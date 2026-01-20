@@ -1,6 +1,6 @@
 # KubeVirt Shepherd
 
-[![Licensed under Apache License version 2.0](https://img.shields.io/github/license/cloudpasture/kubevirt-shepherd.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![Licensed under Apache License version 2.0](https://img.shields.io/github/license/CloudPasture/kubevirt-shepherd.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 **KubeVirt Shepherd** is a governance platform for [KubeVirt][kubevirt] virtual 
 machines. It enables self-service VM lifecycle management with proper approval 
@@ -40,7 +40,11 @@ System (Business Line) → Service (Application) → VM Instance
 
 ## Community
 
-[GitHub Issues][issues]
+- [GitHub Issues][issues] - Bug reports and feature requests
+- [Contributing](CONTRIBUTING.md) - How to contribute
+- [Code of Conduct](CODE_OF_CONDUCT.md) - Community standards
+- [Governance](GOVERNANCE.md) - Project governance
+- [Security](SECURITY.md) - Security policy
 
 ## License
 
@@ -49,4 +53,4 @@ Apache License 2.0. See [LICENSE](LICENSE).
     Copyright The KubeVirt Shepherd Authors.
 
 [kubevirt]: https://kubevirt.io
-[issues]: https://github.com/cloudpasture/kubevirt-shepherd/issues
+[issues]: https://github.com/CloudPasture/kubevirt-shepherd/issues

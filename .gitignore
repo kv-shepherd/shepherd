@@ -1,0 +1,55 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Go
+*.test
+*.out
+go.work
+go.work.sum
+vendor/
+coverage.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Ent generated (optional, some teams commit these)
+# ent/runtime.go
+# ent/enttest/
+# ent/migrate/
+
+# sqlc generated
+# internal/repository/sqlc/*.sql.go
+
+# Build artifacts
+*.log
+tmp/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+kubeconfig
+kubeconfig.*
+
+# Docker
+.docker/
+
+# Test containers
+.testcontainers/
+
+# OS files
+Thumbs.db
