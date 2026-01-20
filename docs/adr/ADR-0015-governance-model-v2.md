@@ -662,6 +662,10 @@ type DeleteConfirmationCode struct {
 
 // Code is single-use and user-bound
 // Stored in PostgreSQL with TTL, auto-cleaned by periodic job
+
+// SECURITY: Rate limiting is REQUIRED to prevent brute-force attacks
+// Implementation must enforce: max 3 failed attempts per user per 5 minutes
+// After 3 failures: lock confirmation for 15 minutes
 ```
 
 **Error Responses**:
@@ -850,11 +854,13 @@ func SelectCluster(clusters []Cluster, environment string) *Cluster {
 
 ### 16. Global Unique Naming and VM Name Format
 
-**Decision**: System and Service names are globally unique. VM names include namespace prefix to ensure cluster-wide uniqueness. **Strict length constraints are enforced to guarantee RFC 1123 compliance.**
+**Decision**: System and Service names are globally unique. VM names include namespace prefix to ensure cluster-wide uniqueness. **Strict length constraints are enforced to guarantee Kubernetes DNS Label compatibility.**
 
 > **Design Principle**: Prevent problems early. Warn users at entity creation time, not at VM creation time.
 
-#### 16.1 Naming Length Constraints (RFC 1123 Compliance)
+#### 16.1 Naming Length Constraints (Kubernetes DNS Label Standard)
+
+> **Note**: While RFC 1123 allows labels to start with digits, **Kubernetes implements stricter requirements** that align with RFC 1035 for most resource types. This platform follows Kubernetes conventions to ensure maximum compatibility.
 
 **Constraint Derivation**:
 
@@ -880,14 +886,15 @@ VM Name Format: {namespace}-{system}-{service}-{index}
 | **Service** | 15 characters | Service creation API | Warn (soft) + Block (hard) |
 | **VM Name** | 50 characters | VM creation (platform-generated) | Auto-calculated, always safe |
 
-**Naming Character Rules** (RFC 1123 DNS Label):
+**Naming Character Rules** (Kubernetes DNS Label Standard):
 
-| Rule | Requirement |
-|------|-------------|
-| Characters | Lowercase alphanumeric (`a-z`, `0-9`) and hyphen (`-`) only |
-| Start/End | Must start and end with alphanumeric character |
-| No consecutive hyphens | Avoid `--` in names |
-| No underscores | Use hyphens instead |
+| Rule | Requirement | Rationale |
+|------|-------------|----------|
+| Characters | Lowercase alphanumeric (`a-z`, `0-9`) and hyphen (`-`) only | Kubernetes enforces lowercase |
+| **Start Character** | Must start with an **alphabetic** character (`a-z`) | Kubernetes aligns with RFC 1035 for most resources |
+| End Character | Must end with alphanumeric character (`a-z`, `0-9`) | RFC 1123 requirement |
+| No consecutive hyphens | Avoid `--` in names | Improves readability |
+| No underscores | Use hyphens instead | DNS compatibility |
 
 #### 16.2 Early Warning Strategy (Shift-Left Validation)
 
@@ -1128,6 +1135,17 @@ field.Time("created_at"),
 | **Time-Bounded** | Max TTL: 2 hours (configurable) | Limit exposure window |
 | **User Binding** | Token includes hashed user ID | Prevent token sharing |
 | **Revocation** | Admin can revoke active tokens | Emergency access termination |
+
+**Encryption Key Management**:
+
+> VNC token encryption shares the same key management infrastructure as cluster credential encryption (see [Phase 1: Multi-Cluster Credential Management](../design/phases/01-contracts.md#5-multi-cluster-credential-management)).
+
+| Aspect | Specification |
+|--------|---------------|
+| Key Storage | Application-level secret (environment variable or external secret manager) |
+| Key Rotation | Supported via `encryption_key_id` field; old tokens remain valid until expiry |
+| Algorithm | AES-256-GCM (AEAD providing confidentiality and integrity) |
+| Key Derivation | Per-token nonce generated via CSPRNG |
 
 **Token Structure**:
 
@@ -1607,9 +1625,10 @@ field.String("tenant_id").Default(DefaultTenantID).Immutable()
 | `check_permission_inheritance.go` | Service/VM permissions resolve to System | Permission check |
 | `check_batch_ticket_consistency.go` | Parent-child ticket counts consistent | Batch operations |
 | `check_name_length.go` | System/Service name ≤ 15 chars, warn > 12 chars | Entity creation |
-| `check_rfc1123_compliance.go` | Names contain only `[a-z0-9-]`, start/end with alphanumeric | Entity creation |
+| `check_k8s_dns_label.go` | Names contain only `[a-z0-9-]`, start with `[a-z]`, end with `[a-z0-9]` | Entity creation |
 | `check_vnc_token_security.go` | VNC token single-use, expired tokens rejected | VNC access |
 | `check_prod_delete_code.go` | Production VM delete requires valid confirmation code | Delete API call |
+| `check_confirmation_rate_limit.go` | Max 3 failed confirmation attempts per user per 5 minutes | Delete API call |
 
 ---
 
