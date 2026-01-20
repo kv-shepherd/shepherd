@@ -164,6 +164,27 @@ func (uc *CreateVMAtomicUseCase) Execute(ctx context.Context, input CreateVMInpu
 | Using sqlc in Service layer | Only UseCase layer controls transactions |
 | Using `sql.Open()` to create separate connection pool | Must use shared pgxpool |
 | Using `INSERT INTO river_job` directly | Must use River's official API |
+| **Mixing Ent and sqlc in the same transaction** | Connection borrowing conflict (see below) |
+
+> ⚠️ **Critical Rule: No Ent+sqlc Mixing Within Same Transaction**
+>
+> Although Ent and sqlc share the same `pgxpool`, they use different connection borrowing mechanisms:
+> - **sqlc**: Uses `pgx.Tx` directly via `pgxpool.BeginTx()`
+> - **Ent**: Uses `*sql.Tx` via `stdlib.OpenDBFromPool()` wrapper
+>
+> **Within a single atomic transaction, use ONLY ONE approach:**
+>
+> | Pattern | Allowed | Example |
+> |---------|---------|---------|
+> | ✅ sqlc-only transaction | Yes | `tx := pool.Begin(); sqlcTx := queries.WithTx(tx); sqlcTx.CreateEvent(); river.InsertTx(tx)` |
+> | ✅ Ent-only transaction | Yes | `entTx := entClient.Tx(ctx); entTx.VM.Create().Save(ctx)` |
+> | ❌ Mixed transaction | **NO** | `tx := pool.Begin(); sqlcTx.Create(); entClient.VM.Create()` ← Different TX contexts |
+>
+> **Rationale**: The `stdlib.OpenDBFromPool` wrapper borrows connections from the pool in a way
+> that may not align with an externally-managed `pgx.Tx`, potentially causing:
+> - Operations executing on different connections
+> - Transaction isolation violations
+> - Deadlocks under load
 
 ### CI Enforcement
 

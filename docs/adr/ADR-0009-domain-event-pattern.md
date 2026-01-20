@@ -73,6 +73,30 @@ func GetEffectiveSpec(event *ent.DomainEvent, ticket *ent.ApprovalTicket) map[st
 }
 ```
 
+> **Enforcement via Ent Hook** (Recommended):
+>
+> ```go
+> // ent/schema/domain_event.go - Add Hook to enforce immutability
+> 
+> func (DomainEvent) Hooks() []ent.Hook {
+>     return []ent.Hook{
+>         // Prevent payload modification after creation
+>         hook.On(func(next ent.Mutator) ent.Mutator {
+>             return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+>                 if dm, ok := m.(*DomainEventMutation); ok {
+>                     if _, exists := dm.Payload(); exists {
+>                         return nil, errors.New("payload field is immutable after creation")
+>                     }
+>                 }
+>                 return next.Mutate(ctx, m)
+>             })
+>         }, ent.OpUpdate|ent.OpUpdateOne),
+>     }
+> }
+> ```
+>
+> This Hook will cause a runtime error if any code attempts to update the `payload` field.
+
 > **Why abandon `mergeSpec`**:
 > - Shallow merge: `{"resources": {"cpu": 4}}` overwrites `resources` key, `memory` lost
 > - Deep merge: Logic complex, hard to express "delete field" intent
