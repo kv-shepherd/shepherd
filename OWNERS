@@ -1,0 +1,15 @@
+# OWNERS file for KubeVirt Shepherd
+#
+# Defines who can approve and review pull requests.
+
+# Approvers can approve PRs for merge
+approvers:
+  - CloudPasture/maintainers
+
+# Reviewers can review PRs and provide feedback
+reviewers:
+  - CloudPasture/reviewers
+
+# Labels to apply to issues/PRs in this directory
+labels:
+  - area/core
