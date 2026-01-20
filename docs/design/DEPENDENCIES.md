@@ -435,20 +435,46 @@ replace (
 |-----------|---------|---------------------|------------|
 | `DB_POOL_MAX_CONNS` | `50` | `DB_POOL_MAX_CONNS` | Max connections |
 | `DB_POOL_MIN_CONNS` | `5` | `DB_POOL_MIN_CONNS` | Min connections |
-| `DB_CONN_MAX_LIFETIME` | `1h` | `DB_CONN_MAX_LIFETIME` | Max connection lifetime |
-| `DB_CONN_MAX_IDLE_TIME` | `10m` | `DB_CONN_MAX_IDLE_TIME` | Idle connection timeout |
+| `DB_POOL_MAX_CONN_LIFETIME` | `1h` | `DB_POOL_MAX_CONN_LIFETIME` | Max connection lifetime |
+| `DB_POOL_MAX_CONN_IDLE_TIME` | `10m` | `DB_POOL_MAX_CONN_IDLE_TIME` | Idle connection timeout |
 
 ### Concurrency Control
 
-> **Stability First Principle**: This platform is a governance platform, not a high-concurrency scheduling platform.
-> In high-concurrency scenarios, use **batching and queuing**. Stability and consistency are top priority.
+> ⚠️ **Platform Positioning: Governance Over Speed**
+>
+> KubeVirt Shepherd is a **governance platform**, NOT a high-concurrency scheduling platform.
+>
+> | Principle | Meaning |
+> |-----------|---------|
+> | **Reliability First** | All 10 VMs eventually created properly is more important than creating them in parallel |
+> | **Conservative Concurrency** | Default settings favor stability; intentionally slower to avoid K8s API overload |
+> | **Queue-Based Processing** | Batch requests are serialized through River Queue; no need for aggressive parallelism |
+> | **No Distributed Lock Complexity** | Avoid Redis/Zookeeper dependencies; PostgreSQL-native solutions only |
+>
+> **Implication for Batch Operations**:
+> - Batch create 10 VMs → Queued as 10 River Jobs → Processed gradually (e.g., 2 per cluster at a time)
+> - Total time may be longer, but each operation gets proper K8s API attention
+> - Retry and error handling work reliably without race conditions
 
 | Parameter | Default | Environment Variable | Constraint |
 |-----------|---------|---------------------|------------|
-| `K8S_CLUSTER_CONCURRENCY` | `20` | `K8S_CLUSTER_CONCURRENCY` | Single cluster K8s operation concurrency limit |
+| `K8S_CLUSTER_CONCURRENCY` | `20` | `K8S_CLUSTER_CONCURRENCY` | **Per-instance** single cluster K8s operation limit |
 | `HEAVY_WRITE_LIMIT` | `30` | `HEAVY_WRITE_LIMIT` | Heavy write operations (K8s API, external systems) |
 | `LIGHT_WRITE_LIMIT` | `80` | `LIGHT_WRITE_LIMIT` | Light write operations (pure DB) |
 | `RIVER_MAX_WORKERS` | `10` | `KUBEVIRT_SHEPHERD_RIVER_MAX_WORKERS` | River Worker max concurrency |
+
+> ⚠️ **Concurrency Scope Clarification**:
+>
+> | Parameter | Scope | Coordination |
+> |-----------|-------|--------------|
+> | `RIVER_MAX_WORKERS` | Per-instance | **River Queue coordinates globally** via `FOR UPDATE SKIP LOCKED` |
+> | `K8S_CLUSTER_CONCURRENCY` | **Per-instance only** | In-memory semaphore, no cross-Pod coordination |
+>
+> **Implication**: With HPA, actual K8s concurrency per cluster = `Pod count × K8S_CLUSTER_CONCURRENCY`.
+> The K8s API server's built-in rate limiting provides the final protection layer.
+>
+> **Best Practice**: Set `K8S_CLUSTER_CONCURRENCY` conservatively (default: 20) to ensure
+> even at maximum HPA scale, total K8s API load remains acceptable.
 
 ### HPA Concurrency Constraints (Required)
 
