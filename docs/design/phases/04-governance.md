@@ -3,6 +3,17 @@
 > **Prerequisites**: Phase 3 complete  
 > **Acceptance**: Approval workflow operational, River Queue processing
 
+### Required Deliverables from Phase 3
+
+| Dependency | Location | Verification |
+|------------|----------|--------------|
+| Composition Root | `internal/app/bootstrap.go` | Application boots successfully |
+| VMService | `internal/service/vm_service.go` | Business logic callable |
+| CreateVMUseCase | `internal/usecase/create_vm.go` | Atomic transaction works |
+| VMHandler | `internal/api/handlers/vm.go` | HTTP endpoints respond |
+| Health checks | `/health/live`, `/health/ready` | Both return 200 |
+| Manual DI pattern | All `New*()` in bootstrap.go | CI check passes |
+
 ---
 
 ## Objectives
@@ -189,10 +200,29 @@ internal/governance/
 
 ### Status Flow
 
-```
-SUBMITTED → PENDING_APPROVAL → APPROVED → EXECUTING → COMPLETED
-                            → REJECTED           → FAILED
-```
+> **Ticket Status** (ApprovalTicket table):
+>
+> ```
+> PENDING_APPROVAL ──► APPROVED ──► COMPLETED
+>                  └─► REJECTED     │
+>                                   └─► FAILED
+> ```
+
+> **Event Status** (DomainEvent table):
+>
+> ```
+> PENDING ──► PROCESSING ──► COMPLETED
+>                        └─► FAILED
+>                        └─► CANCELLED
+> ```
+
+> ⚠️ **Status Terminology Alignment**:
+>
+> | Context | Initial Status | Description |
+> |---------|---------------|-------------|
+> | ApprovalTicket | `PENDING_APPROVAL` | Awaiting admin review |
+> | DomainEvent (requires approval) | `PENDING` | Event created, ticket pending |
+> | DomainEvent (auto-approved) | `PROCESSING` | Skipped PENDING, directly queued |
 
 ### Approval Types
 

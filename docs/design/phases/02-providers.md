@@ -3,6 +3,16 @@
 > **Prerequisites**: Phase 1 complete  
 > **Acceptance**: KubeVirt Provider implements all interfaces, tests pass
 
+### Required Deliverables from Phase 1
+
+| Dependency | Location | Verification |
+|------------|----------|--------------|
+| Ent schemas generated | `ent/` | `go generate ./ent` succeeds |
+| Provider interfaces defined | `internal/provider/interface.go` | Interfaces compile |
+| Domain models | `internal/domain/` | `domain.VM`, `domain.Cluster` exist |
+| Error system | `internal/pkg/errors/` | Error codes defined |
+| DomainEvent schema | `ent/schema/domain_event.go` | Schema generated |
+
 ---
 
 ## Objectives

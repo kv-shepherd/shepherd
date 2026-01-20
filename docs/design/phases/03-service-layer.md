@@ -3,6 +3,17 @@
 > **Prerequisites**: Phase 2 complete  
 > **Acceptance**: VMService integrated, API endpoints working
 
+### Required Deliverables from Phase 2
+
+| Dependency | Location | Verification |
+|------------|----------|--------------|
+| KubeVirtProvider | `internal/provider/kubevirt.go` | All interface methods implemented |
+| MockProvider | `internal/provider/mock.go` | Test helper ready |
+| KubeVirtMapper | `internal/provider/mapper.go` | K8s ↔ Domain mapping works |
+| ResourceWatcher | `internal/provider/watcher.go` | List-Watch pattern implemented |
+| ClusterHealthChecker | `internal/provider/health_checker.go` | Health checks functional |
+| CapabilityDetector | `internal/provider/capability.go` | Feature detection works |
+
 ---
 
 ## Objectives
