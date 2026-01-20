@@ -30,6 +30,15 @@ System (Business Line) → Service (Application) → VM Instance
 - **Environment Isolation**: Strict separation between test and production
 - **Audit Trail**: Complete operation history for compliance
 
+## Design Principles
+
+| Principle | Description |
+|-----------|-------------|
+| **Governance First** | This is a governance platform, not a scheduling platform. Reliability over speed. |
+| **Eventually Consistent** | Batch operations complete reliably via queue processing, not aggressively in parallel. |
+| **PostgreSQL Only** | Single database dependency (PostgreSQL 18+). No Redis, no external message queues. |
+| **Async by Default** | All write operations return `202 Accepted` and execute asynchronously. |
+
 ## Project Status
 
 > ⚠️ **Pre-Alpha**: Planning and design phase.
