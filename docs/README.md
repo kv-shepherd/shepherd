@@ -102,6 +102,29 @@ Check [RFCs](./rfc/) for proposed features:
 | **RFC** | `rfc/` | Proposed future features |
 | **Design** | `design/` | Implementation specifications |
 
+### ADR vs RFC Decision Guide
+
+> **When to create which document type?**
+>
+> ```
+> Question: Does this involve...
+> 
+> ├── Technology selection? (e.g., ORM, database, framework)
+> │   └── ✅ Create ADR
+> │
+> ├── Architectural pattern? (e.g., async model, transaction strategy)
+> │   └── ✅ Create ADR
+> │
+> ├── New user-facing feature? (e.g., VNC console, Helm export)
+> │   └── ✅ Create RFC
+> │
+> ├── Performance optimization? (e.g., caching, partitioning)
+> │   └── ✅ Create RFC (unless it changes architecture)
+> │
+> └── Implementation detail change? (same architecture)
+>     └── ✅ Update Design docs only
+> ```
+
 ---
 
 ## Contributing
@@ -113,3 +136,13 @@ When contributing documentation:
 3. **Implementation details**: Update files in `design/`
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for detailed guidelines.
+
+---
+
+## Related Documents
+
+| Document | Purpose |
+|----------|---------|
+| [RELEASE.md](./RELEASE.md) | Release process and versioning |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | Contribution guidelines |
+| [SECURITY.md](../SECURITY.md) | Security policy |
