@@ -1,7 +1,7 @@
 # ADR-0015: Governance Model V2 - Decoupled Hierarchy and Enhanced Controls
 
-> **Status**: Proposed  
-> **Date**: 2026-01-21  
+> **Status**: Accepted  
+> **Date**: 2026-01-21 (Accepted)  
 > **Supersedes**: Portions of Phase 1 Contracts (01-contracts.md) related to governance model
 
 ---
