@@ -1,7 +1,7 @@
 # ADR-0015: Governance Model V2 - Decoupled Hierarchy and Enhanced Controls
 
 > **Status**: Proposed  
-> **Date**: 2026-01-20  
+> **Date**: 2026-01-21  
 > **Supersedes**: Portions of Phase 1 Contracts (01-contracts.md) related to governance model
 
 ---
@@ -38,12 +38,13 @@ The initial governance model design had several limitations that would impact lo
 
 ### 1. System Entity Decoupling
 
-**Decision**: Remove namespace, environment, and cluster bindings from System entity. Add `maintainers` field for team ownership.
+**Decision**: Remove namespace, environment, and cluster bindings from System entity. Permissions are managed via separate RBAC tables (see [§22. Authentication & RBAC Strategy](#22-authentication--rbac-strategy)).
 
 **Rationale**:
 - A System represents a logical business grouping, not an infrastructure deployment unit
 - VMs under a System may span multiple clusters and namespaces
-- Team ownership is essential for enterprise scenarios
+- Team ownership is managed via RoleBinding, not stored in entity itself
+- RBAC tables enable OIDC/LDAP integration and fine-grained permission control
 
 **Schema Changes**:
 
@@ -55,7 +56,8 @@ func (System) Fields() []ent.Field {
         field.String("name").NotEmpty(),
         field.String("description").Optional(),
         field.String("created_by").NotEmpty(),
-        field.Strings("maintainers").Default([]string{}),  // Team ownership
+        // NOTE: No maintainers field - permissions managed via RoleBinding table
+        field.String("tenant_id").Default("default").Immutable(),  // Multi-tenancy reserved
         field.Time("created_at").Default(time.Now).Immutable(),
         field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
     }
@@ -84,13 +86,13 @@ func (System) Indexes() []ent.Index {
 **Permission Resolution Pattern**:
 
 ```go
-// Permission check: Service inherits from System
+// Permission check: Service inherits from System via RBAC
 func (s *PermissionService) CanAccessService(ctx context.Context, userID, serviceID string) (bool, error) {
     service, _ := s.serviceRepo.Query(ctx).Where(service.IDEQ(serviceID)).WithSystem().Only(ctx)
     system := service.Edges.System
     
-    // Check against System's permissions
-    return system.CreatedBy == userID || contains(system.Maintainers, userID), nil
+    // Check against RBAC tables (see §22 for full RBAC schema)
+    return s.hasPermission(ctx, userID, "service:read", "system", system.ID)
 }
 ```
 
@@ -121,9 +123,9 @@ func (Service) Edges() []ent.Edge {
 
 | Entity | Permission Source | Storage |
 |--------|------------------|--------|
-| System | Own `created_by` + `maintainers` | Stored in System table |
-| Service | Inherited from parent System | Not stored, runtime query |
-| VM | Inherited via Service → System chain | Not stored, runtime query |
+| System | RoleBinding with scope_type="system" | RoleBinding table |
+| Service | Inherited from parent System | RoleBinding table (query via System) |
+| VM | Inherited via Service → System chain | RoleBinding table (query via System) |
 
 ---
 
@@ -593,55 +595,36 @@ func (s *SystemService) Delete(ctx context.Context, systemID string) error {
 
 ### 13.1 Delete Confirmation Mechanism
 
-**Decision**: Implement tiered delete confirmation based on entity sensitivity and environment.
+**Decision**: Implement tiered delete confirmation based on entity sensitivity. Users must type the resource name to confirm deletion.
 
-> **Rationale**: Hard delete is irreversible. Confirmation mechanisms prevent accidental data loss while balancing user experience. Production resources require stronger protection.
+> **Rationale**: Hard delete is irreversible. Requiring users to type the resource name forces deliberate confirmation, preventing accidental deletions. This follows the GitHub/AWS industry standard pattern.
 
 **Tiered Confirmation Strategy**:
 
-| Entity | Environment | Confirmation Method | Implementation |
-|--------|-------------|--------------------|-----------------|
-| **VM** | test | `confirm=true` query parameter | Lightweight, API-level protection |
-| **VM** | prod | Dynamic confirmation code | Two-step: get code → confirm with code |
-| **Service** | all | `confirm=true` query parameter | Same as test VM (requires no child VMs) |
-| **System** | all | Type entity name to confirm | Strong confirmation for root entity |
-
-**Production VM Delete Flow (Enhanced)**:
-
-```
-1. User calls DELETE /api/v1/vms/{id} without confirm
-2. API returns 428 Precondition Required with:
-   - confirm_code: "DEL-abc123" (valid 5 minutes)
-   - vm_name: "prod-shop-redis-01"
-   - warning: "This VM is in production environment"
-3. User confirms with DELETE /api/v1/vms/{id}?confirm_code=DEL-abc123
-4. Delete proceeds with full audit trail
-```
+| Entity | Confirmation Method | Implementation |
+|--------|--------------------|-----------------| 
+| **VM** (test) | `confirm=true` query parameter | Lightweight, API-level protection |
+| **VM** (prod) | Type VM name in request body | Strong confirmation for production resources |
+| **Service** | `confirm=true` query parameter | Same as test VM (requires no child VMs) |
+| **System** | Type system name in request body | Strong confirmation for root entity |
 
 **API Design**:
 
 ```bash
-# Test VM Delete - simple confirm
+# Test VM Delete - simple confirm parameter
 DELETE /api/v1/vms/{id}?confirm=true
 
-# Prod VM Delete - Step 1: Request confirmation code
+# Prod VM Delete - requires typing VM name
 DELETE /api/v1/vms/{id}
-# Response 428:
-# {
-#   "code": "DELETE_CONFIRMATION_REQUIRED",
-#   "confirm_code": "DEL-abc123",
-#   "expires_in": 300,
-#   "vm_name": "prod-shop-redis-01",
-#   "environment": "prod"
-# }
-
-# Prod VM Delete - Step 2: Confirm with code
-DELETE /api/v1/vms/{id}?confirm_code=DEL-abc123
+Content-Type: application/json
+{
+  "confirm_name": "prod-shop-redis-01"  // Must match VM name exactly
+}
 
 # Service Delete - requires confirm parameter  
 DELETE /api/v1/services/{id}?confirm=true
 
-# System Delete - requires name confirmation in body
+# System Delete - requires typing system name
 DELETE /api/v1/systems/{id}
 Content-Type: application/json
 {
@@ -649,49 +632,30 @@ Content-Type: application/json
 }
 ```
 
-**Confirmation Code Specification**:
-
-```go
-type DeleteConfirmationCode struct {
-    Code       string    `json:"code"`        // Format: DEL-{6 alphanumeric}
-    EntityType string    `json:"entity_type"` // "vm", "service", "system"
-    EntityID   string    `json:"entity_id"`
-    UserID     string    `json:"user_id"`     // Bound to requesting user
-    ExpiresAt  time.Time `json:"expires_at"`  // 5 minute TTL
-}
-
-// Code is single-use and user-bound
-// Stored in PostgreSQL with TTL, auto-cleaned by periodic job
-
-// SECURITY: Rate limiting is REQUIRED to prevent brute-force attacks
-// Implementation must enforce: max 3 failed attempts per user per 5 minutes
-// After 3 failures: lock confirmation for 15 minutes
-```
-
 **Error Responses**:
 
 ```go
-// Missing confirmation
+// Missing or incorrect confirmation
 type ErrDeleteConfirmationRequired struct {
-    Entity       string `json:"entity"`
+    Entity       string `json:"entity"`        // "vm", "service", "system"
     EntityID     string `json:"entity_id"`
-    EntityName   string `json:"entity_name,omitempty"`    // For System
-    ConfirmCode  string `json:"confirm_code,omitempty"`   // For prod VM
-    ExpiresIn    int    `json:"expires_in,omitempty"`     // Seconds
+    EntityName   string `json:"entity_name"`   // Name user must type to confirm
     Environment  string `json:"environment,omitempty"`
+    Message      string `json:"message"`       // Human-readable instruction
 }
 
 func (e *ErrDeleteConfirmationRequired) Code() string {
     return "DELETE_CONFIRMATION_REQUIRED"
 }
 
-// Invalid or expired code
-type ErrInvalidConfirmationCode struct {
-    Reason string `json:"reason"` // "expired", "invalid", "wrong_user"
+// Name mismatch
+type ErrConfirmationNameMismatch struct {
+    Expected string `json:"expected"`  // Correct name (displayed in UI)
+    Provided string `json:"provided"`  // What user typed
 }
 
-func (e *ErrInvalidConfirmationCode) Code() string {
-    return "INVALID_CONFIRMATION_CODE"
+func (e *ErrConfirmationNameMismatch) Code() string {
+    return "CONFIRMATION_NAME_MISMATCH"
 }
 ```
 
@@ -700,106 +664,162 @@ func (e *ErrInvalidConfirmationCode) Code() string {
 | Entity | Environment | Recommended UI Pattern |
 |--------|-------------|------------------------|
 | VM | test | Modal with "Delete" button, auto-adds `confirm=true` |
-| VM | prod | Modal showing confirm code, user clicks "Confirm Delete" |
-| Service | all | Modal with warning about cascade check |
-| System | all | Modal requiring user to type system name |
+| VM | prod | Modal with **red highlighted VM name**, input field for user to type name |
+| Service | all | Modal with warning about cascade check, "Delete" button |
+| System | all | Modal with **red highlighted system name**, input field for user to type name |
 
-> **Rationale for Production Enhancement**:
-> - Simple `confirm=true` can be accidentally added by scripts
-> - Dynamic code requires active user interaction
-> - User-bound code prevents token sharing
-> - 5-minute TTL limits exposure window
+> **UI Example (Production VM)**:
+> ```
+> ┌────────────────────────────────────────────────────┐
+> │  ⚠️ Delete Production VM                          │
+> │                                                    │
+> │  You are about to delete:                         │
+> │  [🔴 prod-shop-redis-01 ]                         │
+> │                                                    │
+> │  Type the VM name to confirm:                     │
+> │  ┌──────────────────────────────────────────────┐ │
+> │  │                                              │ │
+> │  └──────────────────────────────────────────────┘ │
+> │                                                    │
+> │  [ Cancel ]                    [ Delete ]         │
+> └────────────────────────────────────────────────────┘
+> ```
+
+> **Rationale for Name Confirmation**:
+> - Forces user to consciously identify what they are deleting
+> - Prevents "click-through" confirmation fatigue
+> - Follows industry standard (GitHub, AWS, Kubernetes Dashboard)
+> - Simple implementation, no server-side state required
 
 ---
 
-### 14. Maintainers Permission Model
+### 14. Platform RBAC Model
 
-**Decision**: Permissions are managed **only at System level**. `maintainers` have identical permissions to `created_by`. Service and VM permissions are **fully inherited** from parent System via edge query.
+**Decision**: Permissions are managed via **Platform RBAC tables** (Role, Permission, RoleBinding), not stored in entity fields. This enables OIDC/LDAP integration, fine-grained permissions, and environment-level isolation.
+
+> **Design Principle**: "Platform RBAC, not Kubernetes RBAC". Shepherd maintains its own RBAC in PostgreSQL to provide multi-cluster unified access control, approval workflows, and business-level abstractions that K8s RBAC cannot support.
 
 **Permission Inheritance Hierarchy**:
 
 ```
-System (created_by + maintainers stored here)
-   └── Service (inherits from System)
-         └── VM (inherits via Service → System chain)
+RoleBinding (user_id, role_id, scope_type, scope_id, allowed_environments)
+   └── scope_type = "system" → applies to System + all child Services/VMs
+   └── scope_type = "global" → applies to all resources (Admin only)
 ```
+
+**Core RBAC Tables** (see [§22](#22-authentication--rbac-strategy) for full schema):
+
+| Table | Purpose |
+|-------|---------|
+| `permissions` | Atomic permission definitions (e.g., `vm:create`, `system:read`) |
+| `roles` | Permission bundles (e.g., `SystemAdmin`, `Operator`, `Viewer`) |
+| `role_permissions` | Many-to-many: which permissions belong to which role |
+| `role_bindings` | User-role assignments with scope and environment restrictions |
 
 **Role-Based Visibility**:
 
-| Role | Visibility Scope |
-|------|------------------|
-| **Administrator** | All Systems, Services, VMs across all users |
-| **Owner (created_by)** | Own Systems and all child Services/VMs |
-| **Maintainer** | Systems where listed + all child Services/VMs |
-| **Other Users** | ❌ Cannot see other users' resources |
+| Role | Visibility Scope | Environment Access |
+|------|------------------|-------------------|
+| **PlatformAdmin** | All resources globally | test + prod |
+| **SystemAdmin** | Assigned Systems + children | As specified in RoleBinding |
+| **Operator** | Assigned Systems + children | As specified in RoleBinding |
+| **Viewer** | Assigned Systems (read-only) | As specified in RoleBinding |
 
 **Permission Matrix**:
 
-| Operation | Admin | created_by | maintainers | Other Users |
-|-----------|-------|------------|-------------|-------------|
-| View System/Service/VM | ✅ All | ✅ Own hierarchy | ✅ Assigned hierarchy | ❌ |
-| Modify System description | ✅ | ✅ | ✅ | ❌ |
-| Add/Remove maintainers | ✅ | ✅ | ✅ | ❌ |
-| Create Service under System | ✅ | ✅ | ✅ | ❌ |
-| Submit VM requests | ✅ | ✅ | ✅ | ❌ |
-| Operate VM (start/stop) | ✅ | ✅ | ✅ | ❌ |
-| Cancel pending requests | ✅ All | ✅ Own | ✅ Own | ❌ |
-| Approve requests | ✅ | ❌ | ❌ | ❌ |
-| Manage clusters | ✅ | ❌ | ❌ | ❌ |
-| Manage templates | ✅ | ❌ | ❌ | ❌ |
+| Operation | Permission Required | PlatformAdmin | SystemAdmin | Operator | Viewer |
+|-----------|---------------------|---------------|-------------|----------|--------|
+| View System/Service/VM | `system:read`, `service:read`, `vm:read` | ✅ | ✅ | ✅ | ✅ |
+| Modify System description | `system:write` | ✅ | ✅ | ❌ | ❌ |
+| Manage RoleBindings | `rbac:manage` | ✅ | ✅ | ❌ | ❌ |
+| Create Service | `service:create` | ✅ | ✅ | ✅ | ❌ |
+| Submit VM requests | `vm:create` | ✅ | ✅ | ✅ | ❌ |
+| Operate VM (start/stop) | `vm:operate` | ✅ | ✅ | ✅ | ❌ |
+| Access VNC | `vnc:access` | ✅ | ✅ | ✅ | ❌ |
+| Approve requests | `approval:approve` | ✅ | ❌ | ❌ | ❌ |
+| Manage clusters | `cluster:manage` | ✅ | ❌ | ❌ | ❌ |
+| Manage templates | `template:manage` | ✅ | ❌ | ❌ | ❌ |
+
+**Environment-Level Permission Control**:
+
+```go
+// RoleBinding includes environment restrictions
+type RoleBinding struct {
+    ID                  string    `json:"id"`
+    UserID              string    `json:"user_id"`
+    RoleID              string    `json:"role_id"`
+    ScopeType           string    `json:"scope_type"`  // "global" | "system"
+    ScopeID             *string   `json:"scope_id"`    // system_id if scope_type=system
+    AllowedEnvironments []string  `json:"allowed_environments"` // ["test"] or ["test", "prod"]
+    CreatedAt           time.Time `json:"created_at"`
+    CreatedBy           string    `json:"created_by"`
+}
+
+// Example: Developer can only access test environment
+// {user_id: "alice", role_id: "operator", scope_type: "system", scope_id: "sys-shop", allowed_environments: ["test"]}
+
+// Example: SRE can access both test and prod
+// {user_id: "bob", role_id: "operator", scope_type: "system", scope_id: "sys-shop", allowed_environments: ["test", "prod"]}
+```
 
 **Permission Resolution Implementation**:
 
 ```go
-// Check permission for any entity by resolving to System
-func (s *PermissionService) CanAccess(ctx context.Context, userID string, entityType string, entityID string) (bool, error) {
-    var system *ent.System
+// Check permission for any entity, considering environment restrictions
+func (s *PermissionService) HasPermission(ctx context.Context, 
+    userID string, permission string, resourceType string, resourceID string, environment string) (bool, error) {
     
-    switch entityType {
-    case "system":
-        system, _ = s.systemRepo.Get(ctx, entityID)
-    case "service":
-        svc, _ := s.serviceRepo.Query(ctx).Where(service.IDEQ(entityID)).WithSystem().Only(ctx)
-        system = svc.Edges.System
-    case "vm":
-        vm, _ := s.vmRepo.Query(ctx).Where(vm.IDEQ(entityID)).
-            WithService(func(q *ent.ServiceQuery) { q.WithSystem() }).Only(ctx)
-        system = vm.Edges.Service.Edges.System
+    // 1. Resolve resource to System
+    systemID := s.resolveToSystemID(ctx, resourceType, resourceID)
+    
+    // 2. Query user's RoleBindings for this System (or global)
+    bindings, _ := s.roleBindingRepo.Query(ctx).Where(
+        rolebinding.UserIDEQ(userID),
+        predicate.Or(
+            rolebinding.ScopeTypeEQ("global"),
+            predicate.And(
+                rolebinding.ScopeTypeEQ("system"),
+                rolebinding.ScopeIDEQ(systemID),
+            ),
+        ),
+    ).WithRole(func(q *ent.RoleQuery) {
+        q.WithPermissions()
+    }).All(ctx)
+    
+    // 3. Check if any binding grants the required permission + environment
+    for _, binding := range bindings {
+        // Check environment restriction
+        if !contains(binding.AllowedEnvironments, environment) {
+            continue
+        }
+        
+        // Check if role has required permission
+        for _, perm := range binding.Edges.Role.Edges.Permissions {
+            if perm.ID == permission || matchWildcard(perm.ID, permission) {
+                return true, nil
+            }
+        }
     }
     
-    // Check against System's permissions
-    return system.CreatedBy == userID || contains(system.Maintainers, userID), nil
-}
-
-// List Services - filter by accessible Systems
-func (s *ServiceService) ListForUser(ctx context.Context, userID string) ([]*Service, error) {
-    return s.repo.Query(ctx).
-        Where(
-            service.HasSystemWith(
-                predicate.Or(
-                    system.CreatedByEQ(userID),
-                    system.MaintainersContains(userID),
-                ),
-            ),
-        ).
-        All(ctx)
+    return false, nil
 }
 ```
 
 **API Behavior**:
 
-| Endpoint | Admin | Non-Admin |
-|----------|-------|-----------|
-| `GET /api/v1/systems` | Returns all systems | Returns only owned/maintained systems |
+| Endpoint | PlatformAdmin | Non-Admin |
+|----------|---------------|-----------|
+| `GET /api/v1/systems` | Returns all systems | Returns systems where user has RoleBinding |
 | `GET /api/v1/services` | Returns all services | Returns services under accessible systems |
-| `GET /api/v1/vms` | Returns all VMs | Returns VMs under accessible systems |
+| `GET /api/v1/vms` | Returns all VMs | Returns VMs under accessible systems, filtered by allowed_environments |
+| `GET /api/v1/vms?environment=prod` | Returns prod VMs | Only if user's RoleBinding includes "prod" in allowed_environments |
 
 **Rationale**: 
-- Single point of permission management (System level only)
-- System maintainer changes immediately affect all child resources
-- No synchronization needed between System and Service permissions
-- Strict resource isolation prevents information leakage between users
-- Administrators require global view for governance and troubleshooting
+- **Platform RBAC > K8s RBAC**: Multi-cluster unified view, approval workflows, and business abstractions
+- **Environment isolation**: Same role can have different environment access per binding
+- **OIDC/LDAP ready**: RoleBindings can be auto-created from IdP group mappings
+- **Audit-friendly**: All permission changes are tracked in RoleBinding table
+- **No entity pollution**: Permissions are not stored in System/Service/VM entities
 
 ---
 
@@ -888,13 +908,17 @@ VM Name Format: {namespace}-{system}-{service}-{index}
 
 **Naming Character Rules** (Kubernetes DNS Label Standard):
 
+> **Technical Note**: While RFC 1123 technically permits labels to start with digits, Kubernetes enforces stricter requirements aligned with RFC 1035 for most resource types (including VirtualMachine). This platform follows Kubernetes conventions to ensure maximum compatibility.
+
 | Rule | Requirement | Rationale |
 |------|-------------|----------|
 | Characters | Lowercase alphanumeric (`a-z`, `0-9`) and hyphen (`-`) only | Kubernetes enforces lowercase |
-| **Start Character** | Must start with an **alphabetic** character (`a-z`) | Kubernetes aligns with RFC 1035 for most resources |
+| **Start Character** | Must start with an **alphabetic** character (`a-z`) | Kubernetes implementation choice (RFC 1035 aligned, not RFC 1123 literal) |
 | End Character | Must end with alphanumeric character (`a-z`, `0-9`) | RFC 1123 requirement |
 | No consecutive hyphens | Avoid `--` in names | Improves readability |
 | No underscores | Use hyphens instead | DNS compatibility |
+
+> **Technical Note**: Kubernetes `Service` objects can start with a digit if the `RelaxedServiceNameValidation` feature gate is enabled. However, this platform enforces stricter RFC 1035 rules for all entity names to ensure maximum compatibility across all Kubernetes resource types and versions.
 
 #### 16.2 Early Warning Strategy (Shift-Left Validation)
 
@@ -1045,6 +1069,8 @@ annotations:
 ```
 
 > **Best Practice**: If cross-cluster DNS is required, consider implementing a central DNS service (e.g., external-dns with multi-cluster support) as a future RFC.
+>
+> **Community Input**: The 15-character entity name limit is a V1 hard constraint to ensure Kubernetes compatibility. If your use case requires longer names, please [open a GitHub Issue](https://github.com/CloudPasture/kubevirt-shepherd/issues) to discuss potential solutions for future versions.
 
 #### 16.5 Implementation Checklist
 
@@ -1105,6 +1131,8 @@ field.Time("created_at"),
 ---
 
 ### 18. VNC Console Access Permissions
+
+> **V1 Priority**: Low. VNC is a convenience feature for administrators, not a core governance function. We recommend enterprises use bastion hosts for production VM management. Security enhancements described here are targets for future versions.
 
 **Decision**: VNC access requires approval in production environment, no approval needed in test environment.
 
@@ -1201,6 +1229,52 @@ func (t *VNCAccessToken) IsValid() bool {
 | Batch Start/Stop | 50 | Per environment policy | Best-effort |
 | Batch Delete | 10 | Parent + Child tickets | Independent per VM |
 | Batch Approve (Admin) | 20 | Admin action | Independent per ticket |
+
+**Two-Layer Rate Limiting Strategy**:
+
+> **Design Principle**: Protect system stability first, ensure user fairness second. Administrators retain full control.
+
+**Layer 1: Global Rate Limiting (System Protection)**
+
+| Limit | Value | Rationale |
+|-------|-------|-----------|
+| **Max global pending batch tickets** | 100 | Prevent system overload |
+| **Max global API requests** | 1000 req/min | Infrastructure protection |
+
+**Layer 2: User-Level Auto Rate Limiting (Fairness)**
+
+> Automatically enforced to prevent "noisy neighbor" issues. Administrators can exempt users or adjust limits.
+
+| Limit | Default Value | Rationale |
+|-------|---------------|----------|
+| **Max pending batch requests per user** | 3 | Prevent single user monopolizing queue |
+| **Cooldown between batch submissions** | 2 minutes | Allow queue processing, reduce burst load |
+| **Max total pending child tickets per user** | 30 | Limit resource commitment per user |
+
+**Administrator Override Capabilities**:
+
+| Operation | API Endpoint | Description |
+|-----------|--------------|-------------|
+| Exempt user from rate limiting | `POST /api/v1/admin/rate-limits/exemptions` | Grant user unlimited access |
+| Remove user exemption | `DELETE /api/v1/admin/rate-limits/exemptions/{user_id}` | Restore normal rate limiting |
+| Adjust user limits | `PUT /api/v1/admin/rate-limits/users/{user_id}` | Custom limits for specific user |
+| View rate-limited users | `GET /api/v1/admin/rate-limits/status` | Monitor current rate limit status |
+
+**Rate Limit Response**:
+
+```go
+// When user hits rate limit
+type RateLimitExceededError struct {
+    Code          string    `json:"code"`           // "RATE_LIMIT_EXCEEDED"
+    LimitType     string    `json:"limit_type"`     // "global" or "user"
+    CurrentValue  int       `json:"current_value"`
+    MaxValue      int       `json:"max_value"`
+    RetryAfter    int       `json:"retry_after"`    // Seconds until limit resets
+    ContactAdmin  bool      `json:"contact_admin"`  // true if user should request exemption
+}
+```
+
+> **Rationale**: Enterprise internal users are trusted. Auto rate limiting handles normal cases; administrators handle exceptions. No Redis required for V1 (counters stored in PostgreSQL).
 
 **Atomicity Boundary (ADR-0012 Compliant)**:
 
@@ -1443,21 +1517,414 @@ field.String("tenant_id").Default(DefaultTenantID).Immutable()
 
 ---
 
+### 22. Authentication & RBAC Strategy
+
+**Decision**: Implement **Platform RBAC** with full database-backed permission management. Support OIDC/LDAP integration via **guided configuration flow** (sample data → field selection → group sync → visual mapping).
+
+> **Strategic Position**: Shepherd maintains its own RBAC in PostgreSQL rather than relying on Kubernetes RBAC. This enables multi-cluster unified access control, approval workflows, and business-level abstractions that K8s RBAC cannot provide.
+
+#### 22.1 Platform RBAC vs Kubernetes RBAC
+
+| Aspect | K8s RBAC | Platform RBAC (Shepherd) |
+|--------|----------|--------------------------|
+| Scope | Single cluster | Multi-cluster unified |
+| Abstraction | Namespace/Resource | System/Service/Environment |
+| Approval Workflow | ❌ Not supported | ✅ Native support |
+| OIDC/LDAP Integration | Complex (per-cluster) | ✅ Centralized |
+| Audit Trail | Separate per cluster | ✅ Unified in PostgreSQL |
+| Business Logic | ❌ Not possible | ✅ Environment-based policies |
+
+**Rationale**: Kubernetes RBAC is designed for cluster-level resource access, not for business-level governance. Shepherd provides a governance layer that abstracts away K8s complexity while maintaining security.
+
+**Multi-Cluster Stability Architecture**:
+
+> This platform maintains RBAC in PostgreSQL rather than extending Kubernetes-native RBAC stored in etcd. This architectural choice aligns with the platform's positioning as a **governance layer** optimized for multi-tenant, multi-user scenarios.
+
+| Consideration | K8s-native RBAC (etcd) | Platform RBAC (PostgreSQL) |
+|---------------|------------------------|---------------------------|
+| **Query Load Impact** | Permission checks traverse K8s API Server → etcd | Handled entirely by PostgreSQL, K8s control plane unaffected |
+| **Multi-tenant Scalability** | etcd optimized for cluster state, not high-frequency user queries | PostgreSQL handles relational queries with indexing and connection pooling |
+| **Rate Limiting** | Requires K8s API Priority & Fairness configuration | Native application-level control, independent of K8s |
+| **Cluster Stability** | User permission queries share etcd resources with critical cluster operations | Zero contention with K8s API Server or etcd |
+| **Query Complexity** | Limited to Kubernetes RBAC model | Flexible SQL queries supporting environment-based, time-based policies |
+
+> By externalizing RBAC to PostgreSQL, Shepherd ensures that user permission checks, role lookups, and multi-tenant access patterns do not contend with critical Kubernetes operations (scheduling, pod lifecycle, etc.), thereby preserving cluster stability under high user concurrency.
+
+#### 22.2 RBAC Core Schema
+
+```go
+// ent/schema/permission.go
+// Atomic permission definitions
+func (Permission) Fields() []ent.Field {
+    return []ent.Field{
+        field.String("id").Unique().Immutable(),      // "vm:create", "system:read"
+        field.String("name").NotEmpty(),               // "Create VM"
+        field.String("description").Optional(),        // "Allows creating new VMs"
+        field.String("resource").NotEmpty(),           // "vm", "system", "cluster"
+        field.String("action").NotEmpty(),             // "create", "read", "write", "delete"
+    }
+}
+
+// ent/schema/role.go
+// Role = bundle of permissions
+func (Role) Fields() []ent.Field {
+    return []ent.Field{
+        field.String("id").Unique().Immutable(),       // "role-systemadmin"
+        field.String("name").NotEmpty(),                // "SystemAdmin"
+        field.String("description").Optional(),
+        field.Bool("is_builtin").Default(false),        // true = cannot be deleted
+        field.Time("created_at").Default(time.Now),
+    }
+}
+
+func (Role) Edges() []ent.Edge {
+    return []ent.Edge{
+        edge.To("permissions", Permission.Type),  // Many-to-many
+    }
+}
+
+// ent/schema/role_binding.go
+// Assigns role to user with scope and environment restrictions
+func (RoleBinding) Fields() []ent.Field {
+    return []ent.Field{
+        field.String("id").Unique().Immutable(),
+        field.String("user_id").NotEmpty(),
+        field.String("role_id").NotEmpty(),
+        field.Enum("scope_type").Values("global", "system"),
+        field.String("scope_id").Optional().Nillable(), // system_id if scope_type=system
+        field.Strings("allowed_environments").Default([]string{"test"}),  // ["test"] or ["test", "prod"]
+        field.Time("created_at").Default(time.Now),
+        field.String("created_by").NotEmpty(),           // Who granted this binding
+    }
+}
+
+func (RoleBinding) Edges() []ent.Edge {
+    return []ent.Edge{
+        edge.To("role", Role.Type).Unique().Required(),
+    }
+}
+
+func (RoleBinding) Indexes() []ent.Index {
+    return []ent.Index{
+        index.Fields("user_id", "role_id", "scope_type", "scope_id").Unique(),
+    }
+}
+```
+
+#### 22.3 Built-in Roles and Permissions
+
+**Permissions (Seeded at initialization)**:
+
+| Permission ID | Resource | Action | Description |
+|--------------|----------|--------|-------------|
+| `system:read` | system | read | View system details |
+| `system:write` | system | write | Modify system description |
+| `system:delete` | system | delete | Delete system |
+| `service:read` | service | read | View service details |
+| `service:create` | service | create | Create new service |
+| `service:delete` | service | delete | Delete service |
+| `vm:read` | vm | read | View VM details |
+| `vm:create` | vm | create | Submit VM creation request |
+| `vm:operate` | vm | operate | Start/stop/restart VM |
+| `vm:delete` | vm | delete | Delete VM |
+| `vnc:access` | vnc | access | Access VNC console |
+| `approval:approve` | approval | approve | Approve/reject requests |
+| `approval:view` | approval | view | View pending approvals |
+| `cluster:manage` | cluster | manage | Manage cluster configurations |
+| `template:manage` | template | manage | Manage VM templates |
+| `rbac:manage` | rbac | manage | Manage role bindings |
+| `*:*` | * | * | Wildcard: all permissions |
+
+**Built-in Roles (Seeded at initialization, `is_builtin=true`)**:
+
+| Role ID | Name | Permissions |
+|---------|------|-------------|
+| `role-platform-admin` | PlatformAdmin | `*:*` (all) |
+| `role-system-admin` | SystemAdmin | `system:*`, `service:*`, `vm:*`, `vnc:access`, `rbac:manage` |
+| `role-operator` | Operator | `system:read`, `service:read`, `vm:*`, `vnc:access` |
+| `role-viewer` | Viewer | `system:read`, `service:read`, `vm:read` |
+
+```go
+// Seed data at application startup
+func SeedBuiltinRoles(ctx context.Context, db *ent.Client) error {
+    // Permissions
+    permissions := []Permission{
+        {ID: "system:read", Resource: "system", Action: "read", Name: "View System"},
+        {ID: "system:write", Resource: "system", Action: "write", Name: "Edit System"},
+        // ... more permissions
+        {ID: "*:*", Resource: "*", Action: "*", Name: "All Permissions"},
+    }
+    
+    // Roles with permission assignments
+    roles := []struct {
+        Role        Role
+        Permissions []string
+    }{
+        {
+            Role: Role{ID: "role-platform-admin", Name: "PlatformAdmin", IsBuiltin: true},
+            Permissions: []string{"*:*"},
+        },
+        {
+            Role: Role{ID: "role-system-admin", Name: "SystemAdmin", IsBuiltin: true},
+            Permissions: []string{"system:*", "service:*", "vm:*", "vnc:access", "rbac:manage"},
+        },
+        // ... more roles
+    }
+    
+    // Upsert logic...
+    return nil
+}
+```
+
+#### 22.4 IdP Integration: Guided Configuration Flow
+
+> **Design Principle**: "Show, don't ask". Display sample data to admins, let them choose fields visually, rather than requiring manual configuration.
+
+**Step 1: Connect & Sample**
+
+```go
+// Admin initiates IdP connection, system fetches 10 sample users
+type IdpSampleResponse struct {
+    Users       []map[string]interface{} `json:"users"`        // 10 sample tokens
+    DetectedFields []FieldInfo           `json:"detected_fields"`
+}
+
+type FieldInfo struct {
+    Name         string   `json:"name"`            // "groups", "department", "roles"
+    Type         string   `json:"type"`            // "array" | "string"
+    SampleValues []string `json:"sample_values"`   // ["DevOps-Team", "QA-Team"]
+    UniqueCount  int      `json:"unique_count"`    // Number of unique values in sample
+}
+
+// API: GET /api/v1/admin/idp/{id}/sample
+```
+
+**Step 2: Admin Selects Field**
+
+```
+UI Display:
+┌─────────────────────────────────────────────────────────┐
+│  Sample Token Fields:                                    │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │ ◉ groups (array, 5 unique values)                 │  │
+│  │   Sample: ["DevOps-Team", "QA-Team", ...]         │  │
+│  │ ○ department (string, 3 unique values)            │  │
+│  │   Sample: ["Engineering", "IT", "QA"]             │  │
+│  │ ○ custom_roles (array, 2 unique values)           │  │
+│  │   Sample: ["admin", "developer"]                  │  │
+│  └───────────────────────────────────────────────────┘  │
+│                                                          │
+│  [Sync Selected Field →]                                 │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Step 3: Sync Unique Values (Deduped)**
+
+```go
+// Sync only the unique values of selected field (not all users!)
+type IdpGroupSyncRequest struct {
+    IdpConfigID string `json:"idp_config_id"`
+    FieldName   string `json:"field_name"`  // Admin-selected field
+}
+
+// API: POST /api/v1/admin/idp/{id}/sync-groups
+// Result: Syncs unique group names to idp_synced_groups table
+
+// ent/schema/idp_synced_group.go
+func (IdpSyncedGroup) Fields() []ent.Field {
+    return []ent.Field{
+        field.String("id").Unique().Immutable(),
+        field.String("idp_config_id").NotEmpty(),
+        field.String("group_id").NotEmpty(),       // The actual value from IdP
+        field.String("group_name").Optional(),      // Human-readable name if available
+        field.String("source_field").NotEmpty(),    // "groups", "department", etc.
+        field.Time("synced_at").Default(time.Now),
+    }
+}
+```
+
+**Step 4: Visual Role Mapping**
+
+```
+UI Display:
+┌─────────────────────────────────────────────────────────┐
+│  IdP Group → Shepherd Role Mapping                       │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │ IdP Group          Shepherd Role    Environments  │  │
+│  │ ─────────────────────────────────────────────────│  │
+│  │ DevOps-Team       [SystemAdmin ▼]   ☑test ☑prod  │  │
+│  │ QA-Team           [Operator ▼]      ☑test ☐prod  │  │
+│  │ IT-Support        [Viewer ▼]        ☑test ☐prod  │  │
+│  │ HR-Department     [No Mapping ▼]    -            │  │
+│  └───────────────────────────────────────────────────┘  │
+│                                                          │
+│  💡 Unmapped groups get default: Viewer + test only     │
+│                                                          │
+│  [💾 Save Mapping]                                       │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Mapping Storage**:
+
+```go
+// ent/schema/idp_group_mapping.go
+func (IdpGroupMapping) Fields() []ent.Field {
+    return []ent.Field{
+        field.String("id").Unique().Immutable(),
+        field.String("idp_config_id").NotEmpty(),
+        field.String("idp_group_id").NotEmpty(),          // Links to idp_synced_groups
+        field.String("idp_group_name").Optional(),         // Cached for display
+        field.String("role_id").NotEmpty(),                // Shepherd role
+        field.Enum("scope_type").Values("global", "system").Default("global"),
+        field.String("scope_id").Optional().Nillable(),
+        field.Strings("allowed_environments").Default([]string{"test"}),
+        field.Time("created_at").Default(time.Now),
+    }
+}
+```
+
+#### 22.5 Login Flow with IdP
+
+```go
+func HandleOIDCCallback(ctx context.Context, token *oidc.IDToken) (*User, error) {
+    // 1. Extract claims
+    var claims map[string]interface{}
+    token.Claims(&claims)
+    
+    // 2. Get IdP config to know which field to use
+    idpConfig := getIdpConfig(token.Issuer)
+    groupField := idpConfig.ClaimsMapping.Groups  // e.g., "groups"
+    
+    // 3. Extract group values from token
+    userGroups := extractField(claims, groupField)  // ["DevOps-Team", "QA-Team"]
+    
+    // 4. Query mappings
+    mappings, _ := queryIdpGroupMappings(idpConfig.ID, userGroups)
+    
+    // 5. Create/Update RoleBindings for user
+    for _, mapping := range mappings {
+        upsertRoleBinding(ctx, RoleBinding{
+            UserID:              token.Subject,
+            RoleID:              mapping.RoleID,
+            ScopeType:           mapping.ScopeType,
+            ScopeID:             mapping.ScopeID,
+            AllowedEnvironments: mapping.AllowedEnvironments,
+            CreatedBy:           "idp-sync",
+        })
+    }
+    
+    // 6. Apply default role if no mappings found
+    if len(mappings) == 0 {
+        upsertRoleBinding(ctx, RoleBinding{
+            UserID:              token.Subject,
+            RoleID:              idpConfig.DefaultRoleID,  // "role-viewer"
+            ScopeType:           "global",
+            AllowedEnvironments: idpConfig.DefaultAllowedEnvironments,  // ["test"]
+            CreatedBy:           "idp-default",
+        })
+    }
+    
+    return createOrUpdateUser(ctx, token)
+}
+```
+
+#### 22.6 IdP Configuration Schema
+
+```go
+// ent/schema/idp_config.go
+func (IdpConfig) Fields() []ent.Field {
+    return []ent.Field{
+        field.String("id").Unique().Immutable(),
+        field.String("name").NotEmpty(),                    // "Company Azure AD"
+        field.Enum("type").Values("oidc", "ldap", "saml"),
+        field.Bool("enabled").Default(true),
+        
+        // OIDC-specific config
+        field.String("issuer").Optional(),
+        field.String("client_id").Optional(),
+        field.String("client_secret_encrypted").Optional(),
+        
+        // Claims mapping (guided by sample data)
+        field.JSON("claims_mapping", ClaimsMapping{}),
+        
+        // Default permissions for unmapped users
+        field.String("default_role_id").Default("role-viewer"),
+        field.Strings("default_allowed_environments").Default([]string{"test"}),
+        
+        field.Time("created_at").Default(time.Now),
+        field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
+    }
+}
+
+type ClaimsMapping struct {
+    UserID      string `json:"user_id"`       // Default: "sub"
+    Email       string `json:"email"`         // Default: "email"
+    DisplayName string `json:"display_name"`  // Default: "name"
+    Groups      string `json:"groups"`        // Admin-selected field
+    GroupsFormat string `json:"groups_format"` // "array" | "csv" | "ldap_dn"
+}
+```
+
+**IdP Security Requirements (REQUIRED)**:
+
+| Requirement | Implementation | Rationale |
+|-------------|----------------|----------|
+| **LDAP TLS** | LDAP connections MUST use `ldaps://` or StartTLS | Protect credentials in transit |
+| **OIDC Token Validation** | Validate signature + `iss` + `aud` before trusting claims | Prevent token forgery |
+| **Short-lived Access Tokens** | Access token TTL should be ≤ 1 hour | Limit exposure window |
+| **Claims Refresh** | Group memberships re-evaluated on each login | Reflect IdP changes promptly |
+| **Secret Encryption** | Uses same key management as cluster credentials (§5) | Unified encryption infrastructure |
+
+```go
+// Token validation example (REQUIRED checks)
+func ValidateIDToken(token *oidc.IDToken, expectedIssuer, expectedAudience string) error {
+    if token.Issuer != expectedIssuer {
+        return ErrInvalidIssuer
+    }
+    if !contains(token.Audience, expectedAudience) {
+        return ErrInvalidAudience
+    }
+    // Signature validation handled by oidc library
+    return nil
+}
+```
+
+#### 22.7 API Endpoints for RBAC
+
+| Endpoint | Method | Purpose | Auth |
+|----------|--------|---------|------|
+| `/api/v1/admin/roles` | GET | List all roles | PlatformAdmin |
+| `/api/v1/admin/roles` | POST | Create custom role | PlatformAdmin |
+| `/api/v1/admin/roles/{id}/permissions` | PUT | Update role permissions | PlatformAdmin |
+| `/api/v1/admin/role-bindings` | GET | List all role bindings | PlatformAdmin |
+| `/api/v1/admin/role-bindings` | POST | Create role binding | PlatformAdmin or SystemAdmin (for own system) |
+| `/api/v1/admin/role-bindings/{id}` | DELETE | Remove role binding | PlatformAdmin or SystemAdmin |
+| `/api/v1/admin/idp` | GET | List IdP configurations | PlatformAdmin |
+| `/api/v1/admin/idp` | POST | Create IdP configuration | PlatformAdmin |
+| `/api/v1/admin/idp/{id}/sample` | GET | Get sample token data | PlatformAdmin |
+| `/api/v1/admin/idp/{id}/sync-groups` | POST | Sync groups from IdP | PlatformAdmin |
+| `/api/v1/admin/idp/{id}/mappings` | GET | List group mappings | PlatformAdmin |
+| `/api/v1/admin/idp/{id}/mappings` | PUT | Update group mappings | PlatformAdmin |
+| `/api/v1/me/permissions` | GET | Get current user's permissions | Authenticated |
+
+---
+
 ## Consequences
 
 ### Positive
 
 - ✅ **Scalability**: System decoupling enables multi-cluster, multi-namespace growth
-- ✅ **Team Ownership**: `maintainers` field at System level supports enterprise team structures
-- ✅ **Simplified Permission Model**: Single source of permissions (System level only) eliminates synchronization complexity
-- ✅ **Immediate Permission Updates**: Changes to System maintainers immediately affect all child Services/VMs
+- ✅ **Platform RBAC**: Database-backed RBAC enables OIDC/LDAP integration, fine-grained permissions, and environment-level isolation
+- ✅ **Multi-Cluster Unified Access**: Single RBAC model manages permissions across all clusters
+- ✅ **OIDC/LDAP Ready**: Guided configuration flow simplifies IdP integration without manual UUID mapping
+- ✅ **Environment Isolation**: RoleBinding's `AllowedEnvironments` enforces test/prod separation per user
 - ✅ **Data Integrity**: Immutable Service names and platform-controlled labels ensure traceability
 - ✅ **Security**: User-forbidden fields (cloud_init, labels) prevent governance bypass
 - ✅ **Flexibility**: Template masks enable feature rollout without code changes
 - ✅ **Auditability**: Comprehensive event tracking for compliance requirements
 - ✅ **Operational Safety**: Environment-based approval policies reduce production risks
 - ✅ **Delete Protection**: Tiered confirmation mechanism prevents accidental deletions
-- ✅ **Production Safety**: Dynamic confirmation codes for production VM deletion prevent script accidents
+- ✅ **Production Safety**: Name typing confirmation for production VM deletion follows industry standard (GitHub/AWS pattern)
 - ✅ **Reduced Configuration**: Auto-detected storage classes simplify cluster onboarding
 - ✅ **Request Protection**: Duplicate prevention avoids conflicting pending requests
 - ✅ **Clear Naming**: Global unique naming and namespace-prefixed VM names prevent conflicts
@@ -1469,26 +1936,30 @@ field.String("tenant_id").Default(DefaultTenantID).Immutable()
 - ✅ **Fault Isolation**: Independent batch execution prevents cascade failures
 - ✅ **Future-Proof Notifications**: Decoupled notification interface enables easy integration
 - ✅ **VNC Security**: Single-use, time-bounded, user-bound tokens protect console access
+- ✅ **Custom Roles**: Ability to create custom roles enables enterprise-specific permission bundles
 
 ### Negative
 
 - 🟡 **Breaking Change**: Existing Phase 1 schema designs need updates
-- 🟡 **Frontend Dependency**: Template mask, notification inbox, and batch UI require frontend work
+- 🟡 **Frontend Dependency**: Template mask, notification inbox, RBAC management UI, and batch UI require frontend work
 - 🟡 **Hard Delete Risk**: Accidental deletion is permanent (mitigated by confirmation mechanism and cascade constraints)
 - 🟡 **No Timeout**: Pending requests can accumulate without automatic cleanup
-- 🟡 **Permission Query Overhead**: Service/VM permission checks require edge traversal to System
+- 🟡 **RBAC Query Overhead**: Permission checks require RoleBinding + Role + Permission JOINs (PostgreSQL indexing sufficient for V1 scale; caching may be added via RFC if needed)
 - 🟡 **Batch Partial Success**: Users must handle partial success states for batch operations
 - 🟡 **Naming Constraints**: 15-character limit may require existing systems to rename
+- 🟡 **IdP Dependency**: OIDC/LDAP integration requires external IdP availability
 
 ### Mitigation
 
 - Phase 1 implementation has not started; schema updates can be incorporated directly
 - Template mask structure is JSON-based; frontend can evolve independently
 - Clear API contracts defined for frontend-backend coordination
-- Tiered delete confirmation (confirm param + dynamic code + name typing) prevents accidental deletions
+- Tiered delete confirmation (confirm param + name typing) prevents accidental deletions
 - Cascade constraints prevent deletion of entities with children
 - UI-based prioritization and duplicate lock encourage timely processing
+- RBAC queries optimized via PostgreSQL indexes on `user_id`, `role_id`, `scope_type`, `scope_id`; no application-level cache needed for V1
 - Edge queries are optimized via Ent ORM's eager loading; overhead is minimal
+- Rate limiting uses PostgreSQL counters, no external Redis dependency
 - Batch status API provides clear visibility into partial success/failure states
 - Naming constraints are clearly documented; soft warnings at 12 chars guide users proactively
 - VNC tokens are auto-cleaned by periodic job; no manual maintenance required
@@ -1502,6 +1973,20 @@ field.String("tenant_id").Default(DefaultTenantID).Immutable()
 ---
 
 ### Documents Requiring Updates (Detailed)
+
+#### 0. `README.md` (Project Root)
+
+| Section | Current State | Required Change |
+|---------|---------------|-----------------|
+| Design Principles | Contains 4 principles | Add **Platform RBAC** principle |
+
+**Suggested Addition** (in Design Principles table):
+
+| Principle | Description |
+|-----------|-------------|
+| **Platform RBAC** | RBAC in PostgreSQL, not Kubernetes. Permission queries isolated from cluster control plane. |
+
+> **Rationale**: This is a differentiating architectural decision that users/contributors should understand upfront. It explains why Shepherd doesn't rely on K8s RBAC.
 
 #### 1. `docs/design/phases/01-contracts.md`
 
@@ -1542,7 +2027,8 @@ field.String("tenant_id").Default(DefaultTenantID).Immutable()
 
 | Field/Type | Current State | Required Change |
 |------------|---------------|-----------------|
-| `VM.SystemID` | Exists | **Remove** - obtain via Service edge |
+| `VM.SystemID` | Exists | **REMOVE COMPLETELY** - obtain via `Service.Edges.System`. Keeping this field risks inconsistency if developers mistakenly use it directly instead of querying through Service edge. |
+| `VMSpec.SystemID` | Exists | **REMOVE COMPLETELY** - same rationale as above |
 | `VMSpec.Name` | Exists | Add comment: "Platform-generated, user cannot set" |
 | `VMSpec.Labels` | Exists | Add comment: "Platform-managed, user cannot set" |
 | `VMSpec.CloudInit` | Exists | Add comment: "Template-defined only" |
@@ -1597,6 +2083,10 @@ field.String("tenant_id").Default(DefaultTenantID).Immutable()
 | `/api/v1/vms/batch` | POST | Batch create VMs | Authenticated |
 | `/api/v1/vms/batch/{id}` | GET | Get batch operation status | Owner/Maintainer |
 | `/api/v1/vms/batch/{id}/retry` | POST | Retry failed items | Owner/Maintainer |
+| `/api/v1/admin/rate-limits/exemptions` | POST | Exempt user from rate limiting | PlatformAdmin |
+| `/api/v1/admin/rate-limits/exemptions/{user_id}` | DELETE | Remove user rate limit exemption | PlatformAdmin |
+| `/api/v1/admin/rate-limits/users/{user_id}` | PUT | Adjust rate limits for specific user | PlatformAdmin |
+| `/api/v1/admin/rate-limits/status` | GET | View current rate limit status | PlatformAdmin |
 
 #### Modified Endpoints
 
@@ -1636,12 +2126,20 @@ field.String("tenant_id").Default(DefaultTenantID).Immutable()
 
 | Schema File | Key Fields | Purpose |
 |-------------|-----------|---------|
+| `ent/schema/permission.go` | id, name, resource, action | Atomic permission definitions |
+| `ent/schema/role.go` | id, name, is_builtin, permissions (edge) | Role = bundle of permissions |
+| `ent/schema/role_binding.go` | user_id, role_id, scope_type, scope_id, allowed_environments | User-role assignments with scope |
+| `ent/schema/idp_config.go` | name, type, issuer, claims_mapping, default_role_id | IdP configuration |
+| `ent/schema/idp_synced_group.go` | idp_config_id, group_id, group_name, source_field | Synced groups from IdP |
+| `ent/schema/idp_group_mapping.go` | idp_config_id, idp_group_id, role_id, allowed_environments | IdP group → Shepherd role mapping |
 | `ent/schema/notification.go` | recipient, type, title, content, related_ticket_id, read, read_at | Internal inbox notifications |
 | `ent/schema/approval_policy.go` | name, environment, operation, requires_approval, approvers, priority | Configurable approval rules (future) |
 | `ent/schema/batch_approval_ticket.go` | ticket_id, batch_type, child_count, success_count, failed_count, status | Parent ticket for batch operations |
 | `ent/schema/child_approval_ticket.go` | ticket_id, parent_ticket_id, vm_spec, status, error_message | Child ticket for individual items |
 | `ent/schema/vnc_access_token.go` | token_id, vm_id, user_id, ticket_id, expires_at, used_at, revoked_at | VNC temporary access tokens |
 | `ent/schema/delete_confirmation_code.go` | code, entity_type, entity_id, user_id, expires_at | Production delete confirmation codes |
+| `ent/schema/rate_limit_counter.go` | user_id, limit_type, current_value, window_start, exempted | User rate limit counters (PostgreSQL-based) |
+| `ent/schema/rate_limit_exemption.go` | user_id, exempted_by, exempted_at, reason, expires_at | Admin-granted rate limit exemptions |
 
 ---
 
@@ -1653,7 +2151,8 @@ field.String("tenant_id").Default(DefaultTenantID).Immutable()
 |-------|--------|
 | `namespace` | **REMOVE** |
 | `environment` | **REMOVE** |
-| `maintainers` | **ADD** `[]string` |
+| `maintainers` | **NOT ADDED** - permissions managed via RoleBinding table |
+| `tenant_id` | **ADD** `string` (default: "default", reserved for multi-tenancy) |
 | Index | Change to `name` only (global unique) |
 
 #### Service Entity
@@ -1667,7 +2166,8 @@ field.String("tenant_id").Default(DefaultTenantID).Immutable()
 
 | Field | Change |
 |-------|--------|
-| Direct `system_id` | **REMOVE** (query via Service edge) |
+| `system_id` (in VM struct) | **REMOVE COMPLETELY** - query via `vm.Edges.Service.Edges.System`. Do not keep as convenience field to prevent inconsistency. |
+| `system_id` (in VMSpec struct) | **REMOVE COMPLETELY** - same rationale |
 
 #### Template Entity
 
