@@ -21,17 +21,21 @@ const (
 
 // VM represents a virtual machine in the domain model.
 // Decoupled from kubevirtv1.VirtualMachine.
+//
+// NOTE (ADR-0015 §3): VM does NOT store SystemID directly.
+// System information is obtained via: vm.Edges.Service.Edges.System
+// This ensures Single Source of Truth and prevents data inconsistency.
 type VM struct {
 	// Identity
 	ID        string `json:"id"`
-	Name      string `json:"name"`
+	Name      string `json:"name"` // Platform-generated: {namespace}-{system}-{service}-{index}
 	Namespace string `json:"namespace"`
 	Cluster   string `json:"cluster"`
 
-	// Governance Model
-	SystemID  string `json:"system_id"`
+	// Governance Model (ADR-0015 §3)
+	// NOTE: No SystemID - obtain via ServiceID → Service.Edges.System
 	ServiceID string `json:"service_id"`
-	Instance  string `json:"instance"` // e.g., "06"
+	Instance  string `json:"instance"` // e.g., "01"
 
 	// Spec
 	CPU      int    `json:"cpu"`
@@ -56,16 +60,25 @@ type VM struct {
 }
 
 // VMSpec is the specification for creating/updating a VM.
+//
+// NOTE (ADR-0015 §4): User-Submittable Fields are limited.
+// The following fields are FORBIDDEN in user requests:
+//   - Name (platform-generated)
+//   - Labels (platform-managed)
+//   - CloudInit (template-defined only)
+//
+// NOTE (ADR-0015 §3): No SystemID in spec.
+// System is inferred from ServiceID → Service.Edges.System
 type VMSpec struct {
-	Name      string            `json:"name"`
-	CPU       int               `json:"cpu"`
-	MemoryMB  int               `json:"memory_mb"`
-	DiskGB    int               `json:"disk_gb,omitempty"`
-	Template  string            `json:"template"`
-	SystemID  string            `json:"system_id"`
-	ServiceID string            `json:"service_id"`
-	Labels    map[string]string `json:"labels,omitempty"`
-	CloudInit *CloudInit        `json:"cloud_init,omitempty"`
+	// NOTE: Name is platform-generated, not user-provided (ADR-0015 §4)
+	CPU       int    `json:"cpu"`
+	MemoryMB  int    `json:"memory_mb"`
+	DiskGB    int    `json:"disk_gb,omitempty"`
+	Template  string `json:"template"`
+	ServiceID string `json:"service_id"`
+	// NOTE: No SystemID - inferred from ServiceID (ADR-0015 §3)
+	// NOTE: No Labels - platform-managed (ADR-0015 §4)
+	// NOTE: No CloudInit - template-defined only (ADR-0015 §4)
 }
 
 // CloudInit contains cloud-init configuration.

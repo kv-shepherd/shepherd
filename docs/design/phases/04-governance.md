@@ -226,13 +226,19 @@ internal/governance/
 
 ### Approval Types
 
-| Type | Approval Required | Notes |
-|------|-------------------|-------|
-| CREATE_SYSTEM | No | Record only |
-| CREATE_SERVICE | No | Record only |
-| CREATE_VM | **Yes** | Resource consumption |
-| MODIFY_VM | **Yes** | Config change |
-| DELETE_VM | Configurable | Policy-based |
+> **Updated by [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) §7**: Added power operation types with environment-aware policies.
+
+| Type | test Environment | prod Environment | Notes |
+|------|------------------|------------------|-------|
+| CREATE_SYSTEM | No | No | Record only |
+| CREATE_SERVICE | No | No | Record only |
+| CREATE_VM | **Yes** | **Yes** | Resource consumption |
+| MODIFY_VM | **Yes** | **Yes** | Config change |
+| DELETE_VM | **Yes** | **Yes** | Tiered confirmation (ADR-0015 §13.1) |
+| START_VM | ❌ No | **Yes** | Power operation |
+| STOP_VM | ❌ No | **Yes** | Power operation |
+| RESTART_VM | ❌ No | **Yes** | Power operation |
+| VNC_ACCESS | ❌ No | **Yes** (temporary grant) | VNC Console (ADR-0015 §18) |
 
 ### Admin Modification
 
@@ -308,41 +314,111 @@ func (a *SSAApplier) DryRunApply(ctx context.Context, yaml []byte) error {
 
 ## 6. Environment Isolation
 
-### Schema Fields
+> **Updated by [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) §1, §15**: System is decoupled from environment. Environment is determined by Cluster and Namespace.
+
+### Environment Source (ADR-0015 §15 Clarification)
+
+| Entity | Environment Field | Set By | Example Names |
+|--------|-------------------|--------|---------------|
+| **Cluster** | `environment` (test/prod) | Admin | cluster-01, cluster-02 |
+| **Namespace** | `environment` (test/prod) | Admin at creation | dev, test, uat, stg, prod01, shop-prod |
+| **System** | ❌ **Removed** | - | System is a logical grouping, not infrastructure-bound |
+
+> **Key Point**: Namespace name can be anything (dev, test, uat, shop-prod, etc.), but its environment **type** is one of: `test` or `prod`.
 
 ```go
-// Cluster
+// ent/schema/cluster.go
 field.Enum("environment").Values("test", "prod"),
 
-// System
-field.Enum("environment").Values("test", "prod"),
+// ent/schema/namespace_registry.go (Platform maintains namespace registry)
+field.String("name").NotEmpty().Unique(),
+field.String("cluster_id").NotEmpty(),
+field.Enum("environment").Values("test", "prod"),  // Explicit, set by admin
 ```
 
-### Visibility Rules
+### Visibility Rules (via Platform RBAC)
 
-| User Role | Can See |
-|-----------|---------|
-| Regular user | test only |
-| prod user | test + prod |
-| Admin | all |
+Environment access is controlled by `RoleBinding.allowed_environments` (ADR-0015 §22):
 
-### Scheduling Constraint
+| User RoleBinding | Allowed Environments | Can See |
+|------------------|---------------------|--------|
+| `allowed_environments: ["test"]` | test only | test namespaces |
+| `allowed_environments: ["test", "prod"]` | test + prod | all namespaces |
+| PlatformAdmin | all | all |
+
+### Scheduling Strategy
+
+```
+User with test permission → sees test namespaces → VMs scheduled to test clusters
+User with prod permission → sees test+prod namespaces → VMs scheduled to matching cluster type
+```
 
 ```go
 func (s *ApprovalService) Approve(ctx context.Context, ticketID string) error {
     ticket := s.getTicket(ticketID)
-    system := s.getSystem(ticket.SystemID)
+    namespace := ticket.Namespace  // From VM creation request
     cluster := s.getSelectedCluster(ticket)
     
-    if system.Environment != cluster.Environment {
+    // Environment is determined by namespace/cluster, not by System
+    if GetNamespaceEnvironment(namespace) != cluster.Environment {
         return ErrEnvironmentMismatch{
-            SystemEnv:  system.Environment,
-            ClusterEnv: cluster.Environment,
+            NamespaceEnv: GetNamespaceEnvironment(namespace),
+            ClusterEnv:   cluster.Environment,
         }
     }
     // Continue approval...
 }
 ```
+
+---
+
+## 6.1 Delete Confirmation Mechanism (ADR-0015 §13.1)
+
+> **Tiered confirmation to prevent accidental deletions.**
+
+| Entity | Environment | Confirmation Method |
+|--------|-------------|---------------------|
+| VM | test | `confirm=true` query parameter |
+| VM | prod | Type VM name in request body |
+| Service | all | `confirm=true` query parameter |
+| System | all | Type system name in request body |
+
+```bash
+# Test VM Delete - simple confirm parameter
+DELETE /api/v1/vms/{id}?confirm=true
+
+# Prod VM Delete - requires typing VM name
+DELETE /api/v1/vms/{id}
+Content-Type: application/json
+{
+  "confirm_name": "prod-shop-redis-01"  // Must match VM name exactly
+}
+```
+
+---
+
+## 6.2 VNC Console Permissions (ADR-0015 §18)
+
+> **Low priority for V1**. VNC is a convenience feature; enterprises should use bastion hosts for production.
+
+| Environment | VNC Access | Approval Required |
+|-------------|------------|-------------------|
+| test | ✅ Allowed | ❌ No |
+| prod | ✅ Allowed | ✅ Yes (temporary grant) |
+
+**Production VNC Flow**:
+1. User requests VNC access to prod VM
+2. Request creates approval ticket (`VNC_ACCESS_REQUESTED`)
+3. Admin approves with time limit (e.g., 2 hours)
+4. User gets temporary VNC token (single-use, user-bound)
+5. Token expires after time limit
+6. All VNC sessions are audit logged
+
+**VNC Token Security** (ADR-0015 §18):
+- **Single Use**: Token invalidated after first connection
+- **Time-Bounded**: Max TTL: 2 hours
+- **User Binding**: Token includes hashed user ID
+- **Encryption**: AES-256-GCM (shared key management with cluster credentials)
 
 ---
 
@@ -393,11 +469,13 @@ If >50% of resources detected as ghosts, halt and alert.
 
 - [ ] Atlas migrations work
 - [ ] River Jobs process correctly
-- [ ] Approval workflow functional
+- [ ] Approval workflow functional (including power ops)
 - [ ] Event status updates correctly
 - [ ] Template lifecycle works
 - [ ] Audit logs complete
-- [ ] Environment isolation enforced
+- [ ] Environment isolation enforced (via Cluster + RoleBinding.allowed_environments)
+- [ ] Delete confirmation mechanism works (tiered by entity/environment)
+- [ ] VNC token security enforced (single-use, time-bounded)
 
 ---
 
@@ -409,3 +487,4 @@ If >50% of resources detected as ghosts, halt and alert.
 - [ADR-0007](../../adr/ADR-0007-template-storage.md) - Template Storage
 - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md) - Domain Event
 - [ADR-0011](../../adr/ADR-0011-ssa-apply-strategy.md) - SSA Apply
+- [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) - Governance Model V2 (Environment, Approval Policies, VNC, Delete Confirmation)

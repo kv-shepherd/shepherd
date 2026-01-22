@@ -17,15 +17,20 @@
 
 ---
 
-## Environment Isolation (test/prod)
+## Environment Isolation (ADR-0015 §1, §15)
 
 - [ ] **Schema Fields**:
   - [ ] `Cluster.environment` - Cluster environment type (test/prod)
-  - [ ] `System.environment` - System environment type (test/prod)
-  - [ ] Joint index for scheduling matching
-- [ ] **Visibility Filtering** implemented
-- [ ] **Scheduling Constraints** enforced
-- [ ] **Permission Control** configured
+  - [ ] `ent/schema/namespace_registry.go` - Namespace registry with explicit environment
+    - [ ] Contains `name` field
+    - [ ] Contains `cluster_id` field
+    - [ ] Contains `environment` field (test/prod) - **explicitly set by admin**
+  - [ ] ❌ **No `System.environment`** - System is decoupled from environment (ADR-0015 §1)
+- [ ] **Platform RBAC**:
+  - [ ] `RoleBinding.allowed_environments` field
+  - [ ] Environment-based query filtering
+- [ ] **Visibility Filtering** - users see only namespaces matching their allowed_environments
+- [ ] **Scheduling Constraints** - namespace environment must match cluster environment
 
 ---
 
@@ -116,3 +121,41 @@
 - [ ] **Extensible Approval Handler Architecture** designed
 - [ ] **Notification Service (Reserved Interface)** defined
 - [ ] **External State Management** (no pre-approval job insertion)
+
+---
+
+## Delete Confirmation Mechanism (ADR-0015 §13.1)
+
+- [ ] **Tiered Confirmation**:
+  - [ ] Simple `confirm=true` parameter for test VMs and Services
+  - [ ] Name typing confirmation for prod VMs and Systems
+- [ ] **Reject without confirmation** returns `400 BAD_REQUEST`
+- [ ] **Error code**: `CONFIRMATION_REQUIRED` with clear params
+
+---
+
+## VNC Console Permissions (ADR-0015 §18)
+
+- [ ] **Environment-Based Access**:
+  - [ ] test environment - no approval required
+  - [ ] prod environment - requires approval ticket
+- [ ] **VNC Token Security**:
+  - [ ] Single-use token
+  - [ ] Time-bounded (max 2 hours)
+  - [ ] User-bound (hashed user ID)
+  - [ ] AES-256-GCM encryption
+- [ ] **Token Revocation** API
+- [ ] **VNC Session Audit** logging
+
+---
+
+## Notification System (ADR-0015 §20)
+
+- [ ] `ent/schema/notification.go` - Internal inbox
+- [ ] **NotificationSender Interface** (decoupled)
+- [ ] **V1 Implementation**: InboxNotificationSender (database)
+- [ ] Notification triggers:
+  - [ ] New approval request → all admins
+  - [ ] Request approved/rejected → creator + maintainers
+  - [ ] VM created/deleted → creator + maintainers
+

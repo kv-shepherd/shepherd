@@ -6,23 +6,34 @@
 
 ## Core Types (Ent Schema)
 
-> **Governance Model Hierarchy**: `Namespace(K8s) → System → Service → VM Instance`
+> **Governance Model Hierarchy** (ADR-0015): `System → Service → VM Instance`
+>
+> System is a logical grouping decoupled from namespace. Namespace specified at VM creation.
 
 - [ ] `ent/schema/` directory created
 - [ ] **Governance Model Core Schema**:
   - [ ] `ent/schema/system.go` - System/Project (e.g., demo, shop)
-    - [ ] Contains `documentation` field (Markdown)
+    - [ ] Contains `id` field (immutable)
+    - [ ] Contains `description` field (optional)
     - [ ] Contains `created_by` field
-    - [ ] Contains `namespace` field (K8s Namespace isolation)
+    - [ ] Contains `tenant_id` field (default: "default", reserved for multi-tenancy)
+    - [ ] ❌ **No `namespace` field** (ADR-0015 §1)
+    - [ ] ❌ **No `environment` field** (ADR-0015 §1)
+    - [ ] ❌ **No `maintainers` field** - use RoleBinding table (ADR-0015 §22)
+    - [ ] Globally unique name constraint
     - [ ] **User self-service creation, no approval required**
   - [ ] `ent/schema/service.go` - Service (e.g., redis, mysql)
-    - [ ] Contains `documentation` field (Markdown)
-    - [ ] Contains `created_by` field
+    - [ ] Contains `id` field (immutable)
+    - [ ] Contains `name` field (**immutable after creation**, ADR-0015 §2)
+    - [ ] Contains `description` field (optional)
+    - [ ] ❌ **No `created_by` field** - inherited from System (ADR-0015 §2)
     - [ ] Contains `next_instance_index` field (**permanently incrementing, no reset**)
+    - [ ] Globally unique name constraint
     - [ ] **User self-service creation, no approval required**
 - [ ] `ent/schema/vm.go` - VM Schema definition
-  - [ ] Associates `system_id`, `service_id`
-  - [ ] `instance` field stores instance number (e.g., "06")
+  - [ ] Associates `service_id` **only** (ADR-0015 §3)
+  - [ ] ❌ **No `system_id` field** - obtain via service edge (ADR-0015 §3)
+  - [ ] `instance` field stores instance number (e.g., "01")
 - [ ] `ent/schema/vm_revision.go` - VM version history
 - [ ] `ent/schema/audit_log.go` - Audit log Schema
 - [ ] `ent/schema/approval_ticket.go` - Approval ticket (Governance Core)
@@ -92,6 +103,16 @@
 - [ ] **JWT Implementation** completed
 - [ ] **ApprovalProvider Interface** defined
 - [ ] **NotificationProvider Interface** defined
+
+---
+
+## Platform RBAC Schema (ADR-0015 §22)
+
+- [ ] `ent/schema/permission.go` - Atomic permission definitions
+- [ ] `ent/schema/role.go` - Role = bundle of permissions
+- [ ] `ent/schema/role_binding.go` - User-role assignments with scope
+- [ ] Built-in roles seeded: PlatformAdmin, SystemAdmin, Operator, Viewer
+- [ ] Environment-based permission control (`allowed_environments` field)
 
 ---
 

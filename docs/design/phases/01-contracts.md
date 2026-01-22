@@ -50,32 +50,46 @@ Define core contracts and types:
 
 ## 1. Governance Model Hierarchy
 
+> **Updated by [ADR-0015](../../adr/ADR-0015-governance-model-v2.md)**: System is decoupled from namespace/environment. See ADR for complete rationale.
+
 ```
-Namespace (K8s) → System → Service → VM Instance
+System → Service → VM Instance
+         ↑
+    (Namespace specified at VM creation, not at System level)
 ```
 
-| Level | Example | User Self-Service | Approval Required |
-|-------|---------|-------------------|-------------------|
-| Namespace | `dev`, `prod` | ❌ | Admin only |
-| System | `demo`, `shop` | ✅ | No |
-| Service | `redis`, `mysql` | ✅ | No |
-| VM Instance | `redis-06` | ✅ | **Yes** |
+| Level | Example | Uniqueness | User Self-Service | Approval Required |
+|-------|---------|------------|-------------------|-------------------|
+| System | `demo`, `shop` | **Global** | ✅ | No |
+| Service | `redis`, `mysql` | **Global** | ✅ | No |
+| VM Instance | `dev-shop-redis-01` | Per Namespace | ✅ | **Yes** |
+
+**Key Decisions (ADR-0015)**:
+- System is a **logical business grouping**, not bound to namespace or cluster
+- Namespace is specified at **VM creation time**, not at System creation time
+- Permissions managed via **Platform RBAC tables**, not entity fields
 
 ---
 
 ## 2. K8s Resource Labels
+
+> **Updated by [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) §4**: Added hostname, created-by labels.
 
 Platform-managed resources must have these labels:
 
 | Label | Purpose | Example |
 |-------|---------|---------|
 | `kubevirt-shepherd.io/managed-by` | Platform identifier | `kubevirt-shepherd` |
-| `kubevirt-shepherd.io/system` | System name | `demo` |
+| `kubevirt-shepherd.io/system` | System name | `shop` |
 | `kubevirt-shepherd.io/service` | Service name | `redis` |
-| `kubevirt-shepherd.io/instance` | Instance number | `06` |
-| `kubevirt-shepherd.io/ticket-id` | Approval ticket | `TKT-123` |
+| `kubevirt-shepherd.io/instance` | Instance number | `01` |
+| `kubevirt-shepherd.io/ticket-id` | Approval ticket | `TKT-12345` |
+| `kubevirt-shepherd.io/created-by` | Request creator | `alice` |
+| `kubevirt-shepherd.io/hostname` | VM hostname | `dev-shop-redis-01` |
 
-**Unique Identity**: `cluster + namespace + system + service + instance`
+**Unique Identity**: `namespace + system + service + instance` (within a cluster)
+
+> ⚠️ **User-Forbidden Labels**: Users cannot set labels directly. All labels are platform-managed for governance integrity.
 
 ---
 
@@ -83,23 +97,27 @@ Platform-managed resources must have these labels:
 
 ### 3.1 System Schema
 
+> **Updated by [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) §1**: Removed `namespace`, `environment` fields. System is now a logical grouping decoupled from infrastructure.
+
 ```go
 // ent/schema/system.go
 
 func (System) Fields() []ent.Field {
     return []ent.Field{
+        field.String("id").Unique().Immutable(),
         field.String("name").NotEmpty(),
-        field.String("namespace").NotEmpty(),
-        field.String("documentation").Optional(),
+        field.String("description").Optional(),
         field.String("created_by").NotEmpty(),
-        field.Enum("environment").Values("test", "prod").Default("test"),
-        field.Time("created_at").Default(time.Now),
+        // NOTE: No maintainers field - permissions managed via RoleBinding table (ADR-0015 §22)
+        field.String("tenant_id").Default("default").Immutable(),  // Multi-tenancy reserved
+        field.Time("created_at").Default(time.Now).Immutable(),
+        field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
     }
 }
 
 func (System) Indexes() []ent.Index {
     return []ent.Index{
-        index.Fields("namespace", "name").Unique(),
+        index.Fields("name").Unique(),  // Globally unique (ADR-0015 §16)
     }
 }
 
@@ -110,18 +128,29 @@ func (System) Edges() []ent.Edge {
 }
 ```
 
+**Removed Fields** (per ADR-0015 §1):
+
+| Field | Reason for Removal |
+|-------|--------------------|
+| `namespace` | Namespace is specified at VM creation, not System level |
+| `environment` | Environment is determined by namespace, not System |
+| `maintainers` ❌ **Not added** | Permissions managed via RoleBinding table |
+
 ### 3.2 Service Schema
+
+> **Updated by [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) §2**: Removed `created_by`. Service inherits permissions from parent System via RoleBinding. Name is immutable after creation.
 
 ```go
 // ent/schema/service.go
 
 func (Service) Fields() []ent.Field {
     return []ent.Field{
-        field.String("name").NotEmpty(),
-        field.String("documentation").Optional(),
-        field.String("created_by").NotEmpty(),
-        field.Int("next_instance_index").Default(1), // Permanent increment, no reset
-        field.Time("created_at").Default(time.Now),
+        field.String("id").Unique().Immutable(),
+        field.String("name").NotEmpty().Immutable(),           // Cannot change after creation (ADR-0015 §2)
+        field.String("description").Optional(),
+        field.Int("next_instance_index").Default(1),
+        field.Time("created_at").Default(time.Now).Immutable(),
+        // NOTE: No created_by, no maintainers - fully inherited from System (ADR-0015 §2)
     }
 }
 
@@ -132,6 +161,13 @@ func (Service) Edges() []ent.Edge {
     }
 }
 ```
+
+**Removed Fields** (per ADR-0015 §2):
+
+| Field | Reason for Removal |
+|-------|--------------------|
+| `created_by` | Inherited from System |
+| `maintainers` | Inherited from System via RoleBinding |
 
 ### 3.3 DomainEvent Schema (ADR-0009)
 
@@ -288,3 +324,4 @@ const (
 - [examples/domain/](../examples/domain/)
 - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md) - Domain Event Pattern
 - [ADR-0014](../../adr/ADR-0014-capability-detection.md) - Capability Detection
+- [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) - Governance Model V2 (Entity Decoupling, RBAC)
