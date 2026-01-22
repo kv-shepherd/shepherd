@@ -6,6 +6,28 @@
 
 ---
 
+## Scope Clarification
+
+> ⚠️ **Note**: VNC security specifications have been accepted as part of [ADR-0015: Governance Model V2](../adr/ADR-0015-governance-model-v2.md) §18 (VNC Console Access Permissions).
+>
+> **ADR-0015 defines (must be followed):**
+>
+> | Specification | ADR-0015 Location |
+> |---------------|-------------------|
+> | Permission Matrix (test/prod) | §18 Table |
+> | Token Security (single-use, time-bounded, user-binding) | §18 Token Structure |
+> | Encryption Key Management | §18 shared with cluster credentials |
+> | Audit Logging Requirements | §18 Audit Table |
+>
+> **This RFC covers frontend implementation only:**
+> - noVNC JavaScript library integration
+> - WebSocket proxy implementation
+> - UI/UX for console access
+>
+> All security and permission logic must conform to ADR-0015 §18.
+
+---
+
 ## Problem
 
 Users may need to access VM consoles directly from the governance platform UI without additional tools.
@@ -68,5 +90,6 @@ Upgrade: websocket
 
 ## References
 
+- [ADR-0015: Governance Model V2 §18](../adr/ADR-0015-governance-model-v2.md) - VNC security specifications
 - [KubeVirt Console Access](https://kubevirt.io/user-guide/virtual_machines/accessing_virtual_machines/)
 - [noVNC](https://novnc.com/)
