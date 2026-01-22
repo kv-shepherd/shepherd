@@ -316,18 +316,24 @@ func (a *SSAApplier) DryRunApply(ctx context.Context, yaml []byte) error {
 
 > **Updated by [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) §1, §15**: System is decoupled from environment. Environment is determined by Cluster and Namespace.
 
-### Environment Source (ADR-0015)
+### Environment Source (ADR-0015 §15 Clarification)
 
-| Entity | Environment Field | Source |
-|--------|-------------------|--------|
-| **Cluster** | `environment` | Admin-configured (test/prod) |
-| **Namespace** | → implicit | Via namespace naming convention or labels |
-| **System** | ❌ **Removed** | System is a logical grouping, not infrastructure-bound |
+| Entity | Environment Field | Set By | Example Names |
+|--------|-------------------|--------|---------------|
+| **Cluster** | `environment` (test/prod) | Admin | cluster-01, cluster-02 |
+| **Namespace** | `environment` (test/prod) | Admin at creation | dev, test, uat, stg, prod01, shop-prod |
+| **System** | ❌ **Removed** | - | System is a logical grouping, not infrastructure-bound |
+
+> **Key Point**: Namespace name can be anything (dev, test, uat, shop-prod, etc.), but its environment **type** is one of: `test` or `prod`.
 
 ```go
-// Only Cluster has environment field
 // ent/schema/cluster.go
 field.Enum("environment").Values("test", "prod"),
+
+// ent/schema/namespace_registry.go (Platform maintains namespace registry)
+field.String("name").NotEmpty().Unique(),
+field.String("cluster_id").NotEmpty(),
+field.Enum("environment").Values("test", "prod"),  // Explicit, set by admin
 ```
 
 ### Visibility Rules (via Platform RBAC)

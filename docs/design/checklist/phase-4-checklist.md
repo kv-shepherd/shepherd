@@ -21,12 +21,15 @@
 
 - [ ] **Schema Fields**:
   - [ ] `Cluster.environment` - Cluster environment type (test/prod)
+  - [ ] `ent/schema/namespace_registry.go` - Namespace registry with explicit environment
+    - [ ] Contains `name` field
+    - [ ] Contains `cluster_id` field
+    - [ ] Contains `environment` field (test/prod) - **explicitly set by admin**
   - [ ] ❌ **No `System.environment`** - System is decoupled from environment (ADR-0015 §1)
-  - [ ] Namespace-to-environment mapping (convention or label-based)
 - [ ] **Platform RBAC**:
   - [ ] `RoleBinding.allowed_environments` field
   - [ ] Environment-based query filtering
-- [ ] **Visibility Filtering** via allowed_environments
+- [ ] **Visibility Filtering** - users see only namespaces matching their allowed_environments
 - [ ] **Scheduling Constraints** - namespace environment must match cluster environment
 
 ---
