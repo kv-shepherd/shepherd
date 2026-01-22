@@ -10,7 +10,7 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ### Reporting Issues
 
-- Check existing [issues](https://github.com/CloudPasture/kubevirt-shepherd/issues) before creating a new one
+- Check existing [issues](https://github.com/kv-shepherd/shepherd/issues) before creating a new one
 - Use the issue templates when available
 - Include relevant details: version, environment, steps to reproduce
 
@@ -65,7 +65,7 @@ Closes #123
 
 ```bash
 # Clone your fork
-git clone git@github.com:YOUR_USERNAME/kubevirt-shepherd.git
+git clone git@github.com:YOUR_USERNAME/shepherd.git
 cd kubevirt-shepherd
 
 # Install dependencies
@@ -165,7 +165,7 @@ Aim for ≥60% test coverage on new code.
 
 ## Getting Help
 
-- Open a [GitHub Discussion](https://github.com/CloudPasture/kubevirt-shepherd/discussions)
+- Open a [GitHub Discussion](https://github.com/kv-shepherd/shepherd/discussions)
 - Check existing [documentation](docs/)
 - Review related [ADRs](docs/adr/) for design context
 

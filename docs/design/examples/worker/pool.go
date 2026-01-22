@@ -8,7 +8,7 @@ import (
 	"github.com/panjf2000/ants/v2"
 	"go.uber.org/zap"
 
-	"github.com/CloudPasture/kubevirt-shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
 // PoolConfig contains Worker Pool configuration.

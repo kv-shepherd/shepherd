@@ -4,11 +4,11 @@
 
 # Approvers can approve PRs for merge
 approvers:
-  - CloudPasture/maintainers
+  - kv-shepherd/maintainers
 
 # Reviewers can review PRs and provide feedback
 reviewers:
-  - CloudPasture/reviewers
+  - kv-shepherd/reviewers
 
 # Labels to apply to issues/PRs in this directory
 labels:

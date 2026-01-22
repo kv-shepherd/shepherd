@@ -109,9 +109,9 @@ As the project grows, we may establish:
 
 | Channel | Purpose |
 |---------|---------|
-| [GitHub Issues](https://github.com/CloudPasture/kubevirt-shepherd/issues) | Bug reports, feature requests |
-| [GitHub Discussions](https://github.com/CloudPasture/kubevirt-shepherd/discussions) | General questions, ideas |
-| [GitHub PRs](https://github.com/CloudPasture/kubevirt-shepherd/pulls) | Code contributions |
+| [GitHub Issues](https://github.com/kv-shepherd/shepherd/issues) | Bug reports, feature requests |
+| [GitHub Discussions](https://github.com/kv-shepherd/shepherd/discussions) | General questions, ideas |
+| [GitHub PRs](https://github.com/kv-shepherd/shepherd/pulls) | Code contributions |
 
 ## Changes to Governance
 

@@ -1070,7 +1070,7 @@ annotations:
 
 > **Best Practice**: If cross-cluster DNS is required, consider implementing a central DNS service (e.g., external-dns with multi-cluster support) as a future RFC.
 >
-> **Community Input**: The 15-character entity name limit is a V1 hard constraint to ensure Kubernetes compatibility. If your use case requires longer names, please [open a GitHub Issue](https://github.com/CloudPasture/kubevirt-shepherd/issues) to discuss potential solutions for future versions.
+> **Community Input**: The 15-character entity name limit is a V1 hard constraint to ensure Kubernetes compatibility. If your use case requires longer names, please [open a GitHub Issue](https://github.com/kv-shepherd/shepherd/issues) to discuss potential solutions for future versions.
 
 #### 16.5 Implementation Checklist
 

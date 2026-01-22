@@ -99,8 +99,8 @@ import (
     "github.com/riverqueue/river"
     "github.com/riverqueue/river/riverdriver/riverpgxv5"
     
-    "github.com/CloudPasture/kubevirt-shepherd/ent"
-    "github.com/CloudPasture/kubevirt-shepherd/internal/repository/sqlc"
+    "kv-shepherd.io/shepherd/ent"
+    "kv-shepherd.io/shepherd/internal/repository/sqlc"
 )
 
 // DatabaseClients - Database client container (ADR-0012 shared pool)
@@ -245,7 +245,7 @@ func (c *DatabaseClients) Close() {
 ```go
 // go.mod
 
-module github.com/CloudPasture/kubevirt-shepherd
+module kv-shepherd.io/shepherd
 
 go 1.25
 
@@ -522,7 +522,7 @@ replace (
 ## go.mod Template
 
 ```go
-module github.com/CloudPasture/kubevirt-shepherd
+module kv-shepherd.io/shepherd
 
 go 1.25
 

@@ -24,6 +24,8 @@
 | [ADR-0012](./ADR-0012-hybrid-transaction.md) | Hybrid Transaction Strategy | Accepted | - |
 | [ADR-0013](./ADR-0013-manual-di.md) | Manual Dependency Injection | Accepted | - |
 | [ADR-0014](./ADR-0014-capability-detection.md) | KubeVirt Capability Detection | Accepted | - |
+| [ADR-0015](./ADR-0015-governance-model-v2.md) | Governance Model V2 | Accepted | - |
+| [ADR-0016](./ADR-0016-go-module-vanity-import.md) | Go Module Vanity Import | Accepted | - |
 
 > ⚠️ **¹ ADR-0009 Partial Supersession Notice**:
 >
