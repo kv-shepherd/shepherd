@@ -2,7 +2,7 @@
 
 > **Project Status**: Active  
 > **Language**: Go  
-> **Maintained by**: [CloudPasture](https://github.com/cloudpasture) Community
+> **Maintained by**: [KubeVirt Shepherd](https://github.com/kv-shepherd) Community
 
 ---
 
@@ -12,7 +12,7 @@ This project implements the core Go backend for KubeVirt Shepherd, a governance 
 
 ### Origin Statement
 
-> 🌱 This is an **original design** created from scratch by CloudPasture community contributors.
+> 🌱 This is an **original design** created from scratch by KubeVirt Shepherd community contributors.
 >
 > Inspired by real-world governance challenges in Kubernetes/KubeVirt environments, this project represents a **complete rewrite** using cloud-native technologies (Go, Ent, River Queue), not a port or adaptation of any existing codebase.
 >
@@ -295,8 +295,8 @@ internal/
 
 ```bash
 # Clone repository
-git clone git@github.com:CloudPasture/kubevirt-shepherd.git
-cd kubevirt-shepherd
+git clone git@github.com:kv-shepherd/shepherd.git
+cd shepherd
 
 # Install dependencies
 go mod download

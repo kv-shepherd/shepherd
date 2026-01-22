@@ -16,9 +16,9 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
-	"github.com/CloudPasture/kubevirt-shepherd/ent"
-	"github.com/CloudPasture/kubevirt-shepherd/internal/config"
-	"github.com/CloudPasture/kubevirt-shepherd/internal/repository/sqlc"
+	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/repository/sqlc"
 )
 
 // DatabaseClients contains all database-related clients.

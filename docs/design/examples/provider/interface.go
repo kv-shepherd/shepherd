@@ -7,7 +7,7 @@ package provider
 import (
 	"context"
 
-	"github.com/CloudPasture/kubevirt-shepherd/internal/domain"
+	"kv-shepherd.io/shepherd/internal/domain"
 )
 
 // InfrastructureProvider is the base interface for all infrastructure providers.

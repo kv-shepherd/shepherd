@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/CloudPasture/kubevirt-shepherd/ent"
+	"kv-shepherd.io/shepherd/ent"
 )
 
 // WorkerStatus is an interface for checking worker health.
