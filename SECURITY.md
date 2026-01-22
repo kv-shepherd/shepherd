@@ -19,7 +19,7 @@ We take security seriously. If you discover a security vulnerability, please rep
 
 Instead, please report security vulnerabilities via email:
 
-📧 **security@cloudpasture.io** (or create a private security advisory on GitHub)
+📧 **security@kv-shepherd.io** (or create a private security advisory on GitHub)
 
 ### What to Include
 
@@ -117,7 +117,7 @@ We appreciate responsible disclosure and will acknowledge security researchers w
 ## Contact
 
 For security-related questions that are not vulnerabilities:
-- Open a [GitHub Discussion](https://github.com/CloudPasture/kubevirt-shepherd/discussions) with the `security` label
+- Open a [GitHub Discussion](https://github.com/kv-shepherd/shepherd/discussions) with the `security` label
 
 ---
 

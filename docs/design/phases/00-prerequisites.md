@@ -43,9 +43,9 @@ Establish Go project infrastructure:
 ### 1.1 Go Module
 
 ```bash
-mkdir -p kubevirt-shepherd-go
-cd kubevirt-shepherd-go
-go mod init github.com/CloudPasture/kubevirt-shepherd
+mkdir -p shepherd
+cd shepherd
+go mod init kv-shepherd.io/shepherd
 ```
 
 ### 1.2 Directory Structure

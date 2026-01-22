@@ -88,7 +88,7 @@ For critical security or bug fixes:
 
 | Artifact | Location | Description |
 |----------|----------|-------------|
-| Container Image | `ghcr.io/cloudpasture/kubevirt-shepherd:vX.Y.Z` | Multi-arch image |
+| Container Image | `ghcr.io/kv-shepherd/shepherd:vX.Y.Z` | Multi-arch image |
 | SBOM | GitHub Release assets | Software Bill of Materials |
 | Checksums | GitHub Release assets | SHA256 checksums |
 

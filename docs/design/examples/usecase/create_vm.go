@@ -32,9 +32,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 
-	"github.com/CloudPasture/kubevirt-shepherd/internal/domain"
-	"github.com/CloudPasture/kubevirt-shepherd/internal/jobs"
-	"github.com/CloudPasture/kubevirt-shepherd/internal/repository/sqlc"
+	"kv-shepherd.io/shepherd/internal/domain"
+	"kv-shepherd.io/shepherd/internal/jobs"
+	"kv-shepherd.io/shepherd/internal/repository/sqlc"
 )
 
 // CreateVMAtomicUseCase handles VM creation with atomic transaction.

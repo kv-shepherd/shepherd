@@ -40,4 +40,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > This section will be populated as releases are made.
 
-[Unreleased]: https://github.com/CloudPasture/kubevirt-shepherd/compare/main...HEAD
+[Unreleased]: https://github.com/kv-shepherd/shepherd/compare/main...HEAD
