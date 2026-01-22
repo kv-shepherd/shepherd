@@ -17,10 +17,10 @@
 | [RFC-0005](./RFC-0005-event-archiving.md) | Physical Event Archiving ¹ | Deferred | P2 | DomainEvent table too large |
 | [RFC-0006](./RFC-0006-hot-reload.md) | Configuration Admin API ² | Deferred | P2 | Dynamic config via API |
 | [RFC-0007](./RFC-0007-redis-cache.md) | Redis Cache Support | Deferred | P3 | Cache miss causing bottleneck |
-| [RFC-0008](./RFC-0008-extended-auth.md) | Extended Auth Providers | Deferred | P2 | SSO/LDAP/Enterprise needs |
+| [RFC-0008](./RFC-0008-extended-auth.md) | Extended Auth Providers ⁴ | Deferred | P2 | MFA or SAML 2.0 required |
 | [RFC-0009](./RFC-0009-pgbouncer.md) | PgBouncer Dual Pool | Deferred | P3 | Enterprise deployment |
 | [RFC-0010](./RFC-0010-observability.md) | Observability Stack | Deferred | P2 | Metrics/Tracing required |
-| [RFC-0011](./RFC-0011-vnc-console.md) | VNC Console (noVNC) ³ | Deferred | P2 | Browser VM access needed |
+| [RFC-0011](./RFC-0011-vnc-console.md) | VNC Console (noVNC) ³⁴ | Deferred | P2 | Browser VM access needed |
 | [RFC-0012](./RFC-0012-kubevirt-advanced.md) | KubeVirt Advanced Features ³ | Deferred | P2 | Snapshot/Clone/Migration |
 | [RFC-0013](./RFC-0013-vm-snapshot.md) | VM Snapshot ³ | Deferred | P2 | Backup/Restore needed |
 | [RFC-0014](./RFC-0014-vm-clone.md) | VM Clone ³ | Deferred | P2 | Rapid VM duplication |
@@ -30,6 +30,7 @@
 > - ¹ Soft archiving (`archived_at` field) is implemented in Phase 4; this RFC covers physical archiving to separate tables
 > - ² Basic hot-reload (log level, rate limits) is in Phase 0; this RFC covers API-based config changes
 > - ³ Provider interfaces defined in Phase 1-2; this RFC covers full implementation
+> - ⁴ **Scope reduced by ADR-0015**: Core functionality accepted in [ADR-0015](../adr/ADR-0015-governance-model-v2.md); RFC now covers only advanced features not in ADR. See individual RFC for details.
 
 ---
 
