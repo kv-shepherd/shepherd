@@ -36,8 +36,8 @@ This Code of Conduct is adapted from the [Contributor Covenant](https://www.cont
 ## Contact
 
 For Code of Conduct concerns:
-- Open a private issue with the `conduct` label
-- Or contact maintainers directly via the methods listed in [GOVERNANCE.md](GOVERNANCE.md)
+- 📧 **coc@kv-shepherd.io** (confidential)
+- Or open a private issue with the `conduct` label
 
 ---
 
