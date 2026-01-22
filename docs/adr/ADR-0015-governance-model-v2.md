@@ -846,9 +846,33 @@ User with prod permission → sees test+prod namespaces → VMs scheduled to mat
 
 | Phase | Actor | Logic |
 |-------|-------|-------|
-| Request | User | Selects namespace (environment implicitly determined) |
+| Request | User | Selects namespace (namespace has explicit environment type) |
 | Approval | Admin | System suggests cluster by weight; admin can override |
 | Execution | Platform | Deploys to admin-selected or weight-based cluster |
+
+> **Clarification (2026-01-22)**: Namespace Environment Type
+>
+> **Namespace has an explicit `environment` type (test/prod), set by administrators during creation.**
+>
+> | Entity | Environment Field | Set By | Example Names |
+> |--------|-------------------|--------|---------------|
+> | **Cluster** | `environment` (test/prod) | Admin | cluster-01, cluster-02 |
+> | **Namespace** | `environment` (test/prod) | Admin | dev, test, uat, stg, prod01, shop-prod |
+>
+> - Namespace name can be anything (dev, test, uat, stg, prod01, shop-prod, etc.)
+> - But environment **type** is always one of: `test` or `prod`
+> - User selects namespace → namespace's environment type is known → matched with cluster environment
+> - `RoleBinding.allowed_environments` controls which environment types a user can access
+>
+> **Schema**:
+>
+> ```go
+> // Platform maintains namespace registry with explicit environment
+> // ent/schema/namespace_registry.go
+> field.String("name").NotEmpty().Unique(),
+> field.String("cluster_id").NotEmpty(),
+> field.Enum("environment").Values("test", "prod"),  // Explicit, not inferred
+> ```
 
 **Cluster Weight Configuration**:
 
@@ -2140,6 +2164,7 @@ func ValidateIDToken(token *oidc.IDToken, expectedIssuer, expectedAudience strin
 | `ent/schema/delete_confirmation_code.go` | code, entity_type, entity_id, user_id, expires_at | Production delete confirmation codes |
 | `ent/schema/rate_limit_counter.go` | user_id, limit_type, current_value, window_start, exempted | User rate limit counters (PostgreSQL-based) |
 | `ent/schema/rate_limit_exemption.go` | user_id, exempted_by, exempted_at, reason, expires_at | Admin-granted rate limit exemptions |
+| `ent/schema/namespace_registry.go` | name, cluster_id, environment (test/prod) | Namespace registry with explicit environment type (§15 Clarification) |
 
 ---
 
