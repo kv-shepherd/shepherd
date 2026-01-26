@@ -1172,6 +1172,198 @@ Schema versions are synchronized with cluster capabilities during:
 
 ---
 
+### Multi-Cluster Schema Compatibility Strategy (Added 2026-01-26)
+
+> **Design Decision**: Adopt **Dynamic Schema Loading + Direct Validation** strategy. No fallback or degradation logic.
+>
+> **Rationale**:
+> - Degradation logic is complex and error-prone (e.g., newer KubeVirt may reject legacy API formats)
+> - Explicit validation failure is preferable to implicit degradation that may cause unexpected behavior
+> - Schema files are maintained by KubeVirt official, ensuring correctness
+
+#### Problem
+
+When Shepherd manages multiple clusters running different KubeVirt versions (e.g., v1.2.x, v1.3.x, v1.4.x), how to ensure InstanceSize configurations are compatible with target clusters?
+
+#### Solution: Dynamic Schema Loading
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│            Dynamic Schema Loading + Direct Validation                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. User/Admin selects target cluster                                        │
+│        │                                                                     │
+│        ▼                                                                     │
+│  2. System retrieves cluster's KubeVirt version (e.g., v1.3.1)               │
+│        │                                                                     │
+│        ▼                                                                     │
+│  3. Dynamically load corresponding JSON Schema (VMSpec subset only)          │
+│     └── Priority: Local cache → Fetch from official source                  │
+│        │                                                                     │
+│        ▼                                                                     │
+│  4. Validate InstanceSize configuration against loaded Schema                │
+│        │                                                                     │
+│        ├── ✅ PASS → Allow creation/deployment                               │
+│        │                                                                     │
+│        └── ❌ FAIL → Return explicit error with details                      │
+│             "Field 'xxx' does not exist in KubeVirt v1.3.1"                  │
+│             "Please modify InstanceSize configuration or select another     │
+│              target cluster"                                                 │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Design Principles
+
+| Principle | Implementation | Notes |
+|-----------|----------------|-------|
+| **No Degradation** | Incompatible config → Error (not warning) | Avoid silent failures |
+| **Cluster-Aware** | Each cluster records its KubeVirt version | Stored in `clusters` table |
+| **Lazy Loading** | Schema loaded on-demand, cached after first load | Minimize memory footprint |
+| **Official Source** | Schema from KubeVirt GitHub releases | Ensure correctness |
+| **Subset Only** | Only cache `VirtualMachineSpec` portion | Avoid loading full OpenAPI spec |
+
+#### Cluster Metadata Extension
+
+```sql
+-- clusters table extension
+ALTER TABLE clusters ADD COLUMN IF NOT EXISTS
+    kubevirt_version VARCHAR(50);           -- e.g., "1.3.1"
+    
+ALTER TABLE clusters ADD COLUMN IF NOT EXISTS
+    kubevirt_api_group VARCHAR(100);        -- e.g., "kubevirt.io/v1"
+    
+ALTER TABLE clusters ADD COLUMN IF NOT EXISTS
+    schema_cache_key VARCHAR(100);          -- Cache identifier
+
+COMMENT ON COLUMN clusters.kubevirt_version IS 
+    'Detected KubeVirt version. Used for Schema selection during validation.';
+```
+
+#### Validation Implementation
+
+```go
+// ValidateForCluster validates InstanceSize against specific cluster's KubeVirt Schema
+func (s *InstanceSizeService) ValidateForCluster(
+    ctx context.Context, 
+    sizeID uuid.UUID, 
+    clusterID uuid.UUID,
+) error {
+    // 1. Get target cluster's KubeVirt version
+    cluster, err := s.clusterRepo.Get(ctx, clusterID)
+    if err != nil {
+        return fmt.Errorf("failed to get cluster: %w", err)
+    }
+    
+    // 2. Load corresponding Schema (cached or fetch)
+    schema, err := s.schemaCache.GetOrFetch(ctx, cluster.KubevirtVersion)
+    if err != nil {
+        return fmt.Errorf("failed to load Schema for KubeVirt %s: %w", 
+            cluster.KubevirtVersion, err)
+    }
+    
+    // 3. Get InstanceSize
+    size, err := s.repo.Get(ctx, sizeID)
+    if err != nil {
+        return err
+    }
+    
+    // 4. Convert InstanceSize to VMSpec JSON
+    vmSpecJSON := size.ToVMSpecJSON()
+    
+    // 5. Validate against Schema - NO FALLBACK
+    validationErrors := schema.Validate(vmSpecJSON)
+    if len(validationErrors) > 0 {
+        return &ValidationError{
+            Code:    "SCHEMA_VALIDATION_FAILED",
+            Message: fmt.Sprintf(
+                "InstanceSize '%s' is incompatible with cluster '%s' (KubeVirt %s)",
+                size.Name, cluster.Name, cluster.KubevirtVersion,
+            ),
+            Details: validationErrors,
+            Hint:    "Modify InstanceSize configuration or select a different target cluster",
+        }
+    }
+    
+    return nil
+}
+
+// SchemaCache manages KubeVirt schema versions
+type SchemaCache struct {
+    cache sync.Map  // version -> *jsonschema.Schema
+}
+
+// GetOrFetch returns cached schema or fetches from official source
+func (c *SchemaCache) GetOrFetch(ctx context.Context, version string) (*jsonschema.Schema, error) {
+    minorVersion := toMinorVersion(version)  // "1.3.1" → "1.3.x"
+    
+    // Check cache first
+    if cached, ok := c.cache.Load(minorVersion); ok {
+        return cached.(*jsonschema.Schema), nil
+    }
+    
+    // Fetch from official source (VMSpec subset only)
+    schemaURL := fmt.Sprintf(
+        "https://raw.githubusercontent.com/kubevirt/kubevirt/v%s/api/openapi-spec/swagger.json",
+        version,
+    )
+    
+    fullSpec, err := fetchJSON(ctx, schemaURL)
+    if err != nil {
+        return nil, fmt.Errorf("failed to fetch schema: %w", err)
+    }
+    
+    // Extract VMSpec subset (avoid loading entire OpenAPI spec)
+    vmSpecSchema := extractVMSpecSubset(fullSpec)
+    
+    compiled, err := jsonschema.CompileString("", vmSpecSchema)
+    if err != nil {
+        return nil, fmt.Errorf("failed to compile schema: %w", err)
+    }
+    
+    // Cache for future use
+    c.cache.Store(minorVersion, compiled)
+    
+    return compiled, nil
+}
+```
+
+#### UI Integration
+
+When Admin creates/edits InstanceSize or User submits VM request, the UI can optionally show cluster compatibility status:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  InstanceSize: gpu-workstation                                                │
+│                                                                               │
+│  ── Cluster Compatibility ──────────────────────────────────────────────────  │
+│  ┌────────────────────────────────────────────────────────────────────────┐   │
+│  │  Cluster          │ KubeVirt │ Status                                  │   │
+│  │  ─────────────────┼──────────┼───────────────────────────────────────  │   │
+│  │  prod-cluster-a   │ v1.4.2   │ ✅ Compatible                           │   │
+│  │  prod-cluster-b   │ v1.3.1   │ ❌ Incompatible: 'spec.instancetype'    │   │
+│  │                   │          │    field not supported                  │   │
+│  │  test-cluster-a   │ v1.5.0   │ ✅ Compatible                           │   │
+│  └────────────────────────────────────────────────────────────────────────┘   │
+│                                                                               │
+│  💡 Only compatible clusters will be available for VM deployment              │
+│                                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Comparison: Degradation vs Direct Validation
+
+| Aspect | Degradation Logic (Rejected) | Direct Validation (Adopted) |
+|--------|------------------------------|-----------------------------|
+| **Complexity** | High: maintain field mapping, conversion rules | Low: load schema, validate |
+| **Risk** | High: silent failures, unexpected behavior | Low: explicit errors |
+| **User Experience** | Confusing: some fields silently ignored | Clear: know exactly what failed |
+| **Maintenance** | High: update rules for each KubeVirt release | Low: schemas from official source |
+| **Correctness** | Questionable: custom conversion may be wrong | Reliable: official schema |
+
+---
+
 ### InstanceSize Immutability (Snapshot Pattern) (Added 2026-01-26 per Review Feedback)
 
 > **Design Decision**: VMs **snapshot** InstanceSize configuration at creation time.
@@ -1296,6 +1488,8 @@ The following features are identified for future versions but are **out of scope
 
 | Date | Change |
 |------|--------|
+| 2026-01-26 | **Cross-Reference Review**: Clarified that ADR-0015 §4 (VMCreateRequest.ClusterID) is amended by [ADR-0017](./ADR-0017-vm-request-flow-clarification.md), not this ADR. ADR-0018 only amends §5 (Template Layered Design). |
+| 2026-01-26 | Added: **Multi-Cluster Schema Compatibility Strategy** - dynamic schema loading + direct validation (no degradation logic), see [RFC-0013](../rfc/RFC-0013-vm-snapshot.md) for snapshot lifecycle |
 | 2026-01-26 | **Review Feedback**: Upgraded Dedicated CPU + Overcommit from WARNING to **ERROR** (blocking) per review feedback |
 | 2026-01-26 | **Review Feedback**: Added InstanceSize Validation Strategy section - hybrid validation with versioned Schema cache + optional dry-run |
 | 2026-01-26 | **Review Feedback**: Added InstanceSize Immutability (Snapshot Pattern) section - VMs snapshot config at approval time |
@@ -1363,6 +1557,8 @@ The following features are identified for future versions but are **out of scope
 **Sections Affected**:
 - §5. Template Layered Design (lines 240-310): `required_features`, `required_hardware` fields
 - §5. Template Schema (lines 252-279): Hardware capability definitions
+
+> **Note**: §4. VMCreateRequest is amended by [ADR-0017](./ADR-0017-vm-request-flow-clarification.md), not this ADR.
 
 **Amendment Block to Append** (at end of ADR-0015, after the last section):
 
