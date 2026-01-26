@@ -167,4 +167,15 @@ import (
 
 | Date | Change |
 |------|--------|
-| 2026-01-22 | Initial proposal, accepted |
+| 2026-01-22 | Initial creation with expedited approval ¹ |
+
+> **¹ Governance Note**: This ADR was created and accepted in a single step during
+> the pre-alpha project migration phase. Justification:
+> - Project had no external users at this stage
+> - Vanity import adoption had zero migration cost at this point
+> - Decision followed well-established industry patterns (k8s.io, sigs.k8s.io)
+> - Delaying would have risked breaking changes for future users
+>
+> Going forward, all ADRs should follow the standard `Proposed → Accepted` lifecycle
+> with a minimum 48-hour public comment period. See Issue #14 for governance process
+> documentation.
