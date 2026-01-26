@@ -16,7 +16,7 @@
 
 | ADR-0015 Section | Original Decision | Amendment in ADR-0018 |
 |------------------|-------------------|----------------------|
-| §5. Template Layered Design | Template contains `required_features`, `required_hardware` capability requirements | **MOVED** to InstanceSize. See [§4. Backend Storage](#4-backend-storage-dumb). Template now only contains: OS image source, cloud-init config, field visibility control. |
+| §5. Template Layered Design | Template contains `required_features`, `required_hardware` capability requirements | **MOVED** to InstanceSize. See [§4. Backend Storage](#4-backend-storage-hybrid-model). Template now only contains: OS image source, cloud-init config, field visibility control. |
 | §5. Template Layered Design | Template defines `quick_fields` and `advanced_fields` for field visibility | **CLARIFIED**: InstanceSize now defines hardware capabilities (GPU/SR-IOV/Hugepages). Template retains field visibility control for UI rendering only. |
 
 > **Note**: ADR-0015 remains **Accepted**. This amendment is a refinement, not a replacement. Cross-reference this ADR when implementing Template and InstanceSize features.
@@ -1575,10 +1575,10 @@ The following features are identified for future versions but are **out of scope
 
 | Original Section | Status | Amendment Details | See Also |
 |------------------|--------|-------------------|----------|
-| §5. Template Layered Design: `required_features`, `required_hardware` | **MOVED** | Capability requirements now defined in InstanceSize, not Template | [ADR-0018 §4](./ADR-0018-instance-size-abstraction.md#4-backend-storage-dumb) |
+| §5. Template Layered Design: `required_features`, `required_hardware` | **MOVED** | Capability requirements now defined in InstanceSize, not Template | [ADR-0018 §4](./ADR-0018-instance-size-abstraction.md#4-backend-storage-hybrid-model) |
 | §5. Template Layered Design: Hardware capability definitions | **MOVED** | GPU/SR-IOV/Hugepages capabilities configured via InstanceSize | [ADR-0018 §Cluster Capability Matching](./ADR-0018-instance-size-abstraction.md#cluster-capability-matching) |
-| §5. Template Schema: `field.Strings("required_features")` | **SUPERSEDED** | Use InstanceSize.spec_overrides instead | [ADR-0018 InstanceSize Schema](./ADR-0018-instance-size-abstraction.md#4-backend-storage-dumb) |
-| §5. Template Schema: `field.Strings("required_hardware")` | **SUPERSEDED** | Use InstanceSize.spec_overrides instead | [ADR-0018 InstanceSize Schema](./ADR-0018-instance-size-abstraction.md#4-backend-storage-dumb) |
+| §5. Template Schema: `field.Strings("required_features")` | **SUPERSEDED** | Use InstanceSize.spec_overrides instead | [ADR-0018 InstanceSize Schema](./ADR-0018-instance-size-abstraction.md#4-backend-storage-hybrid-model) |
+| §5. Template Schema: `field.Strings("required_hardware")` | **SUPERSEDED** | Use InstanceSize.spec_overrides instead | [ADR-0018 InstanceSize Schema](./ADR-0018-instance-size-abstraction.md#4-backend-storage-hybrid-model) |
 
 > **Implementation Guidance**: Template retains `quick_fields` and `advanced_fields` for UI field visibility control. All hardware capability requirements (GPU, SR-IOV, Hugepages, dedicated CPU) are now configured in InstanceSize and matched against cluster detected capabilities.
 
