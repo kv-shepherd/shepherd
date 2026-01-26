@@ -975,6 +975,109 @@ GET /api/v1/schema                          # Get KubeVirt JSON Schema
 GET /api/v1/mask                            # Get Mask configuration
 ```
 
+### Dry-Run Validation (Added 2026-01-26)
+
+> **Design Decision**: Use query parameter `dryRun=All` on existing mutating endpoints, following Kubernetes API conventions.
+>
+> **Rationale**: 
+> - Keeps API surface clean (no separate dry-run endpoints)
+> - Follows Kubernetes API best practices
+> - Client intent is explicitly communicated via parameter
+
+```
+# InstanceSize dry-run validation
+POST /api/v1/admin/instance-sizes?dryRun=All
+PUT  /api/v1/admin/instance-sizes/{name}?dryRun=All
+
+# With target cluster for KubeVirt server-side validation
+POST /api/v1/admin/instance-sizes?dryRun=All&targetCluster={cluster_id}
+```
+
+**Dry-Run Behavior**:
+
+| Stage | Action |
+|-------|--------|
+| 1. Schema Validation | Validate `spec_overrides` against cached KubeVirt JSON Schema |
+| 2. Hybrid Field Extraction | Extract indexed fields (CPU, Memory, GPU, etc.) |
+| 3. KubeVirt Dry-Run (optional) | If `targetCluster` specified, render full VM YAML and send `kubectl apply --dry-run=server` to target cluster |
+| 4. Response | Return validation result without persisting to database |
+
+**Response Example**:
+
+```json
+{
+  "valid": true,
+  "rendered_preview": {
+    "cpu_cores": 4,
+    "memory": "8Gi",
+    "requires_gpu": true
+  },
+  "cluster_validation": {
+    "cluster_id": "cluster-a",
+    "kubevirt_version": "v1.5.2",
+    "result": "valid"
+  }
+}
+```
+
+### Hybrid Model Data Consistency Strategy (Added 2026-01-26)
+
+> **Design Decision**: Use ORM Hooks (Ent Mutation Hooks) to ensure consistency between `spec_overrides` JSONB and extracted indexed columns.
+>
+> **Rationale**:
+> - **PostgreSQL Generated Columns** offer database-level consistency but have limited ORM support and complex JSONB path expressions
+> - **Triggers** add database maintenance complexity
+> - **ORM Hooks** are suitable because Shepherd is a single-application system where all writes go through Ent ORM
+
+**Implementation**:
+
+```go
+// ent/schema/instance_size.go
+func (InstanceSize) Hooks() []ent.Hook {
+    return []ent.Hook{
+        // Sync indexed fields from spec_overrides on every create/update
+        hook.On(
+            func(next ent.Mutator) ent.Mutator {
+                return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+                    if is, ok := m.(*gen.InstanceSizeMutation); ok {
+                        if spec, exists := is.SpecOverrides(); exists {
+                            // Force sync indexed fields from JSONB
+                            is.SetCPUCores(extractInt(spec, "spec.template.spec.domain.cpu.cores"))
+                            is.SetMemory(extractString(spec, "spec.template.spec.domain.resources.requests.memory"))
+                            is.SetRequiresGPU(hasPath(spec, "spec.template.spec.domain.devices.gpus"))
+                            is.SetRequiresHugepages(hasPath(spec, "spec.template.spec.domain.memory.hugepages"))
+                            is.SetRequiresSRIOV(hasPath(spec, "spec.template.spec.domain.devices.interfaces[*].sriov"))
+                        }
+                    }
+                    return next.Mutate(ctx, m)
+                })
+            },
+            ent.OpCreate|ent.OpUpdate|ent.OpUpdateOne,
+        ),
+    }
+}
+```
+
+**Consistency Guarantee**:
+
+| Scenario | Behavior |
+|----------|----------|
+| Create via ORM | Hook extracts and sets indexed fields ✅ |
+| Update via ORM | Hook re-extracts and updates indexed fields ✅ |
+| Direct SQL UPDATE | ⚠️ Not recommended - bypasses hooks |
+| Database migration | Use SQL to sync existing records |
+
+**Mitigation for Direct SQL**:
+
+```sql
+-- One-time sync script (for migrations or manual corrections)
+UPDATE instance_sizes SET
+    cpu_cores = (spec_overrides->'spec'->'template'->'spec'->'domain'->'cpu'->>'cores')::int,
+    memory = spec_overrides->'spec'->'template'->'spec'->'domain'->'resources'->'requests'->>'memory',
+    requires_gpu = spec_overrides->'spec'->'template'->'spec'->'domain'->'devices' ? 'gpus'
+WHERE true;
+```
+
 ---
 
 ### Canonical Interaction Flow Document (Post-Acceptance)
@@ -1003,7 +1106,7 @@ GET /api/v1/mask                            # Get Mask configuration
 2. PRs modifying workflow logic MUST reference the relevant section of the flow document
 3. Flow document updates MUST go through the same review process as code changes
 
-> **Note**: The Chinese appendix (附录) in this ADR serves as the draft for this document. Upon ADR acceptance, it will be extracted and formalized as the canonical flow document.
+> **Note**: The detailed interaction flows have been extracted to the standalone document linked below. This ADR focuses on the architectural decisions.
 
 ---
 
@@ -1488,6 +1591,8 @@ The following features are identified for future versions but are **out of scope
 
 | Date | Change |
 |------|--------|
+| 2026-01-26 | **API Enhancement**: Added Dry-Run Validation endpoint design (`?dryRun=All` query parameter) following Kubernetes API conventions |
+| 2026-01-26 | **Data Consistency**: Added Hybrid Model Data Consistency Strategy using ORM Hooks (Ent Mutation Hooks) |
 | 2026-01-26 | **Cross-Reference Review**: Clarified that ADR-0015 §4 (VMCreateRequest.ClusterID) is amended by [ADR-0017](./ADR-0017-vm-request-flow-clarification.md), not this ADR. ADR-0018 only amends §5 (Template Layered Design). |
 | 2026-01-26 | Added: **Multi-Cluster Schema Compatibility Strategy** - dynamic schema loading + direct validation (no degradation logic), see [RFC-0013](../rfc/RFC-0013-vm-snapshot.md) for snapshot lifecycle |
 | 2026-01-26 | **Review Feedback**: Upgraded Dedicated CPU + Overcommit from WARNING to **ERROR** (blocking) per review feedback |
@@ -1700,7 +1805,7 @@ The following features are identified for future versions but are **out of scope
 
 ```sql
 -- Global RBAC (OIDC/LDAP group mapping)
-role_bindings (id, user_id, role_id, scope_type, allowed_environments, source)
+role_bindings (id, user_id, role_id, scope_type, allowed_environments, created_by)
 
 -- Resource-level RBAC (User self-service)
 resource_role_bindings (id, user_id, role, resource_type, resource_id, granted_by, created_at)
@@ -1787,6 +1892,45 @@ CREATE TABLE external_approval_systems (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+```
+
+### 9. Dry-Run API Implementation (ADR-0018 §Dry-Run Validation)
+
+> **Added 2026-01-26**: Dry-Run validation endpoint design
+
+| Document | Section | Required Change |
+|----------|---------|--------------------|
+| `docs/design/phases/02-providers.md` | API Endpoints | **ADD**: `?dryRun=All` query parameter support for InstanceSize endpoints |
+| `docs/design/phases/03-service-layer.md` | InstanceSizeService | **ADD**: `CreateWithDryRun(ctx, input, targetCluster)` method |
+| `docs/design/examples/api/` | **NEW**: `instance_size_handler.go` | **ADD**: Handler with dry-run logic |
+| `internal/api/handlers/` | **NEW**: `instance_size.go` | **ADD**: Production handler implementation |
+
+**API Specifications**:
+
+```
+POST /api/v1/admin/instance-sizes?dryRun=All
+POST /api/v1/admin/instance-sizes?dryRun=All&targetCluster={cluster_id}
+PUT  /api/v1/admin/instance-sizes/{name}?dryRun=All
+```
+
+### 10. Hybrid Model Data Consistency (ADR-0018 §Hybrid Model Data Consistency Strategy)
+
+> **Added 2026-01-26**: ORM Hooks for JSONB-indexed column sync
+
+| Document | Section | Required Change |
+|----------|---------|--------------------|
+| `docs/design/phases/01-contracts.md` | InstanceSize Schema | **ADD**: Note about ORM Hooks for data consistency |
+| `docs/design/examples/ent/schema/` | **NEW**: `instance_size.go` | **ADD**: Complete schema with `Hooks()` method |
+| `ent/schema/instance_size.go` | Implementation | **ADD**: Hook to sync `spec_overrides` → indexed columns |
+| `scripts/migrations/` | **NEW**: `sync_instance_size_fields.sql` | **ADD**: One-time sync script for manual corrections |
+
+**Implementation Files**:
+
+```
+ent/schema/instance_size.go     # Schema with Hooks()
+internal/pkg/jsonpath/          # JSON path extraction utilities
+  ├── extractor.go              # extractInt(), extractString(), hasPath()
+  └── extractor_test.go         # Unit tests
 ```
 
 ---
