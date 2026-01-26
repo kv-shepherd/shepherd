@@ -166,6 +166,30 @@ Admin can:
 | `01-contracts.md` | VM creation flow | Document correct request structure |
 | `04-governance.md` | Approval workflow | Document admin cluster selection |
 
+> **ADR Immutability Principle**: Upon acceptance of ADR-0017, append the following block to ADR-0015 (do NOT modify original content).
+
+**Amendment Block to Append** (at end of ADR-0015):
+
+```markdown
+---
+
+## Amendments by Subsequent ADRs
+
+> ⚠️ **Notice**: The following sections of this ADR have been amended by subsequent ADRs.
+> The original decisions above remain **unchanged for historical reference**.
+> When implementing, please refer to the amending ADRs for current design.
+
+### ADR-0017: VM Request Flow Clarification (2026-01-22)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §4. VMCreateRequest: `ClusterID string binding:"required"` | **REMOVED** | User does NOT provide ClusterID. Admin selects target cluster during approval workflow. | [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) |
+
+> **Rationale**: Separation of concerns - Users submit business requests (service, template, namespace); Administrators determine infrastructure decisions (cluster, storage class).
+
+---
+```
+
 ### API Changes
 
 | Endpoint | Change |
@@ -190,3 +214,4 @@ Admin can:
 |------|--------|
 | 2026-01-22 | Initial draft, amending ADR-0015 §4 |
 | 2026-01-26 | Submitted as formal proposal with 48-hour review period (Issue #15) |
+| 2026-01-26 | Added: Pre-written "Amendments by Subsequent ADRs" block for ADR-0015 (to be appended upon ADR-0017 acceptance) |
