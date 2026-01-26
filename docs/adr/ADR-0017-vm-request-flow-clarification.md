@@ -165,6 +165,66 @@ Admin can:
 | `ADR-0015` | §4 VMCreateRequest | Add amendment notice pointing to this ADR |
 | `01-contracts.md` | VM creation flow | Document correct request structure |
 | `04-governance.md` | Approval workflow | Document admin cluster selection |
+| `04-governance.md` | §6 namespace_registry schema | **Remove `cluster_id` field** - see below |
+
+### Namespace Schema Correction (04-governance.md §6)
+
+> **Problem**: The current `namespace_registry` schema in 04-governance.md includes a `cluster_id` field, implying Namespace is bound to a specific cluster. This contradicts the multi-cluster governance model.
+
+**Current Design (INCORRECT)**:
+
+```go
+// 04-governance.md line 333-336 - INCORRECT
+field.String("name").NotEmpty().Unique(),
+field.String("cluster_id").NotEmpty(),    // ❌ Implies 1:1 binding to cluster
+field.Enum("environment").Values("test", "prod"),
+```
+
+**Corrected Design**:
+
+```go
+// ent/schema/namespace.go - CORRECT
+func (Namespace) Fields() []ent.Field {
+    return []ent.Field{
+        field.String("id").Unique().Immutable(),
+        field.String("name").NotEmpty().Unique(),      // Globally unique in Shepherd
+        field.Enum("environment").Values("test", "prod"), // Explicit environment type
+        field.String("description").Optional(),
+        field.Time("created_at").Default(time.Now).Immutable(),
+        // ❌ NO cluster_id - Namespace is a global logical entity
+    }
+}
+```
+
+**Rationale**:
+
+| Principle | Explanation |
+|-----------|-------------|
+| **Namespace is a Shepherd-managed entity** | Not derived from any single K8s cluster |
+| **Multi-cluster governance** | Same Namespace can be deployed to multiple clusters of matching environment |
+| **Separation of concerns** | Namespace defines "where" (environment type); Cluster selection happens at approval time |
+| **Just-in-time creation** | When VM is approved, Shepherd checks if Namespace exists in target cluster; creates if needed |
+
+**Namespace-Cluster Relationship**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Shepherd Namespace (PostgreSQL)          K8s Clusters                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Namespace: "prod-shop"                                                      │
+│  Environment: prod                                                           │
+│           │                                                                  │
+│           ├── Can deploy to ──► Cluster-A (prod) ──► k8s namespace exists?  │
+│           │                                           └─ No → Create        │
+│           │                                           └─ Yes → Use          │
+│           │                                                                  │
+│           └── Can deploy to ──► Cluster-B (prod) ──► k8s namespace exists?  │
+│                                                       └─ No → Create        │
+│                                                       └─ Yes → Use          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 > **ADR Immutability Principle**: Upon acceptance of ADR-0017, append the following block to ADR-0015 (do NOT modify original content).
 
@@ -215,3 +275,4 @@ Admin can:
 | 2026-01-22 | Initial draft, amending ADR-0015 §4 |
 | 2026-01-26 | Submitted as formal proposal with 48-hour review period (Issue #15) |
 | 2026-01-26 | Added: Pre-written "Amendments by Subsequent ADRs" block for ADR-0015 (to be appended upon ADR-0017 acceptance) |
+| 2026-01-26 | Added: Namespace Schema Correction section - clarifies that `namespace_registry` should NOT have `cluster_id` field (multi-cluster governance principle) |
