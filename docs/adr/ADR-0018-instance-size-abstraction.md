@@ -383,9 +383,16 @@ Example UI rendering:
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 4. Backend Storage (Dumb)
+#### 4. Backend Storage (Hybrid Model)
 
-Backend stores user input as generic JSON. It does NOT parse or interpret the contents.
+> **Design Decision (Updated 2026-01-26 per Review Feedback)**:
+> 
+> Original design used "pure dumb backend" storing only `spec_overrides` as JSONB.
+> After architectural review, we adopt a **Hybrid Model** that balances flexibility with query efficiency:
+> - **Indexed Columns**: Core scheduling fields (CPU, Memory, GPU, Hugepages) stored in typed columns for efficient queries
+> - **JSONB Extension**: Remaining KubeVirt fields stored in `spec_overrides` for flexibility
+> 
+> This addresses the "Dumb Backend Paradox" - scheduling queries need explicit fields, but we maintain JSONB flexibility for long-tail KubeVirt features.
 
 ```go
 // ent/schema/instance_size.go
@@ -394,6 +401,37 @@ func (InstanceSize) Fields() []ent.Field {
         field.String("id").Unique().Immutable(),
         field.String("name").NotEmpty().Unique(),       // "gpu-workstation"
         field.String("display_name").NotEmpty(),        // "GPU Workstation"
+        
+        // ============================================================
+        // INDEXED COLUMNS: Core scheduling fields for efficient queries
+        // These fields are frequently used for cluster capability matching
+        // ============================================================
+        
+        // CPU Configuration (indexed for scheduling queries)
+        field.Int("cpu_cores").Default(1).
+            Comment("Number of CPU cores. Indexed for scheduling."),
+        field.Bool("dedicated_cpu").Default(false).
+            Comment("Whether to use dedicated CPU placement (pinning)."),
+        
+        // Memory Configuration (indexed for scheduling queries)
+        field.String("memory").Default("1Gi").
+            Comment("Memory size (e.g., '8Gi'). Indexed for scheduling."),
+        field.String("hugepages_size").Optional().Nillable().
+            Comment("Hugepages page size: '2Mi', '1Gi', or nil (none)."),
+        
+        // GPU Configuration (indexed for scheduling queries)
+        field.Bool("requires_gpu").Default(false).
+            Comment("Whether this size requires GPU. Indexed for cluster matching."),
+        field.JSON("gpu_devices", []GPUDevice{}).Optional().
+            Comment("GPU device list. Extracted for scheduling, also in spec_overrides."),
+        
+        // SR-IOV Configuration (indexed for scheduling queries)
+        field.Bool("requires_sriov").Default(false).
+            Comment("Whether this size requires SR-IOV network."),
+        
+        // ============================================================
+        // DISK AND OVERCOMMIT: Structured fields
+        // ============================================================
         
         // Default disk size (Admin preset, User can adjust)
         field.Int("default_disk_gb").Default(100).
@@ -409,13 +447,22 @@ func (InstanceSize) Fields() []ent.Field {
         field.JSON("mem_overcommit", &OvercommitConfig{}).Optional().
             Comment("Memory overcommit config: {enabled, request, limit}"),
         
-        // Generic JSON storage - backend does NOT interpret contents
+        // ============================================================
+        // JSONB EXTENSION: Flexible storage for remaining KubeVirt fields
+        // Backend does NOT interpret these contents beyond basic JSON validation
+        // ============================================================
         field.JSON("spec_overrides", map[string]interface{}{}).
-            Comment("JSON Path → Value mapping. Backend does NOT interpret."),
+            Comment("JSON Path → Value mapping for non-core KubeVirt fields."),
         
         field.Bool("enabled").Default(true),
         field.Time("created_at").Default(time.Now),
     }
+}
+
+// GPUDevice represents a GPU passthrough device
+type GPUDevice struct {
+    Name       string `json:"name"`        // Friendly name, e.g., "gpu1"
+    DeviceName string `json:"deviceName"`  // KubeVirt device name, e.g., "nvidia.com/GA102GL_A10"
 }
 
 // OvercommitConfig defines request/limit for resource overcommit
@@ -423,6 +470,50 @@ type OvercommitConfig struct {
     Enabled bool   `json:"enabled"`    // Whether overcommit is enabled
     Request string `json:"request"`    // e.g., "4" for CPU, "16Gi" for memory
     Limit   string `json:"limit"`      // e.g., "8" for CPU, "32Gi" for memory
+}
+
+// SchedulingIndexes returns fields indexed for efficient scheduling queries
+func (InstanceSize) Indexes() []ent.Index {
+    return []ent.Index{
+        index.Fields("requires_gpu"),           // Fast filter: GPU workloads
+        index.Fields("requires_sriov"),         // Fast filter: SR-IOV workloads
+        index.Fields("hugepages_size"),         // Fast filter: Hugepages workloads
+        index.Fields("dedicated_cpu"),          // Fast filter: Pinned CPU workloads
+        index.Fields("cpu_cores", "memory"),    // Compound index for capacity matching
+    }
+}
+```
+
+**Hybrid Model Benefits**:
+
+| Aspect | Indexed Columns | JSONB Extension |
+|--------|-----------------|-----------------|
+| **Fields** | cpu_cores, memory, hugepages_size, requires_gpu, requires_sriov, dedicated_cpu | All other KubeVirt fields |
+| **Query Performance** | O(log n) with B-tree index | O(n) scan or GIN index |
+| **Schema Changes** | Requires DB migration | No migration needed |
+| **Use Case** | Cluster capability matching, scheduling | Long-tail KubeVirt features |
+
+**Data Synchronization**:
+
+When saving InstanceSize, the backend extracts core fields from the full configuration:
+
+```go
+// Extract indexed fields when saving InstanceSize
+func (s *InstanceSizeService) Create(ctx context.Context, input CreateInstanceSizeInput) error {
+    // Core fields extracted for indexing
+    instanceSize := &InstanceSize{
+        CPUCores:      input.SpecOverrides.GetInt("spec.template.spec.domain.cpu.cores"),
+        Memory:        input.SpecOverrides.GetString("spec.template.spec.domain.resources.requests.memory"),
+        DedicatedCPU:  input.SpecOverrides.GetBool("spec.template.spec.domain.cpu.dedicatedCpuPlacement"),
+        HugepagesSize: input.SpecOverrides.GetStringPtr("spec.template.spec.domain.memory.hugepages.pageSize"),
+        RequiresGPU:   len(input.SpecOverrides.GetArray("spec.template.spec.domain.devices.gpus")) > 0,
+        GPUDevices:    input.SpecOverrides.GetGPUDevices(),
+        RequiresSRIOV: len(input.SpecOverrides.GetArray("spec.template.spec.domain.devices.interfaces")) > 0 &&
+                       hasSRIOVInterface(input.SpecOverrides),
+        // Full JSONB for remaining fields
+        SpecOverrides: input.SpecOverrides,
+    }
+    return s.repo.Create(ctx, instanceSize)
 }
 ```
 
@@ -630,6 +721,39 @@ func ApproveVMRequest(request *VMRequest, approvalOverride *OverrideConfig) (*Ap
 | **User** | "Medium (4 vCPU, 8GB)" | Nothing about overcommit |
 | **Admin (Create)** | Request/Limit fields when overcommit enabled | Default overcommit ratio per InstanceSize |
 | **Admin (Approve)** | Override toggle + Warnings | Final request/limit values per VM |
+
+**Warning vs Error Classification** (Updated 2026-01-26 per Review Feedback):
+
+> **Design Decision**: Dedicated CPU + Overcommit is upgraded from **Warning** to **Error**.
+> 
+> **Rationale**: KubeVirt requires `request == limit` for dedicated CPU placement (CPU pinning).
+> If `request < limit` (overcommit enabled) with `dedicatedCpuPlacement: true`, the Pod will fail to start.
+> This is not just a performance risk—it's a **guaranteed failure**. Therefore, it must be blocked.
+
+| Condition | Level | Behavior |
+|-----------|-------|----------|
+| Overcommit in prod environment | **WARNING** (Yellow) | Advisory only, Admin takes responsibility |
+| Overcommit + Dedicated CPU | **ERROR** (Red) | **Blocking** - Cannot save/approve configuration |
+
+```go
+// Updated validation logic
+func ValidateInstanceSizeConfig(config *InstanceSizeConfig) error {
+    hasOvercommit := config.CPURequest != config.CPULimit || config.MemRequest != config.MemLimit
+    hasDedicatedCPU := config.SpecOverrides["spec.template.spec.domain.cpu.dedicatedCpuPlacement"] == true
+    
+    // ERROR: This combination will cause KubeVirt Pod to fail
+    if hasOvercommit && hasDedicatedCPU {
+        return &ValidationError{
+            Level:   "ERROR",  // RED, BLOCKING
+            Field:   "dedicated_cpu",
+            Message: "INCOMPATIBLE: Dedicated CPU Placement requires request == limit. " +
+                     "Disable overcommit or uncheck dedicated CPU placement.",
+        }
+    }
+    
+    return nil  // No blocking errors
+}
+```
 
 **Warning Types** (Yellow warning, NOT blocking):
 
@@ -907,6 +1031,258 @@ GET /api/v1/mask                            # Get Mask configuration
 
 ---
 
+### InstanceSize Validation Strategy (Added 2026-01-26 per Review Feedback)
+
+> **Design Decision**: Adopt a **hybrid validation strategy** that combines local Schema validation with optional dry-run against target clusters.
+>
+> **Rationale**: 
+> - Local validation provides **immediate feedback** during InstanceSize creation
+> - KubeVirt versions may differ across managed clusters
+> - Pre-caching all KubeVirt Schema versions ensures offline validation capability
+
+#### Versioned Schema Cache
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    KubeVirt Schema Version Cache                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  📦 Schema Repository (embedded in application or fetched at startup):      │
+│                                                                              │
+│  schemas/                                                                    │
+│  ├── kubevirt-v1.2.x.json   (KubeVirt 1.2.x OpenAPI Schema)                  │
+│  ├── kubevirt-v1.3.x.json   (KubeVirt 1.3.x OpenAPI Schema)                  │
+│  ├── kubevirt-v1.4.x.json   (KubeVirt 1.4.x OpenAPI Schema)                  │
+│  └── kubevirt-v1.5.x.json   (KubeVirt 1.5.x OpenAPI Schema)                  │
+│                                                                              │
+│  💡 Schema files extracted from KubeVirt CRD OpenAPI definitions             │
+│  💡 Minor version granularity (1.5.x) is sufficient for field compatibility  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Validation Flow
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  InstanceSize Validation Pipeline                                             │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│  Admin creates/edits InstanceSize                                             │
+│                  │                                                            │
+│                  ▼                                                            │
+│  ┌─────────────────────────────────────────────────────────────────────────┐  │
+│  │  Stage 1: Local Schema Validation (Mandatory, Fast)                     │  │
+│  │  ───────────────────────────────────────────────────────────            │  │
+│  │  • Validate JSON structure against KubeVirt Schema                      │  │
+│  │  • Check field types, constraints, enum values                          │  │
+│  │  • Catch typos immediately (e.g., "dedicatdCpu" → ERROR)                │  │
+│  │                                                                         │  │
+│  │  Schema Version Selection:                                              │  │
+│  │  ┌─────────────────────────────────────────────────────────────────┐    │  │
+│  │  │  if (admin has NOT specified target cluster):                    │    │  │
+│  │  │      Use latest Schema version (most permissive)                 │    │  │
+│  │  │  else:                                                           │    │  │
+│  │  │      cluster := GetCluster(targetClusterID)                      │    │  │
+│  │  │      Use Schema matching cluster.KubeVirtVersion (e.g., 1.5.x)   │    │  │
+│  │  └─────────────────────────────────────────────────────────────────┘    │  │
+│  │                                                                         │  │
+│  │  ✅ PASS → Continue to Stage 2                                         │  │
+│  │  ❌ FAIL → Return validation errors immediately                        │  │
+│  └─────────────────────────────────────────────────────────────────────────┘  │
+│                  │                                                            │
+│                  ▼                                                            │
+│  ┌─────────────────────────────────────────────────────────────────────────┐  │
+│  │  Stage 2: Save to Database                                              │  │
+│  │  ───────────────────────────────────────────────────                    │  │
+│  │  • Store validated InstanceSize                                         │  │
+│  │  • Extract indexed fields for Hybrid Model (CPU, Memory, GPU, etc.)     │  │
+│  └─────────────────────────────────────────────────────────────────────────┘  │
+│                  │                                                            │
+│                  ▼                                                            │
+│  ┌─────────────────────────────────────────────────────────────────────────┐  │
+│  │  Stage 3: Optional Dry-Run Test (Admin-Initiated)                       │  │
+│  │  ───────────────────────────────────────────────────                    │  │
+│  │  Admin clicks [Test Configuration] button                               │  │
+│  │  ┌─────────────────────────────────────────────────────────────────┐    │  │
+│  │  │  Select Target Cluster: [cluster-a ▼]                            │    │  │
+│  │  │                                                                  │    │  │
+│  │  │  [Run Dry-Run Test]                                              │    │  │
+│  │  └─────────────────────────────────────────────────────────────────┘    │  │
+│  │                                                                         │  │
+│  │  System sends dry-run request to target cluster's KubeVirt API:         │  │
+│  │  kubectl apply --dry-run=server -f <rendered-vm-spec.yaml>              │  │
+│  │                                                                         │  │
+│  │  ✅ PASS → "Configuration valid for cluster-a (KubeVirt v1.5.2)"        │  │
+│  │  ❌ FAIL → Show KubeVirt validation errors from cluster                 │  │
+│  └─────────────────────────────────────────────────────────────────────────┘  │
+│                                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Implementation Notes
+
+```go
+// SchemaValidator provides version-aware KubeVirt schema validation
+type SchemaValidator struct {
+    schemas map[string]*jsonschema.Schema  // "1.5.x" → Schema
+}
+
+// LoadSchemas loads all KubeVirt schema versions at startup
+func (v *SchemaValidator) LoadSchemas(schemaDir string) error {
+    files, _ := filepath.Glob(filepath.Join(schemaDir, "kubevirt-v*.json"))
+    for _, file := range files {
+        version := extractVersion(file)  // "v1.5.x" → "1.5.x"
+        schema, err := jsonschema.CompileString(file, string(readFile(file)))
+        if err != nil {
+            return fmt.Errorf("failed to compile schema %s: %w", file, err)
+        }
+        v.schemas[version] = schema
+    }
+    return nil
+}
+
+// Validate validates spec_overrides against the appropriate schema version
+func (v *SchemaValidator) Validate(specOverrides map[string]interface{}, kubevirtVersion string) error {
+    // Select schema based on minor version (1.5.2 → 1.5.x)
+    minorVersion := toMinorVersion(kubevirtVersion)  // "1.5.2" → "1.5.x"
+    schema, ok := v.schemas[minorVersion]
+    if !ok {
+        schema = v.schemas["latest"]  // Fallback to latest
+    }
+    
+    return schema.Validate(specOverrides)
+}
+```
+
+#### Schema Version Synchronization
+
+Schema versions are synchronized with cluster capabilities during:
+
+1. **Cluster Registration**: Detect KubeVirt version, select matching Schema
+2. **Periodic Health Check**: Verify KubeVirt version, update if changed
+3. **Application Startup**: Pre-load all known Schema versions
+
+| KubeVirt Version | Schema File | Notes |
+|------------------|-------------|-------|
+| 1.2.x | kubevirt-v1.2.x.json | Baseline |
+| 1.3.x | kubevirt-v1.3.x.json | Added `spec.instancetype` |
+| 1.4.x | kubevirt-v1.4.x.json | Added `spec.preference` |
+| 1.5.x | kubevirt-v1.5.x.json | Current production |
+
+---
+
+### InstanceSize Immutability (Snapshot Pattern) (Added 2026-01-26 per Review Feedback)
+
+> **Design Decision**: VMs **snapshot** InstanceSize configuration at creation time.
+> 
+> **Rationale**: Modifying an InstanceSize definition should NOT affect existing VMs.
+> This follows the Kubernetes CRD best practice of treating configuration as immutable-per-instance.
+
+#### Snapshot Behavior
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  InstanceSize Immutability Model                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│  Timeline:                                                                    │
+│  ─────────────────────────────────────────────────────────────────────────    │
+│                                                                               │
+│  T1: Admin creates InstanceSize "medium" (4 vCPU, 8GB)                        │
+│      │                                                                        │
+│  T2: │ User creates VM-A using "medium"                                       │
+│      │   → ApprovalTicket snapshots "medium" config at T2                     │
+│      │   → VM-A stores instance_size_snapshot in approval record              │
+│      │                                                                        │
+│  T3: │ Admin modifies InstanceSize "medium" (4 vCPU → 8 vCPU, 8GB → 16GB)     │
+│      │   → Only affects NEW VMs created after T3                              │
+│      │   → VM-A remains unchanged (4 vCPU, 8GB)                               │
+│      │                                                                        │
+│  T4: │ User creates VM-B using "medium"                                       │
+│      │   → ApprovalTicket snapshots "medium" config at T4                     │
+│      │   → VM-B gets new spec (8 vCPU, 16GB)                                  │
+│                                                                               │
+│  Result:                                                                      │
+│  ┌───────────────────────────────────────────────────────────────────────┐    │
+│  │  VM-A: 4 vCPU, 8GB (snapshot from T2)                                  │    │
+│  │  VM-B: 8 vCPU, 16GB (snapshot from T4)                                 │    │
+│  │                                                                        │    │
+│  │  Both VMs reference "medium" InstanceSize, but with different configs  │    │
+│  └───────────────────────────────────────────────────────────────────────┘    │
+│                                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Database Schema
+
+```go
+// ApprovalTicket stores complete configuration snapshot at approval time
+type ApprovalTicket struct {
+    ID                    string                 `json:"id"`
+    VMRequestID           string                 `json:"vm_request_id"`
+    InstanceSizeID        string                 `json:"instance_size_id"`        // Reference to current InstanceSize
+    InstanceSizeSnapshot  map[string]interface{} `json:"instance_size_snapshot"`  // SNAPSHOT at approval time
+    TemplateID            string                 `json:"template_id"`
+    TemplateSnapshot      map[string]interface{} `json:"template_snapshot"`       // SNAPSHOT at approval time
+    // ... other fields
+}
+```
+
+```sql
+-- ApprovalTicket table with snapshots
+CREATE TABLE approval_tickets (
+    id                     UUID PRIMARY KEY,
+    vm_request_id          UUID NOT NULL REFERENCES vm_requests(id),
+    instance_size_id       UUID NOT NULL REFERENCES instance_sizes(id),
+    instance_size_snapshot JSONB NOT NULL,  -- Complete config at approval time
+    template_id            UUID NOT NULL REFERENCES templates(id),
+    template_snapshot      JSONB NOT NULL,  -- Complete config at approval time
+    -- ...
+);
+
+COMMENT ON COLUMN approval_tickets.instance_size_snapshot IS 
+    'Immutable snapshot of InstanceSize at approval time. Changes to InstanceSize do NOT affect this VM.';
+```
+
+#### Benefits
+
+| Aspect | Without Snapshot | With Snapshot |
+|--------|-----------------|---------------|
+| **Admin modifies InstanceSize** | All existing VMs affected (disaster risk) | Only new VMs affected |
+| **Troubleshooting** | "What was the config when this VM was created?" - Unknown | Stored in `instance_size_snapshot` |
+| **Rollout control** | Changes propagate immediately | Changes only apply to new requests |
+| **Audit compliance** | Configuration drift over time | Point-in-time configuration preserved |
+
+---
+
+### Future Work (Added 2026-01-26)
+
+The following features are identified for future versions but are **out of scope** for ADR-0018:
+
+#### 1. Multi-Architecture Support (x86/ARM64)
+
+> **Status**: Future RFC
+> 
+> **Problem**: Mixed-architecture clusters (x86 + ARM64 nodes) require architecture-aware scheduling.
+> 
+> **Proposed Solution**:
+> - Add `architecture` field to InstanceSize: `"x86_64"` | `"aarch64"` | `"any"`
+> - Auto-detect node architectures during cluster capability scanning
+> - Add architecture filter to cluster capability matching logic
+
+#### 2. ResourceQuota Integration
+
+> **Status**: Intentionally Out of Scope
+> 
+> **Rationale**: Per ADR-0015 §9, Kubernetes ResourceQuota management is the responsibility of K8s administrators, not the Shepherd platform.
+> 
+> **Platform Behavior**:
+> - If VM creation fails due to ResourceQuota limits, the error is propagated from KubeVirt
+> - Platform does NOT attempt to pre-validate against ResourceQuota
+
+---
+
 ## References
 
 - [KubeVirt API Reference](https://kubevirt.io/api-reference/)
@@ -920,6 +1296,11 @@ GET /api/v1/mask                            # Get Mask configuration
 
 | Date | Change |
 |------|--------|
+| 2026-01-26 | **Review Feedback**: Upgraded Dedicated CPU + Overcommit from WARNING to **ERROR** (blocking) per review feedback |
+| 2026-01-26 | **Review Feedback**: Added InstanceSize Validation Strategy section - hybrid validation with versioned Schema cache + optional dry-run |
+| 2026-01-26 | **Review Feedback**: Added InstanceSize Immutability (Snapshot Pattern) section - VMs snapshot config at approval time |
+| 2026-01-26 | **Review Feedback**: Added Future Work section (Multi-Architecture, ResourceQuota scope clarification) |
+| 2026-01-26 | **Review Feedback**: Changed Backend Storage from "Dumb" to "Hybrid Model" - core scheduling fields in indexed columns, extension fields in JSONB |
 | 2026-01-26 | Updated: Deprecated Decisions table now includes **Source ADR/Document** column for traceability |
 | 2026-01-26 | Updated: Documents Requiring Updates section now follows **ADR Immutability Principle** - append-only amendments for accepted ADRs |
 | 2026-01-26 | Added: Pre-written "Amendments by Subsequent ADRs" blocks for ADR-0015 and ADR-0014 (to be appended upon ADR-0018 acceptance) |
