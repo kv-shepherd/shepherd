@@ -4,6 +4,8 @@
 // 1. config.yaml file (optional)
 // 2. Environment variables (KUBEVIRT_SHEPHERD_ prefix)
 // 3. Default values
+//
+// Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/config
 package config
 
 import (
