@@ -2,6 +2,8 @@
 //
 // Coding Standard (Required): Naked goroutines are forbidden.
 // All concurrency must go through Worker Pool.
+//
+// Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/pkg/worker
 package worker
 
 import (

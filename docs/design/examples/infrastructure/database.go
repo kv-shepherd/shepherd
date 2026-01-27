@@ -2,6 +2,8 @@
 //
 // ADR-0012: Uses shared pgxpool for Ent, River, and sqlc.
 // This ensures atomic transactions across all three components.
+//
+// Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/infrastructure
 package infrastructure
 
 import (
