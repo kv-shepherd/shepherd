@@ -45,7 +45,7 @@ The following decisions from earlier ADRs and drafts are **DEPRECATED** and shou
 | Responsibility | Platform Scope | NOT Platform Scope |
 |----------------|----------------|-------------------|
 | **VM Initialization** | Provide one-time password for first login | SSH key management, bastion integration |
-| **Namespace** | Optional creation helper | K8s RBAC, ResourceQuota management |
+| **Namespace** | Optional creation helper (see [ADR-0017 §JIT](./ADR-0017-vm-request-flow-clarification.md)) | K8s RBAC, ResourceQuota management |
 | **Hardware Capabilities** | Configured in InstanceSize | ~~Configured in Template~~ |
 | **Cluster Matching** | Environment type matching (test→test, prod→prod) | Cross-environment scheduling |
 
@@ -177,25 +177,34 @@ The following decisions from earlier ADRs and drafts are **DEPRECATED** and shou
 
 **Built-in Role Seeding Logic**:
 
+> **Note**: Per [ADR-0003](./ADR-0003-ent-adoption.md), all database operations MUST use Ent ORM.
+
 ```go
-// On application startup
-func SeedBuiltinRoles(ctx context.Context, db *sql.DB) error {
-    builtinRoles := []Role{
-        {ID: "platform-admin", Name: "PlatformAdmin", Permissions: []string{"*:*"}, IsBuiltin: true},
-        {ID: "system-admin", Name: "SystemAdmin", Permissions: []string{"system:*", "service:*", "vm:*"}, IsBuiltin: true},
-        {ID: "approver", Name: "Approver", Permissions: []string{"approval:*", "vm:read"}, IsBuiltin: true},
-        {ID: "operator", Name: "Operator", Permissions: []string{"vm:operate"}, IsBuiltin: true},
-        {ID: "viewer", Name: "Viewer", Permissions: []string{"*:read"}, IsBuiltin: true},
+// On application startup (ADR-0003 compliant: uses Ent ORM)
+func SeedBuiltinRoles(ctx context.Context, client *ent.Client) error {
+    builtinRoles := []struct {
+        ID          string
+        Name        string
+        Permissions []string
+    }{
+        {"platform-admin", "PlatformAdmin", []string{"*:*"}},
+        {"system-admin", "SystemAdmin", []string{"system:*", "service:*", "vm:*"}},
+        {"approver", "Approver", []string{"approval:*", "vm:read"}},
+        {"operator", "Operator", []string{"vm:operate"}},
+        {"viewer", "Viewer", []string{"*:read"}},
     }
     
     for _, role := range builtinRoles {
-        _, err := db.ExecContext(ctx, `
-            INSERT INTO roles (id, name, permissions, is_builtin, created_at)
-            VALUES ($1, $2, $3, $4, NOW())
-            ON CONFLICT (id) DO NOTHING  -- Skip if exists, don't overwrite
-        `, role.ID, role.Name, role.Permissions, role.IsBuiltin)
+        err := client.Role.Create().
+            SetID(role.ID).
+            SetName(role.Name).
+            SetPermissions(role.Permissions).
+            SetIsBuiltin(true).
+            OnConflictColumns(role.FieldID).  // Upsert: skip if exists
+            DoNothing().
+            Exec(ctx)
         if err != nil {
-            return err
+            return fmt.Errorf("seed role %s: %w", role.ID, err)
         }
     }
     return nil
@@ -1740,6 +1749,9 @@ The following features are identified for future versions but are **out of scope
 
 | Date | Change |
 |------|--------|
+| 2026-01-27 | **ADR Compliance**: Updated Built-in Role Seeding example to use Ent ORM per [ADR-0003](./ADR-0003-ent-adoption.md) (was direct SQL) |
+| 2026-01-27 | **Cross-Reference**: Added [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) reference for Namespace JIT creation in Responsibility Boundary table |
+| 2026-01-27 | **ADR Compliance**: Added [ADR-0006](./ADR-0006-writes-via-river-queue.md) River Queue requirement for InstanceSize CRUD operations in Documents Requiring Updates |
 | 2026-01-27 | **Security Enhancement**: Added Direct SQL UPDATE prevention strategy - database triggers, CI pipeline checks, ORM context markers |
 | 2026-01-27 | **Reliability Enhancement**: Added Schema Bundling Strategy - pre-bundle common versions using Go `embed`, fallback to runtime fetch |
 | 2026-01-26 | **API Enhancement**: Added Dry-Run Validation endpoint design (`?dryRun=All` query parameter) following Kubernetes API conventions |
@@ -1903,6 +1915,12 @@ The following features are identified for future versions but are **out of scope
 | Approval Flow | Basic approval fields | **ADD**: Overcommit override fields in approval request |
 | Approval Warnings | Not exists | **ADD**: Production overcommit warning, Dedicated CPU conflict warning |
 | **NEW**: InstanceSize Management | Not exists | **ADD**: Admin InstanceSize CRUD operations |
+| **NEW**: River Queue Integration | Not exists | **ADD**: Per [ADR-0006](./ADR-0006-writes-via-river-queue.md), all InstanceSize write operations (Create, Update, Delete) MUST be executed via River Queue jobs |
+
+> **ADR-0006 Compliance Note**: InstanceSize CRUD operations involve configuration changes that require audit logging. All writes must go through River Queue to ensure:
+> - Audit log consistency
+> - Async processing for admin operations
+> - Retry logic for transient failures
 
 ---
 
