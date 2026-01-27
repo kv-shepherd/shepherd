@@ -325,3 +325,4 @@ const (
 - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md) - Domain Event Pattern
 - [ADR-0014](../../adr/ADR-0014-capability-detection.md) - Capability Detection
 - [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) - Governance Model V2 (Entity Decoupling, RBAC)
+- [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Go Module Vanity Import

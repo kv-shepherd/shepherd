@@ -2,6 +2,8 @@
 //
 // Anti-Corruption Layer: These types are decoupled from K8s types.
 // Provider mapper translates between K8s types and domain types.
+//
+// Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/domain
 package domain
 
 import "time"

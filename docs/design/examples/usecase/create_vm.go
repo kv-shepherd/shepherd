@@ -3,6 +3,11 @@
 // ADR-0012: Demonstrates hybrid atomic transaction pattern.
 // Uses pgx transaction with Ent, sqlc, and River atomically.
 //
+// ADR-0015 §3: No SystemID stored in VM or request.
+// System is resolved via ServiceID → Service.Edges.System.
+//
+// Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/usecase
+//
 // METHOD SELECTION GUIDE:
 //
 //	Scenario                              Method
@@ -64,15 +69,21 @@ func NewCreateVMAtomicUseCase(
 }
 
 // CreateVMRequest contains the VM creation request data.
+//
+// NOTE (ADR-0015 §3): No SystemID field.
+// System is resolved via ServiceID → Service.Edges.System.
+//
+// NOTE (ADR-0015 §4): No Name field.
+// Name is platform-generated: {namespace}-{system}-{service}-{index}
 type CreateVMRequest struct {
-	SystemID    string
-	ServiceID   string
-	TemplateID  string
-	Name        string
-	CPU         int
-	MemoryMB    int
-	Reason      string
-	RequestedBy string
+	ServiceID   string // Required: parent service
+	TemplateID  string // Required: template to use
+	Namespace   string // Required: target K8s namespace
+	ClusterID   string // Required: target cluster
+	CPU         int    // Optional: override template default
+	MemoryMB    int    // Optional: override template default
+	Reason      string // Required: business reason for request
+	RequestedBy string // Required: user who submitted the request
 }
 
 // CreateVMResult contains the VM creation result.
@@ -93,11 +104,13 @@ func (uc *CreateVMAtomicUseCase) Execute(ctx context.Context, req CreateVMReques
 	ticketID := uuid.New().String()
 
 	// Create domain event payload
+	// NOTE (ADR-0015 §3): No SystemID - resolved via ServiceID
+	// NOTE (ADR-0015 §4): No Name - platform-generated after approval
 	payload := domain.VMCreationPayload{
-		SystemID:   req.SystemID,
 		ServiceID:  req.ServiceID,
 		TemplateID: req.TemplateID,
-		Name:       req.Name,
+		Namespace:  req.Namespace,
+		ClusterID:  req.ClusterID,
 		CPU:        req.CPU,
 		MemoryMB:   req.MemoryMB,
 		Reason:     req.Reason,
@@ -112,11 +125,12 @@ func (uc *CreateVMAtomicUseCase) Execute(ctx context.Context, req CreateVMReques
 
 	// Step 1: Write DomainEvent via sqlc (within tx)
 	sqlcTx := uc.sqlcQueries.WithTx(tx)
+	// AggregateID uses ServiceID since VM Name is generated after approval
 	err = sqlcTx.CreateDomainEvent(ctx, sqlc.CreateDomainEventParams{
 		EventID:       eventID,
 		EventType:     "VM_CREATION_REQUESTED",
 		AggregateType: "VM",
-		AggregateID:   req.Name,
+		AggregateID:   req.ServiceID + "-" + eventID[:8], // Temporary ID, actual VM name assigned later
 		Payload:       payload.ToJSON(),
 		Status:        "PENDING",
 		CreatedBy:     req.RequestedBy,
@@ -220,11 +234,12 @@ func (uc *CreateVMAtomicUseCase) AutoApproveAndEnqueue(ctx context.Context, req 
 	eventID := uuid.New().String()
 	ticketID := uuid.New().String()
 
+	// NOTE (ADR-0015 §3, §4): No SystemID, no Name in payload
 	payload := domain.VMCreationPayload{
-		SystemID:   req.SystemID,
 		ServiceID:  req.ServiceID,
 		TemplateID: req.TemplateID,
-		Name:       req.Name,
+		Namespace:  req.Namespace,
+		ClusterID:  req.ClusterID,
 		CPU:        req.CPU,
 		MemoryMB:   req.MemoryMB,
 		Reason:     req.Reason,
@@ -240,11 +255,12 @@ func (uc *CreateVMAtomicUseCase) AutoApproveAndEnqueue(ctx context.Context, req 
 	sqlcTx := uc.sqlcQueries.WithTx(tx)
 
 	// Step 1: Create DomainEvent (status = PROCESSING for auto-approve)
+	// AggregateID uses ServiceID since VM Name is generated after approval
 	err = sqlcTx.CreateDomainEvent(ctx, sqlc.CreateDomainEventParams{
 		EventID:       eventID,
 		EventType:     "VM_CREATION_REQUESTED",
 		AggregateType: "VM",
-		AggregateID:   req.Name,
+		AggregateID:   req.ServiceID + "-" + eventID[:8], // Temporary ID, actual VM name assigned later
 		Payload:       payload.ToJSON(),
 		Status:        "PROCESSING", // Skip PENDING for auto-approve
 		CreatedBy:     req.RequestedBy,

@@ -488,3 +488,4 @@ If >50% of resources detected as ghosts, halt and alert.
 - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md) - Domain Event
 - [ADR-0011](../../adr/ADR-0011-ssa-apply-strategy.md) - SSA Apply
 - [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) - Governance Model V2 (Environment, Approval Policies, VNC, Delete Confirmation)
+- [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Go Module Vanity Import
