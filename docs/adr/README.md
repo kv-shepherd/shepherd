@@ -27,6 +27,7 @@
 | [ADR-0015](./ADR-0015-governance-model-v2.md) | Governance Model V2 | **Accepted** ² | - |
 | [ADR-0016](./ADR-0016-go-module-vanity-import.md) | Go Module Vanity Import | Accepted | - |
 | [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) | VM Request and Approval Flow Clarification | **Proposed** | - |
+| [ADR-0018](./ADR-0018-instance-size-abstraction.md) | Instance Size Abstraction Layer | **Proposed** | - |
 
 > ⚠️ **¹ ADR-0009 Partial Supersession Notice**:
 >
@@ -43,6 +44,7 @@
 > | Section | Status | Action |
 > |---------|--------|--------|
 > | §4 VMCreateRequest.ClusterID | ❌ **Incorrect** | See [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) for correct definition |
+> | §5 Template.required_features/required_hardware | ❌ **Moved** | See [ADR-0018](./ADR-0018-instance-size-abstraction.md) - capabilities now in InstanceSize |
 > | All other sections | ✅ **Valid** | Must read and follow |
 
 ---
@@ -77,6 +79,11 @@ For newcomers, we recommend reading ADRs in this order:
 7. **ADR-0011** (SSA Apply) → K8s resource submission
 8. **ADR-0014** (Capability Detection) → Multi-cluster compatibility
 
+### Governance Layer
+9. **ADR-0015** (Governance Model V2) → Platform RBAC, approval workflows
+10. **ADR-0017** (VM Request Flow) → Clarifies user vs admin responsibilities
+11. **ADR-0018** (Instance Size Abstraction) → Schema-driven VM sizing
+
 ### Historical Context
 - **ADR-0002** → Why we moved from Git storage to DB (Superseded by ADR-0007)
 - **ADR-0009** → DomainEvent pattern concepts (still valid), transaction section superseded by ADR-0012
@@ -86,42 +93,40 @@ For newcomers, we recommend reading ADRs in this order:
 
 ## Creating New ADRs
 
-Use the following template for new ADRs:
+> **📋 Template**: Use the official [TEMPLATE.md](./TEMPLATE.md) file for new ADRs.
 
-```markdown
-# ADR-NNNN: Title
+### Best Practices (CNCF Guidelines)
 
-> **Status**: Proposed  
-> **Date**: YYYY-MM-DD  
-> **Supersedes**: ADR-XXXX (if applicable)
+| Guideline | Description |
+|-----------|-------------|
+| **Single Atomic Decision** | Each ADR should address ONE specific architectural decision |
+| **Target Length** | Aim for 200-500 lines; consider splitting if exceeding 800 lines |
+| **Concise Context** | Focus on why the decision is needed, not implementation details |
+| **Clear Consequences** | Document both positive and negative outcomes |
+| **Immutability** | Once Accepted, content should remain unchanged; use Amendment blocks |
+| **48-Hour Review** | All Proposed ADRs require minimum 48-hour public comment period |
 
-## Context
+### Quick Start
 
-[Describe the problem and constraints]
+1. Copy `TEMPLATE.md` to `ADR-XXXX-your-title.md`
+2. Replace `XXXX` with the next available number
+3. Fill in all sections, following the guidelines in the template
+4. Submit for review with a GitHub Issue
+5. After 48-hour review period, update status to `Accepted` or `Rejected`
 
-## Decision
+### Amending Accepted ADRs
 
-[State the decision clearly]
+Accepted ADRs are **immutable**. To change a decision:
 
-## Consequences
-
-### Positive
-- [Benefit 1]
-- [Benefit 2]
-
-### Negative
-- [Drawback 1]
-- [Mitigation strategy]
-
-## References
-
-- [Related document](link)
-```
+1. **Minor Clarification**: Create a new ADR with `Amends: ADR-XXXX §X`
+2. **Major Change**: Create a new ADR with `Supersedes: ADR-XXXX`
+3. **Append Only**: Add an "Amendments by Subsequent ADRs" block at the END of the original ADR
 
 ---
 
 ## Related Resources
 
+- [TEMPLATE.md](./TEMPLATE.md) - Official ADR template with guidelines
 - [Glossary](./GLOSSARY.md) - Technical terminology
 - [RFC Directory](../rfc/) - Future feature proposals
 - [Core Go Project](../design/) - Implementation details
