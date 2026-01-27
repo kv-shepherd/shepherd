@@ -1066,7 +1066,8 @@ func (InstanceSize) Hooks() []ent.Hook {
                             is.SetCPUCores(extractInt(spec, "spec.template.spec.domain.cpu.cores"))
                             is.SetMemory(extractString(spec, "spec.template.spec.domain.resources.requests.memory"))
                             is.SetRequiresGPU(hasPath(spec, "spec.template.spec.domain.devices.gpus"))
-                            is.SetRequiresHugepages(hasPath(spec, "spec.template.spec.domain.memory.hugepages"))
+                            // Extract hugepages size: "2Mi", "1Gi", or nil if not configured
+                            is.SetHugepagesSize(extractNillableString(spec, "spec.template.spec.domain.memory.hugepages.pageSize"))
                             is.SetRequiresSRIOV(hasPath(spec, "spec.template.spec.domain.devices.interfaces[*].sriov"))
                         }
                     }
@@ -1764,6 +1765,7 @@ The following features are identified for future versions but are **out of scope
 | 2026-01-27 | **Internal Consistency Fix**: Separated Warning Types and Error Types tables - moved "Dedicated CPU + Overcommit" from Warning to Error table per 2026-01-26 decision |
 | 2026-01-27 | **Schema Fix**: Added missing `requires_hugepages` boolean field to InstanceSize schema (was used in Hooks but not defined) |
 | 2026-01-27 | **Principle Evolution**: Renamed \"Dumb Backend\" to \"Hybrid Model\" across all occurrences (§Core Design Principles, §4, §Consequences, §Appendix) with evolution notes |
+| 2026-01-27 | **Schema Consistency Fix**: ORM Hook now uses `SetHugepagesSize(extractNillableString(...))` instead of `SetRequiresHugepages(hasPath(...))` to match Schema definition (L428 defines `hugepages_size` as string, not bool). Added `extractNillableString()` helper. |
 | 2026-01-27 | **ADR Compliance**: Updated Built-in Role Seeding example to use Ent ORM per [ADR-0003](./ADR-0003-ent-adoption.md) (was direct SQL) |
 | 2026-01-27 | **Cross-Reference**: Added [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) reference for Namespace JIT creation in Responsibility Boundary table |
 | 2026-01-27 | **ADR Compliance**: Added [ADR-0006](./ADR-0006-writes-via-river-queue.md) River Queue requirement for InstanceSize CRUD operations in Documents Requiring Updates |
@@ -2113,7 +2115,7 @@ PUT  /api/v1/admin/instance-sizes/{name}?dryRun=All
 ```
 ent/schema/instance_size.go     # Schema with Hooks()
 internal/pkg/jsonpath/          # JSON path extraction utilities
-  ├── extractor.go              # extractInt(), extractString(), hasPath()
+  ├── extractor.go              # extractInt(), extractString(), extractNillableString(), hasPath()
   └── extractor_test.go         # Unit tests
 ```
 
