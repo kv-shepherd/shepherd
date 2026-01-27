@@ -1069,8 +1069,89 @@ func (InstanceSize) Hooks() []ent.Hook {
 
 **Mitigation for Direct SQL**:
 
+> **Design Decision (Added 2026-01-27)**: Direct SQL UPDATE that bypasses ORM Hooks MUST be prevented at multiple layers during development.
+
+**Layer 1: Database Permission Restriction (Production)**
+
 ```sql
--- One-time sync script (for migrations or manual corrections)
+-- Create application user with restricted permissions
+CREATE ROLE shepherd_app WITH LOGIN PASSWORD 'xxx';
+
+-- Grant SELECT, INSERT, UPDATE, DELETE only through application
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO shepherd_app;
+
+-- REVOKE direct UPDATE on indexed columns (only ORM Hooks should set these)
+-- Note: PostgreSQL cannot restrict specific columns, so we use triggers instead
+CREATE OR REPLACE FUNCTION prevent_direct_indexed_field_update()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Check if update is from application (has app context)
+    IF current_setting('shepherd.via_orm', true) IS NULL THEN
+        -- Allow only if ALL indexed fields match extracted values from spec_overrides
+        IF NEW.cpu_cores != (NEW.spec_overrides->'spec'->'template'->'spec'->'domain'->'cpu'->>'cores')::int
+           OR NEW.memory != NEW.spec_overrides->'spec'->'template'->'spec'->'domain'->'resources'->'requests'->>'memory'
+        THEN
+            RAISE EXCEPTION 'Direct UPDATE of indexed fields is prohibited. Use ORM API instead.';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_prevent_direct_indexed_update
+BEFORE UPDATE ON instance_sizes
+FOR EACH ROW EXECUTE FUNCTION prevent_direct_indexed_field_update();
+```
+
+**Layer 2: CI Pipeline Check (Development)**
+
+```yaml
+# .github/workflows/lint.yml
+- name: Check for direct SQL UPDATE on indexed tables
+  run: |
+    # Scan for direct UPDATE statements on protected tables
+    PROTECTED_TABLES="instance_sizes"
+    
+    # Check migration files and SQL scripts
+    if grep -rn "UPDATE.*instance_sizes.*SET.*\(cpu_cores\|memory\|requires_gpu\)" \
+        --include="*.sql" --include="*.go" \
+        --exclude-dir=".git" --exclude="*_test.go" .; then
+      echo "❌ ERROR: Direct UPDATE on indexed columns detected!"
+      echo "Use ORM API or include sync script in migrations."
+      exit 1
+    fi
+    
+    echo "✅ No prohibited direct SQL UPDATE found"
+```
+
+**Layer 3: ORM Context Marker**
+
+```go
+// When using ORM, set context marker for trigger bypass (authorized operations only)
+func (r *InstanceSizeRepository) UpdateWithContext(ctx context.Context, id string, input UpdateInput) error {
+    // Set PostgreSQL session variable to indicate ORM operation
+    _, err := r.db.ExecContext(ctx, "SET LOCAL shepherd.via_orm = 'true'")
+    if err != nil {
+        return err
+    }
+    
+    return r.client.InstanceSize.UpdateOneID(id).
+        SetSpecOverrides(input.SpecOverrides).
+        // Indexed fields auto-set by ORM Hook
+        Exec(ctx)
+}
+```
+
+**Allowed Exception: Migration Scripts**
+
+```sql
+-- Migration scripts that need to sync existing records MUST include this comment
+-- and be reviewed by at least 2 approvers
+-- SHEPHERD_MIGRATION: Direct SQL UPDATE for data migration
+-- Approved by: @reviewer1, @reviewer2
+
+SET LOCAL shepherd.via_orm = 'migration';
+
 UPDATE instance_sizes SET
     cpu_cores = (spec_overrides->'spec'->'template'->'spec'->'domain'->'cpu'->>'cores')::int,
     memory = spec_overrides->'spec'->'template'->'spec'->'domain'->'resources'->'requests'->>'memory',
@@ -1272,6 +1353,74 @@ Schema versions are synchronized with cluster capabilities during:
 | 1.3.x | kubevirt-v1.3.x.json | Added `spec.instancetype` |
 | 1.4.x | kubevirt-v1.4.x.json | Added `spec.preference` |
 | 1.5.x | kubevirt-v1.5.x.json | Current production |
+
+**Schema Bundling Strategy (Added 2026-01-27)**:
+
+> **Design Decision**: Common KubeVirt Schema versions MUST be pre-bundled with the application binary to ensure offline validation capability and reduce external dependency.
+
+| Strategy | Implementation | Purpose |
+|----------|----------------|---------|
+| **Pre-bundled Schemas** | Embed `schemas/*.json` using Go `embed` package | Offline validation, no network latency |
+| **Runtime Fetch** | Fetch from GitHub only for unknown versions | Support newer KubeVirt releases |
+| **Local Cache** | Cache fetched schemas to filesystem or database | Reduce repeat network requests |
+
+```go
+import "embed"
+
+//go:embed schemas/*.json
+var embeddedSchemas embed.FS
+
+func (c *SchemaCache) GetOrFetch(ctx context.Context, version string) (*jsonschema.Schema, error) {
+    minorVersion := toMinorVersion(version)  // "1.5.2" → "1.5.x"
+    
+    // Priority 1: Check in-memory cache
+    if cached, ok := c.memCache.Load(minorVersion); ok {
+        return cached.(*jsonschema.Schema), nil
+    }
+    
+    // Priority 2: Check embedded schemas (bundled at compile time)
+    if data, err := embeddedSchemas.ReadFile("schemas/kubevirt-v" + minorVersion + ".json"); err == nil {
+        schema, err := jsonschema.CompileString("", string(data))
+        if err == nil {
+            c.memCache.Store(minorVersion, schema)
+            return schema, nil
+        }
+    }
+    
+    // Priority 3: Check local filesystem cache
+    if schema, err := c.loadFromLocalCache(minorVersion); err == nil {
+        c.memCache.Store(minorVersion, schema)
+        return schema, nil
+    }
+    
+    // Priority 4: Fetch from remote (with timeout and retry)
+    schema, err := c.fetchFromRemote(ctx, version)
+    if err != nil {
+        return nil, fmt.Errorf("schema for KubeVirt %s not available: %w", version, err)
+    }
+    
+    // Cache to local filesystem for future use
+    c.saveToLocalCache(minorVersion, schema)
+    c.memCache.Store(minorVersion, schema)
+    
+    return schema, nil
+}
+```
+
+**Build-Time Schema Update**:
+
+```makefile
+# Makefile
+.PHONY: update-schemas
+update-schemas:
+	@echo "Fetching latest KubeVirt schemas..."
+	@for version in 1.2.0 1.3.0 1.4.0 1.5.0; do \
+		curl -sL "https://raw.githubusercontent.com/kubevirt/kubevirt/v$$version/api/openapi-spec/swagger.json" \
+		| jq '.definitions["v1.VirtualMachineSpec"]' \
+		> schemas/kubevirt-v$$(echo $$version | cut -d. -f1,2).x.json; \
+	done
+	@echo "✅ Schemas updated. Rebuild application to embed."
+```
 
 ---
 
@@ -1591,6 +1740,8 @@ The following features are identified for future versions but are **out of scope
 
 | Date | Change |
 |------|--------|
+| 2026-01-27 | **Security Enhancement**: Added Direct SQL UPDATE prevention strategy - database triggers, CI pipeline checks, ORM context markers |
+| 2026-01-27 | **Reliability Enhancement**: Added Schema Bundling Strategy - pre-bundle common versions using Go `embed`, fallback to runtime fetch |
 | 2026-01-26 | **API Enhancement**: Added Dry-Run Validation endpoint design (`?dryRun=All` query parameter) following Kubernetes API conventions |
 | 2026-01-26 | **Data Consistency**: Added Hybrid Model Data Consistency Strategy using ORM Hooks (Ent Mutation Hooks) |
 | 2026-01-26 | **Cross-Reference Review**: Clarified that ADR-0015 §4 (VMCreateRequest.ClusterID) is amended by [ADR-0017](./ADR-0017-vm-request-flow-clarification.md), not this ADR. ADR-0018 only amends §5 (Template Layered Design). |
