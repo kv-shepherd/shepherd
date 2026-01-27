@@ -71,12 +71,14 @@ Upon acceptance, perform the following updates (do not modify original ADR conte
 
 ### 1. Naming Policy (Most Conservative)
 
-**Policy**: All platform-managed logical names (System, Service, Namespace, VM name components) MUST follow RFC 1035-style label rules:
+**Policy**: All platform-managed logical names (System, Service, Namespace, VM name components) MUST follow RFC 1035-based label rules with additional conservative constraints:
 
 * lowercase letters, digits, and hyphen only (`a-z`, `0-9`, `-`)
 * MUST start with a letter (`a-z`)
 * MUST end with a letter or digit
-* MUST NOT contain consecutive hyphens (`--`)
+* MUST NOT contain consecutive hyphens (`--`) ※
+
+> ※ **Note**: The consecutive hyphen prohibition is an **additional conservative constraint** beyond RFC 1035. RFC 5891 reserves `--` at positions 3-4 for Punycode (e.g., `xn--`); this policy extends the restriction to all positions for simplicity and future-proofing.
 
 **Length Constraints**: See [ADR-0015 §16](./ADR-0015-governance-model-v2.md) for component length limits (System/Service/Namespace: max 15 characters each).
 
@@ -175,4 +177,5 @@ Upon acceptance, perform the following updates (do not modify original ADR conte
 
 | Date | Author | Change |
 |------|--------|--------|
+| 2026-01-27 | @jindyzhao | **Clarification**: RFC 1035 naming policy now explicitly notes that consecutive hyphen prohibition is an additional conservative constraint beyond RFC 1035, with RFC 5891 rationale |
 | 2026-01-27 | @jindyzhao | Initial draft |
