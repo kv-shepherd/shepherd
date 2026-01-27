@@ -28,6 +28,7 @@
 | [ADR-0016](./ADR-0016-go-module-vanity-import.md) | Go Module Vanity Import | Accepted | - |
 | [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) | VM Request and Approval Flow Clarification | **Proposed** | - |
 | [ADR-0018](./ADR-0018-instance-size-abstraction.md) | Instance Size Abstraction Layer | **Proposed** | - |
+| [ADR-0019](./ADR-0019-governance-security-baseline-controls.md) | Governance Security Baseline Controls | **Proposed** | - |
 
 > ⚠️ **¹ ADR-0009 Partial Supersession Notice**:
 >

@@ -192,6 +192,8 @@ This project follows the architecture decisions documented in:
 | [ADR-0012](../../adr/ADR-0012-hybrid-transaction.md) | Hybrid Transaction | Accepted |
 | [ADR-0013](../../adr/ADR-0013-manual-di.md) | Manual DI | Accepted |
 | [ADR-0014](../../adr/ADR-0014-capability-detection.md) | Capability Detection | Accepted |
+| [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) | Governance Model V2 | Accepted |
+| [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) | Go Module Vanity Import | Accepted |
 
 ---
 
@@ -217,10 +219,12 @@ Reference implementations are in the [examples/](./examples/) directory:
 | [infrastructure/database.go](./examples/infrastructure/database.go) | Shared connection pool | ADR-0012 |
 | [worker/pool.go](./examples/worker/pool.go) | Worker pool pattern | - |
 | [handlers/health.go](./examples/handlers/health.go) | Health check endpoints | - |
-| [domain/vm.go](./examples/domain/vm.go) | Domain models | - |
-| [domain/event.go](./examples/domain/event.go) | Domain event pattern | ADR-0009 |
+| [domain/vm.go](./examples/domain/vm.go) | Domain models | ADR-0015 §3-4 |
+| [domain/event.go](./examples/domain/event.go) | Domain event pattern | ADR-0009, ADR-0015 §6 |
 | [provider/interface.go](./examples/provider/interface.go) | Provider interfaces | ADR-0004 |
-| [usecase/create_vm.go](./examples/usecase/create_vm.go) | Atomic transaction | ADR-0012 |
+| [usecase/create_vm.go](./examples/usecase/create_vm.go) | Atomic transaction | ADR-0012, ADR-0015 §3 |
+
+> **Note (ADR-0016)**: All example code uses vanity import paths (`kv-shepherd.io/shepherd/...`).
 
 ---
 

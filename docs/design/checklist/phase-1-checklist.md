@@ -138,6 +138,12 @@
 - [ ] Context passing uses `context.Context`
 - [ ] Request ID middleware
 
+## Go Module Configuration (ADR-0016)
+
+- [ ] `go.mod` uses vanity import path: `kv-shepherd.io/shepherd`
+- [ ] All internal imports use vanity path: `kv-shepherd.io/shepherd/internal/...`
+- [ ] Vanity import server configured (for production deployment)
+
 ---
 
 ## Pre-Phase 2 Verification

@@ -311,3 +311,5 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, spec *domain.VMSpec) e
 - [ADR-0006](../../adr/ADR-0006-unified-async-model.md) - Unified Async Model
 - [ADR-0012](../../adr/ADR-0012-hybrid-transaction.md) - Hybrid Transaction
 - [ADR-0013](../../adr/ADR-0013-manual-di.md) - Manual DI
+- [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) - Governance Model V2 (Entity Decoupling)
+- [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Go Module Vanity Import

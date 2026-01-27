@@ -2,6 +2,11 @@
 //
 // ADR-0009: Domain Event Pattern (Claim Check, not Event Sourcing)
 // River Job only carries EventID, full payload stored in DomainEvent table.
+//
+// ADR-0015: Extended event types for governance operations.
+// Includes power operations, VNC access, batch operations, notifications.
+//
+// Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/domain
 package domain
 
 import (
@@ -13,11 +18,57 @@ import (
 type EventType string
 
 const (
+	// VM Creation Events
 	EventVMCreationRequested EventType = "VM_CREATION_REQUESTED"
-	EventVMDeletionRequested EventType = "VM_DELETION_REQUESTED"
-	EventVMModifyRequested   EventType = "VM_MODIFY_REQUESTED"
 	EventVMCreationCompleted EventType = "VM_CREATION_COMPLETED"
 	EventVMCreationFailed    EventType = "VM_CREATION_FAILED"
+
+	// VM Modification Events
+	EventVMModifyRequested  EventType = "VM_MODIFY_REQUESTED"
+	EventVMModifyCompleted  EventType = "VM_MODIFY_COMPLETED"
+	EventVMModifyFailed     EventType = "VM_MODIFY_FAILED"
+
+	// VM Deletion Events
+	EventVMDeletionRequested EventType = "VM_DELETION_REQUESTED"
+	EventVMDeletionCompleted EventType = "VM_DELETION_COMPLETED"
+	EventVMDeletionFailed    EventType = "VM_DELETION_FAILED"
+
+	// Power Operations (ADR-0015 §6)
+	EventVMStartRequested   EventType = "VM_START_REQUESTED"
+	EventVMStartCompleted   EventType = "VM_START_COMPLETED"
+	EventVMStartFailed      EventType = "VM_START_FAILED"
+	EventVMStopRequested    EventType = "VM_STOP_REQUESTED"
+	EventVMStopCompleted    EventType = "VM_STOP_COMPLETED"
+	EventVMStopFailed       EventType = "VM_STOP_FAILED"
+	EventVMRestartRequested EventType = "VM_RESTART_REQUESTED"
+	EventVMRestartCompleted EventType = "VM_RESTART_COMPLETED"
+	EventVMRestartFailed    EventType = "VM_RESTART_FAILED"
+
+	// VNC Console Events (ADR-0015 §18)
+	EventVNCAccessRequested EventType = "VNC_ACCESS_REQUESTED"
+	EventVNCAccessGranted   EventType = "VNC_ACCESS_GRANTED"
+	EventVNCAccessDenied    EventType = "VNC_ACCESS_DENIED"
+	EventVNCTokenRevoked    EventType = "VNC_TOKEN_REVOKED"
+
+	// Batch Operations (ADR-0015 §19)
+	EventBatchCreateRequested EventType = "BATCH_CREATE_REQUESTED"
+	EventBatchCreateCompleted EventType = "BATCH_CREATE_COMPLETED"
+	EventBatchCreateFailed    EventType = "BATCH_CREATE_FAILED"
+	EventBatchDeleteRequested EventType = "BATCH_DELETE_REQUESTED"
+	EventBatchDeleteCompleted EventType = "BATCH_DELETE_COMPLETED"
+	EventBatchDeleteFailed    EventType = "BATCH_DELETE_FAILED"
+
+	// Request Lifecycle Events (ADR-0015 §10)
+	EventRequestCancelled EventType = "REQUEST_CANCELLED"
+
+	// Notification Events (ADR-0015 §20)
+	EventNotificationSent EventType = "NOTIFICATION_SENT"
+
+	// System/Service Events (recorded, no approval required)
+	EventSystemCreated  EventType = "SYSTEM_CREATED"
+	EventSystemDeleted  EventType = "SYSTEM_DELETED"
+	EventServiceCreated EventType = "SERVICE_CREATED"
+	EventServiceDeleted EventType = "SERVICE_DELETED"
 )
 
 // EventStatus defines the status of a domain event.
@@ -50,15 +101,20 @@ type DomainEvent struct {
 }
 
 // VMCreationPayload is the payload for VM creation events.
+//
+// NOTE (ADR-0015 §3): No SystemID field.
+// System is always resolved via ServiceID → Service.Edges.System.
+// This ensures Single Source of Truth and prevents data inconsistency.
 type VMCreationPayload struct {
-	SystemID   string `json:"system_id"`
 	ServiceID  string `json:"service_id"`
 	TemplateID string `json:"template_id"`
-	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`  // Target namespace for the VM
+	ClusterID  string `json:"cluster_id"` // Target cluster ID
 	CPU        int    `json:"cpu"`
 	MemoryMB   int    `json:"memory_mb"`
 	DiskGB     int    `json:"disk_gb,omitempty"`
 	Reason     string `json:"reason"`
+	// NOTE: Name is platform-generated, not stored in payload (ADR-0015 §4)
 }
 
 // ToJSON converts payload to JSON bytes.
