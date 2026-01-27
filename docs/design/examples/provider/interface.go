@@ -2,6 +2,8 @@
 //
 // This is the Anti-Corruption Layer between the platform and KubeVirt.
 // All provider methods return domain types, not K8s types.
+//
+// Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/provider
 package provider
 
 import (
