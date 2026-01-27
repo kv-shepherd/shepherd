@@ -231,8 +231,10 @@ KubeVirt VirtualMachine API has hundreds of fields. Users need a simple way to c
 |-----------|-------------|
 | **Schema as Source of Truth** | KubeVirt official JSON Schema defines all field types, constraints, and enum options. We do NOT duplicate this in our code. |
 | **Mask Selects Paths** | Mask only specifies which JSON Schema paths to expose. It does NOT define field options or values. |
-| **Dumb Backend** | Backend stores `map[string]interface{}` and does NOT interpret field semantics (e.g., what is "GPU"). |
+| **Hybrid Model** | Core scheduling fields stored in indexed columns; `spec_overrides` JSONB stores remaining fields without semantic interpretation. See [§4. Backend Storage](#4-backend-storage-hybrid-model). |
 | **Schema-Driven UI** | Frontend reads JSON Schema + Mask to render appropriate UI components based on field types. |
+
+> **Evolution Note (2026-01-26)**: The original "Dumb Backend" principle was evolved to "Hybrid Model" to address scheduling query performance requirements while preserving flexibility for long-tail KubeVirt features.
 
 ---
 
@@ -401,7 +403,7 @@ Example UI rendering:
 > - **Indexed Columns**: Core scheduling fields (CPU, Memory, GPU, Hugepages) stored in typed columns for efficient queries
 > - **JSONB Extension**: Remaining KubeVirt fields stored in `spec_overrides` for flexibility
 > 
-> This addresses the "Dumb Backend Paradox" - scheduling queries need explicit fields, but we maintain JSONB flexibility for long-tail KubeVirt features.
+> This addresses the original "Dumb Backend Paradox" - scheduling queries need explicit fields, but we maintain JSONB flexibility for long-tail KubeVirt features. The solution is the **Hybrid Model** adopted below.
 
 ```go
 // ent/schema/instance_size.go
@@ -427,6 +429,8 @@ func (InstanceSize) Fields() []ent.Field {
             Comment("Memory size (e.g., '8Gi'). Indexed for scheduling."),
         field.String("hugepages_size").Optional().Nillable().
             Comment("Hugepages page size: '2Mi', '1Gi', or nil (none)."),
+        field.Bool("requires_hugepages").Default(false).
+            Comment("Whether this size requires Hugepages. Indexed for cluster matching."),
         
         // GPU Configuration (indexed for scheduling queries)
         field.Bool("requires_gpu").Default(false).
@@ -486,7 +490,8 @@ func (InstanceSize) Indexes() []ent.Index {
     return []ent.Index{
         index.Fields("requires_gpu"),           // Fast filter: GPU workloads
         index.Fields("requires_sriov"),         // Fast filter: SR-IOV workloads
-        index.Fields("hugepages_size"),         // Fast filter: Hugepages workloads
+        index.Fields("requires_hugepages"),     // Fast filter: Hugepages workloads
+        index.Fields("hugepages_size"),         // Fast filter: Specific Hugepages size
         index.Fields("dedicated_cpu"),          // Fast filter: Pinned CPU workloads
         index.Fields("cpu_cores", "memory"),    // Compound index for capacity matching
     }
@@ -497,7 +502,7 @@ func (InstanceSize) Indexes() []ent.Index {
 
 | Aspect | Indexed Columns | JSONB Extension |
 |--------|-----------------|-----------------|
-| **Fields** | cpu_cores, memory, hugepages_size, requires_gpu, requires_sriov, dedicated_cpu | All other KubeVirt fields |
+| **Fields** | cpu_cores, memory, hugepages_size, requires_hugepages, requires_gpu, requires_sriov, dedicated_cpu | All other KubeVirt fields |
 | **Query Performance** | O(log n) with B-tree index | O(n) scan or GIN index |
 | **Schema Changes** | Requires DB migration | No migration needed |
 | **Use Case** | Cluster capability matching, scheduling | Long-tail KubeVirt features |
@@ -769,9 +774,16 @@ func ValidateInstanceSizeConfig(config *InstanceSizeConfig) error {
 | Condition | Warning Message |
 |-----------|-----------------|
 | Overcommit in prod environment | "Overcommit enabled for PRODUCTION environment. This may impact VM performance." |
-| Overcommit + Dedicated CPU | "CONFLICT: Dedicated CPU Placement is incompatible with CPU overcommit. VM may fail to start." |
 
 > **Note**: Warnings are advisory only. Admin takes responsibility for the final configuration.
+
+**Error Types** (Red error, BLOCKING - per 2026-01-26 Review Feedback):
+
+| Condition | Error Message | Behavior |
+|-----------|---------------|----------|
+| Overcommit + Dedicated CPU | "INCOMPATIBLE: Dedicated CPU Placement requires request == limit. Disable overcommit or uncheck dedicated CPU placement." | Cannot save/approve configuration |
+
+> **Note**: Errors are blocking. Configuration cannot proceed until the conflict is resolved.
 
 #### 6. VM Spec Rendering
 
@@ -1205,7 +1217,7 @@ WHERE true;
 ### Positive
 
 - ✅ **Schema as Truth**: Field types and options come from official KubeVirt Schema
-- ✅ **Dumb Backend**: Backend only stores/retrieves JSON, no semantic interpretation
+- ✅ **Hybrid Model**: Core fields indexed for queries; `spec_overrides` JSONB preserves flexibility without semantic interpretation (see [§4](#4-backend-storage-hybrid-model))
 - ✅ **Auto-Updating**: When KubeVirt adds new fields, just update Schema + Mask
 - ✅ **Flexible**: Users can fill any valid value, not limited to predefined options
 - ✅ **Consistent**: UI rendering is automatic based on Schema types
@@ -1749,6 +1761,9 @@ The following features are identified for future versions but are **out of scope
 
 | Date | Change |
 |------|--------|
+| 2026-01-27 | **Internal Consistency Fix**: Separated Warning Types and Error Types tables - moved "Dedicated CPU + Overcommit" from Warning to Error table per 2026-01-26 decision |
+| 2026-01-27 | **Schema Fix**: Added missing `requires_hugepages` boolean field to InstanceSize schema (was used in Hooks but not defined) |
+| 2026-01-27 | **Principle Evolution**: Renamed \"Dumb Backend\" to \"Hybrid Model\" across all occurrences (§Core Design Principles, §4, §Consequences, §Appendix) with evolution notes |
 | 2026-01-27 | **ADR Compliance**: Updated Built-in Role Seeding example to use Ent ORM per [ADR-0003](./ADR-0003-ent-adoption.md) (was direct SQL) |
 | 2026-01-27 | **Cross-Reference**: Added [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) reference for Namespace JIT creation in Responsibility Boundary table |
 | 2026-01-27 | **ADR Compliance**: Added [ADR-0006](./ADR-0006-writes-via-river-queue.md) River Queue requirement for InstanceSize CRUD operations in Documents Requiring Updates |
@@ -2132,7 +2147,7 @@ internal/pkg/jsonpath/          # JSON path extraction utilities
 |-----------|-------------|
 | **Schema as Single Source of Truth** | KubeVirt official JSON Schema defines all field types, constraints, enum options |
 | **Mask Only Selects Paths** | Mask specifies which Schema paths to expose, does NOT define field options |
-| **Dumb Backend** | Backend stores `map[string]interface{}` without interpreting field semantics |
+| **Hybrid Model** | Core scheduling fields in indexed columns; `spec_overrides` JSONB without semantic interpretation (see [§4](#4-backend-storage-hybrid-model)) |
 | **Schema-Driven Frontend** | Frontend reads JSON Schema + Mask to render appropriate UI components |
 
 ### Role Definitions
