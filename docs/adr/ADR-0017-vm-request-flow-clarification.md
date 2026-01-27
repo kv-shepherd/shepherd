@@ -130,10 +130,89 @@ func SuggestClusters(namespace string) ([]ClusterSuggestion, error) {
 
 Admin can:
 - Accept suggested cluster
-- Override with different cluster (same environment)
-- Override with different environment cluster (with explicit confirmation)
+- Override with different cluster (within same environment)
 
----
+### Namespace Just-In-Time Creation (Added 2026-01-27)
+
+When a VM is approved for deployment to a cluster where the target namespace doesn't exist, the platform attempts JIT namespace creation:
+
+```go
+// JIT Namespace creation with permission handling
+func EnsureNamespaceExists(ctx context.Context, cluster *Cluster, nsName string, env string) error {
+    // Check if namespace already exists on target cluster
+    exists, err := checkNamespaceExists(ctx, cluster, nsName)
+    if err != nil {
+        return fmt.Errorf("failed to check namespace: %w", err)
+    }
+    if exists {
+        return nil // Already exists, nothing to do
+    }
+    
+    // Attempt to create namespace
+    err = createNamespace(ctx, cluster, nsName, map[string]string{
+        "shepherd.io/environment": env,
+        "shepherd.io/managed-by":  "shepherd",
+        "shepherd.io/created-at":  time.Now().Format(time.RFC3339),
+    })
+    
+    if err != nil {
+        // Handle permission denied gracefully
+        if isPermissionDenied(err) {
+            return &NamespaceCreationError{
+                Code:    "NAMESPACE_PERMISSION_DENIED",
+                Message: fmt.Sprintf(
+                    "Cannot create namespace '%s' on cluster '%s': insufficient permissions. "+
+                    "Please contact cluster administrator to pre-create the namespace or "+
+                    "grant 'namespaces:create' permission to Shepherd service account.",
+                    nsName, cluster.Name,
+                ),
+                Cluster:   cluster.Name,
+                Namespace: nsName,
+                Hint:      "kubectl create namespace " + nsName,
+            }
+        }
+        return fmt.Errorf("failed to create namespace: %w", err)
+    }
+    
+    // Record audit log
+    emitEvent(ctx, DomainEvent{
+        Type:      "NAMESPACE_CREATED",
+        EntityType: "namespace",
+        EntityID:   nsName,
+        Payload: map[string]interface{}{
+            "cluster_id":   cluster.ID,
+            "cluster_name": cluster.Name,
+            "environment":  env,
+            "created_by":   "shepherd-controller",
+        },
+    })
+    
+    return nil
+}
+```
+
+**Permission Denied Flow**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  VM Request Approved → Execute on Cluster-A                                  │
+│                                                                              │
+│  1. Check namespace exists on Cluster-A                                      │
+│     └─ Namespace 'production' NOT FOUND                                      │
+│                                                                              │
+│  2. Attempt JIT creation                                                     │
+│     └─ ERROR: 403 Forbidden (insufficient permissions)                       │
+│                                                                              │
+│  3. Ticket status → FAILED                                                   │
+│     └─ Error message displayed to admin                                      │
+│     └─ Suggested action: Contact cluster admin or select different cluster  │
+│                                                                              │
+│  4. Admin options:                                                           │
+│     ├─ Request cluster admin to pre-create namespace                         │
+│     ├─ Select different cluster with existing namespace                      │
+│     └─ Grant Shepherd SA 'namespaces:create' RBAC permission                │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Consequences
 
@@ -276,3 +355,4 @@ func (Namespace) Fields() []ent.Field {
 | 2026-01-26 | Submitted as formal proposal with 48-hour review period (Issue #15) |
 | 2026-01-26 | Added: Pre-written "Amendments by Subsequent ADRs" block for ADR-0015 (to be appended upon ADR-0017 acceptance) |
 | 2026-01-26 | Added: Namespace Schema Correction section - clarifies that `namespace_registry` should NOT have `cluster_id` field (multi-cluster governance principle) |
+| 2026-01-27 | Added: Namespace JIT Creation with permission denied handling (graceful error with actionable hints) |
