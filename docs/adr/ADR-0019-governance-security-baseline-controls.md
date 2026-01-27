@@ -10,7 +10,7 @@ informed: []  # Stakeholders kept up-to-date (one-way communication)
 # ADR-0019: Governance Security Baseline Controls
 
 > **Review Period**: Until 2026-01-29 (48-hour minimum)  
-> **Discussion**: [Issue #TBD](https://github.com/kv-shepherd/shepherd/issues/TBD)  
+> **Discussion**: [Issue #25](https://github.com/kv-shepherd/shepherd/issues/25)  
 > **Amends**: [ADR-0015 §6](./ADR-0015-governance-model-v2.md), [ADR-0015 §16](./ADR-0015-governance-model-v2.md), [ADR-0015 §22](./ADR-0015-governance-model-v2.md)
 
 ---
