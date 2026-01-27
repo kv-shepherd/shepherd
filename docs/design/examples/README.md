@@ -9,7 +9,7 @@
 > These `.go` files are **pseudo-code examples** for documentation purposes. They demonstrate patterns and architecture but **will not compile** because:
 >
 > 1. Referenced packages (`internal/domain`, `internal/jobs`, etc.) do not exist yet
-> 2. Import paths are placeholders
+> 2. Import paths use vanity import (`kv-shepherd.io/shepherd/...`) per [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md)
 > 3. Some helper functions are omitted for brevity
 >
 > **To use these examples**: Copy the patterns into your actual implementation during Phase 0-1.
@@ -48,10 +48,10 @@ examples/
 | [infrastructure/database.go](./infrastructure/database.go) | Shared pgxpool for Ent + sqlc + River | ADR-0012 |
 | [worker/pool.go](./worker/pool.go) | Worker pool with panic recovery | - |
 | [handlers/health.go](./handlers/health.go) | Health check endpoints | - |
-| [domain/vm.go](./domain/vm.go) | VM domain model (Anti-Corruption Layer) | - |
-| [domain/event.go](./domain/event.go) | Domain event types and GetEffectiveSpec | ADR-0009 |
+| [domain/vm.go](./domain/vm.go) | VM domain model (Anti-Corruption Layer) | ADR-0015 §3-4 |
+| [domain/event.go](./domain/event.go) | Domain event types (Power Ops, VNC, Batch) | ADR-0009, ADR-0015 §6 |
 | [provider/interface.go](./provider/interface.go) | KubeVirt provider interfaces | ADR-0004 |
-| [usecase/create_vm.go](./usecase/create_vm.go) | Atomic transaction with pgx + sqlc + River | ADR-0012 |
+| [usecase/create_vm.go](./usecase/create_vm.go) | Atomic transaction with pgx + sqlc + River | ADR-0012, ADR-0015 §3 |
 
 ---
 
@@ -109,6 +109,20 @@ See [domain/event.go](./domain/event.go) - Claim Check pattern with immutable pa
 ### ADR-0006: Unified Async Model
 
 All write operations return `202 Accepted` with event ID. Workers execute actual K8s operations.
+
+### ADR-0015: Governance Model V2
+
+**Entity Decoupling**:
+- System is decoupled from namespace/environment (§1)
+- Service inherits permissions from System (§2)
+- VM does not store SystemID directly - resolve via ServiceID → Service.Edges.System (§3)
+- User-forbidden fields: Name, Labels, CloudInit are platform-controlled (§4)
+
+**Extended Event Types** (see [domain/event.go](./domain/event.go)):
+- Power operations: `VM_START_REQUESTED`, `VM_STOP_REQUESTED`, `VM_RESTART_REQUESTED`
+- VNC console: `VNC_ACCESS_REQUESTED`, `VNC_ACCESS_GRANTED`
+- Batch operations: `BATCH_CREATE_REQUESTED`, `BATCH_DELETE_REQUESTED`
+- Notifications: `NOTIFICATION_SENT`
 
 ### Worker Pool (Coding Standard)
 
