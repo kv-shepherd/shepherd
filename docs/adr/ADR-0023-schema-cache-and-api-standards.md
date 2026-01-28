@@ -44,6 +44,17 @@ Adopt the following supplementary standards that extend ADR-0017 and ADR-0018.
 
 ## 1. Schema Cache Management Policy
 
+### Design Motivation
+
+Schema caching addresses **four core operational pain points**:
+
+| Pain Point | Problem Without Cache | Solution With Cache |
+|------------|----------------------|---------------------|
+| **1. Frontend Performance** (Schema-Driven UI) | OpenAPI Spec is 3-5MB. Each form open requires download and browser parsing, causing 1-2s lag. | Backend returns simplified, pre-parsed JSON (~50KB). Instant page load. |
+| **2. Multi-Version Compatibility** (Matrix Problem) | With 10+ clusters at different KubeVirt versions: validation impossible before cluster selection (ADR-0017 specifies cluster selection at approval time). | Pre-load all managed version schemas. Enable pre-validation: "This config requires v1.5+ clusters". |
+| **3. Offline Validation** | When target cluster API is unreachable (network flap, control plane upgrade), requests fail immediately. | Validate against cached schema, create ticket, execute when cluster recovers. Business flow uninterrupted. |
+| **4. Schema Immutability Leverage** | N/A | KubeVirt schemas are immutable per version (v1.5.0 schema never changes). Enables indefinite caching with version-triggered updates only. |
+
 ### Cache Lifecycle
 
 ```
@@ -69,20 +80,117 @@ Adopt the following supplementary standards that extend ADR-0017 and ADR-0018.
 │  │ - Extract minor version (1.5.x)                                         │ │
 │  │ - Check if schema exists in cache                                       │ │
 │  │   ├── YES: Use cached schema                                            │ │
-│  │   └── NO:  Fetch from GitHub, cache locally                             │ │
+│  │   └── NO:  Queue SchemaFetchJob (River), use embedded fallback          │ │
 │  └─────────────────────────────────────────────────────────────────────────┘ │
 │          │                                                                   │
 │          ▼                                                                   │
 │  ┌─────────────────────────────────────────────────────────────────────────┐ │
-│  │ Periodic Health Check (every 6 hours)                                   │ │
-│  │ - Re-detect KubeVirt version from cluster                               │ │
-│  │ - If version changed:                                                   │ │
-│  │   ├── Fetch new schema if needed                                        │ │
-│  │   ├── Emit event: "ClusterKubeVirtVersionChanged"                       │ │
-│  │   └── Re-validate affected InstanceSizes (async)                        │ │
+│  │ ClusterHealthChecker Integration (Piggyback Model)                      │ │
+│  │                                                                          │ │
+│  │ ┌─────────────────────────────────────────────────────────────────────┐ │ │
+│  │ │ Health Check Loop (every 60s)                                       │ │ │
+│  │ │ - Primary: Check cluster Running status                             │ │ │
+│  │ │ - Piggyback: Read KubeVirt Operator Status (version field)          │ │ │
+│  │ │   └── Cost: 1 additional field read, negligible overhead            │ │ │
+│  │ └─────────────────────────────────────────────────────────────────────┘ │ │
+│  │                          │                                               │ │
+│  │                          ▼                                               │ │
+│  │ ┌─────────────────────────────────────────────────────────────────────┐ │ │
+│  │ │ Version Diff Check                                                  │ │ │
+│  │ │ - Compare: clusters.kubevirt_version vs. detected version           │ │ │
+│  │ │ - If SAME:  No action (most common case)                            │ │ │
+│  │ │ - If DIFFERENT:                                                     │ │ │
+│  │ │   1. Queue SchemaUpdateJob (River Job)                              │ │ │
+│  │ │   2. Emit "ClusterKubeVirtVersionChanged" event                     │ │ │
+│  │ │   3. Update clusters.kubevirt_version                               │ │ │
+│  │ │   4. Async: Re-validate affected InstanceSizes                      │ │ │
+│  │ └─────────────────────────────────────────────────────────────────────┘ │ │
+│  │                                                                          │ │
 │  └─────────────────────────────────────────────────────────────────────────┘ │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### ClusterHealthChecker Integration
+
+> **Design Decision**: Version detection is **piggybacked** onto existing health checks, NOT a separate polling loop.
+
+**Rationale**:
+- Health check already connects to cluster every 60s
+- Reading KubeVirt Operator status adds negligible overhead (1 field)
+- KubeVirt upgrades are **infrequent** (monthly/quarterly), so most checks return "no change"
+- Avoids separate 6h polling interval complexity
+
+```go
+// ClusterHealthChecker with piggyback version detection
+type ClusterHealthChecker struct {
+    healthCheckInterval time.Duration  // 60s - checks cluster reachability
+    schemaCache         *SchemaCache
+    riverClient         *river.Client
+    db                  *ent.Client
+}
+
+// CheckCluster is called every 60s per cluster
+func (h *ClusterHealthChecker) CheckCluster(ctx context.Context, cluster *ent.Cluster) error {
+    // Primary responsibility: health check
+    status, err := h.checkClusterHealth(ctx, cluster)
+    if err != nil {
+        return h.handleUnhealthyCluster(ctx, cluster, err)
+    }
+    
+    // Piggyback: version detection (low overhead)
+    detectedVersion := status.KubeVirtOperatorVersion  // e.g., "v1.5.2"
+    if detectedVersion == "" {
+        // KubeVirt not installed or status unavailable
+        return nil
+    }
+    
+    storedVersion := cluster.KubevirtVersion
+    if detectedVersion != storedVersion {
+        return h.handleVersionChange(ctx, cluster, storedVersion, detectedVersion)
+    }
+    
+    return nil
+}
+
+func (h *ClusterHealthChecker) handleVersionChange(
+    ctx context.Context,
+    cluster *ent.Cluster,
+    oldVersion, newVersion string,
+) error {
+    h.logger.Info("KubeVirt version change detected",
+        "cluster", cluster.Name,
+        "from", oldVersion,
+        "to", newVersion,
+    )
+    
+    // 1. Queue async schema fetch job (non-blocking)
+    _, err := h.riverClient.Insert(ctx, &SchemaUpdateJob{
+        ClusterID:  cluster.ID,
+        NewVersion: newVersion,
+    }, nil)
+    if err != nil {
+        h.logger.Error("failed to queue schema update job", "error", err)
+        // Continue - don't block health check for schema issues
+    }
+    
+    // 2. Update cluster record
+    err = cluster.Update().
+        SetKubevirtVersion(newVersion).
+        Exec(ctx)
+    if err != nil {
+        return fmt.Errorf("update cluster version: %w", err)
+    }
+    
+    // 3. Emit event for downstream consumers
+    h.events.Emit(ctx, ClusterKubeVirtVersionChanged{
+        ClusterID:  cluster.ID,
+        OldVersion: oldVersion,
+        NewVersion: newVersion,
+    })
+    
+    return nil
+}
 ```
 
 ### Cache Configuration
@@ -92,8 +200,10 @@ Adopt the following supplementary standards that extend ADR-0017 and ADR-0018.
 | `schema.embedded_versions` | `["1.2.x", "1.3.x", "1.4.x", "1.5.x"]` | Versions bundled at compile time |
 | `schema.cache_dir` | `/var/cache/shepherd/schemas/` | Local filesystem cache directory |
 | `schema.remote_fetch_timeout` | `30s` | Timeout for fetching schema from GitHub |
-| `schema.health_check_interval` | `6h` | Interval for checking cluster KubeVirt versions |
+| `schema.remote_fetch_retries` | `3` | Retry count for remote fetch with exponential backoff |
 | `schema.validation_on_version_change` | `true` | Re-validate InstanceSizes when version changes |
+
+> **Note**: `health_check_interval` is configured at the ClusterHealthChecker level (default 60s), not in schema config. Version detection piggybacks on this existing loop.
 
 ### Schema Expiration Policy
 
@@ -101,44 +211,46 @@ Adopt the following supplementary standards that extend ADR-0017 and ADR-0018.
 
 **Rationale**: KubeVirt schema definitions are immutable per version. A schema for v1.5.x will never change, so time-based expiration adds complexity without benefit.
 
-**Version Change Handling**:
+### Graceful Degradation Strategy
+
+When schema fetch fails, the system MUST NOT block operations:
+
+| Scenario | Behavior | User Impact |
+|----------|----------|-------------|
+| **Schema fetch timeout** | Log warning, continue with closest embedded version | Minor: advanced features may not validate correctly |
+| **GitHub API rate limited** | Retry with exponential backoff (30s, 60s, 120s), use embedded fallback | None if embedded version exists |
+| **No matching embedded schema** | Log error, alert admin, allow cluster registration | Admin must manually provide schema or wait for retry |
+| **Cluster unreachable during version check** | Keep existing version, mark cluster unhealthy | Existing validation continues working |
 
 ```go
-// Pseudo-code for version change handling
-func (h *HealthChecker) CheckCluster(ctx context.Context, cluster *Cluster) error {
-    currentVersion, err := h.detectKubeVirtVersion(ctx, cluster)
-    if err != nil {
-        return err
-    }
+// SchemaUpdateJob - River job for async schema fetching
+type SchemaUpdateJob struct {
+    ClusterID  uuid.UUID `json:"cluster_id"`
+    NewVersion string    `json:"new_version"`
+}
+
+func (j *SchemaUpdateJob) Work(ctx context.Context) error {
+    minorVersion := extractMinorVersion(j.NewVersion)  // "v1.5.2" -> "1.5.x"
     
-    if currentVersion != cluster.KubeVirtVersion {
-        // Version changed - this is significant
-        h.logger.Warn("KubeVirt version changed",
-            "cluster", cluster.Name,
-            "from", cluster.KubeVirtVersion,
-            "to", currentVersion,
-        )
-        
-        // Update stored version
-        cluster.KubeVirtVersion = currentVersion
-        
-        // Ensure we have the schema for new version
-        _, err := h.schemaCache.GetOrFetch(ctx, currentVersion)
-        if err != nil {
-            return fmt.Errorf("schema for new version unavailable: %w", err)
+    // Try fetching from remote
+    schema, err := j.schemaFetcher.FetchFromGitHub(ctx, minorVersion)
+    if err != nil {
+        // Fallback: check embedded schemas
+        if embedded, ok := j.schemaCache.GetEmbedded(minorVersion); ok {
+            j.logger.Warn("using embedded schema as fallback",
+                "version", minorVersion,
+                "fetch_error", err,
+            )
+            return j.schemaCache.Store(minorVersion, embedded)
         }
         
-        // Trigger async re-validation of InstanceSizes targeting this cluster
-        h.events.Emit(ctx, ClusterKubeVirtVersionChanged{
-            ClusterID:   cluster.ID,
-            OldVersion:  cluster.KubeVirtVersion,
-            NewVersion:  currentVersion,
-        })
+        // No fallback available - retry later
+        return fmt.Errorf("schema fetch failed, no fallback: %w", err)
     }
     
-    return nil
+    // Store fetched schema
+    return j.schemaCache.Store(minorVersion, schema)
 }
-```
 
 ---
 
@@ -301,13 +413,28 @@ func classifyNamespaceError(err error, clusterName, nsName string) error {
 
 Upon acceptance, perform the following:
 
+### Schema Cache Implementation
+
 1. [ ] Add schema cache configuration to `config.yaml` schema
-2. [ ] Implement periodic health check for KubeVirt version detection
-3. [ ] Add pagination support to `SuggestClusters` endpoint
-4. [ ] Update OpenAPI spec with pagination schemas
-5. [ ] Refine namespace error codes per taxonomy
-6. [ ] Update `docs/operations/troubleshooting.md` with error code reference
-7. [ ] Append "Amendments by Subsequent ADRs" block to ADR-0017 and ADR-0018
+2. [ ] Integrate KubeVirt version detection into `ClusterHealthChecker` (piggyback model)
+3. [ ] Implement `SchemaUpdateJob` River job for async schema fetching
+4. [ ] Implement graceful degradation with embedded schema fallback
+5. [ ] Bundle embedded schemas for KubeVirt v1.2.x - v1.5.x at compile time
+
+### API Pagination
+
+6. [ ] Add pagination support to `SuggestClusters` endpoint
+7. [ ] Update OpenAPI spec with `PaginatedResponse` schema
+8. [ ] Add pagination to list endpoints: `/vms`, `/systems`, `/services`, `/admin/clusters`
+
+### Error Handling
+
+9. [ ] Refine namespace error codes per taxonomy
+10. [ ] Update `docs/operations/troubleshooting.md` with error code reference
+
+### Documentation
+
+11. [ ] Append "Amendments by Subsequent ADRs" block to ADR-0017 and ADR-0018
 
 ---
 
@@ -325,6 +452,7 @@ Upon acceptance, perform the following:
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-01-28 | @jindyzhao | Initial draft based on ADR-0017/0018 review feedback |
+| 2026-01-28 | @jindyzhao | Added: Design motivation (4 core pain points), ClusterHealthChecker piggyback integration, graceful degradation strategy |
 
 ---
 
