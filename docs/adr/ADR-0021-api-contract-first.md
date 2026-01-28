@@ -74,6 +74,19 @@ We need a formalized approach where the API specification is the **single source
 | **TypeScript Generation** | openapi-typescript | Generate TypeScript types for frontend |
 | **Spec Validation** | spectral | Lint OpenAPI specs for quality |
 | **Interactive Docs** | Scalar (or Swagger UI) | Developer-facing API documentation |
+| **Mock Server** | Prism | Development-time API mocking |
+
+### OpenAPI Version Policy
+
+This project adopts **OpenAPI 3.1** as the specification format. Version selection rationale:
+
+| Version | Status | Notes |
+|---------|--------|-------|
+| OpenAPI 3.1 | ✅ Adopted | Full JSON Schema compatibility, webhooks support |
+| OpenAPI 3.0 | ⚠️ Compatible | May be used for tooling compatibility if needed |
+| OpenAPI 2.0 (Swagger) | ❌ Not supported | Legacy format, lacks key features |
+
+**Compatibility Note**: If an external tool only supports OpenAPI 3.0, use `@redocly/cli` to downgrade the spec for that specific use case. The source of truth remains 3.1.
 
 ### Consequences
 
@@ -362,6 +375,71 @@ export type VMStatus = components["schemas"]["VM"]["status"];
 
 ---
 
+## Mock Server Integration
+
+To enable parallel frontend-backend development, integrate a mock server that serves realistic responses based on the OpenAPI specification.
+
+### Development Workflow with Mocking
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Parallel Development with Mock Server                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. API Designer defines endpoints in openapi.yaml                           │
+│     │                                                                        │
+│     ├─────────────────────────────────┬─────────────────────────────────┐   │
+│     ▼                                 ▼                                 │   │
+│  ┌────────────────┐       ┌─────────────────────┐                       │   │
+│  │ Backend Team   │       │ Frontend Team       │                       │   │
+│  │ Implements API │       │ Uses Mock Server    │                       │   │
+│  └────────────────┘       └─────────────────────┘                       │   │
+│     │                                 │                                 │   │
+│     │ (1-2 weeks)                     │ (immediate start)               │   │
+│     ▼                                 ▼                                 │   │
+│  ┌────────────────┐       ┌─────────────────────┐                       │   │
+│  │ Real API Ready │ ◄──── │ Switch to Real API  │                       │   │
+│  └────────────────┘       └─────────────────────┘                       │   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Prism Mock Server Setup
+
+```bash
+# Install Prism
+npm install -g @stoplight/prism-cli
+
+# Run mock server
+prism mock api/openapi.yaml --port 4010
+
+# Frontend can now develop against http://localhost:4010
+```
+
+### Mock Data with Examples
+
+```yaml
+# In openapi.yaml, add examples for realistic mock responses
+components:
+  schemas:
+    VM:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        name:
+          type: string
+          example: "web-server-01"
+        status:
+          type: string
+          enum: [pending, running, stopped]
+          example: "running"
+```
+
+---
+
 ## Error Handling Integration
 
 Per the architecture improvement suggestions, implement a centralized error system:
@@ -515,11 +593,25 @@ Upon acceptance, perform the following:
 4. [ ] Add generation scripts to `Makefile`:
    - `make generate-api`
    - `make validate-api`
+   - `make mock-server`
 5. [ ] Create `internal/apperror/` package for domain errors
 6. [ ] Create error mapping middleware
 7. [ ] Update frontend (`shepherd-ui`) to use generated types
 8. [ ] Add `spectral` linting to CI pipeline
 9. [ ] Document API development workflow in `docs/development/api-guidelines.md`
+10. [ ] Set up Prism mock server for frontend development
+
+### SDK Publishing Strategy (Future)
+
+When external integrations require SDK access:
+
+| Language | Package | Generation Tool | Registry |
+|----------|---------|-----------------|----------|
+| TypeScript | `@kv-shepherd/api-client` | openapi-typescript + openapi-fetch | npm |
+| Go | `github.com/kv-shepherd/shepherd-go` | oapi-codegen (client mode) | Go modules |
+| Python | `kv-shepherd-client` | openapi-python-client | PyPI |
+
+**Versioning**: SDK versions MUST follow the API version. Breaking API changes require major version bump in all SDKs.
 
 ---
 
@@ -538,6 +630,7 @@ Upon acceptance, perform the following:
 
 | Date | Author | Change |
 |------|--------|--------|
+| 2026-01-28 | @jindyzhao | Added Mock Server integration, OpenAPI version policy, and SDK publishing strategy |
 | 2026-01-27 | @jindyzhao | Initial draft based on 2026 best practices research |
 
 ---
