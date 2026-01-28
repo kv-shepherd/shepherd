@@ -1,8 +1,8 @@
 # Master Interaction Flow
 
-> **Status**: Draft (Pending ADR-0018 Acceptance)  
-> **Version**: 0.1-draft  
-> **Date**: 2026-01-26  
+> **Status**: Stable (ADR-0017, ADR-0018 Accepted)  
+> **Version**: 1.0  
+> **Date**: 2026-01-28  
 > **Language**: English (Canonical Version)  
 > **Source**: Extracted from ADR-0018 Appendix
 
@@ -312,7 +312,11 @@ This document is the **canonical reference** for all Shepherd platform interacti
 │  - Target cluster (based on namespace environment, capacity, policy)        │
 │  - Final template version                                                   │
 │  - Storage class                                                            │
-│  - Any parameter overrides                                                  │
+│  - Any parameter overrides (CPU, Memory, etc.)                              │
+│                                                                              │
+│  Admin CANNOT modify (Security - prevents permission escalation):           │
+│  - Namespace (user-provided and immutable after submission) [ADR-0017]      │
+│  - ServiceID (determines ownership and inheritance)                         │
 │                                                                              │
 │  Approval decisions:                                                         │
 │  - APPROVE → VM creation proceeds                                           │
@@ -417,6 +421,9 @@ CREATE TABLE resource_role_bindings (
 
 | Date | Version | Change |
 |------|---------|--------|
+| 2026-01-28 | 1.0 | **STABLE**: ADR-0017 and ADR-0018 accepted |
+| 2026-01-28 | 1.0 | Added: Stage 5.B Namespace immutability constraint (Admin CANNOT modify Namespace) |
+| 2026-01-28 | 1.0 | Verified: roles, role_bindings, resource_role_bindings tables match ADR-0018 §7 |
 | 2026-01-26 | 0.1-draft | Updated: Support both config.yaml and env vars for infrastructure config |
 | 2026-01-26 | 0.1-draft | Added: Configuration Storage Strategy - PostgreSQL-first design |
 | 2026-01-26 | 0.1-draft | Added: First Deployment Bootstrap flow (admin/admin + force password change) |

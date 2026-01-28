@@ -1,8 +1,8 @@
 # ADR-0018: Instance Size Abstraction Layer (Schema-Driven Design)
 
-> **Status**: Proposed  
-> **Date**: 2026-01-22  
-> **Review Period**: Until **2026-01-28** (48-hour public comment period)  
+> **Status**: Accepted  
+> **Date**: 2026-01-28 (Accepted)  
+> **Proposed**: 2026-01-22  
 > **Discussion Issue**: [Issue #17](https://github.com/kv-shepherd/shepherd/issues/17)  
 > **Supersedes**: Previous ADR-0018 drafts  
 > **Amends**: ADR-0015 §5 (Template Layered Design)  
@@ -1972,6 +1972,46 @@ The following features are identified for future versions but are **out of scope
 | `config/mask.yaml` | Mask configuration defining exposed Schema paths |
 | `config/seed/templates.yaml` | Pre-populated template data for system initialization |
 | `config/seed/instance_sizes.yaml` | Pre-populated InstanceSize data for system initialization |
+### 6.5. Capability Filtering Updates (ADR-0018 §Cluster Capability Matching)
+
+> **Added 2026-01-28**: Capability requirements moved from Template to InstanceSize
+
+| Document | Section | Required Change |
+|----------|---------|-----------------|
+| `docs/design/phases/02-providers.md` | §5. Capability Detection - Template Matching | **REPLACE**: Change `template.RequiredFeatures` to `instanceSize.Spec.RequiredCapabilities` |
+| `docs/design/phases/02-providers.md` | §5. FilterCompatibleClusters function | **UPDATE**: Filter based on InstanceSize requirements, not Template |
+
+**Before (INCORRECT)**:
+```go
+// template.RequiredFeatures is deprecated
+hasAllFeatures(c.EnabledFeatures, template.RequiredFeatures)
+```
+
+**After (CORRECT)**:
+```go
+// Capability requirements are now in InstanceSize
+hasAllCapabilities(c.Capabilities, instanceSize.RequiredCapabilities)
+```
+
+### 6.6. Template Engine Simplification (ADR-0018 §Template Simplification)
+
+> **Added 2026-01-28**: Template is now simplified - no more YAML editing or Go Template syntax
+
+| Document | Section | Required Change |
+|----------|---------|-----------------|
+| `docs/design/phases/04-governance.md` | §5. Template Engine | **SIMPLIFY**: Remove Go Template syntax check, YAML template editing. Template now only contains OS image source + cloud-init YAML |
+| `docs/design/phases/04-governance.md` | §5. Template Validation | **REPLACE**: Remove "Go Template syntax check", keep only K8s dry-run validation |
+| `docs/design/phases/00-prerequisites.md` | §1.2. Directory Structure | **REMOVE**: `templates/` directory - all templates stored in PostgreSQL, not files |
+
+**Template Scope After ADR-0018**:
+- ✅ OS image source (DataVolume, ContainerDisk, etc.)
+- ✅ Cloud-init YAML (one-time password, SSH keys)
+- ✅ Field visibility control (quick_fields, advanced_fields)
+- ❌ ~~Go Template variables~~ (REMOVED)
+- ❌ ~~YAML template files~~ (REMOVED - stored in PostgreSQL)
+- ❌ ~~RequiredFeatures/RequiredHardware~~ (MOVED to InstanceSize)
+
+
 
 ### 7. Permission System Updates (ADR-0018 §Stage 2.A+, §Stage 4.A+)
 
@@ -1988,12 +2028,42 @@ The following features are identified for future versions but are **out of scope
 **New Database Tables**:
 
 ```sql
--- Global RBAC (OIDC/LDAP group mapping)
-role_bindings (id, user_id, role_id, scope_type, allowed_environments, created_by)
+-- Roles (built-in + custom) [master-flow.md Stage 2.A]
+CREATE TABLE roles (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    permissions JSONB NOT NULL,         -- ['system:*', 'vm:create', ...]
+    is_builtin BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
 
--- Resource-level RBAC (User self-service)
-resource_role_bindings (id, user_id, role, resource_type, resource_id, granted_by, created_at)
+-- Global RBAC (OIDC/LDAP group mapping) [master-flow.md Stage 2.B/C]
+CREATE TABLE role_bindings (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    role_id VARCHAR(36) NOT NULL REFERENCES roles(id),
+    scope_type VARCHAR(20) NOT NULL,    -- 'global', 'system', 'service'
+    allowed_environments TEXT[],         -- ['test', 'prod']
+    source VARCHAR(20) NOT NULL,         -- 'idp_mapping', 'manual'
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Resource-level RBAC (User self-service) [master-flow.md Stage 4.A+]
+CREATE TABLE resource_role_bindings (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    role VARCHAR(20) NOT NULL,           -- 'owner', 'admin', 'member', 'viewer'
+    resource_type VARCHAR(20) NOT NULL,  -- 'system', 'service', 'vm'
+    resource_id VARCHAR(36) NOT NULL,
+    granted_by VARCHAR(36) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
 ```
+
+| Document | Section | Required Change |
+|----------|---------|-----------------|
+| `docs/design/phases/01-contracts.md` | Database Schema | **ADD**: `roles` table (built-in + custom roles) |
+| `docs/design/phases/01-contracts.md` | Database Schema | **ADD**: `role_bindings` table (Global RBAC) |
 
 **Supersedes** in ADR-0015:
 - §2 RoleBinding: Add resource-level binding supplement (not replacement)
@@ -2116,6 +2186,17 @@ internal/pkg/jsonpath/          # JSON path extraction utilities
   ├── extractor.go              # extractInt(), extractString(), hasPath()
   └── extractor_test.go         # Unit tests
 ```
+
+---
+
+### 11. Master Interaction Flow Updates (ADR-0018 §Canonical Flows)
+
+> **Added 2026-01-28**: Ensure master-flow.md stays synchronized with ADR decisions
+
+| Document | Section | Required Change |
+|----------|---------|-----------------|
+| `docs/design/interaction-flows/master-flow.md` | Status | **UPDATE**: Change from "Draft" to final version after ADR-0018 acceptance |
+| `docs/design/interaction-flows/master-flow.md` | Database Tables Summary | **VERIFY**: Ensure `roles`, `role_bindings`, `resource_role_bindings` tables match ADR-0018 §7 |
 
 ---
 
