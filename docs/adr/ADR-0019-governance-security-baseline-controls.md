@@ -84,6 +84,8 @@ Upon acceptance, perform the following updates (do not modify original ADR conte
 
 **Reserved Names**: Names that conflict with platform-reserved or system-level identifiers SHOULD be avoided. Examples include but are not limited to: `default`, `system`, `admin`, `root`, `internal`, or any names prefixed with `kube-` or `kubevirt-shepherd-`. The implementation MAY maintain a configurable deny-list.
 
+**RFC 1035 vs RFC 1123**: While Kubernetes Namespace names follow RFC 1123 (which allows leading digits), this policy uses RFC 1035 (alphabetic start required) for maximum compatibility. RFC 1035 is a strict subset of RFC 1123, ensuring names work across all Kubernetes resource types without exceptions.
+
 **Rationale**: This is the most conservative compatible naming policy across Kubernetes resource types and avoids reliance on feature gates such as `RelaxedServiceNameValidation`.
 
 ### 2. Platform RBAC Least Privilege
@@ -98,6 +100,12 @@ Upon acceptance, perform the following updates (do not modify original ADR conte
   * remain revocable via administrative action at any time.
 * If the bootstrap role must be temporarily re-enabled for maintenance, the activation and deactivation MUST be recorded in the audit log.
 * All other roles MUST use explicit verbs and resources (no wildcards).
+
+**Standard Operating Procedure (SOP)**: Platform operators MUST follow the documented procedure for bootstrap role management. See `docs/operations/bootstrap-role-sop.md` for:
+  * Initial setup procedure
+  * Post-initialization disable checklist
+  * Emergency re-enablement process
+  * Quarterly audit checklist
 
 **Rationale**: Minimizes accidental privilege escalation and limits future resource exposure. The manual disable + audit approach balances security with operational simplicity for internal governance platforms.
 
@@ -177,5 +185,6 @@ Upon acceptance, perform the following updates (do not modify original ADR conte
 
 | Date | Author | Change |
 |------|--------|--------|
+| 2026-01-28 | @jindyzhao | Added RFC 1035 vs RFC 1123 clarification and bootstrap role SOP reference |
 | 2026-01-27 | @jindyzhao | **Clarification**: RFC 1035 naming policy now explicitly notes that consecutive hyphen prohibition is an additional conservative constraint beyond RFC 1035, with RFC 5891 rationale |
 | 2026-01-27 | @jindyzhao | Initial draft |
