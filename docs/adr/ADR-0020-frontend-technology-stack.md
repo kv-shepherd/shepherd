@@ -98,6 +98,18 @@ We need to select a technology stack that:
 * Accessibility audit passes WCAG 2.1 AA standards
 * Build and deployment pipeline successfully configured
 
+### Alternatives Also Considered for UI Components
+
+While Ant Design is the recommended choice, the following alternatives were evaluated:
+
+| Library | Pros | Cons | Conclusion |
+|---------|------|------|------------|
+| **Shadcn UI + Radix** | Maximum customizability, smaller bundle, modern trends | More initial setup, less enterprise components | Consider for future if branding diverges significantly |
+| **Mantine** | Modern, TypeScript-first, comprehensive hooks | Smaller community, less enterprise precedent | Good alternative but less proven at scale |
+| **Blueprint UI** | Dense desktop interfaces, professional applications | Heavier, less Schema-driven support | Too specialized for general use |
+
+**Why Ant Design was chosen**: `@ant-design/pro-components` provides Schema-driven form rendering (`ProForm`) out of the box, which directly supports ADR-0018 requirements. Building equivalent functionality from primitives would delay the project significantly.
+
 ---
 
 ## Repository Structure
@@ -661,6 +673,140 @@ Use Husky + lint-staged for automated checks before commit:
 
 ---
 
+## Performance Optimization Guidelines
+
+This section defines mandatory performance patterns based on Vercel Engineering best practices. These patterns are prioritized by impact.
+
+### Critical: Eliminating Waterfalls
+
+Waterfalls (sequential async operations) are the #1 performance killer.
+
+```typescript
+// ❌ Bad: Sequential execution (3 round trips)
+const user = await fetchUser()
+const posts = await fetchPosts()
+const comments = await fetchComments()
+
+// ✅ Good: Parallel execution (1 round trip)
+const [user, posts, comments] = await Promise.all([
+  fetchUser(),
+  fetchPosts(),
+  fetchComments()
+])
+```
+
+**Rule**: Always use `Promise.all()` for independent async operations.
+
+### Critical: Bundle Size Optimization
+
+Reducing initial bundle size improves Time to Interactive (TTI).
+
+**Avoid Barrel File Imports**:
+
+```typescript
+// ❌ Bad: Imports entire library
+import { Button, Table } from 'antd'
+
+// ✅ Good: Direct imports (when not using optimizePackageImports)
+import Button from 'antd/es/button'
+import Table from 'antd/es/table'
+```
+
+**Next.js Configuration** (enables ergonomic imports):
+
+```javascript
+// next.config.js
+module.exports = {
+  experimental: {
+    optimizePackageImports: ['antd', '@ant-design/icons', 'lodash-es']
+  }
+}
+```
+
+**Dynamic Imports for Heavy Components**:
+
+```typescript
+import dynamic from 'next/dynamic'
+
+// Load Monaco editor only when needed (~300KB)
+const MonacoEditor = dynamic(
+  () => import('./monaco-editor').then(m => m.MonacoEditor),
+  { ssr: false, loading: () => <Skeleton /> }
+)
+```
+
+### High: Server Component Optimization
+
+**Minimize Data at RSC Boundaries**:
+
+```typescript
+// ❌ Bad: Serializes all 50 fields
+async function Page() {
+  const user = await fetchUser()  // 50 fields
+  return <Profile user={user} />  // sends all to client
+}
+
+// ✅ Good: Select only needed fields
+async function Page() {
+  const user = await fetchUser()
+  return <Profile name={user.name} avatar={user.avatar} />
+}
+```
+
+**Use Suspense for Streaming**:
+
+```tsx
+function Page() {
+  return (
+    <div>
+      <Header />  {/* Renders immediately */}
+      <Suspense fallback={<TableSkeleton />}>
+        <VMTable />  {/* Streams in when ready */}
+      </Suspense>
+      <Footer />  {/* Renders immediately */}
+    </div>
+  )
+}
+```
+
+### Medium: Re-render Optimization
+
+**Calculate Derived State During Rendering**:
+
+```typescript
+// ❌ Bad: useEffect for derived state
+const [items, setItems] = useState([])
+const [filteredItems, setFilteredItems] = useState([])
+
+useEffect(() => {
+  setFilteredItems(items.filter(i => i.active))
+}, [items])
+
+// ✅ Good: Derive during render
+const [items, setItems] = useState([])
+const filteredItems = useMemo(
+  () => items.filter(i => i.active),
+  [items]
+)
+```
+
+**Use Functional setState**:
+
+```typescript
+// ❌ Bad: Closure captures stale value
+const handleClick = () => setCount(count + 1)
+
+// ✅ Good: Always gets latest value
+const handleClick = () => setCount(prev => prev + 1)
+```
+
+### Documentation Reference
+
+For the complete performance optimization ruleset (57 rules across 8 categories), see:
+- `.agent/skills/vercel-react-best-practices/AGENTS.md`
+
+---
+
 ## Pros and Cons of the Options
 
 ### Option 1: React + Next.js + Ant Design (Recommended)
@@ -736,6 +882,9 @@ Upon acceptance, perform the following:
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-01-28 | @jindyzhao | Added Code Quality and Debuggability section with CI quality gates |
+| 2026-01-28 | @jindyzhao | Added Performance Optimization Guidelines based on Vercel Engineering best practices |
+| 2026-01-28 | @jindyzhao | Added Alternatives Also Considered section for UI component libraries |
+
 | 2026-01-27 | @jindyzhao | Added React/Next.js Design Patterns section based on nextjs-best-practices |
 | 2026-01-27 | @jindyzhao | Initial draft based on 2026 best practices research |
 
