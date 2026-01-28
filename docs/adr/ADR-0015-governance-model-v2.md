@@ -2231,3 +2231,35 @@ func ValidateIDToken(token *oidc.IDToken, expectedIssuer, expectedAudience strin
 - [Phase 1: Core Contracts](../design/phases/01-contracts.md) - Original schema designs (to be updated)
 - [Phase 4: Governance](../design/phases/04-governance.md) - Approval workflow details (to be updated)
 
+---
+
+## Amendments by Subsequent ADRs
+
+> ⚠️ **Notice**: The following sections of this ADR have been amended by subsequent ADRs.
+> The original decisions above remain **unchanged for historical reference**.
+> When implementing, please refer to the amending ADRs for current design.
+
+### ADR-0017: VM Request and Approval Flow Clarification (2026-01-28)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §4. VM Field Control: `VMCreateRequest.ClusterID` | **MOVED** | ClusterID is now determined by admin during approval, not user-provided | [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) |
+| §4. VM Field Control: `VMCreateRequest.Namespace` | **IMMUTABLE** | Namespace is user-provided and **CANNOT be modified** by admin. If wrong, request must be rejected and user resubmits. | [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) |
+| §4. User-Submittable Fields struct | **SUPERSEDED** | Use updated `VMCreateRequest` struct from ADR-0017 | [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) |
+
+> **Implementation Guidance**: 
+> - `ClusterID`: Moved from user input to admin approval workflow. Administrators select the target cluster based on namespace environment, cluster capacity, and capability requirements.
+> - `Namespace`: User-provided and **immutable after submission**. Admin can only approve/reject, never modify. This prevents permission escalation attacks.
+
+### ADR-0018: Instance Size Abstraction (2026-01-28)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §5. Template Layered Design: `required_features`, `required_hardware` | **MOVED** | Capability requirements now defined in InstanceSize, not Template | [ADR-0018 §4](./ADR-0018-instance-size-abstraction.md#4-backend-storage-hybrid-model) |
+| §5. Template Layered Design: Hardware capability definitions | **MOVED** | GPU/SR-IOV/Hugepages capabilities configured via InstanceSize | [ADR-0018 §Cluster Capability Matching](./ADR-0018-instance-size-abstraction.md#cluster-capability-matching) |
+| §5. Template Schema: `field.Strings("required_features")` | **SUPERSEDED** | Use InstanceSize.spec_overrides instead | [ADR-0018 InstanceSize Schema](./ADR-0018-instance-size-abstraction.md#4-backend-storage-hybrid-model) |
+| §5. Template Schema: `field.Strings("required_hardware")` | **SUPERSEDED** | Use InstanceSize.spec_overrides instead | [ADR-0018 InstanceSize Schema](./ADR-0018-instance-size-abstraction.md#4-backend-storage-hybrid-model) |
+
+> **Implementation Guidance**: Template retains `quick_fields` and `advanced_fields` for UI field visibility control. All hardware capability requirements (GPU, SR-IOV, Hugepages, dedicated CPU) are now configured in InstanceSize and matched against cluster detected capabilities.
+
+---

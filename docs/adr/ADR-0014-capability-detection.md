@@ -260,3 +260,20 @@ func (s *VMService) CreateVM(ctx context.Context, ...) error {
 
 - [KubeVirt Feature Gates Documentation](https://kubevirt.io/user-guide/cluster_admin/activating_feature_gates/)
 - [ADR-0011: SSA Apply Strategy](./ADR-0011-ssa-apply-strategy.md)
+
+---
+
+## Amendments by Subsequent ADRs
+
+> ⚠️ **Notice**: Partial amendments to this ADR by subsequent ADRs.
+
+### ADR-0018: Instance Size Abstraction (2026-01-28)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| Template `required_features` metadata | **MOVED** | Feature requirements now stored in InstanceSize.spec_overrides, not Template | [ADR-0018](./ADR-0018-instance-size-abstraction.md) |
+| Template `required_hardware` metadata | **MOVED** | Hardware requirements now stored in InstanceSize.spec_overrides, not Template | [ADR-0018](./ADR-0018-instance-size-abstraction.md) |
+
+> **Note**: The cluster capability detection mechanism described in this ADR remains valid. The change only affects WHERE requirements are stored (InstanceSize instead of Template).
+
+---
