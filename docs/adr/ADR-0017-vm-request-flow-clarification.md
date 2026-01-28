@@ -1,9 +1,9 @@
 # ADR-0017: VM Request and Approval Flow Clarification
 
-> **Status**: Proposed  
-> **Date**: 2026-01-22  
-> **Amends**: ADR-0015 §4 (User-Forbidden Fields and Platform-Controlled Attributes)  
-> **Review Period**: Until 2026-01-28 (48-hour public comment period)
+> **Status**: Accepted  
+> **Date**: 2026-01-28 (Accepted)  
+> **Proposed**: 2026-01-22  
+> **Amends**: ADR-0015 §4 (User-Forbidden Fields and Platform-Controlled Attributes)
 
 ---
 
@@ -64,7 +64,10 @@ Admin determines/confirms:
 - Final template version (may differ from user's request)
 - Target cluster (based on namespace environment, cluster capacity, policy)
 - Storage class (from cluster's available options)
-- Any parameter overrides
+- Any parameter overrides (CPU, Memory, etc.)
+
+Admin **CANNOT** modify:
+- `Namespace` - User-provided and **immutable after submission** (security: prevents permission escalation)
 
 ### Corrected VMCreateRequest
 
@@ -104,7 +107,11 @@ type ApprovalTicket struct {
     SelectedStorageClass  string `json:"selected_storage_class"`   // From cluster's available SCs
     
     // Template snapshot at approval time (immutable record)
-    TemplateSnapshot string `json:"template_snapshot"`
+    // Type: JSONB - stores full template configuration for audit
+    TemplateSnapshot map[string]interface{} `json:"template_snapshot"`
+    
+    // InstanceSize snapshot at approval time (ADR-0018)
+    InstanceSizeSnapshot map[string]interface{} `json:"instance_size_snapshot"`
 }
 ```
 
@@ -243,8 +250,13 @@ func EnsureNamespaceExists(ctx context.Context, cluster *Cluster, nsName string,
 |----------|---------|--------|
 | `ADR-0015` | §4 VMCreateRequest | Add amendment notice pointing to this ADR |
 | `01-contracts.md` | VM creation flow | Document correct request structure |
+| `01-contracts.md` | ApprovalTicket Admin Fields | **ADD**: Document `selected_cluster_id`, `selected_template_version`, snapshot fields |
 | `04-governance.md` | Approval workflow | Document admin cluster selection |
 | `04-governance.md` | §6 namespace_registry schema | **Remove `cluster_id` field** - see below |
+| `04-governance.md` | Admin Modification | **ADD**: Security constraints - Namespace CANNOT be modified |
+| `master-flow.md` | Stage 5.B Approval Workflow | **ADD**: Clarify Namespace is immutable after submission |
+| `examples/usecase/create_vm.go` | CreateVMRequest struct | **REMOVE**: `ClusterID` field - admin selects during approval |
+| `examples/usecase/create_vm.go` | VMCreationPayload | **REMOVE**: `ClusterID` from payload - only added after admin approval |
 
 ### Namespace Schema Correction (04-governance.md §6)
 
@@ -318,7 +330,7 @@ func (Namespace) Fields() []ent.Field {
 > The original decisions above remain **unchanged for historical reference**.
 > When implementing, please refer to the amending ADRs for current design.
 
-### ADR-0017: VM Request Flow Clarification (2026-01-22)
+### ADR-0017: VM Request Flow Clarification (2026-01-28)
 
 | Original Section | Status | Amendment Details | See Also |
 |------------------|--------|-------------------|----------|

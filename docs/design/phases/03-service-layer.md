@@ -36,6 +36,8 @@ Integrate service layer with providers:
 | VMService | `internal/service/vm_service.go` | ⬜ | - |
 | CreateVMUseCase | `internal/usecase/create_vm.go` | ⬜ | [examples/usecase/create_vm.go](../examples/usecase/create_vm.go) |
 | VMHandler | `internal/api/handlers/vm.go` | ⬜ | - |
+| **InstanceSizeService** | `internal/service/instance_size.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
+| **InstanceSizeHandler** | `internal/api/handlers/instance_size.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
 | CI check | `scripts/ci/check_manual_di.sh` | ⬜ | - |
 
 ---
@@ -305,6 +307,56 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, spec *domain.VMSpec) e
 
 ---
 
+## 8. InstanceSize Management (ADR-0018)
+
+> **Added per [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md)**: Admin InstanceSize CRUD operations.
+
+### Admin Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/admin/instance-sizes` | GET | List all InstanceSizes |
+| `/api/v1/admin/instance-sizes` | POST | Create InstanceSize |
+| `/api/v1/admin/instance-sizes/{name}` | GET | Get InstanceSize by name |
+| `/api/v1/admin/instance-sizes/{name}` | PUT | Update InstanceSize |
+| `/api/v1/admin/instance-sizes/{name}` | DELETE | Delete InstanceSize |
+| `/api/v1/admin/instance-sizes?dryRun=All` | POST | Dry-run validation only |
+
+### River Queue Integration (ADR-0006 Compliance)
+
+> **Mandatory**: All InstanceSize write operations MUST go through River Queue per [ADR-0006](../../adr/ADR-0006-unified-async-model.md).
+
+```go
+// All admin writes create River Job
+func (h *InstanceSizeHandler) Create(c *gin.Context) {
+    var req CreateInstanceSizeRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(400, gin.H{"error": err.Error()})
+        return
+    }
+    
+    // Insert via River Queue
+    job, err := h.riverClient.Insert(ctx, InstanceSizeCRUDJobArgs{
+        Operation: "CREATE",
+        Payload:   req,
+    }, nil)
+    
+    c.JSON(202, gin.H{
+        "job_id": job.ID,
+        "status": "PENDING",
+    })
+}
+```
+
+### Overcommit Warnings (Approval Flow)
+
+| Scenario | Warning Level | Description |
+|----------|---------------|-------------|
+| Overcommit in Production | ⚠️ Warning | Admin sees explicit warning but can approve |
+| Dedicated CPU + Overcommit | ❌ Error | **Blocking** - cannot be approved (incompatible) |
+
+---
+
 ## Related Documentation
 
 - [examples/usecase/create_vm.go](../examples/usecase/create_vm.go) - Atomic TX pattern
@@ -313,3 +365,5 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, spec *domain.VMSpec) e
 - [ADR-0013](../../adr/ADR-0013-manual-di.md) - Manual DI
 - [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) - Governance Model V2 (Entity Decoupling)
 - [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Go Module Vanity Import
+- [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) - VM Request Flow (Cluster selection at approval time)
+- [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) - Instance Size Abstraction (Overcommit, Dry-Run, Validation)
