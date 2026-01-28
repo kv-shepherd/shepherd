@@ -4,8 +4,14 @@
 
 ## Related Issue
 
-<!-- Link to the issue this PR addresses (if applicable) -->
-Fixes #
+<!-- Link to the issue this PR addresses -->
+<!-- Use "Refs #N" for partial work, "Closes #N" ONLY when fully resolved -->
+
+- Refs #<!--issue number-->
+
+<!-- Uncomment ONLY if this PR fully resolves the issue:
+- Closes #
+-->
 
 ## Type of Change
 
@@ -46,10 +52,19 @@ Fixes #
 
 <!-- Add screenshots to help explain your changes -->
 
+## Labels
+
+<!-- Check applicable labels -->
+- [ ] `kind/feature` | `kind/bug` | `kind/documentation` | `kind/cleanup`
+- [ ] `area/core` | `area/api` | `area/provider`
+- [ ] `priority/high` | `priority/medium` | `priority/low`
+
 ## Additional Notes
 
 <!-- Add any additional notes for reviewers -->
 
 ---
 
-By submitting this pull request, I confirm that my contribution is made under the terms of the Apache 2.0 license.
+By submitting this pull request, I confirm that:
+- My contribution is made under the Apache 2.0 license
+- All commits are signed off (DCO)

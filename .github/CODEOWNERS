@@ -1,0 +1,76 @@
+# CODEOWNERS for KubeVirt Shepherd
+#
+# These owners will be automatically requested for review when a PR modifies
+# matching file paths. Documentation: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# CODEOWNERS syntax:
+#   [path pattern] [owner1] [owner2] ...
+#   Owners can be @username, @org/team, or email@example.com
+
+# Global default owners (required for all PRs)
+*                                   @jindyzhao
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Core Areas
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Architecture Decision Records (critical - require maintainer review)
+/docs/adr/                          @jindyzhao
+
+# Database schemas and migrations
+/ent/                               @jindyzhao
+/migrations/                        @jindyzhao
+
+# API layer
+/internal/api/                      @jindyzhao
+/api/                               @jindyzhao
+
+# Provider implementations (KubeVirt integration)
+/internal/provider/                 @jindyzhao
+
+# Job queue and workers
+/internal/jobs/                     @jindyzhao
+
+# Governance (System/Service/RBAC)
+/internal/governance/               @jindyzhao
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Configuration and CI
+# ──────────────────────────────────────────────────────────────────────────────
+
+# GitHub configuration
+/.github/                           @jindyzhao
+
+# CI/CD pipelines
+/.github/workflows/                 @jindyzhao
+
+# Project configuration files
+/go.mod                             @jindyzhao
+/go.sum                             @jindyzhao
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Documentation
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Project-level documentation
+/*.md                               @jindyzhao
+/docs/                              @jindyzhao
+
+# AI Agent configuration
+/.agent/                            @jindyzhao
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Security-sensitive files
+# ──────────────────────────────────────────────────────────────────────────────
+
+SECURITY.md                         @jindyzhao
+/internal/auth/                     @jindyzhao
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Note: As the project grows, add more granular ownership:
+#
+# Example for future SIG structure:
+# /internal/vm/       @kv-shepherd/sig-vm
+# /internal/storage/  @kv-shepherd/sig-storage
+# /docs/i18n/zh-CN/   @kv-shepherd/localization-zh
+# ──────────────────────────────────────────────────────────────────────────────

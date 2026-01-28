@@ -32,24 +32,56 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ### Commit Message Guidelines
 
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
+Follow [Conventional Commits](https://www.conventionalcommits.org/) with the **50/72 rule**:
 
 ```
-<type>(<scope>): <description>
-
-[optional body]
-
-[optional footer(s)]
+<type>(<scope>): <description>     ← 50 chars max, imperative, no period
+                                    ← blank line
+[body: explain what and why]        ← wrap at 72 chars
+                                    ← blank line
+[footer: issue refs, sign-off]      ← Refs #N or Closes #N
+Signed-off-by: Your Name <email>
 ```
 
-Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+### Commit Message Rules
 
-Example:
+| Rule | Requirement |
+|------|-------------|
+| Subject line | ≤50 characters, imperative mood, no period |
+| Blank line | Required between subject and body |
+| Body | Wrap at 72 characters, explain *what* and *why* |
+| Footer | Issue references, DCO sign-off |
+
+### Types
+
+`feat` | `fix` | `docs` | `style` | `refactor` | `test` | `chore` | `perf` | `ci`
+
+### Issue Reference Keywords
+
+| Keyword | Effect | When to Use |
+|---------|--------|-------------|
+| `Refs #N` | Links only | Partial work, ongoing discussion |
+| `Part of #N` | Links only | Multi-PR issue |
+| `Closes #N` | **Closes on merge** | Only when PR fully resolves issue |
+| `Fixes #N` | **Closes on merge** | Bug fixes that fully resolve |
+
+> ⚠️ **IMPORTANT**: Use `Refs #N` for work-in-progress. Only use `Closes/Fixes` when the PR **completely** resolves the issue.
+
+### Example
+
 ```
 feat(provider): add KubeVirt snapshot support
 
-Implements VM snapshot functionality using KubeVirt VolumeSnapshot API.
+Implements VM snapshot functionality using the KubeVirt VolumeSnapshot
+API. This enables point-in-time recovery for VirtualMachine instances.
+
+Key changes:
+- Add SnapshotProvider interface
+- Implement KubeVirt VolumeSnapshot adapter
+- Add snapshot lifecycle management
+
 Closes #123
+Signed-off-by: Your Name <email@example.com>
 ```
 
 ## Development Setup
@@ -162,6 +194,45 @@ Aim for ≥60% test coverage on new code.
 2. CI checks must pass
 3. Documentation must be updated if applicable
 4. Breaking changes require ADR update
+5. All review comments must be resolved before merge
+
+### Labels
+
+Use labels to categorize your PR:
+
+| Label | Description |
+|-------|-------------|
+| `kind/feature` | New feature |
+| `kind/bug` | Bug fix |
+| `kind/documentation` | Documentation update |
+| `kind/cleanup` | Code cleanup or refactoring |
+| `area/core` | Core functionality |
+| `area/api` | API changes |
+| `area/provider` | KubeVirt provider |
+| `good first issue` | Suitable for new contributors |
+
+### Draft PRs
+
+Open a **Draft PR** early to:
+- Get early feedback on your approach
+- Allow others to track your progress
+- Prevent duplicate work
+
+Mark as "Ready for Review" when complete.
+
+### Handling Review Feedback
+
+When addressing review comments:
+
+```bash
+# Make changes, then use fixup commits
+git commit --fixup=<commit-hash>
+
+# Before final merge, squash fixups
+git rebase --autosquash -i main
+```
+
+> 💡 Avoid commit messages like "Address review comments" - squash them into meaningful commits before merge.
 
 ## Getting Help
 

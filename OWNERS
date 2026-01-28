@@ -1,14 +1,17 @@
 # OWNERS file for KubeVirt Shepherd
 #
 # Defines who can approve and review pull requests.
+# See: https://www.kubernetes.dev/docs/guide/owners/
 
-# Approvers can approve PRs for merge
+# Approvers can approve PRs for merge (LGTM + approve)
 approvers:
-  - kv-shepherd/maintainers
+  - jindyzhao
+  # Future: - kv-shepherd/maintainers
 
-# Reviewers can review PRs and provide feedback
+# Reviewers can review PRs and provide feedback (LGTM only)
 reviewers:
-  - kv-shepherd/reviewers
+  - jindyzhao
+  # Future: - kv-shepherd/reviewers
 
 # Labels to apply to issues/PRs in this directory
 labels:
