@@ -6,7 +6,7 @@ This file lists the maintainers of the KubeVirt Shepherd project.
 
 | Name | GitHub | Affiliation | Focus Area |
 |------|--------|-------------|------------|
-| *To be announced* | - | - | Core |
+| Jindy Zhao | [@jindyzhao](https://github.com/jindyzhao) | Independent | Core, Architecture |
 
 > **Note**: As a new project, the maintainer list will be populated as the community grows. See [GOVERNANCE.md](GOVERNANCE.md) for the process of becoming a maintainer.
 
