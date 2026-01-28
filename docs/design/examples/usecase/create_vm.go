@@ -75,11 +75,15 @@ func NewCreateVMAtomicUseCase(
 //
 // NOTE (ADR-0015 §4): No Name field.
 // Name is platform-generated: {namespace}-{system}-{service}-{index}
+//
+// NOTE (ADR-0017): No ClusterID field.
+// ClusterID is determined by admin during approval (Stage 5.B).
+// User specifies WHAT they want, admin decides WHERE it runs.
 type CreateVMRequest struct {
-	ServiceID   string // Required: parent service
-	TemplateID  string // Required: template to use
-	Namespace   string // Required: target K8s namespace
-	ClusterID   string // Required: target cluster
+	ServiceID  string // Required: parent service
+	TemplateID string // Required: template to use
+	Namespace  string // Required: target K8s namespace (immutable after submission)
+	// NOTE: ClusterID is NOT here - admin selects during approval (ADR-0017)
 	CPU         int    // Optional: override template default
 	MemoryMB    int    // Optional: override template default
 	Reason      string // Required: business reason for request
@@ -106,14 +110,15 @@ func (uc *CreateVMAtomicUseCase) Execute(ctx context.Context, req CreateVMReques
 	// Create domain event payload
 	// NOTE (ADR-0015 §3): No SystemID - resolved via ServiceID
 	// NOTE (ADR-0015 §4): No Name - platform-generated after approval
+	// NOTE (ADR-0017): No ClusterID - admin selects during approval
 	payload := domain.VMCreationPayload{
 		ServiceID:  req.ServiceID,
 		TemplateID: req.TemplateID,
 		Namespace:  req.Namespace,
-		ClusterID:  req.ClusterID,
-		CPU:        req.CPU,
-		MemoryMB:   req.MemoryMB,
-		Reason:     req.Reason,
+		// ClusterID is NOT included - admin determines this during approval (ADR-0017)
+		CPU:      req.CPU,
+		MemoryMB: req.MemoryMB,
+		Reason:   req.Reason,
 	}
 
 	// ========== Atomic Transaction ==========
@@ -235,14 +240,15 @@ func (uc *CreateVMAtomicUseCase) AutoApproveAndEnqueue(ctx context.Context, req 
 	ticketID := uuid.New().String()
 
 	// NOTE (ADR-0015 §3, §4): No SystemID, no Name in payload
+	// NOTE (ADR-0017): No ClusterID - admin selects during approval
 	payload := domain.VMCreationPayload{
 		ServiceID:  req.ServiceID,
 		TemplateID: req.TemplateID,
 		Namespace:  req.Namespace,
-		ClusterID:  req.ClusterID,
-		CPU:        req.CPU,
-		MemoryMB:   req.MemoryMB,
-		Reason:     req.Reason,
+		// ClusterID is NOT included - admin determines this during approval (ADR-0017)
+		CPU:      req.CPU,
+		MemoryMB: req.MemoryMB,
+		Reason:   req.Reason,
 	}
 
 	// ========== Single Atomic Transaction (ADR-0012 True ACID) ==========

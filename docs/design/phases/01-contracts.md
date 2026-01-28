@@ -42,6 +42,13 @@ Define core contracts and types:
 | Cluster Schema | `ent/schema/cluster.go` | ⬜ | - |
 | DomainEvent Schema | `ent/schema/domain_event.go` | ⬜ | - |
 | PendingAdoption Schema | `ent/schema/pending_adoption.go` | ⬜ | - |
+| **InstanceSize Schema** | `ent/schema/instance_size.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
+| **Users Schema** | `ent/schema/users.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
+| **AuthProviders Schema** | `ent/schema/auth_providers.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
+| **Roles Schema** | `ent/schema/roles.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.A](../interaction-flows/master-flow.md) |
+| **RoleBindings Schema** | `ent/schema/role_bindings.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.B](../interaction-flows/master-flow.md) |
+| **ResourceRoleBindings Schema** | `ent/schema/resource_role_bindings.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
+| **ExternalApprovalSystems Schema** | `ent/schema/external_approval_systems.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
 | Provider interface | `internal/provider/interface.go` | ⬜ | [examples/provider/interface.go](../examples/provider/interface.go) |
 | Domain models | `internal/domain/` | ⬜ | [examples/domain/](../examples/domain/) |
 | Error system | `internal/pkg/errors/errors.go` | ⬜ | - |
@@ -178,7 +185,21 @@ Key constraints:
 - Modifications stored in `ApprovalTicket.modified_spec` (full replacement)
 - `archived_at` field for soft archiving
 
-### 3.4 Instance Number Design
+### 3.4 ApprovalTicket Admin Fields (ADR-0017)
+
+> **Added by [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md)**: Admin-determined fields during approval workflow.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `selected_cluster_id` | string | Admin selects target cluster during approval |
+| `selected_template_version` | int | Admin confirms template version |
+| `selected_storage_class` | string | From cluster's available storage classes |
+| `template_snapshot` | JSONB | Full template configuration at approval time (immutable) |
+| `instance_size_snapshot` | JSONB | InstanceSize configuration at approval time (ADR-0018) |
+
+> **Security Note**: User-provided `namespace` is **immutable after submission**. Admin can only approve/reject, never modify the namespace. This prevents permission escalation attacks.
+
+### 3.5 Instance Number Design
 
 **Rule**: Instance numbers permanently increment, **no reset API**.
 
@@ -326,3 +347,5 @@ const (
 - [ADR-0014](../../adr/ADR-0014-capability-detection.md) - Capability Detection
 - [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) - Governance Model V2 (Entity Decoupling, RBAC)
 - [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Go Module Vanity Import
+- [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) - VM Request Flow (Cluster selection at approval time)
+- [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) - Instance Size Abstraction (InstanceSize, Users, AuthProviders schemas)

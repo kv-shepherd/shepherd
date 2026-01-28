@@ -242,6 +242,10 @@ internal/governance/
 
 ### Admin Modification
 
+> **Security Constraints (ADR-0017)**:
+> - Admin **CAN** modify: `template_version`, `cluster_id`, `storage_class`, resource parameters (CPU, Memory, etc.)
+> - Admin **CANNOT** modify: `namespace`, `service_id` (immutable after submission - prevents permission escalation)
+
 ```go
 // ApprovalTicket fields
 field.JSON("modified_spec", &ModifiedSpec{}),
@@ -251,6 +255,7 @@ field.String("modification_reason"),
 func GetEffectiveSpec(ticket *ApprovalTicket) (*VMSpec, error) {
     if ticket.ModifiedSpec != nil {
         // Full replacement, not merge
+        // NOTE: Namespace is NOT included in ModifiedSpec (immutable)
         return applyModifications(ticket.Payload, ticket.ModifiedSpec)
     }
     return parsePayload(ticket.Payload)
@@ -263,11 +268,24 @@ func GetEffectiveSpec(ticket *ApprovalTicket) (*VMSpec, error) {
 |-------|--------|
 | ≥5 top-level fields deleted | Log warning |
 | Required field deleted | Reject with error |
+| **Namespace modification attempted** | **Reject with error (ADR-0017)** |
 | Preview before save | `POST /api/v1/admin/approvals/:id/preview` |
 
 ---
 
-## 5. Template Engine (ADR-0007, ADR-0011)
+## 5. Template Engine (ADR-0007, ADR-0011, ADR-0018)
+
+> **Simplified per ADR-0018**: Template no longer contains Go Template variables or YAML template files. Templates define only OS image source and cloud-init configuration.
+
+### Template Scope (After ADR-0018)
+
+| In Scope | Description |
+|----------|-------------|
+| OS image source | DataVolume, ContainerDisk, PVC reference |
+| Cloud-init YAML | SSH keys, one-time password, network config |
+| Field visibility | `quick_fields`, `advanced_fields` for UI |
+| ❌ ~~Go Template variables~~ | **REMOVED** - Too complex, error-prone |
+| ❌ ~~RequiredFeatures/Hardware~~ | **MOVED** to InstanceSize per ADR-0018 |
 
 ### Template Lifecycle
 
@@ -284,8 +302,10 @@ draft → active → deprecated → archived
 
 ### Template Validation (Before Save)
 
-1. Go Template syntax check
-2. Mock data render test
+> **Updated per ADR-0018**: Removed Go Template syntax check.
+
+1. ~~Go Template syntax check~~ → **REMOVED**
+2. Cloud-init YAML syntax validation
 3. K8s Server-Side Dry-Run validation
 
 ### SSA Apply (ADR-0011)
@@ -331,10 +351,15 @@ func (a *SSAApplier) DryRunApply(ctx context.Context, yaml []byte) error {
 field.Enum("environment").Values("test", "prod"),
 
 // ent/schema/namespace_registry.go (Platform maintains namespace registry)
-field.String("name").NotEmpty().Unique(),
-field.String("cluster_id").NotEmpty(),
+// Updated by ADR-0017: Removed cluster_id - Namespace is a global logical entity
+field.String("name").NotEmpty().Unique(),      // Globally unique in Shepherd
 field.Enum("environment").Values("test", "prod"),  // Explicit, set by admin
+field.String("description").Optional(),
+// ❌ NO cluster_id - Namespace can be deployed to multiple clusters of matching environment
+// Cluster selection happens at VM approval time (ADR-0017)
 ```
+
+> **ADR-0017 Clarification**: Namespace is a Shepherd-managed logical entity, NOT bound to any single K8s cluster. When a VM is approved, the admin selects the target cluster. If the namespace doesn't exist on that cluster, Shepherd creates it JIT (Just-In-Time).
 
 ### Visibility Rules (via Platform RBAC)
 
@@ -489,3 +514,6 @@ If >50% of resources detected as ghosts, halt and alert.
 - [ADR-0011](../../adr/ADR-0011-ssa-apply-strategy.md) - SSA Apply
 - [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) - Governance Model V2 (Environment, Approval Policies, VNC, Delete Confirmation)
 - [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Go Module Vanity Import
+- [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) - VM Request Flow (Cluster selection at approval time, Namespace JIT creation)
+- [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) - Instance Size Abstraction (Overcommit, InstanceSize configuration)
+

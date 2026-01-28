@@ -190,20 +190,33 @@ field.JSON("hardware_capabilities", map[string]bool{}), // Admin-declared
 
 ### Template Matching
 
+> **Updated per ADR-0018**: Capability requirements are now stored in InstanceSize, not Template.
+
 ```go
-func FilterCompatibleClusters(clusters []Cluster, template Template) []Cluster {
+// FilterCompatibleClusters returns clusters that support the given InstanceSize requirements
+// Note: RequiredCapabilities moved from Template to InstanceSize per ADR-0018
+func FilterCompatibleClusters(clusters []Cluster, instanceSize InstanceSize) []Cluster {
     var result []Cluster
     for _, c := range clusters {
-        if hasAllFeatures(c.EnabledFeatures, template.RequiredFeatures) &&
-           hasAllHardware(c.HardwareCapabilities, template.RequiredHardware) {
+        if hasAllCapabilities(c.Capabilities, instanceSize.RequiredCapabilities) {
             result = append(result, c)
         }
     }
     return result
 }
+
+// hasAllCapabilities checks if cluster has all required capabilities from InstanceSize
+func hasAllCapabilities(clusterCaps map[string]bool, required []string) bool {
+    for _, cap := range required {
+        if !clusterCaps[cap] {
+            return false
+        }
+    }
+    return true
+}
 ```
 
----
+> **See Also**: [ADR-0018 §Cluster Capability Matching](../../adr/ADR-0018-instance-size-abstraction.md)
 
 ## 6. Resource Adoption (Two-Phase)
 

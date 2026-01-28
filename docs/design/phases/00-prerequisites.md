@@ -50,6 +50,8 @@ go mod init kv-shepherd.io/shepherd
 
 ### 1.2 Directory Structure
 
+> **Updated per ADR-0018**: Templates are stored in PostgreSQL, not as YAML files.
+
 ```
 kubevirt-shepherd-go/
 ├── cmd/
@@ -76,11 +78,15 @@ kubevirt-shepherd-go/
 │   ├── service/              # Business logic
 │   └── usecase/              # Clean Architecture use cases
 ├── migrations/               # Database migrations
-├── templates/                # YAML templates
+├── config/                   # Configuration files
+│   ├── seed/                 # Seed data (templates, instance_sizes) - loaded to PostgreSQL
+│   └── mask.yaml             # Field visibility configuration
 ├── scripts/ci/               # CI check scripts
 ├── .github/workflows/
 └── Makefile
 ```
+
+> **Note**: `templates/` directory removed per ADR-0018. All templates stored in PostgreSQL database.
 
 ---
 
