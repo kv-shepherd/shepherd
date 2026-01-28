@@ -455,6 +455,212 @@ function CreateVMForm() {
 
 ---
 
+## Code Quality and Debuggability
+
+To ensure long-term maintainability and ease of debugging, the frontend must adhere to strict code quality standards enforced through CI/CD pipelines.
+
+### CI Quality Gates (Mandatory)
+
+The following checks MUST pass before any PR can be merged:
+
+| Check | Tool | Fail Condition |
+|-------|------|----------------|
+| **Type Safety** | TypeScript | Any error with `strict: true` |
+| **Lint** | ESLint | Any error (warnings allowed in dev) |
+| **Format** | Prettier | Any unformatted file |
+| **Unit Tests** | Vitest | Coverage < 70% for new code |
+| **Build** | Next.js | Build failure |
+
+### TypeScript Configuration (tsconfig.json)
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true
+  }
+}
+```
+
+**Rationale**: Strict TypeScript catches errors at compile time rather than runtime, significantly reducing debugging time.
+
+### ESLint Configuration
+
+Use ESLint Flat Config (eslint.config.js) with these mandatory rules:
+
+```javascript
+// eslint.config.js
+import eslint from '@eslint/js';
+import tseslint from 'typescript-eslint';
+import react from 'eslint-plugin-react';
+import reactHooks from 'eslint-plugin-react-hooks';
+
+export default tseslint.config(
+  eslint.configs.recommended,
+  ...tseslint.configs.strictTypeChecked,
+  {
+    rules: {
+      // Complexity limits for debuggability
+      'max-lines-per-function': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
+      'max-depth': ['error', 3],
+      'complexity': ['error', 10],
+      
+      // Explicit is better than implicit
+      '@typescript-eslint/explicit-function-return-type': 'error',
+      '@typescript-eslint/explicit-module-boundary-types': 'error',
+      '@typescript-eslint/no-explicit-any': 'error',
+      
+      // React best practices
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+      
+      // Import organization
+      'import/order': ['error', {
+        'groups': ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
+        'newlines-between': 'always'
+      }]
+    }
+  }
+);
+```
+
+### Component Design Principles
+
+#### 1. Single Responsibility
+
+Each component should have ONE clear purpose. Split large components.
+
+```typescript
+// ❌ Bad: Component doing too much
+function VMCard({ vm }: { vm: VM }) {
+  // Fetching, formatting, rendering, actions all in one
+}
+
+// ✅ Good: Clear separation
+function VMCard({ vm }: { vm: VM }) {
+  return (
+    <Card>
+      <VMCardHeader name={vm.name} status={vm.status} />
+      <VMCardMetrics vm={vm} />
+      <VMCardActions vmId={vm.id} />
+    </Card>
+  );
+}
+```
+
+#### 2. Explicit Over Implicit
+
+Prefer verbose but clear code over clever but obscure patterns.
+
+```typescript
+// ❌ Avoid: Chained operations hard to debug
+const result = data.filter(x => x.active).map(x => x.name).slice(0, 10);
+
+// ✅ Prefer: Step-by-step for easy breakpoint debugging
+const activeItems = data.filter(item => item.active);
+const itemNames = activeItems.map(item => item.name);
+const result = itemNames.slice(0, 10);
+```
+
+#### 3. Direct Imports
+
+Always use direct imports instead of barrel files for better stack traces.
+
+```typescript
+// ❌ Avoid: Barrel import
+import { Button, Input, Select } from '@/components/ui';
+
+// ✅ Prefer: Direct imports
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+```
+
+#### 4. Typed Custom Hooks
+
+Extract complex logic into well-typed custom hooks.
+
+```typescript
+// ✅ Good: Logic encapsulated with clear types
+interface UseVMListResult {
+  vms: VM[];
+  isLoading: boolean;
+  error: Error | null;
+  refresh: () => Promise<void>;
+}
+
+function useVMList(serviceId: string): UseVMListResult {
+  // Implementation
+}
+```
+
+### Directory Structure Enforcement
+
+```
+src/
+├── app/                    # Next.js App Router (pages only)
+│   └── (feature)/          # Route groups with feature name
+├── components/             # Reusable UI components
+│   ├── ui/                 # Base components (Button, Input, etc.)
+│   └── feature/            # Feature-specific components
+├── features/               # Business logic organized by domain
+│   └── {feature}/
+│       ├── hooks/          # Feature-specific hooks
+│       ├── types/          # Feature-specific types
+│       └── utils/          # Feature-specific utilities
+├── lib/                    # Shared utilities
+│   ├── api/                # API client and types
+│   ├── hooks/              # Shared hooks
+│   └── utils/              # Shared utilities
+├── stores/                 # Zustand stores
+└── types/                  # Global TypeScript types
+```
+
+**Rules**:
+- Components in `app/` should be thin wrappers around feature components
+- No business logic in `components/ui/`
+- Each feature folder should be self-contained
+- Cross-feature imports must go through `lib/`
+
+### Error Handling Standards
+
+All async operations must have explicit error handling:
+
+```typescript
+// ✅ Good: Complete error context
+try {
+  const result = await api.vms.create(data);
+  return { success: true, data: result };
+} catch (error) {
+  console.error('[VMCreate] Failed to create VM:', {
+    input: data,
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  });
+  return { success: false, error: 'Failed to create VM' };
+}
+```
+
+### Pre-commit Hooks
+
+Use Husky + lint-staged for automated checks before commit:
+
+```json
+// package.json
+{
+  "lint-staged": {
+    "*.{ts,tsx}": ["eslint --fix", "prettier --write"],
+    "*.{json,md}": ["prettier --write"]
+  }
+}
+```
+
+---
+
 ## Pros and Cons of the Options
 
 ### Option 1: React + Next.js + Ant Design (Recommended)
@@ -529,6 +735,7 @@ Upon acceptance, perform the following:
 
 | Date | Author | Change |
 |------|--------|--------|
+| 2026-01-28 | @jindyzhao | Added Code Quality and Debuggability section with CI quality gates |
 | 2026-01-27 | @jindyzhao | Added React/Next.js Design Patterns section based on nextjs-best-practices |
 | 2026-01-27 | @jindyzhao | Initial draft based on 2026 best practices research |
 
