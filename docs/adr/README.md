@@ -26,8 +26,8 @@
 | [ADR-0014](./ADR-0014-capability-detection.md) | KubeVirt Capability Detection | Accepted | - |
 | [ADR-0015](./ADR-0015-governance-model-v2.md) | Governance Model V2 | **Accepted** ² | - |
 | [ADR-0016](./ADR-0016-go-module-vanity-import.md) | Go Module Vanity Import | Accepted | - |
-| [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) | VM Request and Approval Flow Clarification | **Proposed** | - |
-| [ADR-0018](./ADR-0018-instance-size-abstraction.md) | Instance Size Abstraction Layer | **Proposed** | - |
+| [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) | VM Request and Approval Flow Clarification | **Accepted** | - |
+| [ADR-0018](./ADR-0018-instance-size-abstraction.md) | Instance Size Abstraction Layer | **Accepted** | - |
 | [ADR-0019](./ADR-0019-governance-security-baseline-controls.md) | Governance Security Baseline Controls | **Proposed** | - |
 
 > ⚠️ **¹ ADR-0009 Partial Supersession Notice**:

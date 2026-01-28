@@ -23,8 +23,8 @@
   - [ ] `Cluster.environment` - Cluster environment type (test/prod)
   - [ ] `ent/schema/namespace_registry.go` - Namespace registry with explicit environment
     - [ ] Contains `name` field
-    - [ ] Contains `cluster_id` field
     - [ ] Contains `environment` field (test/prod) - **explicitly set by admin**
+    - [ ] Does NOT contain `cluster_id` field (ADR-0017)
   - [ ] ❌ **No `System.environment`** - System is decoupled from environment (ADR-0015 §1)
 - [ ] **Platform RBAC**:
   - [ ] `RoleBinding.allowed_environments` field
@@ -158,4 +158,3 @@
   - [ ] New approval request → all admins
   - [ ] Request approved/rejected → creator + maintainers
   - [ ] VM created/deleted → creator + maintainers
-

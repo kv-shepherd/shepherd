@@ -194,6 +194,8 @@ This project follows the architecture decisions documented in:
 | [ADR-0014](../../adr/ADR-0014-capability-detection.md) | Capability Detection | Accepted |
 | [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) | Governance Model V2 | Accepted |
 | [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) | Go Module Vanity Import | Accepted |
+| [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) | VM Request and Approval Flow Clarification | Accepted |
+| [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) | Instance Size Abstraction Layer | Accepted |
 
 ---
 

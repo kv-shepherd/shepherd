@@ -1,8 +1,8 @@
 # 规范交互流程 (Master Flow)
 
-> **Status**: Draft (待 ADR-0018 接受后生效)  
-> **版本**: 0.1-draft  
-> **日期**: 2026-01-26  
+> **Status**: Stable (ADR-0017, ADR-0018 Accepted)  
+> **版本**: 1.0  
+> **日期**: 2026-01-28  
 > **语言**: 中文 (翻译版本)  
 > **规范版本**: [English Canonical Version](../../../../design/interaction-flows/master-flow.md)
 
@@ -24,8 +24,8 @@
 
 ## 附录：规范交互流程（中文版）
 
-> **重要**: 本节是 `docs/design/interaction-flows/master-flow.md` 的草稿。
-> ADR 被接受后，本节内容将被提取为独立的规范交互流程文档，作为前后端和数据库开发的统一参考。
+> **重要**: 本节为 `docs/design/interaction-flows/master-flow.md` 的中文翻译版本。
+> 如有不一致，以英文规范版本为准。
 
 ### 文档结构
 
@@ -2179,4 +2179,3 @@ INSERT INTO external_approval_systems (
 | **回退机制** | 外部系统不可用时，自动回退到内置审批 |
 
 ---
-

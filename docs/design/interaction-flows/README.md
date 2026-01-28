@@ -1,6 +1,6 @@
 # Interaction Flows
 
-> **Status**: Draft (Pending ADR-0018 Acceptance)  
+> **Status**: Stable (ADR-0017, ADR-0018 Accepted)  
 > **Source of Truth**: This directory contains the canonical interaction flows for Shepherd platform.
 
 ---
@@ -101,6 +101,7 @@ This directory content is **extracted from** ADR-0018 Appendix.
 
 | Date | Version | Change |
 |------|---------|--------|
+| 2026-01-28 | 1.0 | **STABLE**: ADR-0017 and ADR-0018 accepted |
 | 2026-01-26 | 0.1-draft | CNCF normalization: English as canonical, Chinese to i18n/ |
 | 2026-01-26 | 0.1-draft | Added: Stage 1.5 Bootstrap, Stage 2.E External Approval Systems |
 | 2026-01-26 | 0.1-draft | Updated: All runtime config via PostgreSQL (removed YAML config) |
