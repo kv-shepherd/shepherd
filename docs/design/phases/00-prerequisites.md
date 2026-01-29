@@ -99,7 +99,7 @@ kubevirt-shepherd-go/
 | Decision | Rationale |
 |----------|-----------|
 | Viper for config | Standard Go config library, supports file + env |
-| Environment variable prefix | `KUBEVIRT_SHEPHERD_` |
+| Standard env vars | ADR-0018: `DATABASE_URL`, `SERVER_PORT`, `LOG_LEVEL` (no prefix) |
 | Shared connection pool | ADR-0012: Ent + River + sqlc share same pgxpool |
 | PostgreSQL for sessions | Redis removed, sessions stored in PostgreSQL |
 
@@ -232,18 +232,88 @@ See [ci/README.md](../ci/README.md) for complete list.
 
 ---
 
-## 8. Data Initialization
+## 7.5 PostgreSQL Stability (ADR-0008) ⚠️ CRITICAL
+
+> **Risk**: River job queue tables experience high-frequency inserts/updates/deletes.
+> Without aggressive autovacuum, tables will bloat and severely degrade performance.
+
+### Required Deployment SQL
+
+```sql
+-- River job table: aggressive autovacuum (vacuum earlier, at 1% dead tuples instead of 20%)
+ALTER TABLE river_job SET (
+    autovacuum_vacuum_scale_factor = 0.01,  -- 1% threshold (default: 0.2 = 20%)
+    autovacuum_vacuum_threshold = 1000,     -- minimum dead tuples before vacuum
+    autovacuum_analyze_scale_factor = 0.01, -- frequent statistics update
+    autovacuum_analyze_threshold = 500
+);
+
+-- If using audit_logs with high write volume, apply similar settings
+ALTER TABLE audit_logs SET (
+    autovacuum_vacuum_scale_factor = 0.02,
+    autovacuum_vacuum_threshold = 5000
+);
+```
+
+### River Built-in Cleanup
+
+```go
+// River client configuration
+riverClient, _ := river.NewClient(riverpgxv5.New(pool), &river.Config{
+    // Automatically delete completed jobs after 24 hours
+    CompletedJobRetentionPeriod: 24 * time.Hour,
+})
+```
+
+### Monitoring
+
+| Metric | Warning | Critical |
+|--------|---------|----------|
+| `river_dead_tuple_ratio` | > 10% | > 30% |
+| `pg_stat_user_tables.n_dead_tup` | Review | Vacuum immediately |
+
+### Verification Query
+
+```sql
+SELECT relname, n_dead_tup, n_live_tup,
+       round(100.0 * n_dead_tup / nullif(n_live_tup + n_dead_tup, 0), 2) as dead_ratio
+FROM pg_stat_user_tables
+WHERE relname LIKE 'river%' OR relname = 'audit_logs'
+ORDER BY dead_ratio DESC;
+```
+
+---
+
+## 8. Data Initialization (ADR-0018)
+
+> **Design**: Application auto-initializes on first startup. See [ADR-0018 §First Deployment](../../adr/ADR-0018-instance-size-abstraction.md) and [master-flow.md Stage 1](../interaction-flows/master-flow.md).
+
+### Auto-Initialization Flow
+
+Application performs these steps on startup (idempotent, `ON CONFLICT DO NOTHING`):
+
+1. **Run Atlas migrations** - Schema changes
+2. **Run River migrations** - Job queue tables
+3. **Seed built-in roles** - PlatformAdmin, Approver, Viewer (do not overwrite existing)
+4. **Seed default admin** - `admin/admin` with `force_password_change=true`
+
+### First Login Experience
+
+- User logs in with `admin/admin`
+- System forces password change before any other action
+- After password change, `force_password_change` flag cleared
 
 ### Required Seeds
 
-| Data | Purpose |
-|------|---------|
-| Super admin | Initial admin account |
-| System config | Default VM limits |
-| Quota template | Default tenant quotas |
-| Approval policy | Default approval rules |
+| Data | Purpose | Idempotent |
+|------|---------|------------|
+| Super admin | Initial admin account (`admin/admin`) | ✅ `ON CONFLICT DO NOTHING` |
+| Built-in roles | PlatformAdmin, Approver, Viewer | ✅ `ON CONFLICT DO NOTHING` |
+| Default quota | Tenant quota template | ✅ `ON CONFLICT DO NOTHING` |
 
-### Execution Order
+### Manual Migration (Development/CI)
+
+For explicit control outside auto-init:
 
 ```bash
 # 1. Atlas migration (business tables)
@@ -252,8 +322,8 @@ atlas migrate apply --dir file://migrations/atlas --url $DATABASE_URL
 # 2. River migration (job queue tables)
 river migrate-up --database-url $DATABASE_URL
 
-# 3. Data seeding
-SEED_ADMIN_PASSWORD=your_secure_password go run ./cmd/seed
+# 3. Application auto-seeds on first startup
+go run cmd/server/main.go
 ```
 
 ---
@@ -266,7 +336,7 @@ SEED_ADMIN_PASSWORD=your_secure_password go run ./cmd/seed
 - [ ] Docker image builds successfully
 - [ ] `/health/live` returns 200
 - [ ] `/health/ready` checks database
-- [ ] `make seed` initializes admin account
+- [ ] First startup auto-seeds admin account
 - [ ] River migration tables created
 
 ---
@@ -279,3 +349,47 @@ SEED_ADMIN_PASSWORD=your_secure_password go run ./cmd/seed
 - [ci/README.md](../ci/README.md) - CI scripts
 - [ADR-0012](../../adr/ADR-0012-hybrid-transaction.md) - Hybrid transaction
 - [ADR-0013](../../adr/ADR-0013-manual-di.md) - Manual DI
+- [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Vanity Import
+
+---
+
+## ADR-0016: Vanity Import Deployment
+
+> **Required for `go get kv-shepherd.io/shepherd` to work**
+
+The vanity import server must be deployed before external users can import the module.
+
+### Deployment Options (per ADR-0016)
+
+| Option | Complexity | Recommended For |
+|--------|-----------|-----------------|
+| **Cloudflare Pages** (Recommended) | Low | Projects using Cloudflare DNS |
+| Static HTML | Low | Any web host |
+| [govanityurls](https://github.com/GoogleCloudPlatform/govanity) | Medium | Programmatic management |
+
+### Quick Setup (Cloudflare Pages)
+
+1. Create Cloudflare Pages project for `kv-shepherd.io`
+2. Deploy static HTML with `go-import` meta tag:
+
+```html
+<!-- public/shepherd/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="go-import" content="kv-shepherd.io/shepherd git https://github.com/kv-shepherd/shepherd">
+    <meta name="go-source" content="kv-shepherd.io/shepherd https://github.com/kv-shepherd/shepherd https://github.com/kv-shepherd/shepherd/tree/main{/dir} https://github.com/kv-shepherd/shepherd/blob/main{/dir}/{file}#L{line}">
+    <meta http-equiv="refresh" content="0; url=https://github.com/kv-shepherd/shepherd">
+</head>
+<body>Redirecting...</body>
+</html>
+```
+
+3. Verify: `go get kv-shepherd.io/shepherd@latest`
+
+### Status
+
+- [ ] Domain DNS configured
+- [ ] Vanity import server deployed
+- [ ] `go get` verification passed
+
