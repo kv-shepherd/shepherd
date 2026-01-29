@@ -96,6 +96,9 @@ func (m *Mapper) MapVM(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMac
 
 ### Using Official Client
 
+> **ADR-0001**: Use official `kubevirt.io/client-go` client.  
+> **Version Tracking**: Client version is specified in [DEPENDENCIES.md](../DEPENDENCIES.md) as single source of truth.
+
 ```go
 import "kubevirt.io/client-go/kubecli"
 
@@ -218,7 +221,36 @@ func hasAllCapabilities(clusterCaps map[string]bool, required []string) bool {
 
 > **See Also**: [ADR-0018 §Cluster Capability Matching](../../adr/ADR-0018-instance-size-abstraction.md)
 
-## 6. Resource Adoption (Two-Phase)
+## 6. Schema Cache Lifecycle (ADR-0023)
+
+> **Purpose**: KubeVirt Schema caching enables offline validation, multi-version compatibility, and frontend type generation.
+
+### Cache Lifecycle
+
+| Stage | Trigger | Action |
+|-------|---------|--------|
+| **1. Startup** | Application boot | Load embedded schemas (bundled at compile time) |
+| **2. Cluster Registration** | New cluster added | Detect KubeVirt version → check cache → queue fetch if missing |
+| **3. Version Detection** | Health check loop (60s) | Piggyback: compare `clusters.kubevirt_version` with detected version |
+| **4. Schema Update** | Version change detected | Queue `SchemaUpdateJob` (River) → async fetch → cache update |
+
+### Implementation Integration
+
+- **ClusterHealthChecker**: Detects version during health check, triggers schema update if mismatch
+- **SchemaUpdateJob**: River job that fetches and caches OpenAPI schema from cluster
+- **Embedded Fallback**: Bundled schemas for common KubeVirt versions (compile-time)
+
+### Expiration Policy
+
+Schemas are **immutable per version** (v1.5.0 never changes). Cache indefinitely; update only on version change.
+
+### Graceful Degradation
+
+If schema fetch fails → use embedded fallback → retry on next health check cycle.
+
+> **See Also**: [ADR-0023 §1 Schema Cache](../../adr/ADR-0023-schema-cache-and-api-standards.md), [master-flow.md §Schema Cache Lifecycle](../interaction-flows/master-flow.md)
+
+## 7. Resource Adoption (Two-Phase)
 
 ### Phase 1: Auto-Discovery
 
@@ -254,7 +286,7 @@ Admin reviews pending list → Confirm/Ignore → Write to main table or delete
 
 ---
 
-## 7. MockProvider
+## 8. MockProvider
 
 For testing without K8s cluster:
 

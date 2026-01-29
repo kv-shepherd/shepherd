@@ -6,10 +6,11 @@
 
 ## Project Structure
 
-- [ ] Go module initialized (`go.mod`)
+- [ ] Go module initialized (`go.mod` with `kv-shepherd.io/shepherd`)
 - [ ] Directory structure follows [README.md](../README.md#project-structure)
 - [ ] `cmd/server/main.go` created
 - [ ] Configuration loading (Viper) working correctly
+- [ ] **Standard environment variables (ADR-0018)**: `DATABASE_URL`, `SERVER_PORT`, `LOG_LEVEL`
 
 ---
 
@@ -72,3 +73,4 @@ Before proceeding to Phase 1, verify:
 - [ ] `go build ./...` no errors
 - [ ] PostgreSQL connection test successful
 - [ ] Worker Pool initialization test passes
+- [ ] **Auto-initialization (ADR-0018)**: First startup auto-seeds admin/admin with force_password_change

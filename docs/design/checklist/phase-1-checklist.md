@@ -106,12 +106,16 @@
 
 ---
 
-## Platform RBAC Schema (ADR-0015 §22)
+## Platform RBAC Schema (ADR-0015 §22, ADR-0019)
 
 - [ ] `ent/schema/permission.go` - Atomic permission definitions
 - [ ] `ent/schema/role.go` - Role = bundle of permissions
 - [ ] `ent/schema/role_binding.go` - User-role assignments with scope
-- [ ] Built-in roles seeded: PlatformAdmin, SystemAdmin, Operator, Viewer
+- [ ] Built-in roles seeded (per master-flow.md):
+  - [ ] **Bootstrap** - Initial setup only (`*:*`), MUST be disabled after initialization
+  - [ ] **PlatformAdmin** - Super admin (`platform:admin` explicit permission)
+  - [ ] **Approver** - Can approve requests (`approval:approve`, `approval:view`)
+  - [ ] **Viewer** - Read-only access (`*:read`)
 - [ ] Environment-based permission control (`allowed_environments` field)
 
 ---

@@ -2280,4 +2280,28 @@ RUNNING/STOPPED → DELETING → DELETED (terminal)
 
 ---
 
+## Amendments by Subsequent ADRs
+
+> ⚠️ **Notice**: The following sections of this ADR have been amended by subsequent ADRs.
+> The original decisions above remain **unchanged for historical reference**.
+> When implementing, please refer to the amending ADRs for current design.
+
+### ADR-0019: Governance Security Baseline Controls (2026-01-29)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §Configuration Storage Strategy: `SeedBuiltinRoles` code example | **AMENDED** | Wildcard `*:*` is now prohibited. Replace with explicit `platform:admin` permission | [ADR-0019 §2](./ADR-0019-governance-security-baseline-controls.md#2-rbac-least-privilege) |
+
+> **Implementation Guidance**:
+> The code example at line 190 showing `{"platform-admin", "PlatformAdmin", []string{"*:*"}}` must be updated to:
+> ```go
+> {"platform-admin", "PlatformAdmin", []string{"platform:admin"}},
+> ```
+> 
+> **Rationale**: Wildcard patterns expand at runtime, which violates the principle of least privilege.
+> The `platform:admin` is an explicit, named permission that grants full access through application logic,
+> not pattern matching.
+
+---
+
 _End of ADR-0018_
