@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"  # proposed | accepted | deprecated | superseded by ADR-XXXX
+status: "accepted"  # proposed | accepted | deprecated | superseded by ADR-XXXX
 date: 2026-01-27
 deciders: []  # GitHub usernames of decision makers
 consulted: []  # Subject-matter experts consulted (two-way communication)
