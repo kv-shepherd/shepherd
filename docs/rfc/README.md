@@ -13,7 +13,7 @@
 | [RFC-0001](./RFC-0001-pg-partman.md) | PostgreSQL Table Partitioning | Deferred | P2 | Daily jobs > 10M |
 | [RFC-0002](./RFC-0002-temporal.md) | Temporal Workflow Integration | Deferred | P3 | Multi-level approval needed |
 | [RFC-0003](./RFC-0003-helm-export.md) | Helm Chart Export | Deferred | P2 | User request |
-| [RFC-0004](./RFC-0004-external-approval.md) | External Approval Systems | Deferred | P2 | Webhook/pull mode needed |
+| [RFC-0004](./RFC-0004-external-approval.md) | External Approval Systems | **Proposed** | **P1** | V1+ optional feature |
 | [RFC-0005](./RFC-0005-event-archiving.md) | Physical Event Archiving ¹ | Deferred | P2 | DomainEvent table too large |
 | [RFC-0006](./RFC-0006-hot-reload.md) | Configuration Admin API ² | Deferred | P2 | Dynamic config via API |
 | [RFC-0007](./RFC-0007-redis-cache.md) | Redis Cache Support | Deferred | P3 | Cache miss causing bottleneck |
