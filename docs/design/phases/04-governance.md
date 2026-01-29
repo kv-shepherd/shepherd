@@ -141,7 +141,7 @@ func (w *EventJobWorker) Work(ctx context.Context, job *river.Job[EventJobArgs])
 ### Event Status Flow
 
 ```
-PENDING → PROCESSING → COMPLETED
+PENDING → PROCESSING → COMPLETED   # Per ADR-0009 L156
                     → FAILED
                     → CANCELLED
 ```
@@ -172,7 +172,7 @@ func archiveOldEvents(ctx context.Context, client *ent.Client) error {
     threshold := time.Now().AddDate(0, 0, -30)
     return client.DomainEvent.Update().
         Where(
-            domainevent.StatusIn("COMPLETED", "FAILED", "CANCELLED"),
+            domainevent.StatusIn("COMPLETED", "FAILED", "CANCELLED"), // ADR-0009
             domainevent.CreatedAtLT(threshold),
             domainevent.ArchivedAtIsNil(),
         ).
@@ -203,17 +203,23 @@ internal/governance/
 > **Ticket Status** (ApprovalTicket table):
 >
 > ```
-> PENDING_APPROVAL ──► APPROVED ──► COMPLETED
->                  └─► REJECTED     │
->                                   └─► FAILED
+>                 ┌─────────► REJECTED (terminal)
+>                 │
+> PENDING_APPROVAL─┼─────────► CANCELLED (terminal, user cancels)
+>                 │
+>                 └─────────► APPROVED ──► EXECUTING ──► SUCCESS (terminal)
+>                                                    └─► FAILED (terminal)
 > ```
+>
+> Note: APPROVED triggers River Job insertion (ADR-0006/0012).
+> EXECUTING state is set when River worker picks up the job.
 
 > **Event Status** (DomainEvent table):
 >
 > ```
-> PENDING ──► PROCESSING ──► COMPLETED
+> PENDING ──► PROCESSING ──► COMPLETED   # Per ADR-0009
 >                        └─► FAILED
->                        └─► CANCELLED
+>         └─► CANCELLED                  # If ticket rejected/cancelled
 > ```
 
 > ⚠️ **Status Terminology Alignment**:
@@ -299,6 +305,9 @@ draft → active → deprecated → archived
 | active | Available for VM creation |
 | deprecated | No new VMs, existing VMs OK |
 | archived | Hidden from all UIs |
+
+> ⚠️ **ADR-0007 Constraint**: Only **one active template per name** is allowed.
+> Creating a new version automatically deprecates the previous active version.
 
 ### Template Validation (Before Save)
 
@@ -449,11 +458,45 @@ Content-Type: application/json
 
 ## 7. Audit Logging
 
+> 📋 **Decision reference**: [ADR-0015 §6](../../adr/ADR-0015-governance-model-v2.md#6-comprehensive-operation-audit-trail), [ADR-0019 §3](../../adr/ADR-0019-governance-security-baseline-controls.md#3-audit-logging-and-sensitive-data-controls)
+
 ### Design Principles
 
 - **Append-only**: No modify, no delete
 - **Complete**: Record all operations (success and failure)
 - **Traceable**: Link to TicketID
+- **Secure**: Sensitive data MUST be redacted (ADR-0019)
+
+### Sensitive Data Redaction (ADR-0019)
+
+> **Security Baseline**: Audit logs MUST NOT contain plaintext sensitive data.
+
+| Data Category | Redaction Rule | Example |
+|---------------|----------------|---------|
+| **Passwords** | Replace with `[REDACTED]` | `password: [REDACTED]` |
+| **Tokens/Secrets** | Replace with `[REDACTED]` | `api_key: [REDACTED]` |
+| **Personal Identifiers** | Hash or partial mask | `ssn: ***-**-1234` |
+| **Kubernetes Credentials** | Never log | `kubeconfig: [NOT_LOGGED]` |
+
+```go
+// internal/governance/audit/redactor.go
+var sensitiveFields = []string{
+    "password", "secret", "token", "credential", 
+    "kubeconfig", "private_key", "api_key",
+}
+
+func RedactSensitiveData(params map[string]interface{}) map[string]interface{} {
+    redacted := make(map[string]interface{})
+    for k, v := range params {
+        if containsSensitiveField(k) {
+            redacted[k] = "[REDACTED]"
+        } else {
+            redacted[k] = v
+        }
+    }
+    return redacted
+}
+```
 
 ### ActionCodes
 
@@ -463,16 +506,137 @@ Content-Type: application/json
 | Approval | APPROVAL_APPROVED, APPROVAL_REJECTED |
 | Execution | EXECUTION_STARTED, EXECUTION_COMPLETED, EXECUTION_FAILED |
 
-### Storage
+### Storage Schema
 
-```go
-// ent/schema/audit_log.go
-field.String("action_code").NotEmpty(),
-field.JSON("params", map[string]interface{}{}),
-field.String("ticket_id").Optional(),
-field.String("performed_by").NotEmpty(),
-field.Time("performed_at").Default(time.Now),
+```sql
+-- Full DDL for audit_logs table (migrated from master-flow.md)
+CREATE TABLE audit_logs (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- Operation info
+    action          VARCHAR(50) NOT NULL,    -- action type
+    actor_id        VARCHAR(50) NOT NULL,    -- actor user ID
+    actor_name      VARCHAR(100),            -- display name (redundant for query)
+
+    -- Resource info
+    resource_type   VARCHAR(50) NOT NULL,    -- system, service, vm, approval, template, etc.
+    resource_id     VARCHAR(50) NOT NULL,    -- resource ID
+    resource_name   VARCHAR(100),            -- resource name (redundant for query)
+
+    -- Context
+    parent_type     VARCHAR(50),             -- parent resource type
+    parent_id       VARCHAR(50),             -- parent resource ID
+    environment     VARCHAR(20),             -- test, prod
+
+    -- Details (MUST be redacted before storage per ADR-0019)
+    details         JSONB,                   -- details (before/after, reason, etc.)
+    ip_address      INET,                    -- actor IP
+    user_agent      TEXT,                    -- client info
+
+    -- Time
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Indexes for common query patterns
+CREATE INDEX idx_audit_actor ON audit_logs (actor_id, created_at DESC);
+CREATE INDEX idx_audit_resource ON audit_logs (resource_type, resource_id, created_at DESC);
+CREATE INDEX idx_audit_action ON audit_logs (action, created_at DESC);
+CREATE INDEX idx_audit_time ON audit_logs (created_at DESC);
 ```
+
+### Retention Policy
+
+| Environment | Min Retention | Reason |
+|-------------|---------------|--------|
+| **Production** | ≥ 1 year | Compliance |
+| **Test** | ≥ 90 days | Configurable shorter |
+| **Sensitive ops** | ≥ 3 years | `*.delete`, `approval.*`, `rbac.*` |
+
+### JSON Export API {#7-json-export-api}
+
+> **Scenario**: Integrate audit logs into enterprise SIEM (Elasticsearch, Datadog, Splunk)
+
+```
+GET /api/v1/admin/audit-logs/export
+Content-Type: application/json
+
+Query Parameters:
+  - start_time: ISO 8601 start time
+  - end_time: ISO 8601 end time
+  - action: action filter (optional)
+  - actor_id: actor filter (optional)
+  - page: page number
+  - per_page: page size (max 1000)
+```
+
+**Response Format**:
+
+```json
+{
+  "logs": [
+    {
+      "@timestamp": "2026-01-26T10:14:16Z",
+      "event_id": "log-001",
+      "action": "vm.create",
+      "level": "INFO",
+      "actor": {
+        "id": "user-001",
+        "name": "Zhang San",
+        "ip_address": "192.168.1.100"
+      },
+      "resource": {
+        "type": "vm",
+        "id": "vm-001",
+        "name": "prod-shop-redis-01"
+      },
+      "context": {
+        "environment": "prod",
+        "cluster": "prod-cluster-01",
+        "correlation_id": "req-xxx-yyy"
+      },
+      "details": {
+        "instance_size": "medium-gpu",
+        "template": "centos7-docker"
+      }
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "per_page": 100,
+    "total": 1500
+  }
+}
+```
+
+### Webhook Push Integration
+
+```json
+POST /api/v1/admin/audit-logs/webhook
+{
+  "name": "datadog-integration",
+  "url": "https://http-intake.logs.datadoghq.com/v1/input/API_KEY",
+  "method": "POST",
+  "headers": {
+    "DD-API-KEY": "${DATADOG_API_KEY}"
+  },
+  "filters": {
+    "actions": ["*.delete", "approval.*"],
+    "environments": ["prod"]
+  },
+  "batch_size": 100,
+  "flush_interval_seconds": 60
+}
+```
+
+### Best Practices
+
+| Practice | Description |
+|----------|-------------|
+| **Structured logs** | Always JSON for search/analysis |
+| **Consistent field names** | Unified naming (snake_case) |
+| **Correlation ID** | Include `correlation_id` for tracing |
+| **Redaction** | Redact PII and sensitive data (ADR-0019) |
+| **Shallow nesting** | 2-3 levels max for query performance |
 
 ---
 
@@ -512,8 +676,48 @@ If >50% of resources detected as ghosts, halt and alert.
 - [ADR-0007](../../adr/ADR-0007-template-storage.md) - Template Storage
 - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md) - Domain Event
 - [ADR-0011](../../adr/ADR-0011-ssa-apply-strategy.md) - SSA Apply
-- [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) - Governance Model V2 (Environment, Approval Policies, VNC, Delete Confirmation)
+- [ADR-0012](../../adr/ADR-0012-hybrid-transaction.md) - Hybrid Transaction (Ent + sqlc) with CI enforcement
+- [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) - Governance Model V2
 - [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Go Module Vanity Import
-- [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) - VM Request Flow (Cluster selection at approval time, Namespace JIT creation)
-- [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) - Instance Size Abstraction (Overcommit, InstanceSize configuration)
+- [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) - VM Request Flow
+- [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) - Instance Size Abstraction
+- [ADR-0019](../../adr/ADR-0019-governance-security-baseline-controls.md) - Governance Security Baseline
+- [ADR-0020](../../adr/ADR-0020-frontend-technology-stack.md) - Frontend Technology Stack (separate repo)
+
+---
+
+## ADR-0015 Section Coverage Index
+
+> The following ADR-0015 decisions are implemented in this phase:
+
+| ADR-0015 Section | Covered In | Notes |
+|------------------|------------|-------|
+| §7 Approval Policies | Section 4 | Environment-aware policy matrix |
+| §8 Storage Class | Section 6.0.1 | Per-cluster default SC |
+| §10 Cancellation | Section 6.1 | Delete confirmation |
+| §11 Approval Timeout | ⚠️ **Pending** | Worker-side timeout or cron |
+| §13 Delete Cascade | Section 6.1 | Hierarchical delete |
+| §18 VNC Permissions | Section 6.2 | Token-based access |
+| §19 Batch Operations | ⚠️ **Pending** | Bulk approval/power ops |
+| §20 Notification System | ⚠️ **Pending** | In-app + email alerts |
+| §22 Authentication (IdP) | ⚠️ **Out of Scope V1** | See ADR-0015 §21 |
+
+> **Pending items** will be addressed in future iterations. See ADR-0015 for full specification.
+
+---
+
+## ADR-0012 CI Enforcement
+
+> **sqlc Usage Whitelist** (per [ADR-0012](../../adr/ADR-0012-hybrid-transaction.md)):
+
+| Directory | Allowed | Reason |
+|-----------|---------|--------|
+| `internal/repository/sqlc/` | ✅ Yes | sqlc query definitions |
+| `internal/usecase/` | ✅ Yes | Core atomic transactions |
+| All other directories | ❌ No | Must use Ent ORM |
+
+```bash
+# CI validation: scripts/check-sqlc-usage.sh
+# Fails build if sqlc imported outside whitelist
+```
 
