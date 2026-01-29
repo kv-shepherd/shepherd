@@ -24,9 +24,9 @@ const (
 	EventVMCreationFailed    EventType = "VM_CREATION_FAILED"
 
 	// VM Modification Events
-	EventVMModifyRequested  EventType = "VM_MODIFY_REQUESTED"
-	EventVMModifyCompleted  EventType = "VM_MODIFY_COMPLETED"
-	EventVMModifyFailed     EventType = "VM_MODIFY_FAILED"
+	EventVMModifyRequested EventType = "VM_MODIFY_REQUESTED"
+	EventVMModifyCompleted EventType = "VM_MODIFY_COMPLETED"
+	EventVMModifyFailed    EventType = "VM_MODIFY_FAILED"
 
 	// VM Deletion Events
 	EventVMDeletionRequested EventType = "VM_DELETION_REQUESTED"
@@ -72,12 +72,13 @@ const (
 )
 
 // EventStatus defines the status of a domain event.
+// Aligned with ADR-0009 DomainEvent Schema (L156).
 type EventStatus string
 
 const (
 	EventStatusPending    EventStatus = "PENDING"
 	EventStatusProcessing EventStatus = "PROCESSING"
-	EventStatusCompleted  EventStatus = "COMPLETED"
+	EventStatusCompleted  EventStatus = "COMPLETED" // Per ADR-0009 L156, NOT "SUCCESS"
 	EventStatusFailed     EventStatus = "FAILED"
 	EventStatusCancelled  EventStatus = "CANCELLED"
 )
@@ -105,15 +106,19 @@ type DomainEvent struct {
 // NOTE (ADR-0015 §3): No SystemID field.
 // System is always resolved via ServiceID → Service.Edges.System.
 // This ensures Single Source of Truth and prevents data inconsistency.
+//
+// NOTE (master-flow.md §Stage 3.C): No ClusterID in user request.
+// Cluster is selected by admin during approval and stored in ApprovalTicket.ModifiedSpec.
+// This prevents users from bypassing capacity planning.
 type VMCreationPayload struct {
 	ServiceID  string `json:"service_id"`
 	TemplateID string `json:"template_id"`
-	Namespace  string `json:"namespace"`  // Target namespace for the VM
-	ClusterID  string `json:"cluster_id"` // Target cluster ID
-	CPU        int    `json:"cpu"`
-	MemoryMB   int    `json:"memory_mb"`
-	DiskGB     int    `json:"disk_gb,omitempty"`
-	Reason     string `json:"reason"`
+	// NOTE: ClusterID is NOT in user request - selected during approval (master-flow.md)
+	// NOTE: Namespace is resolved from Service at execution time
+	CPU      int    `json:"cpu"`
+	MemoryMB int    `json:"memory_mb"`
+	DiskGB   int    `json:"disk_gb,omitempty"`
+	Reason   string `json:"reason"`
 	// NOTE: Name is platform-generated, not stored in payload (ADR-0015 §4)
 }
 
@@ -146,8 +151,9 @@ func (m *ModifiedSpec) ToJSON() []byte {
 // GetEffectiveSpec returns the final spec to use.
 // Uses ModifiedSpec if present, otherwise original payload.
 //
-// Key Pattern: Full replacement, NOT merge.
-// This avoids complex nested structure merging issues.
+// Key Pattern: Field-level override (merge), NOT full replacement.
+// Only non-nil fields in ModifiedSpec are applied to the original.
+// This allows admin to modify only specific fields while preserving others.
 func GetEffectiveSpec(originalPayload []byte, modifiedSpec []byte) (*VMCreationPayload, error) {
 	var original VMCreationPayload
 	if err := json.Unmarshal(originalPayload, &original); err != nil {
