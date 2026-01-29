@@ -9,16 +9,24 @@ package domain
 import "time"
 
 // VMStatus represents the status of a VM.
+// Aligned with master-flow.md §Stage 2.F status definitions.
 type VMStatus string
 
 const (
-	VMStatusPending   VMStatus = "PENDING"
-	VMStatusRunning   VMStatus = "RUNNING"
-	VMStatusStopped   VMStatus = "STOPPED"
-	VMStatusFailed    VMStatus = "FAILED"
-	VMStatusMigrating VMStatus = "MIGRATING"
-	VMStatusPaused    VMStatus = "PAUSED"
-	VMStatusUnknown   VMStatus = "UNKNOWN"
+	// Primary lifecycle states (master-flow.md)
+	VMStatusCreating VMStatus = "CREATING" // VM being provisioned
+	VMStatusRunning  VMStatus = "RUNNING"  // VM is running
+	VMStatusStopping VMStatus = "STOPPING" // VM shutting down
+	VMStatusStopped  VMStatus = "STOPPED"  // VM is stopped
+	VMStatusDeleting VMStatus = "DELETING" // VM being deleted
+	VMStatusDeleted  VMStatus = "DELETED"  // VM deleted (soft-delete record)
+	VMStatusFailed   VMStatus = "FAILED"   // VM in error state
+
+	// Extended states (K8s/KubeVirt specific)
+	VMStatusPending   VMStatus = "PENDING"   // Waiting for resources
+	VMStatusMigrating VMStatus = "MIGRATING" // Live migration in progress
+	VMStatusPaused    VMStatus = "PAUSED"    // VM paused
+	VMStatusUnknown   VMStatus = "UNKNOWN"   // Status cannot be determined
 )
 
 // VM represents a virtual machine in the domain model.

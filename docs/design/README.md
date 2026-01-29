@@ -196,8 +196,11 @@ This project follows the architecture decisions documented in:
 | [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) | Go Module Vanity Import | Accepted |
 | [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) | VM Request and Approval Flow Clarification | Accepted |
 | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) | Instance Size Abstraction Layer | Accepted |
-<<<<<<< HEAD
-=======
+| [ADR-0019](../../adr/ADR-0019-governance-security-baseline-controls.md) | Governance Security Baseline Controls | Accepted |
+| [ADR-0020](../../adr/ADR-0020-frontend-technology-stack.md) | Frontend Technology Stack | Accepted |
+| [ADR-0021](../../adr/ADR-0021-api-contract-first.md) | API Contract-First Design | Accepted |
+| [ADR-0022](../../adr/ADR-0022-modular-provider-pattern.md) | Modular Provider Pattern | Accepted |
+| [ADR-0023](../../adr/ADR-0023-schema-cache-and-api-standards.md) | Schema Cache and API Standards | Accepted |
 
 ---
 
@@ -205,7 +208,6 @@ This project follows the architecture decisions documented in:
 
 Proposed changes are documented in `docs/design/notes/` until the ADR is accepted.
 Do not update normative specs until acceptance.
->>>>>>> 4476316 (docs(governance): establish design notes workflow)
 
 ---
 
