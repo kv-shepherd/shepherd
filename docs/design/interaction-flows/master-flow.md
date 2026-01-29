@@ -5,19 +5,38 @@
 > **Date**: 2026-01-28  
 > **Language**: English (Canonical Version)  
 > **Source**: Extracted from ADR-0018 Appendix
+>
+> 🌐 **Other Languages**: [中文版](../../i18n/zh-CN/design/interaction-flows/master-flow.md)
 
 ---
 
 ## Document Purpose
 
 This document is the canonical reference for all Shepherd platform interaction
-flows, serving as the single source of truth for frontend, backend, and
+flows, serving as the **single source of truth** for frontend, backend, and
 database development.
+
+## Document Scope
+
+| In Scope | Out of Scope |
+|----------|--------------|
+| User interaction sequences | Database DDL/Schema definitions |
+| Data flow and sources | Detailed API specifications |
+| Conceptual state diagrams | Implementation code examples |
+| Business rules summary | Low-level technical constraints |
+
+> **Cross-Reference Pattern**: Operations involving data persistence include
+> conceptual overview here, with implementation details documented in Phase
+> design documents.
+>
+> Example: "Audit logs are created for all operations. See [04-governance.md §7](../phases/04-governance.md#7-audit-logging) for schema details."
 
 **Related Documents**:
 - [ADR-0018: Instance Size Abstraction](../../adr/ADR-0018-instance-size-abstraction.md)
 - [ADR-0015: Governance Model V2](../../adr/ADR-0015-governance-model-v2.md)
 - [ADR-0017: VM Request Flow](../../adr/ADR-0017-vm-request-flow-clarification.md)
+- [Phase 01: Contracts](../phases/01-contracts.md) — Data contracts and naming constraints
+- [Phase 04: Governance](../phases/04-governance.md) — RBAC, audit logging, approval workflows
 
 ---
 
@@ -40,8 +59,8 @@ database development.
 |----------|-------------|
 | **Schema as Single Source of Truth** | KubeVirt official JSON Schema defines all field types, constraints, and enum options. We do not duplicate these in code. |
 | **Mask Only Selects Paths** | Mask only selects which Schema paths to expose. It does not define field options. |
-| **Dumb Backend** | Backend stores `map[string]interface{}` and does not interpret field semantics. |
-| **Schema-Driven Frontend** | Frontend renders UI components based on Schema types. |
+| **Hybrid Model** | Core scheduling fields (CPU, memory, GPU) stored in indexed columns for query performance; `spec_overrides` JSONB stores remaining fields without semantic interpretation. See ADR-0018 §4. |
+| **Schema-Driven Frontend** | Frontend renders UI components based on Schema types. See ADR-0020 for technology stack (React 19, Next.js 15, Ant Design 5). |
 
 ### Role Definitions
 
@@ -50,6 +69,46 @@ database development.
 | **Developer** | Fetch KubeVirt Schema, define Mask (select exposed paths) | Code/config layer |
 | **Platform Admin** | Create InstanceSize (fill values via schema-driven form) | Admin console |
 | **Regular User** | Choose InstanceSize and submit VM create request | Business usage layer |
+
+### Naming Policy (ADR-0019 Baseline)
+
+> **Security Baseline**: All platform-managed logical names MUST follow RFC 1035-based rules.
+
+| Rule | Constraint |
+|------|------------|
+| **Character Set** | Lowercase letters, digits, hyphen only (`a-z`, `0-9`, `-`) |
+| **Start Character** | MUST start with a letter (`a-z`) |
+| **End Character** | MUST end with a letter or digit |
+| **Consecutive Hyphens** | MUST NOT contain `--` (reserved for Punycode) |
+| **Length** | System/Service/Namespace: max 15 chars each (ADR-0015 §16) |
+
+**Applies to**: System name, Service name, Namespace name, VM name components.
+
+### API Design Principles (ADR-0021, ADR-0023)
+
+| Principle | Description |
+|-----------|-------------|
+| **Contract-First** | OpenAPI 3.1 spec is the single source of truth. See ADR-0021. |
+| **Code Generation** | Go server types via `oapi-codegen`; TypeScript types via `openapi-typescript`. |
+| **Pagination** | List APIs use standardized pagination (`page`, `per_page`, `sort_by`, `sort_order`). See ADR-0023. |
+| **Error Codes** | Granular error codes (e.g., `NAMESPACE_PERMISSION_DENIED`). See ADR-0023 §3. |
+
+### Schema Cache Lifecycle (ADR-0023)
+
+> **Purpose**: KubeVirt Schema caching enables offline validation, multi-version compatibility, and frontend performance.
+
+| Stage | Trigger | Action |
+|-------|---------|--------|
+| **1. Startup** | Application boot | Load embedded schemas (bundled at compile time) |
+| **2. Cluster Registration** | New cluster added | Detect KubeVirt version → check cache → queue fetch if missing |
+| **3. Version Detection** | Health check loop (60s) | Piggyback: compare `clusters.kubevirt_version` with detected version |
+| **4. Schema Update** | Version change detected | Queue `SchemaUpdateJob` (River) → async fetch → cache update |
+
+**Expiration Policy**: Schemas are **immutable per version** (v1.5.0 never changes). Cache indefinitely; update only on version change.
+
+**Graceful Degradation**: If schema fetch fails → use embedded fallback → retry on next health check cycle.
+
+See ADR-0023 §1 for complete cache lifecycle diagram.
 
 ---
 
@@ -235,27 +294,53 @@ database development.
 │  │    ('cluster:manage', 'cluster', 'manage', 'Manage clusters'),                     │
 │  │    ('template:manage', 'template', 'manage', 'Manage templates'),                  │
 │  │    ('rbac:manage', 'rbac', 'manage', 'Manage permissions'),                        │
-│  │    ('*:*', '*', '*', 'Super permission');                                           │
+│  │    ('platform:admin', 'platform', 'admin', 'Super-admin permission (explicit)'),   │
+│  │    -- ⚠️ DEPRECATED: *:* wildcard is ONLY for bootstrap role (ADR-0019)            │
+│  │    ('*:*', '*', '*', 'Bootstrap-only wildcard - DISABLE AFTER INIT');              │
 │  │                                                                                    │
-│  │  -- 2. Built-in roles                                                               │
+│  │  -- 2. Built-in roles (ADR-0019 compliant)                                   │       │
 │  │  INSERT INTO roles (id, name, is_builtin, description) VALUES                      │
-│  │    ('role-platform-admin', 'PlatformAdmin', true, 'Platform admin - all access'),  │
+│  │    ('role-bootstrap', 'Bootstrap', true, 'Initial setup only - DISABLE AFTER INIT'), │
+│  │    ('role-platform-admin', 'PlatformAdmin', true, 'Platform admin'),                │
 │  │    ('role-system-admin', 'SystemAdmin', true, 'System admin'),                      │
 │  │    ('role-approver', 'Approver', true, 'Approver'),                                 │
 │  │    ('role-operator', 'Operator', true, 'Operator'),                                 │
 │  │    ('role-viewer', 'Viewer', true, 'Read-only user');                               │
 │  │                                                                                    │
-│  │  -- 3. Role-permission bindings                                                     │
+│  │  -- 3. Role-permission bindings (ADR-0019: only bootstrap has wildcard)             │
 │  │  INSERT INTO role_permissions (role_id, permission_id) VALUES                      │
-│  │    ('role-platform-admin', '*:*'),                                                 │
-│  │    ('role-approver', 'approval:*'), ('role-approver', 'vm:read'),                  │
-│  │    ('role-system-admin', 'system:*'), ('role-system-admin', 'service:*'),          │
-│  │    ('role-system-admin', 'vm:*'), ('role-system-admin', 'vnc:access'),             │
-│  │    ('role-system-admin', 'rbac:manage'),                                           │
-│  │    ('role-operator', 'system:read'), ('role-operator', 'service:read'),            │
-│  │    ('role-operator', 'vm:*'), ('role-operator', 'vnc:access'),                     │
-│  │    ('role-viewer', 'system:read'), ('role-viewer', 'service:read'),                │
-│  │    ('role-viewer', 'vm:read');                                                     │
+│  │    -- Bootstrap role: wildcard (MUST be disabled after platform init)              │
+│  │    ('role-bootstrap', '*:*'),                                                       │
+│  │    -- PlatformAdmin: explicit permissions (no wildcards per ADR-0019)              │
+│  │    ('role-platform-admin', 'system:read'), ('role-platform-admin', 'system:write'), │
+│  │    ('role-platform-admin', 'system:delete'), ('role-platform-admin', 'service:read'),│
+│  │    ('role-platform-admin', 'service:create'), ('role-platform-admin', 'service:delete'),│
+│  │    ('role-platform-admin', 'vm:read'), ('role-platform-admin', 'vm:create'),        │
+│  │    ('role-platform-admin', 'vm:operate'), ('role-platform-admin', 'vm:delete'),     │
+│  │    ('role-platform-admin', 'vnc:access'), ('role-platform-admin', 'approval:approve'),│
+│  │    ('role-platform-admin', 'approval:view'), ('role-platform-admin', 'cluster:manage'),│
+│  │    ('role-platform-admin', 'template:manage'), ('role-platform-admin', 'rbac:manage'),│
+│  │    -- Approver: explicit permissions (no wildcards per ADR-0019)                    │
+│  │    ('role-approver', 'approval:approve'), ('role-approver', 'approval:view'),       │
+│  │    ('role-approver', 'vm:read'), ('role-approver', 'system:read'),                  │
+│  │    ('role-approver', 'service:read'),                                               │
+│  │    -- SystemAdmin, Operator, Viewer: explicit permissions                           │
+│  │    ('role-system-admin', 'system:read'), ('role-system-admin', 'system:write'),     │
+│  │    ('role-system-admin', 'system:delete'), ('role-system-admin', 'service:read'),   │
+│  │    ('role-system-admin', 'service:create'), ('role-system-admin', 'service:delete'),│
+│  │    ('role-system-admin', 'vm:read'), ('role-system-admin', 'vm:create'),            │
+│  │    ('role-system-admin', 'vm:operate'), ('role-system-admin', 'vm:delete'),         │
+│  │    ('role-system-admin', 'vnc:access'), ('role-system-admin', 'rbac:manage'),       │
+│  │    ('role-operator', 'system:read'), ('role-operator', 'service:read'),             │
+│  │    ('role-operator', 'vm:read'), ('role-operator', 'vm:create'),                    │
+│  │    ('role-operator', 'vm:operate'), ('role-operator', 'vnc:access'),                │
+│  │    ('role-viewer', 'system:read'), ('role-viewer', 'service:read'),                 │
+│  │    ('role-viewer', 'vm:read');                                                      │
+│  │                                                                                    │
+│  │  -- ⚠️ ADR-0019 Security SOP:                                                       │
+│  │  -- After platform initialization, DISABLE the bootstrap role:                      │
+│  │  --   DELETE FROM role_bindings WHERE role_id = 'role-bootstrap';                  │
+│  │  -- See docs/operations/bootstrap-role-sop.md for full procedure.                  │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -538,7 +623,7 @@ User requests access to resource R (e.g., GET /api/v1/systems/sys-001)
 
 ┌─ Step 1: Global permission check ───────────────────────────────────────────────┐
 │  Query role_bindings → aggregate permissions                                    │
-│  - PlatformAdmin (*:*) → allow all resources                                    │
+│  - Has platform:admin permission → allow all resources (explicit super-admin)   │
 │  - Has required global permission (system:read) → proceed to Step 2             │
 │  - Otherwise → deny                                                            │
 └────────────────────────────────────────────────────────────────────────────────┘
@@ -706,23 +791,36 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │                                                                                        │  │
 │  └────────────────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                              │
-│  ┌─ Step 2: Configure Namespace (optional, ADR-0015 §9) ──────────────────────────────────┐ │
+│  ┌─ Step 2: Configure Namespace (ADR-0017 Compliant) ─────────────────────────────────────┐ │
+│  │                                                                                          │
+│  │  ⚠️ KEY PRINCIPLE (ADR-0017):                                                            │
+│  │  - Namespace is a **global logical entity**, NOT bound to a specific cluster             │
+│  │  - Actual K8s namespace is created JIT (Just-In-Time) when approved VM is provisioned   │
+│  │  - Namespace is **IMMUTABLE after VM request submission**                                │
 │  │                                                                                          │
 │  │  Platform responsibility boundary:                                                      │
-│  │  - ✅ Optional: assist namespace creation                                                │
+│  │  - ✅ Manage logical namespace registry (environment labels, ownership)                  │
 │  │  - ❌ Not managed: Kubernetes RBAC / ResourceQuota (owned by K8s admins)                 │
 │  │                                                                                          │
-│  │  Admin action:                                                                           │
-│  │  POST /api/v1/admin/clusters/{cluster_id}/namespaces                                      │
+│  │  Admin action (register logical namespace):                                              │
+│  │  POST /api/v1/admin/namespaces                    👈 NOT cluster-scoped                 │
 │  │  {                                                                                       │
 │  │      "name": "prod-shop",                                                              │
-│  │      "labels": { "environment": "prod" }   👈 env label drives approval and matching │
+│  │      "environment": "prod",                       👈 drives approval and cluster match │
+│  │      "owner_id": "user-001"                                                            │
 │  │  }                                                                                       │
 │  │                                                                                          │
 │  │  💡 When user selects a Namespace, system uses environment label to determine:           │
 │  │     - Approval policy (test can be fast, prod is strict)                                 │
 │  │     - Overcommit warnings (warn in prod)                                                 │
 │  │     - Cluster matching (namespace env must match cluster env: test→test, prod→prod)       │
+│  │                                                                                          │
+│  │  💡 JIT Namespace Creation (during approval execution):                                  │
+│  │     When admin approves a VM request and selects target cluster:                         │
+│  │     1. Check if K8s namespace exists on target cluster                                   │
+│  │     2. If not exists → create namespace with standard labels                             │
+│  │     3. If permission denied → fail with NAMESPACE_PERMISSION_DENIED error                │
+│  │     See ADR-0017 §142-221 for full JIT creation flow.                                   │
 │  │                                                                                          │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘
 │                                                                                              │
@@ -1009,7 +1107,7 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │  User requests access to resource R:                                                │       │
 │  │                                                                                    │       │
 │  │  1. Global permission check:                                                       │       │
-│  │     - PlatformAdmin (*:*) → allow immediately                                      │       │
+│  │     - Has platform:admin permission → allow immediately (explicit super-admin)          │       │
 │  │                                                                                    │       │
 │  │  2. Resource-level permission check (walk inheritance chain):                      │       │
 │  │     ┌──────────────────────────────────────────────────────────────────────────┐  │       │
@@ -1287,6 +1385,15 @@ Target: vm-001 (svc-redis → sys-shop)
 ### Stage 5.A (continued): VM Request - Database Operations
 
 > **Note**: DB transaction after user submits VM request
+>
+> **⚠️ ADR Compliance**:
+> - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md): DomainEvent must be created in same transaction
+> - [ADR-0012](../../adr/ADR-0012-hybrid-transaction.md): Atomic Ent + sqlc transaction
+>
+> **Audit Logs vs Domain Events**:
+> - `audit_logs`: Human-readable compliance records (WHO did WHAT, WHEN)
+> - `domain_events`: Machine-readable state transitions (system replay/projection)
+> Both are required and serve distinct purposes.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -1295,40 +1402,54 @@ Target: vm-001 (svc-redis → sys-shop)
 │                                                                                              │
 │  User clicks [Submit Request]:                                                               │
 │                                                                                              │
-│  📦 Database operations (single transaction):                                                │
+│  📦 Database operations (single transaction - ADR-0012):                                     │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
 │  │  BEGIN TRANSACTION;                                                               │       │
 │  │                                                                                    │       │
-│  │  -- 1. Create approval ticket                                                     │       │
+│  │  -- 1. Create domain event (ADR-0009) 👈 REQUIRED                                  │       │
+│  │  INSERT INTO domain_events (                                                      │       │
+│  │      id, type, aggregate_type, aggregate_id,                                       │       │
+│  │      payload, status, created_at                                                   │       │
+│  │  ) VALUES (                                                                        │       │
+│  │      'evt-001',                                                                    │       │
+│  │      'VM_CREATE_REQUESTED',             👈 event type                              │       │
+│  │      'vm', NULL,                        👈 aggregate (VM not yet created)          │       │
+│  │      '{\"service_id\": \"svc-001\", \"instance_size_id\": \"is-gpu\"...}',       │       │
+│  │      'PENDING',                         👈 awaiting approval (ADR-0009 L156)       │       │
+│  │      NOW()                                                                        │       │
+│  │  );                                                                                │       │
+│  │                                                                                    │       │
+│  │  -- 2. Create approval ticket (linked to event)                                    │       │
 │  │  INSERT INTO approval_tickets (                                                   │       │
-│  │      id, type, status, requester_id,                                              │       │
+│  │      id, event_id, type, status, requester_id,                                    │       │
 │  │      service_id, namespace, instance_size_id, template_id,                        │       │
 │  │      request_params, reason, created_at                                           │       │
 │  │  ) VALUES (                                                                        │       │
 │  │      'ticket-001',                                                                │       │
+│  │      'evt-001',                         👈 link to domain event                    │       │
 │  │      'VM_CREATE',                                                                 │       │
-│  │      'PENDING_APPROVAL',                    👈 initial status                     │       │
+│  │      'PENDING_APPROVAL',                👈 initial status                          │       │
 │  │      'zhang.san',                                                                 │       │
 │  │      'svc-001',                                                                   │       │
 │  │      'prod-shop',                                                                 │       │
 │  │      'is-gpu-workstation',                                                        │       │
 │  │      'tpl-centos7',                                                               │       │
-│  │      '{"disk_gb": 100}',                   👈 user-adjustable params             │       │
+│  │      '{\"disk_gb\": 100}',               👈 user-adjustable params                │       │
 │  │      'Production deployment',                                                     │       │
 │  │      NOW()                                                                        │       │
 │  │  );                                                                                │       │
 │  │                                                                                    │       │
-│  │  -- 2. Audit log                                                                   │       │
+│  │  -- 3. Audit log (human-readable compliance)                                       │       │
 │  │  INSERT INTO audit_logs (                                                         │       │
 │  │      id, action, actor_id, resource_type, resource_id, details, created_at        │       │
 │  │  ) VALUES (                                                                        │       │
 │  │      'log-001', 'REQUEST_SUBMITTED', 'zhang.san',                                  │       │
 │  │      'approval_ticket', 'ticket-001',                                              │       │
-│  │      '{"action": "VM_CREATE", "namespace": "prod-shop"}',                    │       │
+│  │      '{\"action\": \"VM_CREATE\", \"namespace\": \"prod-shop\"}',                │       │
 │  │      NOW()                                                                        │       │
 │  │  );                                                                                │       │
 │  │                                                                                    │       │
-│  │  -- 3. Notify admins (optional, config-driven)                                     │       │
+│  │  -- 4. Notify admins (optional, config-driven)                                     │       │
 │  │  INSERT INTO notifications (                                                      │       │
 │  │      id, recipient_role, type, title, content, related_ticket_id, created_at      │       │
 │  │  ) VALUES (                                                                        │       │
@@ -1340,7 +1461,11 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │  COMMIT;                                                                          │       │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
-│  📊 State transition: (none) → PENDING_APPROVAL                                              │
+│  📊 State transition:                                                                       │
+│     - ApprovalTicket: (none) → PENDING_APPROVAL                                              │
+│     - DomainEvent: (none) → PENDING                                                          │
+│                                                                                              │
+│  🚫 Note: NO River Job inserted at this stage (awaiting approval)                           │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1350,6 +1475,11 @@ Target: vm-001 (svc-redis → sys-shop)
 ### Stage 5.B (continued): Admin Approval - Database Operations
 
 > **Note**: DB transaction after admin approves/rejects request
+>
+> **⚠️ ADR Compliance**:
+> - [ADR-0006](../../adr/ADR-0006-unified-async-model.md): River Job must be inserted in same transaction
+> - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md): DomainEvent status must be updated
+> - [ADR-0012](../../adr/ADR-0012-hybrid-transaction.md): Atomic Ent + sqlc + River InsertTx
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -1358,7 +1488,7 @@ Target: vm-001 (svc-redis → sys-shop)
 │                                                                                              │
 │  Admin clicks [Approve]:                                                                     │
 │                                                                                              │
-│  📦 Database operations (single transaction):                                                │
+│  📦 Database operations (single transaction - ADR-0012):                                     │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
 │  │  BEGIN TRANSACTION;                                                               │       │
 │  │                                                                                    │       │
@@ -1367,8 +1497,8 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │      status = 'APPROVED',                  👈 PENDING → APPROVED                   │       │
 │  │      approver_id = 'admin.li',                                                    │       │
 │  │      approved_at = NOW(),                                                         │       │
-│  │      cluster_id = 'cluster-a',             👈 admin-selected cluster               │       │
-│  │      storage_class = 'ceph-rbd',           👈 admin-selected storage class         │       │
+│  │      selected_cluster_id = 'cluster-a',     👈 admin-selected cluster (ADR-0017)    │       │
+│  │      selected_storage_class = 'ceph-rbd',   👈 admin-selected storage class          │       │
 │  │      template_snapshot = '{...}',          👈 template snapshot (ADR-0015 §17)     │       │
 │  │      final_cpu_request = '4',              👈 final CPU request (after overcommit)│       │
 │  │      final_cpu_limit = '8',                                                       │       │
@@ -1377,7 +1507,13 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │      final_disk_gb = 100                   👈 final disk size                      │       │
 │  │  WHERE id = 'ticket-001';                                                         │       │
 │  │                                                                                    │       │
-│  │  -- 2. Generate VM name and create VM record                                       │       │
+│  │  -- 2. Update domain event status (ADR-0009) 👈 REQUIRED                           │       │
+│  │  UPDATE domain_events SET                                                         │       │
+│  │      status = 'PROCESSING',               👈 PENDING → PROCESSING                  │       │
+│  │      updated_at = NOW()                                                           │       │
+│  │  WHERE id = 'evt-001';                                                            │       │
+│  │                                                                                    │       │
+│  │  -- 3. Generate VM name and create VM record                                       │       │
 │  │  INSERT INTO vms (                                                                │       │
 │  │      id, name, service_id, namespace, cluster_id,                                 │       │
 │  │      instance_size_id, template_id, status,                                       │       │
@@ -1391,17 +1527,30 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │      'ticket-001', NOW()                                                          │       │
 │  │  );                                                                                │       │
 │  │                                                                                    │       │
-│  │  -- 3. Audit log                                                                   │       │
+│  │  -- 4. Insert River Job (ADR-0006/0012) 👈 REQUIRED - triggers async execution     │       │
+│  │  INSERT INTO river_job (                                                          │       │
+│  │      id, kind, args, queue, state, created_at                                     │       │
+│  │  ) VALUES (                                                                        │       │
+│  │      'job-001',                                                                   │       │
+│  │      'VMCreateJob',                        👈 River worker type                     │       │
+│  │      '{"event_id": "evt-001", "vm_id": "vm-001", "ticket_id": "ticket-001"}',    │       │
+│  │      'default',                                                                   │       │
+│  │      'available',                          👈 ready for worker consumption          │       │
+│  │      NOW()                                                                        │       │
+│  │  );                                                                                │       │
+│  │  -- Note: Use riverClient.InsertTx() in code, NOT raw INSERT                       │       │
+│  │                                                                                    │       │
+│  │  -- 5. Audit log                                                                   │       │
 │  │  INSERT INTO audit_logs (                                                         │       │
 │  │      id, action, actor_id, resource_type, resource_id, details, created_at        │       │
 │  │  ) VALUES (                                                                        │       │
 │  │      'log-002', 'REQUEST_APPROVED', 'admin.li',                                    │       │
 │  │      'approval_ticket', 'ticket-001',                                              │       │
-│  │      '{"cluster": "cluster-a", "vm_name": "prod-shop-shop-redis-01"}',       │       │
+│  │      '{"cluster": "cluster-a", "vm_name": "prod-shop-shop-redis-01"}',           │       │
 │  │      NOW()                                                                        │       │
 │  │  );                                                                                │       │
 │  │                                                                                    │       │
-│  │  -- 4. Notify user                                                                 │       │
+│  │  -- 6. Notify user                                                                 │       │
 │  │  INSERT INTO notifications (                                                      │       │
 │  │      id, recipient_id, type, title, content, related_ticket_id, created_at        │       │
 │  │  ) VALUES (                                                                        │       │
@@ -1413,9 +1562,13 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │  COMMIT;                                                                          │       │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
-│  📊 State transition: PENDING_APPROVAL → APPROVED                                            │
+│  📊 State transitions:                                                                       │
+│     - ApprovalTicket: PENDING_APPROVAL → APPROVED                                            │
+│     - DomainEvent: PENDING → PROCESSING                                                      │
+│     - VM: (none) → CREATING                                                                  │
+│     - RiverJob: (none) → available                                                           │
 │                                                                                              │
-│  🔄 Async task: worker processes APPROVED tickets, creates VM on K8s                          │
+│  🔄 Async execution: River worker picks up job and calls KubeVirt API                        │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 
@@ -1425,7 +1578,7 @@ Target: vm-001 (svc-redis → sys-shop)
 │                                                                                              │
 │  Admin clicks [Reject]:                                                                      │
 │                                                                                              │
-│  📦 Database operations (single transaction):                                                │
+│  📦 Database operations (single transaction - ADR-0012):                                     │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
 │  │  BEGIN TRANSACTION;                                                               │       │
 │  │                                                                                    │       │
@@ -1437,17 +1590,25 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │      rejection_reason = 'Insufficient resources, choose another size'             │       │
 │  │  WHERE id = 'ticket-001';                                                         │       │
 │  │                                                                                    │       │
-│  │  -- 2. Audit log                                                                   │       │
+│  │  -- 2. Update domain event status (ADR-0009) 👈 REQUIRED                           │       │
+│  │  UPDATE domain_events SET                                                         │       │
+│  │      status = 'CANCELLED',                👈 PENDING → CANCELLED (rejected)        │       │
+│  │      updated_at = NOW()                                                           │       │
+│  │  WHERE id = 'evt-001';                                                            │       │
+│  │                                                                                    │       │
+│  │  -- 3. Audit log                                                                   │       │
 │  │  INSERT INTO audit_logs (...) VALUES (...);                                       │       │
 │  │                                                                                    │       │
-│  │  -- 3. Notify user                                                                 │       │
+│  │  -- 4. Notify user                                                                 │       │
 │  │  INSERT INTO notifications (...) VALUES (...);                                    │       │
 │  │                                                                                    │       │
 │  │  COMMIT;                                                                          │       │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
-│  📊 State transition: PENDING_APPROVAL → REJECTED                                            │
-│  ❌ No VM record created                                                                     │
+│  📊 State transitions:                                                                       │
+│     - ApprovalTicket: PENDING_APPROVAL → REJECTED                                            │
+│     - DomainEvent: PENDING → CANCELLED                                                       │
+│  ❌ No VM record created, no River Job inserted                                              │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1758,42 +1919,7 @@ Target: vm-001 (svc-redis → sys-shop)
 
 > **Reference**: ADR-0015 §7 (Deletion & Cascade Constraints) - "audit records are preserved"
 
-#### Audit Log Table Structure
-
-```sql
-CREATE TABLE audit_logs (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-
-    -- Operation info
-    action          VARCHAR(50) NOT NULL,    -- action type
-    actor_id        VARCHAR(50) NOT NULL,    -- actor user ID
-    actor_name      VARCHAR(100),            -- display name (redundant)
-
-    -- Resource info
-    resource_type   VARCHAR(50) NOT NULL,    -- system, service, vm, approval, template, etc.
-    resource_id     VARCHAR(50) NOT NULL,    -- resource ID
-    resource_name   VARCHAR(100),            -- resource name (redundant)
-
-    -- Context
-    parent_type     VARCHAR(50),             -- parent resource type (e.g., vm parent is service)
-    parent_id       VARCHAR(50),             -- parent resource ID
-    environment     VARCHAR(20),             -- test, prod
-
-    -- Details
-    details         JSONB,                   -- details (before/after, reason, etc.)
-    ip_address      INET,                    -- actor IP
-    user_agent      TEXT,                    -- client info
-
-    -- Time
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    -- Indexes
-    INDEX idx_audit_actor (actor_id, created_at DESC),
-    INDEX idx_audit_resource (resource_type, resource_id, created_at DESC),
-    INDEX idx_audit_action (action, created_at DESC),
-    INDEX idx_audit_time (created_at DESC)
-);
-```
+> 📦 **Schema**: See [04-governance.md §7 Storage Schema](../phases/04-governance.md#storage-schema) for full DDL and indexes.
 
 #### Operations That Must Be Audited
 
@@ -1944,98 +2070,14 @@ ORDER BY created_at DESC;
 
 ### Audit Log JSON Export (v1+)
 
-> **Scenario**: integrate audit logs into enterprise monitoring and SIEM (Elasticsearch, Datadog, Splunk, etc.)
+> **Scenario**: Integrate audit logs into enterprise SIEM (Elasticsearch, Datadog, Splunk, etc.)
 
-#### JSON Export API
+> 📦 **API Specification**: See [04-governance.md §7 JSON Export API](../phases/04-governance.md#7-json-export-api) for full API and response format.
 
-```
-GET /api/v1/admin/audit-logs/export
-Content-Type: application/json
-
-Query Parameters:
-  - start_time: ISO 8601 start time
-  - end_time: ISO 8601 end time
-  - action: action filter (optional)
-  - actor_id: actor filter (optional)
-  - page: page number
-  - per_page: page size (max 1000)
-```
-
-#### Standard JSON Export Format
-
-```json
-{
-  "logs": [
-    {
-      "@timestamp": "2026-01-26T10:14:16Z",       // ISO 8601 UTC timestamp
-      "event_id": "log-001",
-      "action": "vm.create",                      // action type
-      "level": "INFO",                            // INFO, WARN, ERROR
-      "actor": {
-        "id": "user-001",
-        "name": "Zhang San",
-        "ip_address": "192.168.1.100"
-      },
-      "resource": {
-        "type": "vm",
-        "id": "vm-001",
-        "name": "prod-shop-shop-redis-01"
-      },
-      "parent_resource": {                       // optional: parent
-        "type": "service",
-        "id": "svc-001"
-      },
-      "context": {
-        "environment": "prod",
-        "cluster": "prod-cluster-01",
-        "correlation_id": "req-xxx-yyy"          // request correlation ID
-      },
-      "details": {                               // action details (JSON object)
-        "instance_size": "medium-gpu",
-        "template": "centos7-docker"
-      }
-    }
-  ],
-  "pagination": {
-    "page": 1,
-    "per_page": 100,
-    "total": 1500
-  }
-}
-```
-
-#### Push Integration Mode (Webhook)
-
-```
-POST /api/v1/admin/audit-logs/webhook
-Content-Type: application/json
-
-{
-  "name": "datadog-integration",
-  "url": "https://http-intake.logs.datadoghq.com/v1/input/API_KEY",
-  "method": "POST",
-  "headers": {
-    "DD-API-KEY": "${DATADOG_API_KEY}"           // sensitive via env var
-  },
-  "filters": {
-    "actions": ["*.delete", "approval.*"],       // push only certain actions
-    "environments": ["prod"]                      // prod only
-  },
-  "batch_size": 100,
-  "flush_interval_seconds": 60
-}
-```
-
-#### Best Practices
-
-| Practice | Description |
-|------|-------------|
-| **Structured logs** | Always JSON for search/analysis |
-| **Consistent field names** | Unified naming (snake_case) |
-| **Correlation ID** | Include `correlation_id` for tracing |
-| **Redaction** | Redact PII and sensitive data on export |
-| **Shallow nesting** | 2-3 levels max for query performance |
-| **Source filtering** | Filter low-value logs before export |
+**Key Features**:
+- Paginated export with time range filtering
+- Webhook push integration for real-time streaming
+- Structured JSON format compatible with common log aggregators
 
 ---
 

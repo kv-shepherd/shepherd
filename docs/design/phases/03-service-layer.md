@@ -44,7 +44,54 @@ Integrate service layer with providers:
 
 ## 1. Dependency Injection (Strict Manual DI)
 
-> **ADR-0013**: Wire removed, use strict manual DI
+> **ADR-0013**: Wire removed, use strict manual DI  
+> **ADR-0022**: Organize DI via Modular Provider Pattern
+
+### Modular Provider Pattern (ADR-0022)
+
+> **Goal**: Reduce `bootstrap.go` complexity by organizing dependencies into domain-specific modules.
+
+```
+internal/app/modules/
+├── infrastructure.go   # Database clients, River, shared infra
+├── vm.go               # VM domain: services, handlers, workers
+├── approval.go         # Approval domain
+├── governance.go       # System/Service/Namespace management
+└── admin.go            # Admin-only operations (InstanceSize, Cluster)
+```
+
+Each module implements:
+```go
+type Module interface {
+    Handlers() []Handler       // HTTP handlers
+    Workers() []river.Worker   // River workers
+    Shutdown(ctx context.Context) error
+}
+```
+
+### Module Boundary Rules (Prevent Circular Dependencies)
+
+> **Go Principle**: Go compiler forbids circular imports. Design modules with a DAG (Directed Acyclic Graph) dependency structure.
+
+| Rule | Rationale |
+|------|-----------|
+| **Intra-layer injection forbidden** | `OrderService` cannot inject `ProductService` (same layer). Use higher-level orchestrator. |
+| **Depend on interfaces, not implementations** | Define interfaces in consuming package to break import cycles. |
+| **Extract shared types** | Common DTOs/constants go in `internal/domain/` or `internal/pkg/`. |
+
+**Module Dependency Graph**:
+```
+infrastructure ← [vm, approval, governance, admin]  ✅ All depend on infra
+vm ← approval                                        ✅ approval uses VM info
+governance ← vm                                      ✅ vm uses System/Service
+admin ← (standalone)                                 ✅ No cross-module deps
+```
+
+**Anti-patterns to avoid**:
+```
+vm ↔ approval    ❌ Bidirectional dependency
+governance → vm → governance  ❌ Transitive cycle
+```
 
 ### Composition Root
 
@@ -52,33 +99,42 @@ Integrate service layer with providers:
 // internal/app/bootstrap.go
 
 func Bootstrap(cfg *config.Config) (*App, error) {
-    // Layer 1: Infrastructure
-    dbClients, err := infrastructure.NewDatabaseClients(ctx, cfg.Database)
+    // Layer 1: Infrastructure (shared)
+    infraModule := modules.NewInfrastructureModule(cfg)
     
-    // Layer 2: Repositories
-    vmRepo := repository.NewVMRepository(dbClients.EntClient)
-    clusterRepo := repository.NewClusterRepository(dbClients.EntClient)
+    // Layer 2: Domain modules (depend on infrastructure)
+    vmModule := modules.NewVMModule(infraModule)
+    approvalModule := modules.NewApprovalModule(infraModule)
+    governanceModule := modules.NewGovernanceModule(infraModule)
+    adminModule := modules.NewAdminModule(infraModule)
     
-    // Layer 3: Providers
-    credProvider := provider.NewKubeconfigProvider(clusterRepo, crypto)
-    kubeProvider := provider.NewKubeVirtProvider(credProvider)
-    
-    // Layer 4: Services
-    vmService := service.NewVMService(vmRepo, kubeProvider)
-    
-    // Layer 5: UseCases
-    createVMUseCase := usecase.NewCreateVMAtomicUseCase(
-        dbClients.Pool, 
-        dbClients.SqlcQueries, 
-        riverClient,
+    // Collect all handlers and workers
+    allHandlers := slices.Concat(
+        vmModule.Handlers(),
+        approvalModule.Handlers(),
+        governanceModule.Handlers(),
+        adminModule.Handlers(),
+    )
+    allWorkers := slices.Concat(
+        vmModule.Workers(),
+        approvalModule.Workers(),
+        adminModule.Workers(),
     )
     
-    // Layer 6: Handlers
-    vmHandler := handlers.NewVMHandler(vmService, createVMUseCase)
-    
-    return &App{...}, nil
+    return &App{
+        Handlers: allHandlers,
+        Workers:  allWorkers,
+        Shutdown: func(ctx context.Context) error {
+            return errors.Join(
+                vmModule.Shutdown(ctx),
+                approvalModule.Shutdown(ctx),
+                infraModule.Shutdown(ctx),
+            )
+        },
+    }, nil
 }
 ```
+
 
 ### CI Enforcement
 
@@ -109,6 +165,19 @@ func Bootstrap(cfg *config.Config) (*App, error) {
 | Service layer must not manage transactions | `check_transaction_boundary.go` |
 | K8s calls forbidden inside transactions | `check_k8s_in_transaction.go` |
 | Transaction boundaries at UseCase layer | - |
+
+> ⚠️ **Developer Guidance**: Run these checks locally before committing:
+> ```bash
+> go run scripts/ci/check_transaction_boundary.go ./...
+> go run scripts/ci/check_k8s_in_transaction.go ./...
+> ```
+>
+> **Anti-Pattern (ADR-0012)**: K8s API calls inside DB transactions cause:
+> - Extended lock duration (network latency → deadlocks)
+> - False atomicity (K8s changes cannot rollback with DB)
+> - Connection pool exhaustion
+>
+> See [Best Practice Search Results] for distributed transaction patterns.
 
 ---
 
@@ -224,7 +293,9 @@ func (m *Manager) UpdateGlobalLimit(newLimit int) {
 
 ### Unified 202 Return (ADR-0006)
 
-All write operations return `202 Accepted`:
+All write operations return `202 Accepted` with `Location` header:
+
+> **ADR-0006 Compliance**: Response must include `Location` header and `links` for status tracking.
 
 ```go
 func (h *VMHandler) Create(c *gin.Context) {
@@ -248,13 +319,24 @@ func (h *VMHandler) Create(c *gin.Context) {
         return
     }
     
+    // 4. Return with Location header (ADR-0006)
+    statusURL := fmt.Sprintf("/api/v1/events/%s", result.EventID)
+    c.Header("Location", statusURL)
     c.JSON(202, gin.H{
         "event_id":  result.EventID,
         "ticket_id": result.TicketID,
         "status":    "PENDING_APPROVAL",
+        "message":   "Request accepted, awaiting approval",
+        "links": gin.H{
+            "self":   statusURL,
+            "ticket": fmt.Sprintf("/api/v1/tickets/%s", result.TicketID),
+        },
     })
 }
 ```
+
+> **Note**: For auto-approved operations, return `task_id` instead of `event_id`/`ticket_id`.
+> See [ADR-0006 §API Response Standards](../../adr/ADR-0006-unified-async-model.md#api-response-standards).
 
 ### Degradation Protection
 
@@ -367,3 +449,4 @@ func (h *InstanceSizeHandler) Create(c *gin.Context) {
 - [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Go Module Vanity Import
 - [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) - VM Request Flow (Cluster selection at approval time)
 - [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) - Instance Size Abstraction (Overcommit, Dry-Run, Validation)
+- [ADR-0022](../../adr/ADR-0022-modular-provider-pattern.md) - Modular Provider Pattern (Module-based DI organization)
