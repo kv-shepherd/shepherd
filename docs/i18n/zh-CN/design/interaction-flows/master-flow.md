@@ -26,7 +26,6 @@
 
 > **重要**: 本节为 `docs/design/interaction-flows/master-flow.md` 的中文翻译版本。
 > 如有不一致，以英文规范版本为准。
-
 ### 文档结构
 
 | Part | 内容 | 涉及角色 |
@@ -794,7 +793,7 @@
 │  │  管理员看到的 UI (前端根据 Schema 自动渲染):                                               │ │
 │  │                                                                                          │ │
 │  │  ┌──────────────────────────────────────────────────────────────────────────────────┐   │ │
-│  │  │  创建规格                                                                          │   │ │
+│  │  │  创建InstanceSize（规格）                                                                          │   │ │
 │  │  │                                                                                    │   │ │
 │  │  │  名称:         [gpu-workstation    ]                                              │   │ │
 │  │  │  显示名称:     [GPU 工作站 (8核 32GB)]                                             │   │ │
@@ -1143,16 +1142,16 @@
 │  │  │  命名空间:     [prod-shop ▼]                                                       │   │ │
 │  │  │  模板:         [centos7-docker ▼]                                                  │   │ │
 │  │  │                                                                                    │   │ │
-│  │  │  规格:         [gpu-workstation ▼]                                                 │   │ │
+│  │  │  InstanceSize（规格）:         [gpu-workstation ▼]                                                 │   │ │
 │  │  │                                                                                    │   │ │
-│  │  │  ┌── 规格详情 ──────────────────────────────────────────────────────────────────┐ │   │ │
+│  │  │  ┌── InstanceSize（规格）详情 ──────────────────────────────────────────────────────────────────┐ │   │ │
 │  │  │  │  CPU: 8 核   内存: 32 GB                                                      │ │   │ │
-│  │  │  │  ⚠️ 此规格包含 GPU: nvidia.com/GA102GL_A10                                    │ │   │ │
+│  │  │  │  ⚠️ 此InstanceSize（规格）包含 GPU: nvidia.com/GA102GL_A10                                    │ │   │ │
 │  │  │  │     请确认您的业务确实需要 GPU 资源                                             │ │   │ │
 │  │  │  └───────────────────────────────────────────────────────────────────────────────┘ │   │ │
 │  │  │                                                                                    │   │ │
 │  │  │  ── 快速配置 ──                                                                    │   │ │
-│  │  │  磁盘大小:     [====●==========] [100] GB   👈 默认值来自规格预设                   │   │ │
+│  │  │  磁盘大小:     [====●==========] [100] GB   👈 默认值来自InstanceSize（规格）预设                   │   │ │
 │  │  │                 50 ─────────── 500           用户可通过滑块或输入框调整             │   │ │
 │  │  │                                                                                    │   │ │
 │  │  │  申请理由:     [生产环境部署                ]                                       │   │ │
@@ -1160,9 +1159,9 @@
 │  │  │  [提交申请]                                                                         │   │ │
 │  │  └──────────────────────────────────────────────────────────────────────────────────┘   │ │
 │  │                                                                                          │ │
-│  │  👆 规格下拉框显示关键信息:                                                               │ │
-│  │     - 普通规格: "medium (4核 8GB)" → 用户看到 CPU 和内存                                 │ │
-│  │     - GPU 规格: "gpu-workstation (8核 32GB)" + ⚠️GPU 提示 → 提醒用户确认是否需要         │ │
+│  │  👆 InstanceSize（规格）下拉框显示关键信息:                                                               │ │
+│  │     - 普通InstanceSize（规格）: "medium (4核 8GB)" → 用户看到 CPU 和内存                                 │ │
+│  │     - GPU InstanceSize（规格）: "gpu-workstation (8核 32GB)" + ⚠️GPU 提示 → 提醒用户确认是否需要         │ │
 │  │                                                                                          │ │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                              │
@@ -1195,14 +1194,14 @@
 │  │  申请人:       zhang.san                                                                   │ │
 │  │  命名空间:     prod-shop              👈 生产环境                                          │ │
 │  │  服务:         shop/redis                                                                  │ │
-│  │  规格:         gpu-workstation (8核 32GB)                                                  │ │
+│  │  InstanceSize（规格）:         gpu-workstation (8核 32GB)                                                  │ │
 │  │                                                                                            │ │
 │  │  ── 磁盘配置 ─────────────────────────────────────────────────────────────────────────    │ │
-│  │  磁盘大小:     [100     ] GB   (用户申请值: 100GB, 规格范围: 50-500GB)                      │ │
+│  │  磁盘大小:     [100     ] GB   (用户申请值: 100GB, InstanceSize（规格）范围: 50-500GB)                      │ │
 │  │                                                                                            │ │
-│  │  ── 资源分配 (规格含超卖时显示，可覆盖) ───────────────────────────────────────────────    │ │
+│  │  ── 资源分配 (InstanceSize（规格）含超卖时显示，可覆盖) ───────────────────────────────────────────────    │ │
 │  │                                                                                            │ │
-│  │  [✓] 启用覆盖    👈 管理员可覆盖规格的默认 request/limit 值                                  │ │
+│  │  [✓] 启用覆盖    👈 管理员可覆盖InstanceSize（规格）的默认 request/limit 值                                  │ │
 │  │                                                                                            │ │
 │  │  ┌──────────────────────────────────────────────────────────────────────────────────────┐ │ │
 │  │  │                                                                                      │ │ │
@@ -1225,7 +1224,7 @@
 │                                                                                              │
 │  👆 显示逻辑:                                                                                 │
 │     - 磁盘配置: 始终显示，管理员可调整                                                          │
-│     - 资源分配 (request/limit): 规格启用超卖时显示，不区分环境                                   │
+│     - 资源分配 (request/limit): InstanceSize（规格）启用超卖时显示，不区分环境                                   │
 │                                                                                              │
 │  👆 警告逻辑 (仅提示，不阻止审批):                                                             │
 │     1. request ≠ limit 且环境为 prod → ⚠️ 黄色警告 (生产环境超卖)                              │
@@ -1439,7 +1438,7 @@
 │  │      status = 'REJECTED',                  👈 状态变更: PENDING → REJECTED         │       │
 │  │      approver_id = 'admin.li',                                                    │       │
 │  │      rejected_at = NOW(),                                                         │       │
-│  │      rejection_reason = '资源不足，请选择其他规格'                                   │       │
+│  │      rejection_reason = '资源不足，请选择其他InstanceSize（规格）'                                   │       │
 │  │  WHERE id = 'ticket-001';                                                         │       │
 │  │                                                                                    │       │
 │  │  -- 2. 记录审计日志                                                                 │       │
@@ -1768,30 +1767,30 @@
 CREATE TABLE audit_logs (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
-    -- 操作信息
-    action          VARCHAR(50) NOT NULL,    -- 操作类型
-    actor_id        VARCHAR(50) NOT NULL,    -- 操作者用户ID
-    actor_name      VARCHAR(100),            -- 操作者显示名称 (冗余，便于查询)
+    -- Operation info
+    action          VARCHAR(50) NOT NULL,    -- action type
+    actor_id        VARCHAR(50) NOT NULL,    -- actor user ID
+    actor_name      VARCHAR(100),            -- actor display name (redundant, for search)
     
-    -- 资源信息
+    -- Resource info
     resource_type   VARCHAR(50) NOT NULL,    -- system, service, vm, approval, template, etc.
-    resource_id     VARCHAR(50) NOT NULL,    -- 资源ID
-    resource_name   VARCHAR(100),            -- 资源名称 (冗余)
+    resource_id     VARCHAR(50) NOT NULL,    -- resource ID
+    resource_name   VARCHAR(100),            -- resource name (redundant)
     
-    -- 上下文信息
-    parent_type     VARCHAR(50),             -- 父资源类型 (如 vm 的父级是 service)
-    parent_id       VARCHAR(50),             -- 父资源ID
+    -- Context
+    parent_type     VARCHAR(50),             -- parent resource type (e.g., vm parent is service)
+    parent_id       VARCHAR(50),             -- parent resource ID
     environment     VARCHAR(20),             -- test, prod
     
-    -- 详情
-    details         JSONB,                   -- 操作详细信息 (变更前后值、原因等)
-    ip_address      INET,                    -- 操作者IP
-    user_agent      TEXT,                    -- 客户端信息
+    -- Details
+    details         JSONB,                   -- details (before/after values, reasons)
+    ip_address      INET,                    -- actor IP
+    user_agent      TEXT,                    -- client info
     
-    -- 时间
+    -- Time
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
-    -- 索引
+    -- Indexes
     INDEX idx_audit_actor (actor_id, created_at DESC),
     INDEX idx_audit_resource (resource_type, resource_id, created_at DESC),
     INDEX idx_audit_action (action, created_at DESC),
@@ -1838,10 +1837,10 @@ CREATE TABLE audit_logs (
 | **Template** | `template.update` | 更新模板 (版本+1) | `{name: "centos7-docker", version: 2, changes: {...}}` |
 | **Template** | `template.deprecate` | 标记模板为弃用 | `{name: "centos6-base", successor: "centos7-base"}` |
 | **Template** | `template.delete` | 删除模板 | `{name: "centos6-base", version: 3}` |
-| **InstanceSize** | `instance_size.create` | 创建规格 | `{name: "medium-gpu", cpu: 4, memory: "8Gi", gpu: 1}` |
-| **InstanceSize** | `instance_size.update` | 修改规格 | `{name: "medium-gpu", changes: {memory: {old: "8Gi", new: "16Gi"}}}` |
-| **InstanceSize** | `instance_size.deprecate` | 标记规格为弃用 | `{name: "small-legacy"}` |
-| **InstanceSize** | `instance_size.delete` | 删除规格 | `{name: "small-legacy"}` |
+| **InstanceSize** | `instance_size.create` | 创建InstanceSize（规格） | `{name: "medium-gpu", cpu: 4, memory: "8Gi", gpu: 1}` |
+| **InstanceSize** | `instance_size.update` | 修改InstanceSize（规格） | `{name: "medium-gpu", changes: {memory: {old: "8Gi", new: "16Gi"}}}` |
+| **InstanceSize** | `instance_size.deprecate` | 标记InstanceSize（规格）为弃用 | `{name: "small-legacy"}` |
+| **InstanceSize** | `instance_size.delete` | 删除InstanceSize（规格） | `{name: "small-legacy"}` |
 | **Namespace** | `namespace.create` | 创建命名空间 | `{name: "prod-shop", cluster: "prod-01"}` |
 | **Namespace** | `namespace.delete` | 删除命名空间 | `{name: "prod-shop"}` |
 | **IdP** | `idp.configure` | 配置 IdP 连接 | `{type: "oidc", issuer: "...", client_id: "..."}` |
@@ -1914,22 +1913,22 @@ CREATE TABLE audit_logs (
 #### 审计日志查询示例
 
 ```sql
--- 查询某用户的所有操作
+-- Query all actions for a user
 SELECT * FROM audit_logs 
 WHERE actor_id = 'user-001' 
 ORDER BY created_at DESC LIMIT 50;
 
--- 查询某资源的操作历史
+-- Query resource history
 SELECT * FROM audit_logs 
 WHERE resource_type = 'vm' AND resource_id = 'vm-redis-01'
 ORDER BY created_at DESC;
 
--- 查询所有审批操作
+-- Query all approval actions
 SELECT * FROM audit_logs 
 WHERE action LIKE 'approval.%' 
 ORDER BY created_at DESC;
 
--- 查询生产环境的敏感操作
+-- Query sensitive prod actions
 SELECT * FROM audit_logs 
 WHERE environment = 'prod' 
   AND action IN ('vm.delete', 'system.delete', 'approval.approve')
@@ -2072,7 +2071,7 @@ Content-Type: application/json
 > 管理员在 **设置 → 外部审批系统 → 添加** 进行配置，所有配置存储在 `external_approval_systems` 表中。
 
 ```sql
--- 示例: external_approval_systems 表记录
+-- Example: external_approval_systems record
 INSERT INTO external_approval_systems (
   id, name, type, enabled,
   webhook_url, webhook_secret, webhook_headers,
@@ -2085,9 +2084,9 @@ INSERT INTO external_approval_systems (
   'webhook',
   true,
   'https://jira.company.com/api/v2/tickets',
-  'encrypted:AES256:xxx',  -- 使用 ENCRYPTION_KEY 加密存储
+  'encrypted:AES256:xxx',  -- encrypted with ENCRYPTION_KEY
   '{"Authorization": "Bearer ${JIRA_TOKEN}"}',
-  'encrypted:AES256:xxx',  -- 回调验证 HMAC 密钥
+  'encrypted:AES256:xxx',  -- HMAC secret for callback verification
   '{"Approved": "APPROVED", "Rejected": "REJECTED", "Cancelled": "CANCELLED"}',
   30, 3,
   'admin'
