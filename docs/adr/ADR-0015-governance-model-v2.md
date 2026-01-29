@@ -2262,4 +2262,19 @@ func ValidateIDToken(token *oidc.IDToken, expectedIssuer, expectedAudience strin
 
 > **Implementation Guidance**: Template retains `quick_fields` and `advanced_fields` for UI field visibility control. All hardware capability requirements (GPU, SR-IOV, Hugepages, dedicated CPU) are now configured in InstanceSize and matched against cluster detected capabilities.
 
+### ADR-0019: Governance Security Baseline Controls (2026-01-29)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §6. Comprehensive Operation Audit Trail | **AMENDED** | Adds sensitive data redaction requirements (PII, secrets must be redacted in logs) | [ADR-0019 §3](./ADR-0019-governance-security-baseline-controls.md#3-audit-logging-and-sensitive-data-controls) |
+| §16. Naming Conventions | **CONFIRMED** | RFC 1035 naming with additional constraint: consecutive hyphens (`--`) are prohibited | [ADR-0019 §1](./ADR-0019-governance-security-baseline-controls.md#1-naming-policy-most-conservative) |
+| §22.3 Built-in Roles: `*:*` wildcard | **AMENDED** | Wildcard patterns are prohibited. Use explicit `platform:admin` permission instead | [ADR-0019 §2](./ADR-0019-governance-security-baseline-controls.md#2-rbac-least-privilege) |
+
+> **Implementation Guidance**:
+> - **RBAC**: The `*:*` wildcard permission pattern is now **prohibited**. Replace with:
+>   - `platform:admin`: Explicit super-admin permission (compile-time constant)
+>   - All other roles use explicit verb:resource permissions only
+> - **Naming**: All platform-managed names must validate against RFC 1035 rules plus `--` prohibition
+> - **Audit**: Logs must redact: passwords, tokens, secrets, personal identifiers (SSN, ID numbers)
+
 ---

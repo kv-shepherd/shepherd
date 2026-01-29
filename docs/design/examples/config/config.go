@@ -2,7 +2,7 @@
 //
 // Configuration is loaded from:
 // 1. config.yaml file (optional)
-// 2. Environment variables (KUBEVIRT_SHEPHERD_ prefix)
+// 2. Environment variables (ADR-0018: standard names like DATABASE_URL, SERVER_PORT)
 // 3. Default values
 //
 // Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/config
@@ -84,17 +84,19 @@ type RiverConfig struct {
 }
 
 // Load reads configuration from file and environment variables
+// ADR-0018: Standard environment variables without prefix (DATABASE_URL, SERVER_PORT, etc.)
 func Load() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("/etc/kubevirt-shepherd")
 
-	// Environment variable override
-	// Required: maps database.max_conns to DATABASE_MAX_CONNS
+	// Environment variable override (ADR-0018)
+	// No prefix: uses standard names like DATABASE_URL, SERVER_PORT, LOG_LEVEL
+	// Maps nested config: database.max_conns → DATABASE_MAX_CONNS
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
-	viper.SetEnvPrefix("KUBEVIRT_SHEPHERD")
+	// NOTE: No SetEnvPrefix - use standard env var names per ADR-0018
 
 	setDefaults()
 

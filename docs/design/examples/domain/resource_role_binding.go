@@ -4,6 +4,7 @@
 // Dual-layer permission model: Global RBAC + Resource-level RBAC.
 //
 // Reference: docs/adr/ADR-0018-instance-size-abstraction.md
+// Reference: docs/design/interaction-flows/master-flow.md §Stage 2.D
 
 package domain
 
@@ -23,7 +24,7 @@ import "time"
 type ResourceRoleBinding struct {
 	ID           string     `json:"id"`
 	UserID       string     `json:"user_id"`       // Target user
-	Role         string     `json:"role"`          // viewer, editor, admin
+	Role         string     `json:"role"`          // owner, admin, member, viewer (per master-flow.md)
 	ResourceType string     `json:"resource_type"` // system, service, vm, namespace
 	ResourceID   string     `json:"resource_id"`   // The specific resource ID
 	GrantedBy    string     `json:"granted_by"`    // Who granted this permission
@@ -32,24 +33,40 @@ type ResourceRoleBinding struct {
 }
 
 // ResourceRole defines the available roles for resource-level RBAC.
+// Aligned with master-flow.md §Stage 2.D role definitions.
 type ResourceRole string
 
 const (
-	ResourceRoleViewer ResourceRole = "viewer" // Read-only access
-	ResourceRoleEditor ResourceRole = "editor" // Read + Modify (no delete)
-	ResourceRoleAdmin  ResourceRole = "admin"  // Full access including grant permissions
+	// ResourceRoleOwner is the creator/primary owner of the resource.
+	// Has full access including transfer ownership and delete.
+	ResourceRoleOwner ResourceRole = "owner"
+
+	// ResourceRoleAdmin has full management access including grant permissions.
+	// Cannot transfer ownership or delete the resource.
+	ResourceRoleAdmin ResourceRole = "admin"
+
+	// ResourceRoleMember can read and perform basic operations.
+	// Can create sub-resources (e.g., VMs under a System).
+	ResourceRoleMember ResourceRole = "member"
+
+	// ResourceRoleViewer has read-only access.
+	// Cannot modify or create anything.
+	ResourceRoleViewer ResourceRole = "viewer"
 )
 
 // ResourceType defines the resource types that support resource-level RBAC.
+// Aligned with master-flow.md §Resource-Level RBAC scope.
 type ResourceType string
 
 const (
-	ResourceTypeSystem       ResourceType = "system"
-	ResourceTypeService      ResourceType = "service"
-	ResourceTypeVM           ResourceType = "vm"
-	ResourceTypeNamespace    ResourceType = "namespace"
-	ResourceTypeTemplate     ResourceType = "template"
-	ResourceTypeInstanceSize ResourceType = "instance_size"
+	// Primary resource types (master-flow.md §Resource-Level RBAC)
+	ResourceTypeSystem  ResourceType = "system"
+	ResourceTypeService ResourceType = "service"
+	ResourceTypeVM      ResourceType = "vm"
+
+	// Extended types (reserved for future use)
+	// NOTE: namespace/template/instance_size are platform-managed,
+	// not user-assignable resources per current design.
 )
 
 // Permission represents a permission check result.
@@ -64,11 +81,12 @@ type Permission struct {
 type PermissionChecker interface {
 	// CheckPermission checks if user has specified permission on resource.
 	// Returns Permission with allowed=true if:
-	// 1. Global RBAC grants the permission, OR
+	// 1. Global RBAC grants the permission (including platform:admin), OR
 	// 2. Resource-level RBAC grants the permission (direct or inherited)
 	CheckPermission(userID, action, resourceType, resourceID string) (*Permission, error)
 
 	// CanGrant checks if user can grant the specified role to another user.
-	// Only users with "admin" role on the resource can grant permissions.
-	CanGrant(granterID, resourceType, resourceID, role string) (bool, error)
+	// Only users with "owner" or "admin" role on the resource can grant permissions.
+	// Note: owner can grant any role; admin cannot grant owner role.
+	CanGrant(granterID, resourceType, resourceID, targetRole string) (bool, error)
 }
