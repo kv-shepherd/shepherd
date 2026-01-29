@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"  # proposed | accepted | deprecated | superseded by ADR-XXXX
+status: "accepted"  # proposed | accepted | deprecated | superseded by ADR-XXXX
 date: 2026-01-27
 deciders: []  # GitHub usernames of decision makers
 consulted: []  # Subject-matter experts consulted (two-way communication)
@@ -54,15 +54,19 @@ We need a single, enforceable governance baseline for naming, RBAC, and audit lo
 Upon acceptance, perform the following updates (do not modify original ADR content; append amendment blocks only):
 
 * Append "Amendments by Subsequent ADRs" to ADR-0015 for:
-  * §6 Audit trail
-  * §16 Naming rules
-  * §22 Platform RBAC model
+  * §6 Audit trail (add sensitive data redaction requirements)
+  * §16 Naming rules (confirm RFC 1035 with no consecutive hyphens)
+  * §22 Platform RBAC model (correct `*:*` wildcard to `platform:admin` explicit permission)
+* Append "Amendments by Subsequent ADRs" to ADR-0018 for:
+  * §Configuration Storage Strategy: Update `SeedBuiltinRoles` code example to use `platform:admin` instead of `*:*`
 * Update governance/design documents to align with this ADR:
-  * `docs/design/phases/01-contracts.md`
-  * `docs/design/phases/04-governance.md`
+  * `docs/design/phases/01-contracts.md` - Naming constraints
+  * `docs/design/phases/04-governance.md` - RBAC model, audit logging
+  * `docs/design/interaction-flows/master-flow.md` - Permission check pseudocode
 * Add or update code review checklist items to ensure:
-  * name validation enforces RFC 1035-style rules
-  * RBAC roles avoid wildcards except bootstrap role
+  * name validation enforces RFC 1035-style rules with no consecutive hyphens
+  * RBAC roles use explicit permissions only (no wildcards)
+  * `platform:admin` is implemented as explicit permission, not wildcard pattern
   * logs redact sensitive fields and enforce access control
 
 ---
@@ -92,22 +96,55 @@ Upon acceptance, perform the following updates (do not modify original ADR conte
 
 **Policy**:
 
-* Wildcard permissions (e.g., `*:*`) are prohibited for all roles except a single, built-in bootstrap role.
-* The bootstrap role (`role-platform-admin` or equivalent) is intended **exclusively** for platform initialization and MUST:
-  * be narrowly distributed (assigned only to platform operators during initial setup),
-  * be **disabled or its bindings removed** after platform initialization is complete,
-  * be subject to **periodic audit** (at least quarterly) to verify no active bindings exist in production,
+* **Wildcard permissions (e.g., `*:*`, `system:*`) as runtime-evaluated patterns are PROHIBITED** for all roles.
+  * Rationale: Wildcard patterns expand at runtime—when new resources or actions are added, wildcards automatically grant access without explicit review. This violates the principle of least privilege.
+* **Explicit super-admin permission (`platform:admin`) is ALLOWED** as a single, defined permission.
+  * `platform:admin` is a named, atomic permission (not a pattern) that grants full access.
+  * Permission check logic treats `platform:admin` as a compile-time constant: if user has `platform:admin`, all checks pass.
+  * This is semantically different from `*:*`: adding new resources does NOT automatically expand access—the permission resolver explicitly handles `platform:admin`.
+
+**Permission Check Implementation**:
+
+```go
+// ✅ Correct: Explicit super-admin permission (compile-time constant)
+func hasPermission(user User, required string) bool {
+    // platform:admin is an explicit permission, not a wildcard pattern
+    if user.HasPermission("platform:admin") {
+        return true  // Explicitly defined to grant all access
+    }
+    return user.HasPermission(required)
+}
+
+// ❌ Prohibited: Runtime wildcard expansion
+// Permissions like "*:*", "system:*" that match against new resources
+```
+
+**Built-in Roles Definition (Correction to ADR-0015 §22)**:
+
+| Role ID | Name | Permissions | Notes |
+|---------|------|-------------|-------|
+| `role-platform-admin` | PlatformAdmin | `platform:admin` | Single explicit permission, NOT `*:*` |
+| `role-system-admin` | SystemAdmin | `system:read`, `system:write`, `service:create`, ... | Explicit list, no wildcards |
+| `role-operator` | Operator | `vm:operate`, `system:read`, `service:read` | Explicit list |
+| `role-viewer` | Viewer | `system:read`, `service:read`, `vm:read` | Explicit list |
+
+**PlatformAdmin Role Management**:
+
+* The `role-platform-admin` role with `platform:admin` permission is intended for platform administrators and MUST:
+  * be narrowly distributed (assigned only to platform operators),
+  * be subject to **periodic audit** (at least quarterly) to verify assignments are still valid,
   * remain revocable via administrative action at any time.
-* If the bootstrap role must be temporarily re-enabled for maintenance, the activation and deactivation MUST be recorded in the audit log.
-* All other roles MUST use explicit verbs and resources (no wildcards).
+* If `role-platform-admin` bindings must be modified, the change MUST be recorded in the audit log.
 
-**Standard Operating Procedure (SOP)**: Platform operators MUST follow the documented procedure for bootstrap role management. See `docs/operations/bootstrap-role-sop.md` for:
-  * Initial setup procedure
-  * Post-initialization disable checklist
-  * Emergency re-enablement process
-  * Quarterly audit checklist
+**Standard Operating Procedure (SOP)**: Platform operators MUST follow the documented procedure for platform admin role management. See `docs/operations/platform-admin-sop.md` for:
+  * Role assignment procedure
+  * Periodic audit checklist
+  * Emergency access process
 
-**Rationale**: Minimizes accidental privilege escalation and limits future resource exposure. The manual disable + audit approach balances security with operational simplicity for internal governance platforms.
+**Rationale**: The key distinction is between **pattern-based wildcards** (runtime expansion, prohibited) and **explicit super-admin permission** (compile-time constant, allowed). This approach:
+* Prevents accidental privilege escalation when new resources are added
+* Maintains clear audit trail of what "full access" means
+* Follows cloud-native security best practices for least privilege
 
 ### 3. Audit Logging and Sensitive Data Controls
 

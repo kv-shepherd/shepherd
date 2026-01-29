@@ -38,7 +38,7 @@ Define core contracts and types:
 | VM Revision Schema | `ent/schema/vm_revision.go` | ⬜ | - |
 | AuditLog Schema | `ent/schema/audit_log.go` | ⬜ | - |
 | ApprovalTicket Schema | `ent/schema/approval_ticket.go` | ⬜ | - |
-| ApprovalPolicy Schema | `ent/schema/approval_policy.go` | ⬜ | - |
+| ApprovalPolicy Schema | `ent/schema/approval_policy.go` | ⬜ | [ADR-0005](../../adr/ADR-0005-workflow-extensibility.md) ¹ |
 | Cluster Schema | `ent/schema/cluster.go` | ⬜ | - |
 | DomainEvent Schema | `ent/schema/domain_event.go` | ⬜ | - |
 | PendingAdoption Schema | `ent/schema/pending_adoption.go` | ⬜ | - |
@@ -48,10 +48,59 @@ Define core contracts and types:
 | **Roles Schema** | `ent/schema/roles.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.A](../interaction-flows/master-flow.md) |
 | **RoleBindings Schema** | `ent/schema/role_bindings.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.B](../interaction-flows/master-flow.md) |
 | **ResourceRoleBindings Schema** | `ent/schema/resource_role_bindings.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
-| **ExternalApprovalSystems Schema** | `ent/schema/external_approval_systems.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
+| **ExternalApprovalSystems Schema** | `ent/schema/external_approval_systems.go` | ⬜ | [RFC-0004](../../rfc/RFC-0004-external-approval.md) ² |
 | Provider interface | `internal/provider/interface.go` | ⬜ | [examples/provider/interface.go](../examples/provider/interface.go) |
 | Domain models | `internal/domain/` | ⬜ | [examples/domain/](../examples/domain/) |
 | Error system | `internal/pkg/errors/errors.go` | ⬜ | - |
+
+---
+
+## API Contract-First Design (ADR-0021)
+
+> **Principle**: OpenAPI 3.1 specification is the **single source of truth** for all HTTP APIs. See [ADR-0021](../../adr/ADR-0021-api-contract-first.md) for complete rationale.
+
+### Spec-First Workflow
+
+```
+api/openapi.yaml → Code Generation → Implementation
+       ↓
+  oapi-codegen (Go types)
+  openapi-typescript (TS types)
+```
+
+### Directory Structure
+
+```
+api/
+├── openapi.yaml           # Main spec (single file for simplicity)
+├── schemas/               # Reusable schema components
+│   ├── common.yaml        # Pagination, Error
+│   ├── governance.yaml    # System, Service, VM
+│   └── rbac.yaml          # Roles, Permissions
+└── paths/                 # API paths (optional split)
+```
+
+### Pagination Standard (ADR-0023)
+
+All list APIs use standardized pagination parameters:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `page` | int | Page number (1-indexed) |
+| `per_page` | int | Items per page (default: 20, max: 100) |
+| `sort_by` | string | Field to sort by |
+| `sort_order` | string | `asc` or `desc` |
+
+### Error Code Standard (ADR-0023)
+
+Granular error codes for frontend handling:
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `NAMESPACE_PERMISSION_DENIED` | 403 | No JIT namespace creation permission |
+| `QUOTA_EXCEEDED` | 422 | Tenant quota exceeded |
+| `CLUSTER_UNHEALTHY` | 503 | Target cluster unavailable |
+| `APPROVAL_REQUIRED` | 202 | Request pending approval |
 
 ---
 
@@ -75,6 +124,45 @@ System → Service → VM Instance
 - System is a **logical business grouping**, not bound to namespace or cluster
 - Namespace is specified at **VM creation time**, not at System creation time
 - Permissions managed via **Platform RBAC tables**, not entity fields
+
+### 1.1 Naming Constraints (ADR-0019)
+
+> **Security Baseline**: All platform-managed logical names MUST follow RFC 1035-based rules.
+
+| Rule | Constraint |
+|------|------------|
+| **Character Set** | Lowercase letters, digits, and hyphen only (`a-z`, `0-9`, `-`) |
+| **Start Character** | MUST start with a letter (`a-z`) |
+| **End Character** | MUST end with a letter or digit |
+| **Consecutive Hyphens** | Prohibited (`--`) — Reserved for Punycode |
+| **Length Limit** | System/Service/Namespace: max 15 characters each (ADR-0015 §16) |
+
+**Scope**: System names, Service names, Namespace names, VM name components.
+
+**Reserved Names**: The following names are reserved and SHOULD be avoided:
+- `default`, `system`, `admin`, `root`, `internal`
+- Prefixes: `kube-`, `kubevirt-shepherd-`
+
+**Validation Regex**:
+```go
+// RFC 1035 + no consecutive hyphens (ADR-0019)
+var validNameRegex = regexp.MustCompile(`^[a-z]([a-z0-9-]*[a-z0-9])?$`)
+
+func ValidateName(name string) error {
+    if len(name) > 15 {
+        return errors.New("name exceeds 15 characters")
+    }
+    if !validNameRegex.MatchString(name) {
+        return errors.New("name must follow RFC 1035 rules")
+    }
+    if strings.Contains(name, "--") {
+        return errors.New("consecutive hyphens are not allowed")
+    }
+    return nil
+}
+```
+
+> 📋 **Decision reference**: [ADR-0019 §1 Naming Policy](../../adr/ADR-0019-governance-security-baseline-controls.md#1-naming-policy-most-conservative)
 
 ---
 
@@ -343,9 +431,35 @@ const (
 - [CHECKLIST.md](../CHECKLIST.md) - Phase 1 acceptance items
 - [examples/provider/interface.go](../examples/provider/interface.go)
 - [examples/domain/](../examples/domain/)
+- [ADR-0005](../../adr/ADR-0005-workflow-extensibility.md) - Workflow Extensibility (Simplified Approval)
 - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md) - Domain Event Pattern
 - [ADR-0014](../../adr/ADR-0014-capability-detection.md) - Capability Detection
 - [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) - Governance Model V2 (Entity Decoupling, RBAC)
 - [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Go Module Vanity Import
 - [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) - VM Request Flow (Cluster selection at approval time)
 - [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) - Instance Size Abstraction (InstanceSize, Users, AuthProviders schemas)
+- [RFC-0004](../../rfc/RFC-0004-external-approval.md) - External Approval Systems (Deferred → V1+)
+
+---
+
+## Footnotes
+
+> **¹ ApprovalPolicy Scope (ADR-0005)**: 
+> 
+> ApprovalPolicy defines **environment-level policies** (e.g., "prod environment requires approval for VM creation").
+> This is **NOT** multi-level approval. Per ADR-0005, the following are explicitly **out of scope for V1**:
+> 
+> | Feature | V1 Status | Roadmap |
+> |---------|-----------|---------|
+> | Multi-level approval (L1 → L2 → L3) | ❌ Not implementing | P2 Future |
+> | Withdraw/Countersign/Transfer | ❌ Not implementing | P3 Never |
+> | Timeout auto-processing | ❌ Not implementing | P2 Future |
+> 
+> ApprovalPolicy supports only: `PENDING → APPROVED` or `PENDING → REJECTED` (two paths, no intermediate states).
+
+> **² ExternalApprovalSystems (RFC-0004)**:
+> 
+> RFC-0004 status is `Proposed` (P1, V1+ optional). Design defined in [Master Flow Stage 2.E](../interaction-flows/master-flow.md#stage-2-e).
+> Review Period: Until 2026-02-01. This is an **optional feature** - if external approval is not configured, the built-in approval engine is used.
+> Security: TLS mandatory, HMAC signature verification, fallback to built-in on failure.
+
