@@ -115,6 +115,18 @@ For newcomers, we recommend reading ADRs in this order:
 4. Submit for review with a GitHub Issue
 5. After 48-hour review period, update status to `Accepted` or `Rejected`
 
+### Proposed ADRs and Pending Changes
+
+When an ADR is **Proposed**, do NOT edit normative design specs.
+Instead:
+
+1. Create a Design Note in `docs/design/notes/` (e.g., `ADR-XXXX-title.md`)
+2. Capture concrete implementation impacts there (fields, APIs, migrations)
+3. Optionally add a short **Pending Changes** block in affected design docs
+
+Once the ADR is **Accepted**, merge Design Note changes into the design specs
+and remove the Pending Changes block.
+
 ### Amending Accepted ADRs
 
 Accepted ADRs are **immutable**. To change a decision:

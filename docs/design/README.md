@@ -196,6 +196,16 @@ This project follows the architecture decisions documented in:
 | [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) | Go Module Vanity Import | Accepted |
 | [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) | VM Request and Approval Flow Clarification | Accepted |
 | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) | Instance Size Abstraction Layer | Accepted |
+<<<<<<< HEAD
+=======
+
+---
+
+### Proposed Changes (Pre-ADR)
+
+Proposed changes are documented in `docs/design/notes/` until the ADR is accepted.
+Do not update normative specs until acceptance.
+>>>>>>> 4476316 (docs(governance): establish design notes workflow)
 
 ---
 

@@ -170,6 +170,18 @@ See [docs/design/ci/README.md](docs/design/ci/README.md) for the complete list.
 - ADR changes require discussion and approval
 - Keep examples in `docs/design/examples/` synchronized with actual patterns
 
+### Decision Documents (ADR + Design Notes)
+
+When an ADR is **Proposed**, do not change normative design specs yet.
+Use a Design Note to describe the concrete changes and impact:
+
+1. Create `docs/design/notes/ADR-XXXX-title.md`
+2. Document impacted APIs, schemas, migrations, and behavioral changes
+3. Optionally add a short **Pending Changes** block in the affected design docs
+
+After the ADR is **Accepted**, merge the Design Note into the design specs
+and remove any Pending Changes blocks.
+
 ## Testing
 
 ### Unit Tests

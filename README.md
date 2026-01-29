@@ -40,6 +40,12 @@ System (Business Line) → Service (Application) → VM Instance
 | **Async by Default** | All write operations return `202 Accepted` and execute asynchronously. |
 | **Platform RBAC** | RBAC managed in PostgreSQL, not Kubernetes. Permission queries isolated from cluster control plane. |
 
+## Decision Documents
+
+- **ADRs** record accepted architectural decisions
+- **Design Notes** capture proposed changes before ADR acceptance
+- Normative design specs are updated only after ADRs are accepted
+
 ## Project Status
 
 > ⚠️ **Pre-Alpha**: Planning and design phase.
