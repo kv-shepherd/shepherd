@@ -640,7 +640,249 @@ POST /api/v1/admin/audit-logs/webhook
 
 ---
 
-## 8. Reconciler
+## 8. IdP Authentication (V1 Scope)
+
+> **Reference**: [master-flow.md Stage 2.B/2.C/2.D](../interaction-flows/master-flow.md#stage-2-b)
+
+### 8.1 Supported Authentication Methods
+
+| Method | V1 Status | Use Case |
+|--------|-----------|----------|
+| **OIDC** | ✅ Implemented | Modern SSO (Azure AD, Okta, Keycloak) |
+| **LDAP** | ✅ Implemented | Legacy Active Directory |
+| **Built-in Users** | ✅ Implemented | Development/testing, bootstrap admin |
+
+### 8.2 OIDC Token Validation Checklist
+
+> **Security Requirement**: All ID Tokens MUST be validated per [OIDC Core Spec](https://openid.net/specs/openid-connect-core-1_0.html).
+
+| Validation Step | Required | Implementation |
+|-----------------|----------|----------------|
+| **Signature verification** | ✅ Mandatory | Verify against IdP JWKS endpoint public keys |
+| **`alg` algorithm whitelist** | ✅ Mandatory | Only accept RS256, ES256; reject "none" |
+| **`iss` (issuer) match** | ✅ Mandatory | Must exactly match configured IdP issuer URL |
+| **`aud` (audience) match** | ✅ Mandatory | Must contain application's `client_id` |
+| **`exp` (expiration) check** | ✅ Mandatory | Current time < exp (allow 30s clock skew) |
+| **`nonce` validation** | ✅ Mandatory | Must match nonce sent in auth request |
+| **`iat` (issued at) freshness** | ⚠️ Recommended | Reject tokens older than 1 hour |
+
+```go
+// internal/auth/oidc/validator.go
+type TokenValidator struct {
+    jwksCache    *jwk.Cache
+    issuer       string
+    clientID     string
+    allowedAlgs  []string // ["RS256", "ES256"]
+    clockSkew    time.Duration
+}
+
+func (v *TokenValidator) Validate(ctx context.Context, rawToken string) (*Claims, error) {
+    // 1. Parse and verify signature
+    token, err := jwt.ParseSigned(rawToken)
+    if err != nil {
+        return nil, ErrInvalidToken
+    }
+    
+    // 2. Get public key from JWKS cache
+    keySet, err := v.jwksCache.Get(ctx, v.issuer+"/.well-known/jwks.json")
+    if err != nil {
+        return nil, ErrJWKSFetchFailed
+    }
+    
+    // 3. Verify signature and extract claims
+    var claims Claims
+    if err := token.Claims(keySet, &claims); err != nil {
+        return nil, ErrSignatureInvalid
+    }
+    
+    // 4. Validate required claims
+    if claims.Issuer != v.issuer {
+        return nil, ErrIssuerMismatch
+    }
+    if !claims.Audience.Contains(v.clientID) {
+        return nil, ErrAudienceMismatch
+    }
+    if time.Now().After(claims.Expiry.Time().Add(v.clockSkew)) {
+        return nil, ErrTokenExpired
+    }
+    
+    return &claims, nil
+}
+```
+
+### 8.3 IdP Data Model
+
+> **Reference**: [01-contracts.md](./01-contracts.md) for full schema.
+
+| Table | Purpose |
+|-------|---------|
+| `idp_configs` | OIDC/LDAP provider configuration |
+| `idp_synced_groups` | Groups discovered from IdP |
+| `idp_group_mappings` | IdP group → Shepherd role mapping |
+
+### 8.4 User Login Flow
+
+See [master-flow.md Stage 2.D](../interaction-flows/master-flow.md#stage-2-d) for complete flow diagram.
+
+Key operations:
+1. Validate OIDC/LDAP credentials
+2. Extract user groups from token/LDAP
+3. Delete old IdP-assigned RoleBindings (`source = 'idp_mapping'`)
+4. Recreate RoleBindings based on current group mappings
+5. Return session JWT
+
+---
+
+## 9. External Approval Systems (V1 Interface Only)
+
+> **V1 Scope**: Interface and schema defined. Full implementation in V2.
+
+### 9.1 Interface Definition
+
+```go
+// internal/governance/approval/external.go
+
+// ExternalApprovalProvider defines the contract for external approval systems
+type ExternalApprovalProvider interface {
+    // SubmitForApproval sends a request to external system
+    SubmitForApproval(ctx context.Context, ticket *ApprovalTicket) (externalID string, err error)
+    
+    // CheckStatus polls external system for decision
+    CheckStatus(ctx context.Context, externalID string) (ExternalDecision, error)
+    
+    // CancelRequest cancels pending external request
+    CancelRequest(ctx context.Context, externalID string) error
+}
+
+type ExternalDecision struct {
+    Status    string    // "pending", "approved", "rejected"
+    Approver  string    // External approver ID
+    Comment   string    // Approval/rejection reason
+    Timestamp time.Time
+}
+```
+
+### 9.2 Schema (V1 - Defined but not fully implemented)
+
+```go
+// ent/schema/external_approval_system.go
+field.String("id"),
+field.String("name"),
+field.Enum("type").Values("webhook", "servicenow", "jira"),
+field.Bool("enabled"),
+field.String("webhook_url").Optional(),
+field.String("webhook_secret").Optional().Sensitive(), // Encrypted
+field.JSON("webhook_headers", map[string]string{}),
+field.Int("timeout_seconds").Default(30),
+field.Int("retry_count").Default(3),
+```
+
+### 9.3 V2 Roadmap
+
+| Feature | V2 Target |
+|---------|-----------|
+| Webhook integration | Full bidirectional webhook |
+| ServiceNow connector | Native ServiceNow API |
+| JIRA connector | JIRA issue-based approval |
+| Callback handling | Async approval notification |
+
+---
+
+## 10. Resource-Level RBAC
+
+> **Reference**: [master-flow.md Stage 4.A+](../interaction-flows/master-flow.md#stage-4-a-plus)
+
+### 10.1 Resource Role Binding
+
+| Role | Permissions |
+|------|-------------|
+| **owner** | Full control, can transfer ownership |
+| **admin** | Manage members, create/delete child resources |
+| **member** | Create child resources, view all |
+| **viewer** | Read-only access |
+
+### 10.2 Inheritance Model
+
+```
+System (shop)           ← Members configured here
+  ├── Service (redis)   ← Inherits from System
+  │     ├── VM-01       ← Inherits from Service → System
+  │     └── VM-02       ← Inherits from Service → System
+  └── Service (mysql)   ← Inherits from System
+        └── VM-03       ← Inherits from Service → System
+```
+
+### 10.3 Permission Check Algorithm
+
+```go
+func (s *AuthzService) CheckResourceAccess(ctx context.Context, userID, resourceType, resourceID string) (Role, error) {
+    // 1. Check global admin
+    if s.hasGlobalPermission(ctx, userID, "platform:admin") {
+        return RoleOwner, nil // Super admin sees everything
+    }
+    
+    // 2. Traverse inheritance chain
+    resource := s.getResource(resourceType, resourceID)
+    for resource != nil {
+        binding, err := s.repo.GetResourceRoleBinding(ctx, userID, resource.Type, resource.ID)
+        if err == nil && binding != nil {
+            return binding.Role, nil
+        }
+        resource = resource.Parent() // VM → Service → System → nil
+    }
+    
+    return RoleNone, ErrAccessDenied // Resource not visible to user
+}
+```
+
+### 10.4 Member Management API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `GET /api/v1/systems/{id}/members` | GET | List system members |
+| `POST /api/v1/systems/{id}/members` | POST | Add member |
+| `PATCH /api/v1/systems/{id}/members/{userId}` | PATCH | Update member role |
+| `DELETE /api/v1/systems/{id}/members/{userId}` | DELETE | Remove member |
+
+---
+
+## 11. VM Deletion Workflow
+
+> **Reference**: [master-flow.md Stage 5.D](../interaction-flows/master-flow.md#stage-5-d)
+
+### 11.1 Deletion Confirmation (Tiered)
+
+| Entity | Environment | Confirmation Required |
+|--------|-------------|----------------------|
+| VM | test | `?confirm=true` query param |
+| VM | prod | Request body with `confirm_name` matching VM name |
+| Service | all | `?confirm=true` query param |
+| System | all | Request body with `confirm_name` matching system name |
+
+### 11.2 Deletion API
+
+```
+DELETE /api/v1/vms/{id}?confirm=true           # Test environment
+DELETE /api/v1/vms/{id}                         # Prod environment
+Content-Type: application/json
+{"confirm_name": "prod-shop-redis-01"}
+```
+
+### 11.3 Deletion Flow
+
+1. **Validate confirmation** - Tier-appropriate confirmation
+2. **Check permissions** - User must have `vm:delete` + resource access
+3. **Create approval ticket** (if prod environment)
+4. **On approval**:
+   - Mark VM as `DELETING` in database
+   - Enqueue River job for K8s deletion
+   - River worker deletes VirtualMachine CR
+   - Update status to `DELETED`
+5. **Audit log** - Record deletion with actor, reason, timestamp
+
+---
+
+## 12. Reconciler
 
 | Mode | Behavior |
 |------|----------|
@@ -665,6 +907,16 @@ If >50% of resources detected as ghosts, halt and alert.
 - [ ] Environment isolation enforced (via Cluster + RoleBinding.allowed_environments)
 - [ ] Delete confirmation mechanism works (tiered by entity/environment)
 - [ ] VNC token security enforced (single-use, time-bounded)
+- [ ] **IdP Authentication** (V1):
+  - [ ] OIDC login flow works (token validation per checklist)
+  - [ ] LDAP login flow works
+  - [ ] IdP group → role mapping synchronized on login
+- [ ] **Resource-level RBAC**:
+  - [ ] Member management API functional
+  - [ ] Permission inheritance chain correct
+- [ ] **VM Deletion**:
+  - [ ] Tiered confirmation enforced
+  - [ ] Audit log recorded
 
 ---
 
@@ -700,7 +952,8 @@ If >50% of resources detected as ghosts, halt and alert.
 | §18 VNC Permissions | Section 6.2 | Token-based access |
 | §19 Batch Operations | ⚠️ **Pending** | Bulk approval/power ops |
 | §20 Notification System | ⚠️ **Pending** | In-app + email alerts |
-| §22 Authentication (IdP) | ⚠️ **Out of Scope V1** | See ADR-0015 §21 |
+| §22 Authentication (IdP) | ✅ **V1 Scope** | Section 8 - OIDC + LDAP |
+| External Approval Systems | ⚠️ **V1 Interface Only** | Section 9 - API defined, V2 implementation |
 
 > **Pending items** will be addressed in future iterations. See ADR-0015 for full specification.
 

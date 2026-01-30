@@ -111,11 +111,14 @@
 - [ ] `ent/schema/permission.go` - Atomic permission definitions
 - [ ] `ent/schema/role.go` - Role = bundle of permissions
 - [ ] `ent/schema/role_binding.go` - User-role assignments with scope
-- [ ] Built-in roles seeded (per master-flow.md):
-  - [ ] **Bootstrap** - Initial setup only (`*:*`), MUST be disabled after initialization
-  - [ ] **PlatformAdmin** - Super admin (`platform:admin` explicit permission)
+- [ ] `ent/schema/resource_role_binding.go` - Resource-level member management (owner/admin/member/viewer)
+- [ ] Built-in roles seeded (per master-flow.md Stage 2.A):
+  - [ ] **Bootstrap** - Initial setup only (`*:*`), ⚠️ MUST be disabled after initialization
+  - [ ] **PlatformAdmin** - Super admin (explicit permissions, NO wildcards)
+  - [ ] **SystemAdmin** - Resource management (`system:*`, `service:*`, `vm:*`)
   - [ ] **Approver** - Can approve requests (`approval:approve`, `approval:view`)
-  - [ ] **Viewer** - Read-only access (`*:read`)
+  - [ ] **Operator** - Power operations (`vm:operate`, `vm:read`)
+  - [ ] **Viewer** - Read-only access (explicit: `system:read`, `service:read`, `vm:read`, `template:read`, `instance_size:read`) ⚠️ **NO `*:read` wildcard** (ADR-0019)
 - [ ] Environment-based permission control (`allowed_environments` field)
 
 ---

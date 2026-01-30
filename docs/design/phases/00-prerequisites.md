@@ -103,6 +103,75 @@ kubevirt-shepherd-go/
 | Shared connection pool | ADR-0012: Ent + River + sqlc share same pgxpool |
 | PostgreSQL for sessions | Redis removed, sessions stored in PostgreSQL |
 
+### Configuration Classification
+
+> **Clarification**: There are two types of configuration with different storage and management patterns.
+
+| Type | Storage | Management | Examples |
+|------|---------|------------|----------|
+| **Deployment-time (Infrastructure)** | `config.yaml` / env vars | DevOps at deploy time | `DATABASE_URL`, `SERVER_PORT`, `ENCRYPTION_KEY` |
+| **Runtime (Business)** | PostgreSQL | WebUI by admins | Clusters, templates, OIDC config, roles, users |
+
+### Required Deployment-time Configuration
+
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `DATABASE_URL` | ✅ | PostgreSQL connection string | `postgres://user:pass@host:5432/dbname` |
+| `SERVER_PORT` | ❌ | HTTP server port (default: 8080) | `8080` |
+| `LOG_LEVEL` | ❌ | Logging level (default: info) | `debug`, `info`, `warn`, `error` |
+| `ENCRYPTION_KEY` | ✅ | **AES-256-GCM key for sensitive data** | 32-byte base64-encoded key |
+| `SESSION_SECRET` | ✅ | JWT signing secret | Random 256-bit key |
+
+> **Security**: `ENCRYPTION_KEY` is used to encrypt sensitive fields (IdP secrets, cluster credentials) stored in PostgreSQL. See [OWASP Secrets Management](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html).
+
+```bash
+# Generate ENCRYPTION_KEY
+openssl rand -base64 32
+
+# Example config.yaml (DO NOT commit secrets!)
+database:
+  url: ${DATABASE_URL}
+server:
+  port: 8080
+security:
+  encryption_key: ${ENCRYPTION_KEY}
+  session_secret: ${SESSION_SECRET}
+```
+
+### Password Policy (NIST 800-63B Compliant)
+
+> **Reference**: [NIST SP 800-63B](https://pages.nist.gov/800-63-4/sp800-63b.html) - Digital Identity Guidelines
+
+**Default Policy** (NIST-compliant):
+
+| Requirement | Value | NIST Reference |
+|-------------|-------|----------------|
+| Minimum length | 8 characters | §3.1.1.2 (absolute minimum) |
+| Recommended length | 15+ characters | §3.1.1.2 (best practice) |
+| Maximum length | 64+ characters | §3.1.1.2 |
+| ❌ Composition rules | **Not enforced** | §3.1.1.2 ("shall not impose") |
+| ❌ Periodic expiration | **Not enforced** | §3.1.1.2 ("shall not require") |
+| ✅ Blocklist check | Required | §3.1.1.3 (common/breached passwords) |
+| ✅ Unicode support | Required | §3.1.1.2 (all printable characters) |
+
+**Optional Legacy Policy** (for enterprises with compliance requirements):
+
+Enterprises can enable traditional complexity rules via configuration:
+
+```yaml
+# config.yaml - Optional legacy password policy
+security:
+  password_policy:
+    mode: "nist"          # "nist" (default) or "legacy"
+    # Legacy mode only:
+    require_uppercase: true
+    require_lowercase: true
+    require_digit: true
+    require_special: false
+```
+
+> **ADR Note**: If `mode: legacy` is used, document the compliance reason in deployment notes.
+
 ### Configuration Sources (Priority)
 
 1. Environment variables (highest)
@@ -294,7 +363,7 @@ Application performs these steps on startup (idempotent, `ON CONFLICT DO NOTHING
 
 1. **Run Atlas migrations** - Schema changes
 2. **Run River migrations** - Job queue tables
-3. **Seed built-in roles** - PlatformAdmin, Approver, Viewer (do not overwrite existing)
+3. **Seed built-in roles** - Complete role set (see below)
 4. **Seed default admin** - `admin/admin` with `force_password_change=true`
 
 ### First Login Experience
@@ -303,12 +372,27 @@ Application performs these steps on startup (idempotent, `ON CONFLICT DO NOTHING
 - System forces password change before any other action
 - After password change, `force_password_change` flag cleared
 
+### Built-in Roles (master-flow Stage 2.A)
+
+> **ADR-0019**: Wildcard permissions (`*:*`, `*:read`) are forbidden except for Bootstrap during initial setup.
+
+| Role | Permissions | Notes |
+|------|-------------|-------|
+| **Bootstrap** | `*:*` (temporary) | ⚠️ **MUST be disabled after first admin setup** |
+| **PlatformAdmin** | `platform:admin`, `cluster:*`, `user:*`, `role:*`, `template:*`, `instance_size:*`, `audit:read`, `approval:*` | Super admin - explicit permissions, no wildcards |
+| **SystemAdmin** | `system:*`, `service:*`, `vm:*`, `approval:view` | Can manage all resources but not platform config |
+| **Approver** | `approval:approve`, `approval:view`, `vm:read`, `service:read`, `system:read` | Can approve requests, read resources |
+| **Operator** | `vm:operate`, `vm:read`, `service:read`, `system:read` | Can start/stop/restart VMs |
+| **Viewer** | `system:read`, `service:read`, `vm:read`, `template:read`, `instance_size:read` | Read-only access (explicit, no `*:read`) |
+
+> **Note**: Bootstrap role is seeded but immediately assigned to the first admin account. After initial setup, the Bootstrap role MUST be disabled (set `enabled=false`).
+
 ### Required Seeds
 
 | Data | Purpose | Idempotent |
 |------|---------|------------|
 | Super admin | Initial admin account (`admin/admin`) | ✅ `ON CONFLICT DO NOTHING` |
-| Built-in roles | PlatformAdmin, Approver, Viewer | ✅ `ON CONFLICT DO NOTHING` |
+| Built-in roles | Bootstrap, PlatformAdmin, SystemAdmin, Approver, Operator, Viewer | ✅ `ON CONFLICT DO NOTHING` |
 | Default quota | Tenant quota template | ✅ `ON CONFLICT DO NOTHING` |
 
 ### Manual Migration (Development/CI)
