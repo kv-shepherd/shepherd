@@ -1,0 +1,122 @@
+# Spectral Ruleset for KubeVirt Shepherd API
+# Reference: https://docs.stoplight.io/docs/spectral
+#
+# This ruleset enforces API style guidelines per ADR-0021.
+# Run with: npx @stoplight/spectral-cli lint api/openapi.yaml
+
+extends:
+  - spectral:oas  # Built-in OpenAPI rules
+
+# Override severity for specific rules
+rules:
+  # ─────────────────────────────────────────────────────────────────
+  # Naming Conventions (ADR-0019: RFC 1035 naming)
+  # ─────────────────────────────────────────────────────────────────
+  paths-kebab-case:
+    description: Paths must use kebab-case
+    severity: error
+    given: $.paths[*]~
+    then:
+      function: pattern
+      functionOptions:
+        match: "^(/[a-z][a-z0-9-]*({[^}]+})?)+$"
+
+  operation-operationId-valid-in-url:
+    description: operationId must be valid for code generation
+    severity: error
+    given: $.paths[*][*].operationId
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[a-zA-Z][a-zA-Z0-9]*$"
+
+  # ─────────────────────────────────────────────────────────────────
+  # Schema Quality
+  # ─────────────────────────────────────────────────────────────────
+  oas3-schema:
+    severity: error
+  
+  oas3-valid-media-example:
+    severity: warn
+
+  # Require descriptions for better documentation
+  operation-description:
+    severity: warn
+  
+  operation-summary:
+    severity: error
+
+  schema-description:
+    description: Schemas should have descriptions
+    severity: warn
+    given: $.components.schemas[*]
+    then:
+      field: description
+      function: truthy
+
+  # ─────────────────────────────────────────────────────────────────
+  # Response Standards
+  # ─────────────────────────────────────────────────────────────────
+  operation-success-response:
+    description: Operations must have a success response (2xx)
+    severity: error
+
+  # Require error responses
+  operation-4xx-response:
+    description: Operations should define 4xx error responses
+    severity: warn
+    given: $.paths[*][get,post,put,patch,delete]
+    then:
+      field: responses
+      function: schema
+      functionOptions:
+        schema:
+          anyOf:
+            - required: ["400"]
+            - required: ["401"]
+            - required: ["403"]
+            - required: ["404"]
+            - required: ["409"]
+            - required: ["422"]
+
+  # ─────────────────────────────────────────────────────────────────
+  # Security
+  # ─────────────────────────────────────────────────────────────────
+  # Require security on all operations except specific public endpoints
+  operation-security-defined:
+    description: All operations must have security defined
+    severity: warn
+    given: $.paths[*][get,post,put,patch,delete]
+    then:
+      field: security
+      function: truthy
+
+  # ─────────────────────────────────────────────────────────────────
+  # Pagination (ADR-0023)
+  # ─────────────────────────────────────────────────────────────────
+  pagination-parameters:
+    description: List operations should use standard pagination
+    severity: info
+    given: $.paths[*].get
+    then:
+      - field: operationId
+        function: pattern
+        functionOptions:
+          notMatch: "^list"
+      # OR has pagination parameters - complex logic handled by custom rules if needed
+
+  # ─────────────────────────────────────────────────────────────────
+  # Deprecation
+  # ─────────────────────────────────────────────────────────────────
+  operation-deprecated-comment:
+    description: Deprecated operations should have deprecation notice in description
+    severity: warn
+    given: $.paths[*][?(@.deprecated == true)]
+    then:
+      field: description
+      function: pattern
+      functionOptions:
+        match: "(?i)deprecated"
+
+# Custom functions can be added for project-specific rules
+# functionsDir: "./spectral-functions"
