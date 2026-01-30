@@ -10,7 +10,7 @@ informed: []
 # ADR-0026: Auth Provider Naming and Standardized Provider Output
 
 > **Review Period**: Until 2026-02-01
-> **Discussion**: [Issue #XX](https://github.com/kv-shepherd/shepherd/issues/XX)
+> **Discussion**: [Issue #74](https://github.com/kv-shepherd/shepherd/issues/74)
 > **Amends**: [ADR-0018](./ADR-0018-instance-size-abstraction.md) (naming alignment)
 
 ---
@@ -117,4 +117,4 @@ Adapters MUST normalize all external providers into a common output payload:
 
 | Date | Author | Change |
 |------|--------|--------|
-| 2026-01-30 | @codex | Initial draft |
+| 2026-01-30 | @jindyzhao | Initial draft |
