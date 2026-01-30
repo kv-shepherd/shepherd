@@ -10,7 +10,7 @@ informed: []
 # ADR-0025: Bootstrap Secrets Auto-Generation and Persistence
 
 > **Review Period**: Until 2026-02-01
-> **Discussion**: [Issue #XX](https://github.com/kv-shepherd/shepherd/issues/XX)
+> **Discussion**: [Issue #73](https://github.com/kv-shepherd/shepherd/issues/73)
 > **Amends**: [ADR-0018](./ADR-0018-instance-size-abstraction.md) (bootstrap config guidance)
 
 ---
@@ -106,4 +106,4 @@ because it balances security with usability and avoids unsafe ephemeral keys.
 
 | Date | Author | Change |
 |------|--------|--------|
-| 2026-01-30 | @codex | Initial draft |
+| 2026-01-30 | @jindyzhao | Initial draft |
