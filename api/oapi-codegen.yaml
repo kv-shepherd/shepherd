@@ -1,0 +1,10 @@
+# oapi-codegen configuration for KubeVirt Shepherd (ADR-0021)
+package: generated
+output: internal/api/generated/server.gen.go
+generate:
+  - gin-server
+  - models
+  - spec
+  - embedded-spec
+import-mapping:
+  # Add specific mappings here if needed

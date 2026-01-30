@@ -24,6 +24,11 @@ echo "  API Contract Sync Check (ADR-0021)"
 echo "=========================================="
 echo ""
 
+if [ ! -f "${PROJECT_ROOT}/api/openapi.yaml" ]; then
+    echo -e "${YELLOW}⚠️  OpenAPI spec not found at api/openapi.yaml. Skipping sync check.${NC}"
+    exit 0
+fi
+
 # Step 1: Store current state
 echo "📸 Storing current state of generated files..."
 TEMP_DIR=$(mktemp -d)

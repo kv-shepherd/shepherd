@@ -1,0 +1,63 @@
+openapi: 3.1.0
+info:
+  title: KubeVirt Shepherd API
+  description: |
+    API for managing KubeVirt virtual machines and cloud-native governance.
+    
+    Adheres to ADR-0021: API Contract-First Development.
+  version: 1.0.0
+  contact:
+    name: KubeVirt Shepherd Team
+    url: https://github.com/kv-shepherd/shepherd
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: /api/v1
+    description: Production API
+
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      operationId: GetHealth
+      description: Returns the health status of the service
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: Service is unavailable
+
+components:
+  schemas:
+    Health:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+          example: ok
+        version:
+          type: string
+          example: v1.0.0
+    
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true

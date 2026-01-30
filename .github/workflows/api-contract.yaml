@@ -27,7 +27,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check if spec exists
+        id: check_file
+        run: |
+          if [ -f "api/openapi.yaml" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run Spectral Linting
+        if: steps.check_file.outputs.exists == 'true'
         uses: stoplightio/spectral-action@latest
         with:
           file_glob: 'api/openapi.yaml'
@@ -43,21 +53,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Need full history for base comparison
+          fetch-depth: 0
+
+      - name: Check if spec exists
+        id: check_file
+        run: |
+          if [ -f "api/openapi.yaml" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Fetch base branch
-        run: git fetch origin ${{ github.base_ref }}
+        if: steps.check_file.outputs.exists == 'true'
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          if git show origin/${{ github.base_ref }}:api/openapi.yaml > /dev/null 2>&1; then
+            echo "base_exists=true" >> $GITHUB_ENV
+          else
+            echo "base_exists=false" >> $GITHUB_ENV
+          fi
 
       - name: Check for Breaking Changes
+        if: steps.check_file.outputs.exists == 'true' && env.base_exists == 'true'
         uses: oasdiff/oasdiff-action/breaking@main
         with:
           base: origin/${{ github.base_ref }}:api/openapi.yaml
           revision: api/openapi.yaml
-          fail-on: ERR  # Block on definite breaking changes
-          format: github-actions  # Annotate PR with issues
+          fail-on: ERR
+          format: github-actions
 
-      - name: Generate Changelog (for reference)
-        if: always()
+      - name: Generate Changelog
+        if: steps.check_file.outputs.exists == 'true' && env.base_exists == 'true'
         uses: oasdiff/oasdiff-action/changelog@main
         with:
           base: origin/${{ github.base_ref }}:api/openapi.yaml
