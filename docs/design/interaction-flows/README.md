@@ -72,15 +72,38 @@ Part 4: State Machines & Data Models
 
 ## Configuration Storage Strategy
 
-> **2026-01-26 Update**: All runtime configuration is stored in PostgreSQL, managed via Web UI.
+> **Clarification (2026-01-29)**: Configuration is divided into two categories with distinct storage and management patterns. This resolves prior confusion between "all PostgreSQL" and "config.yaml + env".
 
-| Configuration Type | Storage | Management |
-|--------------------|---------|------------|
-| Infrastructure (DATABASE_URL, etc.) | config.yaml or env vars | Deployment-time |
-| Auth Providers (OIDC/LDAP) | PostgreSQL | Web UI |
-| External Approval Systems | PostgreSQL | Web UI |
-| Clusters, InstanceSizes, Templates | PostgreSQL | Web UI |
-| Users, Roles, Permissions | PostgreSQL | Web UI + IdP sync |
+### Configuration Classification
+
+| Category | Storage | Management | When Set |
+|----------|---------|------------|----------|
+| **Deployment-time (Infrastructure)** | `config.yaml` / env vars | DevOps | At container startup |
+| **Runtime (Business)** | PostgreSQL | Web UI | After platform is running |
+
+### Deployment-time Configuration (config.yaml / env vars)
+
+These are **infrastructure** settings required before the application can start:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | ✅ | PostgreSQL connection string |
+| `ENCRYPTION_KEY` | ✅ | AES-256-GCM key for sensitive data |
+| `SESSION_SECRET` | ✅ | JWT signing secret |
+| `SERVER_PORT` | ❌ | HTTP port (default: 8080) |
+| `LOG_LEVEL` | ❌ | Logging level (default: info) |
+
+> See [00-prerequisites.md §2](../phases/00-prerequisites.md#2-configuration-management) for complete configuration reference.
+
+### Runtime Configuration (PostgreSQL, managed via Web UI)
+
+| Configuration Type | Table | Management |
+|--------------------|-------|------------|
+| Auth Providers (OIDC/LDAP) | `idp_configs` | Web UI |
+| External Approval Systems | `external_approval_systems` | Web UI |
+| Clusters | `clusters` | Web UI |
+| InstanceSizes, Templates | `instance_sizes`, `templates` | Web UI |
+| Users, Roles, Permissions | `users`, `roles`, `role_bindings` | Web UI + IdP sync |
 
 ---
 
