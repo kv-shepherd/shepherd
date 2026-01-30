@@ -87,3 +87,34 @@ ci/
     ├── check_dead_tests.go            # Dead test detection
     └── check_test_assertions.go       # Test assertion check
 ```
+
+---
+
+## API Contract-First Enforcement (ADR-0021)
+
+> **Status**: Design Phase - NOT ACTIVE YET
+> 
+> These files will be moved to their final locations when coding begins.
+
+### Additional Files for API Contract Enforcement
+
+| File | Purpose | Final Location |
+|------|---------|----------------|
+| `workflows/api-contract.yaml` | GitHub Actions for spec validation | `.github/workflows/` |
+| `scripts/api-check.sh` | Verifies generated code is in sync | `scripts/` |
+| `spectral/.spectral.yaml` | OpenAPI linting rules | `api/` |
+| `api-templates/openapi.yaml` | Starting OpenAPI specification | `api/` |
+| `api-templates/oapi-codegen.yaml` | Code generation configuration | `api/` |
+| `makefile/api.mk` | Make targets for API workflows | `build/` |
+
+### Activation Checklist
+
+When transitioning from Design Phase to Coding Phase:
+
+1. **Initialize Go module**: `go mod init kv-shepherd.io/shepherd`
+2. **Move files** to final locations (see file table above)
+3. **Update root Makefile**: `include build/api.mk`
+4. **Verify**: `make api-lint && make api-generate`
+
+See [ADR-0021](../../adr/ADR-0021-api-contract-first.md) for full design details.
+

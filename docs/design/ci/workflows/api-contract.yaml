@@ -41,7 +41,7 @@ jobs:
         uses: stoplightio/spectral-action@latest
         with:
           file_glob: 'api/openapi.yaml'
-          spectral_ruleset: '.spectral.yaml'
+          spectral_ruleset: 'api/.spectral.yaml'
 
   # ─────────────────────────────────────────────────────────────────
   # Stage 2: Detect Breaking Changes
