@@ -45,13 +45,18 @@ Define core contracts and types:
 | **InstanceSize Schema** | `ent/schema/instance_size.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
 | **Users Schema** | `ent/schema/users.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
 | **AuthProviders Schema** | `ent/schema/auth_providers.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
+| **IdPConfigs Schema** | `ent/schema/idp_configs.go` | ⬜ | [master-flow Stage 2.B](../interaction-flows/master-flow.md) - OIDC/LDAP config ³ |
+| **IdPSyncedGroups Schema** | `ent/schema/idp_synced_groups.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md) - Groups from IdP ³ |
+| **IdPGroupMappings Schema** | `ent/schema/idp_group_mappings.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md) - IdP group → role ³ |
 | **Roles Schema** | `ent/schema/roles.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.A](../interaction-flows/master-flow.md) |
 | **RoleBindings Schema** | `ent/schema/role_bindings.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.B](../interaction-flows/master-flow.md) |
-| **ResourceRoleBindings Schema** | `ent/schema/resource_role_bindings.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
+| **ResourceRoleBindings Schema** | `ent/schema/resource_role_bindings.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 4.A+](../interaction-flows/master-flow.md) |
 | **ExternalApprovalSystems Schema** | `ent/schema/external_approval_systems.go` | ⬜ | [RFC-0004](../../rfc/RFC-0004-external-approval.md) ² |
 | Provider interface | `internal/provider/interface.go` | ⬜ | [examples/provider/interface.go](../examples/provider/interface.go) |
 | Domain models | `internal/domain/` | ⬜ | [examples/domain/](../examples/domain/) |
 | Error system | `internal/pkg/errors/errors.go` | ⬜ | - |
+
+> ³ **V1 Scope**: IdP authentication (OIDC + LDAP) is fully implemented in V1.
 
 ---
 
@@ -95,12 +100,17 @@ All list APIs use standardized pagination parameters:
 
 Granular error codes for frontend handling:
 
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `NAMESPACE_PERMISSION_DENIED` | 403 | No JIT namespace creation permission |
-| `QUOTA_EXCEEDED` | 422 | Tenant quota exceeded |
-| `CLUSTER_UNHEALTHY` | 503 | Target cluster unavailable |
-| `APPROVAL_REQUIRED` | 202 | Request pending approval |
+| Code | HTTP Status | Description | V1 Status |
+|------|-------------|-------------|-----------|
+| `NAMESPACE_PERMISSION_DENIED` | 403 | No JIT namespace creation permission | ✅ Active |
+| `NAMESPACE_QUOTA_EXCEEDED` | 403 | Cluster namespace quota reached (K8s ResourceQuota) | ✅ Active ¹ |
+| `QUOTA_EXCEEDED` | 422 | Tenant resource quota exceeded | ⏳ V2+ Reserved ² |
+| `CLUSTER_UNHEALTHY` | 503 | Target cluster unavailable | ✅ Active |
+| `APPROVAL_REQUIRED` | 202 | Request pending approval | ✅ Active |
+
+> **¹ NAMESPACE_QUOTA_EXCEEDED**: This error is returned when K8s rejects namespace creation due to ResourceQuota limits. The platform does NOT manage K8s quotas — it only reports K8s errors. See [master-flow.md Stage 3 JIT Namespace](../interaction-flows/master-flow.md) for error handling flow.
+>
+> **² QUOTA_EXCEEDED**: Reserved for future tenant-level resource quota system (CPU/Memory/VM count limits). V1 does not implement tenant quotas — this error code is a placeholder for V2+ expansion.
 
 ---
 
