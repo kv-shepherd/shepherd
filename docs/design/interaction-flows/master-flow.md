@@ -224,10 +224,10 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │  │    New password:     [••••••••••••                ]                                   │   │
 │  │    Confirm:          [••••••••••••                ]                                   │   │
 │  │                                                                                      │   │
-│  │    Password requirements:                                                            │   │
-│  │    ✓ At least 8 characters                                                           │   │
-│  │    ✓ Uppercase and lowercase letters                                                  │   │
-│  │    ✓ Numbers                                                                          │   │
+│  │    Password requirements (NIST 800-63B):                                              │   │
+│  │    ✓ Minimum 8 characters (15+ recommended)                                          │   │
+│  │    ✓ Not in common password blocklist                                                │   │
+│  │    ○ Complexity rules not enforced (configurable for legacy compliance)              │   │
 │  │                                                                                      │   │
 │  │    [Confirm]                                                                          │   │
 │  │                                                                                      │   │
@@ -819,8 +819,14 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │     When admin approves a VM request and selects target cluster:                         │
 │  │     1. Check if K8s namespace exists on target cluster                                   │
 │  │     2. If not exists → create namespace with standard labels                             │
-│  │     3. If permission denied → fail with NAMESPACE_PERMISSION_DENIED error                │
+│  │     3. Error handling (K8s API errors are classified and reported):                      │
+│  │        - Permission denied → NAMESPACE_PERMISSION_DENIED (403)                           │
+│  │        - ResourceQuota exceeded → NAMESPACE_QUOTA_EXCEEDED (403) ¹                       │
+│  │        - Other errors → NAMESPACE_CREATION_FAILED (500)                                  │
 │  │     See ADR-0017 §142-221 for full JIT creation flow.                                   │
+│  │                                                                                          │
+│  │     ¹ K8s may reject namespace creation if cluster has ResourceQuota policy.             │
+│  │       Platform reports the error but does NOT manage K8s quotas.                         │
 │  │                                                                                          │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘
 │                                                                                              │
