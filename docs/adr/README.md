@@ -29,6 +29,7 @@
 | [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) | VM Request and Approval Flow Clarification | **Accepted** | - |
 | [ADR-0018](./ADR-0018-instance-size-abstraction.md) | Instance Size Abstraction Layer | **Accepted** | - |
 | [ADR-0019](./ADR-0019-governance-security-baseline-controls.md) | Governance Security Baseline Controls | **Proposed** | - |
+| [ADR-0027](./ADR-0027-repository-structure-monorepo.md) | Monorepo Repository Structure with web/ | **Proposed** | - |
 
 > ⚠️ **¹ ADR-0009 Partial Supersession Notice**:
 >
