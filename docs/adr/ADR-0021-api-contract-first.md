@@ -635,4 +635,13 @@ When external integrations require SDK access:
 
 ---
 
+## Implementation Notes
+
+For detailed implementation specifications including CI/CD pipeline configuration, Makefile targets, and tool integrations, see:
+
+**→ [ADR-0021 Implementation Design](../design/notes/ADR-0021-api-contract-first-implementation.md)**
+
+---
+
 _End of ADR-0021_
+
