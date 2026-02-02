@@ -803,7 +803,8 @@ const handleClick = () => setCount(prev => prev + 1)
 ### Documentation Reference
 
 For the complete performance optimization ruleset (57 rules across 8 categories), see:
-- `.agent/skills/vercel-react-best-practices/AGENTS.md`
+- [Vercel Engineering: How We Optimized Package Imports](https://vercel.com/blog/how-we-optimized-package-imports-in-next-js)
+- [Next.js Performance Best Practices](https://nextjs.org/docs/pages/building-your-application/optimizing)
 
 ---
 
@@ -891,3 +892,16 @@ Upon acceptance, perform the following:
 ---
 
 _End of ADR-0020_
+
+---
+
+## Amendments by Subsequent ADRs
+
+> ⚠️ **Notice**: The following sections have been amended by subsequent ADRs.
+> The original decisions above remain **unchanged for historical reference**.
+
+### ADR-0027: Monorepo Repository Structure with web/ (2026-01-31)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §Repository Structure | **SUPERSEDED** | Repository structure decision updated to Monorepo with `web/` frontend directory. | [ADR-0027](./ADR-0027-repository-structure-monorepo.md) |
