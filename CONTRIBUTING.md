@@ -164,11 +164,20 @@ See [docs/design/ci/README.md](docs/design/ci/README.md) for the complete list.
 - Document exported types and functions
 - Write tests for new functionality
 
+### License Headers (If Applicable)
+
+If this repository uses license headers or boilerplate checks, all new source files must include the required header. Follow the exact format used by existing files in the same directory and any repo-specific scripts or guidelines.
+
+### Inclusive Language
+
+Use inclusive terminology in new code and documentation. Prefer "allowlist/denylist" over "whitelist/blacklist" and avoid non-inclusive legacy terms in new content.
+
 ## Documentation
 
 - Update relevant documentation when changing functionality
 - ADR changes require discussion and approval
 - Keep examples in `docs/design/examples/` synchronized with actual patterns
+- If documentation lint or link-check tools exist in this repo, run them for doc changes; otherwise perform a manual sanity check (headings, lists, links).
 
 ### Decision Documents (ADR + Design Notes)
 
@@ -207,6 +216,10 @@ Aim for ≥60% test coverage on new code.
 3. Documentation must be updated if applicable
 4. Breaking changes require ADR update
 5. All review comments must be resolved before merge
+
+### Owners and Reviewers
+
+If an `OWNERS` or `CODEOWNERS` file applies to the files you changed, request review from the appropriate owners/maintainers and mention them in the PR when needed.
 
 ### Labels
 
