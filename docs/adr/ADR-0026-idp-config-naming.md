@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"
+status: "accepted"
 date: 2026-01-30
 deciders: []
 consulted: []
