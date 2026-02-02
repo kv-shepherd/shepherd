@@ -176,7 +176,8 @@
 │  │    max_workers: 10                       # 可选，默认 10                                  │ │
 │  │                                                                                          │ │
 │  │  security:                                                                               │ │
-│  │    encryption_key: "32-byte-hex"         # 可选，用于加密敏感数据                          │ │
+│  │    encryption_key: "32-byte-random"      # 可选，强烈建议                                │ │
+│  │    session_secret: "32-byte-random"      # 可选，强烈建议                                │ │
 │  └────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                              │
 │  🐳 方式 B: 环境变量 (容器化部署)                                                               │
@@ -185,11 +186,18 @@
 │  │  SERVER_PORT=8080                        # 可选，默认 8080                               │ │
 │  │  LOG_LEVEL=info                          # 可选，默认 info                                │ │
 │  │  RIVER_MAX_WORKERS=10                    # 可选，默认 10                                  │ │
-│  │  ENCRYPTION_KEY=<32-byte-hex-string>     # 可选，用于加密敏感数据                          │ │
+│  │  ENCRYPTION_KEY=<32-byte-random>         # 可选，强烈建议                                │ │
+│  │  SESSION_SECRET=<32-byte-random>         # 可选，强烈建议                                │ │
 │  └────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                              │
 │  ⚡ 优先级: 环境变量 > config.yaml > 默认值                                                    │
 │  💡 环境变量始终覆盖 config.yaml (12-factor app 原则)                                          │
+│                                                                                              │
+│  🔐 自动生成 (缺省时):                                                                        │
+│  - 首次启动若缺少 ENCRYPTION_KEY / SESSION_SECRET，自动生成强随机密钥                         │
+│  - 持久化存入 PostgreSQL (禁止仅内存临时密钥)                                                  │
+│  - 外部密钥或环境变量优先于数据库值                                                           │
+│  - 轮换策略推迟到 RFC-0016                                                                    │
 │                                                                                              │
 │  📦 应用自动初始化:                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────────────────────────┐ │
@@ -422,6 +430,9 @@
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
                                            │
                                            ▼
+
+> **标准化 Provider 输出**：所有认证提供方（OIDC/LDAP/SSO）通过适配层统一成标准输出，用于 RBAC 映射。见 ADR-0026。
+
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 │                         阶段 2.B: 配置认证方式 (OIDC/LDAP)                                      │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
@@ -462,9 +473,12 @@
 │                                                                                              │
 │  📦 数据库操作:                                                                               │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  INSERT INTO idp_configs (id, type, name, issuer_url, client_id, client_secret)   │       │
-│  │  VALUES ('idp-001', 'oidc', 'Corp-SSO', 'https://sso.company.com/realms/main',    │       │
-│  │          'shepherd-platform', 'encrypted:xxx');                                    │       │
+│  │  INSERT INTO auth_providers (id, type, name, enabled, issuer, client_id,           │       │
+│  │    client_secret_encrypted, scopes, claims_mapping, default_role_id,               │       │
+│  │    default_allowed_environments) VALUES                                            │       │
+│  │  ('idp-001', 'oidc', 'Corp-SSO', true, 'https://sso.company.com/realms/main',       │       │
+│  │   'shepherd-platform', 'encrypted:xxx', ARRAY['openid','profile','email'],         │       │
+│  │   '{"groups":"groups","groups_format":"array"}', 'role-viewer', ARRAY['test']);    │       │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -518,13 +532,13 @@
 │  📦 数据库操作:                                                                               │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
 │  │  -- 同步 IdP 组                                                                    │       │
-│  │  INSERT INTO idp_synced_groups (id, idp_config_id, group_id, source_field)        │       │
+│  │  INSERT INTO idp_synced_groups (id, auth_provider_id, group_id, source_field)     │       │
 │  │  VALUES ('sg-001', 'idp-001', 'Platform-Admin', 'groups'),                        │       │
 │  │         ('sg-002', 'idp-001', 'DevOps-Team', 'groups'),                           │       │
 │  │         ('sg-003', 'idp-001', 'QA-Team', 'groups');                               │       │
 │  │                                                                                    │       │
 │  │  -- 保存映射关系                                                                    │       │
-│  │  INSERT INTO idp_group_mappings (id, idp_config_id, idp_group_id, role_id,        │       │
+│  │  INSERT INTO idp_group_mappings (id, auth_provider_id, idp_group_id, role_id,     │       │
 │  │                                  scope_type, allowed_environments) VALUES         │       │
 │  │    ('map-001', 'idp-001', 'Platform-Admin', 'role-platform-admin',                │       │
 │  │     'global', ARRAY['test', 'prod']),                                             │       │
@@ -569,7 +583,7 @@
 │  │  BEGIN TRANSACTION;                                                               │       │
 │  │                                                                                    │       │
 │  │  -- 1. 创建用户记录 (如果不存在)                                                     │       │
-│  │  INSERT INTO users (id, external_id, email, name, idp_config_id, created_at)      │       │
+│  │  INSERT INTO users (id, external_id, email, name, auth_provider_id, created_at)   │       │
 │  │  VALUES ('user-001', 'oidc|abc123', 'zhang.san@company.com', '张三',               │       │
 │  │          'idp-001', NOW())                                                         │       │
 │  │  ON CONFLICT (external_id) DO UPDATE SET last_login_at = NOW();                   │       │
@@ -734,7 +748,7 @@
 │                                                                                              │
 │  💡 敏感数据加密:                                                                             │
 │  - webhook_secret 使用 AES-256-GCM 加密存储                                                  │
-│  - 解密密钥来自环境变量 ENCRYPTION_KEY                                                        │
+│  - 解密密钥优先来自外部/环境变量，缺省则使用数据库生成的密钥                                 │
 │  - 日志中不记录敏感字段值                                                                      │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -1002,9 +1016,10 @@
 │  │  INSERT INTO systems (id, name, description, created_by, created_at)              │       │
 │  │  VALUES ('sys-001', 'shop', '电商核心系统', 'zhang.san', NOW());                   │       │
 │  │                                                                                    │       │
-│  │  -- 2. 用户权限自动继承 (通过 RoleBinding 表, 参考 ADR-0015 §22)                    │       │
-│  │  INSERT INTO role_bindings (user_id, role, resource_type, resource_id)            │       │
-│  │  VALUES ('zhang.san', 'owner', 'system', 'sys-001');                              │       │
+│  │  -- 2. 用户权限自动继承 (资源级权限)                                                │       │
+│  │  INSERT INTO resource_role_bindings                                               │       │
+│  │    (id, user_id, role, resource_type, resource_id, granted_by, created_at)        │       │
+│  │  VALUES ('rrb-001', 'zhang.san', 'owner', 'system', 'sys-001', 'zhang.san', NOW()); │       │
 │  │                                                                                    │       │
 │  │  -- 3. 📝 记录审计日志                                                             │       │
 │  │  INSERT INTO audit_logs (action, actor_id, resource_type, resource_id, details)   │       │
@@ -2115,6 +2130,16 @@ ORDER BY created_at DESC;
 #### 外部审批配置 (通过 Web UI 配置，存储于 PostgreSQL)
 
 > 管理员在 **设置 → 外部审批系统 → 添加** 进行配置，所有配置存储在 `external_approval_systems` 表中。
+
+**Webhook 安全最佳实践**：
+- 所有 webhook URL 必须使用 HTTPS。
+- 使用共享密钥进行签名校验，并采用常量时间比较。
+- 在签名载荷中包含时间戳，拒绝过期请求，防止重放。
+- webhook 密钥需加密存储，泄露时及时轮换。
+
+参考：
+- https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
+- https://docs.stripe.com/webhooks/test
 
 ```sql
 -- Example: external_approval_systems record

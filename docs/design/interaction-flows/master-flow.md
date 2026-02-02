@@ -175,7 +175,8 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │  │    max_workers: 10                       # optional, default: 10                         │ │
 │  │                                                                                          │ │
 │  │  security:                                                                               │
-│  │    encryption_key: "32-byte-hex"         # optional, encrypt sensitive data              │ │
+│  │    encryption_key: "32-byte-random"      # optional, strongly recommended                │ │
+│  │    session_secret: "32-byte-random"      # optional, strongly recommended                │ │
 │  └────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                              │
 │  🐳 Option B: Environment variables (containerized deploy)                                   │
@@ -184,11 +185,19 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │  │  SERVER_PORT=8080                        # optional, default: 8080                      │ │
 │  │  LOG_LEVEL=info                          # optional, default: info                       │ │
 │  │  RIVER_MAX_WORKERS=10                    # optional, default: 10                         │ │
-│  │  ENCRYPTION_KEY=<32-byte-hex-string>     # optional, encrypt sensitive data              │ │
+│  │  ENCRYPTION_KEY=<32-byte-random>         # optional, strongly recommended                │ │
+│  │  SESSION_SECRET=<32-byte-random>         # optional, strongly recommended                │ │
 │  └────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                              │
 │  ⚡ Priority: env vars > config.yaml > defaults                                               │
 │  💡 Env vars always override config.yaml (12-factor app principle)                            │
+│                                                                                              │
+│  🔐 Auto-generation (if missing):                                                            │
+│  - Generate strong random ENCRYPTION_KEY and SESSION_SECRET on first boot                    │
+│  - Persist to PostgreSQL (no ephemeral in-memory-only keys)                                  │
+│  - External key or env var overrides DB value                                                │
+│  - Rotation deferred to RFC-0016 (future)                                                    │
+│                                                                                              │
 │                                                                                              │
 │  📦 App auto-initialization:                                                                 │
 │  ┌────────────────────────────────────────────────────────────────────────────────────────┐ │
@@ -421,6 +430,7 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
                                            │
                                            ▼
+> **Standard Provider Output**: All auth providers (OIDC/LDAP/SSO) are normalized via adapter layer into a common payload for RBAC mapping. See ADR-0026.
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 │                     Stage 2.B: Configure Authentication (OIDC/LDAP)                          │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
@@ -461,9 +471,12 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │                                                                                              │
 │  📦 Database operations:                                                                     │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  INSERT INTO idp_configs (id, type, name, issuer_url, client_id, client_secret)   │
-│  │  VALUES ('idp-001', 'oidc', 'Corp-SSO', 'https://sso.company.com/realms/main',     │
-│  │          'shepherd-platform', 'encrypted:xxx');                                    │
+│  │  INSERT INTO auth_providers (id, type, name, enabled, issuer, client_id,           │
+│  │    client_secret_encrypted, scopes, claims_mapping, default_role_id,               │
+│  │    default_allowed_environments) VALUES                                            │
+│  │  ('idp-001', 'oidc', 'Corp-SSO', true, 'https://sso.company.com/realms/main',       │
+│  │   'shepherd-platform', 'encrypted:xxx', ARRAY['openid','profile','email'],         │
+│  │   '{"groups":"groups","groups_format":"array"}', 'role-viewer', ARRAY['test']);    │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -517,13 +530,13 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │  📦 Database operations:                                                                     │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
 │  │  -- Sync IdP groups                                                             │
-│  │  INSERT INTO idp_synced_groups (id, idp_config_id, group_id, source_field)       │
+│  │  INSERT INTO idp_synced_groups (id, auth_provider_id, group_id, source_field)    │
 │  │  VALUES ('sg-001', 'idp-001', 'Platform-Admin', 'groups'),                       │
 │  │         ('sg-002', 'idp-001', 'DevOps-Team', 'groups'),                          │
 │  │         ('sg-003', 'idp-001', 'QA-Team', 'groups');                              │
 │  │                                                                                    │
 │  │  -- Save mappings                                                                   │
-│  │  INSERT INTO idp_group_mappings (id, idp_config_id, idp_group_id, role_id,         │
+│  │  INSERT INTO idp_group_mappings (id, auth_provider_id, idp_group_id, role_id,      │
 │  │                                  scope_type, allowed_environments) VALUES          │
 │  │    ('map-001', 'idp-001', 'Platform-Admin', 'role-platform-admin',                 │
 │  │     'global', ARRAY['test', 'prod']),                                              │
@@ -568,7 +581,7 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │  │  BEGIN TRANSACTION;                                                               │
 │  │                                                                                    │
 │  │  -- 1. Create user record (if not exists)                                          │
-│  │  INSERT INTO users (id, external_id, email, name, idp_config_id, created_at)      │
+│  │  INSERT INTO users (id, external_id, email, name, auth_provider_id, created_at)   │
 │  │  VALUES ('user-001', 'oidc|abc123', 'zhang.san@company.com', 'Zhang San',          │
 │  │          'idp-001', NOW())                                                         │
 │  │  ON CONFLICT (external_id) DO UPDATE SET last_login_at = NOW();                   │
@@ -733,7 +746,7 @@ Target: vm-001 (svc-redis → sys-shop)
 │                                                                                              │
 │  💡 Sensitive data encryption:                                                              │
 │  - webhook_secret stored encrypted with AES-256-GCM                                         │
-│  - decryption key from ENCRYPTION_KEY env var                                               │
+│  - decryption key from external/env if provided; otherwise from DB-generated key            │
 │  - sensitive fields must not be logged                                                     │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -1000,9 +1013,10 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │  INSERT INTO systems (id, name, description, created_by, created_at)              │       │
 │  │  VALUES ('sys-001', 'shop', 'E-commerce core system', 'zhang.san', NOW());         │       │
 │  │                                                                                    │       │
-│  │  -- 2. Auto permission inheritance (RoleBinding, see ADR-0015 §22)                 │       │
-│  │  INSERT INTO role_bindings (user_id, role, resource_type, resource_id)            │       │
-│  │  VALUES ('zhang.san', 'owner', 'system', 'sys-001');                               │       │
+│  │  -- 2. Auto permission inheritance (ResourceRoleBinding)                           │       │
+│  │  INSERT INTO resource_role_bindings                                               │       │
+│  │    (id, user_id, role, resource_type, resource_id, granted_by, created_at)        │       │
+│  │  VALUES ('rrb-001', 'zhang.san', 'owner', 'system', 'sys-001', 'zhang.san', NOW()); │       │
 │  │                                                                                    │       │
 │  │  -- 3. 📝 Audit log                                                                │       │
 │  │  INSERT INTO audit_logs (action, actor_id, resource_type, resource_id, details)   │       │
@@ -2115,6 +2129,16 @@ ORDER BY created_at DESC;
 
 > Admin config via **Settings → External Approval Systems → Add**.
 > All configs stored in `external_approval_systems` table.
+
+**Webhook security (best practice)**:
+- HTTPS only for all webhook URLs.
+- Verify webhook signatures with shared secret and constant-time comparison.
+- Include a timestamp in the signed payload and reject stale requests to prevent replay.
+- Store webhook secrets encrypted at rest; rotate when compromised.
+
+References:
+- https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
+- https://docs.stripe.com/webhooks/test
 
 ```sql
 -- Example: external_approval_systems record

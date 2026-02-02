@@ -45,9 +45,8 @@ Define core contracts and types:
 | **InstanceSize Schema** | `ent/schema/instance_size.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
 | **Users Schema** | `ent/schema/users.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
 | **AuthProviders Schema** | `ent/schema/auth_providers.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
-| **IdPConfigs Schema** | `ent/schema/idp_configs.go` | ⬜ | [master-flow Stage 2.B](../interaction-flows/master-flow.md) - OIDC/LDAP config ³ |
-| **IdPSyncedGroups Schema** | `ent/schema/idp_synced_groups.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md) - Groups from IdP ³ |
-| **IdPGroupMappings Schema** | `ent/schema/idp_group_mappings.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md) - IdP group → role ³ |
+| **IdPSyncedGroups Schema** | `ent/schema/idp_synced_groups.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md) ³ |
+| **IdPGroupMappings Schema** | `ent/schema/idp_group_mappings.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md) ³ |
 | **Roles Schema** | `ent/schema/roles.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.A](../interaction-flows/master-flow.md) |
 | **RoleBindings Schema** | `ent/schema/role_bindings.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.B](../interaction-flows/master-flow.md) |
 | **ResourceRoleBindings Schema** | `ent/schema/resource_role_bindings.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 4.A+](../interaction-flows/master-flow.md) |
@@ -274,6 +273,61 @@ func (Service) Edges() []ent.Edge {
 | `created_by` | Inherited from System |
 | `maintainers` | Inherited from System via RoleBinding |
 
+### 3.2.1 Auth Provider Schema (auth_providers)
+
+> **Canonical table name**: `auth_providers` (unified standard provider config).  
+> **Reference implementation**: [examples/domain/auth_provider.go](../examples/domain/auth_provider.go)
+
+**OIDC requirements**:
+- Use issuer-based discovery and validate `iss` + `aud` on ID tokens (ADR-0015 §22.6).  
+- Store client secrets encrypted at rest.
+
+**LDAP requirements**:
+- TLS required (`ldaps://` or StartTLS).  
+- Bind credentials encrypted at rest.
+
+References:
+- OpenID Connect Discovery: https://openid.net/specs/openid-connect-discovery-1_0.html
+- OpenID Connect Core (token validation): https://openid.net/specs/openid-connect-core-1_0.html
+
+**Standard Provider Output (Adapter Contract)**:
+
+Adapters MUST normalize all external providers into a common output payload:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `provider_id` | string | `auth_providers.id` |
+| `auth_type` | string | `oidc` / `ldap` / `sso` / `wecom` / `feishu` / `dingtalk` |
+| `external_id` | string | Stable subject identifier from provider |
+| `email` | string | User email (may be empty if provider lacks) |
+| `display_name` | string | Human-readable name |
+| `groups` | string[] | Normalized group list for RBAC mapping |
+| `raw_claims` | json | Raw provider claims/attributes (optional, for audit/debug) |
+
+Rules:
+- Core auth/RBAC logic consumes only this normalized output.
+- Provider-specific fields must be mapped in the adapter layer.
+
+### 3.2.2 Pending Changes (ADR-0025): system_secrets Table
+
+> **Status**: Proposed (ADR-0025). Do not implement until accepted.  
+> **Design notes**: [docs/design/notes/ADR-0025-secret-bootstrap.md](../notes/ADR-0025-secret-bootstrap.md)
+
+**Proposed table**: `system_secrets`
+
+| Column | Type | Notes |
+|--------|------|------|
+| `id` | string | Primary key (single row or named keys) |
+| `key_name` | string | `ENCRYPTION_KEY` / `SESSION_SECRET` |
+| `key_value` | string | Base64-encoded secret; encrypted at rest by DB |
+| `source` | string | `db_generated` / `env` / `external` |
+| `created_at` | timestamp | Creation time |
+| `updated_at` | timestamp | Last update |
+
+**Access control (minimum privilege)**:
+- Only application DB role can `SELECT/INSERT/UPDATE`.
+- No admin UI/API exposure of key values.
+
 ### 3.3 DomainEvent Schema (ADR-0009)
 
 > **Reference**: [examples/domain/event.go](../examples/domain/event.go)
@@ -308,6 +362,7 @@ Key constraints:
 ## 4. Provider Interfaces
 
 > **Reference**: [examples/provider/interface.go](../examples/provider/interface.go)
+> **Auth Adapter Reference**: [examples/provider/auth_adapter.go](../examples/provider/auth_adapter.go)
 
 ### Interface Hierarchy
 
@@ -472,4 +527,3 @@ const (
 > RFC-0004 status is `Proposed` (P1, V1+ optional). Design defined in [Master Flow Stage 2.E](../interaction-flows/master-flow.md#stage-2-e).
 > Review Period: Until 2026-02-01. This is an **optional feature** - if external approval is not configured, the built-in approval engine is used.
 > Security: TLS mandatory, HMAC signature verification, fallback to built-in on failure.
-

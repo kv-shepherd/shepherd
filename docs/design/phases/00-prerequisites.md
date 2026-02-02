@@ -112,20 +112,30 @@ kubevirt-shepherd-go/
 | **Deployment-time (Infrastructure)** | `config.yaml` / env vars | DevOps at deploy time | `DATABASE_URL`, `SERVER_PORT`, `ENCRYPTION_KEY` |
 | **Runtime (Business)** | PostgreSQL | WebUI by admins | Clusters, templates, OIDC config, roles, users |
 
-### Required Deployment-time Configuration
+### Deployment-time Configuration (config.yaml / env vars)
 
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
 | `DATABASE_URL` | ✅ | PostgreSQL connection string | `postgres://user:pass@host:5432/dbname` |
 | `SERVER_PORT` | ❌ | HTTP server port (default: 8080) | `8080` |
 | `LOG_LEVEL` | ❌ | Logging level (default: info) | `debug`, `info`, `warn`, `error` |
-| `ENCRYPTION_KEY` | ✅ | **AES-256-GCM key for sensitive data** | 32-byte base64-encoded key |
-| `SESSION_SECRET` | ✅ | JWT signing secret | Random 256-bit key |
+| `ENCRYPTION_KEY` | ❌ | **AES-256-GCM key for sensitive data** (strongly recommended) | 32-byte random key |
+| `SESSION_SECRET` | ❌ | JWT signing secret (strongly recommended) | Random 256-bit key (32 bytes) |
 
-> **Security**: `ENCRYPTION_KEY` is used to encrypt sensitive fields (IdP secrets, cluster credentials) stored in PostgreSQL. See [OWASP Secrets Management](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html).
+**Auto-generation rule** (ADR-0025):
+- If `ENCRYPTION_KEY` or `SESSION_SECRET` is missing, generate strong random keys on first boot and persist them in PostgreSQL.
+- External key or env var overrides DB value.
+- Rotation deferred to RFC-0016.
+
+**Key length guidance**:
+- For HMAC JWT signing (HS256/HS384/HS512), use key length at least the hash output size (e.g., 256 bits for HS256). See [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518).
+- For secrets storage and rotation practices, see [OWASP Secrets Management](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html).
 
 ```bash
-# Generate ENCRYPTION_KEY
+# Generate ENCRYPTION_KEY (32 bytes)
+openssl rand -base64 32
+
+# Generate SESSION_SECRET (32 bytes; for HS256 or similar HMAC JWT signing)
 openssl rand -base64 32
 
 # Example config.yaml (DO NOT commit secrets!)
@@ -476,4 +486,3 @@ The vanity import server must be deployed before external users can import the m
 - [ ] Domain DNS configured
 - [ ] Vanity import server deployed
 - [ ] `go get` verification passed
-
