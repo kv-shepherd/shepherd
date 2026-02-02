@@ -2302,6 +2302,12 @@ RUNNING/STOPPED → DELETING → DELETED (terminal)
 > The `platform:admin` is an explicit, named permission that grants full access through application logic,
 > not pattern matching.
 
+### ADR-0026: Auth Provider Naming (2026-01-30)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §Configuration Storage Strategy (auth_providers) | **AMENDED** | `auth_providers` is canonical; `idp_configs` references are aliases | [ADR-0026](./ADR-0026-idp-config-naming.md) |
+
 ---
 
 _End of ADR-0018_

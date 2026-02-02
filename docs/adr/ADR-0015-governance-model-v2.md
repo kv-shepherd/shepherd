@@ -2277,4 +2277,10 @@ func ValidateIDToken(token *oidc.IDToken, expectedIssuer, expectedAudience strin
 > - **Naming**: All platform-managed names must validate against RFC 1035 rules plus `--` prohibition
 > - **Audit**: Logs must redact: passwords, tokens, secrets, personal identifiers (SSN, ID numbers)
 
+### ADR-0026: Auth Provider Naming (2026-01-30)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §22.6 IdP Configuration Schema (idp_config) | **AMENDED** | Canonical table name is `auth_providers`; `idp_configs` is treated as an alias in docs | [ADR-0026](./ADR-0026-idp-config-naming.md) |
+
 ---
