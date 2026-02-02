@@ -74,6 +74,8 @@ Part 4: State Machines & Data Models
 
 > **Clarification (2026-01-29)**: Configuration is divided into two categories with distinct storage and management patterns. This resolves prior confusion between "all PostgreSQL" and "config.yaml + env".
 
+> **Key bootstrap rule**: If `ENCRYPTION_KEY` or `SESSION_SECRET` is missing at startup, generate strong random keys and persist them in PostgreSQL. External key or env var overrides DB value. Rotation deferred to RFC-0016.
+
 ### Configuration Classification
 
 | Category | Storage | Management | When Set |

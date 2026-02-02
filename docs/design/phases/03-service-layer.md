@@ -177,7 +177,8 @@ func Bootstrap(cfg *config.Config) (*App, error) {
 > - False atomicity (K8s changes cannot rollback with DB)
 > - Connection pool exhaustion
 >
-> See [Best Practice Search Results] for distributed transaction patterns.
+> See Microsoft Saga pattern guidance for distributed transaction patterns:
+> https://learn.microsoft.com/en-us/azure/architecture/reference-architectures/saga/saga
 
 ---
 

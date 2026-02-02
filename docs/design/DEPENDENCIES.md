@@ -461,7 +461,7 @@ replace (
 | `K8S_CLUSTER_CONCURRENCY` | `20` | `K8S_CLUSTER_CONCURRENCY` | **Per-instance** single cluster K8s operation limit |
 | `HEAVY_WRITE_LIMIT` | `30` | `HEAVY_WRITE_LIMIT` | Heavy write operations (K8s API, external systems) |
 | `LIGHT_WRITE_LIMIT` | `80` | `LIGHT_WRITE_LIMIT` | Light write operations (pure DB) |
-| `RIVER_MAX_WORKERS` | `10` | `KUBEVIRT_SHEPHERD_RIVER_MAX_WORKERS` | River Worker max concurrency |
+| `RIVER_MAX_WORKERS` | `10` | `RIVER_MAX_WORKERS` | River Worker max concurrency |
 
 > ⚠️ **Concurrency Scope Clarification**:
 >
