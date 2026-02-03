@@ -396,12 +396,17 @@ replace (
 ### Template Engine
 
 > **Helm Basic Syntax Compatible**: Uses same template engine as Helm (Go text/template + Sprig)
+>
+> **⚠️ Clarification (04-governance.md)**: These dependencies are **NOT** used for VM Template rendering.
+> VM Templates are now **Kubernetes-native YAML** (VirtualMachine/VirtualMachineInstanceType) with no Go template variables.
+> This template engine is retained for **internal configuration rendering** (e.g., deployment manifests, config files).
 
 | Package | Version | Release Date | Description |
 |---------|---------|--------------|-------------|
 | `text/template` | stdlib | - | Go standard template engine |
 | `github.com/Masterminds/sprig/v3` | `v3.3.0` | 2024-08-29 | Template function extension (same as Helm) |
 | `sigs.k8s.io/yaml` | `v1.4.0` | Stable | YAML parsing to K8s objects |
+
 
 ### Test Dependencies
 
