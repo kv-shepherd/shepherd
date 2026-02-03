@@ -192,11 +192,13 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │  ⚡ Priority: env vars > config.yaml > defaults                                               │
 │  💡 Env vars always override config.yaml (12-factor app principle)                            │
 │                                                                                              │
-│  🔐 Auto-generation (if missing):                                                            │
-│  - Generate strong random ENCRYPTION_KEY and SESSION_SECRET on first boot                    │
-│  - Persist to PostgreSQL (no ephemeral in-memory-only keys)                                  │
-│  - External key or env var overrides DB value                                                │
-│  - Rotation deferred to RFC-0016 (future)                                                    │
+│  🔐 Auto-generation (ADR-0025 - if missing):                                                 │
+│  - Generate strong random ENCRYPTION_KEY and SESSION_SECRET on first boot (32-byte CSPRNG)   │
+│  - Persist to PostgreSQL `system_secrets` table (no ephemeral in-memory-only keys)           │
+│  - ⚡ V1 Priority: env vars > DB-generated (ADR-0025)                                        │
+│  - 🔮 Future Priority: KMS/secret manager > env vars > DB-generated (RFC-0017, not in V1)    │
+│  - If external key is introduced later, explicit re-encryption step required                 │
+│  - 🔄 Key rotation deferred to RFC-0016 (not in V1 scope)                                    │
 │                                                                                              │
 │                                                                                              │
 │  📦 App auto-initialization:                                                                 │

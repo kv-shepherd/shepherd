@@ -54,6 +54,10 @@ Define core contracts and types:
 | Provider interface | `internal/provider/interface.go` | ⬜ | [examples/provider/interface.go](../examples/provider/interface.go) |
 | Domain models | `internal/domain/` | ⬜ | [examples/domain/](../examples/domain/) |
 | Error system | `internal/pkg/errors/errors.go` | ⬜ | - |
+| **OpenAPI Spec (Canonical)** | `api/openapi.yaml` | ⬜ | [ADR-0021](../../adr/ADR-0021-api-contract-first.md) |
+| **OpenAPI Spec (Compat, optional)** | `api/openapi.compat.yaml` | ⬜ | 3.0-compatible artifact for Go toolchain |
+| **Go API Generated Types** | `internal/api/generated/` | ⬜ | `make api-generate` |
+| **TS API Generated Types** | `web/src/types/api.gen.ts` | ⬜ | `make api-generate` |
 
 > ³ **V1 Scope**: IdP authentication (OIDC + LDAP) is fully implemented in V1.
 
@@ -71,6 +75,14 @@ api/openapi.yaml → Code Generation → Implementation
   oapi-codegen (Go types)
   openapi-typescript (TS types)
 ```
+
+**Tooling compatibility**:
+- `oapi-codegen` and `kin-openapi` currently target OpenAPI 3.0.x; if 3.1-only features are used in the canonical spec, generate `api/openapi.compat.yaml` (3.0-compatible) for Go codegen/validation while keeping `api/openapi.yaml` as the source of truth.
+- `openapi-typescript` can consume OpenAPI 3.1 directly for frontend types.
+
+**Compat generation**:
+- Use `make api-compat-generate` to produce `api/openapi.compat.yaml` from `api/openapi.yaml`.
+- The downgrade is defined by `docs/design/ci/api-templates/openapi-overlay-3.0.yaml`.
 
 ### Directory Structure
 
@@ -308,12 +320,12 @@ Rules:
 - Core auth/RBAC logic consumes only this normalized output.
 - Provider-specific fields must be mapped in the adapter layer.
 
-### 3.2.2 Pending Changes (ADR-0025): system_secrets Table
+### 3.2.2 System Secrets Table (ADR-0025)
 
-> **Status**: Proposed (ADR-0025). Do not implement until accepted.  
+> **Status**: Accepted (ADR-0025).  
 > **Design notes**: [docs/design/notes/ADR-0025-secret-bootstrap.md](../notes/ADR-0025-secret-bootstrap.md)
 
-**Proposed table**: `system_secrets`
+**Table**: `system_secrets`
 
 | Column | Type | Notes |
 |--------|------|------|
@@ -327,6 +339,11 @@ Rules:
 **Access control (minimum privilege)**:
 - Only application DB role can `SELECT/INSERT/UPDATE`.
 - No admin UI/API exposure of key values.
+
+**Bootstrap rules** (ADR-0025):
+- V1 precedence: env vars > DB-generated.
+- Future precedence: external key (KMS/secret manager) > env vars > DB-generated (RFC-0017).
+- If external/env key is introduced after bootstrap, require explicit re-encryption.
 
 ### 3.3 DomainEvent Schema (ADR-0009)
 
