@@ -1,7 +1,7 @@
 # ADR-0029 Implementation Details: OpenAPI Toolchain Governance
 
 > **Parent ADR**: [ADR-0029](../../adr/ADR-0029-openapi-toolchain-governance.md)  
-> **Status**: Implementation specification for accepted ADR
+> **Status**: Implementation specification for ADR-0029 (parent ADR status: **proposed**)
 
 ---
 
@@ -49,7 +49,7 @@ api-generate:
 # Validate TypeScript types match spec
 api-generate-ts:
 	@echo "==> Generating TypeScript types..."
-	npx openapi-typescript api/openapi.yaml -o ui/src/types/api.gen.ts
+	npx openapi-typescript api/openapi.yaml -o web/src/types/api.gen.ts
 
 # Full API check (CI gate)
 api-check: api-lint
@@ -71,7 +71,7 @@ on:
     paths:
       - 'api/**'
       - 'internal/api/**'
-      - 'ui/src/types/api.gen.ts'
+      - 'web/src/types/api.gen.ts'
 
 jobs:
   api-lint:
@@ -112,8 +112,8 @@ jobs:
       
       - name: Generate and verify TypeScript types
         run: |
-          npx openapi-typescript api/openapi.yaml -o ui/src/types/api.gen.ts
-          git diff --exit-code ui/src/types/api.gen.ts || \
+          npx openapi-typescript api/openapi.yaml -o web/src/types/api.gen.ts
+          git diff --exit-code web/src/types/api.gen.ts || \
             (echo "::error::Generated TypeScript types are out of sync with OpenAPI spec" && exit 1)
 ```
 
