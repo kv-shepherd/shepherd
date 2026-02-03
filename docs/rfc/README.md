@@ -26,6 +26,7 @@
 | [RFC-0014](./RFC-0014-vm-clone.md) | VM Clone ³ | Deferred | P2 | Rapid VM duplication |
 | [RFC-0015](./RFC-0015-per-cluster-concurrency.md) | Per-Cluster Concurrency | Deferred | P3 | Distributed semaphore needed |
 | [RFC-0016](./RFC-0016-key-rotation.md) | Secret Key Rotation | Proposed | P2 | Compliance or operator request |
+| [RFC-0017](./RFC-0017-external-secret-provider.md) | External Secret Provider | Deferred | P2 | Enterprise KMS/Vault requirement |
 
 > **Notes**:
 > - ¹ Soft archiving (`archived_at` field) is implemented in Phase 4; this RFC covers physical archiving to separate tables
