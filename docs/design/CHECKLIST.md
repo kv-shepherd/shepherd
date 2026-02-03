@@ -34,6 +34,8 @@
 - [ ] `golangci-lint` passes
 - [ ] Unit test coverage ≥ 60%
 - [ ] No data races (`go test -race`)
+- [ ] OpenAPI spec and generated Go/TS types are in sync (`make api-check`)
+- [ ] If 3.1-only features are used, `REQUIRE_OPENAPI_COMPAT=1 make api-compat` passes
 
 ### Architecture Constraints
 

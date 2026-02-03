@@ -191,6 +191,19 @@ func (c *DatabaseClients) Close() {
 | `kubevirt.io/api` | `v1.7.0` | 2025-11-27 | KubeVirt API type definitions |
 | `sigs.k8s.io/controller-runtime` | `v0.22.4` | 2025-11-03 | **SSA Apply core dependency** (ADR-0011), compatible with k8s.io v0.34.0 |
 
+---
+
+## API Contract-First Tooling (ADR-0021)
+
+> **Note**: Pin versions here; other docs should not hardcode tool versions.
+
+| Package | Version | Release Date | Description |
+|---------|---------|--------------|-------------|
+| **OpenAPI Specification** | `3.1.1` | 2024-10 | Canonical spec version for `api/openapi.yaml` |
+| **OpenAPI Overlay Spec** | `1.1.0` | 2026-01-14 | Overlay version for compat generation |
+| `github.com/getkin/kin-openapi` | `>= v0.131.0` | 2025-03 | OpenAPI request/response validation (security fix) |
+| `oas-patch` | `0.5.6` | 2025-09-22 | CLI for applying OpenAPI Overlay to generate compat spec |
+
 > **ADR-0011 SSA Apply Strategy**:
 > 
 > `controller-runtime` provides `client.Apply` (Server-Side Apply) capability.

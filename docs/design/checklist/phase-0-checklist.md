@@ -20,6 +20,13 @@
 - [ ] `golangci-lint` configured (`.golangci.yml`)
 - [ ] Unit test framework configured
 - [ ] Code coverage reporting
+- [ ] **API Contract-First CI (ADR-0021)**:
+  - [ ] Move API contract workflow to `.github/workflows/` before coding starts
+  - [ ] Move `docs/design/ci/makefile/api.mk` to `build/api.mk`
+  - [ ] Include `build/api.mk` from root `Makefile`
+  - [ ] Add CI step: `make api-check`
+  - [ ] If 3.1-only features are used: add CI step `REQUIRE_OPENAPI_COMPAT=1 make api-compat`
+  - [ ] Implement `make api-compat-generate` before enabling compat enforcement
 - [ ] **sqlc Usage Scope Check (ADR-0012)**:
   - [ ] `scripts/check-sqlc-usage.sh` created
   - [ ] CI blocks: sqlc only allowed in `internal/repository/sqlc/` and `internal/usecase/`

@@ -97,6 +97,25 @@
 
 ---
 
+## API Contract-First Artifacts (ADR-0021)
+
+- [ ] `api/openapi.yaml` exists and is OpenAPI 3.1 canonical spec
+- [ ] `api/.spectral.yaml` exists and `make api-lint` passes
+- [ ] `api/oapi-codegen.yaml` exists and targets `internal/api/generated/`
+- [ ] `make api-generate` produces:
+  - [ ] `internal/api/generated/` Go server types
+  - [ ] `web/src/types/api.gen.ts` TypeScript types
+- [ ] `make api-check` passes with no uncommitted generated changes
+- [ ] If 3.1-only features are used:
+  - [ ] `api/openapi.compat.yaml` is generated (3.0-compatible)
+  - [ ] `make api-compat-generate` exists and is used to produce the compat spec
+  - [ ] CI runs `make api-compat-generate` before `make api-compat`
+  - [ ] Go codegen/validation uses `api/openapi.compat.yaml`
+- [ ] CI blocks merges unless `make api-check` passes
+- [ ] If 3.1-only features are used, CI blocks merges unless `REQUIRE_OPENAPI_COMPAT=1 make api-compat` passes
+
+---
+
 ## Extension Interfaces
 
 - [ ] **AuthProvider Interface** defined
