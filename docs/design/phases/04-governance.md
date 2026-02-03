@@ -200,6 +200,9 @@ internal/governance/
 
 ### Status Flow
 
+> **ADR-0005 Phase Extension**: ADR-0005 defines the **approval decision flow** (`PENDING → APPROVED/REJECTED`).
+> This section extends it with **execution tracking phases** (`APPROVED → EXECUTING → SUCCESS/FAILED`) to support River Queue integration and provide complete ticket lifecycle visibility.
+
 > **Ticket Status** (ApprovalTicket table):
 >
 > ```
@@ -952,11 +955,12 @@ If >50% of resources detected as ghosts, halt and alert.
 | §13 Delete Cascade | Section 6.1 | Hierarchical delete |
 | §18 VNC Permissions | Section 6.2 | Token-based access |
 | §19 Batch Operations | ⚠️ **Pending** | Bulk approval/power ops |
-| §20 Notification System | ⚠️ **Pending** | In-app + email alerts |
+| §20 Notification System | ✅ **V1 Inbox** | Platform-internal inbox; decoupled `NotificationSender` interface for V2+ adapters |
 | §22 Authentication (IdP) | ✅ **V1 Scope** | Section 8 - OIDC + LDAP |
-| External Approval Systems | ⚠️ **V1 Interface Only** | Section 9 - API defined, V2 implementation |
+| External Approval Systems | ⚠️ **V1 Interface Only** | Standard data interface; external adapters via plugin layer |
 
-> **Pending items** will be addressed in future iterations. See ADR-0015 for full specification.
+> **Interface-First Design**: Notification and Approval systems use **standard data interfaces** (ADR-0015 §20, §9).
+> V1 implements simple built-in solutions. External integrations (Slack, ServiceNow, Jira) are handled by plugin adapters without core interface changes.
 
 ---
 

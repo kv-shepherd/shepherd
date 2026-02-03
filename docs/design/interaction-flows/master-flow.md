@@ -1471,7 +1471,9 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │      NOW()                                                                        │       │
 │  │  );                                                                                │       │
 │  │                                                                                    │       │
-│  │  -- 4. Notify admins (optional, config-driven)                                     │       │
+│  │  -- 4. Notify admins via NotificationSender interface (ADR-0015 §20)               │       │
+│  │  --    V1: InboxNotificationSender (platform-internal inbox)                        │       │
+│  │  --    V2+: External adapters (Email, Webhook, Slack) via plugin layer              │       │
 │  │  INSERT INTO notifications (                                                      │       │
 │  │      id, recipient_role, type, title, content, related_ticket_id, created_at      │       │
 │  │  ) VALUES (                                                                        │       │

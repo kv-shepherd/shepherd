@@ -1474,7 +1474,9 @@
 │  │      NOW()                                                                        │       │
 │  │  );                                                                                │       │
 │  │                                                                                    │       │
-│  │  -- 4. 发送通知到管理员 (可选, 根据配置)                                             │       │
+│  │  -- 4. 通过 NotificationSender 接口通知管理员 (ADR-0015 §20)                        │       │
+│  │  --    V1: InboxNotificationSender (平台内置信箱)                                   │       │
+│  │  --    V2+: 外部适配器 (Email, Webhook, Slack) 通过插件层实现                       │       │
 │  │  INSERT INTO notifications (                                                      │       │
 │  │      id, recipient_role, type, title, content, related_ticket_id, created_at      │       │
 │  │  ) VALUES (                                                                        │       │
