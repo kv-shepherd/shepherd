@@ -27,7 +27,7 @@ We need a unified, Go-native toolchain that provides **strict contract enforceme
 
 ## Decision Drivers
 
-* **Go-native tooling**: Align with project's primary language, reduce external dependencies
+* **Go-native backend tooling**: Align backend validation/linting with project's primary language; TypeScript generation remains Node.js-based per ADR-0021
 * **Strict validation**: Catch undeclared fields, schema violations at CI stage
 * **Performance**: Fast feedback in CI pipelines
 * **Governance-first**: Tools should enforce constraints, not just report them
@@ -69,11 +69,12 @@ All gates are **blocking** (fail CI if violated):
 
 ### Consequences
 
-* ✅ Good, because all tooling is Go-native (no Node.js/Python in CI)
+* ✅ Good, because **backend** tooling is Go-native (no Node.js/Python for validation/linting)
 * ✅ Good, because strict mode catches undeclared fields automatically
 * ✅ Good, because vacuum is 10x faster than spectral in CI
 * ✅ Good, because oapi-codegen integration preserved (ADR-0021 compliance)
 * 🟡 Neutral, because adds libopenapi-validator as new dependency
+* 🟡 Neutral, because TypeScript type generation (`openapi-typescript`) still requires Node.js per ADR-0021
 * ❌ Bad, because existing spectral rulesets may need minor adaptation for vacuum
 
 ### Confirmation
@@ -107,6 +108,21 @@ All gates are **blocking** (fail CI if violated):
 * ✅ Good, because complete ecosystem consistency
 * ❌ Bad, because replacing oapi-codegen violates ADR-0021
 * ❌ Bad, because libopenapi code generation less mature
+
+---
+
+## Documents Requiring Updates
+
+Upon acceptance, the following documents require updates:
+
+| Document | Action | Description |
+|----------|--------|-------------|
+| `docs/design/DEPENDENCIES.md` | UPDATE | Add libopenapi, libopenapi-validator; mark spectral/oas-patch as replaced |
+| `Makefile` | ADD | Add `api-lint`, `api-validate`, `api-check` targets |
+| `.github/workflows/api-contract.yaml` | UPDATE | Add vacuum lint gate, libopenapi-validator gate |
+| `internal/api/middleware/openapi_validator.go` | CREATE | Implement StrictMode validation middleware |
+| `api/.vacuum.yaml` | CREATE | Vacuum ruleset configuration |
+| `go.mod` | UPDATE | Add `github.com/pb33f/libopenapi`, `github.com/pb33f/libopenapi-validator` |
 
 ---
 
