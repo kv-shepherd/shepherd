@@ -37,6 +37,8 @@
 | [ADR-0025](./ADR-0025-secret-bootstrap.md) | Bootstrap Secrets Auto-Generation and Persistence | **Accepted** | - |
 | [ADR-0026](./ADR-0026-idp-config-naming.md) | Auth Provider Naming and Standardized Provider Output | **Accepted** | - |
 | [ADR-0027](./ADR-0027-repository-structure-monorepo.md) | Monorepo Repository Structure with web/ | **Accepted** | - |
+| [ADR-0028](./ADR-0028-oapi-codegen-optional-field-strategy.md) | oapi-codegen Optional Field Strategy | **Proposed** | - |
+| [ADR-0029](./ADR-0029-openapi-toolchain-governance.md) | OpenAPI Toolchain Governance | **Proposed** | - |
 
 > ⚠️ **¹ ADR-0009 Partial Supersession Notice**:
 >

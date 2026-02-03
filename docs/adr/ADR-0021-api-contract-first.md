@@ -643,5 +643,18 @@ For detailed implementation specifications including CI/CD pipeline configuratio
 
 ---
 
+## Amendments by Subsequent ADRs
+
+> ⚠️ **Notice**: The following sections have been amended by subsequent ADRs.
+> The original decisions above remain **unchanged for historical reference**.
+
+### ADR-0029: OpenAPI Toolchain Governance (2026-02-03)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §Technology Stack (Line 69-77) | **CLARIFIED** | Linter: spectral → vacuum (Go-native). Validation: added libopenapi-validator with StrictMode. Overlay: oas-patch → libopenapi (Go-native). | [ADR-0029](./ADR-0029-openapi-toolchain-governance.md) |
+
+---
+
 _End of ADR-0021_
 
