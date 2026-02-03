@@ -18,9 +18,9 @@ This document provides detailed implementation specifications for the OpenAPI to
 | Tool | Version | Install Method | Notes |
 |------|---------|---------------|-------|
 | `vacuum` | `>= v0.14.0` | Go binary / Docker | World's fastest OpenAPI linter |
-| `github.com/pb33f/libopenapi` | `>= v0.21.0` | Go module | Lossless OpenAPI parsing |
-| `github.com/pb33f/libopenapi-validator` | `>= v0.2.0` | Go module | Strict mode validation |
-| `oapi-codegen` | `>= v2.4.0` | Go module | ADR-0021 selection |
+| `github.com/pb33f/libopenapi` | `>= v0.31.0` | Go module | Lossless OpenAPI parsing, **Overlay support** (v0.31.0+) |
+| `github.com/pb33f/libopenapi-validator` | `>= v0.6.0` | Go module | StrictMode, **version-aware validation** (3.0 vs 3.1) |
+| `oapi-codegen` | `>= v2.4.1` | Go module | ADR-0021 selection, pin exact version in CI |
 | `openapi-typescript` | `>= v7.0.0` | npm | TypeScript type generation |
 
 ---
@@ -98,7 +98,7 @@ jobs:
           go-version: '1.25'
       
       - name: Install oapi-codegen
-        run: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
+        run: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.4.1
       
       - name: Generate and verify Go code
         run: |
