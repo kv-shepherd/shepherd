@@ -716,7 +716,7 @@ func (v *TokenValidator) Validate(ctx context.Context, rawToken string) (*Claims
 
 | Table | Purpose |
 |-------|---------|
-| `idp_configs` | OIDC/LDAP provider configuration |
+| `auth_providers` | OIDC/LDAP provider configuration |
 | `idp_synced_groups` | Groups discovered from IdP |
 | `idp_group_mappings` | IdP group → Shepherd role mapping |
 
@@ -934,7 +934,8 @@ If >50% of resources detected as ghosts, halt and alert.
 - [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) - VM Request Flow
 - [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) - Instance Size Abstraction
 - [ADR-0019](../../adr/ADR-0019-governance-security-baseline-controls.md) - Governance Security Baseline
-- [ADR-0020](../../adr/ADR-0020-frontend-technology-stack.md) - Frontend Technology Stack (separate repo)
+- [ADR-0020](../../adr/ADR-0020-frontend-technology-stack.md) - Frontend Technology Stack
+- [ADR-0027](../../adr/ADR-0027-repository-structure-monorepo.md) - Repository Structure (monorepo with `web/`)
 
 ---
 
@@ -973,4 +974,3 @@ If >50% of resources detected as ghosts, halt and alert.
 # CI validation: scripts/check-sqlc-usage.sh
 # Fails build if sqlc imported outside whitelist
 ```
-

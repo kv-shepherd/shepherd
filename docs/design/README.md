@@ -201,6 +201,9 @@ This project follows the architecture decisions documented in:
 | [ADR-0021](../../adr/ADR-0021-api-contract-first.md) | API Contract-First Design | Accepted |
 | [ADR-0022](../../adr/ADR-0022-modular-provider-pattern.md) | Modular Provider Pattern | Accepted |
 | [ADR-0023](../../adr/ADR-0023-schema-cache-and-api-standards.md) | Schema Cache and API Standards | Accepted |
+| [ADR-0025](../../adr/ADR-0025-secret-bootstrap.md) | Bootstrap Secrets Auto-Generation and Persistence | Accepted |
+| [ADR-0026](../../adr/ADR-0026-idp-config-naming.md) | Auth Provider Naming and Standardized Provider Output | Accepted |
+| [ADR-0027](../../adr/ADR-0027-repository-structure-monorepo.md) | Monorepo Repository Structure with web/ | Accepted |
 
 ---
 

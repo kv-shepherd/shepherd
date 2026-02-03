@@ -90,8 +90,8 @@ These are **infrastructure** settings required before the application can start:
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
-| `ENCRYPTION_KEY` | ✅ | AES-256-GCM key for sensitive data |
-| `SESSION_SECRET` | ✅ | JWT signing secret |
+| `ENCRYPTION_KEY` | ❌ | AES-256-GCM key for sensitive data (auto-generated if missing) |
+| `SESSION_SECRET` | ❌ | JWT signing secret (auto-generated if missing) |
 | `SERVER_PORT` | ❌ | HTTP port (default: 8080) |
 | `LOG_LEVEL` | ❌ | Logging level (default: info) |
 
@@ -101,7 +101,7 @@ These are **infrastructure** settings required before the application can start:
 
 | Configuration Type | Table | Management |
 |--------------------|-------|------------|
-| Auth Providers (OIDC/LDAP) | `idp_configs` | Web UI |
+| Auth Providers (OIDC/LDAP) | `auth_providers` | Web UI |
 | External Approval Systems | `external_approval_systems` | Web UI |
 | Clusters | `clusters` | Web UI |
 | InstanceSizes, Templates | `instance_sizes`, `templates` | Web UI |
