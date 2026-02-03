@@ -92,9 +92,11 @@ ci/
 
 ## API Contract-First Enforcement (ADR-0021)
 
-> **Status**: Design Phase - NOT ACTIVE YET
+> **Status**: Design Phase - ACTIVE IN DESIGN DOCS
 > 
-> These files will be moved to their final locations when coding begins.
+> These files are the design-phase artifacts that define the contract-first
+> pipeline. When coding begins, move them to their final locations and wire
+> them into the repo root Makefile and CI.
 
 ### Additional Files for API Contract Enforcement
 
@@ -102,10 +104,24 @@ ci/
 |------|---------|----------------|
 | `workflows/api-contract.yaml` | GitHub Actions for spec validation | `.github/workflows/` |
 | `scripts/api-check.sh` | Verifies generated code is in sync | `scripts/` |
+| `scripts/openapi-compat.sh` | Enforces OpenAPI compat spec presence/freshness | `scripts/` |
+| `scripts/openapi-compat-generate.sh` | Generates OpenAPI 3.0-compatible spec (placeholder) | `scripts/` |
 | `spectral/.spectral.yaml` | OpenAPI linting rules | `api/` |
 | `api-templates/openapi.yaml` | Starting OpenAPI specification | `api/` |
 | `api-templates/oapi-codegen.yaml` | Code generation configuration | `api/` |
+| `api-templates/openapi-overlay-3.0.yaml` | OpenAPI 3.1 → 3.0 overlay | `api/` (or `build/` tooling) |
 | `makefile/api.mk` | Make targets for API workflows | `build/` |
+
+### Tooling and Compatibility Notes
+
+- **Linting**: Spectral is the default lint tool for OpenAPI specs.
+- **Breaking changes**: `oasdiff` is used to detect breaking changes between base and PR specs.
+- **OpenAPI 3.1**: The canonical spec remains 3.1, but Go tooling (`oapi-codegen`, `kin-openapi`) targets 3.0.x. If 3.1-only features are used, generate `api/openapi.compat.yaml` (3.0-compatible) for Go codegen and validation while preserving `api/openapi.yaml` as the source of truth.
+- **Frontend types**: `openapi-typescript` can consume OpenAPI 3.1 directly.
+- **Contract validation**: `kin-openapi` can validate requests/responses against the OpenAPI spec in tests or middleware.
+- **Compat enforcement**: `openapi-compat.sh` checks `api/openapi.compat.yaml` is present and up to date; set `REQUIRE_OPENAPI_COMPAT=1` in CI to block merges when compat spec is required.
+- **Compat generation**: `openapi-compat-generate.sh` uses `oas-patch overlay` to produce a 3.0-compatible spec from the 3.1 canonical file.
+- **Version pinning**: tool versions must be read from `docs/design/DEPENDENCIES.md` (do not hardcode in other docs).
 
 ### Activation Checklist
 
@@ -115,6 +131,9 @@ When transitioning from Design Phase to Coding Phase:
 2. **Move files** to final locations (see file table above)
 3. **Update root Makefile**: `include build/api.mk`
 4. **Verify**: `make api-lint && make api-generate`
+5. **If needed**: add a spec-compat step (3.1 → 3.0) that writes `api/openapi.compat.yaml` for Go codegen/validation until 3.1 support is available.
+6. **CI enforcement**: run `REQUIRE_OPENAPI_COMPAT=1 make api-compat` once 3.1-only features are used.
+7. **Block merges**: add `make api-check` (and `REQUIRE_OPENAPI_COMPAT=1 make api-compat` when required) as required CI checks before any coding begins.
+8. **Compat generation**: implement `make api-compat-generate` and wire it into CI before enabling `REQUIRE_OPENAPI_COMPAT=1`.
 
 See [ADR-0021](../../adr/ADR-0021-api-contract-first.md) for full design details.
-
