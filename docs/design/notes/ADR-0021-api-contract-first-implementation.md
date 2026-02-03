@@ -10,6 +10,8 @@
 
 This document details the implementation of the CI/CD pipeline for enforcing API Contract-First development as defined in ADR-0021.
 
+**Compatibility note**: The canonical spec remains OpenAPI 3.1 (`api/openapi.yaml`) and should target the latest patch version (3.1.1). If 3.1-only features are required, generate a 3.0-compatible artifact (`api/openapi.compat.yaml`) for Go codegen and validation while keeping the canonical spec as the single source of truth. When downgrading, use an OpenAPI Overlay to produce a 3.0-compatible file without mutating the canonical spec.
+
 ## Goals
 
 1. **Prevent drift** between OpenAPI spec and generated code
@@ -26,18 +28,17 @@ This document details the implementation of the CI/CD pipeline for enforcing API
 ```
 project/
 ├── api/
-│   └── openapi/
-│       └── v1/
-│           └── api.yaml          # OpenAPI specification
+│   ├── openapi.yaml              # OpenAPI 3.1 canonical spec (source of truth)
+│   └── openapi.compat.yaml       # OpenAPI 3.0-compatible spec (generated, optional)
 ├── internal/
 │   └── api/
-│       └── v1/
-│           └── api.gen.go        # Generated Go code
+│       └── generated/
+│           └── server.gen.go     # Generated Go code
 ├── web/
 │   └── src/
 │       └── types/
 │           └── api.gen.ts        # Generated TypeScript types
-├── tools/
+├── api/
 │   └── oapi-codegen.yaml         # oapi-codegen configuration
 └── Makefile
 ```
@@ -50,22 +51,28 @@ project/
 # ============================================================
 
 # Path configuration
-OPENAPI_SPEC := api/openapi/v1/api.yaml
-OAPI_CONFIG  := tools/oapi-codegen.yaml
-GO_OUTPUT    := internal/api/v1/api.gen.go
+OPENAPI_SPEC := api/openapi.yaml
+COMPAT_SPEC  := api/openapi.compat.yaml
+OAPI_CONFIG  := api/oapi-codegen.yaml
+GO_OUTPUT    := internal/api/generated/server.gen.go
 TS_OUTPUT    := web/src/types/api.gen.ts
 
 .PHONY: api-lint api-generate api-check api-diff
+.PHONY: api-compat api-compat-generate
 
 ## api-lint: Validate OpenAPI specification
 api-lint:
 	@echo "==> Linting OpenAPI spec..."
-	npx @redocly/cli lint $(OPENAPI_SPEC) --config tools/redocly.yaml
+	npx @stoplight/spectral-cli lint $(OPENAPI_SPEC) --ruleset api/.spectral.yaml
 
 ## api-generate: Generate Go and TypeScript code from OpenAPI
 api-generate: api-lint
 	@echo "==> Generating Go server code..."
-	oapi-codegen --config $(OAPI_CONFIG) $(OPENAPI_SPEC)
+	@if [ -f $(COMPAT_SPEC) ]; then \
+		oapi-codegen --config $(OAPI_CONFIG) $(COMPAT_SPEC); \
+	else \
+		oapi-codegen --config $(OAPI_CONFIG) $(OPENAPI_SPEC); \
+	fi
 	@echo "==> Generating TypeScript types..."
 	npx openapi-typescript $(OPENAPI_SPEC) -o $(TS_OUTPUT)
 	@echo "==> Generation complete"
@@ -76,10 +83,43 @@ api-check: api-generate
 	@git diff --exit-code $(GO_OUTPUT) $(TS_OUTPUT) || \
 		(echo "ERROR: Generated code is out of sync. Run 'make api-generate' and commit." && exit 1)
 
+## api-compat: Ensure 3.0 compat spec is present and fresh (when required)
+api-compat:
+	@REQUIRE_OPENAPI_COMPAT=1 ./docs/design/ci/scripts/openapi-compat.sh
+
+## api-compat-generate: Generate 3.0-compatible spec from canonical 3.1 spec
+api-compat-generate:
+	@./docs/design/ci/scripts/openapi-compat-generate.sh
+
 ## api-diff: Show breaking changes vs main branch
 api-diff:
 	@echo "==> Checking for breaking changes..."
 	oasdiff breaking origin/main:$(OPENAPI_SPEC) $(OPENAPI_SPEC) --fail-on ERR
+```
+
+### Compat Overlay (3.1 → 3.0)
+
+Use an OpenAPI Overlay to downgrade the canonical spec without changing it:
+
+```yaml
+# docs/design/ci/api-templates/openapi-overlay-3.0.yaml
+overlay: 1.1.0
+info:
+  title: "OpenAPI 3.1 -> 3.0 Compatibility Overlay"
+  version: "1.1.0"
+actions:
+  - target: "$.openapi"
+    update: "3.0.3"
+  - target: "$.jsonSchemaDialect"
+    remove: true
+  - target: "$.components.schemas.*.$schema"
+    remove: true
+```
+
+Apply the overlay with `oas-patch` to generate `api/openapi.compat.yaml`:
+
+```bash
+oas-patch overlay api/openapi.yaml docs/design/ci/api-templates/openapi-overlay-3.0.yaml -o api/openapi.compat.yaml
 ```
 
 ---
@@ -102,7 +142,8 @@ name: API Contract Check
 on:
   pull_request:
     paths:
-      - 'api/openapi/**'
+      - 'api/openapi.yaml'
+      - 'api/openapi.compat.yaml'
       - 'internal/api/**'
 
 jobs:
@@ -127,7 +168,7 @@ jobs:
         run: |
           go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
           go install github.com/tufin/oasdiff@latest
-          npm install -g @redocly/cli openapi-typescript
+          npm install -g @stoplight/spectral-cli openapi-typescript
 
       - name: Lint OpenAPI spec
         run: make api-lint
@@ -138,7 +179,7 @@ jobs:
       - name: Check breaking changes
         id: breaking
         run: |
-          oasdiff breaking origin/main:api/openapi/v1/api.yaml api/openapi/v1/api.yaml \
+          oasdiff breaking origin/main:api/openapi.yaml api/openapi.yaml \
             --format markdown > breaking-changes.md || true
           if [ -s breaking-changes.md ]; then
             echo "has_breaking=true" >> $GITHUB_OUTPUT
@@ -180,6 +221,8 @@ Runtime validation ensures that:
 - Enum values are valid
 
 This catches discrepancies between implementation and specification that code generation might miss.
+
+**Security note**: Pin `kin-openapi` to `>= v0.131.0` to avoid known multipart zip decompression issues and track CVE fixes in `docs/design/DEPENDENCIES.md`.
 
 ### Integration Options
 
@@ -444,7 +487,7 @@ func (h *VMHandler) translateValidationError(err error) *ErrorResponse {
 To document validation rules in OpenAPI (for frontend awareness):
 
 ```yaml
-# api/openapi/v1/api.yaml
+# api/openapi.yaml
 components:
   schemas:
     TimeRange:
@@ -489,9 +532,9 @@ components:
 ### Configuration File
 
 ```yaml
-# tools/oapi-codegen.yaml
-package: api
-output: internal/api/v1/api.gen.go
+# api/oapi-codegen.yaml
+package: generated
+output: internal/api/generated/server.gen.go
 generate:
   models: true
   gin-server: true
@@ -518,9 +561,10 @@ additional-imports:
 
 ### Phase 1: Foundation (Priority)
 
-- [ ] Create `tools/oapi-codegen.yaml` configuration
-- [ ] Create `tools/redocly.yaml` for linting configuration
+- [ ] Create `api/oapi-codegen.yaml` configuration
+- [ ] Create `api/.spectral.yaml` for linting configuration
 - [ ] Add Makefile `api-*` targets
+- [ ] Add `api-compat-generate` target and script (3.1 → 3.0 compat)
 - [ ] Verify `make api-generate` works locally
 
 ### Phase 2: CI Integration
@@ -551,5 +595,5 @@ additional-imports:
 - [oapi-codegen documentation](https://github.com/oapi-codegen/oapi-codegen)
 - [oasdiff documentation](https://github.com/tufin/oasdiff)
 - [kin-openapi documentation](https://github.com/getkin/kin-openapi)
-- [Redocly CLI](https://redocly.com/docs/cli/)
+- [Spectral CLI](https://github.com/stoplightio/spectral)
 - [go-playground/validator](https://github.com/go-playground/validator)

@@ -121,6 +121,21 @@ jobs:
       - name: Regenerate API code
         run: make api-generate
 
+      - name: Generate OpenAPI compat spec (if required)
+        env:
+          REQUIRE_OPENAPI_COMPAT: ${{ vars.REQUIRE_OPENAPI_COMPAT || '0' }}
+        run: |
+          if [ "${REQUIRE_OPENAPI_COMPAT}" = "1" ]; then
+            make api-compat-generate
+          else
+            echo "Skipping compat generation (REQUIRE_OPENAPI_COMPAT=0)"
+          fi
+
+      - name: Check OpenAPI compat spec (if required)
+        env:
+          REQUIRE_OPENAPI_COMPAT: ${{ vars.REQUIRE_OPENAPI_COMPAT || '0' }}
+        run: make api-compat
+
       - name: Check for uncommitted changes
         run: |
           if [ -n "$(git status --porcelain internal/api/generated/ web/src/types/api.gen.ts 2>/dev/null)" ]; then

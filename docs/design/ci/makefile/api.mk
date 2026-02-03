@@ -12,14 +12,16 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 OPENAPI_SPEC := api/openapi.yaml
+COMPAT_SPEC := api/openapi.compat.yaml
 SPECTRAL_CONFIG := api/.spectral.yaml
 GO_GENERATED_DIR := internal/api/generated
 TS_GENERATED_FILE := web/src/types/api.gen.ts
 OAPI_CODEGEN_CONFIG := api/oapi-codegen.yaml
+OAPI_CODEGEN_INPUT := $(OPENAPI_SPEC)
 
-# Tool versions (update as needed)
-OAPI_CODEGEN_VERSION := v2.4.1
-OPENAPI_TS_VERSION := 7.4.4
+# Tool versions (pin in docs/design/DEPENDENCIES.md; pass via env when running)
+OAPI_CODEGEN_VERSION ?=
+OPENAPI_TS_VERSION ?=
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main Targets
@@ -39,7 +41,10 @@ api-generate: api-generate-go api-generate-ts ## Generate all API code from Open
 api-generate-go: ## Generate Go server code
 	@echo "🔄 Generating Go server code..."
 	@mkdir -p $(GO_GENERATED_DIR)
-	@go tool oapi-codegen -config $(OAPI_CODEGEN_CONFIG) $(OPENAPI_SPEC)
+	@if [ -f $(COMPAT_SPEC) ]; then \
+		OAPI_CODEGEN_INPUT=$(COMPAT_SPEC); \
+	fi; \
+	go tool oapi-codegen -config $(OAPI_CODEGEN_CONFIG) $${OAPI_CODEGEN_INPUT:-$(OPENAPI_SPEC)}
 	@echo "✅ Go server code generated: $(GO_GENERATED_DIR)/"
 
 .PHONY: api-generate-ts
@@ -53,6 +58,14 @@ api-generate-ts: ## Generate TypeScript types
 api-check: ## Verify generated code is in sync with spec (CI target)
 	@echo "🔍 Checking generated code sync..."
 	@./docs/design/ci/scripts/api-check.sh
+
+.PHONY: api-compat
+api-compat: ## Verify compat spec exists and is fresh (set REQUIRE_OPENAPI_COMPAT=1 to enforce)
+	@./docs/design/ci/scripts/openapi-compat.sh
+
+.PHONY: api-compat-generate
+api-compat-generate: ## Generate OpenAPI 3.0-compatible spec (placeholder)
+	@./docs/design/ci/scripts/openapi-compat-generate.sh
 
 .PHONY: api-breaking
 api-breaking: ## Detect breaking changes vs main branch
@@ -93,6 +106,11 @@ api-docs: ## Serve interactive API documentation
 .PHONY: api-tools
 api-tools: ## Install required API tooling
 	@echo "📦 Installing API development tools..."
+	@if [ -z "$(OAPI_CODEGEN_VERSION)" ] || [ -z "$(OPENAPI_TS_VERSION)" ]; then \
+		echo "❌ Tool versions must be set from docs/design/DEPENDENCIES.md"; \
+		echo "   Example: make api-tools OAPI_CODEGEN_VERSION=... OPENAPI_TS_VERSION=..."; \
+		exit 1; \
+	fi
 	# Go tools (requires Go 1.24+ for go tool directive)
 	go get -tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
 	# Node.js tools (install globally or use npx)
