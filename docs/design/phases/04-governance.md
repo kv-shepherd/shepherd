@@ -29,6 +29,37 @@ Implement governance capabilities:
 
 ---
 
+## V1 Scope Boundaries (ADR-0015 §21)
+
+> **Reference**: [ADR-0015 §21 Scope Exclusions](../../adr/ADR-0015-governance-model-v2.md)
+
+The following features are **explicitly out of scope** for V1:
+
+| Feature | V1 Status | Future Path |
+|---------|-----------|-------------|
+| Resource Quota Management | ❌ Not in V1 | May add in future RFC |
+| User-defined Business Tags | ❌ Not in V1 | If added, stored in DB not K8s |
+| Full Multi-tenancy | ❌ Not in V1 | Schema reserved (`tenant_id = "default"`) |
+| Complex Approval Workflows | ❌ Not in V1 | See RFC-0002 for Temporal integration |
+| Approval Timeout Auto-processing | ❌ Not in V1 | UI prioritization used instead |
+| Automatic Page Refresh via WebSocket | ❌ Not in V1 | Manual refresh in V1 |
+| External Approval System Integration | ⚠️ Interface Only | Standard interface; adapters in V2+ |
+
+**Implementation Guidance**:
+- If a feature request touches any item above, redirect to future RFC
+- Do not implement features beyond this document's scope
+- `tenant_id` is always `"default"` in V1 code
+
+> ⚠️ **Approval Engine V1 Constraint (ADR-0005)**:
+>
+> V1 approval supports **only two terminal states**: `PENDING_APPROVAL → APPROVED` or `PENDING_APPROVAL → REJECTED`.
+> DO NOT design for:
+> - Multi-level approval chains (L1 → L2 → L3)
+> - Withdraw/Countersign/Transfer operations
+> - Timeout auto-processing (use UI prioritization instead)
+>
+> This is intentional to keep the approval engine simple and maintainable. See [01-contracts.md §Footnote 1](01-contracts.md#footnotes).
+
 ## Deliverables
 
 | Deliverable | File Path | Status | Example |
@@ -202,6 +233,12 @@ internal/governance/
 
 > **ADR-0005 Phase Extension**: ADR-0005 defines the **approval decision flow** (`PENDING → APPROVED/REJECTED`).
 > This section extends it with **execution tracking phases** (`APPROVED → EXECUTING → SUCCESS/FAILED`) to support River Queue integration and provide complete ticket lifecycle visibility.
+>
+> ⚠️ **V1 Scope Clarification (ADR-0005)**:
+> - The **approval engine** in V1 supports only `PENDING → APPROVED/REJECTED` transitions
+> - User-initiated `CANCELLED` is an **out-of-band** action (user cancels their own request)
+> - `CANCELLED` is NOT part of the approval workflow logic; it bypasses the approval engine
+> - Multi-level approvals, countersign, and timeout auto-processing are **out of V1 scope**
 
 > **Ticket Status** (ApprovalTicket table):
 >
@@ -248,6 +285,55 @@ internal/governance/
 | STOP_VM | ❌ No | **Yes** | Power operation |
 | RESTART_VM | ❌ No | **Yes** | Power operation |
 | VNC_ACCESS | ❌ No | **Yes** (temporary grant) | VNC Console (ADR-0015 §18) |
+
+### Approval List UI Prioritization (ADR-0015 §11)
+
+> **V1 Strategy**: No automatic timeout or auto-cancellation. UI-based visual prioritization guides admin attention to aging requests.
+
+| Days Pending | Visual Treatment | Sort Priority | User Action |
+|--------------|------------------|---------------|-------------|
+| 0-3 days | Normal | Standard | Wait or cancel |
+| 4-7 days | 🟡 Yellow highlight | Higher | Consider follow-up |
+| 7+ days | 🔴 Red highlight | Highest (top of list) | User may cancel and resubmit |
+
+**Frontend Implementation**:
+
+```typescript
+// Approval list sorting: oldest first within each priority tier
+const sortApprovals = (tickets: ApprovalTicket[]) => {
+  return tickets.sort((a, b) => {
+    const tierA = getPriorityTier(a.created_at);
+    const tierB = getPriorityTier(b.created_at);
+    if (tierA !== tierB) return tierB - tierA; // Higher tier first
+    return a.created_at - b.created_at;        // Older first within tier
+  });
+};
+
+const getPriorityTier = (createdAt: Date): number => {
+  const days = daysSince(createdAt);
+  if (days > 7) return 3;  // Red - highest priority
+  if (days > 3) return 2;  // Yellow - higher priority
+  return 1;                // Normal - standard
+};
+```
+
+**API Response**:
+
+```json
+{
+  "tickets": [
+    {
+      "id": "ticket-001",
+      "status": "PENDING_APPROVAL",
+      "created_at": "2026-01-25T10:00:00Z",
+      "days_pending": 9,
+      "priority_tier": "urgent"
+    }
+  ]
+}
+```
+
+> **User Self-Cancellation**: Users can cancel their own pending requests at any time via `POST /api/v1/approvals/{id}/cancel`. This is independent of timeout - users may cancel to resubmit with different parameters.
 
 ### Admin Modification
 
@@ -322,6 +408,9 @@ draft → active → deprecated → archived
 
 ### SSA Apply (ADR-0011)
 
+> **Version Requirement**: `controller-runtime v0.22.4+` required for `client.DryRunAll` support.
+> See [DEPENDENCIES.md](../DEPENDENCIES.md) for version matrix.
+
 ```go
 type SSAApplier struct {
     client client.Client
@@ -341,6 +430,281 @@ func (a *SSAApplier) DryRunApply(ctx context.Context, yaml []byte) error {
     // Same but with DryRunAll option
 }
 ```
+
+### Dry-Run Validation Flow (ADR-0018)
+
+> **Purpose**: Validate VM creation request against target cluster BEFORE approval, ensuring request is valid and can be executed.
+
+#### When Dry-Run is Performed
+
+| Stage | Trigger | Target Cluster |
+|-------|---------|----------------|
+| VM Request Submission | User submits VM creation | Preview cluster (admin-configured) |
+| Template Save | Admin saves template | Test cluster |
+| Approval Phase | Admin assigns target cluster | Actual target cluster |
+
+#### API Endpoint
+
+```
+POST /api/v1/vms/validate
+Content-Type: application/json
+
+{
+  "instance_size": "medium-gpu",
+  "template_name": "centos7-docker",
+  "namespace": "prod-shop",
+  "cluster_id": "cluster-01"  // Optional: specific cluster, otherwise uses preview cluster
+}
+
+Response (200 OK):
+{
+  "valid": true,
+  "warnings": ["GPU quota is at 80%"],
+  "estimated_resources": {
+    "cpu": "4",
+    "memory": "8Gi",
+    "gpu": "1"
+  }
+}
+
+Response (422 Unprocessable Entity):
+{
+  "valid": false,
+  "code": "VALIDATION_FAILED",
+  "errors": [
+    {
+      "field": "spec.template.spec.domain.devices.gpus",
+      "message": "GPU allocation failed: insufficient GPU resources",
+      "k8s_reason": "Forbidden"
+    }
+  ]
+}
+```
+
+#### Implementation
+
+```go
+// internal/provider/validator.go
+
+type VMValidator struct {
+    applier  *SSAApplier
+    clusters ClusterProvider
+}
+
+// ValidateVMSpec performs dry-run validation against target K8s cluster
+func (v *VMValidator) ValidateVMSpec(ctx context.Context, req *ValidateVMRequest) (*ValidationResult, error) {
+    // 1. Resolve target cluster (preview or specified)
+    cluster, err := v.resolveTargetCluster(ctx, req.ClusterID)
+    if err != nil {
+        return nil, err
+    }
+    
+    // 2. Generate VM manifest from InstanceSize + Template
+    manifest, err := v.generateVMManifest(ctx, req)
+    if err != nil {
+        return &ValidationResult{
+            Valid:  false,
+            Errors: []ValidationError{{Message: err.Error()}},
+        }, nil
+    }
+    
+    // 3. Perform K8s Dry-Run Apply
+    err = v.applier.DryRunApply(ctx, manifest)
+    if err != nil {
+        return v.parseK8sError(err), nil
+    }
+    
+    // 4. Check resource availability (optional quota check)
+    warnings := v.checkResourceWarnings(ctx, cluster, manifest)
+    
+    return &ValidationResult{
+        Valid:    true,
+        Warnings: warnings,
+    }, nil
+}
+
+// DryRunApply performs SSA with DryRunAll option
+func (a *SSAApplier) DryRunApply(ctx context.Context, yaml []byte) error {
+    obj := &unstructured.Unstructured{}
+    if err := yamlutil.Unmarshal(yaml, obj); err != nil {
+        return fmt.Errorf("invalid YAML: %w", err)
+    }
+    
+    return a.client.Patch(ctx, obj, client.Apply,
+        client.FieldOwner("kubevirt-shepherd"),
+        client.ForceOwnership,
+        client.DryRunAll,  // Key: DryRunAll option
+    )
+}
+```
+
+#### Graceful Degradation
+
+If dry-run fails due to cluster unreachable:
+
+| Scenario | Behavior |
+|----------|----------|
+| Preview cluster unreachable | Allow submission with warning, re-validate at approval |
+| Target cluster unreachable at approval | Block approval, require cluster recovery |
+| Dry-run timeout (>10s) | Allow submission with warning |
+
+---
+
+## 5.5 Cluster StorageClass Management (ADR-0015 §8)
+
+> **Reference**: [ADR-0015 §8](../../adr/ADR-0015-governance-model-v2.md)
+
+### Design Overview
+
+StorageClass management ensures VMs use appropriate storage for their workload. The platform auto-detects available StorageClasses during cluster health checks and allows admin override during approval.
+
+### Schema Extensions
+
+```go
+// ent/schema/cluster.go - additional fields
+field.Strings("storage_classes").Optional().
+    Comment("Auto-detected StorageClass list from cluster"),
+field.String("default_storage_class").Optional().
+    Comment("Admin-specified default StorageClass"),
+field.Time("storage_classes_updated_at").Optional().
+    Comment("Last StorageClass detection timestamp"),
+```
+
+### Detection Flow (Health Check Integration)
+
+```
+Health Check (60s interval)
+    ├── API Server connectivity check
+    ├── KubeVirt CRD check
+    ├── Capability detection (ADR-0014)
+    └── StorageClass detection
+        ├── List StorageClasses from cluster
+        ├── Update clusters.storage_classes
+        └── Set storage_classes_updated_at = now()
+```
+
+### Implementation
+
+> **Code Example**: See [`examples/provider/storage_detector.go`](../examples/provider/storage_detector.go)
+
+### Admin API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `GET /api/v1/admin/clusters/{id}/storage-classes` | GET | List cluster's available storage classes |
+| `PUT /api/v1/admin/clusters/{id}/storage-classes/default` | PUT | Set default storage class for cluster |
+
+### Approval Workflow Integration
+
+During approval, admin can select a specific StorageClass (or use cluster default):
+
+```go
+// ApprovalTicket additional field for storage class selection
+field.String("selected_storage_class").Optional().
+    Comment("Admin-selected StorageClass during approval, empty uses cluster default"),
+```
+
+**Approval Flow**:
+
+```
+Admin approves request
+    ├── Select target cluster
+    ├── [Optional] Select StorageClass from cluster.storage_classes
+    │   └── If not specified → use cluster.default_storage_class
+    ├── Validate StorageClass exists on cluster
+    └── Proceed with VM creation
+```
+
+### Validation Rules
+
+| Check | Enforcement |
+|-------|------------|
+| Selected SC must exist | Validate against `cluster.storage_classes` before approval |
+| Default SC must be set | Warn if cluster has no `default_storage_class` |
+| SC detection staleness | Warn if `storage_classes_updated_at` > 24 hours |
+
+---
+
+## 5.6 Batch Operations (ADR-0015 §19)
+
+> **Reference**: [ADR-0015 §19](../../adr/ADR-0015-governance-model-v2.md)
+
+### V1 Design Philosophy
+
+Batch operations in V1 are **UX convenience, not atomic transactions**:
+
+- Frontend allows multi-select for batch approval/power operations
+- Backend receives batch request, enqueues individual River jobs
+- Each operation executes independently (success/failure per item)
+- Aggregate response shows per-item status
+
+### Supported Batch Operations
+
+| Operation | Endpoint | V1 Status |
+|-----------|----------|-----------|
+| Batch Approval | `POST /api/v1/approvals/batch` | ✅ Implemented |
+| Batch Power (Start/Stop/Restart) | `POST /api/v1/vms/batch/power` | ✅ Implemented |
+| Batch Delete | ❌ Not in V1 | High risk, requires individual confirmation |
+
+### API Design
+
+```
+POST /api/v1/approvals/batch
+Content-Type: application/json
+
+{
+  "ticket_ids": ["TKT-001", "TKT-002", "TKT-003"],
+  "action": "approve",
+  "cluster_id": "cluster-01",           // Required for batch approval
+  "instance_size": "medium",            // Optional override
+  "reason": "Batch approved per policy"
+}
+
+Response (202 Accepted):
+{
+  "batch_id": "BATCH-12345",
+  "total": 3,
+  "accepted": 3,
+  "rejected": 0,
+  "items": [
+    {"ticket_id": "TKT-001", "status": "queued", "job_id": "job-a"},
+    {"ticket_id": "TKT-002", "status": "queued", "job_id": "job-b"},
+    {"ticket_id": "TKT-003", "status": "queued", "job_id": "job-c"}
+  ]
+}
+```
+
+### Implementation
+
+> **Code Example**: See [`examples/usecase/batch_approval.go`](../examples/usecase/batch_approval.go)
+
+### Batch Power Operation
+
+```
+POST /api/v1/vms/batch/power
+Content-Type: application/json
+
+{
+  "vm_ids": ["vm-001", "vm-002"],
+  "action": "start",  // start | stop | restart
+  "reason": "Maintenance complete"
+}
+```
+
+### Frontend UX Guidelines
+
+| Scenario | UI Behavior |
+|----------|-------------|
+| Select multiple items | Enable "Batch Action" button |
+| Mixed environments | Warn if batch includes test+prod items |
+| Partial failure | Show per-item status in result modal |
+| Progress tracking | Poll `/api/v1/batches/{batch_id}/status` for completion |
+
+### Constraints
+
+- Maximum batch size: **50 items** (configurable)
+- Batch delete **not supported** in V1 (requires individual confirmation per ADR-0015 §13.1)
+- Each item in batch must pass individual validation
 
 ---
 
@@ -372,6 +736,12 @@ field.String("description").Optional(),
 ```
 
 > **ADR-0017 Clarification**: Namespace is a Shepherd-managed logical entity, NOT bound to any single K8s cluster. When a VM is approved, the admin selects the target cluster. If the namespace doesn't exist on that cluster, Shepherd creates it JIT (Just-In-Time).
+
+> ⚠️ **CRITICAL IMPLEMENTATION WARNING**: 
+> - **DO NOT** add `cluster_id` to `namespace_registry` schema
+> - Namespace ↔ Cluster binding occurs at **VM approval time**, not schema level
+> - Failure to follow this pattern will break multi-cluster namespace sharing
+> - See [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) for complete rationale
 
 ### Visibility Rules (via Platform RBAC)
 
@@ -434,28 +804,96 @@ Content-Type: application/json
 
 ---
 
-## 6.2 VNC Console Permissions (ADR-0015 §18)
+## 6.2 VNC Console Permissions (ADR-0015 §18, RFC-0011)
 
-> **Low priority for V1**. VNC is a convenience feature; enterprises should use bastion hosts for production.
+> **V1 Status**: Simplified implementation (see RFC-0011 for details).
+>
+> **Full Reference**: [Master Flow Stage 6](../interaction-flows/master-flow.md#stage-6-vnc-console-access-adr-0015-18-rfc-0011)
 
-| Environment | VNC Access | Approval Required |
-|-------------|------------|-------------------|
-| test | ✅ Allowed | ❌ No |
-| prod | ✅ Allowed | ✅ Yes (temporary grant) |
+| Environment | VNC Access | Approval Required | Token TTL |
+|-------------|------------|-------------------|-----------|
+| test | ✅ Allowed | ❌ No (RBAC only) | 2 hours |
+| prod | ✅ Allowed | ✅ Yes | 2 hours |
 
-**Production VNC Flow**:
+### V1 Implementation Scope
+
+| Feature | V1 (Simplified) | Full (V2+) |
+|---------|-----------------|------------|
+| Token storage | Inline JWT (no DB table) | VNCAccessToken table |
+| Token revocation | Short TTL only | Active revocation API |
+| Session recording | ❌ Not supported | ✅ Optional |
+
+### Production VNC Flow
+
 1. User requests VNC access to prod VM
 2. Request creates approval ticket (`VNC_ACCESS_REQUESTED`)
-3. Admin approves with time limit (e.g., 2 hours)
+3. Admin approves with time limit (default: 2 hours)
 4. User gets temporary VNC token (single-use, user-bound)
 5. Token expires after time limit
 6. All VNC sessions are audit logged
 
-**VNC Token Security** (ADR-0015 §18):
-- **Single Use**: Token invalidated after first connection
-- **Time-Bounded**: Max TTL: 2 hours
-- **User Binding**: Token includes hashed user ID
-- **Encryption**: AES-256-GCM (shared key management with cluster credentials)
+### VNC Token Security (ADR-0015 §18)
+
+| Security Feature | Requirement | V1 Implementation |
+|------------------|-------------|-------------------|
+| **Single Use** | Token invalidated after first connection | JWT `jti` tracked in Redis |
+| **Time-Bounded** | Max TTL: 2 hours (configurable) | JWT `exp` claim |
+| **User Binding** | Token includes user ID | JWT `sub` claim |
+| **Encryption** | AES-256-GCM | Shared key management |
+| **Audit Logged** | All sessions recorded | `VNC_SESSION_STARTED` event |
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `POST /api/v1/vms/{id}/console/request` | POST | Request VNC access (creates approval ticket in prod) |
+| `GET /api/v1/vms/{id}/console/status` | GET | Check access status (for polling) |
+| `GET /api/v1/vms/{id}/vnc?token={jwt}` | WS | WebSocket VNC connection (noVNC) |
+
+---
+
+## 6.3 Notification System (ADR-0015 §20)
+
+> **Reference**: [ADR-0015 §20](../../adr/ADR-0015-governance-model-v2.md)
+
+### V1 Design: Platform Inbox
+
+V1 implements a minimal internal notification system. External push channels (email, webhook) are deferred to V2+.
+
+### Data Model
+
+> **Code Example**: See [`examples/notification/sender.go`](../examples/notification/sender.go) for full schema and interface definitions
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `GET /api/v1/notifications` | GET | List user's notifications (paginated) |
+| `GET /api/v1/notifications/unread-count` | GET | Get unread count for badge display |
+| `PATCH /api/v1/notifications/{id}/read` | PATCH | Mark notification as read |
+| `POST /api/v1/notifications/mark-all-read` | POST | Mark all notifications as read |
+
+### Decoupled Interface (V2+ Ready)
+
+The notification system uses a decoupled `NotificationSender` interface:
+
+- **V1**: `InboxSender` (stores to PostgreSQL)
+- **V2+**: Add `EmailSender`, `WebhookSender`, `SlackSender` via plugin
+
+### Trigger Points
+
+| Event | Notification Type | Recipients |
+|-------|-------------------|------------|
+| VM request submitted | `APPROVAL_PENDING` | Approvers (PlatformAdmin) |
+| Request approved | `APPROVAL_COMPLETED` | Requester |
+| Request rejected | `APPROVAL_REJECTED` | Requester |
+| VM power state changed | `VM_STATUS_CHANGE` | VM owner |
+
+### V1 Constraints
+
+- **No external push**: Email/webhook adapters in V2+
+- **Poll-based**: Frontend polls unread count every 30s
+- **Retention**: Auto-cleanup after 90 days (via River periodic job)
 
 ---
 
@@ -949,13 +1387,13 @@ If >50% of resources detected as ghosts, halt and alert.
 | ADR-0015 Section | Covered In | Notes |
 |------------------|------------|-------|
 | §7 Approval Policies | Section 4 | Environment-aware policy matrix |
-| §8 Storage Class | Section 6.0.1 | Per-cluster default SC |
-| §10 Cancellation | Section 6.1 | Delete confirmation |
-| §11 Approval Timeout | ⚠️ **Pending** | Worker-side timeout or cron |
+| §8 Storage Class | Section 5.5 | Auto-detection, admin default, approval override |
+| §10 Cancellation | Section 4 Status Flow + UI Prioritization | User can cancel pending requests at any time |
+| §11 Approval Timeout | ✅ **V1 UI Prioritization** | Section 4 - Days pending sort + color warning (0-3d/4-7d/7+d); no auto-cancel |
 | §13 Delete Cascade | Section 6.1 | Hierarchical delete |
 | §18 VNC Permissions | Section 6.2 | Token-based access |
-| §19 Batch Operations | ⚠️ **Pending** | Bulk approval/power ops |
-| §20 Notification System | ✅ **V1 Inbox** | Platform-internal inbox; decoupled `NotificationSender` interface for V2+ adapters |
+| §19 Batch Operations | ✅ **V1 Queue-based** | Section 5.6 - Frontend batch selection → individual River jobs |
+| §20 Notification System | ✅ **V1 Inbox** | Section 6.3 - Decoupled interface; poll-based inbox; external adapters V2+ |
 | §22 Authentication (IdP) | ✅ **V1 Scope** | Section 8 - OIDC + LDAP |
 | External Approval Systems | ⚠️ **V1 Interface Only** | Standard data interface; external adapters via plugin layer |
 

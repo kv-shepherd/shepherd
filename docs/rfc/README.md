@@ -20,7 +20,7 @@
 | [RFC-0008](./RFC-0008-extended-auth.md) | Extended Auth Providers ⁴ | Deferred | P2 | MFA or SAML 2.0 required |
 | [RFC-0009](./RFC-0009-pgbouncer.md) | PgBouncer Dual Pool | Deferred | P3 | Enterprise deployment |
 | [RFC-0010](./RFC-0010-observability.md) | Observability Stack | Deferred | P2 | Metrics/Tracing required |
-| [RFC-0011](./RFC-0011-vnc-console.md) | VNC Console (noVNC) ³⁴ | Deferred | P2 | Browser VM access needed |
+| [RFC-0011](./RFC-0011-vnc-console.md) | VNC Console (noVNC) ³⁴ | **Proposed** | **P1** | V1 core feature |
 | [RFC-0012](./RFC-0012-kubevirt-advanced.md) | KubeVirt Advanced Features ³ | Deferred | P2 | Snapshot/Clone/Migration |
 | [RFC-0013](./RFC-0013-vm-snapshot.md) | VM Snapshot ³ | Deferred | P2 | Backup/Restore needed |
 | [RFC-0014](./RFC-0014-vm-clone.md) | VM Clone ³ | Deferred | P2 | Rapid VM duplication |

@@ -1,8 +1,8 @@
 # RFC-0011: VNC Console (noVNC)
 
-> **Status**: Deferred  
-> **Priority**: P2  
-> **Trigger**: Browser-based VM console access required
+> **Status**: Proposed (V1 simplified implementation)  
+> **Priority**: P1  
+> **Trigger**: ~~Browser-based VM console access required~~ V1 core feature
 
 ---
 
@@ -25,6 +25,33 @@
 > - UI/UX for console access
 >
 > All security and permission logic must conform to ADR-0015 §18.
+
+---
+
+## V1 Implementation Scope
+
+> **V1 adopts a simplified implementation** to balance feature delivery with complexity.
+
+| Feature | V1 (Simplified) | Full (V2+) |
+|---------|-----------------|------------|
+| Token storage | Inline JWT (no DB table) | VNCAccessToken table |
+| Token TTL | 2 hours (ADR-0015) | Configurable |
+| Token revocation | Short TTL only | Active revocation API |
+| Session recording | ❌ Not supported | ✅ Optional |
+| Test env approval | Skip (RBAC check only) | Configurable |
+| Prod env approval | Required | Required |
+
+### V1 API Endpoint
+
+```
+# WebSocket endpoint for noVNC connection
+GET /api/v1/vms/{vm_id}/console
+Upgrade: websocket
+Authorization: Bearer {session_token}
+
+# Token-based access (for iframe/popup)
+GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}
+```
 
 ---
 
