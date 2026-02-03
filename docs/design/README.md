@@ -295,7 +295,17 @@ internal/
 │   └── sqlc/         # sqlc queries (limited scope)
 ├── service/          # Business services
 └── usecase/          # Atomic transaction orchestration
+
+web/                  # Frontend (ADR-0027: Monorepo with web/)
+├── src/
+│   ├── components/   # React components
+│   ├── pages/        # Next.js pages
+│   └── types/
+│       └── api.gen.ts  # Generated from OpenAPI (ADR-0021)
+├── public/
+└── package.json
 ```
+
 
 ---
 
