@@ -38,6 +38,16 @@ database development.
 - [Phase 01: Contracts](../phases/01-contracts.md) — Data contracts and naming constraints
 - [Phase 04: Governance](../phases/04-governance.md) — RBAC, audit logging, approval workflows
 
+**Critical ADR Constraints (Applies to ALL flows in this document)**:
+
+| ADR | Constraint | Scope |
+|-----|------------|-------|
+| **ADR-0006** | All write operations use **unified async model** (request → 202 → River Queue) | All state-changing operations |
+| **ADR-0009** | River Jobs carry **EventID only** (Claim Check); DomainEvent payload is **immutable** | All River Jobs |
+| **ADR-0012** | Atomic transactions: Ent for ORM, **sqlc for core transactions only** | All DB operations |
+
+> **CI Enforcement**: These constraints are enforced by CI checks. See [CONTRIBUTING.md](../../../CONTRIBUTING.md) for validation scripts.
+
 ---
 
 ## Appendix: Canonical Interaction Flow (English)
@@ -92,6 +102,10 @@ database development.
 | **Code Generation** | Go server types via `oapi-codegen`; TypeScript types via `openapi-typescript`. |
 | **Pagination** | List APIs use standardized pagination (`page`, `per_page`, `sort_by`, `sort_order`). See ADR-0023. |
 | **Error Codes** | Granular error codes (e.g., `NAMESPACE_PERMISSION_DENIED`). See ADR-0023 §3. |
+
+> **Full API Contract Governance**: For OpenAPI 3.1 vs 3.0 compatibility, CI toolchain constraints, and spec-code sync enforcement, see [01-contracts.md §API Contract-First Design](../phases/01-contracts.md#api-contract-first-design-adr-0021).
+>
+> **Capability Detection**: For Dry Run Fallback strategy when static capability detection is insufficient, see [02-providers.md §Dry Run Fallback](../phases/02-providers.md#dry-run-fallback-adr-0014).
 
 ### Schema Cache Lifecycle (ADR-0023)
 
@@ -845,7 +859,8 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │     See ADR-0017 §142-221 for full JIT creation flow.                                   │
 │  │                                                                                          │
 │  │     ¹ K8s may reject namespace creation if cluster has ResourceQuota policy.             │
-│  │       Platform reports the error but does NOT manage K8s quotas.                         │
+│  │       Failure handling: Ticket → FAILED_PROVISIONING, retry with exponential backoff.    │
+│  │       See ADR-0017 §142-221 for complete JIT error handling and recovery strategies.     │
 │  │                                                                                          │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘
 │                                                                                              │
@@ -1040,8 +1055,8 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │  BEGIN TRANSACTION;                                                               │       │
 │  │                                                                                    │       │
 │  │  -- 1. Create system                                                               │       │
-│  │  INSERT INTO systems (id, name, description, created_by, created_at)              │       │
-│  │  VALUES ('sys-001', 'shop', 'E-commerce core system', 'zhang.san', NOW());         │       │
+│  │  INSERT INTO systems (id, name, description, created_by, tenant_id, created_at)   │       │
+│  │  VALUES ('sys-001', 'shop', 'E-commerce core system', 'zhang.san', 'default', NOW());│      │
 │  │                                                                                    │       │
 │  │  -- 2. Auto permission inheritance (ResourceRoleBinding)                           │       │
 │  │  INSERT INTO resource_role_bindings                                               │       │
@@ -1268,6 +1283,18 @@ Target: vm-001 (svc-redis → sys-shop)
 ## Part 3: VM Lifecycle Flow
 
 > **Note**: This section describes the full VM lifecycle: request → approval → execution → running → deletion.
+>
+> **⚠️ ADR-0017 Responsibility Boundary**:
+>
+> | Field Category | Provided By | Forbidden For User | Rationale |
+> |----------------|-------------|-------------------|-----------|
+> | **ServiceID, TemplateID, Namespace** | ✅ User | - | Business context, user's domain |
+> | **ClusterID** | ❌ User | ✅ Forbidden | Admin determines during approval |
+> | **Name** | ❌ User | ✅ Forbidden | Platform-generated (`{ns}-{sys}-{svc}-{idx}`) |
+> | **Labels** | ❌ User | ✅ Forbidden | Platform-managed for governance integrity |
+> | **CloudInit** | ❌ User | ✅ Forbidden | Template-defined, security-controlled |
+>
+> See [ADR-0017 §Decision](../../adr/ADR-0017-vm-request-flow-clarification.md) for complete rationale.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -1437,13 +1464,19 @@ Target: vm-001 (svc-redis → sys-shop)
 > **Note**: DB transaction after user submits VM request
 >
 > **⚠️ ADR Compliance**:
-> - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md): DomainEvent must be created in same transaction
-> - [ADR-0012](../../adr/ADR-0012-hybrid-transaction.md): Atomic Ent + sqlc transaction
+> - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md): DomainEvent must be created in same transaction; **payload is immutable** (modifications via `ApprovalTicket.modified_spec` only)
+> - [ADR-0012](../../adr/ADR-0012-hybrid-transaction.md): Atomic Ent + sqlc transaction; **do not mix `tx` (sqlc) and `entTx` (Ent) contexts**
 >
 > **Audit Logs vs Domain Events**:
 > - `audit_logs`: Human-readable compliance records (WHO did WHAT, WHEN)
 > - `domain_events`: Machine-readable state transitions (system replay/projection)
 > Both are required and serve distinct purposes.
+>
+> **⚠️ SQL Examples Notice**: SQL examples below are illustrative. Always refer to [Ent Schema definitions](../phases/01-contracts.md) for current field requirements. Use `go generate ./ent` to regenerate code after schema changes.
+>
+> **Security References**:
+> - **Audit Log Sensitive Data Redaction**: See [04-governance.md §7 Audit Logging](../phases/04-governance.md#7-audit-logging) for redaction rules (ADR-0019)
+> - **Secrets Table Access Control**: See [01-contracts.md §System Secrets Table](../phases/01-contracts.md#322-system-secrets-table-adr-0025) — DB roles only, no admin UI/API exposure (ADR-0025)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -1588,23 +1621,24 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │  INSERT INTO vms (                                                                │       │
 │  │      id, name, service_id, namespace, cluster_id,                                 │       │
 │  │      instance_size_id, template_id, status,                                       │       │
-│  │      ticket_id, created_at                                                        │       │
+│  │      ticket_id, tenant_id, created_at                                             │       │
 │  │  ) VALUES (                                                                        │       │
 │  │      'vm-001',                                                                    │       │
 │  │      'prod-shop-shop-redis-01',            👈 auto: {ns}-{sys}-{svc}-{index}        │       │
 │  │      'svc-001', 'prod-shop', 'cluster-a',                                         │       │
 │  │      'is-gpu-workstation', 'tpl-centos7',                                         │       │
 │  │      'CREATING',                           👈 initial status: creating              │       │
-│  │      'ticket-001', NOW()                                                          │       │
+│  │      'ticket-001', 'default', NOW()        👈 tenant_id default (ADR-0015)          │       │
 │  │  );                                                                                │       │
 │  │                                                                                    │       │
-│  │  -- 4. Insert River Job (ADR-0006/0012) 👈 REQUIRED - triggers async execution     │       │
+│  │  -- 4. Insert River Job (ADR-0006/0009) 👈 REQUIRED - triggers async execution     │       │
+│  │  -- ⚠️ Claim Check Pattern: Job args contain ONLY event_id (ADR-0009)              │       │
 │  │  INSERT INTO river_job (                                                          │       │
 │  │      id, kind, args, queue, state, created_at                                     │       │
 │  │  ) VALUES (                                                                        │       │
 │  │      'job-001',                                                                   │       │
 │  │      'VMCreateJob',                        👈 River worker type                     │       │
-│  │      '{"event_id": "evt-001", "vm_id": "vm-001", "ticket_id": "ticket-001"}',    │       │
+│  │      '{"event_id": "evt-001"}',           👈 Claim Check: event_id ONLY (ADR-0009) │       │
 │  │      'default',                                                                   │       │
 │  │      'available',                          👈 ready for worker consumption          │       │
 │  │      NOW()                                                                        │       │
@@ -1706,14 +1740,17 @@ Target: vm-001 (svc-redis → sys-shop)
 │         └── Service (mysql)                                                                  │
 │                └── VM (prod-shop-shop-mysql-01)                                              │
 │                                                                                              │
-│  Delete rules (Cascade Restrict):                                                            │
+│  Delete rules (Cascade Restrict - ADR-0015 §13.1):                                           │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
 │  │                                                                                    │       │
 │  │  Level        Precondition                  Approval   Confirmation                │       │
 │  │  ────────────────────────────────────────────────────────────────────────────────  │       │
-│  │  VM           None                          ✅ Yes     confirm=true param           │       │
+│  │  VM (test)    None                          ✅ Yes     confirm=true param           │       │
+│  │  VM (prod)    None                          ✅ Yes     confirm_name in body ¹       │       │
 │  │  Service      All VMs deleted first         ✅ Yes     confirm=true param           │       │
-│  │  System       All Services deleted first    ❌ No      type system name             │       │
+│  │  System       All Services deleted first    ❌ No      confirm_name in body         │       │
+│  │                                                                                    │       │
+│  │  ¹ Production VMs require typing the exact VM name to prevent accidental deletion  │       │
 │  │                                                                                    │       │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
@@ -1724,9 +1761,14 @@ Target: vm-001 (svc-redis → sys-shop)
 │                     Delete VM - Database Operations                                          │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
-│  User or admin initiates delete:                                                             │
+│  🔹 Test VM Delete (simple confirmation):                                                    │
 │  DELETE /api/v1/vms/{vm_id}?confirm=true                                                     │
 │                                                                                              │
+│  🔹 Production VM Delete (requires typing VM name - ADR-0015 §13.1):                         │
+│  DELETE /api/v1/vms/{vm_id}                                                                  │
+│  Content-Type: application/json                                                              │
+│  { "confirm_name": "prod-shop-shop-redis-01" }  👈 must match VM name exactly                │
+│                                                                                              │                                                                                              │
 │  📦 Database operations:                                                                     │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
 │  │  BEGIN TRANSACTION;                                                               │       │
@@ -1863,6 +1905,12 @@ Target: vm-001 (svc-redis → sys-shop)
 > **Design Reference**: [04-governance.md §5.6](../phases/04-governance.md#56-batch-operations-adr-0015-19)
 
 Batch operations are **UX convenience**, not atomic transactions. Each item is processed independently via River Queue.
+
+> **Idempotency & Retry**:
+> - Each batch item generates an independent River Job with unique `event_id`
+> - River handles retry logic (default: 3 retries with exponential backoff)
+> - Idempotency key = `event_id` — re-processing same event is safe (ADR-0009 Claim Check)
+> - Partial failures do NOT rollback successful items; aggregate status reported
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
