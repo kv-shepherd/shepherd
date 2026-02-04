@@ -73,14 +73,18 @@ All gates are **blocking** (fail CI if violated):
 * ✅ Good, because strict mode catches undeclared fields automatically
 * ✅ Good, because vacuum is 10x faster than spectral in CI
 * ✅ Good, because oapi-codegen integration preserved (ADR-0021 compliance)
+* ✅ Good, because vacuum is fully compatible with Spectral rulesets (see migration guide)
 * 🟡 Neutral, because adds libopenapi-validator as new dependency
-* 🟡 Neutral, because TypeScript type generation (`openapi-typescript`) still requires Node.js per ADR-0021
-* ❌ Bad, because existing spectral rulesets may need minor adaptation for vacuum
+* 🟡 Neutral, because TypeScript type generation (`openapi-typescript`) still requires Node.js per ADR-0021 (mitigated via Makefile graceful fallback and containerized option)
+* ❌ Bad, because CI pipelines require both Go and Node.js environments (mitigated via separate CI jobs)
+* ❌ Bad, because existing spectral rulesets may need minor adaptation for custom JS functions
 
 ### Confirmation
 
 * [ ] CI pipeline includes all four gates as blocking checks
+* [ ] CI actions are pinned to specific versions or commit SHAs (supply chain security)
 * [ ] libopenapi-validator StrictMode is enabled in validation middleware
+* [ ] Production environment returns generic validation errors only (no information disclosure)
 * [ ] No Python or Node.js dependencies in production Docker image
 
 ---
