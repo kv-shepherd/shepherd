@@ -13,7 +13,7 @@
 | [RFC-0001](./RFC-0001-pg-partman.md) | PostgreSQL Table Partitioning | Deferred | P2 | Daily jobs > 10M |
 | [RFC-0002](./RFC-0002-temporal.md) | Temporal Workflow Integration | Deferred | P3 | Multi-level approval needed |
 | [RFC-0003](./RFC-0003-helm-export.md) | Helm Chart Export | Deferred | P2 | User request |
-| [RFC-0004](./RFC-0004-external-approval.md) | External Approval Systems | **Proposed** | **P1** | V1+ optional feature |
+| [RFC-0004](./RFC-0004-external-approval.md) | External Approval Systems | **Accepted** | **P1** | V1+ optional feature |
 | [RFC-0005](./RFC-0005-event-archiving.md) | Physical Event Archiving ¹ | Deferred | P2 | DomainEvent table too large |
 | [RFC-0006](./RFC-0006-hot-reload.md) | Configuration Admin API ² | Deferred | P2 | Dynamic config via API |
 | [RFC-0007](./RFC-0007-redis-cache.md) | Redis Cache Support | Deferred | P3 | Cache miss causing bottleneck |
@@ -27,6 +27,7 @@
 | [RFC-0015](./RFC-0015-per-cluster-concurrency.md) | Per-Cluster Concurrency | Deferred | P3 | Distributed semaphore needed |
 | [RFC-0016](./RFC-0016-key-rotation.md) | Secret Key Rotation | Proposed | P2 | Compliance or operator request |
 | [RFC-0017](./RFC-0017-external-secret-provider.md) | External Secret Provider | Deferred | P2 | Enterprise KMS/Vault requirement |
+| [RFC-0018](./RFC-0018-external-notification.md) | External Notification Channels | Deferred | P2 | V1 complete; Email/Webhook/Slack requested |
 
 > **Notes**:
 > - ¹ Soft archiving (`archived_at` field) is implemented in Phase 4; this RFC covers physical archiving to separate tables

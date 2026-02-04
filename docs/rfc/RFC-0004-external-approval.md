@@ -1,6 +1,6 @@
 # RFC-0004: External Approval Systems Integration
 
-> **Status**: Proposed  
+> **Status**: Accepted  
 > **Priority**: P1 (V1+)  
 > **Source**: ADR-0005  
 > **Design**: [Master Flow Stage 2.E](../design/interaction-flows/master-flow.md#stage-2-e)  
