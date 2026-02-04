@@ -1,11 +1,12 @@
-# API Contract-First Make Targets (ADR-0021)
+# API Contract-First Make Targets (ADR-0021, ADR-0029)
 # Include this file from the main Makefile:
 #   include build/api.mk
 #
 # Prerequisites:
-#   - Go 1.24+ (or tools.go pattern for oapi-codegen)
-#   - Node.js 20+ (for openapi-typescript)
-#   - npm packages: @stoplight/spectral-cli, openapi-typescript, @stoplight/prism-cli
+#   - Go 1.24+ (for oapi-codegen, vacuum)
+#   - Node.js 20+ (for openapi-typescript only)
+#   - Go tools: vacuum (linting), oapi-codegen (code generation)
+#   - npm packages: openapi-typescript, @stoplight/prism-cli
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
@@ -13,7 +14,7 @@
 
 OPENAPI_SPEC := api/openapi.yaml
 COMPAT_SPEC := api/openapi.compat.yaml
-SPECTRAL_CONFIG := api/.spectral.yaml
+VACUUM_CONFIG := api/.vacuum.yaml
 GO_GENERATED_DIR := internal/api/generated
 TS_GENERATED_FILE := web/src/types/api.gen.ts
 OAPI_CODEGEN_CONFIG := api/oapi-codegen.yaml
@@ -28,9 +29,9 @@ OPENAPI_TS_VERSION ?=
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: api-lint
-api-lint: ## Validate OpenAPI spec with Spectral
+api-lint: ## Validate OpenAPI spec with Vacuum (ADR-0029)
 	@echo "🔍 Linting OpenAPI specification..."
-	@npx @stoplight/spectral-cli lint $(OPENAPI_SPEC) --ruleset $(SPECTRAL_CONFIG)
+	@vacuum lint $(OPENAPI_SPEC) --ruleset $(VACUUM_CONFIG)
 	@echo "✅ OpenAPI spec is valid"
 
 .PHONY: api-generate
@@ -106,15 +107,16 @@ api-docs: ## Serve interactive API documentation
 .PHONY: api-tools
 api-tools: ## Install required API tooling
 	@echo "📦 Installing API development tools..."
-	@if [ -z "$(OAPI_CODEGEN_VERSION)" ] || [ -z "$(OPENAPI_TS_VERSION)" ]; then \
+	@if [ -z "$(OAPI_CODEGEN_VERSION)" ] || [ -z "$(OPENAPI_TS_VERSION)" ] || [ -z "$(VACUUM_VERSION)" ]; then \
 		echo "❌ Tool versions must be set from docs/design/DEPENDENCIES.md"; \
-		echo "   Example: make api-tools OAPI_CODEGEN_VERSION=... OPENAPI_TS_VERSION=..."; \
+		echo "   Example: make api-tools OAPI_CODEGEN_VERSION=... OPENAPI_TS_VERSION=... VACUUM_VERSION=..."; \
 		exit 1; \
 	fi
-	# Go tools (requires Go 1.24+ for go tool directive)
+	# Go tools (requires Go 1.24+)
 	go get -tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
-	# Node.js tools (install globally or use npx)
-	npm install -g @stoplight/spectral-cli @stoplight/prism-cli @scalar/cli
+	go install github.com/daveshanley/vacuum@$(VACUUM_VERSION)
+	# Node.js tools (TypeScript generation only - ADR-0029)
+	npm install -g @stoplight/prism-cli @scalar/cli
 	# For oasdiff (breaking change detection)
 	go install github.com/tufin/oasdiff@latest
 	@echo "✅ API tools installed"
@@ -142,7 +144,7 @@ api-help: ## Show API-related targets
 	@echo "API Contract-First Development Targets (ADR-0021)"
 	@echo ""
 	@echo "Development:"
-	@echo "  api-lint       Validate OpenAPI spec with Spectral"
+	@echo "  api-lint       Validate OpenAPI spec with Vacuum"
 	@echo "  api-generate   Generate Go + TypeScript code"
 	@echo "  api-mock       Start mock server for frontend development"
 	@echo "  api-docs       Serve interactive API documentation"

@@ -90,13 +90,25 @@ ci/
 
 ---
 
-## API Contract-First Enforcement (ADR-0021)
+## API Contract-First Enforcement (ADR-0021, ADR-0029)
 
 > **Status**: Design Phase - ACTIVE IN DESIGN DOCS
 > 
 > These files are the design-phase artifacts that define the contract-first
 > pipeline. When coding begins, move them to their final locations and wire
 > them into the repo root Makefile and CI.
+
+### Toolchain Selection (ADR-0029)
+
+> **Go-Native Backend Tooling**: ADR-0029 mandates Go-native tools for linting and validation.
+
+| Layer | Tool | Replaces | Notes |
+|-------|------|----------|-------|
+| **Linting** | `vacuum` | spectral | Go-native, 10x faster, Spectral-rule compatible |
+| **Runtime Validation** | `libopenapi-validator` | kin-openapi (validation) | StrictMode, undeclared field detection |
+| **Overlay Processing** | `libopenapi` | oas-patch | Go-native, same ecosystem |
+| **Code Generation** | `oapi-codegen` | (unchanged) | ADR-0021 decision preserved |
+| **TypeScript Types** | `openapi-typescript` | (unchanged) | ADR-0021 decision preserved (Node.js) |
 
 ### Additional Files for API Contract Enforcement
 
@@ -106,22 +118,63 @@ ci/
 | `scripts/api-check.sh` | Verifies generated code is in sync | `scripts/` |
 | `scripts/openapi-compat.sh` | Enforces OpenAPI compat spec presence/freshness | `scripts/` |
 | `scripts/openapi-compat-generate.sh` | Generates OpenAPI 3.0-compatible spec (placeholder) | `scripts/` |
-| `spectral/.spectral.yaml` | OpenAPI linting rules | `api/` |
+| ~~`spectral/.spectral.yaml`~~ | ~~OpenAPI linting rules~~ | ~~Deprecated by ADR-0029~~ |
+| `vacuum/.vacuum.yaml` | **Vacuum ruleset** (ADR-0029) | `api/` |
 | `api-templates/openapi.yaml` | Starting OpenAPI specification | `api/` |
 | `api-templates/oapi-codegen.yaml` | Code generation configuration | `api/` |
-| `api-templates/openapi-overlay-3.0.yaml` | OpenAPI 3.1 → 3.0 overlay | `api/` (or `build/` tooling) |
+| `api-templates/openapi-overlay-3.0.yaml` | OpenAPI 3.1 → 3.0 overlay (libopenapi) | `api/` (or `build/` tooling) |
 | `makefile/api.mk` | Make targets for API workflows | `build/` |
+
+### CI Security Best Practices (ADR-0029)
+
+> **Supply Chain Security**: All CI workflows MUST follow these practices.
+
+| Practice | Requirement | Example |
+|----------|-------------|---------|
+| **Action Pinning** | Pin to commit SHA, not tags | `actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683` |
+| **Runner Pinning** | Use specific runner version | `ubuntu-22.04` (not `ubuntu-latest`) |
+| **Minimal Permissions** | Use `permissions:` block | `contents: read`, `pull-requests: read` |
+| **Timeout** | Set job timeout | `timeout-minutes: 10` |
+| **Dependabot** | Auto-update GitHub Actions | Configure `.github/dependabot.yml` |
 
 ### Tooling and Compatibility Notes
 
-- **Linting**: Spectral is the default lint tool for OpenAPI specs.
+- **Linting**: **Vacuum** (ADR-0029) is the linter for OpenAPI specs. Vacuum is fully compatible with Spectral rulesets.
 - **Breaking changes**: `oasdiff` is used to detect breaking changes between base and PR specs.
 - **OpenAPI 3.1**: The canonical spec remains 3.1, but Go tooling (`oapi-codegen`, `kin-openapi`) targets 3.0.x. If 3.1-only features are used, generate `api/openapi.compat.yaml` (3.0-compatible) for Go codegen and validation while preserving `api/openapi.yaml` as the source of truth.
 - **Frontend types**: `openapi-typescript` can consume OpenAPI 3.1 directly.
-- **Contract validation**: `kin-openapi` can validate requests/responses against the OpenAPI spec in tests or middleware.
+- **Contract validation**: `libopenapi-validator` (ADR-0029) validates requests/responses against the OpenAPI spec in middleware with **StrictMode**.
 - **Compat enforcement**: `openapi-compat.sh` checks `api/openapi.compat.yaml` is present and up to date; set `REQUIRE_OPENAPI_COMPAT=1` in CI to block merges when compat spec is required.
-- **Compat generation**: `openapi-compat-generate.sh` uses `oas-patch overlay` to produce a 3.0-compatible spec from the 3.1 canonical file.
+- **Compat generation**: Use `libopenapi` overlay support (Go-native, replaces oas-patch) to produce a 3.0-compatible spec.
 - **Version pinning**: tool versions must be read from `docs/design/DEPENDENCIES.md` (do not hardcode in other docs).
+
+### Spectral to Vacuum Migration
+
+> **Key Point**: Vacuum is designed for drop-in compatibility with Spectral rulesets.
+
+Existing `.spectral.yaml` files can be used directly with Vacuum:
+
+```bash
+# Before (Spectral)
+spectral lint api/openapi.yaml --ruleset .spectral.yaml
+
+# After (Vacuum) - same ruleset file works
+vacuum lint api/openapi.yaml --ruleset .spectral.yaml
+```
+
+For detailed migration guidance, see: [ADR-0029 Implementation Details §8](../notes/ADR-0029-openapi-toolchain-implementation.md#8-spectral-to-vacuum-migration-guide)
+
+### OpenAPI Validator Middleware (ADR-0029)
+
+Runtime request/response validation using `libopenapi-validator` with StrictMode:
+
+| Mode | `gin.Mode()` | Behavior |
+|------|--------------|----------|
+| Development | `debug` | Full validation errors returned to client |
+| Staging | `test` | Full validation errors (for E2E tests) |
+| **Production** | `release` | **Generic error only; details logged server-side** |
+
+For implementation code, see: [ADR-0029 Implementation Details §3](../notes/ADR-0029-openapi-toolchain-implementation.md#3-runtime-validation-with-strictmode)
 
 ### Activation Checklist
 
@@ -130,10 +183,14 @@ When transitioning from Design Phase to Coding Phase:
 1. **Initialize Go module**: `go mod init kv-shepherd.io/shepherd`
 2. **Move files** to final locations (see file table above)
 3. **Update root Makefile**: `include build/api.mk`
-4. **Verify**: `make api-lint && make api-generate`
-5. **If needed**: add a spec-compat step (3.1 → 3.0) that writes `api/openapi.compat.yaml` for Go codegen/validation until 3.1 support is available.
-6. **CI enforcement**: run `REQUIRE_OPENAPI_COMPAT=1 make api-compat` once 3.1-only features are used.
-7. **Block merges**: add `make api-check` (and `REQUIRE_OPENAPI_COMPAT=1 make api-compat` when required) as required CI checks before any coding begins.
-8. **Compat generation**: implement `make api-compat-generate` and wire it into CI before enabling `REQUIRE_OPENAPI_COMPAT=1`.
+4. **Create vacuum ruleset**: Move `vacuum/.vacuum.yaml` to `api/.vacuum.yaml`
+5. **Install vacuum**: `go install github.com/daveshanley/vacuum@v0.14.0` or use `pb33f/vacuum-action@v2` in CI
+6. **Verify**: `make api-lint && make api-generate`
+7. **If needed**: add a spec-compat step (3.1 → 3.0) that writes `api/openapi.compat.yaml` for Go codegen/validation until 3.1 support is available.
+8. **CI enforcement**: run `REQUIRE_OPENAPI_COMPAT=1 make api-compat` once 3.1-only features are used.
+9. **Block merges**: add `make api-check` (and `REQUIRE_OPENAPI_COMPAT=1 make api-compat` when required) as required CI checks before any coding begins.
+10. **Compat generation**: implement `make api-compat-generate` using `libopenapi` overlay support and wire it into CI before enabling `REQUIRE_OPENAPI_COMPAT=1`.
+11. **Implement middleware**: Create `internal/api/middleware/openapi_validator.go` with StrictMode and environment-aware error handling.
 
-See [ADR-0021](../../adr/ADR-0021-api-contract-first.md) for full design details.
+See [ADR-0021](../../adr/ADR-0021-api-contract-first.md) and [ADR-0029](../../adr/ADR-0029-openapi-toolchain-governance.md) for full design details.
+

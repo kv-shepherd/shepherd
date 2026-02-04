@@ -1,0 +1,65 @@
+# api/.vacuum.yaml
+# Vacuum configuration with Spectral-compatible rules (ADR-0029)
+# 
+# This ruleset replaces the previous .spectral.yaml configuration.
+# Vacuum is fully compatible with Spectral rulesets and provides:
+# - 10x faster linting performance (Go-native)
+# - Same rule syntax and severity levels
+# - Additional vacuum-specific features (e.g., runOnChange)
+#
+# Reference: https://quobix.com/vacuum/rulesets/
+
+extends: [[spectral:oas, recommended]]
+
+rules:
+  # Enforce operationId for code generation
+  operation-operationId:
+    severity: error
+    description: "Operations must have operationId for code generation"
+  
+  # Enforce summary for documentation
+  operation-summary:
+    severity: warn
+    description: "Operations should have a summary"
+  
+  # Enforce descriptions
+  operation-description:
+    severity: warn
+    description: "Operations should have a description"
+  
+  # Tag enforcement
+  operation-tag-defined:
+    severity: error
+    description: "Operations must be tagged"
+    
+  # Enforce unique operationIds
+  operation-operationId-unique:
+    severity: error
+    description: "operationIds must be unique across all operations"
+    
+  # Schema property descriptions
+  oas3-schema:
+    severity: warn
+    description: "Schemas should follow OAS3 best practices"
+
+  # Security definitions
+  oas3-operation-security-defined:
+    severity: warn
+    description: "Operations should define security requirements"
+    
+  # Undeclared properties check (critical for StrictMode validation)
+  # This ensures all response fields are explicitly defined in schema
+  oas3-valid-schema-example:
+    severity: error
+    description: "Schema examples must be valid against the schema"
+
+# Vacuum-specific configuration
+settings:
+  # Only run on changed files in CI (performance optimization)
+  runOnChange: true
+  
+  # Fail CI on warnings and above
+  failSeverity: warn
+  
+  # Enable spectral compatibility mode
+  spectralCompatibility: true

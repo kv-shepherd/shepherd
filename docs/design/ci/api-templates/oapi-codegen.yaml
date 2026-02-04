@@ -6,5 +6,10 @@ generate:
   - models
   - spec
   - embedded-spec
+output-options:
+  # Go 1.24+ omitzero support (ADR-0028)
+  # Eliminates "Pointer Hell" for optional fields
+  # See: docs/design/DEPENDENCIES.md §API Contract-First Tooling
+  prefer-skip-optional-pointer-with-omitzero: true
 import-mapping:
   # Add specific mappings here if needed

@@ -115,6 +115,7 @@ Granular error codes for frontend handling:
 |------|-------------|-------------|-----------|
 | `NAMESPACE_PERMISSION_DENIED` | 403 | No JIT namespace creation permission | ✅ Active |
 | `NAMESPACE_QUOTA_EXCEEDED` | 403 | Cluster namespace quota reached (K8s ResourceQuota) | ✅ Active ¹ |
+| `NAMESPACE_CREATION_FAILED` | 500 | JIT namespace creation failed (K8s API error) | ✅ Active ³ |
 | `QUOTA_EXCEEDED` | 422 | Tenant resource quota exceeded | ⏳ V2+ Reserved ² |
 | `CLUSTER_UNHEALTHY` | 503 | Target cluster unavailable | ✅ Active |
 | `APPROVAL_REQUIRED` | 202 | Request pending approval | ✅ Active |
@@ -122,6 +123,8 @@ Granular error codes for frontend handling:
 > **¹ NAMESPACE_QUOTA_EXCEEDED**: This error is returned when K8s rejects namespace creation due to ResourceQuota limits. The platform does NOT manage K8s quotas — it only reports K8s errors. See [master-flow.md Stage 3 JIT Namespace](../interaction-flows/master-flow.md) for error handling flow.
 >
 > **² QUOTA_EXCEEDED**: Reserved for future tenant-level resource quota system (CPU/Memory/VM count limits). V1 does not implement tenant quotas — this error code is a placeholder for V2+ expansion.
+>
+> **³ NAMESPACE_CREATION_FAILED**: Returned when K8s API call to create namespace fails for reasons other than quota (e.g., network error, RBAC issues). See [master-flow.md Stage 3 JIT Namespace](../interaction-flows/master-flow.md#stage-3-c) for error handling.
 
 ---
 
@@ -367,6 +370,44 @@ Key constraints:
 | `instance_size_snapshot` | JSONB | InstanceSize configuration at approval time (ADR-0018) |
 
 > **Security Note**: User-provided `namespace` is **immutable after submission**. Admin can only approve/reject, never modify the namespace. This prevents permission escalation attacks.
+
+### 3.4.1 User Request Field Restrictions (ADR-0017 Security) ⚠️
+
+> **API Contract Enforcement**: The user VM creation request schema MUST NOT include the following admin-only fields.
+> This is a **security constraint** preventing users from bypassing capacity planning.
+
+| Forbidden Field | Reason | Where Determined |
+|-----------------|--------|------------------|
+| `cluster_id` | ❌ **Users cannot select clusters** | Admin during approval |
+| `template_version` | ❌ Users cannot pin specific versions | Admin during approval |
+| `storage_class` | ❌ Infrastructure decision | Admin during approval |
+
+**OpenAPI Schema Enforcement** (api/openapi.yaml):
+
+```yaml
+# User VM creation request - NO cluster_id field
+VMCreateRequest:
+  type: object
+  required:
+    - service_id
+    - template_id
+    - instance_size_id
+  properties:
+    service_id:
+      type: string
+      format: uuid
+    template_id:
+      type: string
+      format: uuid
+    instance_size_id:
+      type: string
+      format: uuid
+    reason:
+      type: string
+    # ⚠️ cluster_id is intentionally ABSENT - see ADR-0017
+```
+
+> **Validation Rule**: If user request contains `cluster_id`, server MUST reject with `400 Bad Request` and error code `INVALID_REQUEST_FIELD`.
 
 ### 3.5 Instance Number Design
 

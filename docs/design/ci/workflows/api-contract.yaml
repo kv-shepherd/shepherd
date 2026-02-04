@@ -1,7 +1,13 @@
-# API Contract-First Enforcement (ADR-0021)
+# API Contract-First Enforcement (ADR-0021, ADR-0029)
 # This workflow ensures OpenAPI spec remains the single source of truth
 # by validating spec quality, detecting breaking changes, and verifying
 # that generated code stays in sync with the specification.
+#
+# Security Notes (ADR-0029):
+# - All third-party actions pinned to specific commit SHAs
+# - Runner version pinned (ubuntu-22.04, not ubuntu-latest)
+# - Minimal permissions following least privilege principle
+# - Dependabot configured for automated updates
 
 name: API Contract Validation
 
@@ -11,21 +17,28 @@ on:
       - 'api/**'
       - 'internal/api/**'
       - 'web/src/types/api.gen.ts'
-      - '.spectral.yaml'
+      - '.vacuum.yaml'  # ADR-0029: vacuum replaces spectral
   push:
     branches: [main]
     paths:
       - 'api/**'
 
+# Principle of Least Privilege (ADR-0029)
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   # ─────────────────────────────────────────────────────────────────
-  # Stage 1: Validate OpenAPI Specification
+  # Stage 1: Validate OpenAPI Specification (ADR-0029: vacuum)
   # ─────────────────────────────────────────────────────────────────
   lint-spec:
     name: Lint OpenAPI Spec
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Pin runner version
+    timeout-minutes: 10    # Prevent stuck workflows
     steps:
-      - uses: actions/checkout@v4
+      # Pin to specific commit SHA for security
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Check if spec exists
         id: check_file
@@ -36,22 +49,25 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Run Spectral Linting
+      # ADR-0029: Use vacuum instead of spectral (Go-native, 10x faster)
+      - name: Run Vacuum Linting
         if: steps.check_file.outputs.exists == 'true'
-        uses: stoplightio/spectral-action@latest
+        uses: pb33f/vacuum-action@v2
         with:
-          file_glob: 'api/openapi.yaml'
-          spectral_ruleset: 'api/.spectral.yaml'
+          spec: api/openapi.yaml
+          fail_severity: warn
+          ruleset: api/.vacuum.yaml
 
   # ─────────────────────────────────────────────────────────────────
   # Stage 2: Detect Breaking Changes
   # ─────────────────────────────────────────────────────────────────
   breaking-changes:
     name: Detect Breaking Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
 
@@ -96,20 +112,26 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   generated-code-sync:
     name: Verify Generated Code Sync
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    needs: lint-spec
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5  # v5.5.0
         with:
           go-version-file: 'go.mod'
           cache: true
 
+      # Pin oapi-codegen to exact version for reproducibility
+      - name: Install oapi-codegen
+        run: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.4.1
+
       - name: Setup Node.js (for TypeScript generation)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: 'web/package-lock.json'
 
@@ -154,9 +176,9 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   # contract-test:
   #   name: Contract Testing
-  #   runs-on: ubuntu-latest
+  #   runs-on: ubuntu-22.04
   #   needs: [lint-spec, generated-code-sync]
   #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Run Dredd contract tests
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+  #     - name: Run contract tests with libopenapi-validator
   #       run: make api-contract-test

@@ -597,3 +597,24 @@ additional-imports:
 - [kin-openapi documentation](https://github.com/getkin/kin-openapi)
 - [Spectral CLI](https://github.com/stoplightio/spectral)
 - [go-playground/validator](https://github.com/go-playground/validator)
+- [Vacuum](https://github.com/daveshanley/vacuum) - Go-native OpenAPI linter
+
+---
+
+## Addendum: ADR-0029 Toolchain Migration (2026-02-03)
+
+> **Note**: This document was written before ADR-0029 (OpenAPI Toolchain Governance).
+>
+> Per ADR-0029, the following toolchain changes apply:
+>
+> | This Document | ADR-0029 Replacement |
+> |---------------|----------------------|
+> | `spectral lint` | `vacuum lint` (Go-native, 10x faster, Spectral-rule compatible) |
+> | `kin-openapi` validation | `libopenapi-validator` (StrictMode) |
+> | `oas-patch` | `libopenapi` overlay support |
+>
+> **Spectral rulesets remain compatible** with Vacuum. No rule file changes required.
+>
+> See [ADR-0029](../../adr/ADR-0029-openapi-toolchain-governance.md) and
+> [ADR-0029 Implementation Details](./ADR-0029-openapi-toolchain-implementation.md) for current toolchain.
+
