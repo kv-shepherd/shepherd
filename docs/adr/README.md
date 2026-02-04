@@ -33,11 +33,11 @@
 | [ADR-0021](./ADR-0021-api-contract-first.md) | API Contract-First Design | **Accepted** | - |
 | [ADR-0022](./ADR-0022-modular-provider-pattern.md) | Modular Provider Pattern | **Accepted** | - |
 | [ADR-0023](./ADR-0023-schema-cache-management.md) | Schema Cache Management and API Standardization | **Accepted** | - |
-| [ADR-0024](./ADR-0024-provider-capability-composition.md) | Provider Interface Capability Composition | **Accepted** | - |
+| [ADR-0024](./ADR-0024-provider-interface-capability-composition.md) | Provider Interface Capability Composition | **Accepted** | - |
 | [ADR-0025](./ADR-0025-secret-bootstrap.md) | Bootstrap Secrets Auto-Generation and Persistence | **Accepted** | - |
 | [ADR-0026](./ADR-0026-idp-config-naming.md) | Auth Provider Naming and Standardized Provider Output | **Accepted** | - |
 | [ADR-0027](./ADR-0027-repository-structure-monorepo.md) | Monorepo Repository Structure with web/ | **Accepted** | - |
-| [ADR-0028](./ADR-0028-oapi-codegen-optional-field-strategy.md) | oapi-codegen Optional Field Strategy | **Proposed** | - |
+| [ADR-0028](./ADR-0028-oapi-codegen-optional-field-strategy.md) | oapi-codegen Optional Field Strategy | **Accepted** | - |
 | [ADR-0029](./ADR-0029-openapi-toolchain-governance.md) | OpenAPI Toolchain Governance | **Proposed** | - |
 
 > ⚠️ **¹ ADR-0009 Partial Supersession Notice**:
