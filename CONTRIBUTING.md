@@ -14,6 +14,34 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 - Use the issue templates when available
 - Include relevant details: version, environment, steps to reproduce
 
+### Issue Best Practices
+
+Well-defined issues are the foundation of efficient collaboration:
+
+| Principle | Description |
+|-----------|-------------|
+| **Single Responsibility** | Each issue should address ONE specific problem, feature, or enhancement |
+| **Focused Scope** | Avoid bundling unrelated changes; create separate issues for distinct concerns |
+| **Clear Problem Statement** | Describe the current behavior, expected behavior, and impact |
+| **Actionable** | Include enough context for a contributor to understand and implement |
+
+**Issue Types:**
+
+| Type | Scope | Example |
+|------|-------|-------|
+| Bug | One specific defect | "API returns 500 when VM name contains special characters" |
+| Feature | One logical capability | "Add snapshot support for persistent volumes" |
+| Documentation | One topic or section | "Update installation guide for Kubernetes 1.32" |
+| Enhancement | One improvement area | "Improve error messages in validation layer" |
+
+**Anti-patterns to Avoid:**
+
+- ❌ "Add feature X, fix bug Y, and refactor Z" – Too broad, split into 3 issues
+- ❌ "Various improvements" – Not actionable, be specific
+- ❌ Duplicate issues – Search existing issues first
+
+> 💡 **Tip**: If your issue description requires multiple distinct "Acceptance Criteria" sections, consider splitting it.
+
 ### Submitting Pull Requests
 
 1. **Fork** the repository
@@ -29,6 +57,49 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
    ```
 5. **Commit** with clear, descriptive messages
 6. **Push** to your fork and create a Pull Request
+
+### Atomic Pull Requests
+
+An atomic PR contains the minimal, self-contained set of changes to address one issue:
+
+| Principle | Requirement |
+|-----------|-------------|
+| **One PR = One Issue** | Each PR addresses exactly ONE issue or concern |
+| **Self-Contained** | PR can be reviewed, tested, and reverted independently |
+| **Minimal Changes** | Include only what's necessary to resolve the issue |
+| **Logical Commits** | Each commit within the PR should be atomic and focused |
+
+**Benefits of Atomic PRs:**
+
+- ✅ Easier code review – Reviewers can focus on one logical change
+- ✅ Safer reverts – If issues arise, only the minimal change is rolled back
+- ✅ Cleaner history – Git log tells a clear story of the project
+- ✅ Faster merges – Less conflict potential with other PRs
+
+**What to Split:**
+
+| Scenario | Action |
+|----------|--------|
+| Bug fix + unrelated refactoring | Two separate PRs |
+| Feature + documentation for another feature | Two separate PRs |
+| Multiple independent bug fixes | One PR per bug |
+| Feature + its own documentation | One PR (same concern) |
+| Feature + its own tests | One PR (tests are part of the feature) |
+
+**Example: Splitting PRs**
+
+```bash
+# BAD: One PR with multiple concerns
+git add .
+git commit -m "feat: add VM snapshot, fix auth bug, update docs"
+
+# GOOD: Separate PRs for each concern
+# PR 1: feat(vm): add snapshot support (#10)
+# PR 2: fix(auth): resolve token refresh issue (#11)
+# PR 3: docs(api): update authentication guide (#12)
+```
+
+> ⚠️ **IMPORTANT**: If you find yourself writing "also" or "additionally" in your PR description for unrelated changes, consider splitting the PR.
 
 ### Commit Message Guidelines
 
