@@ -480,7 +480,7 @@ The following checks MUST pass before any PR can be merged:
 | **Type Safety** | TypeScript | Any error with `strict: true` |
 | **Lint** | ESLint | Any error (warnings allowed in dev) |
 | **Format** | Prettier | Any unformatted file |
-| **Unit Tests** | Vitest | Coverage < 70% for new code |
+| **Unit Tests** | Vitest | Coverage < 80% for new code |
 | **Build** | Next.js | Build failure |
 
 ### TypeScript Configuration (tsconfig.json)
@@ -905,3 +905,15 @@ _End of ADR-0020_
 | Original Section | Status | Amendment Details | See Also |
 |------------------|--------|-------------------|----------|
 | §Repository Structure | **SUPERSEDED** | Repository structure decision updated to Monorepo with `web/` frontend directory. | [ADR-0027](./ADR-0027-repository-structure-monorepo.md) |
+
+### Implementation Note: Frontend Testing Toolchain (2026-02-04)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §Testing (lines 79-80) | **EXPANDED** | Detailed testing toolchain configuration, CI enforcement gates, and Server Component testing strategy. Coverage threshold increased from 70% to **80%** (industry standard). | [Implementation Note](../design/notes/ADR-0020-frontend-testing-toolchain.md) |
+| §CI Quality Gates (line 483) | **UPDATED** | Coverage threshold for new code: 70% → **80%** with CI mandatory block. | [Implementation Note §6](../design/notes/ADR-0020-frontend-testing-toolchain.md#6-ci-configuration) |
+
+> **Implementation Guidance**:
+> - **Vitest**: Configure with `coverage.thresholds` at 80% lines/functions/statements, 75% branches
+> - **Playwright**: Use for Server Component testing and critical E2E paths
+> - **CI**: Coverage below thresholds will **BLOCK** PR merging
