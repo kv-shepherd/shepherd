@@ -1,6 +1,6 @@
 # ADR-0025 Design Notes: Bootstrap Secrets Auto-Generation (V1)
 
-> **Status**: Pending ADR-0025 acceptance
+> **Status**: Active (ADR-0025 accepted 2026-01-30)
 
 ## Summary
 

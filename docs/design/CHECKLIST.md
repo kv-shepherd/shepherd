@@ -43,6 +43,17 @@
 - [ ] All K8s calls have timeout set
 - [ ] Service layer has no transaction control code
 
+### Code-Level Architecture (Code Review Enforcement)
+
+> **Note**: These constraints are enforced during code review, not CI.
+
+| Constraint | ADR | Verification Method |
+|------------|-----|---------------------|
+| `bootstrap.go` < 100 lines | ADR-0022 | Manual review |
+| Provider interfaces use embedding | ADR-0024 | Verify `KubeVirtProvider` embeds capability interfaces |
+| Optional fields use `omitzero` | ADR-0028 | Verify generated types (when ADR accepted) |
+| Service layer uses narrow interfaces | ADR-0024 | No dependency on full `KubeVirtProvider` when subset suffices |
+
 ### Documentation Sync
 
 - [ ] `DEPENDENCIES.md` is only source for versions

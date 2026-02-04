@@ -265,6 +265,7 @@ Reference implementations are in the [examples/](./examples/) directory:
 | Document | Description |
 |----------|-------------|
 | [DEPENDENCIES.md](./DEPENDENCIES.md) | Version pinning (single source of truth) |
+| [FRONTEND.md](./FRONTEND.md) | Frontend engineering specification (i18n, API types) |
 | [CHECKLIST.md](./CHECKLIST.md) | Acceptance criteria |
 | [ci/README.md](./ci/README.md) | CI scripts index |
 | [examples/README.md](./examples/README.md) | Code examples index |
@@ -296,10 +297,26 @@ internal/
 ├── service/          # Business services
 └── usecase/          # Atomic transaction orchestration
 
-web/                  # Frontend (ADR-0027: Monorepo with web/)
+web/                  # Frontend (ADR-0020, ADR-0027: Monorepo with web/)
 ├── src/
 │   ├── components/   # React components
 │   ├── pages/        # Next.js pages
+│   ├── hooks/        # Custom React hooks
+│   ├── lib/          # Utility functions
+│   ├── i18n/         # Internationalization (react-i18next)
+│   │   ├── index.ts          # i18next initialization
+│   │   ├── config.ts         # Language configuration
+│   │   └── locales/          # Translation files
+│   │       ├── en/           # English (default)
+│   │       │   ├── common.json     # Shared translations
+│   │       │   ├── errors.json     # Error messages (from error codes)
+│   │       │   ├── approval.json   # Approval workflow
+│   │       │   └── vm.json         # VM management
+│   │       └── zh-CN/        # Chinese Simplified
+│   │           ├── common.json
+│   │           ├── errors.json
+│   │           ├── approval.json
+│   │           └── vm.json
 │   └── types/
 │       └── api.gen.ts  # Generated from OpenAPI (ADR-0021)
 ├── public/

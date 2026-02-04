@@ -177,7 +177,7 @@ The following decisions from earlier ADRs and drafts are **DEPRECATED** and shou
 
 **Built-in Role Seeding Logic**:
 
-> **Note**: Per [ADR-0003](./ADR-0003-ent-adoption.md), all database operations MUST use Ent ORM.
+> **Note**: Per [ADR-0003](./ADR-0003-database-orm.md), all database operations MUST use Ent ORM.
 
 ```go
 // On application startup (ADR-0003 compliant: uses Ent ORM)
@@ -1764,9 +1764,9 @@ The following features are identified for future versions but are **out of scope
 | 2026-01-27 | **Internal Consistency Fix**: Separated Warning Types and Error Types tables - moved "Dedicated CPU + Overcommit" from Warning to Error table per 2026-01-26 decision |
 | 2026-01-27 | **Schema Fix**: Added missing `requires_hugepages` boolean field to InstanceSize schema (was used in Hooks but not defined) |
 | 2026-01-27 | **Principle Evolution**: Renamed \"Dumb Backend\" to \"Hybrid Model\" across all occurrences (§Core Design Principles, §4, §Consequences, §Appendix) with evolution notes |
-| 2026-01-27 | **ADR Compliance**: Updated Built-in Role Seeding example to use Ent ORM per [ADR-0003](./ADR-0003-ent-adoption.md) (was direct SQL) |
+| 2026-01-27 | **ADR Compliance**: Updated Built-in Role Seeding example to use Ent ORM per [ADR-0003](./ADR-0003-database-orm.md) (was direct SQL) |
 | 2026-01-27 | **Cross-Reference**: Added [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) reference for Namespace JIT creation in Responsibility Boundary table |
-| 2026-01-27 | **ADR Compliance**: Added [ADR-0006](./ADR-0006-writes-via-river-queue.md) River Queue requirement for InstanceSize CRUD operations in Documents Requiring Updates |
+| 2026-01-27 | **ADR Compliance**: Added [ADR-0006](./ADR-0006-unified-async-model.md) River Queue requirement for InstanceSize CRUD operations in Documents Requiring Updates |
 | 2026-01-27 | **Security Enhancement**: Added Direct SQL UPDATE prevention strategy - database triggers, CI pipeline checks, ORM context markers |
 | 2026-01-27 | **Reliability Enhancement**: Added Schema Bundling Strategy - pre-bundle common versions using Go `embed`, fallback to runtime fetch |
 | 2026-01-26 | **API Enhancement**: Added Dry-Run Validation endpoint design (`?dryRun=All` query parameter) following Kubernetes API conventions |
@@ -1930,7 +1930,7 @@ The following features are identified for future versions but are **out of scope
 | Approval Flow | Basic approval fields | **ADD**: Overcommit override fields in approval request |
 | Approval Warnings | Not exists | **ADD**: Production overcommit warning, Dedicated CPU conflict warning |
 | **NEW**: InstanceSize Management | Not exists | **ADD**: Admin InstanceSize CRUD operations |
-| **NEW**: River Queue Integration | Not exists | **ADD**: Per [ADR-0006](./ADR-0006-writes-via-river-queue.md), all InstanceSize write operations (Create, Update, Delete) MUST be executed via River Queue jobs |
+| **NEW**: River Queue Integration | Not exists | **ADD**: Per [ADR-0006](./ADR-0006-unified-async-model.md), all InstanceSize write operations (Create, Update, Delete) MUST be executed via River Queue jobs |
 
 > **ADR-0006 Compliance Note**: InstanceSize CRUD operations involve configuration changes that require audit logging. All writes must go through River Queue to ensure:
 > - Audit log consistency

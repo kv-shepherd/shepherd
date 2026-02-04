@@ -132,3 +132,29 @@ type WorkflowExecutor interface {
 
 - [Temporal Go SDK](https://docs.temporal.io/dev-guide/go)
 - [State Machines vs Workflows](https://temporal.io/blog/state-machines-vs-workflows)
+
+---
+
+## Amendments by Subsequent Implementations
+
+> ⚠️ **Notice**: The following clarifications document implementation decisions made after ADR acceptance.
+> The original decisions above remain **unchanged for historical reference**.
+
+### V1 Implementation Note (2026-02-04)
+
+| Feature | ADR-0005 Scope | V1 Implementation |
+|---------|----------------|-------------------|
+| Approval Decisions | `PENDING → APPROVED/REJECTED` | ✅ Implemented as defined |
+| User Cancellation | `Cancel()` interface reserved, marked "not currently used" | ✅ Implemented as **out-of-band** operation |
+
+> **Clarification**: The `Cancel(ctx, ticketID, reason)` interface in ADR-0005 §Interface Extensibility was reserved for potential workflow-level cancellation. V1 implements **user self-cancellation** as an out-of-band operation that is semantically different:
+>
+> | Aspect | Workflow Cancellation (Reserved) | User Self-Cancellation (V1) |
+> |--------|----------------------------------|----------------------------|
+> | Trigger | Workflow engine decision | User action |
+> | Scope | Part of approval workflow | **Bypasses** approval workflow |
+> | State | Would be workflow state | `CANCELLED` in DomainEvent (ADR-0009) |
+>
+> **Design Reference**: See [04-governance.md §5.2](../design/phases/04-governance.md) for implementation details.
+>
+> **API Endpoint**: `POST /api/v1/approvals/{id}/cancel` - Users can cancel their own pending requests at any time.

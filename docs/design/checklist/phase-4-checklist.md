@@ -53,7 +53,7 @@
   - [ ] `ExportTemplate(name)` implemented
   - [ ] **Lifecycle Management** (Publish, Deprecate, Archive)
   - [ ] **Save Validation** (3-step: syntax, mock render, dry run)
-- [ ] **Initial Import** from templates directory
+- [ ] **Initial Import** from `deploy/seed/` to PostgreSQL (ADR-0018: templates stored in DB, not files)
 
 ---
 
@@ -115,6 +115,10 @@
 - [ ] **State Flow** implemented
 - [ ] **User View - My Requests** API
 - [ ] **Admin View - Approval Workbench** API
+  - [ ] Default sort by `days_pending` (oldest first within priority tier)
+  - [ ] `priority_tier` field in response (normal/warning/urgent)
+  - [ ] Color coding: 0-3d normal, 4-7d yellow, 7+d red (ADR-0015 §11)
+- [ ] **User Self-Cancellation** API (`POST /approvals/{id}/cancel`)
 - [ ] **AuditLogger** implemented
 - [ ] **Approval API** endpoints complete
 - [ ] Policy matching logic implemented
@@ -149,12 +153,41 @@
 
 ---
 
+## Batch Operations (ADR-0015 §19)
+
+> **Design**: [04-governance.md §5.6](../phases/04-governance.md#56-batch-operations-adr-0015-19)
+
+- [ ] **Batch Approval API** (`POST /api/v1/approvals/batch`)
+  - [ ] Request validation (all ticket_ids exist and are PENDING)
+  - [ ] Individual River jobs enqueued per ticket
+  - [ ] Aggregate response with per-item status
+- [ ] **Batch Power Operations API** (`POST /api/v1/vms/batch/power`)
+  - [ ] Same admin approval required for all VMs in batch
+  - [ ] Individual River jobs per VM
+  - [ ] Partial success handling (return per-item status)
+- [ ] **Frontend Batch Selection UX**
+  - [ ] Checkbox multi-select in list views
+  - [ ] Batch action toolbar (Approve, Reject, Start, Stop)
+  - [ ] Progress indicator during batch submission
+
+---
+
 ## Notification System (ADR-0015 §20)
+
+> **Design**: [04-governance.md §6.3](../phases/04-governance.md#63-notification-system-adr-0015-20)
+> **Example**: [examples/notification/sender.go](../examples/notification/sender.go)
 
 - [ ] `ent/schema/notification.go` - Internal inbox
 - [ ] **NotificationSender Interface** (decoupled)
-- [ ] **V1 Implementation**: InboxNotificationSender (database)
+- [ ] **V1 Implementation**: InboxSender (database-backed)
+- [ ] **API Endpoints**:
+  - [ ] `GET /api/v1/notifications` - List user's notifications (paginated)
+  - [ ] `GET /api/v1/notifications/unread-count` - Unread count for badge
+  - [ ] `PATCH /api/v1/notifications/{id}/read` - Mark as read
+  - [ ] `POST /api/v1/notifications/mark-all-read` - Mark all as read
 - [ ] Notification triggers:
-  - [ ] New approval request → all admins
-  - [ ] Request approved/rejected → creator + maintainers
-  - [ ] VM created/deleted → creator + maintainers
+  - [ ] `APPROVAL_PENDING` → all admins
+  - [ ] `APPROVAL_COMPLETED`/`APPROVAL_REJECTED` → requester
+  - [ ] `VM_STATUS_CHANGE` → VM owner
+- [ ] **Retention cleanup** (90 days, via River periodic job)
+

@@ -1,6 +1,6 @@
 # ADR-0027 Design Notes: Monorepo Repository Structure with web/
 
-> **Status**: Pending ADR-0027 acceptance
+> **Status**: Active (ADR-0027 accepted 2026-01-31)
 
 ## Summary
 

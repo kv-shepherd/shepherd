@@ -188,8 +188,21 @@ Initial List → resourceVersion → Watch Events → Update Cache
 field.String("kubevirt_version"),
 field.Strings("enabled_features"),
 field.Time("capabilities_detected_at"),
-field.JSON("hardware_capabilities", map[string]bool{}), // Admin-declared
+field.JSON("hardware_capabilities", map[string]bool{}), // Auto-detected during health check (ADR-0014)
 ```
+
+### Dry Run Fallback (ADR-0014)
+
+> **Compatibility Validation**: When static capability detection is insufficient,
+> use `DryRunAll` to validate resource creation without actual execution.
+>
+> | Strategy | Use Case | Implementation |
+> |----------|----------|----------------|
+> | **Static Detection** | Known feature gates (e.g., GPU, Hugepages) | Query `ServerVersion()` + `featureGates` |
+> | **Dry Run Fallback** | Unknown/edge-case capabilities | `client.Create(ctx, vm, client.DryRunAll)` |
+>
+> **Note**: Dry run requires `controller-runtime v0.22.4+` with `DryRunAll` support.
+> See ADR-0014 §Runtime Validation for implementation details.
 
 ### Template Matching
 
@@ -317,7 +330,8 @@ func (p *MockProvider) Reset() { ... }
 ## Related Documentation
 
 - [examples/domain/vm.go](../examples/domain/vm.go) - Domain models
-- [examples/provider/interface.go](../examples/provider/interface.go) - Interfaces
+- [examples/provider/interface.go](../examples/provider/interface.go) - Interfaces (ADR-0024: capability interface composition)
 - [ADR-0001](../../adr/ADR-0001-kubevirt-client.md) - KubeVirt Client
 - [ADR-0011](../../adr/ADR-0011-ssa-apply-strategy.md) - SSA Apply
 - [ADR-0014](../../adr/ADR-0014-capability-detection.md) - Capability Detection
+- [ADR-0024](../../adr/ADR-0024-provider-interface-capability-composition.md) - Provider Capability Interface Composition

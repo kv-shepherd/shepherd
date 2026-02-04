@@ -20,13 +20,17 @@
 - [ ] `golangci-lint` configured (`.golangci.yml`)
 - [ ] Unit test framework configured
 - [ ] Code coverage reporting
-- [ ] **API Contract-First CI (ADR-0021)**:
-  - [ ] Move API contract workflow to `.github/workflows/` before coding starts
+- [ ] **API Contract-First CI (ADR-0021, ADR-0029)**:
+  - [ ] Move API contract workflow to `.github/workflows/api-contract.yaml`
   - [ ] Move `docs/design/ci/makefile/api.mk` to `build/api.mk`
   - [ ] Include `build/api.mk` from root `Makefile`
   - [ ] Add CI step: `make api-check`
   - [ ] If 3.1-only features are used: add CI step `REQUIRE_OPENAPI_COMPAT=1 make api-compat`
   - [ ] Implement `make api-compat-generate` before enabling compat enforcement
+- [ ] **OpenAPI Toolchain (ADR-0029)**: See [CI README §API Contract-First](../ci/README.md#api-contract-first-enforcement-adr-0021-adr-0029) for details
+  - [ ] `api/.vacuum.yaml` created (vacuum replaces spectral)
+  - [ ] CI uses version-pinned GitHub Actions (commit SHA, not tags)
+  - [ ] `internal/api/middleware/openapi_validator.go` uses `libopenapi-validator` with StrictMode
 - [ ] **sqlc Usage Scope Check (ADR-0012)**:
   - [ ] `scripts/check-sqlc-usage.sh` created
   - [ ] CI blocks: sqlc only allowed in `internal/repository/sqlc/` and `internal/usecase/`
@@ -69,6 +73,20 @@
     - [ ] River Worker heartbeat (Phase 4 injection)
     - [ ] ResourceWatcher heartbeat (Phase 2 injection)
     - [ ] Heartbeat timeout: Worker 60s, Watcher 120s
+
+---
+
+## Modular DI Pattern (ADR-0022)
+
+> **Purpose**: Ensure `bootstrap.go` follows modular provider pattern for maintainability.
+
+- [ ] `internal/app/modules/` directory exists
+- [ ] `internal/app/modules/module.go` defines `Module` interface
+- [ ] `internal/app/modules/infrastructure.go` provides shared dependencies
+- [ ] Domain modules created (vm.go, approval.go, governance.go, admin.go)
+- [ ] **`bootstrap.go` does not exceed 100 lines** (Code Review enforcement)
+- [ ] Each module is independently testable
+- [ ] No Wire/Dig or reflection-based DI (CI enforcement per ADR-0013)
 
 ---
 

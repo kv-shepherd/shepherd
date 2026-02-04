@@ -32,10 +32,14 @@ examples/
 ├── domain/
 │   ├── vm.go                  # VM domain model (Anti-Corruption Layer)
 │   └── event.go               # Domain event pattern (ADR-0009)
+├── notification/
+│   └── sender.go              # Notification system (ADR-0015 §20)
 ├── provider/
-│   └── interface.go           # Provider interface definitions
+│   ├── interface.go           # Provider interface definitions
+│   └── storage_detector.go    # StorageClass detection (ADR-0015 §8)
 └── usecase/
-    └── create_vm.go           # ADR-0012 atomic transaction example
+    ├── create_vm.go           # ADR-0012 atomic transaction example
+    └── batch_approval.go      # Batch operations (ADR-0015 §19)
 ```
 
 ---
@@ -50,8 +54,11 @@ examples/
 | [handlers/health.go](./handlers/health.go) | Health check endpoints | - |
 | [domain/vm.go](./domain/vm.go) | VM domain model (Anti-Corruption Layer) | ADR-0015 §3-4 |
 | [domain/event.go](./domain/event.go) | Domain event types (Power Ops, VNC, Batch) | ADR-0009, ADR-0015 §6 |
+| [notification/sender.go](./notification/sender.go) | Notification system with decoupled interface | ADR-0015 §20 |
 | [provider/interface.go](./provider/interface.go) | KubeVirt provider interfaces | ADR-0004 |
+| [provider/storage_detector.go](./provider/storage_detector.go) | StorageClass auto-detection during health check | ADR-0015 §8 |
 | [usecase/create_vm.go](./usecase/create_vm.go) | Atomic transaction with pgx + sqlc + River | ADR-0012, ADR-0015 §3 |
+| [usecase/batch_approval.go](./usecase/batch_approval.go) | Batch approval via River Queue (not atomic) | ADR-0015 §19 |
 
 ---
 

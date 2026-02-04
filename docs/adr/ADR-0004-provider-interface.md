@@ -141,5 +141,21 @@ type KubeVirtProvider interface {
 
 ## References
 
-- [01-contracts.md](../projects/core-go/phases/01-contracts.md) - Interface definitions
-- [02-providers.md](../projects/core-go/phases/02-providers.md) - Provider implementation
+- [01-contracts.md](../design/phases/01-contracts.md) - Interface definitions
+- [02-providers.md](../design/phases/02-providers.md) - Provider implementation
+
+---
+
+## Amendments by Subsequent ADRs
+
+> ⚠️ **Notice**: The following sections of this ADR have been amended by subsequent ADRs.
+> The original decisions above remain **unchanged for historical reference**.
+> When implementing, please refer to the amending ADRs for current design.
+
+### ADR-0024: Provider Interface Capability Composition (2026-01-29)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §Decision: `KubeVirtProvider` interface design | **REFINED** | `KubeVirtProvider` decomposed into capability interfaces (`SnapshotProvider`, `CloneProvider`, `MigrationProvider`, etc.) via embedding for improved testability | [ADR-0024](./ADR-0024-provider-interface-capability-composition.md) |
+
+> **Implementation Guidance**: The base `InfrastructureProvider` interface remains valid. `KubeVirtProvider` now embeds multiple capability interfaces for granular testing. Service layer can depend on narrow interfaces (e.g., `SnapshotProvider` only) instead of the full `KubeVirtProvider`.

@@ -2282,5 +2282,12 @@ func ValidateIDToken(token *oidc.IDToken, expectedIssuer, expectedAudience strin
 | Original Section | Status | Amendment Details | See Also |
 |------------------|--------|-------------------|----------|
 | §22.6 IdP Configuration Schema (idp_config) | **AMENDED** | Canonical table name is `auth_providers`; `idp_configs` is treated as an alias in docs | [ADR-0026](./ADR-0026-idp-config-naming.md) |
+| §22.6 API Endpoints (`/api/v1/admin/idp/...`) | **AMENDED** | Canonical API path is `/api/v1/admin/auth-providers/...`; legacy path references in this ADR are superseded | [ADR-0026](./ADR-0026-idp-config-naming.md) |
+
+> **Implementation Guidance**:
+> - **Table Name**: Use `auth_providers` as the canonical table name
+> - **API Paths**: Use `/api/v1/admin/auth-providers/{id}/...` instead of `/api/v1/admin/idp/{id}/...`
+> - **Audit Actions**: Use `auth_provider.*` instead of `idp.*` for audit action naming
 
 ---
+

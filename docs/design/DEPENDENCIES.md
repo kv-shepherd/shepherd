@@ -193,16 +193,74 @@ func (c *DatabaseClients) Close() {
 
 ---
 
-## API Contract-First Tooling (ADR-0021)
+## API Contract-First Tooling (ADR-0021, ADR-0028, ADR-0029)
 
-> **Note**: Pin versions here; other docs should not hardcode tool versions.
+> **Note**: Toolchain governance defined by ADR-0029; optional field handling by ADR-0028. Pin versions here.
+>
+> **Go-Native Backend Tooling**: Per ADR-0029, backend validation/linting uses Go-native tools.
+> TypeScript generation remains Node.js-based per ADR-0021.
+>
+> ⚠️ **ADR Status Notice**:
+> - **ADR-0021**: Accepted ✅
+> - **ADR-0028**: Proposed ⏳ (omitzero field strategy)
+> - **ADR-0029**: Proposed ⏳ (toolchain governance)
+>
+> Specifications below that reference ADR-0028/ADR-0029 are **provisional** and may change upon ADR acceptance.
+> If these ADRs are rejected or modified, this document must be updated accordingly.
+
+### OpenAPI Specification Versions
+
+| Spec | Version | Release Date | Description |
+|------|---------|--------------|-------------|
+| **OpenAPI Specification** | `3.1.1` | 2024-10 | Canonical spec version for `api/openapi.yaml` |
+| **OpenAPI Overlay Spec** | `1.1.0` | 2026-01-14 | Overlay version for compat generation |
+
+### Go-Native Backend Tooling (ADR-0029)
 
 | Package | Version | Release Date | Description |
 |---------|---------|--------------|-------------|
-| **OpenAPI Specification** | `3.1.1` | 2024-10 | Canonical spec version for `api/openapi.yaml` |
-| **OpenAPI Overlay Spec** | `1.1.0` | 2026-01-14 | Overlay version for compat generation |
-| `github.com/getkin/kin-openapi` | `>= v0.131.0` | 2025-03 | OpenAPI request/response validation (security fix) |
-| `oas-patch` | `0.5.6` | 2025-09-22 | CLI for applying OpenAPI Overlay to generate compat spec |
+| `vacuum` | `>= v0.14.0` | 2025-12 | Go-native OpenAPI linter (replaces spectral), 10x faster |
+| `github.com/pb33f/libopenapi` | `>= v0.31.0` | 2025-11 | Lossless OpenAPI parsing, Overlay support |
+| `github.com/pb33f/libopenapi-validator` | `>= v0.6.0` | 2025-10 | **StrictMode** request/response validation |
+| `github.com/getkin/kin-openapi` | `>= v0.131.0` | 2025-03 | OpenAPI parsing (oapi-codegen transitive dependency) |
+
+> **Removed Dependencies** (ADR-0029):
+> - `spectral` → replaced by `vacuum` (Go-native, Spectral-rule compatible)
+> - `oas-patch` → replaced by `libopenapi` overlay support (Go-native)
+> - `kin-openapi` validation → replaced by `libopenapi-validator` (StrictMode)
+>
+> Note: `kin-openapi` remains as a transitive dependency of `oapi-codegen`.
+
+### Code Generation (ADR-0021, ADR-0028)
+
+| Package | Version | Release Date | Description |
+|---------|---------|--------------|-------------|
+| `github.com/oapi-codegen/oapi-codegen/v2` | `>= v2.5.0` | 2026-01 | Go server/client code generation |
+| `openapi-typescript` | `>= v7.0.0` | 2025-12 | TypeScript type generation (Node.js) |
+
+#### oapi-codegen Configuration (ADR-0028 omitzero)
+
+```yaml
+# api/oapi-codegen.yaml
+package: api
+generate:
+  models: true
+  gin-server: true
+output: internal/api/api.gen.go
+output-options:
+  # Go 1.24+ omitzero support (ADR-0028)
+  prefer-skip-optional-pointer-with-omitzero: true
+```
+
+> **ADR-0028 Field Generation Rules**:
+>
+> | OpenAPI Specification | Generated Go Type | JSON Tag |
+> |-----------------------|-------------------|----------|
+> | `type: string` (required) | `string` | `json:"field"` |
+> | `type: string` (optional, no nullable) | `string` | `json:"field,omitzero"` |
+> | `type: string` + `nullable: true` | `*string` | `json:"field,omitempty"` |
+>
+> Benefits: Eliminates "Pointer Hell", reduces nil checks, improves code readability.
 
 > **ADR-0011 SSA Apply Strategy**:
 > 
@@ -427,6 +485,38 @@ replace (
 > | **Local Development** | testcontainers-go | Auto-starts Docker PostgreSQL container |
 > | **CI (GitHub Actions)** | Service Container | postgres:18 container |
 
+### Frontend Testing Dependencies (ADR-0020)
+
+> **Implementation Guide**: [ADR-0020 Testing Toolchain](./notes/ADR-0020-frontend-testing-toolchain.md)
+
+| Package | Version | Description |
+|---------|---------|-------------|
+| `vitest` | `3.x` | High-performance ESM-native test runner |
+| `@testing-library/react` | `16.x` | User-centric React component testing |
+| `@testing-library/jest-dom` | `6.x` | Jest DOM matchers for Vitest |
+| `@testing-library/user-event` | `14.x` | User interaction simulation |
+| `jsdom` | `26.x` | DOM environment simulation (stable, comprehensive) |
+| `@vitest/coverage-v8` | `3.x` | Native V8 coverage provider |
+| `playwright` | `1.5x` | Cross-browser E2E testing |
+| `msw` | `2.x` | Mock Service Worker for API mocking |
+
+> **Environment Selection**: `jsdom` chosen over `happy-dom` for:
+> - Superior API coverage and browser fidelity
+> - Stability with `getByRole` queries (React Testing Library recommended)
+> - Enterprise-grade component testing requirements
+> - Alignment with project priority: `Stability > Consistency > Performance`
+
+> **Coverage Thresholds (CI Enforcement)**:
+>
+> | Metric | Threshold |
+> |--------|-----------|
+> | Lines | ≥ 80% |
+> | Functions | ≥ 80% |
+> | Statements | ≥ 80% |
+> | Branches | ≥ 75% |
+>
+> ⚠️ Coverage below thresholds will **BLOCK** PR merging.
+
 ---
 
 ## Middleware Versions
@@ -573,6 +663,10 @@ require (
     github.com/panjf2000/ants/v2 v2.11.4
     golang.org/x/sync v0.12.0
     
+    // OpenAPI Tooling (ADR-0029 Go-native)
+    github.com/pb33f/libopenapi v0.31.0
+    github.com/pb33f/libopenapi-validator v0.6.0
+    
     // Testing (unified PostgreSQL, removed SQLite)
     github.com/stretchr/testify v1.10.0
     github.com/testcontainers/testcontainers-go v0.40.0
@@ -595,7 +689,8 @@ replace (
 | `golangci-lint` | `v1.63.0` | Static code analysis |
 | `goimports` | Latest | Import formatting |
 | `mockgen` | `v0.5.2` | Mock generation (uber-go/mock) |
-| `swag` | `v2.0.1` | Swagger documentation generation |
+| `vacuum` | `>= v0.14.0` | OpenAPI linting (Go-native, ADR-0029) |
+| `oapi-codegen` | `>= v2.5.0` | Go code generation from OpenAPI (ADR-0021) |
 
 ---
 
@@ -648,3 +743,9 @@ go list -m k8s.io/client-go k8s.io/apimachinery k8s.io/api
 - [ADR-0011: SSA Apply Strategy](../../adr/ADR-0011-ssa-apply-strategy.md)
 - [ADR-0012: Hybrid Transaction](../../adr/ADR-0012-hybrid-transaction.md)
 - [ADR-0013: Manual DI](../../adr/ADR-0013-manual-di.md)
+- [ADR-0020: Frontend Technology Stack](../../adr/ADR-0020-frontend-technology-stack.md)
+- [ADR-0020: Testing Toolchain Implementation](./notes/ADR-0020-frontend-testing-toolchain.md)
+- [ADR-0021: API Contract-First](../../adr/ADR-0021-api-contract-first.md)
+- [ADR-0028: oapi-codegen Optional Field Strategy](../../adr/ADR-0028-oapi-codegen-optional-field-strategy.md)
+- [ADR-0029: OpenAPI Toolchain Governance](../../adr/ADR-0029-openapi-toolchain-governance.md)
+

@@ -1,6 +1,6 @@
 # ADR-0026 Design Notes: Auth Provider Naming Unification
 
-> **Status**: Pending ADR-0026 acceptance
+> **Status**: Active (ADR-0026 accepted 2026-01-30)
 
 ## Summary
 

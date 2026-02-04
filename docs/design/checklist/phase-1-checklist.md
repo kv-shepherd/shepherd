@@ -97,10 +97,12 @@
 
 ---
 
-## API Contract-First Artifacts (ADR-0021)
+## API Contract-First Artifacts (ADR-0021, ADR-0029)
+
+> **Details**: See [CI README §API Contract-First](../ci/README.md#api-contract-first-enforcement-adr-0021-adr-0029) for full implementation guidance.
 
 - [ ] `api/openapi.yaml` exists and is OpenAPI 3.1 canonical spec
-- [ ] `api/.spectral.yaml` exists and `make api-lint` passes
+- [ ] `api/.vacuum.yaml` exists and `make api-lint` passes (ADR-0029: vacuum replaces spectral)
 - [ ] `api/oapi-codegen.yaml` exists and targets `internal/api/generated/`
 - [ ] `make api-generate` produces:
   - [ ] `internal/api/generated/` Go server types
@@ -108,11 +110,46 @@
 - [ ] `make api-check` passes with no uncommitted generated changes
 - [ ] If 3.1-only features are used:
   - [ ] `api/openapi.compat.yaml` is generated (3.0-compatible)
-  - [ ] `make api-compat-generate` exists and is used to produce the compat spec
   - [ ] CI runs `make api-compat-generate` before `make api-compat`
-  - [ ] Go codegen/validation uses `api/openapi.compat.yaml`
 - [ ] CI blocks merges unless `make api-check` passes
-- [ ] If 3.1-only features are used, CI blocks merges unless `REQUIRE_OPENAPI_COMPAT=1 make api-compat` passes
+- [ ] ADR-0029 Compliance: libopenapi-validator with StrictMode, version-pinned CI actions
+
+---
+
+## Optional Field Strategy (ADR-0028)
+
+> **Purpose**: Ensure generated Go types use `omitzero` tag to eliminate pointer hell.    
+> **Note**: ADR-0028 is Proposed; checklist items are provisional until acceptance.
+
+- [ ] `go.mod` requires Go 1.25+ (enables `omitzero` support)
+- [ ] `api/oapi-codegen.yaml` contains:
+  - [ ] `output-options.prefer-skip-optional-pointer-with-omitzero: true`
+- [ ] **Generated types verification** (Code Review enforcement):
+  - [ ] Optional-only fields use value types with `json:",omitzero"` tag
+  - [ ] `nullable: true` fields use pointer types with `json:",omitempty"` tag
+  - [ ] No unnecessary `*string`, `*int` for non-nullable optional fields
+- [ ] Business logic does not contain excessive `if ptr != nil` checks for optional fields
+
+---
+
+## Frontend Testing Configuration (ADR-0020)
+
+> **Implementation Guide**: [ADR-0020 Testing Toolchain](../notes/ADR-0020-frontend-testing-toolchain.md)
+
+- [ ] `web/vitest.config.ts` exists with coverage thresholds configured:
+  - [ ] `coverage.thresholds.lines: 80`
+  - [ ] `coverage.thresholds.functions: 80`
+  - [ ] `coverage.thresholds.branches: 75`
+  - [ ] `coverage.thresholds.statements: 80`
+- [ ] `web/tests/setup.ts` exists with MSW initialization
+- [ ] `web/tests/mocks/handlers.ts` exists for API mocking
+- [ ] `web/playwright.config.ts` exists for E2E testing
+- [ ] `.github/workflows/frontend-tests.yml` exists with:
+  - [ ] Unit test job with coverage reporting
+  - [ ] E2E test job with Playwright
+  - [ ] Coverage threshold enforcement (block PR on failure)
+- [ ] Package.json contains required test scripts:
+  - [ ] `test`, `test:run`, `test:coverage`, `test:e2e`
 
 ---
 
@@ -132,8 +169,8 @@
 - [ ] `ent/schema/role_binding.go` - User-role assignments with scope
 - [ ] `ent/schema/resource_role_binding.go` - Resource-level member management (owner/admin/member/viewer)
 - [ ] Built-in roles seeded (per master-flow.md Stage 2.A):
-  - [ ] **Bootstrap** - Initial setup only (`*:*`), ⚠️ MUST be disabled after initialization
-  - [ ] **PlatformAdmin** - Super admin (explicit permissions, NO wildcards)
+  - [ ] **Bootstrap** - Initial setup only (`platform:admin`), ⚠️ MUST be disabled after initialization
+  - [ ] **PlatformAdmin** - Super admin (`platform:admin`, explicit permission per ADR-0019)
   - [ ] **SystemAdmin** - Resource management (`system:*`, `service:*`, `vm:*`)
   - [ ] **Approver** - Can approve requests (`approval:approve`, `approval:view`)
   - [ ] **Operator** - Power operations (`vm:operate`, `vm:read`)

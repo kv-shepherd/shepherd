@@ -30,7 +30,7 @@
 - [ ] ❌ Service layer must not directly manage transactions
 - [ ] Service receives `*ent.Client` parameter (in-transaction or not)
 - [ ] ❌ K8s API calls forbidden inside transactions
-- [ ] ✅ Uses two-phase pattern
+- [ ] ✅ Uses DB/K8s two-phase execution pattern (ADR-0012, not ADR-0010 deprecated approach)
 
 ---
 

@@ -68,6 +68,24 @@
 
 ---
 
+## Provider Interface Capability Composition (ADR-0024)
+
+> **Purpose**: Ensure provider interfaces follow capability interface segregation for testability.
+> **Reference**: [examples/provider/interface.go](../examples/provider/interface.go)
+
+- [ ] **Capability interfaces defined** (`internal/provider/interface.go`):
+  - [ ] `InfrastructureProvider` - Base VM lifecycle
+  - [ ] `SnapshotProvider` - Snapshot operations
+  - [ ] `CloneProvider` - Clone operations
+  - [ ] `MigrationProvider` - Migration operations
+  - [ ] `InstanceTypeProvider` - Instance type queries
+  - [ ] `ConsoleProvider` - Console access
+- [ ] **`KubeVirtProvider` embeds all capability interfaces** (Code Review enforcement)
+- [ ] **Service layer depends on narrow interfaces** (e.g., `SnapshotProvider` only when only snapshot is needed)
+- [ ] ❌ **No monolithic interface dependencies** - avoid depending on full `KubeVirtProvider` when a narrow interface suffices
+
+---
+
 ## MockProvider
 
 - [ ] Interface identical to `KubeVirtProvider`

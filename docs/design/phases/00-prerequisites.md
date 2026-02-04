@@ -384,18 +384,18 @@ Application performs these steps on startup (idempotent, `ON CONFLICT DO NOTHING
 
 ### Built-in Roles (master-flow Stage 2.A)
 
-> **ADR-0019**: Wildcard permissions (`*:*`, `*:read`) are forbidden except for Bootstrap during initial setup.
+> **ADR-0019**: Wildcard permissions (`*:*`, `*:read`) are **PROHIBITED** for all roles. Use explicit `platform:admin` permission for super-admin access.
 
 | Role | Permissions | Notes |
 |------|-------------|-------|
-| **Bootstrap** | `*:*` (temporary) | ⚠️ **MUST be disabled after first admin setup** |
-| **PlatformAdmin** | `platform:admin`, `cluster:*`, `user:*`, `role:*`, `template:*`, `instance_size:*`, `audit:read`, `approval:*` | Super admin - explicit permissions, no wildcards |
-| **SystemAdmin** | `system:*`, `service:*`, `vm:*`, `approval:view` | Can manage all resources but not platform config |
+| **Bootstrap** | `platform:admin` | ⚠️ **MUST be disabled after first admin setup** (explicit super-admin, not wildcard) |
+| **PlatformAdmin** | `platform:admin` | Super admin - single explicit permission (compile-time constant per ADR-0019) |
+| **SystemAdmin** | `system:read`, `system:write`, `system:delete`, `service:read`, `service:create`, `service:delete`, `vm:read`, `vm:create`, `vm:operate`, `vm:delete`, `vnc:access`, `rbac:manage` | Can manage all resources but not platform config (explicit per ADR-0019) |
 | **Approver** | `approval:approve`, `approval:view`, `vm:read`, `service:read`, `system:read` | Can approve requests, read resources |
 | **Operator** | `vm:operate`, `vm:read`, `service:read`, `system:read` | Can start/stop/restart VMs |
 | **Viewer** | `system:read`, `service:read`, `vm:read`, `template:read`, `instance_size:read` | Read-only access (explicit, no `*:read`) |
 
-> **Note**: Bootstrap role is seeded but immediately assigned to the first admin account. After initial setup, the Bootstrap role MUST be disabled (set `enabled=false`).
+> **Note**: The `platform:admin` permission is an explicit, compile-time constant that grants full access (not a runtime wildcard pattern). The Bootstrap role MUST be disabled after initial setup.
 
 ### Required Seeds
 

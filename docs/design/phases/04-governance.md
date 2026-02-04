@@ -370,6 +370,15 @@ func GetEffectiveSpec(ticket *ApprovalTicket) (*VMSpec, error) {
 
 ## 5. Template Engine (ADR-0007, ADR-0011, ADR-0018)
 
+> **Storage Decision (ADR-0007)**: All templates and system templates are stored in **PostgreSQL database**.
+> **No Git dependency** is required for template management. The Git library approach (original ADR-0002) has been **superseded** and fully removed.
+>
+> | Aspect | Decision | ADR Reference |
+> |--------|----------|---------------|
+> | **Storage** | PostgreSQL only | ADR-0007 |
+> | **Version control** | Database-level versioning (draft → active → deprecated → archived) | ADR-0007 |
+> | **Git library** | ❌ **Not used** - original ADR-0002 superseded | ADR-0002 → ADR-0007 |
+
 > **Simplified per ADR-0018**: Template no longer contains Go Template variables or YAML template files. Templates define only OS image source and cloud-init configuration.
 
 ### Template Scope (After ADR-0018)
@@ -859,6 +868,21 @@ Content-Type: application/json
 ### V1 Design: Platform Inbox
 
 V1 implements a minimal internal notification system. External push channels (email, webhook) are deferred to V2+.
+
+> **Write Strategy Clarification (ADR-0006 Compliance)**:
+>
+> Notification writes are **synchronous** (within the same database transaction as business operations), NOT via River Queue.
+>
+> | Aspect | Notification | VM/Approval Operations |
+> |--------|--------------|------------------------|
+> | **Write mode** | Synchronous (same TX) | Async (River Queue) |
+> | **Why?** | Pure DB write, no external API | Requires K8s API calls |
+> | **ADR-0006 scope** | ❌ Not in scope | ✅ In scope |
+> | **Failure handling** | Rolls back with business TX | River retry mechanism |
+>
+> **Rationale**: ADR-0006's "all writes via River Queue" applies to operations requiring external system calls (K8s API). Notification inserts are local PostgreSQL writes with predictable latency, benefiting from transactional atomicity with business data.
+>
+> **V2+ External Channels**: When email/webhook/Slack adapters are added, those external pushes will use River Queue for retry resilience. See [RFC-0018](../../rfc/RFC-0018-external-notification.md) for planned architecture.
 
 ### Data Model
 

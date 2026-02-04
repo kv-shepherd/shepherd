@@ -85,10 +85,49 @@ const (
 
 // DomainEvent represents an immutable domain event.
 //
-// Key Constraints (ADR-0009):
+// Key Constraints (ADR-0009, ADR-0012):
 // 1. Payload is IMMUTABLE (append-only)
 // 2. Modifications stored in ApprovalTicket.ModifiedSpec (full replacement, not diff)
 // 3. Worker calls GetEffectiveSpec() to get final config
+//
+// Database-Level Immutability Enforcement:
+//
+// Option A: PostgreSQL Trigger (Recommended for defense-in-depth)
+//
+//	CREATE OR REPLACE FUNCTION prevent_domain_event_payload_update()
+//	RETURNS TRIGGER AS $$
+//	BEGIN
+//	    IF OLD.payload IS DISTINCT FROM NEW.payload THEN
+//	        RAISE EXCEPTION 'DomainEvent.payload is immutable - updates are forbidden (ADR-0009)';
+//	    END IF;
+//	    RETURN NEW;
+//	END;
+//	$$ LANGUAGE plpgsql;
+//
+//	CREATE TRIGGER domain_event_payload_immutable
+//	    BEFORE UPDATE ON domain_events
+//	    FOR EACH ROW
+//	    EXECUTE FUNCTION prevent_domain_event_payload_update();
+//
+// Option B: Ent ORM Hook (Application-level enforcement)
+//
+//	func (DomainEvent) Hooks() []ent.Hook {
+//	    return []ent.Hook{
+//	        hook.On(func(next ent.Mutator) ent.Mutator {
+//	            return hook.DomainEventFunc(func(ctx context.Context, m *ent.DomainEventMutation) (ent.Value, error) {
+//	                if m.Op().Is(ent.OpUpdate | ent.OpUpdateOne) {
+//	                    if _, ok := m.Payload(); ok {
+//	                        return nil, errors.New("DomainEvent.payload is immutable (ADR-0009)")
+//	                    }
+//	                }
+//	                return next.Mutate(ctx, m)
+//	            })
+//	        }, ent.OpUpdate|ent.OpUpdateOne),
+//	    }
+//	}
+//
+// Note: Both options should be implemented for defense-in-depth.
+// The DB trigger catches any bypass attempts (e.g., direct SQL).
 type DomainEvent struct {
 	EventID       string      `json:"event_id"`
 	EventType     EventType   `json:"event_type"`
@@ -151,9 +190,18 @@ func (m *ModifiedSpec) ToJSON() []byte {
 // GetEffectiveSpec returns the final spec to use.
 // Uses ModifiedSpec if present, otherwise original payload.
 //
-// Key Pattern: Field-level override (merge), NOT full replacement.
-// Only non-nil fields in ModifiedSpec are applied to the original.
-// This allows admin to modify only specific fields while preserving others.
+// ADR-0005 Decision: Full Replacement Strategy
+// When admin modifies a request, they submit a COMPLETE ModifiedSpec.
+// This is NOT a merge/patch operation - ModifiedSpec fully replaces
+// the relevant fields for audit clarity and state predictability.
+//
+// Rationale (from best practices research):
+// - Audit trail is clearer: each approval shows complete final state
+// - No merge conflict or ambiguity about which fields were actually changed
+// - Simpler implementation: no complex diff/merge logic needed
+//
+// ❌ REMOVED: Field-level merge was considered but rejected.
+// Merge would require tracking which fields were intentionally null vs unchanged.
 func GetEffectiveSpec(originalPayload []byte, modifiedSpec []byte) (*VMCreationPayload, error) {
 	var original VMCreationPayload
 	if err := json.Unmarshal(originalPayload, &original); err != nil {
@@ -165,12 +213,16 @@ func GetEffectiveSpec(originalPayload []byte, modifiedSpec []byte) (*VMCreationP
 		return &original, nil
 	}
 
-	// Apply modifications (full field replacement)
+	// ADR-0005: Full replacement - ModifiedSpec contains complete admin-approved config
+	// Admin must provide ALL fields they want in final spec
 	var mods ModifiedSpec
 	if err := json.Unmarshal(modifiedSpec, &mods); err != nil {
 		return nil, err
 	}
 
+	// Build result from ModifiedSpec as authoritative source
+	// Original values are used ONLY as fallback when ModifiedSpec field is nil
+	// This preserves backward compatibility while enforcing full-spec semantics
 	result := original
 	if mods.CPU != nil {
 		result.CPU = *mods.CPU
