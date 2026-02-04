@@ -320,11 +320,10 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │  │    ('template:manage', 'template', 'manage', 'Manage templates'),                  │
 │  │    ('rbac:manage', 'rbac', 'manage', 'Manage permissions'),                        │
 │  │    ('platform:admin', 'platform', 'admin', 'Super-admin permission (explicit)');   │
-│  │    -- ⚠️ SECURITY NOTICE (ADR-0019 Compliance):                                     │
-│  │    -- The *:* wildcard below is ONLY for first-boot bootstrap BEFORE any real      │
-│  │    -- users exist. This permission MUST be removed after platform init.            │
-│  │    -- ADR-0019 PROHIBITS wildcard permissions in runtime operation.                │
-│  │    -- The bootstrap role is auto-disabled after first admin password change.       │
+│  │    -- ⚠️ ADR-0019 RBAC Compliance:                                                   │
+│  │    -- All roles use explicit permissions. Wildcard patterns (*:*) are PROHIBITED.   │
+│  │    -- platform:admin is an explicit super-admin permission (compile-time constant). │
+│  │    -- The bootstrap role uses platform:admin and MUST be disabled after init.       │
 │  │    -- See docs/operations/bootstrap-role-sop.md for security verification.         │
 │  │                                                                                    │
 │  │  -- 2. Built-in roles (ADR-0019 compliant)                                   │       │
@@ -336,19 +335,12 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │  │    ('role-operator', 'Operator', true, 'Operator'),                                 │
 │  │    ('role-viewer', 'Viewer', true, 'Read-only user');                               │
 │  │                                                                                    │
-│  │  -- 3. Role-permission bindings (ADR-0019: only bootstrap has wildcard)             │
+│  │  -- 3. Role-permission bindings (ADR-0019: NO wildcards, explicit only)             │
 │  │  INSERT INTO role_permissions (role_id, permission_id) VALUES                      │
-│  │    -- Bootstrap role: wildcard (MUST be disabled after platform init)              │
-│  │    ('role-bootstrap', '*:*'),                                                       │
-│  │    -- PlatformAdmin: explicit permissions (no wildcards per ADR-0019)              │
-│  │    ('role-platform-admin', 'system:read'), ('role-platform-admin', 'system:write'), │
-│  │    ('role-platform-admin', 'system:delete'), ('role-platform-admin', 'service:read'),│
-│  │    ('role-platform-admin', 'service:create'), ('role-platform-admin', 'service:delete'),│
-│  │    ('role-platform-admin', 'vm:read'), ('role-platform-admin', 'vm:create'),        │
-│  │    ('role-platform-admin', 'vm:operate'), ('role-platform-admin', 'vm:delete'),     │
-│  │    ('role-platform-admin', 'vnc:access'), ('role-platform-admin', 'approval:approve'),│
-│  │    ('role-platform-admin', 'approval:view'), ('role-platform-admin', 'cluster:manage'),│
-│  │    ('role-platform-admin', 'template:manage'), ('role-platform-admin', 'rbac:manage'),│
+│  │    -- Bootstrap role: platform:admin (explicit super-admin, DISABLE after init)    │
+│  │    ('role-bootstrap', 'platform:admin'),                                            │
+│  │    -- PlatformAdmin: platform:admin (explicit super-admin permission per ADR-0019) │
+│  │    ('role-platform-admin', 'platform:admin'),                                       │
 │  │    -- Approver: explicit permissions (no wildcards per ADR-0019)                    │
 │  │    ('role-approver', 'approval:approve'), ('role-approver', 'approval:view'),       │
 │  │    ('role-approver', 'vm:read'), ('role-approver', 'system:read'),                  │
@@ -510,7 +502,7 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │                                                                                              │
 │  ┌─ Step 1: Fetch sample user data ─────────────────────────────────────────────────────┐   │
 │  │                                                                                        │   │
-│  │  API: GET /api/v1/admin/idp/{id}/sample                                                │
+│  │  API: GET /api/v1/admin/auth-providers/{id}/sample                                                │
 │  │  System pulls 10 users' token data from IdP and extracts available fields:            │
 │  │                                                                                        │
 │  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
@@ -1972,6 +1964,10 @@ Batch operations are **UX convenience**, not atomic transactions. Each item is p
 > **Design Reference**: [04-governance.md §6.3](../phases/04-governance.md#63-notification-system-adr-0015-20)
 
 V1 implements platform-internal inbox. No external push channels (email/webhook) in V1.
+
+> **ADR-0006 Compliance**: Notification inserts are **synchronous** (within the same DB transaction as business operations), NOT via River Queue. See [04-governance.md §6.3](../phases/04-governance.md#63-notification-system-adr-0015-20) for rationale.
+>
+> **V2+ External Channels**: Email/Webhook/Slack planned in [RFC-0018](../../rfc/RFC-0018-external-notification.md).
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐

@@ -319,9 +319,12 @@
 │  │    ('cluster:manage', 'cluster', 'manage', '管理集群'),                            │       │
 │  │    ('template:manage', 'template', 'manage', '管理模板'),                          │       │
 │  │    ('rbac:manage', 'rbac', 'manage', '管理权限'),                                  │       │
-│  │    ('platform:admin', 'platform', 'admin', '超级管理员权限（显式）'),               │       │
-│  │    -- ⚠️ 已废弃: *:* 通配符仅限 bootstrap 角色使用 (ADR-0019)                       │       │
-│  │    ('*:*', '*', '*', 'Bootstrap专用通配符 - 初始化后必须禁用');                      │       │
+│  │    ('platform:admin', 'platform', 'admin', '超级管理员权限（显式）');               │       │
+│  │    -- ⚠️ ADR-0019 RBAC 合规:                                                        │       │
+│  │    -- 所有角色使用显式权限。通配符模式 (*:*) 已禁止。                                │       │
+│  │    -- platform:admin 是显式超管权限（编译时常量）。                                  │       │
+│  │    -- Bootstrap 角色使用 platform:admin 且必须在初始化后禁用。                       │       │
+│  │    -- 详见 docs/operations/bootstrap-role-sop.md 安全验证流程。                     │       │
 │  │                                                                                    │       │
 │  │  -- 2. 内置角色 (ADR-0019 合规)                                                    │       │
 │  │  INSERT INTO roles (id, name, is_builtin, description) VALUES                     │       │
@@ -332,19 +335,12 @@
 │  │    ('role-operator', 'Operator', true, '运维人员'),                                 │       │
 │  │    ('role-viewer', 'Viewer', true, '只读用户');                                    │       │
 │  │                                                                                    │       │
-│  │  -- 3. 角色-权限关联 (ADR-0019: 仅 bootstrap 可使用通配符)                           │       │
+│  │  -- 3. 角色-权限关联 (ADR-0019: 禁止通配符，仅使用显式权限)                          │       │
 │  │  INSERT INTO role_permissions (role_id, permission_id) VALUES                     │       │
-│  │    -- Bootstrap 角色: 通配符 (平台初始化后必须禁用)                                  │       │
-│  │    ('role-bootstrap', '*:*'),                                                      │       │
-│  │    -- PlatformAdmin: 显式权限列表 (ADR-0019 禁止通配符)                             │       │
-│  │    ('role-platform-admin', 'system:read'), ('role-platform-admin', 'system:write'),│       │
-│  │    ('role-platform-admin', 'system:delete'), ('role-platform-admin', 'service:read'),│     │
-│  │    ('role-platform-admin', 'service:create'), ('role-platform-admin', 'service:delete'),│  │
-│  │    ('role-platform-admin', 'vm:read'), ('role-platform-admin', 'vm:create'),       │       │
-│  │    ('role-platform-admin', 'vm:operate'), ('role-platform-admin', 'vm:delete'),    │       │
-│  │    ('role-platform-admin', 'vnc:access'), ('role-platform-admin', 'approval:approve'),│    │
-│  │    ('role-platform-admin', 'approval:view'), ('role-platform-admin', 'cluster:manage'),│   │
-│  │    ('role-platform-admin', 'template:manage'), ('role-platform-admin', 'rbac:manage'),│    │
+│  │    -- Bootstrap 角色: platform:admin (显式超管权限，初始化后必须禁用)                │       │
+│  │    ('role-bootstrap', 'platform:admin'),                                           │       │
+│  │    -- PlatformAdmin: platform:admin (ADR-0019 显式超管权限)                         │       │
+│  │    ('role-platform-admin', 'platform:admin'),                                      │       │
 │  │    -- Approver: 显式权限 (ADR-0019 禁止通配符)                                       │       │
 │  │    ('role-approver', 'approval:approve'), ('role-approver', 'approval:view'),      │       │
 │  │    ('role-approver', 'vm:read'), ('role-approver', 'system:read'),                 │       │
@@ -508,7 +504,7 @@
 │                                                                                              │
 │  ┌─ Step 1: 获取样本用户数据 ─────────────────────────────────────────────────────────────┐   │
 │  │                                                                                        │   │
-│  │  API: GET /api/v1/admin/idp/{id}/sample                                               │   │
+│  │  API: GET /api/v1/admin/auth-providers/{id}/sample                                               │   │
 │  │  系统从 IdP 拉取 10 个用户的 Token 数据，提取可用字段:                                    │   │
 │  │                                                                                        │   │
 │  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
@@ -1920,6 +1916,10 @@
 > **设计参考**: [04-governance.md §6.3](../phases/04-governance.md#63-notification-system-adr-0015-20)
 
 V1 实现平台内收件箱。V1 不支持外部推送渠道（邮件/Webhook）。
+
+> **ADR-0006 合规性**: 通知写入是**同步**的（与业务操作在同一数据库事务中），不走 River Queue。详见 [04-governance.md §6.3](../phases/04-governance.md#63-notification-system-adr-0015-20)。
+>
+> **V2+ 外部渠道**: 邮件/Webhook/Slack 计划在 [RFC-0018](../../rfc/RFC-0018-external-notification.md) 中实现。
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
