@@ -149,6 +149,24 @@ River built-in states mapping to business semantics:
 
 ---
 
+## Notification Exception
+
+> **V1 In-app notifications are synchronous writes**
+>
+> Platform-internal notifications (inserted into `notifications` table) are **synchronous** writes within the same DB transaction as business operations. This is an intentional design decision:
+>
+> | Channel | V1 Handling | Rationale |
+> |---------|-------------|-----------|
+> | **In-app inbox** | Sync (same transaction) | Ensures atomicity with business operation; no external I/O overhead |
+> | **V2+ External channels** (Email/Webhook/Slack) | Async (River Job) | External I/O requires fault tolerance and retry semantics |
+>
+> **Why synchronous notifications don't violate ADR-0006**:
+> - ADR-0006's async mandate addresses **K8s API calls** and **external I/O** that may timeout or fail
+> - In-app notifications are **internal DB writes** with negligible latency
+> - Same-transaction semantics ensure "business success = notification visible" atomicity
+>
+> See [04-governance.md §6.3](../design/phases/04-governance.md#63-notification-system-adr-0015-20) for implementation details.
+
 ## Stability Prerequisites
 
 All-in-PG strategy **must** be combined with the following measures for stability:

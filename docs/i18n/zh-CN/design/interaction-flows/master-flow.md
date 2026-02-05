@@ -54,10 +54,12 @@
 
 | ADR | 约束 | 适用范围 |
 |-----|------|---------|
-| **ADR-0006** | 所有写操作使用**统一异步模型**（请求 → 202 → River 队列） | 所有状态变更操作 |
+| **ADR-0006** | 所有写操作使用**统一异步模型**（请求 → 202 → River 队列） | 所有状态变更操作 ¹ |
 | **ADR-0009** | River Job 仅携带 **EventID**（Claim Check）；DomainEvent payload **不可变** | 所有 River Job |
 | **ADR-0012** | 原子事务：Ent 用于 ORM，**sqlc 仅用于核心事务** | 所有数据库操作 |
 
+> ¹ **例外**: V1 应用内通知为同步写入（与业务操作同一数据库事务）。详见 [ADR-0006 §Notification Exception](../../../../adr/ADR-0006-unified-async-model.md#notification-exception)。
+>
 > **CI 强制执行**: 这些约束由 CI 检查强制执行。参见 [CONTRIBUTING.md](../../../CONTRIBUTING.md) 了解验证脚本。
 
 ---

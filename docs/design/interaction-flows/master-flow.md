@@ -55,10 +55,12 @@ database development.
 
 | ADR | Constraint | Scope |
 |-----|------------|-------|
-| **ADR-0006** | All write operations use **unified async model** (request → 202 → River Queue) | All state-changing operations |
+| **ADR-0006** | All write operations use **unified async model** (request → 202 → River Queue) | All state-changing operations ¹ |
 | **ADR-0009** | River Jobs carry **EventID only** (Claim Check); DomainEvent payload is **immutable** | All River Jobs |
 | **ADR-0012** | Atomic transactions: Ent for ORM, **sqlc for core transactions only** | All DB operations |
 
+> ¹ **Exception**: V1 in-app notifications are synchronous (same DB transaction). See [ADR-0006 §Notification Exception](../../adr/ADR-0006-unified-async-model.md#notification-exception).
+>
 > **CI Enforcement**: These constraints are enforced by CI checks. See [CONTRIBUTING.md](../../../CONTRIBUTING.md) for validation scripts.
 
 ---

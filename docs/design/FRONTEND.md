@@ -9,6 +9,7 @@
 
 | Component | Technology | Version | Notes |
 |-----------|------------|---------|-------|
+| Core Library | React | 19.x | Required by Next.js 15 |
 | Framework | Next.js | 15.x | App Router (server components) |
 | Language | TypeScript | 5.8+ | Strict mode |
 | UI Library | Ant Design | 5.x | Enterprise UI components |
