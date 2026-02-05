@@ -1,6 +1,6 @@
 # ADR-0026 Design Notes: Auth Provider Naming Unification
 
-> **Status**: Active (ADR-0026 accepted 2026-01-30)
+> **Status**: Active (ADR-0026 **Accepted** ✅ 2026-01-30)
 
 ## Summary
 
@@ -30,5 +30,5 @@ Adapters normalize to:
 
 ## References
 
-- ADR-0026 (proposed)
+- ADR-0026 (Accepted)
 - ADR-0015 §22.6 (IdP config schema, amended by ADR-0026)

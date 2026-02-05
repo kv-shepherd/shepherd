@@ -26,6 +26,17 @@ Implement infrastructure providers:
 - Cluster health checking
 - Capability detection (ADR-0014)
 
+> **⚠️ Interface Composition Constraint (ADR-0004, ADR-0024)**:
+>
+> Provider implementations MUST use **interface composition** pattern defined in [examples/provider/interface.go](../examples/provider/interface.go).
+>
+> | ADR | Requirement |
+> |-----|-------------|
+> | ADR-0004 | Provider interfaces must be composable (single responsibility per interface) |
+> | ADR-0024 | Capability-based interface selection (providers expose only supported interfaces) |
+>
+> **Example**: `KubeVirtProvider` embeds `VMOperator + SnapshotOperator + MigrationOperator` based on cluster capabilities.
+
 > **📖 Document Hierarchy (Prevents Content Drift)**:
 >
 > | Document | Authority | Scope |
