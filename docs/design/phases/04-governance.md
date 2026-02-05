@@ -1419,20 +1419,36 @@ If >50% of resources detected as ghosts, halt and alert.
 
 ## ADR-0015 Section Coverage Index
 
-> The following ADR-0015 decisions are implemented in this phase:
+> The following table provides a **complete mapping** of all ADR-0015 decisions to their implementation locations.
 
-| ADR-0015 Section | Covered In | Notes |
-|------------------|------------|-------|
-| §7 Approval Policies | Section 4 | Environment-aware policy matrix |
-| §8 Storage Class | Section 5.5 | Auto-detection, admin default, approval override |
-| §10 Cancellation | Section 4 Status Flow + UI Prioritization | User can cancel pending requests at any time |
-| §11 Approval Timeout | ✅ **V1 UI Prioritization** | Section 4 - Days pending sort + color warning (0-3d/4-7d/7+d); no auto-cancel |
-| §13 Delete Cascade | Section 6.1 | Hierarchical delete |
-| §18 VNC Permissions | Section 6.2 | Token-based access |
-| §19 Batch Operations | ✅ **V1 Queue-based** | Section 5.6 - Frontend batch selection → individual River jobs |
-| §20 Notification System | ✅ **V1 Inbox** | Section 6.3 - Decoupled interface; poll-based inbox; external adapters V2+ |
-| §22 Authentication (IdP) | ✅ **V1 Scope** | Section 8 - OIDC + LDAP |
-| External Approval Systems | ⚠️ **V1 Interface Only** | Standard data interface; external adapters via plugin layer |
+| ADR-0015 Section | Status | Covered In | Notes |
+|------------------|--------|------------|-------|
+| §1 System Entity Decoupling | ✅ Done | [01-contracts.md](01-contracts.md#system-entity) | No namespace/environment/cluster bindings |
+| §2 Service Entity & Permission Inheritance | ✅ Done | [01-contracts.md](01-contracts.md#service-entity) | Runtime inheritance from System |
+| §3 VM Entity Association | ✅ Done | [01-contracts.md](01-contracts.md#vm-entity) | VM → Service only (no direct system_id) |
+| §4 VM Field Control | ✅ Done | [01-contracts.md](01-contracts.md#vmcreaterequest) | User-forbidden fields; amended by ADR-0017 |
+| §5 Template Layered Design | ✅ Done | [master-flow.md Stage 1](../interaction-flows/master-flow.md#stage-1) | Amended by ADR-0018 (capability → InstanceSize) |
+| §6 Audit Trail | ✅ Done | Section 7 (this doc) | DomainEvent pattern; redaction per ADR-0019 |
+| §7 Approval Policies | ✅ Done | Section 4 (this doc) | Environment-aware policy matrix |
+| §8 Storage Class | ✅ Done | Section 5.5 (this doc) | Auto-detection, admin default, approval override |
+| §9 Namespace Responsibility | ✅ Done | [01-contracts.md](01-contracts.md#namespace-registry) | Platform does NOT manage K8s RBAC/Quota |
+| §10 Cancellation | ✅ Done | Section 4 (this doc) | User can cancel pending requests |
+| §11 Approval Timeout | ✅ V1 UI | Section 4 (this doc) | Days pending sort + color warning; no auto-cancel |
+| §12 Resource Adoption | 🔮 V2+ | - | Recovery mechanism for orphan resources |
+| §13 Delete Cascade | ✅ Done | Section 6.1 (this doc) | Hierarchical delete with constraints |
+| §13.1 Delete Confirmation | ✅ Done | [master-flow.md Stage 5.D](../interaction-flows/master-flow.md#stage-5-d) | Tiered confirmation (test vs prod) |
+| §14 Platform RBAC | ✅ Done | Section 3 (this doc) | Dual-layer RBAC; ADR-0019 amendments |
+| §15 Cluster Visibility | ✅ Done | Section 5.5 (this doc) | Environment matching; scheduling weight |
+| §16 Global Naming | ✅ Done | [01-contracts.md](01-contracts.md#naming-constraints) | RFC 1035 + ADR-0019 extension |
+| §17 Template Snapshot | ✅ Done | [master-flow.md Stage 5.B](../interaction-flows/master-flow.md#stage-5-b) | ApprovalTicket stores immutable snapshot |
+| §18 VNC Permissions | ✅ Done | Section 6.2 (this doc) | Token-based access |
+| §19 Batch Operations | ✅ Done | Section 5.6 (this doc) | Frontend batch → individual River jobs |
+| §20 Notification System | ✅ V1 Inbox | Section 6.3 (this doc) | Sync writes; external adapters V2+ |
+| §21 Scope Exclusions | 📋 Reference | ADR-0015 | Lists deferred items |
+| §22 Authentication | ✅ V1 Scope | Section 8 (this doc) | OIDC + LDAP; group mapping |
+| External Approval Systems | ⚠️ V1 Interface | - | Standard data interface; plugin layer |
+
+> **Legend**: ✅ Done = Implemented in V1 | 🔮 V2+ = Deferred to future version | ⚠️ V1 Interface = Only data interface defined
 
 > **Interface-First Design**: Notification and Approval systems use **standard data interfaces** (ADR-0015 §20, §9).
 > V1 implements simple built-in solutions. External integrations (Slack, ServiceNow, Jira) are handled by plugin adapters without core interface changes.

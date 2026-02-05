@@ -91,8 +91,12 @@
 | [ADR-0013](../adr/ADR-0013-dependency-injection.md) | Manual DI, no Wire/fx | All DI | CI: `check_manual_di.sh` |
 | [ADR-0015](../adr/ADR-0015-governance-model-v2.md) | Entity decoupling (VM→Service only) | Schema design | Code Review |
 | [ADR-0016](../adr/ADR-0016-go-module-vanity-import.md) | Vanity import: `kv-shepherd.io/shepherd` | All Go imports | Code Review |
-| [ADR-0019](../adr/ADR-0019-governance-security-baseline-controls.md) | RFC 1035 naming, least privilege RBAC | All platform-managed names | Code Review |
+| [ADR-0017](../adr/ADR-0017-vm-request-flow-clarification.md) | User does NOT provide ClusterID; Namespace immutable after submission | VM Request Flow | Code Review |
+| [ADR-0018](../adr/ADR-0018-instance-size-abstraction.md) | InstanceSize hybrid model (indexed columns + JSONB); snapshot at approval | Schema design | Code Review |
+| [ADR-0019](../adr/ADR-0019-governance-security-baseline-controls.md) | RFC 1035 naming, least privilege RBAC, audit log redaction | All platform-managed names | Code Review |
 | [ADR-0021](../adr/ADR-0021-api-contract-first.md) | OpenAPI spec is single source of truth | All HTTP APIs | CI: `make api-check` |
+| [ADR-0025](../adr/ADR-0025-secret-bootstrap.md) | Auto-generate secrets on first boot; priority: env vars > DB-generated | Bootstrap flow | Code Review |
+| [ADR-0028](../adr/ADR-0028-oapi-codegen-optional-field-strategy.md) | oapi-codegen with `omitzero`; Go 1.25+ required | API code generation | CI: `make generate` |
 | [ADR-0029](../adr/ADR-0029-openapi-toolchain-governance.md) | Vacuum for linting, libopenapi-validator | API toolchain | CI: `make api-lint` |
 
 > ¹ **ADR-0006 Scope Clarification**: "All writes via River Queue" applies to operations requiring external system calls (K8s API).

@@ -162,48 +162,21 @@ docs/design/
 ## ⛔ Forbidden Patterns (CI Enforcement)
 
 > **These patterns will cause CI to fail. No exceptions.**
+>
+> For the complete list of CI checks and ADR constraints, see [CHECKLIST.md §Core ADR Constraints](./CHECKLIST.md#core-adr-constraints-single-reference-point).
 
-| Pattern | Use Instead | CI Check |
-|---------|-------------|----------|
-| `import "gorm.io/gorm"` | Ent ORM | `check_no_gorm_import.go` |
-| `import "github.com/redis/go-redis"` | PostgreSQL | `check_no_redis_import.sh` |
-| `go func() { ... }()` | Worker Pool | `check_naked_goroutine.go` |
-| Wire dependency injection | Manual DI | `check_manual_di.sh` |
-| Self-built Outbox Worker | River Queue | `check_no_outbox_import.go` |
-| sqlc in Service layer | sqlc only in UseCase | `check_sqlc_usage.sh` |
-| K8s calls inside DB transaction | Two-phase pattern | `check_k8s_in_transaction.go` |
+| Pattern | Use Instead |
+|---------|-------------|
+| `import "gorm.io/gorm"` | Ent ORM (ADR-0003) |
+| `go func() { ... }()` | Worker Pool |
+| Wire/fx DI | Manual DI (ADR-0013) |
+| K8s calls inside DB transaction | Two-phase pattern (ADR-0012) |
 
 ---
 
 ## Architecture Decisions
 
-This project follows the architecture decisions documented in:
-
-| ADR | Title | Status |
-|-----|-------|--------|
-| [ADR-0001](../../adr/ADR-0001-kubevirt-client.md) | KubeVirt Client Selection | Accepted |
-| [ADR-0003](../../adr/ADR-0003-database-orm.md) | Database ORM Selection | Accepted |
-| [ADR-0004](../../adr/ADR-0004-provider-interface.md) | Provider Interface Design | Accepted |
-| [ADR-0006](../../adr/ADR-0006-unified-async-model.md) | Unified Async Model | Accepted |
-| [ADR-0007](../../adr/ADR-0007-template-storage.md) | Template Storage | Accepted |
-| [ADR-0008](../../adr/ADR-0008-postgresql-stability.md) | PostgreSQL Stability | Accepted |
-| [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md) | Domain Event Pattern | Accepted |
-| [ADR-0011](../../adr/ADR-0011-ssa-apply-strategy.md) | SSA Apply Strategy | Accepted |
-| [ADR-0012](../../adr/ADR-0012-hybrid-transaction.md) | Hybrid Transaction | Accepted |
-| [ADR-0013](../../adr/ADR-0013-manual-di.md) | Manual DI | Accepted |
-| [ADR-0014](../../adr/ADR-0014-capability-detection.md) | Capability Detection | Accepted |
-| [ADR-0015](../../adr/ADR-0015-governance-model-v2.md) | Governance Model V2 | Accepted |
-| [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) | Go Module Vanity Import | Accepted |
-| [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) | VM Request and Approval Flow Clarification | Accepted |
-| [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) | Instance Size Abstraction Layer | Accepted |
-| [ADR-0019](../../adr/ADR-0019-governance-security-baseline-controls.md) | Governance Security Baseline Controls | Accepted |
-| [ADR-0020](../../adr/ADR-0020-frontend-technology-stack.md) | Frontend Technology Stack | Accepted |
-| [ADR-0021](../../adr/ADR-0021-api-contract-first.md) | API Contract-First Design | Accepted |
-| [ADR-0022](../../adr/ADR-0022-modular-provider-pattern.md) | Modular Provider Pattern | Accepted |
-| [ADR-0023](../../adr/ADR-0023-schema-cache-and-api-standards.md) | Schema Cache and API Standards | Accepted |
-| [ADR-0025](../../adr/ADR-0025-secret-bootstrap.md) | Bootstrap Secrets Auto-Generation and Persistence | Accepted |
-| [ADR-0026](../../adr/ADR-0026-idp-config-naming.md) | Auth Provider Naming and Standardized Provider Output | Accepted |
-| [ADR-0027](../../adr/ADR-0027-repository-structure-monorepo.md) | Monorepo Repository Structure with web/ | Accepted |
+All architecture decisions are documented in [docs/adr/](../../adr/). For the authoritative list of **enforced constraints** with CI checks, see [CHECKLIST.md §Core ADR Constraints](./CHECKLIST.md#core-adr-constraints-single-reference-point).
 
 ---
 
@@ -264,9 +237,10 @@ Reference implementations are in the [examples/](./examples/) directory:
 
 | Document | Description |
 |----------|-------------|
-| [DEPENDENCIES.md](./DEPENDENCIES.md) | Version pinning (single source of truth) |
+| ⭐ **[master-flow.md](./interaction-flows/master-flow.md)** | **Single source of truth** for all interaction flows (data input/processing/output). Start here for understanding system behavior. |
+| [DEPENDENCIES.md](./DEPENDENCIES.md) | Version pinning (single source of truth for all dependency versions) |
+| [CHECKLIST.md](./CHECKLIST.md) | Acceptance criteria and **Core ADR Constraints** (single source of truth for CI enforcement) |
 | [FRONTEND.md](./FRONTEND.md) | Frontend engineering specification (i18n, API types) |
-| [CHECKLIST.md](./CHECKLIST.md) | Acceptance criteria |
 | [ci/README.md](./ci/README.md) | CI scripts index |
 | [examples/README.md](./examples/README.md) | Code examples index |
 
@@ -326,16 +300,7 @@ web/                  # Frontend (ADR-0020, ADR-0027: Monorepo with web/)
 
 ---
 
-## Prohibited Patterns
-
-| Pattern | Reason | CI Check |
-|---------|--------|----------|
-| GORM import | Use Ent only | `check_forbidden_imports.go` |
-| Redis import | PostgreSQL only in V1 | `check_no_redis_import.sh` |
-| Naked goroutines | Use worker pool | `check_naked_goroutine.go` |
-| Wire import | Manual DI only | `check_manual_di.sh` |
-| Outbox pattern | Use River directly | `check_no_outbox_import.go` |
-| sqlc outside whitelist | Limited to specific dirs | `check_sqlc_usage.sh` |
+> For the complete list, see [CHECKLIST.md §Core ADR Constraints](./CHECKLIST.md#core-adr-constraints-single-reference-point).
 
 ---
 

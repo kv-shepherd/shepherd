@@ -1,8 +1,9 @@
 # Master Interaction Flow
 
 > **Status**: Stable (ADR-0017, ADR-0018 Accepted)  
-> **Version**: 1.0  
-> **Date**: 2026-01-28  
+> **Version**: 1.1  
+> **Created**: 2026-01-28  
+> **Last Updated**: 2026-02-05  
 > **Language**: English (Canonical Version)  
 > **Source**: Extracted from ADR-0018 Appendix
 >
@@ -55,12 +56,10 @@ database development.
 
 | ADR | Constraint | Scope |
 |-----|------------|-------|
-| **ADR-0006** | All write operations use **unified async model** (request → 202 → River Queue) | All state-changing operations ¹ |
+| **ADR-0006** | All write operations use **unified async model** (request → 202 → River Queue) | All state-changing operations |
 | **ADR-0009** | River Jobs carry **EventID only** (Claim Check); DomainEvent payload is **immutable** | All River Jobs |
 | **ADR-0012** | Atomic transactions: Ent for ORM, **sqlc for core transactions only** | All DB operations |
 
-> ¹ **Exception**: V1 in-app notifications are synchronous (same DB transaction). See [ADR-0006 §Notification Exception](../../adr/ADR-0006-unified-async-model.md#notification-exception).
->
 > **CI Enforcement**: These constraints are enforced by CI checks. See [CONTRIBUTING.md](../../../CONTRIBUTING.md) for validation scripts.
 
 ---
@@ -106,6 +105,7 @@ database development.
 | **End Character** | MUST end with a letter or digit |
 | **Consecutive Hyphens** | MUST NOT contain `--` (reserved for Punycode) |
 | **Length** | System/Service/Namespace: max 15 chars each (ADR-0015 §16) |
+| **Reserved Names** | `default`, `system`, `admin`, `root`, `internal`, prefixes `kube-*`, `kubevirt-shepherd-*`. See [01-contracts.md §1.1](../phases/01-contracts.md#11-naming-constraints-adr-0019). |
 
 **Applies to**: System name, Service name, Namespace name, VM name components.
 
@@ -229,7 +229,9 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 
 ### Stage 1.5: First Deployment Bootstrap {#stage-1-5}
 
-> **Added 2026-01-26**: First deployment flow for configuration storage strategy
+> **Added 2026-01-26**: First deployment flow for configuration storage strategy.
+>
+> **Detailed Rules**: See [ADR-0025 (Bootstrap Secrets)](../../adr/ADR-0025-secret-bootstrap.md) for secrets priority and auto-generation, [01-contracts.md §3.2.2](../phases/01-contracts.md#322-system-secrets-table-adr-0025) for implementation details.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -1659,6 +1661,7 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │      selected_cluster_id = 'cluster-a',     👈 admin-selected cluster (ADR-0017)    │       │
 │  │      selected_storage_class = 'ceph-rbd',   👈 admin-selected storage class          │       │
 │  │      template_snapshot = '{...}',          👈 template snapshot (ADR-0015 §17)     │       │
+│  │      instance_size_snapshot = '{...}',     👈 InstanceSize snapshot (ADR-0018)     │       │
 │  │      final_cpu_request = '4',              👈 final CPU request (after overcommit)│       │
 │  │      final_cpu_limit = '8',                                                       │       │
 │  │      final_mem_request = '16Gi',           👈 final memory request                 │       │
