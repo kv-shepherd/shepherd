@@ -57,4 +57,4 @@ NOTIFY config_changed, 'v1.2.3';
 
 ## References
 
-- [Phase 00: Prerequisites](../projects/core-go/phases/00-prerequisites.md)
+- [Phase 00: Prerequisites](../design/phases/00-prerequisites.md)

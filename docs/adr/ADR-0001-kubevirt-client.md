@@ -13,7 +13,7 @@ Use the official KubeVirt `kubevirt.io/client-go` client library.
 |------|-------|
 | Package | `kubevirt.io/client-go` |
 | API Definitions | `kubevirt.io/api` |
-| Version | See [DEPENDENCIES.md](../projects/core-go/DEPENDENCIES.md) (single source of truth) |
+| Version | See [DEPENDENCIES.md](../design/DEPENDENCIES.md) (single source of truth) |
 
 ---
 
