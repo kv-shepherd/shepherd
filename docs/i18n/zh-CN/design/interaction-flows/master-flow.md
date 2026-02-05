@@ -30,6 +30,19 @@
 >
 > 示例: "所有操作都会创建审计日志。详见 [04-governance.md §7](../phases/04-governance.md#7-audit-logging) 了解 Schema 详情。"
 
+### 文档层级（防止内容漂移）
+
+| 文档 | 职责 | 范围 |
+|------|------|------|
+| **ADRs** | 架构决策（接受后不可变） | 决策理由和权衡分析 |
+| **本文档 (master-flow.md)** | 交互原理（唯一真源） | 数据来源、流程原理、用户旅程 |
+| **Phase 文档** | 实现细节 | 代码模式、Schema 设计、API 设计 |
+| **[CHECKLIST.md](../../../../design/CHECKLIST.md)** | ADR 约束引用 | 集中式 ADR 强制规则 |
+
+> **写作指南**: 本文档描述"什么数据"和"为什么这样流动"。
+> 关于"如何实现"，链接到 Phase 文档，而不是重复内容。
+> 示例: "InstanceSize Schema 详情，参见 [01-contracts.md §InstanceSize](../phases/01-contracts.md#instancesize-schema)。"
+
 **相关文档**:
 - [ADR-0018: Instance Size Abstraction](../../../../adr/ADR-0018-instance-size-abstraction.md)
 - [ADR-0015: Governance Model V2](../../../../adr/ADR-0015-governance-model-v2.md)

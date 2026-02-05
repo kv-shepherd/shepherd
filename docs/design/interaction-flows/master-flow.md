@@ -31,6 +31,19 @@ database development.
 >
 > Example: "Audit logs are created for all operations. See [04-governance.md §7](../phases/04-governance.md#7-audit-logging) for schema details."
 
+### Document Hierarchy (Prevents Content Drift)
+
+| Document | Authority | Scope |
+|----------|-----------|-------|
+| **ADRs** | Decisions (immutable after acceptance) | Architecture decisions and rationale |
+| **This document (master-flow.md)** | Interaction principles (single source of truth) | Data sources, flow rationale, user journeys |
+| **Phase docs** | Implementation details | Code patterns, schemas, API design |
+| **[CHECKLIST.md](../CHECKLIST.md)** | ADR constraints reference | Centralized ADR enforcement rules |
+
+> **Writing Guideline**: This document describes "what data" and "why it flows this way".
+> For "how to implement", link to Phase documents instead of duplicating content.
+> Example: "For InstanceSize schema details, see [01-contracts.md §InstanceSize](../phases/01-contracts.md#instancesize-schema)."
+
 **Related Documents**:
 - [ADR-0018: Instance Size Abstraction](../../adr/ADR-0018-instance-size-abstraction.md)
 - [ADR-0015: Governance Model V2](../../adr/ADR-0015-governance-model-v2.md)

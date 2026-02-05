@@ -76,6 +76,31 @@
 
 ---
 
+## Core ADR Constraints (Single Reference Point)
+
+> **Purpose**: This section is the **authoritative reference** for critical ADR constraints.
+> Other documents (phases, master-flow, notes) SHOULD link here instead of repeating these rules.
+> This prevents "content drift" during ADR updates.
+
+| ADR | Constraint | Scope | Enforcement |
+|-----|------------|-------|-------------|
+| [ADR-0003](../adr/ADR-0003-database-orm.md) | Ent ORM only, no GORM | All data access | CI: `check_no_gorm_import.go` |
+| [ADR-0006](../adr/ADR-0006-unified-async-model.md) | All K8s operations via River Queue | External API calls¹ | CI: `check_river_bypass.go` |
+| [ADR-0009](../adr/ADR-0009-domain-event-pattern.md) | Payload is immutable (append-only) | DomainEvent table | Code Review |
+| [ADR-0012](../adr/ADR-0012-hybrid-transaction.md) | K8s calls outside DB transactions | UseCase layer | CI: `check_k8s_in_transaction.go` |
+| [ADR-0013](../adr/ADR-0013-dependency-injection.md) | Manual DI, no Wire/fx | All DI | CI: `check_manual_di.sh` |
+| [ADR-0015](../adr/ADR-0015-governance-model-v2.md) | Entity decoupling (VM→Service only) | Schema design | Code Review |
+| [ADR-0016](../adr/ADR-0016-go-module-vanity-import.md) | Vanity import: `kv-shepherd.io/shepherd` | All Go imports | Code Review |
+| [ADR-0019](../adr/ADR-0019-governance-security-baseline-controls.md) | RFC 1035 naming, least privilege RBAC | All platform-managed names | Code Review |
+| [ADR-0021](../adr/ADR-0021-api-contract-first.md) | OpenAPI spec is single source of truth | All HTTP APIs | CI: `make api-check` |
+| [ADR-0029](../adr/ADR-0029-openapi-toolchain-governance.md) | Vacuum for linting, libopenapi-validator | API toolchain | CI: `make api-lint` |
+
+> ¹ **ADR-0006 Scope Clarification**: "All writes via River Queue" applies to operations requiring external system calls (K8s API).
+> Pure PostgreSQL writes (e.g., Notification, AuditLog, DomainEvent insert) are **synchronous** for transactional atomicity.
+> See [Phase 4 §6.3](phases/04-governance.md#63-notification-system-adr-0015-20) for detailed rationale.
+
+---
+
 ## Explicitly Not Doing
 
 The following items are moved to [RFC directory](../rfc/):

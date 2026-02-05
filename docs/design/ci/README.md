@@ -1,6 +1,8 @@
 # CI Check Scripts
 
 > This directory contains all CI enforcement scripts referenced by `phases/00-prerequisites.md`.
+>
+> **📖 Authoritative Reference**: For the complete list of Core ADR Constraints and their enforcement scope, see [CHECKLIST.md §Core ADR Constraints](../CHECKLIST.md#core-adr-constraints-single-reference-point).
 
 ---
 

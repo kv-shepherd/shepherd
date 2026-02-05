@@ -17,6 +17,17 @@ Establish Go project infrastructure:
 - Health checks
 - Worker pool (required coding standard)
 
+> **📖 Document Hierarchy (Prevents Content Drift)**:
+>
+> | Document | Authority | Scope |
+> |----------|-----------|-------|
+> | **ADRs** | Decisions (immutable after acceptance) | Architecture decisions and rationale |
+> | **[master-flow.md](../interaction-flows/master-flow.md)** | Interaction principles (single source of truth) | Data sources, flow rationale, user journeys |
+> | **Phase docs (this file)** | Implementation details | Code patterns, schemas, API design |
+> | **[CHECKLIST.md](../CHECKLIST.md)** | ADR constraints reference | Centralized ADR enforcement rules |
+>
+> **Cross-Reference Pattern**: When describing "what data" and "why", link to master-flow. This document defines "how to implement".
+
 ---
 
 ## Deliverables
