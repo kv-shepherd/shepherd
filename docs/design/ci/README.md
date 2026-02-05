@@ -15,6 +15,7 @@
 | [check_no_gorm_import.go](./scripts/check_no_gorm_import.go) | **Block GORM imports** (migrated to Ent) | Required | ✅ Yes |
 | [check_no_outbox_import.go](./scripts/check_no_outbox_import.go) | **Block Outbox imports** (use River Queue, ADR-0006) | Required | ✅ Yes |
 | [check_no_redis_import.sh](./scripts/check_no_redis_import.sh) | **Block Redis imports** (removed dependency) | Required | ✅ Yes |
+| [check_river_bypass.go](./scripts/check_river_bypass.go) | **Block direct writes bypassing River Queue** (ADR-0006) | Required | ✅ Yes |
 | [check_naked_goroutine.go](./scripts/check_naked_goroutine.go) | Block naked `go func()` | Required | ✅ Yes |
 | [check_ent_codegen.go](./scripts/check_ent_codegen.go) | Ent code generation sync check | Required | ✅ Yes |
 | [check_manual_di.sh](./scripts/check_manual_di.sh) | **Strict Manual DI convention** (replaces Wire check) | Required | ✅ Yes |
@@ -43,8 +44,20 @@ The following directories are exempt from `check_naked_goroutine.go`:
 > | `check_k8s_in_transaction.go` | Ensures K8s calls in UseCase layer are outside DB transactions |
 > | `check_validate_spec.go` | Ensures validation logic completes before transaction starts |
 > | `check_transaction_boundary.go` | Ensures Service layer does not actively manage transaction boundaries |
+> | `check_river_bypass.go` | **Detects direct writes bypassing River Queue in UseCase layer** |
 >
 > These checks remain valid under the async model as they protect UseCase layer transaction integrity.
+>
+> **River Bypass Detection (ADR-0006 Enforcement)**:
+>
+> The `check_river_bypass.go` script scans `internal/usecase/` for direct database write operations to protected entities (VM, ApprovalTicket, Service, System, Cluster). These operations MUST be submitted as River Jobs, with actual writes performed by Workers after transaction commit.
+>
+> | Entity Type | River Required? | Rationale |
+> |-------------|-----------------|----------|
+> | VM, ApprovalTicket, Service, System, Cluster | ✅ Yes | External system coordination (K8s) |
+> | Notification, DomainEvent, AuditLog | ❌ Exempt | Pure DB writes, transactional atomicity needed |
+>
+> Use `//nolint:river-bypass` comment to skip checks for legitimate exemptions.
 
 ---
 
