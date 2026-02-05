@@ -3,6 +3,8 @@
 #
 # Uses OpenAPI Overlay to downgrade 3.1 -> 3.0 without mutating canonical spec.
 # Expects an overlay file at docs/design/ci/api-templates/openapi-overlay-3.0.yaml
+#
+# ADR-0029: Uses libopenapi for overlay processing (replaces oas-patch)
 
 set -euo pipefail
 
@@ -13,7 +15,8 @@ CANONICAL_SPEC="${PROJECT_ROOT}/api/openapi.yaml"
 COMPAT_SPEC="${PROJECT_ROOT}/api/openapi.compat.yaml"
 OVERLAY_FILE="${PROJECT_ROOT}/docs/design/ci/api-templates/openapi-overlay-3.0.yaml"
 
-OAS_PATCH_BIN="${OAS_PATCH_BIN:-oas-patch}"
+# ADR-0029: Use libopenapi overlay support (Go-native, replaces oas-patch)
+LIBOPENAPI_OVERLAY_BIN="${LIBOPENAPI_OVERLAY_BIN:-go run github.com/pb33f/libopenapi/cmd/openapi-overlay@latest}"
 
 if [ ! -f "${CANONICAL_SPEC}" ]; then
     echo "❌ Canonical spec not found at api/openapi.yaml"
@@ -25,12 +28,11 @@ if [ ! -f "${OVERLAY_FILE}" ]; then
     exit 1
 fi
 
-if ! command -v "${OAS_PATCH_BIN}" >/dev/null 2>&1; then
-    echo "❌ oas-patch CLI not found: ${OAS_PATCH_BIN}"
-    echo "Set OAS_PATCH_BIN to the installed binary name/path."
-    exit 1
-fi
-
 echo "==> Generating compat spec: ${COMPAT_SPEC}"
-"${OAS_PATCH_BIN}" overlay "${CANONICAL_SPEC}" "${OVERLAY_FILE}" -o "${COMPAT_SPEC}"
+# ADR-0029: libopenapi overlay command
+${LIBOPENAPI_OVERLAY_BIN} \
+    -s "${CANONICAL_SPEC}" \
+    -o "${OVERLAY_FILE}" \
+    -output "${COMPAT_SPEC}"
+
 echo "✅ Compat spec generated."

@@ -2308,6 +2308,23 @@ RUNNING/STOPPED → DELETING → DELETED (terminal)
 |------------------|--------|-------------------|----------|
 | §Configuration Storage Strategy (auth_providers) | **AMENDED** | `auth_providers` is canonical; `idp_configs` references are aliases | [ADR-0026](./ADR-0026-idp-config-naming.md) |
 
+### ADR-0023: Schema Cache Management (2026-01-28) — Clarification
+
+| Original Section | Status | Clarification Details | See Also |
+|------------------|--------|----------------------|----------|
+| §Multi-Cluster Schema Compatibility Strategy | **CLARIFIED** | "No fallback" refers to **validation results** only. ADR-0023 extends schema **fetch** layer with graceful degradation. | [ADR-0023 §Graceful Degradation](./ADR-0023-schema-cache-and-api-standards.md#graceful-degradation-strategy) |
+
+> **Important Clarification**: This ADR's "No Degradation" principle (Line 1494) applies to **validation outcomes**:
+> - Incompatible InstanceSize configuration → **ERROR** (not a fallback/degraded acceptance)
+>
+> ADR-0023 supplements this with **schema fetch** layer resilience:
+> - Schema fetch fails → Use **embedded fallback schema** for validation
+> - This ensures system availability while maintaining strict validation
+>
+> **These two principles are complementary, not contradictory**:
+> - Schema acquisition: Graceful degradation (ADR-0023)
+> - Validation result: Strict pass/fail, no silent degradation (ADR-0018)
+
 ---
 
 _End of ADR-0018_

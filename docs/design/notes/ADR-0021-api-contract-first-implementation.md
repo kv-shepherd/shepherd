@@ -60,10 +60,10 @@ TS_OUTPUT    := web/src/types/api.gen.ts
 .PHONY: api-lint api-generate api-check api-diff
 .PHONY: api-compat api-compat-generate
 
-## api-lint: Validate OpenAPI specification
+## api-lint: Validate OpenAPI specification (ADR-0029: vacuum replaces spectral)
 api-lint:
 	@echo "==> Linting OpenAPI spec..."
-	npx @stoplight/spectral-cli lint $(OPENAPI_SPEC) --ruleset api/.spectral.yaml
+	vacuum lint $(OPENAPI_SPEC) --ruleset api/.vacuum.yaml --fail-severity warn
 
 ## api-generate: Generate Go and TypeScript code from OpenAPI
 api-generate: api-lint
@@ -116,10 +116,14 @@ actions:
     remove: true
 ```
 
-Apply the overlay with `oas-patch` to generate `api/openapi.compat.yaml`:
+Apply the overlay with `libopenapi` to generate `api/openapi.compat.yaml` (ADR-0029: libopenapi replaces oas-patch):
 
 ```bash
-oas-patch overlay api/openapi.yaml docs/design/ci/api-templates/openapi-overlay-3.0.yaml -o api/openapi.compat.yaml
+# Using libopenapi overlay support (Go-native)
+go run github.com/pb33f/libopenapi/cmd/openapi-overlay@latest \
+    -s api/openapi.yaml \
+    -o docs/design/ci/api-templates/openapi-overlay-3.0.yaml \
+    -output api/openapi.compat.yaml
 ```
 
 ---
@@ -168,7 +172,9 @@ jobs:
         run: |
           go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
           go install github.com/tufin/oasdiff@latest
-          npm install -g @stoplight/spectral-cli openapi-typescript
+          go install github.com/daveshanley/vacuum@latest
+          go install github.com/pb33f/libopenapi-validator/cmd/libopenapi-validator@latest
+          npm install -g openapi-typescript
 
       - name: Lint OpenAPI spec
         run: make api-lint
@@ -562,7 +568,7 @@ additional-imports:
 ### Phase 1: Foundation (Priority)
 
 - [ ] Create `api/oapi-codegen.yaml` configuration
-- [ ] Create `api/.spectral.yaml` for linting configuration
+- [ ] Create `api/.vacuum.yaml` for linting configuration (ADR-0029)
 - [ ] Add Makefile `api-*` targets
 - [ ] Add `api-compat-generate` target and script (3.1 → 3.0 compat)
 - [ ] Verify `make api-generate` works locally
@@ -595,26 +601,27 @@ additional-imports:
 - [oapi-codegen documentation](https://github.com/oapi-codegen/oapi-codegen)
 - [oasdiff documentation](https://github.com/tufin/oasdiff)
 - [kin-openapi documentation](https://github.com/getkin/kin-openapi)
-- [Spectral CLI](https://github.com/stoplightio/spectral)
+- ~~[Spectral CLI](https://github.com/stoplightio/spectral)~~ (replaced by Vacuum per ADR-0029)
 - [go-playground/validator](https://github.com/go-playground/validator)
-- [Vacuum](https://github.com/daveshanley/vacuum) - Go-native OpenAPI linter
+- [Vacuum](https://github.com/daveshanley/vacuum) - **Go-native OpenAPI linter (ADR-0029)**
+- [libopenapi](https://github.com/pb33f/libopenapi) - Go-native OpenAPI parser with overlay support (ADR-0029)
 
 ---
 
 ## Addendum: ADR-0029 Toolchain Migration (2026-02-03)
 
-> **Note**: This document was written before ADR-0029 (OpenAPI Toolchain Governance).
+> **Status (Updated 2026-02-05)**: This document's main content has been updated to reflect ADR-0029 toolchain.
 >
-> Per ADR-0029, the following toolchain changes apply:
+> **Summary of changes made**:
 >
-> | This Document | ADR-0029 Replacement |
-> |---------------|----------------------|
-> | `spectral lint` | `vacuum lint` (Go-native, 10x faster, Spectral-rule compatible) |
-> | `kin-openapi` validation | `libopenapi-validator` (StrictMode) |
-> | `oas-patch` | `libopenapi` overlay support |
+> | Section | Change |
+> |---------|--------|
+> | §1 Makefile Targets | `spectral lint` → `vacuum lint` |
+> | §1 Compat Overlay | `oas-patch` → `libopenapi overlay` |
+> | §2 CI Workflow | Tool installation updated (vacuum, libopenapi-validator) |
 >
-> **Spectral rulesets remain compatible** with Vacuum. No rule file changes required.
+> **Spectral rulesets remain compatible** with Vacuum. Rename `.spectral.yaml` to `.vacuum.yaml` if needed.
 >
 > See [ADR-0029](../../adr/ADR-0029-openapi-toolchain-governance.md) and
-> [ADR-0029 Implementation Details](./ADR-0029-openapi-toolchain-implementation.md) for current toolchain.
+> [ADR-0029 Implementation Details](./ADR-0029-openapi-toolchain-implementation.md) for complete toolchain specification.
 
