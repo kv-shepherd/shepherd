@@ -122,6 +122,54 @@ database development.
 
 **Graceful Degradation**: If schema fetch fails → use embedded fallback → retry on next health check cycle.
 
+**Frontend Schema Fallback Strategy**:
+
+> ⚠️ **Critical Dependency**: Schema-Driven UI + Mask pattern relies heavily on Schema Cache. The following fallback strategy ensures stable frontend rendering when cache fails or version drifts.
+
+| Scenario | API Response | Frontend UI Behavior |
+|----------|--------------|---------------------|
+| **Schema available** | `200 OK` with `schema_version` header | Normal form rendering with dynamic components |
+| **Schema cache miss** | `200 OK` with `X-Schema-Fallback: embedded-v1.5.x` | Render with embedded fallback; show ⚠️ banner |
+| **Schema fetch in progress** | `200 OK` with `X-Schema-Status: updating` | Render with stale schema; show 🔄 loading indicator |
+| **No schema available** | Error in `/api/v1/schema/{version}` | **Fallback UI Mode** (see below) |
+
+**Fallback UI Mode** (when no schema is available):
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│  ⚠️ Schema Unavailable                                                     │
+│                                                                            │
+│  Unable to load KubeVirt v1.6.x schema for this cluster.                   │
+│  Dynamic field rendering is temporarily unavailable.                       │
+│                                                                            │
+│  ┌────────────────────────────────────────────────────────────────────┐   │
+│  │  Fallback Mode: Basic Fields Only                                  │   │
+│  │                                                                    │   │
+│  │  CPU Cores:    [4        ]    (integer input, no validation)      │   │
+│  │  Memory:       [8Gi      ]    (text input, no validation)         │   │
+│  │                                                                    │   │
+│  │  ⚠️ Advanced fields (GPU, Hugepages, SR-IOV) are hidden.         │   │
+│  │     Contact admin or wait for schema sync.                        │   │
+│  └────────────────────────────────────────────────────────────────────┘   │
+│                                                                            │
+│  [Proceed with Basic Config]    [Cancel]                                   │
+│                                                                            │
+│  ℹ️ Schema will auto-retry on next health check cycle (60s).              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Admin Alert Integration**:
+
+| Alert Condition | Alert Level | Notification Target |
+|-----------------|-------------|---------------------|
+| Schema cache miss (using embedded fallback) | Warning | Admin dashboard widget |
+| Schema fetch failed 3+ consecutive times | Error | DomainEvent + In-app notification |
+| Version drift detected (cluster upgraded) | Info | Audit log only |
+
+> **Implementation Note**: Frontend should cache schema locally (localStorage/IndexedDB) as secondary fallback. Check `X-Schema-Version` header to detect staleness.
+
+> **Implementation Standard**: For detailed frontend code patterns, i18n keys, and mandatory UI components, see [FRONTEND.md §Schema Cache Degradation Strategy](../FRONTEND.md#schema-cache-degradation-strategy-adr-0023).
+
 See ADR-0023 §1 for complete cache lifecycle diagram.
 
 ---

@@ -453,7 +453,43 @@ Upon acceptance, perform the following:
 |------|--------|--------|
 | 2026-01-28 | @jindyzhao | Initial draft based on ADR-0017/0018 review feedback |
 | 2026-01-28 | @jindyzhao | Added: Design motivation (4 core pain points), ClusterHealthChecker piggyback integration, graceful degradation strategy |
+| 2026-02-05 | @jindyzhao | Added: Implementation Notes for frontend degradation strategy |
+
+---
+
+## Implementation Notes (Added Post-Acceptance)
+
+> **Note**: This section provides implementation guidance that supplements the accepted decision without modifying it.
+
+### Frontend Schema Degradation Strategy
+
+The Schema-Driven UI pattern creates a critical dependency on Schema Cache availability. The following implementation guidelines ensure stable frontend rendering:
+
+**Core Patterns**:
+- **Progressive Enhancement**: Basic fields (CPU, Memory) always render; advanced fields (GPU, Hugepages, SR-IOV) require schema
+- **Stale-While-Revalidate (SWR)**: Serve cached schema immediately; refresh in background
+- **Multi-Layer Fallback**: Memory → Browser Storage → Embedded Default → Remote Fetch
+
+**API Headers** (Backend MUST implement):
+
+| Header | Purpose |
+|--------|---------|
+| `X-Schema-Version` | Current schema version being served |
+| `X-Schema-Fallback` | Indicates embedded fallback is in use |
+| `X-Schema-Status` | `updating` when background fetch in progress |
+
+**Frontend Degradation States**:
+
+| State | Condition | UI Behavior |
+|-------|-----------|-------------|
+| Normal | Schema from cache | Full dynamic form |
+| Fallback | Using embedded/older schema | Warning banner + full form |
+| Updating | Background fetch in progress | Loading indicator |
+| Degraded | No schema available | Basic fields only + error alert |
+
+> **Detailed Implementation**: See [FRONTEND.md §Schema Cache Degradation Strategy](../design/FRONTEND.md#schema-cache-degradation-strategy-adr-0023) for code examples, i18n keys, and UI component patterns.
 
 ---
 
 _End of ADR-0023_
+

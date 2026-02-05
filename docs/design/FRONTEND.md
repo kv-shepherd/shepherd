@@ -205,6 +205,131 @@ const { data, error } = await api.GET('/api/v1/vms/{id}', {
 
 ---
 
+## Schema Cache Degradation Strategy (ADR-0023)
+
+> **Reference**: [ADR-0023: Schema Cache Management](../../adr/ADR-0023-schema-cache-and-api-standards.md)
+
+The Schema-Driven UI pattern relies on KubeVirt JSON Schema for dynamic form rendering. This section defines **mandatory** degradation behaviors when schema cache fails or version drifts.
+
+### Core Principles
+
+| Principle | Description |
+|-----------|-------------|
+| **Progressive Enhancement** | Core functionality (basic CPU/Memory) always works; advanced features (GPU, SR-IOV) require schema |
+| **Stale-While-Revalidate** | Serve cached schema immediately; refresh in background |
+| **Explicit User Feedback** | Never fail silently; always inform users of degraded state |
+| **Multi-Layer Fallback** | Memory → IndexedDB → Embedded Default → Remote Fetch |
+
+### API Response Headers
+
+Backend MUST return schema status via HTTP headers:
+
+| Header | Value | Frontend Action |
+|--------|-------|-----------------|
+| `X-Schema-Version` | `1.5.x` | Display version in form footer |
+| `X-Schema-Fallback` | `embedded-v1.4.x` | Show warning banner |
+| `X-Schema-Status` | `updating` | Show loading indicator |
+
+### Frontend Caching Implementation
+
+```typescript
+// src/lib/schema/cache.ts
+interface SchemaCache {
+  get(version: string): Promise<JSONSchema | null>;
+  set(version: string, schema: JSONSchema): Promise<void>;
+  fallback(): JSONSchema;  // Embedded default schema
+}
+
+// Priority: Memory → IndexedDB → Embedded → Remote
+async function getSchema(version: string): Promise<{
+  schema: JSONSchema;
+  source: 'cache' | 'embedded' | 'remote';
+}> {
+  // 1. Try memory cache
+  const cached = memoryCache.get(version);
+  if (cached) return { schema: cached, source: 'cache' };
+  
+  // 2. Try IndexedDB
+  const stored = await idbCache.get(version);
+  if (stored) {
+    memoryCache.set(version, stored);
+    return { schema: stored, source: 'cache' };
+  }
+  
+  // 3. Try embedded fallback (bundled at build time)
+  const embedded = EMBEDDED_SCHEMAS[minorVersion(version)];
+  if (embedded) return { schema: embedded, source: 'embedded' };
+  
+  // 4. Fetch from server (last resort)
+  const fetched = await api.GET('/api/v1/schema/{version}', { params: { path: { version } } });
+  if (fetched.data) {
+    await idbCache.set(version, fetched.data);
+    return { schema: fetched.data, source: 'remote' };
+  }
+  
+  throw new SchemaUnavailableError(version);
+}
+```
+
+### UI Degradation States
+
+| State | Trigger | UI Behavior |
+|-------|---------|-------------|
+| **Normal** | Schema from cache | Full dynamic form |
+| **Fallback** | Using embedded/older schema | ⚠️ Warning banner + full form |
+| **Updating** | Background fetch in progress | 🔄 Loading indicator in header |
+| **Degraded** | No schema available | Basic fields only + error alert |
+
+### Degraded Mode UI (Mandatory)
+
+When schema is unavailable, render **basic fields only**:
+
+```tsx
+// src/components/forms/InstanceSizeForm.tsx
+function InstanceSizeForm({ schemaState }: Props) {
+  if (schemaState.status === 'unavailable') {
+    return (
+      <Alert type="warning" showIcon>
+        <AlertTitle>{t('schema.unavailable.title')}</AlertTitle>
+        <AlertDescription>
+          {t('schema.unavailable.description')}
+        </AlertDescription>
+      </Alert>
+      <BasicFieldsForm />  {/* CPU, Memory only */}
+      <Text type="secondary">
+        {t('schema.unavailable.advanced_hidden')}
+      </Text>
+    );
+  }
+  // ... normal dynamic form
+}
+```
+
+### i18n Keys (Required)
+
+```json
+// src/i18n/locales/en/common.json
+{
+  "schema.unavailable.title": "Schema Unavailable",
+  "schema.unavailable.description": "Unable to load KubeVirt schema for version {{version}}. Advanced fields are hidden.",
+  "schema.unavailable.advanced_hidden": "GPU, Hugepages, SR-IOV options are temporarily unavailable.",
+  "schema.fallback_warning": "Using fallback schema ({{version}}). Some features may be limited.",
+  "schema.updating": "Updating schema..."
+}
+```
+
+### Admin Notifications
+
+Schema failures MUST trigger admin notifications:
+
+| Condition | Notification Level | Delivery |
+|-----------|-------------------|----------|
+| Cache miss (using embedded) | Warning | Dashboard widget |
+| Fetch failed 3+ times | Error | In-app notification |
+| Version drift detected | Info | Audit log only |
+
+> **Implementation Note**: Use `useSchemaStatus()` hook for consistent schema state management across components.
+
 ## Project Initialization
 
 ### Prerequisites

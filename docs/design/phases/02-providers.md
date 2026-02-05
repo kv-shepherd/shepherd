@@ -261,6 +261,8 @@ Schemas are **immutable per version** (v1.5.0 never changes). Cache indefinitely
 
 If schema fetch fails → use embedded fallback → retry on next health check cycle.
 
+> **Frontend Fallback Strategy**: When schema cache fails or version drifts, the Schema-Driven UI provides a Fallback UI Mode with basic fields only. See [master-flow.md §Frontend Schema Fallback Strategy](../interaction-flows/master-flow.md#schema-cache-lifecycle-adr-0023) for detailed UI behavior, alert integration, and implementation notes.
+
 > **See Also**: [ADR-0023 §1 Schema Cache](../../adr/ADR-0023-schema-cache-and-api-standards.md), [master-flow.md §Schema Cache Lifecycle](../interaction-flows/master-flow.md)
 
 ## 7. Resource Adoption (Two-Phase)
