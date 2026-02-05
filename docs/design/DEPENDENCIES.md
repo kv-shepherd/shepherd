@@ -203,10 +203,7 @@ func (c *DatabaseClients) Close() {
 > ⚠️ **ADR Status Notice**:
 > - **ADR-0021**: Accepted ✅
 > - **ADR-0028**: Accepted ✅ (omitzero field strategy)
-> - **ADR-0029**: Proposed ⏳ (toolchain governance)
->
-> Specifications below that reference ADR-0029 are **provisional** and may change upon ADR acceptance.
-> If ADR-0029 is rejected or modified, this document must be updated accordingly.
+> - **ADR-0029**: Accepted ✅ (toolchain governance)
 
 ### OpenAPI Specification Versions
 

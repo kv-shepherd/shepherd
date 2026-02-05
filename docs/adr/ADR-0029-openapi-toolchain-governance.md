@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"  # proposed | accepted | deprecated | superseded by ADR-XXXX
+status: "accepted"  # proposed | accepted | deprecated | superseded by ADR-XXXX
 date: 2026-02-03
 deciders: []  # GitHub usernames of decision makers
 consulted: []  # Subject-matter experts consulted (two-way communication)
@@ -9,7 +9,7 @@ informed: []  # Stakeholders kept up-to-date (one-way communication)
 
 # ADR-0029: OpenAPI Toolchain Governance
 
-> **Review Period**: Until 2026-02-05 (48-hour minimum)  
+> **Accepted**: 2026-02-05 (48-hour review period completed)  
 > **Discussion**: [Issue #96](https://github.com/kv-shepherd/shepherd/issues/96)  
 > **Amends**: [ADR-0021 §Technology Stack](./ADR-0021-api-contract-first.md)
 

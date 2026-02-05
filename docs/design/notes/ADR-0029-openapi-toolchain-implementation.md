@@ -1,7 +1,7 @@
 # ADR-0029 Implementation Details: OpenAPI Toolchain Governance
 
 > **Parent ADR**: [ADR-0029](../../adr/ADR-0029-openapi-toolchain-governance.md)  
-> **Status**: Implementation specification for ADR-0029 (parent ADR status: **proposed**)
+> **Status**: Implementation specification for ADR-0029 (parent ADR status: **accepted**)
 
 ---
 
