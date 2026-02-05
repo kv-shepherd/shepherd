@@ -119,7 +119,7 @@
 ## Optional Field Strategy (ADR-0028)
 
 > **Purpose**: Ensure generated Go types use `omitzero` tag to eliminate pointer hell.    
-> **Note**: ADR-0028 is Accepted. See [ADR-0028](../../adr/ADR-0028-oapi-codegen-optional-field-strategy.md).
+> **Status**: ADR-0028 **Accepted** ✅. See [ADR-0028](../../adr/ADR-0028-oapi-codegen-optional-field-strategy.md).
 
 - [ ] `go.mod` requires Go 1.25+ (enables `omitzero` support)
 - [ ] `api/oapi-codegen.yaml` contains:

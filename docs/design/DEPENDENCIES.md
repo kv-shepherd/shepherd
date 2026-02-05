@@ -22,11 +22,12 @@
 |------|---------|-------|
 | **Go** | `1.25.6` | **Recommended latest stable** (released 2026-01-15, includes security patches) |
 
-> **Go Version Strategy**: 
-> - **Minimum**: Go 1.24 (required by `kubevirt.io/client-go` v1.7.0)
+> **Go Version Strategy (ADR-0028)**: 
+> - **Minimum**: Go 1.24 (required for `omitzero` tag support, ADR-0028)
+> - **CI Enforced**: Go 1.25+ (ADR-0028 §Confirmation)
 > - **Recommended**: Go 1.25.6 (latest stable with security patches)
-> - Gin v1.11.0 requires Go 1.23+, KubeVirt client-go requires Go 1.24+
-> - Unified on **Go 1.25.6**, backward compatible with 1.24 code
+> - Dependencies: Gin v1.11.0 requires Go 1.23+, KubeVirt client-go requires Go 1.24+
+> - Code is backward compatible with Go 1.24, but CI blocks builds below Go 1.25
 
 ---
 
