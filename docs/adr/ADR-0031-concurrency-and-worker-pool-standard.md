@@ -53,11 +53,17 @@ We need a single, enforceable concurrency standard that keeps runtime behavior p
    - All in-process concurrency must be submitted via a Worker Pool API.
    - Exceptions are limited to concurrency infrastructure itself (for example, the Worker Pool implementation package) and River internals. The CI exemption list is the source of truth.
 
-2. **Do not nest Worker Pool inside River workers**
+2. **Worker Pool API must support context propagation**
+   - The submission method (e.g., `Submit(ctx, func(ctx))`) MUST accept `context.Context`.
+   - The implementation MUST respect context cancellation/timeout for graceful shutdown and task lifecycle management.
+   - **Request-scoped tasks** MUST pass the upstream request context; task functions SHOULD check `ctx.Done()` at blocking points.
+   - **Detached background tasks** MUST use a service-lifecycle context and explicitly declare "detached" semantics (e.g., `SubmitDetached(task)`).
+
+3. **Do not nest Worker Pool inside River workers**
    - River already provides worker concurrency controls and backpressure.
    - River job handlers must execute synchronously; do not offload job work into a pool.
 
-3. **Semaphore usage must be leak-safe**
+4. **Semaphore usage must be leak-safe**
    - Any semaphore `Acquire(...)` must be paired with a `defer Release(...)` in the same function.
    - Avoid complex control flow that makes release non-obvious.
 
@@ -119,3 +125,4 @@ We need a single, enforceable concurrency standard that keeps runtime behavior p
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-02-08 | @jindyzhao | Initial draft |
+| 2026-02-08 | @jindyzhao | Added Rule 2: context propagation requirement (review feedback) |
