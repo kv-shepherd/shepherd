@@ -249,6 +249,9 @@ Use inclusive terminology in new code and documentation. Prefer "allowlist/denyl
 - ADR changes require discussion and approval
 - Keep examples in `docs/design/examples/` synchronized with actual patterns
 - If documentation lint or link-check tools exist in this repo, run them for doc changes; otherwise perform a manual sanity check (headings, lists, links).
+- Frontend design docs must be updated under `docs/design/frontend/` (ADR-0030 layering); do not add new frontend specs under `docs/design/` root.
+- Interaction/state-flow changes must update `docs/design/interaction-flows/master-flow.md` and matching frontend/phase docs in the same PR.
+- Run `bash docs/design/ci/scripts/check_design_doc_governance.sh` for documentation changes that touch design/ADR/interaction-flow content.
 
 ### Decision Documents (ADR + Design Notes)
 

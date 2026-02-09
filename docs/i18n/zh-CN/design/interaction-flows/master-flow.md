@@ -1,9 +1,9 @@
 # 规范交互流程 (Master Flow)
 
 > **Status**: Stable (ADR-0017, ADR-0018 Accepted)  
-> **版本**: 1.1  
+> **版本**: 1.2
 > **创建日期**: 2026-01-28  
-> **最后更新**: 2026-02-05  
+> **最后更新**: 2026-02-06
 > **语言**: 中文 (翻译版本)  
 > **规范版本**: [English Canonical Version](../../../../design/interaction-flows/master-flow.md)
 >
@@ -29,7 +29,7 @@
 
 > **交叉引用模式**: 涉及数据持久化的操作在本文档提供概念概述，实现细节详见 Phase 设计文档。
 >
-> 示例: "所有操作都会创建审计日志。详见 [04-governance.md §7](../phases/04-governance.md#7-audit-logging) 了解 Schema 详情。"
+> 示例: "所有操作都会创建审计日志。详见 [04-governance.md §7](../../../../design/phases/04-governance.md#7-audit-logging) 了解 Schema 详情。"
 
 ### 文档层级（防止内容漂移）
 
@@ -42,14 +42,16 @@
 
 > **写作指南**: 本文档描述"什么数据"和"为什么这样流动"。
 > 关于"如何实现"，链接到 Phase 文档，而不是重复内容。
-> 示例: "InstanceSize Schema 详情，参见 [01-contracts.md §InstanceSize](../phases/01-contracts.md#instancesize-schema)。"
+> 示例: "InstanceSize Schema 详情，参见 [01-contracts.md §InstanceSize](../../../../design/phases/01-contracts.md#deliverables)。"
 
 **相关文档**:
-- [ADR-0018: Instance Size Abstraction](../../../../adr/ADR-0018-instance-size-abstraction.md)
-- [ADR-0015: Governance Model V2](../../../../adr/ADR-0015-governance-model-v2.md)
-- [ADR-0017: VM Request Flow](../../../../adr/ADR-0017-vm-request-flow-clarification.md)
-- [Phase 01: 契约](../phases/01-contracts.md) — 数据契约和命名约束
-- [Phase 04: 治理](../phases/04-governance.md) — RBAC、审计日志、审批流程
+- [ADR-0018: Instance Size Abstraction §User Interaction Flow](../../../../adr/ADR-0018-instance-size-abstraction.md#user-interaction-flow)
+- [ADR-0015: Governance Model V2 §Decision](../../../../adr/ADR-0015-governance-model-v2.md#decision)
+- [ADR-0017: VM Request Flow §Decision](../../../../adr/ADR-0017-vm-request-flow-clarification.md#decision)
+- [Phase 01: 契约 §API Contract-First Design](../../../../design/phases/01-contracts.md#api-contract-first-design-adr-0021) — 数据契约和命名约束
+- [Phase 04: 治理 §7 Audit Logging](../../../../design/phases/04-governance.md#7-audit-logging) — RBAC、审计日志、审批流程
+- [frontend/FRONTEND.md §Schema Cache Degradation Strategy](../../../../design/frontend/FRONTEND.md#schema-cache-degradation-strategy-adr-0023) — 前端基线实现标准
+- [frontend/features/batch-operations-queue.md §2 Parent/Child UI Model](../../../../design/frontend/features/batch-operations-queue.md#2-parentchild-ui-model) — 父子队列 UI 与轮询语义
 
 **关键 ADR 约束（适用于本文档所有流程）**:
 
@@ -59,138 +61,79 @@
 | **ADR-0009** | River Job 仅携带 **EventID**（Claim Check）；DomainEvent payload **不可变** | 所有 River Job |
 | **ADR-0012** | 原子事务：Ent 用于 ORM，**sqlc 仅用于核心事务** | 所有数据库操作 |
 
-> **CI 强制执行**: 这些约束由 CI 检查强制执行。参见 [CONTRIBUTING.md](../../../CONTRIBUTING.md) 了解验证脚本。
+> **CI 概览**: 上述约束由自动化检查保障。完整门禁定义和脚本清单见 [docs/design/ci/README.md §Scope Boundary](../../../../design/ci/README.md#scope-boundary)。
 
 ---
 
-## 附录：规范交互流程（中文版）
+## 统一写作契约
 
-> **重要**: 本节为 `docs/design/interaction-flows/master-flow.md` 的中文翻译版本。
-> 如有不一致，以英文规范版本为准。
-### 文档结构
+本节定义全文固定写作风格，确保所有 Stage 章节具备一致的阅读体验，
+同时保留必要结论，不把读者完全丢给外链。
 
-| Part | 内容 | 涉及角色 |
-|------|------|----------|
-| **Part 1** | 平台初始化（Schema/Mask、**首次部署引导**、RBAC/权限、OIDC/LDAP 认证、IdP 组映射、**外部审批系统**、集群/InstanceSize/Template 配置） | 开发者、平台管理员 |
-| **Part 2** | 资源管理（System/Service 创建删除及数据库操作、**含审计日志**） | 普通用户 |
-| **Part 3** | VM 生命周期（创建请求 → 审批 → 执行 → 删除及数据库操作、**含审计日志**） | 普通用户、平台管理员 |
-| **Part 4** | 状态机与数据模型（状态流转图、表关系图、**审计日志设计与例外**） | 所有开发人员 |
+### Stage 固定结构（必须）
 
----
+每个 `Stage` 章节必须按以下顺序组织：
 
-### 核心设计原则
+1. `Purpose`（本阶段目标，1-2 行）
+2. `Actors & Trigger`（谁触发、前置条件）
+3. `Interaction Flow`（仅交互流程图）
+4. `State Transitions`（实体状态变化与归属边界）
+5. `Failure & Edge Cases`（重复请求、无权限、状态冲突等）
+6. `Authority Links`（可点击 ADR/phase/database/frontend/CI 链接）
+7. `Scope Boundary`（明确本节不展开的实现细节）
 
-| 原则 | 说明 |
-|------|------|
-| **Schema 为唯一数据源** | KubeVirt 官方 JSON Schema 定义字段类型、约束、enum 选项，我们不在代码中重复定义 |
-| **Mask 只选择路径** | Mask 只指定暴露哪些 Schema 路径，不定义字段选项 |
-| **混合模型 (Hybrid Model)** | 核心调度字段（CPU、内存、GPU）存储在索引列以优化查询性能；`spec_overrides` JSONB 存储剩余字段，不进行语义解释。参见 ADR-0018 §4。 |
-| **Schema 驱动前端** | 前端根据 Schema 类型自动渲染对应 UI 组件。技术栈详见 ADR-0020（React 19, Next.js 15, Ant Design 5）。 |
+### Part 地图（规范）
 
-### 角色定义
+| Part | 主要关注点 | 主要读者 |
+|------|-----------|---------|
+| **Part 1** | 平台初始化与安全基线 | 开发者、平台管理员 |
+| **Part 2** | 资源层级与归属边界 | 普通用户、平台管理员 |
+| **Part 3** | VM 申请/审批/执行/删除全生命周期 | 普通用户、平台管理员 |
+| **Part 4** | 状态机与共享数据模型语义 | 前后端工程师 |
+| **Part 5/6** | 批量、通知、VNC 等专项流程 | 全栈工程师 |
 
-| 角色 | 职责 | 接触层级 |
-|------|------|---------|
-| **开发者** | 获取 KubeVirt Schema，定义 Mask（选择暴露哪些路径） | 代码/配置层 |
-| **平台管理员** | 创建 InstanceSize（通过 Schema 驱动的表单填写值） | 后台管理层 |
-| **普通用户** | 选择 InstanceSize，提交 VM 创建请求 | 业务使用层 |
+### 全局设计结论（各 Stage 不得覆盖）
 
-### 命名规范 (ADR-0019 安全基线)
+| 主题 | 规范结论 |
+|------|---------|
+| **命名治理** | 平台管理的逻辑名必须通过 ADR-0019 统一校验。 |
+| **写入模型** | 状态变更操作遵循统一异步模型（`request -> 202 -> River`），见 [ADR-0006 §Decision](../../../../adr/ADR-0006-unified-async-model.md#decision)。 |
+| **事件完整性** | River Job 采用 EventID-only claim-check；事件 payload 不可变，见 [ADR-0009 §Constraint 1](../../../../adr/ADR-0009-domain-event-pattern.md#constraint-1-domainevent-payload-immutability-append-only)。 |
+| **事务边界** | 跨聚合核心写入采用 Ent+sqlc 原子事务模型，见 [ADR-0012 §Adopt Ent + sqlc Hybrid Mode](../../../../adr/ADR-0012-hybrid-transaction.md#adopt-ent-sqlc-hybrid-mode)。 |
+| **删除语义** | 主资源表硬删除（可短暂 `DELETING`）；审计/工单/事件独立保留并归档，见 [ADR-0015 §13](../../../../adr/ADR-0015-governance-model-v2.md#13-deletion-cascade-constraints)。 |
+| **批量基线** | V1 批量采用父子工单 + 两层限流，见 [ADR-0015 §19](../../../../adr/ADR-0015-governance-model-v2.md#19-batch-operations)。 |
 
-> **安全基线**: 所有平台管理的逻辑名称必须遵循 RFC 1035 规则。
+### 跨层权威关系
 
-| 规则 | 约束 |
-|------|------|
-| **字符集** | 仅小写字母、数字、连字符 (`a-z`, `0-9`, `-`) |
-| **起始字符** | 必须以字母开头 (`a-z`) |
-| **结束字符** | 必须以字母或数字结尾 |
-| **连续连字符** | 禁止 `--` (为 Punycode 保留) |
-| **长度限制** | System/Service/Namespace: 每个最多 15 字符 (ADR-0015 §16) |
-| **保留名称** | `default`, `system`, `admin`, `root`, `internal`, 前缀 `kube-*`, `kubevirt-shepherd-*`。详见 [01-contracts.md §1.1](../phases/01-contracts.md#11-naming-constraints-adr-0019)。 |
+| 文档层 | 权威范围 |
+|------|---------|
+| [ADRs §Reading Order](../../../../adr/README.md#reading-order) | 已接受架构决策与权衡 |
+| `master-flow.md` | 交互意图与端到端预期行为 |
+| [docs/design/README.md §Implementation Phases](../../../../design/README.md#implementation-phases) | 实现契约与运行约束 |
+| [database/README.md §Document Map](../../../../design/database/README.md#document-map) | 持久化生命周期、一致性与 Schema 归属 |
+| [frontend/README.md §Reading Order](../../../../design/frontend/README.md#reading-order) | UI 交互规范与功能级 UX 行为 |
+| [ci/README.md §Scope Boundary](../../../../design/ci/README.md#scope-boundary) | 可执行门禁与防漂移检查 |
 
-**适用范围**: System 名称、Service 名称、Namespace 名称、VM 名称组件。
+### 边界声明
 
-### API 设计原则 (ADR-0021, ADR-0023)
-
-| 原则 | 说明 |
-|------|------|
-| **契约优先** | OpenAPI 3.1 规范为唯一真理来源。参见 ADR-0021。 |
-| **代码生成** | Go 服务端类型通过 `oapi-codegen` 生成；TypeScript 类型通过 `openapi-typescript` 生成。 |
-| **分页标准** | 列表 API 使用标准分页参数 (`page`, `per_page`, `sort_by`, `sort_order`)。参见 ADR-0023。 |
-| **错误码** | 粒度化错误码（如 `NAMESPACE_PERMISSION_DENIED`）。参见 ADR-0023 §3。 |
-
-> **完整 API 契约治理**: 关于 OpenAPI 3.1 与 3.0 兼容性、CI 工具链约束和规范-代码同步强制执行，参见 [01-contracts.md §API 契约优先设计](../phases/01-contracts.md#api-contract-first-design-adr-0021)。
->
-> **能力检测**: 关于静态能力检测不足时的 Dry Run Fallback 策略，参见 [02-providers.md §Dry Run Fallback](../phases/02-providers.md#dry-run-fallback-adr-0014)。
-
-### Schema 缓存生命周期 (ADR-0023)
-
-> **目的**: KubeVirt Schema 缓存支持离线验证、多版本兼容和前端性能优化。
-
-| 阶段 | 触发时机 | 操作 |
-|------|----------|------|
-| **1. 启动** | 应用启动 | 加载编译时嵌入的 Schema |
-| **2. 集群注册** | 新增集群 | 检测 KubeVirt 版本 → 检查缓存 → 缺失时排队获取 |
-| **3. 版本检测** | 健康检查循环 (60s) | 搭载模式: 比较 `clusters.kubevirt_version` 与检测到的版本 |
-| **4. Schema 更新** | 检测到版本变更 | 排队 `SchemaUpdateJob` (River) → 异步获取 → 更新缓存 |
-
-**过期策略**: Schema **按版本不可变**（v1.5.0 永不改变）。无限期缓存，仅在版本变更时更新。
-
-**优雅降级**: Schema 获取失败 → 使用嵌入的回退版本 → 下次健康检查时重试。
-
-**前端 Schema 降级策略**:
-
-> ⚠️ **关键依赖**: Schema 驱动 UI + Mask 模式高度依赖 Schema Cache。以下降级策略确保缓存失败或版本漂移时前端的稳定渲染。
-
-| 场景 | API 响应 | 前端 UI 行为 |
-|------|----------|-------------|
-| **Schema 可用** | `200 OK` 带 `schema_version` 头 | 正常表单渲染，使用动态组件 |
-| **Schema 缓存未命中** | `200 OK` 带 `X-Schema-Fallback: embedded-v1.5.x` | 使用嵌入回退渲染；显示 ⚠️ 提示横幅 |
-| **Schema 获取中** | `200 OK` 带 `X-Schema-Status: updating` | 使用旧版 Schema 渲染；显示 🔄 加载指示器 |
-| **无 Schema 可用** | `/api/v1/schema/{version}` 返回错误 | **降级 UI 模式**（见下文） |
-
-**降级 UI 模式**（无 Schema 可用时）:
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│  ⚠️ Schema 不可用                                                          │
-│                                                                            │
-│  无法加载该集群的 KubeVirt v1.6.x Schema。                                   │
-│  动态字段渲染暂时不可用。                                                    │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │  降级模式：仅基础字段                                                │   │
-│  │                                                                    │   │
-│  │  CPU 核数:    [4        ]    (数字输入，无验证)                     │   │
-│  │  内存:        [8Gi      ]    (文本输入，无验证)                     │   │
-│  │                                                                    │   │
-│  │  ⚠️ 高级字段（GPU、Hugepages、SR-IOV）已隐藏。                     │   │
-│  │     请联系管理员或等待 Schema 同步。                                 │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  [使用基础配置继续]    [取消]                                              │
-│                                                                            │
-│  ℹ️ Schema 将在下次健康检查周期（60秒）自动重试。                          │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-**管理员告警集成**:
-
-| 告警条件 | 告警级别 | 通知目标 |
-|----------|----------|----------|
-| Schema 缓存未命中（使用嵌入回退） | 警告 | 管理员仪表盘小部件 |
-| Schema 获取连续失败 3 次以上 | 错误 | DomainEvent + 应用内通知 |
-| 检测到版本漂移（集群升级） | 信息 | 仅审计日志 |
-
-> **实现说明**: 前端应在本地缓存 Schema（localStorage/IndexedDB）作为二级回退。检查 `X-Schema-Version` 响应头以检测过期状态。
-
-> **实现标准**: 前端代码模式、i18n 键值和必需 UI 组件的详细说明，参见 [FRONTEND.md §Schema Cache Degradation Strategy](../../../../design/FRONTEND.md#schema-cache-degradation-strategy-adr-0023)。
-
-详见 ADR-0023 §1 完整缓存生命周期图。
+- `master-flow.md` 负责交互意图与行为预期。
+- SQL/DDL/索引/迁移等数据库细节必须写入 `docs/design/database/`。
+- 组件实现与代码级模式必须写入 `docs/design/phases/` 与 `docs/design/frontend/`。
 
 ---
 
-## Part 1: 平台初始化流程
+## Part 1: 平台初始化流程 {#stage-1}
+
+### Purpose
+
+定义 Schema 驱动平台初始化和首次安全部署的预期行为。
+
+### Actors & Trigger
+
+- 触发：首次部署或平台配置变更。
+- 参与方：开发者、平台管理员、启动引导流程。
+
+### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -228,11 +171,53 @@
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### 状态流转（阶段 1）
+
+| 领域 | 之前 | 之后 |
+|------|------|------|
+| Schema 缓存 | 未知/空 | 具备版本化 schema |
+| Mask 配置 | 未定义 | 暴露路径通过校验 |
+| UI 渲染能力 | 静态/手工 | Schema 驱动 |
+
+### 失败与边界（阶段 1）
+
+- Schema 获取失败必须降级到嵌入式 schema 基线。
+- 无效 mask 路径必须在部署前校验失败。
+
+### Authority Links (Part 1 baseline)
+
+- [ADR-0023 §1 Schema Cache Management Policy](../../../../adr/ADR-0023-schema-cache-and-api-standards.md#1-schema-cache-management-policy)
+- [01-contracts.md §API Contract-First Design](../../../../design/phases/01-contracts.md#api-contract-first-design-adr-0021)
+- [frontend/FRONTEND.md §Schema Cache Degradation Strategy](../../../../design/frontend/FRONTEND.md#schema-cache-degradation-strategy-adr-0023)
+
+### 边界声明（阶段 1）
+
+本阶段定义初始化流程预期行为。迁移步骤与代码生成命令细节在 phase/CI 文档中维护。
+
+#### Schema Cache 生命周期引用 {#schema-cache-lifecycle-adr-0023}
+
+Schema 缓存生命周期与降级行为，请以以下文档为准：
+
+- [ADR-0023 §1 Schema Cache Management Policy](../../../../adr/ADR-0023-schema-cache-and-api-standards.md#1-schema-cache-management-policy)
+- [02-providers.md §6 Schema Cache Lifecycle](../../../../design/phases/02-providers.md#6-schema-cache-lifecycle-adr-0023)
+- [frontend/FRONTEND.md §Schema Cache Degradation Strategy](../../../../design/frontend/FRONTEND.md#schema-cache-degradation-strategy-adr-0023)
+
 ### 阶段 1.5: 首次部署引导 (Bootstrap) {#stage-1-5}
 
 > **Added 2026-01-26**: 配置存储策略的首次部署流程。
 >
-> **详细规则**: Bootstrap Secrets 优先级和自动生成详见 [ADR-0025 (Bootstrap Secrets)](../../../../adr/ADR-0025-secret-bootstrap.md)，实现细节详见 [01-contracts.md §3.2.2](../phases/01-contracts.md#322-system-secrets-table-adr-0025)。
+> **详细规则**: Bootstrap Secrets 优先级和自动生成详见 [ADR-0025 §Decision Outcome](../../../../adr/ADR-0025-secret-bootstrap.md#decision-outcome)，实现细节详见 [01-contracts.md §3.2.2](../../../../design/phases/01-contracts.md#322-system-secrets-table-adr-0025)。
+
+#### Purpose
+
+统一首次启动时的配置优先级与密钥引导行为。
+
+#### Actors & Trigger
+
+- 触发：系统首次启动且运行态密钥不存在。
+- 参与方：部署操作者、引导逻辑、数据库持久化层。
+
+#### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -286,7 +271,7 @@
 │  ⚠️ **关键原则**: config.yaml 不是密钥来源 (12-factor app 合规)。                             │
 │     密钥必须来自: 环境变量 或 数据库生成 或 外部密钥管理器。                                      │
 │                                                                                              │
-│  🔐 自动生成 (ADR-0025 - 缺省时):                                                            │
+│  🔐 自动生成（缺省时）:                                                                      │
 │  - 首次启动若缺少 ENCRYPTION_KEY / SESSION_SECRET，自动生成 32 字节强随机密钥（CSPRNG）        │
 │  - 持久化存入 PostgreSQL `system_secrets` 表 (禁止仅内存临时密钥)                             │
 │  - 后续引入外部密钥时，需执行显式重加密步骤                                                   │
@@ -365,9 +350,50 @@
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+#### State Transitions
+
+| 范围 | 之前 | 之后 |
+|------|------|------|
+| 默认管理员 | 无 | 已初始化（`force_password_change=true`） |
+| 核心密钥 | 未设置 | 来自环境变量或自动生成并持久化 |
+| 内置角色 | 未初始化 | 基线角色已落库（幂等 seed） |
+
+#### Failure & Edge Cases
+
+- 缺少必需数据库连接时必须在部分写入前中止启动。
+- 密钥生成与持久化必须原子完成，避免进入不可恢复状态。
+
+#### Authority Links
+
+- [ADR-0025 §Decision Outcome](../../../../adr/ADR-0025-secret-bootstrap.md#decision-outcome)
+- [01-contracts.md §3.2.2 System Secrets Table](../../../../design/phases/01-contracts.md#322-system-secrets-table-adr-0025)
+- [00-prerequisites.md §7 CI Pipeline](../../../../design/phases/00-prerequisites.md#7-ci-pipeline)
+- [00-prerequisites.md §8 Data Initialization](../../../../design/phases/00-prerequisites.md#8-data-initialization-adr-0018)
+
+#### Scope Boundary
+
+本节仅定义首次部署行为与结果。密钥轮换与高级运维流程不在本节展开。
+
 ### 阶段 2: 平台安全配置 (首次部署) {#stage-2}
 
 > **参考**: ADR-0015 §22 (Authentication & RBAC Strategy)
+
+<a id="stage-2-a"></a>
+<a id="stage-2-a-plus"></a>
+<a id="stage-2-b"></a>
+<a id="stage-2-c"></a>
+<a id="stage-2-d"></a>
+
+#### Purpose
+
+建立业务流量进入前必须具备的认证、鉴权与安全基线。
+
+#### Actors & Trigger
+
+- 触发：首次部署后执行安全初始化。
+- 参与方：引导进程、平台管理员、身份源集成配置。
+
+#### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -401,7 +427,7 @@
 │  │    -- 所有角色使用显式权限。通配符模式 (*:*) 已禁止。                                │       │
 │  │    -- platform:admin 是显式超管权限（编译时常量）。                                  │       │
 │  │    -- Bootstrap 角色使用 platform:admin 且必须在初始化后禁用。                       │       │
-│  │    -- 详见 docs/operations/bootstrap-role-sop.md 安全验证流程。                     │       │
+│  │    -- Bootstrap 角色禁用 SOP 见框后 Markdown 说明。                             │       │
 │  │                                                                                    │       │
 │  │  -- 2. 内置角色 (ADR-0019 合规)                                                    │       │
 │  │  INSERT INTO roles (id, name, is_builtin, description) VALUES                     │       │
@@ -438,7 +464,7 @@
 │  │  -- ⚠️ ADR-0019 安全 SOP:                                                           │       │
 │  │  -- 平台初始化完成后，必须禁用 bootstrap 角色:                                        │       │
 │  │  --   DELETE FROM role_bindings WHERE role_id = 'role-bootstrap';                  │       │
-│  │  -- 详见 docs/operations/bootstrap-role-sop.md                                      │       │
+│  │  -- 完整执行步骤见框后 Markdown 说明。                                             │       │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -520,7 +546,7 @@
                                            │
                                            ▼
 
-> **标准化 Provider 输出**：所有认证提供方（OIDC/LDAP/SSO）通过适配层统一成标准输出，用于 RBAC 映射。见 ADR-0026。
+> **标准化 Provider 输出**：所有认证提供方（OIDC/LDAP/SSO）通过适配层统一成标准输出，用于 RBAC 映射。见 [ADR-0026 §Standard Provider Output](../../../../adr/ADR-0026-idp-config-naming.md#standard-provider-output-contract)。
 
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 │                         阶段 2.B: 配置认证方式 (OIDC/LDAP)                                      │
@@ -762,83 +788,70 @@
 3. 结果: 李四继承 System 的 member 权限 → ✅ 可以查看该 VM
 ```
 
-### 阶段 2.E: 外部审批系统配置 (可选) {#stage-2-e}
+#### 阶段 2 Bootstrap 角色安全说明
 
-> **Added 2026-01-26**: 外部审批系统集成配置
+- Bootstrap 角色（`role-bootstrap`）仅用于初始化，首次部署完成后必须禁用。
+- 操作流程：
+  [operations/bootstrap-role-sop.md](../../../../operations/bootstrap-role-sop.md)
+- 治理与审计基线：
+  [04-governance.md §7 Audit Logging](../../../../design/phases/04-governance.md#7-audit-logging)
+
+#### State Transitions
+
+| 领域 | 典型状态变化 |
+|------|-------------|
+| 用户认证档案 | 首次登录后 `uninitialized -> active` |
+| 角色绑定 | `absent -> assigned`（全局或资源级） |
+| 审批能力 | 配置完成后 `disabled -> enabled` |
+
+#### Failure & Edge Cases
+
+- Bootstrap 角色在初始化后必须禁用，避免遗留超管风险。
+- 外部 IdP 映射漂移不得导致静默提权。
+- 继承链无绑定时必须默认拒绝可见性与操作。
+
+#### Authority Links
+
+- [ADR-0015 §22 Authentication and RBAC Strategy](../../../../adr/ADR-0015-governance-model-v2.md#22-authentication-rbac-strategy)
+- [04-governance.md §7 Audit Logging](../../../../design/phases/04-governance.md#7-audit-logging)
+- [01-contracts.md §1.1 Naming Constraints](../../../../design/phases/01-contracts.md#11-naming-constraints-adr-0019)
+
+#### Scope Boundary
+
+本节定义安全交互语义与权限边界。协议细节与加固清单在 phase/operations 文档中定义。
+
+### 阶段 2.E: 审批 Provider 标准 (V1 内置，V2+ 外部插件) {#stage-2-e}
+
+> **Added 2026-01-26**: 审批 Provider 模型与外部集成边界
+
+#### Purpose
+
+定义统一的审批 Provider 契约。V1 只内置一个 Provider；
+外部系统通过插件适配接入，且不改变审批状态机语义。
+
+#### Actors & Trigger
+
+- 触发：平台管理员制定审批 Provider 策略与路由规则。
+- 参与方：平台管理员、审批 Provider 路由层、内置 Provider、可选外部 Provider 适配器。
+
+#### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                         阶段 2.E: 外部审批系统配置 (可选)                                       │
+│ 阶段 2.E：审批 Provider 边界（统一契约 + 可插拔实现）                                           │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
-│  平台管理员操作:                                                                               │
+│  V1 上线路径（必需）：                                                                          │
+│    1) 用户提交请求 -> approval_tickets=PENDING_APPROVAL                                       │
+│    2) 路由层选择内置 Provider（`builtin-default`，V1 唯一实现）                                │
+│    3) 内置审批人做 APPROVED / REJECTED 决策                                                    │
+│    4) Shepherd 执行后续路径并记录审计                                                          │
 │                                                                                              │
-│  ┌─ Step 1: 添加外部审批系统 ──────────────────────────────────────────────────────────────┐   │
-│  │                                                                                        │   │
-│  │  外部审批系统列表                                                                       │   │
-│  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
-│  │  │  名称              类型            状态         操作                            │   │   │
-│  │  │  ────────────────────────────────────────────────────────────────────────────  │   │   │
-│  │  │  OA-审批           Webhook         ✅ 启用      [编辑] [禁用] [删除]             │   │   │
-│  │  │  ServiceNow        ServiceNow      ⚪ 禁用      [编辑] [启用] [删除]             │   │   │
-│  │  │                                                                                  │   │   │
-│  │  │  [+ 添加审批系统]                                                                 │   │   │
-│  │  └────────────────────────────────────────────────────────────────────────────────┘   │   │
-│  │                                                                                        │   │
-│  └────────────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                              │
-│  ┌─ Step 2: 配置 Webhook 类型 ─────────────────────────────────────────────────────────────┐   │
-│  │                                                                                        │   │
-│  │  添加外部审批系统 - Webhook                                                             │   │
-│  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
-│  │  │                                                                                  │   │   │
-│  │  │  名称:         [OA-审批                      ]                                   │   │   │
-│  │  │  类型:         ( ) Webhook   (●) ServiceNow   ( ) Jira                           │   │   │
-│  │  │                                                                                  │   │   │
-│  │  │  ── Webhook 配置 ───────────────────────────────────────────────────────────    │   │   │
-│  │  │  Webhook URL:  [https://oa.company.com/api/approval/callback                ]   │   │   │
-│  │  │  Secret:       [••••••••••••                                ] 👁               │   │   │
-│  │  │                                                                                  │   │   │
-│  │  │  自定义 Headers (JSON):                                                          │   │   │
-│  │  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │   │
-│  │  │  │  {                                                                        │   │   │   │
-│  │  │  │    "X-API-Key": "your-api-key",                                          │   │   │   │
-│  │  │  │    "X-Tenant-ID": "company-001"                                          │   │   │   │
-│  │  │  │  }                                                                        │   │   │   │
-│  │  │  └──────────────────────────────────────────────────────────────────────────┘   │   │   │
-│  │  │                                                                                  │   │   │
-│  │  │  超时 (秒):    [30             ]                                                │   │   │
-│  │  │  重试次数:     [3              ]                                                │   │   │
-│  │  │                                                                                  │   │   │
-│  │  │  [测试连接]  [保存]                                                              │   │   │
-│  │  │                                                                                  │   │   │
-│  │  └────────────────────────────────────────────────────────────────────────────────┘   │   │
-│  │                                                                                        │   │
-│  └────────────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                              │
-│  📦 数据库操作:                                                                               │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  INSERT INTO external_approval_systems                                            │       │
-│  │    (id, name, type, enabled, webhook_url, webhook_secret, webhook_headers,        │       │
-│  │     timeout_seconds, retry_count, created_by, created_at)                         │       │
-│  │  VALUES                                                                            │       │
-│  │    ('eas-001', 'OA-审批', 'webhook', true,                                         │       │
-│  │     'https://oa.company.com/api/approval/callback',                                │       │
-│  │     'encrypted:AES256:xxxx',                   -- 加密存储                          │       │
-│  │     '{"X-API-Key": "xxx", "X-Tenant-ID": "company-001"}',                          │       │
-│  │     30, 3, 'admin', NOW());                                                        │       │
-│  │                                                                                    │       │
-│  │  -- 审计日志                                                                         │       │
-│  │  INSERT INTO audit_logs (action, actor_id, resource_type, resource_id, details)   │       │
-│  │  VALUES ('external_approval_system.create', 'admin',                               │       │
-│  │          'external_approval_system', 'eas-001',                                    │       │
-│  │          '{"name": "OA-审批", "type": "webhook", "url": "https://oa.company.com..."}');  │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  💡 敏感数据加密:                                                                             │
-│  - webhook_secret 使用 AES-256-GCM 加密存储                                                  │
-│  - 解密密钥优先来自外部/环境变量，缺省则使用数据库生成的密钥                                 │
-│  - 日志中不记录敏感字段值                                                                      │
+│  外部插件路径（V2+ 路线图）：                                                                  │
+│    1) 外部适配器插件按策略注册并启用                                                           │
+│    2) 路由层通过 ExternalApprovalProvider.SubmitForApproval 委派工单                           │
+│    3) 回调/轮询结果映射到统一的 APPROVED / REJECTED                                            │
+│    4) 外部超时/不可用 -> 可控回退到内置审批队列                                                │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -862,7 +875,7 @@
 │  │  POST /api/v1/admin/clusters                                                             │ │
 │  │  { "name": "cluster-a", "kubeconfig": "...", "environment": "prod" }                     │ │
 │  │                                                                                          │ │
-│  │  系统自动探测 (参考 ADR-0014)，管理员无需手动配置:                                          │ │
+│  │  系统自动探测，管理员无需手动配置:                                                          │ │
 │  │  ┌───────────────────────────────────────────────────────────────────────────────────────┐ │ │
 │  │  │  探测项目          探测方式                                     结果示例              │ │ │
 │  │  │  ────────────────────────────────────────────────────────────────────────────────────│ │ │
@@ -895,9 +908,9 @@
 │  │                                                                                          │ │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                              │
-│  ┌─ 步骤 2: 配置 Namespace (ADR-0017 合规) ──────────────────────────────────────────────────┐ │
+│  ┌─ 步骤 2: 配置 Namespace ───────────────────────────────────────────────────────────────────┐ │
 │  │                                                                                          │ │
-│  │  ⚠️ 核心原则 (ADR-0017):                                                                  │ │
+│  │  ⚠️ 核心原则:                                                                              │ │
 │  │  - Namespace 是**全局逻辑实体**，不绑定到特定集群                                           │ │
 │  │  - 实际 K8s namespace 在审批通过的 VM 部署时 JIT (即时) 创建                                │ │
 │  │  - **VM 请求提交后 Namespace 不可变**                                                      │ │
@@ -923,19 +936,11 @@
 │  │     管理员审批 VM 请求并选择目标集群后:                                                     │ │
 │  │     1. 检查目标集群上是否存在 K8s namespace                                                │ │
 │  │     2. 如不存在 → 创建带有标准标签的 namespace                                             │ │
-│  │     3. 错误处理（K8s API 错误被分类后报告）:                                               │ │
-│  │        - 权限不足 → NAMESPACE_PERMISSION_DENIED (403)                                     │ │
-│  │        - ResourceQuota 超限 → NAMESPACE_QUOTA_EXCEEDED (403) ¹                            │ │
-│  │        - 其他错误 → NAMESPACE_CREATION_FAILED (500)                                       │ │
-│  │     详见 ADR-0017 §142-221 完整 JIT 创建流程。                                            │ │
-│  │                                                                                          │ │
-│  │     ¹ K8s 可能因集群 ResourceQuota 策略拒绝创建 namespace。                                │ │
-│  │       失败处理: 工单 → FAILED_PROVISIONING，使用指数退避重试。                              │ │
-│  │       详见 ADR-0017 §142-221 完整 JIT 错误处理和恢复策略。                                  │ │
+│  │     3. 对 K8s API 错误做分类并返回标准错误码（细节见框后 Markdown 说明）。                  │ │
 │  │                                                                                          │ │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                              │
-│  ┌─ 步骤 3: 配置 Template (参考 ADR-0015 §5, §17) ───────────────────────────────────────────┐ │
+│  ┌─ 步骤 3: 配置 Template ─────────────────────────────────────────────────────────────────────┐ │
 │  │                                                                                          │ │
 │  │  模板定义 VM 的操作系统基础配置:                                                            │ │
 │  │  - OS 镜像来源 (DataVolume / PVC 引用)                                                    │ │
@@ -983,7 +988,7 @@
 │  │  │  [保存]                                                                            │   │ │
 │  │  └──────────────────────────────────────────────────────────────────────────────────┘   │ │
 │  │                                                                                          │ │
-│  │  模板版本说明 (ADR-0015 §17):                                                            │ │
+│  │  模板版本说明:                                                                            │ │
 │  │  - 用户提交请求时看到当前活跃版本                                                          │ │
 │  │  - 管理员审批时可选择不同版本                                                              │ │
 │  │  - 最终模板内容快照到 ApprovalTicket，VM 创建后不受模板更新影响                            │ │
@@ -1054,15 +1059,100 @@
 │  │                                                                                          │ │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                              │
+│  ⚠️ Dry-Run 校验：                                                                           │
+│  ┌──────────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                                                                                          │ │
+│  │  保存前，管理员可对目标集群执行 InstanceSize 兼容性校验：                                 │ │
+│  │                                                                                          │ │
+│  │  POST /api/v1/admin/instance-sizes?dryRun=All                                            │ │
+│  │  POST /api/v1/admin/instance-sizes?dryRun=All&targetCluster={cluster_id}                 │ │
+│  │                                                                                          │ │
+│  │  校验阶段：                                                                              │ │
+│  │  ┌────────────────────────────────────────────────────────────────────────────────────┐  │ │
+│  │  │  阶段 1: 结构检查            → YAML/JSON 语法合法                                  │  │ │
+│  │  │  阶段 2: Schema 校验         → 与 KubeVirt VirtualMachine Schema 兼容               │  │ │
+│  │  │  阶段 3: 集群 Dry-Run (可选) → 在目标集群执行 kubectl apply --dry-run=server        │  │ │
+│  │  └────────────────────────────────────────────────────────────────────────────────────┘  │ │
+│  │                                                                                          │ │
+│  │  响应（dry-run 模式）：                                                                  │ │
+│  │  {                                                                                       │ │
+│  │      "valid": true,                                                                     │ │
+│  │      "rendered_yaml": "...",     👈 生成 VM 规格预览                                    │ │
+│  │      "compatible_clusters": ["cluster-a", "cluster-c"]   👈 匹配的集群列表              │ │
+│  │  }                                                                                       │ │
+│  │                                                                                          │ │
+│  └──────────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+#### 阶段 3 JIT Namespace 执行说明 {#stage-3-jit-namespace}
+
+<a id="stage-3-c"></a>
+
+- 错误分类（标准错误码）：
+  - `NAMESPACE_PERMISSION_DENIED (403)`：目标集群拒绝 namespace 创建权限。
+  - `NAMESPACE_QUOTA_EXCEEDED (403)`：被集群 ResourceQuota 策略拒绝。
+  - `NAMESPACE_CREATION_FAILED (500)`：其他未归类的 K8s/API 错误。
+- 失败处理基线：
+  - 工单状态转为 `FAILED_PROVISIONING`。
+  - Worker 使用指数退避策略重试。
+- 规范来源：
+  - [ADR-0017 §Namespace Just-In-Time Creation (Added 2026-01-27)](../../../../adr/ADR-0017-vm-request-flow-clarification.md#namespace-just-in-time-creation-added-2026-01-27)
+  - [01-contracts.md §Error Code Standard (ADR-0023)](../../../../design/phases/01-contracts.md#error-code-standard-adr-0023)
+
+#### State Transitions
+
+| 领域 | 典型状态变化 |
+|------|-------------|
+| 审批 Provider 集合 | 内置实现隐式存在 -> 显式 Provider 注册表（V1 仅内置） |
+| 决策契约 | 存在提供方差异解读风险 -> 统一 `APPROVED/REJECTED` 契约 |
+| 故障回退模式 | 隐式 -> 外部适配器故障时显式回退到内置审批 |
+
+#### Failure & Edge Cases
+
+- 外部适配器不可用不得阻塞内置 Provider 主路径。
+- 回调签名或状态映射不合法必须拒绝并记录审计。
+- 外部审批超时必须保持工单可恢复（回退或继续 pending），不得形成孤儿状态。
+
+#### Authority Links
+
+- [ADR-0005 §Decision](../../../../adr/ADR-0005-workflow-extensibility.md#decision)
+- [ADR-0015 §21 Scope Exclusions (V1)](../../../../adr/ADR-0015-governance-model-v2.md#21-scope-exclusions-v1)
+- [04-governance.md §9 External Approval Systems](../../../../design/phases/04-governance.md#9-external-approval-systems-v1-interface-only)
+- [04-governance.md §9.1 Interface Definition](../../../../design/phases/04-governance.md#91-interface-definition)
+- [04-governance.md §7 Audit Logging](../../../../design/phases/04-governance.md#7-audit-logging)
+- [RFC-0004 External Approval Systems Integration](../../../../rfc/RFC-0004-external-approval.md)
+
+#### Scope Boundary
+
+本节只定义审批 Provider 模型与 V1 边界。
+提供方 payload/callback/安全细节归属
+[Part 4 §审批 Provider 插件化架构 (V2+ 路线图)](#external-approval-v2-roadmap)
+与 RFC-0004。
 
 
 ---
 
 ## Part 2: 资源管理流程
 
+<a id="stage-4-a"></a>
+<a id="stage-4-a-plus"></a>
+<a id="stage-4-b"></a>
+<a id="stage-4-c"></a>
+
 > **说明**: 用户在创建 VM 之前，必须先创建 System 和 Service 来组织资源。
+
+### Purpose
+
+定义 System/Service 资源层级创建与归属关系的交互行为。
+
+### Actors & Trigger
+
+- 触发：普通用户为后续 VM 工作负载创建资源层级。
+- 参与方：资源拥有者、团队成员、RBAC 评估层、审计子系统。
+
+### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -1326,11 +1416,47 @@
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### State Transitions (Part 2)
+
+| 实体 | 典型状态变化 |
+|------|-------------|
+| System | `none -> ACTIVE`（创建成功） |
+| Service | 父 System 校验通过后 `none -> ACTIVE` |
+| 资源成员关系 | `none -> owner/admin/member/viewer`（遵循继承语义） |
+
+### Failure & Edge Cases (Part 2)
+
+- 未授权或不可见的父 System 下创建 Service 必须失败。
+- 同一作用域内逻辑名冲突必须在提交前失败。
+- 删除必须满足级联约束与确认参数要求。
+
+### Authority Links (Part 2)
+
+- [ADR-0015 §13 Deletion Cascade Constraints](../../../../adr/ADR-0015-governance-model-v2.md#13-deletion-cascade-constraints)
+- [ADR-0019 §Baseline Controls (Normative)](../../../../adr/ADR-0019-governance-security-baseline-controls.md#baseline-controls-normative)
+- [04-governance.md §6.1 Delete Cascade and Confirmation](../../../../design/phases/04-governance.md#61-delete-cascade-and-confirmation-mechanism-adr-0015-13-131)
+- [database/schema-catalog.md §Table Domains](../../../../design/database/schema-catalog.md#table-domains)
+
+### Scope Boundary (Part 2)
+
+本部分定义层级与权限交互预期。DDL、索引策略与 SQL 实现细节以 database/phase 文档为准。
+
 ---
 
 ## Part 3: VM 生命周期流程
 
 > **说明**: 本节描述 VM 的完整生命周期：创建请求 → 审批 → 执行 → 运行 → 删除
+
+### Purpose
+
+描述 VM 从提交申请到审批、执行、运行、删除的端到端交互预期。
+
+### Actors & Trigger
+
+- 触发：普通用户在 Service 作用域提交 VM 创建请求。
+- 参与方：申请用户、平台审批管理员、异步 worker、provider 集成层。
+
+### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -1440,7 +1566,6 @@
 │                                                                                              │
 │  ² **技术约束**: `dedicatedCpuPlacement` 要求 KubeVirt 使用 Guaranteed QoS 类，               │
 │    意味着 CPU request 必须等于 limit。这是 K8s/KubeVirt 硬性约束，无法绕过。                       │
-│    详见 KubeVirt compute 文档。                                                                │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
                                            │
@@ -1479,6 +1604,13 @@
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### 阶段 5.B 约束说明：专用 CPU 与超卖
+
+- 硬约束：`dedicatedCpuPlacement` 要求 Guaranteed QoS，因此 CPU request 必须等于 CPU limit。
+- 该校验在审批流中是阻断型错误（不是提示型警告）。
+- 参考：
+  [KubeVirt Compute resource requests and limits](https://kubevirt.io/user-guide/compute/resources_requests_and_limits/)
+
 ### 参数来源总结
 
 | 参数 | 填写者 | 来源 | 说明 |
@@ -1498,511 +1630,364 @@
 | **UI 渲染** | 开发者预定义下拉框选项 | 前端根据 Schema 类型自动渲染 |
 | **后端职责** | 做 KV 子集匹配 | 只存储 JSON，提取资源做匹配 |
 
----
+### State Transitions (阶段 5.A-5.C)
 
-### 阶段 5.A (续): VM 创建请求 - 数据库操作
+| 阶段 | 工单 | 领域事件 | VM | Worker Job |
+|------|------|----------|----|------------|
+| 5.A 提交 | 创建为 `PENDING_APPROVAL` | 创建为 `PENDING` | 无 | 无 |
+| 5.B 批准 | `PENDING_APPROVAL -> APPROVED` | `PENDING -> PROCESSING` | 创建为 `CREATING` | 插入 |
+| 5.B 拒绝 | `PENDING_APPROVAL -> REJECTED` | `PENDING -> CANCELLED` | 无 | 无 |
+| 5.C 执行 | 不变 | 随执行推进 | `CREATING -> RUNNING|FAILED` | 消费并完成 |
 
-> **说明**: 用户提交 VM 请求后的数据库事务处理
->
-> **⚠️ ADR 合规要求**:
-> - [ADR-0009](../../../../adr/ADR-0009-domain-event-pattern.md): 领域事件必须在同一事务中创建
-> - [ADR-0012](../../../../adr/ADR-0012-hybrid-transaction.md): 原子性 Ent + sqlc 事务
->
-> **审计日志 vs 领域事件**:
-> - `audit_logs`: 人类可读的合规记录 (谁在何时做了什么)
-> - `domain_events`: 机器可读的状态流转 (系统重放/投影)
-> 二者均为必须，功能互补，不可替代。
+### Failure & Edge Cases (阶段 5.A-5.C)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                         用户提交 VM 请求 - 数据库操作                                          │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                              │
-│  用户点击 [提交申请] 按钮:                                                                     │
-│                                                                                              │
-│  📦 数据库操作 (单事务 - ADR-0012):                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │                                                                                    │       │
-│  │  -- ⚠️ 重复请求检查 (ADR-0015 §10) - 在事务开始前执行                              │       │
-│  │  -- 检查是否存在同 service_id + 同用户的 PENDING 请求                               │       │
-│  │  SELECT id FROM approval_tickets                                                   │       │
-│  │  WHERE service_id = 'svc-001'                                                      │       │
-│  │    AND requester_id = 'zhang.san'                                                  │       │
-│  │    AND status IN ('PENDING_APPROVAL', 'APPROVED')  -- 未完成的请求                  │       │
-│  │    AND type = 'VM_CREATE';                                                         │       │
-│  │  -- 如果找到 → 返回 409 Conflict (请求已存在)                                       │       │
-│  │  -- 如果未找到 → 继续下方事务                                                       │       │
-│  │                                                                                    │       │
-│  │  BEGIN TRANSACTION;                                                               │       │
-│  │                                                                                    │       │
-│  │  -- 1. 创建领域事件 (ADR-0009) 👈 必须                                              │       │
-│  │  INSERT INTO domain_events (                                                      │       │
-│  │      id, type, aggregate_type, aggregate_id,                                       │       │
-│  │      payload, status, created_at                                                   │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'evt-001',                                                                    │       │
-│  │      'VM_CREATE_REQUESTED',             👈 事件类型                                 │       │
-│  │      'vm', NULL,                        👈 聚合类型 (VM 尚未创建)                    │       │
-│  │      '{"service_id": "svc-001", "instance_size_id": "is-gpu"...}',                │       │
-│  │      'PENDING',                         👈 等待审批 (ADR-0009 L156)                 │       │
-│  │      NOW()                                                                        │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 2. 创建审批工单 (关联事件)                                                       │       │
-│  │  INSERT INTO approval_tickets (                                                   │       │
-│  │      id, event_id, type, status, requester_id,                                    │       │
-│  │      service_id, namespace, instance_size_id, template_id,                        │       │
-│  │      request_params, reason, created_at                                           │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'ticket-001',                                                                │       │
-│  │      'evt-001',                         👈 关联领域事件                             │       │
-│  │      'VM_CREATE',                                                                 │       │
-│  │      'PENDING_APPROVAL',                👈 初始状态: 待审批                          │       │
-│  │      'zhang.san',                                                                 │       │
-│  │      'svc-001',                                                                   │       │
-│  │      'prod-shop',                                                                 │       │
-│  │      'is-gpu-workstation',                                                        │       │
-│  │      'tpl-centos7',                                                               │       │
-│  │      '{"disk_gb": 100}',                👈 用户可调整的参数                         │       │
-│  │      '生产环境部署',                                                               │       │
-│  │      NOW()                                                                        │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 3. 记录审计日志 (人类可读合规)                                                   │       │
-│  │  INSERT INTO audit_logs (                                                         │       │
-│  │      id, action, actor_id, resource_type, resource_id, details, created_at        │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'log-001', 'REQUEST_SUBMITTED', 'zhang.san',                                 │       │
-│  │      'approval_ticket', 'ticket-001',                                             │       │
-│  │      '{"action": "VM_CREATE", "namespace": "prod-shop"}',                         │       │
-│  │      NOW()                                                                        │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 4. 通过 NotificationSender 接口通知管理员 (ADR-0015 §20)                        │       │
-│  │  --    V1: InboxNotificationSender (平台内置信箱)                                   │       │
-│  │  --    V2+: 外部适配器 (Email, Webhook, Slack) 通过插件层实现                       │       │
-│  │  INSERT INTO notifications (                                                      │       │
-│  │      id, recipient_role, type, title, content, related_ticket_id, created_at      │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'notif-001', 'admin', 'APPROVAL_REQUIRED',                                   │       │
-│  │      '新的 VM 创建请求', '用户 zhang.san 申请创建 VM...',                          │       │
-│  │      'ticket-001', NOW()                                                          │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  COMMIT;                                                                          │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  📊 状态流转:                                                                                │
-│     - ApprovalTicket: (无) → PENDING_APPROVAL                                                │
-│     - DomainEvent: (无) → PENDING                                                            │
-│                                                                                              │
-│  🚫 注意: 此阶段不插入 River Job (等待审批)                                                    │
-│                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+- 同一操作的重复待审批提交必须在写入前拦截。
+- 审批阶段集群能力不匹配必须阻断审批，不得调度 worker。
+- 执行失败必须保留可审计轨迹并支持确定性重试。
+
+### Authority Links (阶段 5.A-5.C)
+
+- [ADR-0017 §Decision](../../../../adr/ADR-0017-vm-request-flow-clarification.md#decision)
+- [ADR-0018 §User Interaction Flow](../../../../adr/ADR-0018-instance-size-abstraction.md#user-interaction-flow)
+- [database/vm-lifecycle-write-model.md §Stage 5.A](../../../../design/database/vm-lifecycle-write-model.md#stage-5a-vm-request-submission-pending-approval)
+- [frontend/FRONTEND.md §API Type Integration](../../../../design/frontend/FRONTEND.md#api-type-integration-adr-0021)
+
+### Scope Boundary (阶段 5.A-5.C)
+
+本节定义交互顺序与状态预期。SQL/DDL/迁移与 worker 实现细节以 database/phase 文档为准。
 
 ---
 
-### 阶段 5.B (续): 管理员审批 - 数据库操作
+### 阶段 5.A：持久化摘要 {#stage-5-a}
 
-> **说明**: 管理员审批/拒绝请求后的数据库事务处理
->
-> **⚠️ ADR 合规要求**:
-> - [ADR-0006](../../../../adr/ADR-0006-unified-async-model.md): River Job 必须在同一事务中插入
-> - [ADR-0009](../../../../adr/ADR-0009-domain-event-pattern.md): DomainEvent 状态必须更新
-> - [ADR-0012](../../../../adr/ADR-0012-hybrid-transaction.md): 原子性 Ent + sqlc + River InsertTx
+#### Purpose
+
+总结用户提交 VM 请求后的持久化意图，同时将实现细节下沉到数据库文档层。
+
+#### Actors & Trigger
+
+- 触发：用户提交 VM 创建请求。
+- 参与方：申请人、审批工作流子系统、通知子系统。
+
+#### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                         管理员批准 VM 请求 - 数据库操作                                        │
+│ 阶段 5.A 持久化意图（提交写集）                                                                 │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
-│  管理员点击 [批准] 按钮:                                                                       │
-│                                                                                              │
-│  📦 数据库操作 (单事务 - ADR-0012):                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  BEGIN TRANSACTION;                                                               │       │
-│  │                                                                                    │       │
-│  │  -- 1. 更新工单状态                                                                 │       │
-│  │  UPDATE approval_tickets SET                                                      │       │
-│  │      status = 'APPROVED',                  👈 状态变更: PENDING → APPROVED         │       │
-│  │      approver_id = 'admin.li',                                                    │       │
-│  │      approved_at = NOW(),                                                         │       │
-│  │      selected_cluster_id = 'cluster-a',     👈 管理员选择的集群 (ADR-0017)            │       │
-│  │      selected_storage_class = 'ceph-rbd',   👈 管理员选择的存储类                      │       │
-│  │      template_snapshot = '{...}',          👈 模板快照 (ADR-0015 §17)              │       │
-│  │      instance_size_snapshot = '{...}',     👈 InstanceSize 快照 (ADR-0018)         │       │
-│  │      final_cpu_request = '4',              👈 最终 CPU request (超卖调整后)        │       │
-│  │      final_cpu_limit = '8',                                                       │       │
-│  │      final_mem_request = '16Gi',           👈 最终内存 request                     │       │
-│  │      final_mem_limit = '32Gi',                                                    │       │
-│  │      final_disk_gb = 100                   👈 最终磁盘大小                          │       │
-│  │  WHERE id = 'ticket-001';                                                         │       │
-│  │                                                                                    │       │
-│  │  -- 2. 更新领域事件状态 (ADR-0009) 👈 必须                                           │       │
-│  │  UPDATE domain_events SET                                                         │       │
-│  │      status = 'PROCESSING',               👈 状态变更: PENDING → PROCESSING         │       │
-│  │      updated_at = NOW()                                                           │       │
-│  │  WHERE id = 'evt-001';                                                            │       │
-│  │                                                                                    │       │
-│  │  -- 3. 生成 VM 名称并创建 VM 记录                                                    │       │
-│  │  INSERT INTO vms (                                                                │       │
-│  │      id, name, service_id, namespace, cluster_id,                                 │       │
-│  │      instance_size_id, template_id, status,                                       │       │
-│  │      ticket_id, created_at                                                        │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'vm-001',                                                                    │       │
-│  │      'prod-shop-shop-redis-01',            👈 自动生成: {ns}-{sys}-{svc}-{index}   │       │
-│  │      'svc-001', 'prod-shop', 'cluster-a',                                         │       │
-│  │      'is-gpu-workstation', 'tpl-centos7',                                         │       │
-│  │      'CREATING',                           👈 初始状态: 创建中                      │       │
-│  │      'ticket-001', NOW()                                                          │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 4. 插入 River Job (ADR-0006/0012) 👈 必须 - 触发异步执行                         │       │
-│  │  INSERT INTO river_job (                                                          │       │
-│  │      id, kind, args, queue, state, created_at                                     │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'job-001',                                                                   │       │
-│  │      'VMCreateJob',                        👈 River worker 类型                     │       │
-│  │      '{"event_id": "evt-001", "vm_id": "vm-001", "ticket_id": "ticket-001"}',    │       │
-│  │      'default',                                                                   │       │
-│  │      'available',                          👈 可被 worker 消费                      │       │
-│  │      NOW()                                                                        │       │
-│  │  );                                                                                │       │
-│  │  -- 注意: 代码中使用 riverClient.InsertTx(), 而非原始 INSERT                         │       │
-│  │                                                                                    │       │
-│  │  -- 5. 记录审计日志                                                                 │       │
-│  │  INSERT INTO audit_logs (                                                         │       │
-│  │      id, action, actor_id, resource_type, resource_id, details, created_at        │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'log-002', 'REQUEST_APPROVED', 'admin.li',                                   │       │
-│  │      'approval_ticket', 'ticket-001',                                             │       │
-│  │      '{"cluster": "cluster-a", "vm_name": "prod-shop-shop-redis-01"}',            │       │
-│  │      NOW()                                                                        │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 6. 发送通知给用户                                                               │       │
-│  │  INSERT INTO notifications (                                                      │       │
-│  │      id, recipient_id, type, title, content, related_ticket_id, created_at        │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'notif-002', 'zhang.san', 'REQUEST_APPROVED',                                │       │
-│  │      '您的 VM 请求已批准', 'VM prod-shop-shop-redis-01 正在创建...',               │       │
-│  │      'ticket-001', NOW()                                                          │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  COMMIT;                                                                          │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  📊 状态流转:                                                                                │
-│     - ApprovalTicket: PENDING_APPROVAL → APPROVED                                            │
-│     - DomainEvent: PENDING → PROCESSING                                                      │
-│     - VM: (无) → CREATING                                                                    │
-│     - RiverJob: (无) → available                                                             │
-│                                                                                              │
-│  🔄 异步执行: River worker 读取 Job，调用 KubeVirt API                                         │
-│                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                         管理员拒绝 VM 请求 - 数据库操作                                        │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                              │
-│  管理员点击 [拒绝] 按钮:                                                                       │
-│                                                                                              │
-│  📦 数据库操作 (单事务 - ADR-0012):                                                            │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  BEGIN TRANSACTION;                                                               │       │
-│  │                                                                                    │       │
-│  │  -- 1. 更新工单状态                                                                 │       │
-│  │  UPDATE approval_tickets SET                                                      │       │
-│  │      status = 'REJECTED',                  👈 状态变更: PENDING → REJECTED         │       │
-│  │      approver_id = 'admin.li',                                                    │       │
-│  │      rejected_at = NOW(),                                                         │       │
-│  │      rejection_reason = '资源不足，请选择其他InstanceSize（规格）'                  │       │
-│  │  WHERE id = 'ticket-001';                                                         │       │
-│  │                                                                                    │       │
-│  │  -- 2. 更新领域事件状态 (ADR-0009) 👈 必须                                           │       │
-│  │  UPDATE domain_events SET                                                         │       │
-│  │      status = 'CANCELLED',                👈 状态变更: PENDING → CANCELLED (被拒绝) │       │
-│  │      updated_at = NOW()                                                           │       │
-│  │  WHERE id = 'evt-001';                                                            │       │
-│  │                                                                                    │       │
-│  │  -- 3. 记录审计日志                                                                 │       │
-│  │  INSERT INTO audit_logs (...) VALUES (...);                                       │       │
-│  │                                                                                    │       │
-│  │  -- 4. 通知用户                                                                    │       │
-│  │  INSERT INTO notifications (...) VALUES (...);                                    │       │
-│  │                                                                                    │       │
-│  │  COMMIT;                                                                          │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  📊 状态流转:                                                                                │
-│     - ApprovalTicket: PENDING_APPROVAL → REJECTED                                            │
-│     - DomainEvent: PENDING → CANCELLED                                                       │
-│  ❌ 无 VM 记录创建, 无 River Job 插入                                                         │
+│  申请人提交 VM 请求                                                                           │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  API 预检查（RBAC + 重复待审批拦截）                                                          │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  单事务写入：                                                                                │
+│    1) approval_tickets: 创建 `PENDING_APPROVAL`                                              │
+│    2) domain_events: 创建 `PENDING`                                                          │
+│    3) audit_logs: 追加规范提交动作                                                           │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  返回 `202 Accepted`，前端据此轮询工单状态                                                     │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+#### State Transitions
+
+| 实体 | 之前 | 之后 |
+|------|------|------|
+| `approval_tickets` | 无 | `PENDING_APPROVAL` |
+| `domain_events` | 无 | `PENDING` |
+| `vms` | 无 | 无 |
+| `river_job` | 无 | 无 |
+
+#### Failure & Edge Cases
+
+- 同类待审批请求重复提交必须返回冲突并给出已有工单引用。
+- 事务内任一写入失败必须整体回滚。
+
+#### Authority Links
+
+- [database/vm-lifecycle-write-model.md §Stage 5.A](../../../../design/database/vm-lifecycle-write-model.md#stage-5a-vm-request-submission-pending-approval)
+- [ADR-0009 §Constraint 1 DomainEvent Payload Immutability](../../../../adr/ADR-0009-domain-event-pattern.md#constraint-1-domainevent-payload-immutability-append-only)
+- [ADR-0012 §Adopt Ent + sqlc Hybrid Mode](../../../../adr/ADR-0012-hybrid-transaction.md#adopt-ent-sqlc-hybrid-mode)
+
+#### Scope Boundary
+
+本节不定义 SQL 语句、索引和迁移细节。
+
+### 阶段 5.B：持久化摘要 {#stage-5-b}
+
+#### Purpose
+
+总结管理员批准/拒绝路径下的写入结果与一致性保证。
+
+#### Actors & Trigger
+
+- 触发：管理员对待审批 VM 请求执行批准或拒绝。
+- 参与方：审批人、事务编排层、River 调度器。
+
+#### Interaction Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 阶段 5.B 持久化意图（决策写集）                                                                 │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                              │
+│  审批人打开待审批工单                                                                          │
+│        │                                                                                     │
+│        ├── 批准路径                                                                            │
+│        │      1) 工单：`PENDING_APPROVAL -> APPROVED`                                        │
+│        │      2) 事件：`PENDING -> PROCESSING`                                               │
+│        │      3) VM：插入并置为 `CREATING`                                                   │
+│        │      4) River：入队执行任务                                                         │
+│        │      5) 审计：记录批准动作                                                          │
+│        │                                                                                     │
+│        └── 拒绝路径                                                                            │
+│               1) 工单：`PENDING_APPROVAL -> REJECTED`                                        │
+│               2) 事件：`PENDING -> CANCELLED`                                                │
+│               3) 不创建 VM / 不入队 River                                                    │
+│               4) 审计：记录拒绝动作                                                          │
+│                                                                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### State Transitions
+
+| 路径 | 工单 | 领域事件 | VM | River Job |
+|------|------|----------|----|-----------|
+| 批准 | `PENDING_APPROVAL -> APPROVED` | `PENDING -> PROCESSING` | 创建并置为 `CREATING` | 插入（`available`） |
+| 拒绝 | `PENDING_APPROVAL -> REJECTED` | `PENDING -> CANCELLED` | 不创建 | 不插入 |
+
+#### Failure & Edge Cases
+
+- 批准路径必须保持 claim-check（River 仅携带 EventID 引用）。
+- 拒绝路径不得创建 VM 记录或异步任务。
+
+#### Authority Links
+
+- [database/vm-lifecycle-write-model.md §Stage 5.B](../../../../design/database/vm-lifecycle-write-model.md#stage-5b-admin-approval-rejection)
+- [ADR-0006 §Decision](../../../../adr/ADR-0006-unified-async-model.md#decision)
+- [ADR-0009 §Constraint 1 DomainEvent Payload Immutability](../../../../adr/ADR-0009-domain-event-pattern.md#constraint-1-domainevent-payload-immutability-append-only)
+- [ADR-0012 §Adopt Ent + sqlc Hybrid Mode](../../../../adr/ADR-0012-hybrid-transaction.md#adopt-ent-sqlc-hybrid-mode)
+
+#### Scope Boundary
+
+本节仅定义状态结果与事务保证，不展开 SQL/DDL。
+
+### 阶段 5.D: 删除操作 {#stage-5-d}
+
+#### Purpose
+
+定义 VM/Service/System 删除的交互行为与状态预期。
+
+#### Actors & Trigger
+
+- 触发：用户或管理员发起删除 API，并携带必需确认参数。
+- 参与方：请求方、审批工作流（仅 VM）、异步 worker、审计子系统。
+
+#### Interaction Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 删除用户旅程（交互意图）                                                                        │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                              │
+│  资源详情页（VM / Service / System）                                                           │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  点击删除 -> UI 二次确认（`confirm=true` 或 `confirm_name`）                                 │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  API 校验：RBAC + 级联前置条件 + 环境策略                                                      │
+│        │                                                                                     │
+│        ├── VM 路径：创建删除审批工单 -> 审批决策                                                │
+│        │                                                                                     │
+│        └── Service/System 路径：无删除审批工单                                                 │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  执行路径可短暂进入 `DELETING`，完成清理后主表硬删除                                           │
+│  （审计日志/审批记录/领域事件按保留策略独立留存）                                              │
+│                                                                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+实体规则矩阵：
+
+| 实体 | 前置条件 | 审批 | 确认方式 | 主表行为 |
+|------|------|------|------|------|
+| VM（测试） | 无 | ✅ 需要 | `confirm=true` | `DELETING`（短暂）-> 硬删除 |
+| VM（生产） | 无 | ✅ 需要 | `confirm_name` | `DELETING`（短暂）-> 硬删除 |
+| Service | 子 VM 必须为 0 | ❌ 不需要 | `confirm=true` | `DELETING`（短暂）-> 硬删除 |
+| System | 子 Service 必须为 0 | ❌ 不需要 | `confirm_name` | 直接硬删除 |
+
+#### State Transitions
+
+| 流程 | 工单 | 资源 | 最终持久化结果 |
+|------|------|------|----------------|
+| VM 删除（审批通过） | `PENDING_APPROVAL -> APPROVED` | `RUNNING/STOPPED -> DELETING -> (主表删除)` | VM 主记录硬删除，审计/工单/事件独立保留 |
+| Service 删除 | 无工单 | `ACTIVE -> DELETING -> (主表删除)` | 清理完成后硬删除 Service 主记录 |
+| System 删除 | 无工单 | `ACTIVE -> (主表删除)` | 校验通过后事务内硬删除 |
+
+#### Failure & Edge Cases
+
+- 级联前置条件不满足必须阻断删除。
+- 确认参数不匹配必须在写入前失败。
+- 进入 `DELETING` 后若 worker 失败，必须可重试且可审计。
+
+#### Authority Links
+
+- [ADR-0015 §13 Deletion Cascade Constraints](../../../../adr/ADR-0015-governance-model-v2.md#13-deletion-cascade-constraints)
+- [ADR-0015 §13.1 Confirmation Mechanism](../../../../adr/ADR-0015-governance-model-v2.md#131-delete-confirmation-mechanism)
+- [04-governance.md §6.1 Delete Cascade and Confirmation](../../../../design/phases/04-governance.md#61-delete-cascade-and-confirmation-mechanism-adr-0015-13-131)
+- [04-governance.md §7 Audit Logging](../../../../design/phases/04-governance.md#7-audit-logging)
+- [database/lifecycle-retention.md §Retention Classes](../../../../design/database/lifecycle-retention.md#retention-classes-table-centric)
+- [database/vm-lifecycle-write-model.md §Stage 5.D](../../../../design/database/vm-lifecycle-write-model.md#stage-5d-delete-write-model)
+
+#### Scope Boundary
+
+本节只定义删除交互意图和结果，不展开 Schema/DDL/归档作业细节。
+
+> **删除动作命名规范**:
+> - V1 规范动作：`*.delete_submitted`、`*.delete_approved`（若适用）、`*.delete_executed`。
+> - `*.delete_request` / `*.delete` 属于旧命名，只允许出现在历史描述中；新增设计内容必须使用上述规范命名。
 
 ---
 
-### 阶段 5.D: 删除操作
+### 阶段 5.E: 批量操作
 
-> **说明**: VM/Service/System 的删除流程和数据库操作
+#### Purpose
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                         删除流程 - 层级依赖关系                                                │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                              │
-│  层级结构 (参考 ADR-0015):                                                                    │
-│                                                                                              │
-│      System (shop)                                                                           │
-│         │                                                                                    │
-│         ├── Service (redis)                                                                  │
-│         │      ├── VM (prod-shop-shop-redis-01)                                             │
-│         │      └── VM (prod-shop-shop-redis-02)                                             │
-│         │                                                                                    │
-│         └── Service (mysql)                                                                  │
-│                └── VM (prod-shop-shop-mysql-01)                                             │
-│                                                                                              │
-│  删除规则 (Cascade Restrict - ADR-0015 §13.1):                                               │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │                                                                                    │       │
-│  │  删除层级      前置条件                    需要审批    确认方式                     │       │
-│  │  ────────────────────────────────────────────────────────────────────────────────  │       │
-│  │  VM (测试)     无                          ✅ 是       confirm=true 参数           │       │
-│  │  VM (生产)     无                          ✅ 是       confirm_name body ¹         │       │
-│  │  Service       下属所有 VM 必须先删除      ✅ 是       confirm=true 参数           │       │
-│  │  System        下属所有 Service 必须先删除 ❌ 否       confirm_name body           │       │
-│  │                                                                                    │       │
-│  │  ¹ 生产 VM 删除需要输入完整 VM 名称确认，防止误删                                    │       │
-│  │                                                                                    │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-                                           │
-                                           ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                         删除 VM - 数据库操作                                                  │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                              │
-│  🔹 测试环境 VM 删除（简单确认）:                                                             │
-│  DELETE /api/v1/vms/{vm_id}?confirm=true                                                     │
-│                                                                                              │
-│  🔹 生产环境 VM 删除（需输入 VM 名称 - ADR-0015 §13.1）:                                       │
-│  DELETE /api/v1/vms/{vm_id}                                                                  │
-│  Content-Type: application/json                                                              │
-│  { "confirm_name": "prod-shop-shop-redis-01" }  👈 必须与 VM 名称完全匹配                      │
-│                                                                                              │                                                                                              │
-│  📦 数据库操作:                                                                               │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  BEGIN TRANSACTION;                                                               │       │
-│  │                                                                                    │       │
-│  │  -- 1. 创建删除审批工单                                                             │       │
-│  │  INSERT INTO approval_tickets (                                                   │       │
-│  │      id, type, status, requester_id, resource_type, resource_id, created_at       │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'ticket-002', 'VM_DELETE', 'PENDING_APPROVAL',                               │       │
-│  │      'zhang.san', 'vm', 'vm-001', NOW()                                           │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 2. 记录审计日志                                                                 │       │
-│  │  INSERT INTO audit_logs (                                                         │       │
-│  │      action, actor_id, resource_type, resource_id, parent_type, parent_id, details│       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'vm.delete_request', 'zhang.san', 'vm', 'vm-001', 'service', 'svc-001',      │       │
-│  │      '{"name": "prod-shop-shop-redis-01", "reason": "资源回收"}'                   │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  COMMIT;                                                                          │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  管理员批准后:                                                                                │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  BEGIN TRANSACTION;                                                               │       │
-│  │                                                                                    │       │
-│  │  -- 1. 更新工单状态                                                                 │       │
-│  │  UPDATE approval_tickets SET status = 'APPROVED', ... WHERE id = 'ticket-002';    │       │
-│  │                                                                                    │       │
-│  │  -- 2. 更新 VM 状态为 DELETING (不是直接删除记录)                                    │       │
-│  │  UPDATE vms SET status = 'DELETING' WHERE id = 'vm-001';                          │       │
-│  │                                                                                    │       │
-│  │  -- 3. 记录审计日志                                                                 │       │
-│  │  INSERT INTO audit_logs (                                                         │       │
-│  │      action, actor_id, resource_type, resource_id, parent_type, parent_id, details│       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'vm.delete', 'admin.li', 'vm', 'vm-001', 'service', 'svc-001',               │       │
-│  │      '{"name": "prod-shop-shop-redis-01", "approved_by": "admin.li"}'             │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  COMMIT;                                                                          │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  🔄 异步任务: Worker 执行 kubectl delete vm，成功后更新 status = 'DELETED'                    │
-│                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+定义父子工单模型下的批量提交流程、执行语义与前端可见行为。
 
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                         删除 Service - 数据库操作                                             │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                              │
-│  DELETE /api/v1/services/{service_id}?confirm=true                                          │
-│                                                                                              │
-│  📦 数据库操作:                                                                               │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  -- 前置检查: 是否有活跃 VM                                                         │       │
-│  │  SELECT COUNT(*) FROM vms                                                         │       │
-│  │  WHERE service_id = 'svc-001' AND status NOT IN ('DELETED', 'DELETING');          │       │
-│  │                                                                                    │       │
-│  │  IF count > 0 THEN                                                                │       │
-│  │      RETURN ERROR("服务下还有 {count} 个活跃 VM，请先删除");                        │       │
-│  │  END IF;                                                                           │       │
-│  │                                                                                    │       │
-│  │  -- 创建删除审批工单 (同 VM 删除流程)                                                │       │
-│  │  INSERT INTO approval_tickets (...);                                              │       │
-│  │                                                                                    │       │
-│  │  -- 记录审计日志                                                                    │       │
-│  │  INSERT INTO audit_logs (                                                         │       │
-│  │      action, actor_id, resource_type, resource_id, parent_type, parent_id, details│       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'service.delete_request', 'zhang.san', 'service', 'svc-001', 'system', 'sys-001',│     │
-│  │      '{"name": "redis", "reason": "服务迁移"}'                                     │       │
-│  │  );                                                                                │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  管理员批准后:                                                                                │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  UPDATE services SET status = 'DELETED', deleted_at = NOW()                       │       │
-│  │  WHERE id = 'svc-001';                                                            │       │
-│  │                                                                                    │       │
-│  │  -- 记录审计日志                                                                    │       │
-│  │  INSERT INTO audit_logs (                                                         │       │
-│  │      action, actor_id, resource_type, resource_id, parent_type, parent_id, details│       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'service.delete', 'admin.li', 'service', 'svc-001', 'system', 'sys-001',     │       │
-│  │      '{"name": "redis", "approved_by": "admin.li"}'                               │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 软删除: 记录保留用于审计                                                         │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+#### Actors & Trigger
 
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                         删除 System - 数据库操作 (无需审批)                                    │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                              │
-│  DELETE /api/v1/systems/{system_id}                                                         │
-│  Body: { "confirm_name": "shop" }    👈 必须输入系统名称确认                                  │
-│                                                                                              │
-│  📦 数据库操作:                                                                               │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  -- 前置检查 1: 确认名称匹配                                                        │       │
-│  │  IF confirm_name != system.name THEN                                              │       │
-│  │      RETURN ERROR("确认名称不匹配");                                               │       │
-│  │  END IF;                                                                           │       │
-│  │                                                                                    │       │
-│  │  -- 前置检查 2: 是否有活跃 Service                                                  │       │
-│  │  SELECT COUNT(*) FROM services                                                    │       │
-│  │  WHERE system_id = 'sys-001' AND status != 'DELETED';                             │       │
-│  │                                                                                    │       │
-│  │  IF count > 0 THEN                                                                │       │
-│  │      RETURN ERROR("系统下还有 {count} 个服务，请先删除");                           │       │
-│  │  END IF;                                                                           │       │
-│  │                                                                                    │       │
-│  │  -- 执行软删除 (无需审批)                                                           │       │
-│  │  UPDATE systems SET status = 'DELETED', deleted_at = NOW()                        │       │
-│  │  WHERE id = 'sys-001';                                                            │       │
-│  │                                                                                    │       │
-│  │  -- 记录审计日志                                                                    │       │
-│  │  INSERT INTO audit_logs (...) VALUES (...);                                       │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  ❌ 不创建审批工单: System 删除由名称确认保护，无需审批                                         │
-│                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+- 触发：用户/管理员提交包含多个子项的批量操作。
+- 参与方：前端队列 UI、API 层、治理事务层、River worker。
 
----
+#### Interaction Flow
 
-### 阶段 5.E: 批量操作 (ADR-0015 §19)
-
-> **设计参考**: [04-governance.md §5.6](../phases/04-governance.md#56-batch-operations-adr-0015-19)
-
-批量操作是 **UX 便利功能**，而非原子事务。每个项目通过 River Queue 独立处理。
-
-> **幂等性 & 重试**:
-> - 每个批量项生成独立的 River Job，拥有唯一的 `event_id`
-> - River 处理重试逻辑（默认：3 次重试，指数退避）
-> - 幂等性键 = `event_id` — 重新处理相同事件是安全的（ADR-0009 Claim Check）
-> - 部分失败**不会**回滚成功项；报告聚合状态
+UI 故事板（父子队列）：
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 批量审批流程                                                                                       │
+│ 批量队列 UI 故事板                                                                              │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                                  │
-│  1. 管理员在 UI 中选择多个待处理工单                                                                │
-│     └── [TKT-001, TKT-002, TKT-003] (最多 50 个)                                                 │
-│                                                                                                  │
-│  2. 前端: POST /api/v1/approvals/batch                                                           │
-│     └── {ticket_ids: [...], action: "approve", cluster_id: "...", reason: "..."}                │
-│                                                                                                  │
-│  3. 后端独立验证每个工单:                                                                          │
-│     ┌─────────────────────────────────────────────────────────────────────────────────────┐     │
-│     │ FOR each ticket_id IN request.ticket_ids:                                           │     │
-│     │   • 检查工单存在且状态 = PENDING_APPROVAL                                             │     │
-│     │   • 检查用户拥有审批权限                                                               │     │
-│     │   • 检查目标集群与工单环境匹配                                                          │     │
-│     │   • IF 有效 → 入队 River job (ApprovalJob)                                           │     │
-│     │   • IF 无效 → 在响应中标记为拒绝                                                       │     │
-│     └─────────────────────────────────────────────────────────────────────────────────────┘     │
-│                                                                                                  │
-│  4. 响应 (202 Accepted):                                                                        │
-│     └── {batch_id: "BATCH-123", total: 3, accepted: 2, rejected: 1, items: [...]}               │
-│                                                                                                  │
-│  5. 前端可轮询: GET /api/v1/batches/{batch_id}/status                                            │
-│                                                                                                  │
-│  ⚠️ V1 不支持批量删除（ADR-0015 §13.1 要求单独确认）                                               │
+│  [批量操作页面]                                                                                  │
+│     选择 VM + 选择操作 + 提交                                                                     │
+│                                  │                                                               │
+│                                  ▼                                                               │
+│  [队列列表页]                                                                                     │
+│     新父工单出现：`PENDING_APPROVAL`                                                             │
+│     展示：总数/成功/失败/待处理 + 申请人 + 更新时间                                               │
+│                                  │                                                               │
+│                                  ▼                                                               │
+│  [展开父工单]                                                                                     │
+│     子任务表展示：单项状态 + attempt_count + last_error                                          │
+│                                  │                                                               │
+│                                  ▼                                                               │
+│  [进行中/终态处理]                                                                                │
+│     `IN_PROGRESS`      -> 操作：终止未开始子项                                                    │
+│     `PARTIAL_SUCCESS`  -> 操作：重试失败子项                                                      │
+│     `FAILED`           -> 操作：重试失败子项                                                      │
+│     `COMPLETED`        -> 操作：导出结果                                                          │
 │                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 批量电源操作流程                                                                                   │
+│ 批量提交流程（规范）                                                                              │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                                  │
-│  1. 用户在 UI 中选择多个 VM                                                                       │
-│     └── [vm-001, vm-002] (最多 50 个)                                                            │
-│                                                                                                  │
-│  2. 前端: POST /api/v1/vms/batch/power                                                          │
-│     └── {vm_ids: [...], action: "start", reason: "..."}                                         │
-│                                                                                                  │
-│  3. 后端:                                                                                        │
-│     • 验证用户对每个 VM 拥有 vm:operate 权限                                                       │
-│     • 对于生产环境 VM，检查是否需要审批（ADR-0015 §7）                                              │
-│     • 入队独立的 River jobs (PowerOperationJob)                                                  │
-│                                                                                                  │
-│  4. 每个 job 独立执行:                                                                            │
-│     └── 按 VM 跟踪成功/失败                                                                       │
+│  1. 用户/管理员在 UI 选择批量项                                                                   │
+│  2. 前端: POST /api/v1/vms/batch                                                                 │
+│  3. 后端前置检查:                                                                                 │
+│     • Layer 1（全局）: 父工单积压阈值 + API 速率                                                   │
+│     • Layer 2（用户）: 用户父/子工单阈值 + 提交冷却时间                                             │
+│  4. 原子事务:                                                                                     │
+│     • 插入父工单                                                                                  │
+│     • 插入全部子工单                                                                              │
+│     • 任一子工单失败则整体回滚                                                                      │
+│  5. 返回 202: {batch_id, status, status_url, retry_after_seconds}                                │
+│  6. 前端轮询: GET /api/v1/vms/batch/{batch_id}                                                   │
 │                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 批量执行流程                                                                                      │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                  │
+│  1. 父工单进入 APPROVED/IN_PROGRESS                                                              │
+│  2. Worker 独立消费子任务                                                                         │
+│  3. 聚合终态计算:                                                                                 │
+│     • COMPLETED: 全部成功                                                                         │
+│     • FAILED: 全部失败                                                                            │
+│     • PARTIAL_SUCCESS: 部分成功                                                                    │
+│     • CANCELLED: 未开始子任务被终止                                                                │
+│  4. 前端可操作:                                                                                   │
+│     • POST /api/v1/vms/batch/{id}/retry  （仅重试失败子项）                                      │
+│     • POST /api/v1/vms/batch/{id}/cancel （终止待执行子项）                                       │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 兼容接口说明                                                                                       │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                  │
+│  兼容保留：                                                                                        │
+│  • POST /api/v1/approvals/batch                                                                  │
+│  • POST /api/v1/vms/batch/power                                                                  │
+│                                                                                                  │
+│  内部统一归一到同一套父子工单流水线。                                                               │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### State Transitions
+
+| 范围 | 状态变化模式 |
+|------|-------------|
+| 父工单 | `PENDING_APPROVAL -> APPROVED/IN_PROGRESS -> COMPLETED|PARTIAL_SUCCESS|FAILED|CANCELLED` |
+| 子工单 | `PENDING -> RUNNING -> SUCCESS|FAILED|CANCELLED` |
+
+#### Failure & Edge Cases
+
+- 全局或用户级限流拒绝必须返回可执行重试窗口。
+- 子任务失败不得回滚已成功子任务。
+- 重试/终止操作仅作用于符合条件子任务，并重算父工单聚合状态。
+
+#### Authority Links
+
+- [ADR-0015 §19 Batch Operations V1](../../../../adr/ADR-0015-governance-model-v2.md#19-batch-operations)
+- [04-governance.md §5.6 Batch Operations](../../../../design/phases/04-governance.md#56-batch-operations-adr-0015-19)
+- [database/vm-lifecycle-write-model.md §Stage 5.E](../../../../design/database/vm-lifecycle-write-model.md#stage-5e-batch-parent-child-write-model)
+- [frontend/features/batch-operations-queue.md §2.0 End-to-End UI Storyboard](../../../../design/frontend/features/batch-operations-queue.md#20-end-to-end-ui-storyboard)
+
+#### Scope Boundary
+
+本节仅定义交互行为与状态语义，队列内部实现、表结构和 worker 调优细节以 phase/database 文档为准。
+
 ---
 
-### 阶段 5.F: 通知系统 (ADR-0015 §20)
+### 阶段 5.F: 通知系统
 
-> **设计参考**: [04-governance.md §6.3](../phases/04-governance.md#63-notification-system-adr-0015-20)
+#### Purpose
 
-V1 实现平台内收件箱。V1 不支持外部推送渠道（邮件/Webhook）。
+定义审批与 VM 生命周期事件的用户可见通知行为。
 
-> **ADR-0006 合规性**: 通知写入是**同步**的（与业务操作在同一数据库事务中），不走 River Queue。详见 [04-governance.md §6.3](../phases/04-governance.md#63-notification-system-adr-0015-20)。
->
-> **V2+ 外部渠道**: 邮件/Webhook/Slack 计划在 [RFC-0018](../../rfc/RFC-0018-external-notification.md) 中实现。
+#### Actors & Trigger
+
+- 触发：审批流程事件和 VM 状态变更。
+- 参与方：事务编排层、站内信通知服务、前端轮询界面。
+
+#### Interaction Flow
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -2065,16 +2050,55 @@ V1 实现平台内收件箱。V1 不支持外部推送渠道（邮件/Webhook）
 │  全部已读: POST /api/v1/notifications/mark-all-read                                             │
 │                                                                                                  │
 │  ⚠️ V1 限制: 仅支持轮询，不支持 WebSocket 推送                                                     │
-│  ⚠️ V1 限制: 不支持外部渠道（邮件/Webhook）- 参见 RFC 了解 V2+ 计划                                 │
+│  ⚠️ V1 限制: 不支持外部渠道（邮件/Webhook）；V2+ 规划见下方链接                                    │
 │                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+#### State Transitions
+
+| 事件类型 | 交付预期 |
+|------|----------|
+| 需要审批 | 工单提交后立即通知审批人 |
+| 审批结果 | 批准/拒绝后通知申请人 |
+| 运行态变更 | VM 状态变化后通知资源拥有者 |
+
+#### Failure & Edge Cases
+
+- 通知写入失败不得静默丢弃，必须可观测。
+- V1 仅轮询，前端需容忍最终一致性延迟。
+- 通知 payload 的敏感信息必须遵循脱敏策略。
+
+#### Authority Links
+
+- [ADR-0015 §20 Notification System](../../../../adr/ADR-0015-governance-model-v2.md#20-notification-system)
+- [04-governance.md §6.3 Notification System](../../../../design/phases/04-governance.md#63-notification-system-adr-0015-20)
+- [04-governance.md §7 Audit Logging](../../../../design/phases/04-governance.md#7-audit-logging)
+- [RFC-0018 §Proposed Solution](../../../../rfc/RFC-0018-external-notification.md#proposed-solution)
+
+#### Scope Boundary
+
+本节定义用户可见通知行为；渠道适配器、重试策略和供应商集成细节在治理文档与 RFC 中定义。
 
 ---
 
 ## Part 4: 状态机与数据模型
 
 > **说明**: 本节定义系统中核心实体的状态机和数据库表关系，是前后端开发的重要参考。
+
+### Purpose
+
+为前后端和运维提供统一状态语义与共享数据模型意图，避免跨层理解偏差。
+
+### Actors & Trigger
+
+- 触发：工程实现或评审需要统一解释工单/VM/审计状态。
+- 参与方：后端工程师、前端工程师、SRE/运维评审人员。
+
+### Interaction Flow
+
+Part 4 属于参考视图，不是用户操作流程。
+它汇总实体状态、关系语义与审计规则，供其它流程章节复用。
 
 ### 审批工单状态流转图
 
@@ -2139,11 +2163,7 @@ V1 实现平台内收件箱。V1 不支持外部推送渠道（邮件/Webhook）
 │     └─────────────┘     └──────┬──────┘                                                      │
 │                                │                                                             │
 │                                ▼                                                             │
-│                         ┌─────────────┐                                                      │
-│                         │   DELETED   │                                                      │
-│                         │   (已删除)   │                                                      │
-│                         └─────────────┘                                                      │
-│                              (终态)                                                           │
+│                     (由 worker 执行硬删除，主资源表不保留 DELETED 持久状态)                   │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -2203,152 +2223,62 @@ V1 实现平台内收件箱。V1 不支持外部推送渠道（邮件/Webhook）
 
 > **参考**: ADR-0015 §7 (Deletion & Cascade Constraints) - "audit records are preserved"
 
-> 📦 **Schema**: 完整 DDL 和索引定义见 [04-governance.md §7 Storage Schema](../../../design/phases/04-governance.md#storage-schema)
+> **边界说明**: 本节仅定义审计语义。
+> Schema/DDL/索引以以下文档为权威来源：
+> - [04-governance.md §7](../../../../design/phases/04-governance.md#7-audit-logging)
+> - [database/schema-catalog.md §Table Domains](../../../../design/database/schema-catalog.md#table-domains)
+> - [database/lifecycle-retention.md §Retention Classes](../../../../design/database/lifecycle-retention.md#retention-classes-table-centric)
 
-#### 需要记录审计的操作
+#### 必须覆盖范围
 
-| 类别 | 操作 (action) | 触发时机 | 详情 (details) 内容 |
-|------|---------------|----------|---------------------|
-| **认证** | `user.login` | 用户登录成功 | `{method: "oidc", idp: "Corp-SSO"}` |
-| **认证** | `user.login_failed` | 登录失败 | `{reason: "invalid_token"}` |
-| **认证** | `user.logout` | 用户登出 | `{}` |
-| **System** | `system.create` | 创建系统 | `{name: "shop", description: "..."}` |
-| **System** | `system.update` | 修改系统 | `{changes: {description: {old: "...", new: "..."}}}` |
-| **System** | `system.delete` | 删除系统 | `{confirmation: "shop"}` |
-| **Service** | `service.create` | 创建服务 | `{name: "redis", system_id: "..."}` |
-| **Service** | `service.delete_request` | 提交服务删除请求 | `{name: "redis", reason: "服务迁移"}` |
-| **Service** | `service.delete` | 删除服务 (审批后) | `{approved_by: "..."}` |
-| **VM** | `vm.request` | 提交 VM 创建请求 | `{instance_size: "...", template: "...", count: 3}` |
-| **VM** | `vm.create` | VM 创建成功 | `{cluster: "...", namespace: "..."}` |
-| **VM** | `vm.start` | 启动 VM | `{}` |
-| **VM** | `vm.stop` | 停止 VM | `{graceful: true}` |
-| **VM** | `vm.restart` | 重启 VM | `{}` |
-| **VM** | `vm.delete_request` | 提交 VM 删除请求 | `{name: "...", reason: "资源回收"}` |
-| **VM** | `vm.delete` | 删除 VM (审批后) | `{approved_by: "..."}`  |
-| **VNC** | `vnc.access` | 访问 VNC 控制台 | `{vm_id: "...", session_duration: 3600}` |
-| **Approval** | `approval.approve` | 批准请求 | `{ticket_id: "...", final_cluster: "...", final_disk_gb: 100}` |
-| **Approval** | `approval.reject` | 拒绝请求 | `{ticket_id: "...", reason: "资源不足"}` |
-| **Approval** | `approval.cancel` | 取消请求 | `{ticket_id: "...", reason: "不再需要"}` |
-| **RBAC** | `role.create` | 创建自定义角色 | `{name: "CustomViewer", permissions: [...]}` |
-| **RBAC** | `role.update` | 修改角色权限 | `{role: "Operator", changes: {permissions: {added: [...], removed: [...]}}}` |
-| **RBAC** | `role.delete` | 删除自定义角色 | `{name: "CustomViewer"}` |
-| **RBAC** | `role.assign` | 分配角色给用户 | `{user_id: "...", role: "SystemAdmin", scope: "system:shop"}` |
-| **RBAC** | `role.revoke` | 撤销用户角色 | `{user_id: "...", role: "Operator"}` |
-| **RBAC** | `permission.create` | 创建权限 | `{code: "vm:vnc", description: "..."}` |
-| **RBAC** | `permission.delete` | 删除权限 | `{code: "vm:vnc"}` |
-| **Cluster** | `cluster.register` | 注册集群 | `{name: "prod-01", environment: "prod", api_server: "..."}` |
-| **Cluster** | `cluster.update` | 修改集群配置 | `{name: "prod-01", changes: {environment: {old: "test", new: "prod"}}}` |
-| **Cluster** | `cluster.delete` | 删除/注销集群 | `{name: "prod-01", reason: "集群下线"}` |
-| **Cluster** | `cluster.credential_rotate` | 轮换集群凭证 | `{name: "prod-01", rotated_at: "..."}` |
-| **Template** | `template.create` | 创建模板 | `{name: "centos7-docker", version: 1}` |
-| **Template** | `template.update` | 更新模板 (版本+1) | `{name: "centos7-docker", version: 2, changes: {...}}` |
-| **Template** | `template.deprecate` | 标记模板为弃用 | `{name: "centos6-base", successor: "centos7-base"}` |
-| **Template** | `template.delete` | 删除模板 | `{name: "centos6-base", version: 3}` |
-| **InstanceSize** | `instance_size.create` | 创建InstanceSize（规格） | `{name: "medium-gpu", cpu: 4, memory: "8Gi", gpu: 1}` |
-| **InstanceSize** | `instance_size.update` | 修改InstanceSize（规格） | `{name: "medium-gpu", changes: {memory: {old: "8Gi", new: "16Gi"}}}` |
-| **InstanceSize** | `instance_size.deprecate` | 标记InstanceSize（规格）为弃用 | `{name: "small-legacy"}` |
-| **InstanceSize** | `instance_size.delete` | 删除InstanceSize（规格） | `{name: "small-legacy"}` |
-| **Namespace** | `namespace.create` | 创建命名空间 | `{name: "prod-shop", cluster: "prod-01"}` |
-| **Namespace** | `namespace.delete` | 删除命名空间 | `{name: "prod-shop"}` |
-| **IdP** | `idp.configure` | 配置 IdP 连接 | `{type: "oidc", issuer: "...", client_id: "..."}` |
-| **IdP** | `idp.update` | 更新 IdP 配置 | `{changes: {issuer: {...}}}` |
-| **IdP** | `idp.delete` | 删除 IdP 配置 | `{type: "oidc"}` |
-| **IdP** | `idp.sync` | 手动同步 IdP 组 | `{synced_groups: 15, new_users: 3}` |
-| **IdP** | `idp.mapping_create` | 创建组-角色映射 | `{idp_group: "DevOps", role: "SystemAdmin", env: "prod"}` |
-| **IdP** | `idp.mapping_update` | 更新组-角色映射 | `{idp_group: "DevOps", changes: {role: {old: "Viewer", new: "Operator"}}}` |
-| **IdP** | `idp.mapping_delete` | 删除组-角色映射 | `{idp_group: "DevOps"}` |
-| **Config** | `config.update` | 修改平台配置 | `{key: "approval.timeout_hours", old: 24, new: 48}` |
+- 所有状态变化操作（CREATE/UPDATE/DELETE）
+- 敏感读操作（例如 `vnc.access`）
+- 提交/审批/执行链路中的成功与失败路径
 
-#### 不需要记录审计的操作 (例外)
+#### 规范动作命名
 
-以下操作因其高频或低敏感性，**不记录审计日志**：
+| 领域 | V1 规范动作 | 说明 |
+|------|------|------|
+| 认证 | `user.login`, `user.login_failed`, `user.logout` | 认证事件 |
+| System | `system.create`, `system.update`, `system.delete_submitted`, `system.delete_executed` | System 删除无审批工单 |
+| Service | `service.create`, `service.delete_submitted`, `service.delete_executed` | Service 删除无审批工单 |
+| VM | `vm.request`, `vm.create`, `vm.start`, `vm.stop`, `vm.restart`, `vm.delete_submitted`, `vm.delete_approved`, `vm.delete_executed` | VM 删除需审批 |
+| VNC | `vnc.access` | 敏感读 |
+| Approval | `approval.approve`, `approval.reject`, `approval.cancel` | 工单决策 |
+| RBAC | `role.create`, `role.update`, `role.delete`, `role.assign`, `role.revoke`, `permission.create`, `permission.delete` | 权限治理 |
+| Cluster | `cluster.register`, `cluster.update`, `cluster.delete`, `cluster.credential_rotate` | 集群生命周期 |
+| Template | `template.create`, `template.update`, `template.deprecate`, `template.delete` | 模板生命周期 |
+| InstanceSize | `instance_size.create`, `instance_size.update`, `instance_size.deprecate`, `instance_size.delete` | 规格生命周期 |
+| Namespace | `namespace.create`, `namespace.delete` | 命名空间生命周期 |
+| Auth Provider | `auth_provider.configure`, `auth_provider.update`, `auth_provider.delete`, `auth_provider.sync`, `auth_provider.mapping_create`, `auth_provider.mapping_update`, `auth_provider.mapping_delete` | ADR-0015 修订：使用 `auth_provider.*`，不再用 `idp.*` |
+| Config | `config.update` | 平台配置变更 |
 
-| 类别 | 操作 | 不记录原因 |
-|------|------|-----------|
-| **系统巡检** | K8s 集群定时健康检查 | 高频定时任务，无用户触发 |
-| **系统巡检** | VM 状态同步轮询 | 每分钟执行，数据量过大 |
-| **系统巡检** | 资源配额检查 | 内部检查，无业务意义 |
-| **只读操作** | 列表查询 (`GET /api/v1/*`) | 只读不改变状态 |
-| **只读操作** | 详情查看 (`GET /api/v1/*/id`) | 只读不改变状态 |
-| **内部通信** | Worker 心跳 | 系统内部通信 |
-| **内部通信** | Metrics 采集 | 监控数据采集 |
+#### 每条审计记录必备字段
 
-> **例外处理原则**:
-> - 所有 **写操作** (CREATE/UPDATE/DELETE) 必须记录
-> - 所有 **敏感读操作** (如 VNC 访问) 必须记录
-> - 纯 **系统自动化** 和 **只读查询** 可以豁免
+- `action`、`actor_id`、`resource_type`、`resource_id`、`created_at`
+- 可选但建议：`parent_type`、`parent_id`、`environment`
+- `details` 必须按 ADR-0019 脱敏后落库
 
-#### 审计日志记录示例
+#### 常见可豁免审计的操作
 
-```
-示例 1: 用户创建 VM 请求
-  INSERT INTO audit_logs (action, actor_id, actor_name, resource_type,
-                          resource_id, parent_type, parent_id, details) VALUES
-    ('vm.request', 'user-001', '张三', 'approval_ticket', 'ticket-001',
-     'service', 'svc-001',
-     '{"instance_size": "medium-gpu", "template": "centos7-docker",
-       "count": 3, "namespace": "prod-shop"}');
+| 类别 | 操作 | 原因 |
+|------|------|------|
+| 系统巡检 | 集群健康轮询、VM 状态轮询 | 高频且无直接用户意图 |
+| 只读查询 | 列表/详情 `GET` API | 不改变状态 |
+| 内部流量 | Worker 心跳、指标采集 | 内部可观测流量 |
 
-示例 2: 管理员批准请求
-  INSERT INTO audit_logs (action, actor_id, actor_name, resource_type,
-                          resource_id, details) VALUES
-    ('approval.approve', 'admin-001', '管理员李四', 'approval_ticket', 'ticket-001',
-     '{"final_cluster": "prod-cluster-01", "final_disk_gb": 100,
-       "final_storage_class": "ceph-ssd", "vms_created": 3}');
+> **豁免原则**:
+> - 写操作默认必须审计。
+> - 豁免必须显式定义并经过评审。
+> - 敏感读即使不改状态也应审计。
 
-示例 3: VNC 访问记录
-  INSERT INTO audit_logs (action, actor_id, actor_name, resource_type,
-                          resource_id, details, ip_address) VALUES
-    ('vnc.access', 'user-001', '张三', 'vm', 'vm-redis-01',
-     '{"session_id": "vnc-xxx", "duration_seconds": 1800}',
-     '192.168.1.100');
-
-示例 4: 删除资源 (保留审计)
-  -- 删除 VM 时，先记录审计日志
-  INSERT INTO audit_logs (action, actor_id, resource_type, resource_id,
-                          parent_type, parent_id, details) VALUES
-    ('vm.delete', 'user-001', 'vm', 'vm-redis-01', 'service', 'svc-001',
-     '{"name": "prod-shop-redis-01", "cluster": "prod-cluster-01",
-       "existed_days": 45, "last_status": "RUNNING"}');
-  
-  -- 然后执行硬删除
-  DELETE FROM vms WHERE id = 'vm-redis-01';
-  
-  💡 审计日志保留，资源记录删除
-```
-
-#### 审计日志查询示例
-
-```sql
--- Query all actions for a user
-SELECT * FROM audit_logs 
-WHERE actor_id = 'user-001' 
-ORDER BY created_at DESC LIMIT 50;
-
--- Query resource history
-SELECT * FROM audit_logs 
-WHERE resource_type = 'vm' AND resource_id = 'vm-redis-01'
-ORDER BY created_at DESC;
-
--- Query all approval actions
-SELECT * FROM audit_logs 
-WHERE action LIKE 'approval.%' 
-ORDER BY created_at DESC;
-
--- Query sensitive prod actions
-SELECT * FROM audit_logs 
-WHERE environment = 'prod' 
-  AND action IN ('vm.delete', 'system.delete', 'approval.approve')
-ORDER BY created_at DESC;
-```
-
-#### 审计日志保留策略
+#### 保留策略基线
 
 | 环境 | 保留时间 | 说明 |
-|------|----------|------|
-| **生产环境** | ≥ 1 年 | 满足合规要求 |
-| **测试环境** | ≥ 90 天 | 可配置缩短 |
-| **敏感操作** | ≥ 3 年 | `*.delete`, `approval.*`, `rbac.*` |
+|------|------|------|
+| 生产环境 | >= 1 年 | 合规基线 |
+| 测试环境 | >= 90 天 | 可按策略缩短 |
+| 敏感操作 | >= 3 年 | `*.delete*`、`approval.*`、`rbac.*` |
 
 ---
 
@@ -2356,7 +2286,7 @@ ORDER BY created_at DESC;
 
 > **场景**: 将审计日志集成到企业级 SIEM 系统（Elasticsearch、Datadog、Splunk 等）
 
-> 📦 **API 规范**: 完整 API 和响应格式见 [04-governance.md §7 JSON Export API](../../../design/phases/04-governance.md#7-json-export-api)
+> 📦 **API 规范**: 完整 API 和响应格式见 [04-governance.md §7 JSON Export API](../../../../design/phases/04-governance.md#7-json-export-api)
 
 **主要功能**:
 - 支持时间范围过滤的分页导出
@@ -2365,15 +2295,20 @@ ORDER BY created_at DESC;
 
 ---
 
-### 外部审批系统集成 (v1+)
+<a id="external-approval-v2-roadmap"></a>
 
-> **场景**: 与企业现有 ITSM 系统（Jira Service Management、ServiceNow 等）集成
+### 审批 Provider 插件化架构 (V2+ 路线图)
+
+> **场景**: 与企业现有 ITSM 系统（Jira Service Management、ServiceNow 等）集成。
+>
+> **V1 边界**: V1 基于统一审批 Provider 契约，仅实现一个内置 Provider（`builtin-default`）。
+> 外部系统作为插件适配器在 V2+ 引入。
 
 #### 设计原则
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                         外部审批系统集成架构                                                   │
+│                         审批 Provider 插件化架构                                               │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │  ┌──────────────┐                    ┌──────────────┐                    ┌──────────────┐   │
@@ -2382,16 +2317,17 @@ ORDER BY created_at DESC;
 │  └──────────────┘                    └──────────────┘                    └──────────────┘   │
 │                                                                                              │
 │  关键原则:                                                                                    │
-│  1. Shepherd 只关注标准 API 接口，不关心外部系统内部流转                                         │
-│  2. 采用异步事件驱动架构，不阻塞用户操作                                                        │
-│  3. 外部审批是可插拔的，v1 默认使用内置审批                                                     │
+│  1. Shepherd 负责统一工单状态机与审计轨迹                                                      │
+│  2. 内置/外部 Provider 共享稳定契约，避免核心流程分叉                                           │
+│  3. 异步集成 + 失败安全回退，外部故障不得阻塞内置主路径                                         │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 外部审批配置 (通过 Web UI 配置，存储于 PostgreSQL)
+#### 审批 Provider 配置（外部适配器，Web UI）
 
-> 管理员在 **设置 → 外部审批系统 → 添加** 进行配置，所有配置存储在 `external_approval_systems` 表中。
+> 管理员在 **设置 → 外部审批系统 → 添加** 进行配置。
+> 外部适配器注册信息存储于 `external_approval_systems`。
 
 **Webhook 安全最佳实践**：
 - 所有 webhook URL 必须使用 HTTPS。
@@ -2403,28 +2339,12 @@ ORDER BY created_at DESC;
 - https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
 - https://docs.stripe.com/webhooks/test
 
-```sql
--- Example: external_approval_systems record
-INSERT INTO external_approval_systems (
-  id, name, type, enabled,
-  webhook_url, webhook_secret, webhook_headers,
-  callback_secret, status_mapping,
-  timeout_seconds, retry_count,
-  created_by
-) VALUES (
-  'eas-001', 
-  'Jira Service Management',
-  'webhook',
-  true,
-  'https://jira.company.com/api/v2/tickets',
-  'encrypted:AES256:xxx',  -- encrypted with ENCRYPTION_KEY
-  '{"Authorization": "Bearer ${JIRA_TOKEN}"}',
-  'encrypted:AES256:xxx',  -- HMAC secret for callback verification
-  '{"Approved": "APPROVED", "Rejected": "REJECTED", "Cancelled": "CANCELLED"}',
-  30, 3,
-  'admin'
-);
-```
+关键落库对象（字段权威定义在 phase/database 文档）：
+
+| 对象 | 代表字段 | 作用 |
+|----------|------|------|
+| `external_approval_systems` | `id`, `name`, `type`, `enabled`, `webhook_url`, `webhook_secret`, `timeout_seconds`, `retry_count` | 外部适配器注册与投递保护策略 |
+| `audit_logs` | `action`, `resource_type`, `resource_id`, `result`, `metadata` | 外部决策/回退动作的本地不可变审计轨迹 |
 
 #### Webhook 发送格式 (Shepherd → 外部系统)
 
@@ -2506,20 +2426,70 @@ INSERT INTO external_approval_systems (
 |----------|------|
 | **幂等性** | Callback 可能重试，需确保多次处理同一回调不会产生副作用 |
 | **状态同步** | 定期检查外部系统中 pending 状态的工单，防止回调丢失 |
-| **超时处理** | V1: 不自动取消。超时后外部系统可调用拒绝 API（参见 ADR-0015 §11） |
+| **超时处理** | V1: 不自动取消。超时后外部系统可调用拒绝 API（参见 [ADR-0015 §11](../../../../adr/ADR-0015-governance-model-v2.md#11-approval-timeout-handling)） |
 | **安全性** | 始终验证 HMAC 签名，防止伪造回调 |
 | **回退机制** | 外部系统不可用时，自动回退到内置审批 |
 
+### State Transitions (Part 4 参考)
+
+| 领域 | 规范状态集合 |
+|------|-------------|
+| 审批工单 | `PENDING_APPROVAL`, `APPROVED`, `REJECTED`, `CANCELLED`, `EXECUTING`, `SUCCESS`, `FAILED` |
+| VM 运行态 | `CREATING`, `RUNNING`, `STOPPING`, `STOPPED`, `FAILED`, `DELETING` |
+| 审计记录生命周期 | 仅追加写入，按策略保留/归档 |
+
+### Failure & Edge Cases (Part 4 参考)
+
+- API/UI/worker 的状态机语义漂移属于设计缺陷，禁止发生。
+- 新增终态必须同时更新 flow、governance、API 合同文档。
+- 审计脱敏违规属于安全事件，而非普通文档问题。
+
+### Authority Links (Part 4)
+
+- [04-governance.md §7 Audit Logging](../../../../design/phases/04-governance.md#7-audit-logging)
+- [database/schema-catalog.md §Relationship Baseline](../../../../design/database/schema-catalog.md#relationship-baseline)
+- [database/lifecycle-retention.md §Database Guardrails](../../../../design/database/lifecycle-retention.md#database-guardrails)
+- [ADR-0015 §11 Approval Timeout Handling](../../../../adr/ADR-0015-governance-model-v2.md#11-approval-timeout-handling)
+
+### Scope Boundary (Part 4)
+
+本部分定义语义模型与跨组件约束，不替代 DDL、API 契约或 worker 实现规范文档。
+
 ---
 
-## 阶段 6: VNC 控制台访问 (ADR-0015 §18, RFC-0011)
+## 阶段 6: VNC 控制台访问
 
-> **范围**: 通过 noVNC 实现浏览器端 VM 控制台访问。
->
-> **ADR-0015 §18 合规性**:
-> - 权限矩阵（测试/生产环境区分）
-> - Token 安全性（单次使用、时间限制、用户绑定）
-> - 审计日志要求
+### Purpose
+
+定义测试/生产环境下的安全控制台访问交互行为。
+
+### Actors & Trigger
+
+- 触发：用户在 VM 详情页请求控制台访问。
+- 参与方：请求用户、RBAC 校验层、审批流程（生产环境）、Token 签发器、VNC 代理层。
+
+### Interaction Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 阶段 6 控制台访问总览                                                                            │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                              │
+│  VM 详情页 -> 用户点击“控制台”或“申请控制台访问”                                                │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  后端统一校验：RBAC（`vnc:access`）+ VM 状态（`RUNNING`）                                     │
+│        │                                                                                     │
+│        ├── 测试环境：签发 token -> 直接打开 noVNC                                              │
+│        │                                                                                     │
+│        └── 生产环境：创建审批工单 -> 管理员批准/拒绝                                            │
+│                 ├── 批准：签发 token -> 打开 noVNC                                             │
+│                 └── 拒绝：无控制台会话                                                         │
+│                                                                                              │
+│  两条路径都必须落审计（请求与访问结果）                                                         │
+│                                                                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ### 权限矩阵
 
@@ -2550,13 +2520,13 @@ INSERT INTO external_approval_systems (
 │  │       "vm_id": "vm-456",           👈 资源绑定                                           │
 │  │       "cluster": "cluster-a",                                                           │
 │  │       "namespace": "test-ns",                                                           │
-│  │       "exp": now + 2h,             👈 有效期 (ADR-0015)                                  │
+│  │       "exp": now + 2h,             👈 有效期                                              │
 │  │       "jti": "vnc-token-789",      👈 唯一 ID 用于审计                                   │
 │  │       "single_use": true           👈 首次连接后失效                                     │
 │  │     }                                                                                    │
 │  │                                                                                          │
 │  │  4. 在新标签页/弹窗打开 noVNC:                                                           │
-│  │     GET /vnc/{vm_id}?token={vnc_jwt}                                                    │
+│  │     GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}                                         │
 │  │                                                                                          │
 │  │  5. 后端代理 WebSocket 到 KubeVirt:                                                      │
 │  │     → subresources.kubevirt.io/v1/namespaces/{ns}/virtualmachineinstances/{name}/vnc    │
@@ -2598,6 +2568,30 @@ INSERT INTO external_approval_systems (
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### State Transitions
+
+| 环境 | 工单 | 访问结果 |
+|------|------|---------|
+| 测试环境 | 无审批工单 | RBAC 通过 -> 签发 token -> 建立会话 |
+| 生产环境 | `PENDING_APPROVAL -> APPROVED/REJECTED` | 批准后签发 token；拒绝则无控制台访问 |
+
+### Failure & Edge Cases
+
+- VM 非 `RUNNING` 状态必须阻断 token 签发。
+- 生产环境重复待审批请求必须幂等拒绝。
+- token 首次成功连接后再次重放必须拒绝并记录审计。
+
+### Authority Links
+
+- [ADR-0015 §18 VNC Console Access](../../../../adr/ADR-0015-governance-model-v2.md#18-vnc-console-access-permissions)
+- [RFC-0011 §V1 Implementation Scope](../../../../rfc/RFC-0011-vnc-console.md#v1-implementation-scope)
+- [database/vm-lifecycle-write-model.md §Stage 6](../../../../design/database/vm-lifecycle-write-model.md#stage-6-vnc-access-write-model)
+- [04-governance.md §7 Audit Logging](../../../../design/phases/04-governance.md#7-audit-logging)
+
+### Scope Boundary
+
+本节定义交互流程与 token 策略，不展开 WebSocket 代理内部实现和存储细节。
+
 ### VNC Token 安全性 (V1 简化版)
 
 | 安全特性 | V1 实现 | ADR-0015 要求 |
@@ -2616,7 +2610,7 @@ INSERT INTO external_approval_systems (
 # 请求 VNC 访问（生产环境创建审批工单）
 POST /api/v1/vms/{vm_id}/console/request
 → 响应: { "ticket_id": "...", "status": "PENDING_APPROVAL" }  (生产)
-→ 响应: { "vnc_url": "/vnc/{vm_id}?token=..." }              (测试)
+→ 响应: { "vnc_url": "/api/v1/vms/{vm_id}/vnc?token=..." }  (测试)
 
 # VNC WebSocket 端点
 GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}
@@ -2630,20 +2624,14 @@ GET /api/v1/vms/{vm_id}/console/status
 
 ### 数据库操作
 
-```sql
--- VNC 访问请求（生产环境）
-INSERT INTO approval_tickets (
-    id, type, status, requester_id, resource_type, resource_id, 
-    environment, created_at
-) VALUES (
-    'vnc-ticket-001', 'VNC_ACCESS_REQUESTED', 'PENDING_APPROVAL',
-    'user-123', 'vm', 'vm-456', 'production', NOW()
-);
+| 环境 | 持久化行为 |
+|------|------------|
+| 测试环境 | 不创建审批工单；访问行为必须写审计。 |
+| 生产环境 | 先创建 `VNC_ACCESS_REQUESTED` 审批工单，审批通过后签发 token 并追加审计记录。 |
 
--- VNC Token 使用追踪（V1: 内嵌 JWT，无独立表）
--- Token 验证: 检查 JWT 签名 + exp + jti 不在 used_tokens 缓存中
--- 首次使用: 将 jti 添加到 Redis used_tokens 集合（TTL = Token TTL）
-```
+实现细节和写集边界以以下文档为准：
+
+- [database/vm-lifecycle-write-model.md §Stage 6](../../../../design/database/vm-lifecycle-write-model.md#stage-6-vnc-access-write-model)
+- [04-governance.md §7 Audit Logging](../../../../design/phases/04-governance.md#7-audit-logging)
 
 ---
-

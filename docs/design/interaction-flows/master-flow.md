@@ -1,9 +1,9 @@
 # Master Interaction Flow
 
 > **Status**: Stable (ADR-0017, ADR-0018 Accepted)  
-> **Version**: 1.1  
+> **Version**: 1.2
 > **Created**: 2026-01-28  
-> **Last Updated**: 2026-02-05  
+> **Last Updated**: 2026-02-06
 > **Language**: English (Canonical Version)  
 > **Source**: Extracted from ADR-0018 Appendix
 >
@@ -43,14 +43,16 @@ database development.
 
 > **Writing Guideline**: This document describes "what data" and "why it flows this way".
 > For "how to implement", link to Phase documents instead of duplicating content.
-> Example: "For InstanceSize schema details, see [01-contracts.md §InstanceSize](../phases/01-contracts.md#instancesize-schema)."
+> Example: "For InstanceSize schema details, see [01-contracts.md §InstanceSize](../phases/01-contracts.md#deliverables)."
 
 **Related Documents**:
-- [ADR-0018: Instance Size Abstraction](../../adr/ADR-0018-instance-size-abstraction.md)
-- [ADR-0015: Governance Model V2](../../adr/ADR-0015-governance-model-v2.md)
-- [ADR-0017: VM Request Flow](../../adr/ADR-0017-vm-request-flow-clarification.md)
-- [Phase 01: Contracts](../phases/01-contracts.md) — Data contracts and naming constraints
-- [Phase 04: Governance](../phases/04-governance.md) — RBAC, audit logging, approval workflows
+- [ADR-0018: Instance Size Abstraction §User Interaction Flow](../../adr/ADR-0018-instance-size-abstraction.md#user-interaction-flow)
+- [ADR-0015: Governance Model V2 §Decision](../../adr/ADR-0015-governance-model-v2.md#decision)
+- [ADR-0017: VM Request Flow §Decision](../../adr/ADR-0017-vm-request-flow-clarification.md#decision)
+- [Phase 01: Contracts §API Contract-First Design](../phases/01-contracts.md#api-contract-first-design-adr-0021) — Data contracts and naming constraints
+- [Phase 04: Governance §7 Audit Logging](../phases/04-governance.md#7-audit-logging) — RBAC, audit logging, approval workflows
+- [frontend/FRONTEND.md §Schema Cache Degradation Strategy](../frontend/FRONTEND.md#schema-cache-degradation-strategy-adr-0023) — Frontend baseline implementation standard
+- [frontend/features/batch-operations-queue.md §2 Parent/Child UI Model](../frontend/features/batch-operations-queue.md#2-parentchild-ui-model) — Parent-child queue UI and polling semantics
 
 **Critical ADR Constraints (Applies to ALL flows in this document)**:
 
@@ -60,136 +62,79 @@ database development.
 | **ADR-0009** | River Jobs carry **EventID only** (Claim Check); DomainEvent payload is **immutable** | All River Jobs |
 | **ADR-0012** | Atomic transactions: Ent for ORM, **sqlc for core transactions only** | All DB operations |
 
-> **CI Enforcement**: These constraints are enforced by CI checks. See [CONTRIBUTING.md](../../../CONTRIBUTING.md) for validation scripts.
+> **CI at a Glance**: The constraints above are enforced by automated checks. For full gate definitions and scripts, see [docs/design/ci/README.md §Scope Boundary](../ci/README.md#scope-boundary).
 
 ---
 
-## Appendix: Canonical Interaction Flow (English)
+## Canonical Authoring Contract
 
-### Document Structure
+This section defines the fixed writing style for all stages in this document.
+The goal is consistent readability across all parts without losing key conclusions.
 
-| Part | Content | Roles Involved |
-|------|---------|----------------|
-| **Part 1** | Platform initialization (Schema/Mask, **First Deployment Bootstrap**, RBAC/permissions, OIDC/LDAP auth, IdP group mapping, **External Approval Systems**, Cluster/InstanceSize/Template configuration) | Developer, Platform Admin |
-| **Part 2** | Resource management (System/Service create/delete and DB operations, **including audit logs**) | Regular User |
-| **Part 3** | VM lifecycle (Create request → Approve → Execute → Delete and DB operations, **including audit logs**) | Regular User, Platform Admin |
-| **Part 4** | State machines and data models (state transitions, table relationships, **audit log design and exceptions**) | All Developers |
+### Stage Structure (Mandatory)
 
----
+Every `Stage` section MUST follow this order:
 
-### Core Design Principles
+1. `Purpose` (why this stage exists; 1-2 lines)
+2. `Actors & Trigger` (who initiates, required preconditions)
+3. `Interaction Flow` (ASCII flow only, user-facing sequence)
+4. `State Transitions` (entity status changes and ownership boundaries)
+5. `Failure & Edge Cases` (duplicate request, invalid state, permission denials)
+6. `Authority Links` (clickable ADR/phase/database/frontend/CI references)
+7. `Scope Boundary` (what this stage intentionally does not define)
 
-| Principle | Description |
-|----------|-------------|
-| **Schema as Single Source of Truth** | KubeVirt official JSON Schema defines all field types, constraints, and enum options. We do not duplicate these in code. |
-| **Mask Only Selects Paths** | Mask only selects which Schema paths to expose. It does not define field options. |
-| **Hybrid Model** | Core scheduling fields (CPU, memory, GPU) stored in indexed columns for query performance; `spec_overrides` JSONB stores remaining fields without semantic interpretation. See ADR-0018 §4. |
-| **Schema-Driven Frontend** | Frontend renders UI components based on Schema types. See ADR-0020 for technology stack (React 19, Next.js 15, Ant Design 5). |
+### Part Map (Canonical)
 
-### Role Definitions
+| Part | Primary Concern | Primary Audience |
+|------|-----------------|------------------|
+| **Part 1** | Platform initialization and security baseline | Developer, Platform Admin |
+| **Part 2** | Resource hierarchy and ownership boundaries | Regular User, Platform Admin |
+| **Part 3** | VM request/approval/execute/delete lifecycle | Regular User, Platform Admin |
+| **Part 4** | State machines and shared data model semantics | Backend and Frontend Engineers |
+| **Part 5/6** | Specialized workflows (batch, notification, VNC) | Full-stack Engineers |
 
-| Role | Responsibility | Layer |
-|------|----------------|-------|
-| **Developer** | Fetch KubeVirt Schema, define Mask (select exposed paths) | Code/config layer |
-| **Platform Admin** | Create InstanceSize (fill values via schema-driven form) | Admin console |
-| **Regular User** | Choose InstanceSize and submit VM create request | Business usage layer |
+### Global Design Conclusions (Do Not Override Per Stage)
 
-### Naming Policy (ADR-0019 Baseline)
+| Topic | Canonical Conclusion |
+|------|----------------------|
+| **Name governance** | Platform-managed logical names follow ADR-0019 constraints and must pass centralized validation. |
+| **Write model** | State-changing operations follow unified async model (`request -> 202 -> River`) per [ADR-0006 §Decision](../../adr/ADR-0006-unified-async-model.md#decision). |
+| **Event integrity** | River jobs use EventID-only claim-check; event payload is immutable per [ADR-0009 §Constraint 1](../../adr/ADR-0009-domain-event-pattern.md#constraint-1-domainevent-payload-immutability-append-only). |
+| **Transaction boundary** | Core cross-aggregate writes use atomic Ent+sqlc transaction model per [ADR-0012 §Adopt Ent + sqlc Hybrid Mode](../../adr/ADR-0012-hybrid-transaction.md#adopt-ent-sqlc-hybrid-mode). |
+| **Delete semantics** | Primary resource rows are hard-deleted (with optional transient `DELETING`), while audit/workflow/event records are retained/archived per [ADR-0015 §13](../../adr/ADR-0015-governance-model-v2.md#13-deletion-cascade-constraints). |
+| **Batch baseline** | V1 batch model uses parent-child tickets with two-layer throttling per [ADR-0015 §19](../../adr/ADR-0015-governance-model-v2.md#19-batch-operations). |
 
-> **Security Baseline**: All platform-managed logical names MUST follow RFC 1035-based rules.
+### Cross-Layer Authority
 
-| Rule | Constraint |
-|------|------------|
-| **Character Set** | Lowercase letters, digits, hyphen only (`a-z`, `0-9`, `-`) |
-| **Start Character** | MUST start with a letter (`a-z`) |
-| **End Character** | MUST end with a letter or digit |
-| **Consecutive Hyphens** | MUST NOT contain `--` (reserved for Punycode) |
-| **Length** | System/Service/Namespace: max 15 chars each (ADR-0015 §16) |
-| **Reserved Names** | `default`, `system`, `admin`, `root`, `internal`, prefixes `kube-*`, `kubevirt-shepherd-*`. See [01-contracts.md §1.1](../phases/01-contracts.md#11-naming-constraints-adr-0019). |
+| Layer | Authoritative For |
+|------|-------------------|
+| [ADRs §Reading Order](../../adr/README.md#reading-order) | Accepted architectural decisions and rationale |
+| `master-flow.md` | Interaction intent and expected end-to-end behavior |
+| [docs/design/README.md §Implementation Phases](../README.md#implementation-phases) | Implementation contracts and operational constraints |
+| [database/README.md §Document Map](../database/README.md#document-map) | Persistence lifecycle, consistency, and schema ownership |
+| [frontend/README.md §Reading Order](../frontend/README.md#reading-order) | UI interaction standards and feature-level UX behavior |
+| [ci/README.md §Scope Boundary](../ci/README.md#scope-boundary) | Enforceable project gates and anti-drift checks |
 
-**Applies to**: System name, Service name, Namespace name, VM name components.
+### Scope Boundary
 
-### API Design Principles (ADR-0021, ADR-0023)
-
-| Principle | Description |
-|-----------|-------------|
-| **Contract-First** | OpenAPI 3.1 spec is the single source of truth. See ADR-0021. |
-| **Code Generation** | Go server types via `oapi-codegen`; TypeScript types via `openapi-typescript`. |
-| **Pagination** | List APIs use standardized pagination (`page`, `per_page`, `sort_by`, `sort_order`). See ADR-0023. |
-| **Error Codes** | Granular error codes (e.g., `NAMESPACE_PERMISSION_DENIED`). See ADR-0023 §3. |
-
-> **Full API Contract Governance**: For OpenAPI 3.1 vs 3.0 compatibility, CI toolchain constraints, and spec-code sync enforcement, see [01-contracts.md §API Contract-First Design](../phases/01-contracts.md#api-contract-first-design-adr-0021).
->
-> **Capability Detection**: For Dry Run Fallback strategy when static capability detection is insufficient, see [02-providers.md §Dry Run Fallback](../phases/02-providers.md#dry-run-fallback-adr-0014).
-
-### Schema Cache Lifecycle (ADR-0023)
-
-> **Purpose**: KubeVirt Schema caching enables offline validation, multi-version compatibility, and frontend performance.
-
-| Stage | Trigger | Action |
-|-------|---------|--------|
-| **1. Startup** | Application boot | Load embedded schemas (bundled at compile time) |
-| **2. Cluster Registration** | New cluster added | Detect KubeVirt version → check cache → queue fetch if missing |
-| **3. Version Detection** | Health check loop (60s) | Piggyback: compare `clusters.kubevirt_version` with detected version |
-| **4. Schema Update** | Version change detected | Queue `SchemaUpdateJob` (River) → async fetch → cache update |
-
-**Expiration Policy**: Schemas are **immutable per version** (v1.5.0 never changes). Cache indefinitely; update only on version change.
-
-**Graceful Degradation**: If schema fetch fails → use embedded fallback → retry on next health check cycle.
-
-**Frontend Schema Fallback Strategy**:
-
-> ⚠️ **Critical Dependency**: Schema-Driven UI + Mask pattern relies heavily on Schema Cache. The following fallback strategy ensures stable frontend rendering when cache fails or version drifts.
-
-| Scenario | API Response | Frontend UI Behavior |
-|----------|--------------|---------------------|
-| **Schema available** | `200 OK` with `schema_version` header | Normal form rendering with dynamic components |
-| **Schema cache miss** | `200 OK` with `X-Schema-Fallback: embedded-v1.5.x` | Render with embedded fallback; show ⚠️ banner |
-| **Schema fetch in progress** | `200 OK` with `X-Schema-Status: updating` | Render with stale schema; show 🔄 loading indicator |
-| **No schema available** | Error in `/api/v1/schema/{version}` | **Fallback UI Mode** (see below) |
-
-**Fallback UI Mode** (when no schema is available):
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│  ⚠️ Schema Unavailable                                                     │
-│                                                                            │
-│  Unable to load KubeVirt v1.6.x schema for this cluster.                   │
-│  Dynamic field rendering is temporarily unavailable.                       │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │  Fallback Mode: Basic Fields Only                                  │   │
-│  │                                                                    │   │
-│  │  CPU Cores:    [4        ]    (integer input, no validation)      │   │
-│  │  Memory:       [8Gi      ]    (text input, no validation)         │   │
-│  │                                                                    │   │
-│  │  ⚠️ Advanced fields (GPU, Hugepages, SR-IOV) are hidden.         │   │
-│  │     Contact admin or wait for schema sync.                        │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  [Proceed with Basic Config]    [Cancel]                                   │
-│                                                                            │
-│  ℹ️ Schema will auto-retry on next health check cycle (60s).              │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Admin Alert Integration**:
-
-| Alert Condition | Alert Level | Notification Target |
-|-----------------|-------------|---------------------|
-| Schema cache miss (using embedded fallback) | Warning | Admin dashboard widget |
-| Schema fetch failed 3+ consecutive times | Error | DomainEvent + In-app notification |
-| Version drift detected (cluster upgraded) | Info | Audit log only |
-
-> **Implementation Note**: Frontend should cache schema locally (localStorage/IndexedDB) as secondary fallback. Check `X-Schema-Version` header to detect staleness.
-
-> **Implementation Standard**: For detailed frontend code patterns, i18n keys, and mandatory UI components, see [FRONTEND.md §Schema Cache Degradation Strategy](../FRONTEND.md#schema-cache-degradation-strategy-adr-0023).
-
-See ADR-0023 §1 for complete cache lifecycle diagram.
+- `master-flow.md` explains interaction intent and expected behavior.
+- Detailed SQL/DDL/index/migration mechanics must be documented in `docs/design/database/`.
+- Detailed component implementation and code-level patterns must be documented in `docs/design/phases/` and `docs/design/frontend/`.
 
 ---
 
-## Part 1: Platform Initialization Flow
+## Part 1: Platform Initialization Flow {#stage-1}
+
+### Purpose
+
+Define bootstrapping behavior for schema-driven platform setup and secure first deployment.
+
+### Actors & Trigger
+
+- Trigger: first deployment or platform reconfiguration.
+- Actors: developer, platform admin, bootstrap runtime.
+
+### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -227,11 +172,53 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### State Transitions (Stage 1)
+
+| Domain | Before | After |
+|------|------|------|
+| Schema cache | unknown/empty | versioned schema available |
+| Mask config | undefined | validated exposure paths |
+| UI rendering capability | static/manual | schema-driven |
+
+### Failure & Edge Cases (Stage 1)
+
+- Schema fetch failure must degrade to embedded schema baseline.
+- Invalid mask paths must fail validation before deployment.
+
+### Authority Links (Part 1 baseline)
+
+- [ADR-0023 §1 Schema Cache Management Policy](../../adr/ADR-0023-schema-cache-and-api-standards.md#1-schema-cache-management-policy)
+- [01-contracts.md API Contract-First Design](../phases/01-contracts.md#api-contract-first-design-adr-0021)
+- [frontend/FRONTEND.md §Schema Cache Degradation Strategy](../frontend/FRONTEND.md#schema-cache-degradation-strategy-adr-0023)
+
+### Scope Boundary (Stage 1)
+
+This stage defines setup flow expectations. Concrete migration steps and code generation commands are maintained in phase/CI docs.
+
+#### Schema Cache Lifecycle Reference {#schema-cache-lifecycle-adr-0023}
+
+For schema cache lifecycle behavior and degradation handling, use these authoritative links:
+
+- [ADR-0023 §1 Schema Cache Management Policy](../../adr/ADR-0023-schema-cache-and-api-standards.md#1-schema-cache-management-policy)
+- [02-providers.md §6 Schema Cache Lifecycle](../phases/02-providers.md#6-schema-cache-lifecycle-adr-0023)
+- [frontend/FRONTEND.md §Schema Cache Degradation Strategy](../frontend/FRONTEND.md#schema-cache-degradation-strategy-adr-0023)
+
 ### Stage 1.5: First Deployment Bootstrap {#stage-1-5}
 
 > **Added 2026-01-26**: First deployment flow for configuration storage strategy.
 >
-> **Detailed Rules**: See [ADR-0025 (Bootstrap Secrets)](../../adr/ADR-0025-secret-bootstrap.md) for secrets priority and auto-generation, [01-contracts.md §3.2.2](../phases/01-contracts.md#322-system-secrets-table-adr-0025) for implementation details.
+> **Detailed Rules**: See [ADR-0025 §Decision Outcome](../../adr/ADR-0025-secret-bootstrap.md#decision-outcome) for secrets priority and auto-generation, [01-contracts.md §3.2.2](../phases/01-contracts.md#322-system-secrets-table-adr-0025) for implementation details.
+
+#### Purpose
+
+Standardize first-run configuration and secret bootstrap behavior across deployment modes.
+
+#### Actors & Trigger
+
+- Trigger: first successful startup with empty runtime secret state.
+- Actors: deployment operator, bootstrap logic, database persistence layer.
+
+#### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -285,7 +272,7 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │  ⚠️ **Key Principle**: config.yaml is NOT a source for secrets (12-factor app compliance).   │
 │     Secrets must come from: env vars OR DB-generated OR external secret manager.             │
 │                                                                                              │
-│  🔐 Auto-generation (ADR-0025 - if missing):                                                 │
+│  🔐 Auto-generation (if missing):                                                            │
 │  - Generate strong random ENCRYPTION_KEY and SESSION_SECRET on first boot (32-byte CSPRNG)   │
 │  - Persist to PostgreSQL `system_secrets` table (no ephemeral in-memory-only keys)           │
 │  - If external key is introduced later, explicit re-encryption step required                 │
@@ -365,9 +352,51 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+#### State Transitions
+
+| Area | Before | After |
+|------|------|------|
+| Bootstrap admin | none | default admin seeded (`force_password_change=true`) |
+| Secrets | unset | env-provided or generated/persisted |
+| Core roles | unset | baseline roles present (idempotent seed) |
+
+#### Failure & Edge Cases
+
+- Missing required DB connection must stop bootstrap before partial writes.
+- Secret generation and persistence must be atomic to avoid unusable startup state.
+
+#### Authority Links
+
+- [ADR-0025 §Decision Outcome](../../adr/ADR-0025-secret-bootstrap.md#decision-outcome)
+- [01-contracts.md §3.2.2 System Secrets Table](../phases/01-contracts.md#322-system-secrets-table-adr-0025)
+- [00-prerequisites.md §7 CI Pipeline](../phases/00-prerequisites.md#7-ci-pipeline)
+- [00-prerequisites.md §8 Data Initialization](../phases/00-prerequisites.md#8-data-initialization-adr-0018)
+
+#### Scope Boundary
+
+This stage specifies first-run behavior and outcomes only.
+Operational rotation playbooks and advanced key management remain outside this flow.
+
 ### Stage 2: Security Configuration (Initial Deployment) {#stage-2}
 
 > **Reference**: ADR-0015 §22 (Authentication & RBAC Strategy)
+
+<a id="stage-2-a"></a>
+<a id="stage-2-a-plus"></a>
+<a id="stage-2-b"></a>
+<a id="stage-2-c"></a>
+<a id="stage-2-d"></a>
+
+#### Purpose
+
+Establish authentication, authorization, and initial security defaults required before business traffic.
+
+#### Actors & Trigger
+
+- Trigger: security baseline initialization after first deployment.
+- Actors: bootstrap process, platform admin, identity provider integration.
+
+#### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -401,7 +430,7 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │  │    -- All roles use explicit permissions. Wildcard patterns (*:*) are PROHIBITED.   │
 │  │    -- platform:admin is an explicit super-admin permission (compile-time constant). │
 │  │    -- The bootstrap role uses platform:admin and MUST be disabled after init.       │
-│  │    -- See docs/operations/bootstrap-role-sop.md for security verification.         │
+│  │    -- Bootstrap-role deactivation SOP is listed in Markdown notes below.            │
 │  │                                                                                    │
 │  │  -- 2. Built-in roles (ADR-0019 compliant)                                   │       │
 │  │  INSERT INTO roles (id, name, is_builtin, description) VALUES                      │
@@ -438,7 +467,7 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 │  │  -- ⚠️ ADR-0019 Security SOP:                                                       │
 │  │  -- After platform initialization, DISABLE the bootstrap role:                      │
 │  │  --   DELETE FROM role_bindings WHERE role_id = 'role-bootstrap';                  │
-│  │  -- See docs/operations/bootstrap-role-sop.md for full procedure.                  │
+│  │  -- Full execution steps are listed in Markdown notes below.                        │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -519,7 +548,7 @@ See ADR-0023 §1 for complete cache lifecycle diagram.
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
                                            │
                                            ▼
-> **Standard Provider Output**: All auth providers (OIDC/LDAP/SSO) are normalized via adapter layer into a common payload for RBAC mapping. See ADR-0026.
+> **Standard Provider Output**: All auth providers (OIDC/LDAP/SSO) are normalized via adapter layer into a common payload for RBAC mapping. See [ADR-0026 §Standard Provider Output](../../adr/ADR-0026-idp-config-naming.md#standard-provider-output-contract).
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 │                     Stage 2.B: Configure Authentication (OIDC/LDAP)                          │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
@@ -760,83 +789,69 @@ Target: vm-001 (svc-redis → sys-shop)
 3. Result: inherit System member → ✅ can view VM
 ```
 
-### Stage 2.E: External Approval System Configuration (Optional) {#stage-2-e}
+#### Stage 2 Bootstrap Role Safety Notes
 
-> **Added 2026-01-26**: External approval system integration configuration
+- Bootstrap role (`role-bootstrap`) is initialization-only and must be disabled after first deployment.
+- Operational procedure: [operations/bootstrap-role-sop.md](../../operations/bootstrap-role-sop.md)
+- Governance and audit baseline: [04-governance.md §7 Audit Logging](../phases/04-governance.md#7-audit-logging)
+
+#### State Transitions
+
+| Domain | Typical Transition |
+|------|---------------------|
+| User auth profile | `uninitialized -> active` after first successful identity sync |
+| Role binding | `absent -> assigned` (global and/or resource level) |
+| Approval capability | `disabled -> enabled` after policy/provider configuration |
+
+#### Failure & Edge Cases
+
+- Bootstrap role must be disabled after initial setup to avoid latent super-admin risk.
+- External IdP mapping drift must not silently escalate privileges.
+- Resource visibility must remain deny-by-default when inheritance chain has no binding.
+
+#### Authority Links
+
+- [ADR-0015 §22 Authentication and RBAC Strategy](../../adr/ADR-0015-governance-model-v2.md#22-authentication-rbac-strategy)
+- [04-governance.md §7 Audit Logging](../phases/04-governance.md#7-audit-logging)
+- [01-contracts.md Naming Constraints](../phases/01-contracts.md#11-naming-constraints-adr-0019)
+
+#### Scope Boundary
+
+This stage specifies security interaction expectations and permission semantics.
+Protocol details and operational hardening checklists are maintained in phase and operations docs.
+
+### Stage 2.E: Approval Provider Standard (V1 Built-in, V2+ External Plugin) {#stage-2-e}
+
+> **Added 2026-01-26**: Approval provider model and external integration boundary
+
+#### Purpose
+
+Define one canonical approval-provider contract. V1 ships with the built-in provider only;
+external systems are integrated as provider plugins without changing approval state semantics.
+
+#### Actors & Trigger
+
+- Trigger: platform admin defines approval provider strategy and policy.
+- Actors: platform admin, approval provider router, built-in provider, optional external provider adapter.
+
+#### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                     Stage 2.E: External Approval System Configuration                        │
+│ Stage 2.E: Approval Provider Boundary (Single Contract, Pluggable Providers)                │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
-│  Platform admin actions:                                                                      │
+│  V1 go-live path (required):                                                                 │
+│    1) User submits request -> approval_tickets=PENDING_APPROVAL                              │
+│    2) Router selects built-in provider (`builtin-default`, only provider in V1)             │
+│    3) Built-in approver decides APPROVED / REJECTED                                          │
+│    4) Shepherd executes decision path and appends audit logs                                 │
 │                                                                                              │
-│  ┌─ Step 1: Add external approval system ────────────────────────────────────────────────┐   │
-│  │                                                                                        │   │
-│  │  External approval systems list                                                       │   │
-│  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
-│  │  │  Name            Type            Status       Actions                           │   │   │
-│  │  │  ────────────────────────────────────────────────────────────────────────────  │   │   │
-│  │  │  OA-Approval     Webhook         ✅ Enabled   [Edit] [Disable] [Delete]          │   │   │
-│  │  │  ServiceNow      ServiceNow      ⚪ Disabled  [Edit] [Enable] [Delete]           │   │   │
-│  │  │                                                                                  │   │   │
-│  │  │  [+ Add approval system]                                                        │   │   │
-│  │  └────────────────────────────────────────────────────────────────────────────────┘   │   │
-│  │                                                                                        │   │
-│  └────────────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                              │
-│  ┌─ Step 2: Configure Webhook type ────────────────────────────────────────────────────────┐   │
-│  │                                                                                        │   │
-│  │  Add External Approval System - Webhook                                                │   │
-│  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
-│  │  │                                                                                  │   │   │
-│  │  │  Name:         [OA-Approval                ]                                     │   │   │
-│  │  │  Type:         ( ) Webhook   (●) ServiceNow   ( ) Jira                            │   │   │
-│  │  │                                                                                  │   │   │
-│  │  │  ── Webhook Config ─────────────────────────────────────────────────────────    │   │   │
-│  │  │  Webhook URL:  [https://oa.company.com/api/approval/callback               ]     │   │   │
-│  │  │  Secret:       [••••••••••••                                ] 👁               │   │   │
-│  │  │                                                                                  │   │   │
-│  │  │  Custom Headers (JSON):                                                          │   │   │
-│  │  │  ┌──────────────────────────────────────────────────────────────────────────┐   │   │   │
-│  │  │  │  {                                                                        │   │   │   │
-│  │  │  │    "X-API-Key": "your-api-key",                                           │   │   │   │
-│  │  │  │    "X-Tenant-ID": "company-001"                                           │   │   │   │
-│  │  │  │  }                                                                        │   │   │   │
-│  │  │  └──────────────────────────────────────────────────────────────────────────┘   │   │   │
-│  │  │                                                                                  │   │   │
-│  │  │  Timeout (sec): [30             ]                                               │   │   │
-│  │  │  Retry count:   [3              ]                                               │   │   │
-│  │  │                                                                                  │   │   │
-│  │  │  [Test Connection]  [Save]                                                    │   │   │
-│  │  │                                                                                  │   │   │
-│  │  └────────────────────────────────────────────────────────────────────────────────┘   │   │
-│  │                                                                                        │   │
-│  └────────────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                              │
-│  📦 Database operations:                                                                     │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  INSERT INTO external_approval_systems                                            │
-│  │    (id, name, type, enabled, webhook_url, webhook_secret, webhook_headers,        │
-│  │     timeout_seconds, retry_count, created_by, created_at)                         │
-│  │  VALUES                                                                            │
-│  │    ('eas-001', 'OA-Approval', 'webhook', true,                                     │
-│  │     'https://oa.company.com/api/approval/callback',                                │
-│  │     'encrypted:AES256:xxxx',                   -- encrypted storage                │
-│  │     '{"X-API-Key": "xxx", "X-Tenant-ID": "company-001"}',                      │
-│  │     30, 3, 'admin', NOW());                                                        │
-│  │                                                                                    │
-│  │  -- Audit log                                                                       │
-│  │  INSERT INTO audit_logs (action, actor_id, resource_type, resource_id, details)    │
-│  │  VALUES ('external_approval_system.create', 'admin',                               │
-│  │         'external_approval_system', 'eas-001',                                     │
-│  │         '{"name": "OA-Approval", "type": "webhook", "url": "https://oa.company.com..."}');
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  💡 Sensitive data encryption:                                                              │
-│  - webhook_secret stored encrypted with AES-256-GCM                                         │
-│  - decryption key from external/env if provided; otherwise from DB-generated key            │
-│  - sensitive fields must not be logged                                                     │
+│  External plugin route (V2+ roadmap):                                                        │
+│    1) External adapter plugin is registered and enabled by policy                            │
+│    2) Router delegates ticket via ExternalApprovalProvider.SubmitForApproval                 │
+│    3) Callback/polling maps external decision to canonical APPROVED/REJECTED                 │
+│    4) Provider timeout/unavailable -> controlled fallback to built-in queue                  │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -860,7 +875,7 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │  POST /api/v1/admin/clusters                                                          │  │
 │  │  { "name": "cluster-a", "kubeconfig": "...", "environment": "prod" }          │  │
 │  │                                                                                        │  │
-│  │  System auto-detects (ADR-0014), admin does not configure manually:                    │  │
+│  │  System auto-detects; admin does not configure manually:                                │  │
 │  │  ┌───────────────────────────────────────────────────────────────────────────────────┐ │
 │  │  │  Item               Detection method                         Example result       │ │
 │  │  │  ─────────────────────────────────────────────────────────────────────────────── │ │
@@ -893,9 +908,9 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │                                                                                        │  │
 │  └────────────────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                              │
-│  ┌─ Step 2: Configure Namespace (ADR-0017 Compliant) ─────────────────────────────────────┐ │
+│  ┌─ Step 2: Configure Namespace ────────────────────────────────────────────────────────────┐ │
 │  │                                                                                          │
-│  │  ⚠️ KEY PRINCIPLE (ADR-0017):                                                            │
+│  │  ⚠️ KEY PRINCIPLE:                                                                       │
 │  │  - Namespace is a **global logical entity**, NOT bound to a specific cluster             │
 │  │  - Actual K8s namespace is created JIT (Just-In-Time) when approved VM is provisioned   │
 │  │  - Namespace is **IMMUTABLE after VM request submission**                                │
@@ -921,19 +936,11 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │     When admin approves a VM request and selects target cluster:                         │
 │  │     1. Check if K8s namespace exists on target cluster                                   │
 │  │     2. If not exists → create namespace with standard labels                             │
-│  │     3. Error handling (K8s API errors are classified and reported):                      │
-│  │        - Permission denied → NAMESPACE_PERMISSION_DENIED (403)                           │
-│  │        - ResourceQuota exceeded → NAMESPACE_QUOTA_EXCEEDED (403) ¹                       │
-│  │        - Other errors → NAMESPACE_CREATION_FAILED (500)                                  │
-│  │     See ADR-0017 §142-221 for full JIT creation flow.                                   │
-│  │                                                                                          │
-│  │     ¹ K8s may reject namespace creation if cluster has ResourceQuota policy.             │
-│  │       Failure handling: Ticket → FAILED_PROVISIONING, retry with exponential backoff.    │
-│  │       See ADR-0017 §142-221 for complete JIT error handling and recovery strategies.     │
+│  │     3. Classify and report K8s API errors (details in Markdown notes below).             │
 │  │                                                                                          │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘
 │                                                                                              │
-│  ┌─ Step 3: Configure Template (ADR-0015 §5, §17) ─────────────────────────────────────────┐ │
+│  ┌─ Step 3: Configure Template ──────────────────────────────────────────────────────────────┐ │
 │  │                                                                                          │
 │  │  Template defines base VM OS configuration:                                              │
 │  │  - OS image source (DataVolume / PVC reference)                                          │
@@ -981,7 +988,7 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │  │  [Save]                                                                           │   │
 │  │  └──────────────────────────────────────────────────────────────────────────────────┘   │
 │  │                                                                                          │
-│  │  Template versioning (ADR-0015 §17):                                                    │
+│  │  Template versioning:                                                                    │
 │  │  - User sees active version when submitting request                                    │
 │  │  - Admin may select a different version during approval                               │
 │  │  - Final template snapshotted into ApprovalTicket; VM not affected by later updates   │
@@ -1052,7 +1059,7 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │                                                                                          │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                              │
-│  ⚠️ Dry-Run Validation (ADR-0018):                                                          │
+│  ⚠️ Dry-Run Validation:                                                                      │
 │  ┌──────────────────────────────────────────────────────────────────────────────────────────┐ │
 │  │                                                                                          │ │
 │  │  Before saving, admin can validate InstanceSize against target clusters:                 │ │
@@ -1079,11 +1086,72 @@ Target: vm-001 (svc-redis → sys-shop)
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+#### Stage 3 JIT Namespace Execution Notes {#stage-3-jit-namespace}
+
+<a id="stage-3-c"></a>
+
+- Error classification (canonical response codes):
+  - `NAMESPACE_PERMISSION_DENIED (403)`: target cluster denies namespace creation.
+  - `NAMESPACE_QUOTA_EXCEEDED (403)`: namespace creation rejected by cluster quota policy.
+  - `NAMESPACE_CREATION_FAILED (500)`: unexpected K8s/API error class.
+- Failure handling baseline:
+  - Ticket status moves to `FAILED_PROVISIONING`.
+  - Worker retries with exponential backoff.
+- Normative references:
+  - [ADR-0017 §Namespace Just-In-Time Creation (Added 2026-01-27)](../../adr/ADR-0017-vm-request-flow-clarification.md#namespace-just-in-time-creation-added-2026-01-27)
+  - [01-contracts.md §Error Code Standard (ADR-0023)](../phases/01-contracts.md#error-code-standard-adr-0023)
+
+#### State Transitions
+
+| Domain | Before | After |
+|------|------|------|
+| Approval provider set | built-in implicit | explicit provider registry; V1 = built-in only |
+| Decision contract | provider-specific interpretation risk | canonical `APPROVED/REJECTED` contract across providers |
+| Fallback behavior | implicit | explicit fail-safe fallback to built-in on adapter failure |
+
+#### Failure & Edge Cases
+
+- External adapter unavailability must not block the built-in provider path.
+- Callback signature/status mapping mismatch must be rejected and audited.
+- External timeout must keep ticket recoverable (fallback or pending), never orphaned.
+
+#### Authority Links
+
+- [ADR-0005 §Decision](../../adr/ADR-0005-workflow-extensibility.md#decision)
+- [ADR-0015 §21 Scope Exclusions (V1)](../../adr/ADR-0015-governance-model-v2.md#21-scope-exclusions-v1)
+- [04-governance.md §9 External Approval Systems (V1 Interface Only)](../phases/04-governance.md#9-external-approval-systems-v1-interface-only)
+- [04-governance.md §9.1 Interface Definition](../phases/04-governance.md#91-interface-definition)
+- [04-governance.md §7 Audit Logging](../phases/04-governance.md#7-audit-logging)
+- [RFC-0004 External Approval Systems Integration](../../rfc/RFC-0004-external-approval.md)
+
+#### Scope Boundary
+
+This stage defines provider-model intent and V1 boundary only.
+Detailed provider payload/callback/security design is roadmap content in
+[Part 4 §Approval Provider Plugin Architecture (V2+ Roadmap)](#external-approval-v2-roadmap)
+and RFC-0004.
+
 ---
 
 ## Part 2: Resource Management Flow
 
+<a id="stage-4-a"></a>
+<a id="stage-4-a-plus"></a>
+<a id="stage-4-b"></a>
+<a id="stage-4-c"></a>
+
 > **Note**: Before creating VMs, users must create System and Service to organize resources.
+
+### Purpose
+
+Define ownership and hierarchy creation behavior for System/Service resources.
+
+### Actors & Trigger
+
+- Trigger: regular user starts environment setup for VM workloads.
+- Actors: resource owner, team members, RBAC evaluator, audit subsystem.
+
+### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -1208,7 +1276,7 @@ Target: vm-001 (svc-redis → sys-shop)
 │  │    ('rrb-001', 'user-002', 'admin', 'system', 'sys-001', 'user-001', NOW());       │       │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
-│  🔍 Permission inheritance model (see Google Cloud IAM, GitHub Teams):                       │
+│  🔍 Permission inheritance model (pattern aligned with Google Cloud IAM, GitHub Teams):       │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
 │  │                                                                                    │       │
 │  │  ⭐ Core principle: child resources fully inherit parent permissions                │       │
@@ -1327,9 +1395,9 @@ Target: vm-001 (svc-redis → sys-shop)
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
 │  │  BEGIN TRANSACTION;                                                               │       │
 │  │                                                                                    │       │
-│  │  -- 1. Create service                                                             │       │
-│  │  INSERT INTO services (id, name, description, system_id, created_by, created_at)  │       │
-│  │  VALUES ('svc-001', 'redis', 'Cache service', 'sys-001', 'zhang.san', NOW());      │       │
+│  │  -- 1. Create service (no created_by per ADR-0015 §2; actor recorded in audit_logs) │       │
+│  │  INSERT INTO services (id, name, description, system_id, created_at)               │       │
+│  │  VALUES ('svc-001', 'redis', 'Cache service', 'sys-001', NOW());                    │       │
 │  │                                                                                    │       │
 │  │  -- 2. Permissions inherit from System (no extra RoleBinding)                      │       │
 │  │                                                                                    │       │
@@ -1347,6 +1415,80 @@ Target: vm-001 (svc-redis → sys-shop)
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Stage 4.C: Service Detail & Update Operations {#stage-4-c-detail}
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                     Stage 4.C: Service Detail & Update Operations                            │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                              │
+│  User navigates to Service detail page:                                                      │
+│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
+│  │  Service: redis  (System: shop)                                                    │       │
+│  │                                                                                    │       │
+│  │  Description:  Cache service  [✏ Edit]                                            │       │
+│  │                                                                                    │       │
+│  │  Virtual Machines:                                                                │       │
+│  │  ┌────────────────────────────────────────────────────────────────────────────┐   │       │
+│  │  │  Name                     Status     Namespace     InstanceSize           │   │       │
+│  │  │  ────────────────────────────────────────────────────────────────────────  │   │       │
+│  │  │  prod-shop-redis-01       RUNNING    prod-shop     gpu-workstation        │   │       │
+│  │  │  prod-shop-redis-02       STOPPED    prod-shop     standard-2c4g          │   │       │
+│  │  └────────────────────────────────────────────────────────────────────────────┘   │       │
+│  │                                                                                    │       │
+│  │  [+ Create VM]  → navigates to Stage 5.A (VM Request)                              │       │
+│  │                                                                                    │       │
+│  └──────────────────────────────────────────────────────────────────────────────────┘       │
+│                                                                                              │
+│  📦 Update description (single transaction):                                                │
+│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
+│  │  BEGIN TRANSACTION;                                                               │       │
+│  │                                                                                    │       │
+│  │  -- 1. Update description only (name is immutable per ADR-0019 RFC 1035)          │       │
+│  │  UPDATE services SET description = $1, updated_at = NOW()                         │       │
+│  │  WHERE id = $2 AND deleted_at IS NULL;                                            │       │
+│  │                                                                                    │       │
+│  │  -- 2. 📝 Audit log                                                                │       │
+│  │  INSERT INTO audit_logs (action, actor_id, resource_type, resource_id,            │       │
+│  │                          parent_type, parent_id, details) VALUES                  │       │
+│  │    ('service.update', $actor, 'service', $id, 'system', $sys_id,                  │       │
+│  │     '{"field": "description", "old": "...", "new": "..."}');                       │       │
+│  │                                                                                    │       │
+│  │  COMMIT;                                                                          │       │
+│  └──────────────────────────────────────────────────────────────────────────────────┘       │
+│                                                                                              │
+│  ⚠️ System update follows same pattern (description only, name immutable).                    │
+│  ⚠️ Delete operations → see Stage 5.D for cascade constraints and confirmation.               │
+│                                                                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### State Transitions (Part 2)
+
+| Entity | Typical Transition |
+|------|---------------------|
+| System | `none -> ACTIVE` on creation |
+| Service | `none -> ACTIVE` after parent-system validation |
+| Resource membership | `none -> owner/admin/member/viewer` with inheritance semantics |
+
+### Failure & Edge Cases (Part 2)
+
+- Creating Service without visible/authorized parent System must fail.
+- Duplicate logical name under same scope must fail before commit.
+- Deletion must respect cascade constraints and confirmation rules.
+
+### Authority Links (Part 2)
+
+- [ADR-0015 §13 Deletion Cascade Constraints](../../adr/ADR-0015-governance-model-v2.md#13-deletion-cascade-constraints)
+- [ADR-0019 §Baseline Controls (Normative)](../../adr/ADR-0019-governance-security-baseline-controls.md#baseline-controls-normative)
+- [04-governance.md §6.1 Delete Cascade and Confirmation](../phases/04-governance.md#61-delete-cascade-and-confirmation-mechanism-adr-0015-13-131)
+- [database/schema-catalog.md §Table Domains](../database/schema-catalog.md#table-domains)
+
+### Scope Boundary (Part 2)
+
+This part defines hierarchy and access behavior expectations.
+DDL details, index strategies, and SQL implementation belong to database/phase docs.
+
 ---
 
 ## Part 3: VM Lifecycle Flow
@@ -1363,7 +1505,19 @@ Target: vm-001 (svc-redis → sys-shop)
 > | **Labels** | ❌ User | ✅ Forbidden | Platform-managed for governance integrity |
 > | **CloudInit** | ❌ User | ✅ Forbidden | Template-defined, security-controlled |
 >
-> See [ADR-0017 §Decision](../../adr/ADR-0017-vm-request-flow-clarification.md) for complete rationale.
+> See [ADR-0017 §Decision](../../adr/ADR-0017-vm-request-flow-clarification.md#decision) for complete rationale.
+
+### Purpose
+
+Capture the end-to-end interaction journey from VM request submission to approval,
+execution, and runtime outcomes.
+
+### Actors & Trigger
+
+- Trigger: regular user submits a VM create request in Service scope.
+- Actors: requester, platform admin approver, async worker, provider integration.
+
+### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -1473,7 +1627,7 @@ Target: vm-001 (svc-redis → sys-shop)
 │                                                                                              │
 │  ² **Technical Constraint**: For `dedicatedCpuPlacement` to work, KubeVirt requires          │
 │    Guaranteed QoS class, meaning CPU request must equal limit. This is a hard K8s/KubeVirt   │
-│    constraint and cannot be bypassed. See KubeVirt compute documentation.                   │
+│    constraint and cannot be bypassed.                                                        │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
                                            │
@@ -1512,6 +1666,13 @@ Target: vm-001 (svc-redis → sys-shop)
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Stage 5.B Constraint Note: Dedicated CPU vs Overcommit {#stage-5b-constraint-note-dedicated-cpu-vs-overcommit}
+
+- Hard constraint: `dedicatedCpuPlacement` requires Guaranteed QoS, so CPU request must equal CPU limit.
+- This check is blocking in approval flow (not warning-only).
+- Reference:
+  [KubeVirt Compute resource requests and limits](https://kubevirt.io/user-guide/compute/resources_requests_and_limits/)
+
 ### Parameter Source Summary
 
 | Parameter | Provided By | Source | Notes |
@@ -1531,526 +1692,381 @@ Target: vm-001 (svc-redis → sys-shop)
 | **UI rendering** | Predefined dropdown options | Frontend renders by Schema type |
 | **Backend responsibility** | KV subset matching | Store JSON, extract resources for matching |
 
----
+### State Transitions (Stage 5.A-5.C)
 
-### Stage 5.A (continued): VM Request - Database Operations
+| Stage | Ticket | Domain Event | VM | Worker Job |
+|------|--------|--------------|----|------------|
+| 5.A Submit | created as `PENDING_APPROVAL` | created as `PENDING` | none | none |
+| 5.B Approve | `PENDING_APPROVAL -> APPROVED` | `PENDING -> PROCESSING` | created as `CREATING` | inserted |
+| 5.B Reject | `PENDING_APPROVAL -> REJECTED` | `PENDING -> CANCELLED` | none | none |
+| 5.C Execute | unchanged | progresses per execution | `CREATING -> RUNNING|FAILED` | consumed/completed |
 
-> **Note**: DB transaction after user submits VM request
->
-> **⚠️ ADR Compliance**:
-> - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md): DomainEvent must be created in same transaction; **payload is immutable** (modifications via `ApprovalTicket.modified_spec` only)
-> - [ADR-0012](../../adr/ADR-0012-hybrid-transaction.md): Atomic Ent + sqlc transaction; **do not mix `tx` (sqlc) and `entTx` (Ent) contexts**
->
-> **Audit Logs vs Domain Events**:
-> - `audit_logs`: Human-readable compliance records (WHO did WHAT, WHEN)
-> - `domain_events`: Machine-readable state transitions (system replay/projection)
-> Both are required and serve distinct purposes.
->
-> **⚠️ SQL Examples Notice**: SQL examples below are illustrative. Always refer to [Ent Schema definitions](../phases/01-contracts.md) for current field requirements. Use `go generate ./ent` to regenerate code after schema changes.
->
-> **Security References**:
-> - **Audit Log Sensitive Data Redaction**: See [04-governance.md §7 Audit Logging](../phases/04-governance.md#7-audit-logging) for redaction rules (ADR-0019)
-> - **Secrets Table Access Control**: See [01-contracts.md §System Secrets Table](../phases/01-contracts.md#322-system-secrets-table-adr-0025) — DB roles only, no admin UI/API exposure (ADR-0025)
+### Failure & Edge Cases (Stage 5.A-5.C)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                     VM Request Submission - Database Operations                              │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                              │
-│  User clicks [Submit Request]:                                                               │
-│                                                                                              │
-│  📦 Database operations (single transaction - ADR-0012):                                     │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │                                                                                    │       │
-│  │  -- Pre-check: Duplicate Request Prevention (ADR-0015 §10)                         │       │
-│  │  -- Same resource + same operation type cannot have duplicate pending requests     │       │
-│  │  SELECT EXISTS(                                                                    │       │
-│  │      SELECT 1 FROM approval_tickets                                               │       │
-│  │      WHERE service_id = 'svc-001'                                                 │       │
-│  │        AND type = 'VM_CREATE'                                                     │       │
-│  │        AND status = 'PENDING_APPROVAL'                                             │       │
-│  │  ) AS has_pending;                                                                 │       │
-│  │                                                                                    │       │
-│  │  -- If has_pending = true:                                                         │       │
-│  │  --   Return error: DUPLICATE_PENDING_REQUEST                                      │       │
-│  │  --   Response: {"code": "DUPLICATE_PENDING_REQUEST",                              │       │
-│  │  --              "existing_ticket_id": "TKT-xxx", "operation": "VM_CREATE"}        │       │
-│  │                                                                                    │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  📦 Main transaction (only if no duplicate):                                                 │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  BEGIN TRANSACTION;                                                               │       │
-│  │                                                                                    │       │
-│  │  -- 1. Create domain event (ADR-0009) 👈 REQUIRED                                  │       │
-│  │  INSERT INTO domain_events (                                                      │       │
-│  │      id, type, aggregate_type, aggregate_id,                                       │       │
-│  │      payload, status, created_at                                                   │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'evt-001',                                                                    │       │
-│  │      'VM_CREATE_REQUESTED',             👈 event type                              │       │
-│  │      'vm', NULL,                        👈 aggregate (VM not yet created)          │       │
-│  │      '{\"service_id\": \"svc-001\", \"instance_size_id\": \"is-gpu\"...}',       │       │
-│  │      'PENDING',                         👈 awaiting approval (ADR-0009 L156)       │       │
-│  │      NOW()                                                                        │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 2. Create approval ticket (linked to event)                                    │       │
-│  │  INSERT INTO approval_tickets (                                                   │       │
-│  │      id, event_id, type, status, requester_id,                                    │       │
-│  │      service_id, namespace, instance_size_id, template_id,                        │       │
-│  │      request_params, reason, created_at                                           │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'ticket-001',                                                                │       │
-│  │      'evt-001',                         👈 link to domain event                    │       │
-│  │      'VM_CREATE',                                                                 │       │
-│  │      'PENDING_APPROVAL',                👈 initial status                          │       │
-│  │      'zhang.san',                                                                 │       │
-│  │      'svc-001',                                                                   │       │
-│  │      'prod-shop',                                                                 │       │
-│  │      'is-gpu-workstation',                                                        │       │
-│  │      'tpl-centos7',                                                               │       │
-│  │      '{\"disk_gb\": 100}',               👈 user-adjustable params                │       │
-│  │      'Production deployment',                                                     │       │
-│  │      NOW()                                                                        │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 3. Audit log (human-readable compliance)                                       │       │
-│  │  INSERT INTO audit_logs (                                                         │       │
-│  │      id, action, actor_id, resource_type, resource_id, details, created_at        │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'log-001', 'REQUEST_SUBMITTED', 'zhang.san',                                  │       │
-│  │      'approval_ticket', 'ticket-001',                                              │       │
-│  │      '{\"action\": \"VM_CREATE\", \"namespace\": \"prod-shop\"}',                │       │
-│  │      NOW()                                                                        │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 4. Notify admins via NotificationSender interface (ADR-0015 §20)               │       │
-│  │  --    V1: InboxNotificationSender (platform-internal inbox)                        │       │
-│  │  --    V2+: External adapters (Email, Webhook, Slack) via plugin layer              │       │
-│  │  INSERT INTO notifications (                                                      │       │
-│  │      id, recipient_role, type, title, content, related_ticket_id, created_at      │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'notif-001', 'admin', 'APPROVAL_REQUIRED',                                    │       │
-│  │      'New VM request', 'User zhang.san requested VM...',                           │       │
-│  │      'ticket-001', NOW()                                                          │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  COMMIT;                                                                          │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  📊 State transition:                                                                       │
-│     - ApprovalTicket: (none) → PENDING_APPROVAL                                              │
-│     - DomainEvent: (none) → PENDING                                                          │
-│                                                                                              │
-│  🚫 Note: NO River Job inserted at this stage (awaiting approval)                           │
-│                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+- Duplicate pending submission must be blocked before creating new ticket/event.
+- Cluster capability mismatch during approval must block approval before worker scheduling.
+- Execution failures must preserve auditable trail and deterministic retry behavior.
+
+### Authority Links (Stage 5.A-5.C)
+
+- [ADR-0017 Decision Boundary](../../adr/ADR-0017-vm-request-flow-clarification.md#decision)
+- [ADR-0018 §User Interaction Flow](../../adr/ADR-0018-instance-size-abstraction.md#user-interaction-flow)
+- [database/vm-lifecycle-write-model.md §Stage 5.A](../database/vm-lifecycle-write-model.md#stage-5a-vm-request-submission-pending-approval)
+- [frontend/FRONTEND.md §API Type Integration](../frontend/FRONTEND.md#api-type-integration-adr-0021)
+
+### Scope Boundary (Stage 5.A-5.C)
+
+This stage group defines interaction sequence and status expectations.
+Detailed SQL/DDL/migration and worker internals are documented in database and phase layers.
 
 ---
 
-### Stage 5.B (continued): Admin Approval - Database Operations
+### Stage 5.A: Persistence Summary {#stage-5-a}
 
-> **Note**: DB transaction after admin approves/rejects request
->
-> **⚠️ ADR Compliance**:
-> - [ADR-0006](../../adr/ADR-0006-unified-async-model.md): River Job must be inserted in same transaction
-> - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md): DomainEvent status must be updated
-> - [ADR-0012](../../adr/ADR-0012-hybrid-transaction.md): Atomic Ent + sqlc + River InsertTx
+#### Purpose
+
+Summarize persistence intent after VM request submission while keeping implementation details in the database layer.
+
+#### Actors & Trigger
+
+- Trigger: user submits VM create request.
+- Actors: requester, approval workflow subsystem, notification subsystem.
+
+#### Interaction Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                     Admin Approves VM Request - Database Operations                          │
+│ Stage 5.A Persistence Intent (Submission Write Set)                                         │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
-│  Admin clicks [Approve]:                                                                     │
-│                                                                                              │
-│  📦 Database operations (single transaction - ADR-0012):                                     │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  BEGIN TRANSACTION;                                                               │       │
-│  │                                                                                    │       │
-│  │  -- 1. Update ticket status                                                       │       │
-│  │  UPDATE approval_tickets SET                                                      │       │
-│  │      status = 'APPROVED',                  👈 PENDING → APPROVED                   │       │
-│  │      approver_id = 'admin.li',                                                    │       │
-│  │      approved_at = NOW(),                                                         │       │
-│  │      selected_cluster_id = 'cluster-a',     👈 admin-selected cluster (ADR-0017)    │       │
-│  │      selected_storage_class = 'ceph-rbd',   👈 admin-selected storage class          │       │
-│  │      template_snapshot = '{...}',          👈 template snapshot (ADR-0015 §17)     │       │
-│  │      instance_size_snapshot = '{...}',     👈 InstanceSize snapshot (ADR-0018)     │       │
-│  │      final_cpu_request = '4',              👈 final CPU request (after overcommit)│       │
-│  │      final_cpu_limit = '8',                                                       │       │
-│  │      final_mem_request = '16Gi',           👈 final memory request                 │       │
-│  │      final_mem_limit = '32Gi',                                                    │       │
-│  │      final_disk_gb = 100                   👈 final disk size                      │       │
-│  │  WHERE id = 'ticket-001';                                                         │       │
-│  │                                                                                    │       │
-│  │  -- 2. Update domain event status (ADR-0009) 👈 REQUIRED                           │       │
-│  │  UPDATE domain_events SET                                                         │       │
-│  │      status = 'PROCESSING',               👈 PENDING → PROCESSING                  │       │
-│  │      updated_at = NOW()                                                           │       │
-│  │  WHERE id = 'evt-001';                                                            │       │
-│  │                                                                                    │       │
-│  │  -- 3. Generate VM name and create VM record                                       │       │
-│  │  INSERT INTO vms (                                                                │       │
-│  │      id, name, service_id, namespace, cluster_id,                                 │       │
-│  │      instance_size_id, template_id, status,                                       │       │
-│  │      ticket_id, tenant_id, created_at                                             │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'vm-001',                                                                    │       │
-│  │      'prod-shop-shop-redis-01',            👈 auto: {ns}-{sys}-{svc}-{index}        │       │
-│  │      'svc-001', 'prod-shop', 'cluster-a',                                         │       │
-│  │      'is-gpu-workstation', 'tpl-centos7',                                         │       │
-│  │      'CREATING',                           👈 initial status: creating              │       │
-│  │      'ticket-001', 'default', NOW()        👈 tenant_id default (ADR-0015)          │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 4. Insert River Job (ADR-0006/0009) 👈 REQUIRED - triggers async execution     │       │
-│  │  -- ⚠️ Claim Check Pattern: Job args contain ONLY event_id (ADR-0009)              │       │
-│  │  INSERT INTO river_job (                                                          │       │
-│  │      id, kind, args, queue, state, created_at                                     │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'job-001',                                                                   │       │
-│  │      'VMCreateJob',                        👈 River worker type                     │       │
-│  │      '{"event_id": "evt-001"}',           👈 Claim Check: event_id ONLY (ADR-0009) │       │
-│  │      'default',                                                                   │       │
-│  │      'available',                          👈 ready for worker consumption          │       │
-│  │      NOW()                                                                        │       │
-│  │  );                                                                                │       │
-│  │  -- Note: Use riverClient.InsertTx() in code, NOT raw INSERT                       │       │
-│  │                                                                                    │       │
-│  │  -- 5. Audit log                                                                   │       │
-│  │  INSERT INTO audit_logs (                                                         │       │
-│  │      id, action, actor_id, resource_type, resource_id, details, created_at        │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'log-002', 'REQUEST_APPROVED', 'admin.li',                                    │       │
-│  │      'approval_ticket', 'ticket-001',                                              │       │
-│  │      '{"cluster": "cluster-a", "vm_name": "prod-shop-shop-redis-01"}',           │       │
-│  │      NOW()                                                                        │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 6. Notify user                                                                 │       │
-│  │  INSERT INTO notifications (                                                      │       │
-│  │      id, recipient_id, type, title, content, related_ticket_id, created_at        │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'notif-002', 'zhang.san', 'REQUEST_APPROVED',                                 │       │
-│  │      'Your VM request is approved', 'VM prod-shop-shop-redis-01 is creating...',  │       │
-│  │      'ticket-001', NOW()                                                          │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  COMMIT;                                                                          │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  📊 State transitions:                                                                       │
-│     - ApprovalTicket: PENDING_APPROVAL → APPROVED                                            │
-│     - DomainEvent: PENDING → PROCESSING                                                      │
-│     - VM: (none) → CREATING                                                                  │
-│     - RiverJob: (none) → available                                                           │
-│                                                                                              │
-│  🔄 Async execution: River worker picks up job and calls KubeVirt API                        │
-│                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                     Admin Rejects VM Request - Database Operations                           │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                              │
-│  Admin clicks [Reject]:                                                                      │
-│                                                                                              │
-│  📦 Database operations (single transaction - ADR-0012):                                     │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  BEGIN TRANSACTION;                                                               │       │
-│  │                                                                                    │       │
-│  │  -- 1. Update ticket status                                                       │       │
-│  │  UPDATE approval_tickets SET                                                      │       │
-│  │      status = 'REJECTED',                  👈 PENDING → REJECTED                   │       │
-│  │      approver_id = 'admin.li',                                                    │       │
-│  │      rejected_at = NOW(),                                                         │       │
-│  │      rejection_reason = 'Insufficient resources, choose another size'             │       │
-│  │  WHERE id = 'ticket-001';                                                         │       │
-│  │                                                                                    │       │
-│  │  -- 2. Update domain event status (ADR-0009) 👈 REQUIRED                           │       │
-│  │  UPDATE domain_events SET                                                         │       │
-│  │      status = 'CANCELLED',                👈 PENDING → CANCELLED (rejected)        │       │
-│  │      updated_at = NOW()                                                           │       │
-│  │  WHERE id = 'evt-001';                                                            │       │
-│  │                                                                                    │       │
-│  │  -- 3. Audit log                                                                   │       │
-│  │  INSERT INTO audit_logs (...) VALUES (...);                                       │       │
-│  │                                                                                    │       │
-│  │  -- 4. Notify user                                                                 │       │
-│  │  INSERT INTO notifications (...) VALUES (...);                                    │       │
-│  │                                                                                    │       │
-│  │  COMMIT;                                                                          │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  📊 State transitions:                                                                       │
-│     - ApprovalTicket: PENDING_APPROVAL → REJECTED                                            │
-│     - DomainEvent: PENDING → CANCELLED                                                       │
-│  ❌ No VM record created, no River Job inserted                                              │
+│  Requester submits VM request                                                                │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  API pre-checks (RBAC + duplicate pending guard)                                             │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  Single transaction writes:                                                                  │
+│    1) approval_tickets: create `PENDING_APPROVAL`                                            │
+│    2) domain_events: create `PENDING`                                                        │
+│    3) audit_logs: append canonical submission action                                         │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  Return `202 Accepted` with ticket reference for polling                                     │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+#### State Transitions
+
+| Entity | Before | After |
+|------|------|------|
+| `approval_tickets` | none | `PENDING_APPROVAL` |
+| `domain_events` | none | `PENDING` |
+| `vms` | none | none |
+| `river_job` | none | none |
+
+#### Failure & Edge Cases
+
+- Duplicate pending request for same operation must return conflict and existing ticket reference.
+- If any write in the transaction fails, all writes must rollback.
+
+#### Authority Links
+
+- [database/vm-lifecycle-write-model.md §Stage 5.A](../database/vm-lifecycle-write-model.md#stage-5a-vm-request-submission-pending-approval)
+- [ADR-0009 §Constraint 1 DomainEvent Payload Immutability](../../adr/ADR-0009-domain-event-pattern.md#constraint-1-domainevent-payload-immutability-append-only)
+- [ADR-0012 §Adopt Ent + sqlc Hybrid Mode](../../adr/ADR-0012-hybrid-transaction.md#adopt-ent-sqlc-hybrid-mode)
+
+#### Scope Boundary
+
+This stage does not define SQL statements, table indexes, or migration details.
+
+### Stage 5.B: Persistence Summary {#stage-5-b}
+
+#### Purpose
+
+Summarize approval/rejection write outcomes and guarantees for VM creation workflows.
+
+#### Actors & Trigger
+
+- Trigger: platform admin approves or rejects a pending VM request.
+- Actors: approver, workflow transaction boundary, River worker scheduler.
+
+#### Interaction Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Stage 5.B Persistence Intent (Decision Write Set)                                            │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                              │
+│  Approver opens pending ticket                                                               │
+│        │                                                                                     │
+│        ├── Approve path                                                                      │
+│        │      1) ticket: `PENDING_APPROVAL -> APPROVED`                                     │
+│        │      2) domain_event: `PENDING -> PROCESSING`                                      │
+│        │      3) vms: insert with `CREATING`                                                │
+│        │      4) river job: enqueue execution task                                           │
+│        │      5) audit_logs: append approval action                                          │
+│        │                                                                                     │
+│        └── Reject path                                                                       │
+│               1) ticket: `PENDING_APPROVAL -> REJECTED`                                     │
+│               2) domain_event: `PENDING -> CANCELLED`                                       │
+│               3) no VM row / no River job                                                   │
+│               4) audit_logs: append rejection action                                         │
+│                                                                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### State Transitions
+
+| Path | Ticket | Domain Event | VM | River Job |
+|------|--------|--------------|----|-----------|
+| Approve | `PENDING_APPROVAL -> APPROVED` | `PENDING -> PROCESSING` | created with `CREATING` | inserted (`available`) |
+| Reject | `PENDING_APPROVAL -> REJECTED` | `PENDING -> CANCELLED` | not created | not inserted |
+
+#### Failure & Edge Cases
+
+- Approval path must preserve claim-check model (River payload carries EventID reference, not full mutable business payload).
+- Rejection path must not create VM rows or async jobs.
+
+#### Authority Links
+
+- [database/vm-lifecycle-write-model.md §Stage 5.B](../database/vm-lifecycle-write-model.md#stage-5b-admin-approval-rejection)
+- [ADR-0006 §Decision](../../adr/ADR-0006-unified-async-model.md#decision)
+- [ADR-0009 §Constraint 1 DomainEvent Payload Immutability](../../adr/ADR-0009-domain-event-pattern.md#constraint-1-domainevent-payload-immutability-append-only)
+- [ADR-0012 §Adopt Ent + sqlc Hybrid Mode](../../adr/ADR-0012-hybrid-transaction.md#adopt-ent-sqlc-hybrid-mode)
+
+#### Scope Boundary
+
+This stage defines required status outcomes and transaction guarantees only.
+
+### Stage 5.D: Delete Operations {#stage-5-d}
+
+#### Purpose
+
+Define user-facing delete behavior for VM/Service/System and the corresponding
+status expectations.
+
+#### Actors & Trigger
+
+- Trigger: user or admin initiates delete API with required confirmation.
+- Actors: requester, approval workflow (VM only), async worker, audit subsystem.
+
+#### Interaction Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Delete User Journey (Interaction Intent)                                                     │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                              │
+│  Resource detail page (VM / Service / System)                                                │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  User clicks Delete -> UI confirmation challenge (`confirm=true` or `confirm_name`)         │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  API validates RBAC + cascade preconditions + environment policy                             │
+│        │                                                                                     │
+│        ├── VM path: create delete approval ticket -> approver decision                       │
+│        │                                                                                     │
+│        └── Service/System path: no delete approval ticket                                    │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  Execution path sets optional transient `DELETING`, performs cleanup, hard-deletes row      │
+│  (audit logs / approval records / domain events remain retained by retention policy)         │
+│                                                                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Entity rule matrix:
+
+| Entity | Preconditions | Approval | Confirmation | Primary Table Behavior |
+|------|------|------|------|------|
+| VM (test) | none | ✅ required | `confirm=true` | `DELETING` (transient) -> hard delete |
+| VM (prod) | none | ✅ required | `confirm_name` | `DELETING` (transient) -> hard delete |
+| Service | child VM count must be 0 | ❌ not required | `confirm=true` | `DELETING` (transient) -> hard delete |
+| System | child Service count must be 0 | ❌ not required | `confirm_name` | hard delete |
+
+#### State Transitions
+
+| Flow | Ticket | Resource | Final Persistence Outcome |
+|------|--------|----------|---------------------------|
+| VM delete approved | `PENDING_APPROVAL -> APPROVED` | `RUNNING/STOPPED -> DELETING -> (row removed)` | VM row hard-deleted, records retained separately |
+| Service delete | no ticket | `ACTIVE -> DELETING -> (row removed)` | Service row hard-deleted after worker cleanup |
+| System delete | no ticket | `ACTIVE -> (row removed)` | System row hard-deleted in validated transaction |
+
+#### Failure & Edge Cases
+
+- Cascade precondition failure must block delete (`Service has VM`, `System has Service`).
+- Confirmation mismatch must fail before any write.
+- Worker failure after `DELETING` must remain recoverable via retry and auditable history.
+
+#### Authority Links
+
+- [ADR-0015 §13 Deletion Cascade Constraints](../../adr/ADR-0015-governance-model-v2.md#13-deletion-cascade-constraints)
+- [ADR-0015 §13.1 Confirmation Mechanism](../../adr/ADR-0015-governance-model-v2.md#131-delete-confirmation-mechanism)
+- [04-governance.md §6.1 Delete Cascade and Confirmation](../phases/04-governance.md#61-delete-cascade-and-confirmation-mechanism-adr-0015-13-131)
+- [04-governance.md §7 Audit Logging](../phases/04-governance.md#7-audit-logging)
+- [database/lifecycle-retention.md §Retention Classes](../database/lifecycle-retention.md#retention-classes-table-centric)
+- [database/vm-lifecycle-write-model.md §Stage 5.D](../database/vm-lifecycle-write-model.md#stage-5d-delete-write-model)
+
+#### Scope Boundary
+
+This stage defines delete interaction intent and required outcomes only.
+Schema details, purge jobs, and index design are defined in database-layer docs.
+
+> **Naming policy for delete actions**:
+> - Canonical V1 actions: `*.delete_submitted`, `*.delete_approved` (when applicable), `*.delete_executed`.
+> - Legacy forms such as `*.delete_request` / `*.delete` may appear in historical notes, but new design content MUST use canonical action names above.
 
 ---
 
-### Stage 5.D: Delete Operations
+### Stage 5.E: Batch Operations {#stage-5e-batch-operations}
 
-> **Note**: VM/Service/System delete flows and DB operations
+#### Purpose
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                     Delete Flow - Hierarchical Dependencies                                  │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                              │
-│  Hierarchy (see ADR-0015):                                                                   │
-│                                                                                              │
-│      System (shop)                                                                           │
-│         │                                                                                    │
-│         ├── Service (redis)                                                                  │
-│         │      ├── VM (prod-shop-shop-redis-01)                                              │
-│         │      └── VM (prod-shop-shop-redis-02)                                              │
-│         │                                                                                    │
-│         └── Service (mysql)                                                                  │
-│                └── VM (prod-shop-shop-mysql-01)                                              │
-│                                                                                              │
-│  Delete rules (Cascade Restrict - ADR-0015 §13.1):                                           │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │                                                                                    │       │
-│  │  Level        Precondition                  Approval   Confirmation                │       │
-│  │  ────────────────────────────────────────────────────────────────────────────────  │       │
-│  │  VM (test)    None                          ✅ Yes     confirm=true param           │       │
-│  │  VM (prod)    None                          ✅ Yes     confirm_name in body ¹       │       │
-│  │  Service      All VMs deleted first         ✅ Yes     confirm=true param           │       │
-│  │  System       All Services deleted first    ❌ No      confirm_name in body         │       │
-│  │                                                                                    │       │
-│  │  ¹ Production VMs require typing the exact VM name to prevent accidental deletion  │       │
-│  │                                                                                    │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-                                           │
-                                           ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                     Delete VM - Database Operations                                          │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                              │
-│  🔹 Test VM Delete (simple confirmation):                                                    │
-│  DELETE /api/v1/vms/{vm_id}?confirm=true                                                     │
-│                                                                                              │
-│  🔹 Production VM Delete (requires typing VM name - ADR-0015 §13.1):                         │
-│  DELETE /api/v1/vms/{vm_id}                                                                  │
-│  Content-Type: application/json                                                              │
-│  { "confirm_name": "prod-shop-shop-redis-01" }  👈 must match VM name exactly                │
-│                                                                                              │                                                                                              │
-│  📦 Database operations:                                                                     │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  BEGIN TRANSACTION;                                                               │       │
-│  │                                                                                    │       │
-│  │  -- 1. Create delete approval ticket                                              │       │
-│  │  INSERT INTO approval_tickets (                                                   │       │
-│  │      id, type, status, requester_id, resource_type, resource_id, created_at       │       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'ticket-002', 'VM_DELETE', 'PENDING_APPROVAL',                               │       │
-│  │      'zhang.san', 'vm', 'vm-001', NOW()                                           │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- 2. Audit log                                                                   │       │
-│  │  INSERT INTO audit_logs (                                                         │       │
-│  │      action, actor_id, resource_type, resource_id, parent_type, parent_id, details│       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'vm.delete_request', 'zhang.san', 'vm', 'vm-001', 'service', 'svc-001',       │       │
-│  │      '{"name": "prod-shop-shop-redis-01", "reason": "resource cleanup"}'     │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  COMMIT;                                                                          │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  After admin approval:                                                                       │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  BEGIN TRANSACTION;                                                               │       │
-│  │                                                                                    │       │
-│  │  -- 1. Update ticket status                                                       │       │
-│  │  UPDATE approval_tickets SET status = 'APPROVED', ... WHERE id = 'ticket-002';    │       │
-│  │                                                                                    │       │
-│  │  -- 2. Update VM status to DELETING (no hard delete)                               │       │
-│  │  UPDATE vms SET status = 'DELETING' WHERE id = 'vm-001';                           │       │
-│  │                                                                                    │       │
-│  │  -- 3. Audit log                                                                   │       │
-│  │  INSERT INTO audit_logs (                                                         │       │
-│  │      action, actor_id, resource_type, resource_id, parent_type, parent_id, details│       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'vm.delete', 'admin.li', 'vm', 'vm-001', 'service', 'svc-001',                │       │
-│  │      '{"name": "prod-shop-shop-redis-01", "approved_by": "admin.li"}'         │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  COMMIT;                                                                          │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  🔄 Async task: worker runs kubectl delete vm; on success set status='DELETED'               │
-│                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+Define canonical batch submission/execution behavior with parent-child ticket
+model and two-layer throttling.
 
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                     Delete Service - Database Operations                                     │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                              │
-│  DELETE /api/v1/services/{service_id}?confirm=true                                           │
-│                                                                                              │
-│  📦 Database operations:                                                                     │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  -- Pre-check: active VM count                                                    │       │
-│  │  SELECT COUNT(*) FROM vms                                                         │       │
-│  │  WHERE service_id = 'svc-001' AND status NOT IN ('DELETED', 'DELETING');           │       │
-│  │                                                                                    │       │
-│  │  IF count > 0 THEN                                                                │       │
-│  │      RETURN ERROR("{count} active VMs exist under service; delete them first");   │       │
-│  │  END IF;                                                                           │       │
-│  │                                                                                    │       │
-│  │  -- Create delete approval ticket (same as VM delete flow)                         │       │
-│  │  INSERT INTO approval_tickets (...);                                              │       │
-│  │                                                                                    │       │
-│  │  -- Audit log                                                                      │       │
-│  │  INSERT INTO audit_logs (                                                         │       │
-│  │      action, actor_id, resource_type, resource_id, parent_type, parent_id, details│       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'service.delete_request', 'zhang.san', 'service', 'svc-001', 'system', 'sys-001',│     │
-│  │      '{"name": "redis", "reason": "service migration"}'                      │       │
-│  │  );                                                                                │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  After admin approval:                                                                       │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  UPDATE services SET status = 'DELETED', deleted_at = NOW()                        │       │
-│  │  WHERE id = 'svc-001';                                                             │       │
-│  │                                                                                    │       │
-│  │  -- Audit log                                                                      │       │
-│  │  INSERT INTO audit_logs (                                                         │       │
-│  │      action, actor_id, resource_type, resource_id, parent_type, parent_id, details│       │
-│  │  ) VALUES (                                                                        │       │
-│  │      'service.delete', 'admin.li', 'service', 'svc-001', 'system', 'sys-001',       │       │
-│  │      '{"name": "redis", "approved_by": "admin.li"}'                            │       │
-│  │  );                                                                                │       │
-│  │                                                                                    │       │
-│  │  -- Soft delete: record preserved for audit                                        │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+#### Actors & Trigger
 
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                     Delete System - Database Operations (No Approval)                         │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                              │
-│  DELETE /api/v1/systems/{system_id}                                                          │
-│  Body: { "confirm_name": "shop" }    👈 must type system name                              │
-│                                                                                              │
-│  📦 Database operations:                                                                     │
-│  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  -- Pre-check 1: confirm name match                                               │       │
-│  │  IF confirm_name != system.name THEN                                              │       │
-│  │      RETURN ERROR("confirmation name mismatch");                                  │       │
-│  │  END IF;                                                                           │       │
-│  │                                                                                    │       │
-│  │  -- Pre-check 2: active Service count                                              │       │
-│  │  SELECT COUNT(*) FROM services                                                    │       │
-│  │  WHERE system_id = 'sys-001' AND status != 'DELETED';                              │       │
-│  │                                                                                    │       │
-│  │  IF count > 0 THEN                                                                │       │
-│  │      RETURN ERROR("{count} services exist under system; delete first");           │       │
-│  │  END IF;                                                                           │       │
-│  │                                                                                    │       │
-│  │  -- Execute soft delete (no approval)                                              │       │
-│  │  UPDATE systems SET status = 'DELETED', deleted_at = NOW()                         │       │
-│  │  WHERE id = 'sys-001';                                                             │       │
-│  │                                                                                    │       │
-│  │  -- Audit log                                                                      │       │
-│  │  INSERT INTO audit_logs (...) VALUES (...);                                        │       │
-│  └──────────────────────────────────────────────────────────────────────────────────┘       │
-│                                                                                              │
-│  ❌ No approval ticket: system deletion guarded by name confirmation only                     │
-│                                                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+- Trigger: user/admin submits one batch operation containing multiple child items.
+- Actors: frontend queue UI, API gateway, governance transaction layer, River workers.
 
----
+#### Interaction Flow
 
-### Stage 5.E: Batch Operations (ADR-0015 §19)
-
-> **Design Reference**: [04-governance.md §5.6](../phases/04-governance.md#56-batch-operations-adr-0015-19)
-
-Batch operations are **UX convenience**, not atomic transactions. Each item is processed independently via River Queue.
-
-> **Idempotency & Retry**:
-> - Each batch item generates an independent River Job with unique `event_id`
-> - River handles retry logic (default: 3 retries with exponential backoff)
-> - Idempotency key = `event_id` — re-processing same event is safe (ADR-0009 Claim Check)
-> - Partial failures do NOT rollback successful items; aggregate status reported
+UI storyboard (parent-child queue):
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ BATCH APPROVAL FLOW                                                                              │
+│ BATCH QUEUE UI STORYBOARD                                                                       │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                                  │
-│  1. Admin selects multiple pending tickets in UI                                                │
-│     └── [TKT-001, TKT-002, TKT-003] (max 50)                                                    │
-│                                                                                                  │
-│  2. Frontend: POST /api/v1/approvals/batch                                                      │
-│     └── {ticket_ids: [...], action: "approve", cluster_id: "...", reason: "..."}               │
-│                                                                                                  │
-│  3. Backend validates each ticket independently:                                                 │
-│     ┌─────────────────────────────────────────────────────────────────────────────────────┐     │
-│     │ FOR each ticket_id IN request.ticket_ids:                                           │     │
-│     │   • Check ticket exists and status = PENDING_APPROVAL                               │     │
-│     │   • Check user has approval permission                                              │     │
-│     │   • Check target cluster matches ticket's environment                               │     │
-│     │   • IF valid → Enqueue River job (ApprovalJob)                                      │     │
-│     │   • IF invalid → Mark as rejected in response                                       │     │
-│     └─────────────────────────────────────────────────────────────────────────────────────┘     │
-│                                                                                                  │
-│  4. Response (202 Accepted):                                                                    │
-│     └── {batch_id: "BATCH-123", total: 3, accepted: 2, rejected: 1, items: [...]}              │
-│                                                                                                  │
-│  5. Frontend can poll: GET /api/v1/batches/{batch_id}/status                                    │
-│                                                                                                  │
-│  ⚠️ Batch Delete NOT supported in V1 (ADR-0015 §13.1 requires individual confirmation)          │
+│  [Batch action page]                                                                             │
+│     Select VM rows + choose operation + Submit                                                   │
+│                                  │                                                               │
+│                                  ▼                                                               │
+│  [Queue list page]                                                                                │
+│     New parent row appears: `PENDING_APPROVAL`                                                   │
+│     Columns: total/success/failed/pending + requester + updated_at                              │
+│                                  │                                                               │
+│                                  ▼                                                               │
+│  [Parent row expanded]                                                                            │
+│     Child table shows per-item status + attempt_count + last_error                               │
+│                                  │                                                               │
+│                                  ▼                                                               │
+│  [In progress / terminal handling]                                                                │
+│     `IN_PROGRESS`      -> action: Terminate pending children                                     │
+│     `PARTIAL_SUCCESS`  -> action: Retry failed children                                           │
+│     `FAILED`           -> action: Retry failed children                                           │
+│     `COMPLETED`        -> action: Export result                                                   │
 │                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ BATCH POWER OPERATION FLOW                                                                       │
+│ BATCH SUBMISSION FLOW (CANONICAL)                                                               │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                                  │
-│  1. User selects multiple VMs in UI                                                             │
-│     └── [vm-001, vm-002] (max 50)                                                               │
+│  1. User/Admin selects batch items in UI                                                        │
 │                                                                                                  │
-│  2. Frontend: POST /api/v1/vms/batch/power                                                      │
-│     └── {vm_ids: [...], action: "start", reason: "..."}                                        │
+│  2. Frontend: POST /api/v1/vms/batch                                                            │
+│     └── includes idempotency key + operation payload                                             │
 │                                                                                                  │
-│  3. Backend:                                                                                    │
-│     • Validate user has vm:operate permission for each VM                                       │
-│     • For prod environment VMs, check if approval required (ADR-0015 §7)                        │
-│     • Enqueue individual River jobs (PowerOperationJob)                                         │
+│  3. Backend pre-checks:                                                                          │
+│     • Layer 1 (global): pending parent threshold + API rate                                     │
+│     • Layer 2 (user): pending parent/child limits + cooldown                                    │
 │                                                                                                  │
-│  4. Each job executes independently:                                                            │
-│     └── Success/failure tracked per VM                                                          │
+│  4. Atomic transaction:                                                                          │
+│     • Insert parent batch ticket                                                                 │
+│     • Insert all child tickets                                                                   │
+│     • If any child insert fails -> rollback all                                                 │
+│                                                                                                  │
+│  5. Response (202 Accepted):                                                                     │
+│     └── {batch_id, status: \"PENDING_APPROVAL\", status_url, retry_after_seconds}               │
+│                                                                                                  │
+│  6. Frontend tracks: GET /api/v1/vms/batch/{batch_id}                                           │
 │                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ BATCH EXECUTION FLOW                                                                             │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                  │
+│  1. Parent enters APPROVED/IN_PROGRESS                                                          │
+│                                                                                                  │
+│  2. Workers consume child tickets/jobs independently                                             │
+│     • Child success/failure updates parent aggregate counters                                    │
+│     • Failures are isolated; successful children are not rolled back                             │
+│                                                                                                  │
+│  3. Parent terminal state calculation:                                                           │
+│     • COMPLETED: all children succeeded                                                          │
+│     • FAILED: all children failed                                                                │
+│     • PARTIAL_SUCCESS: mixed success/failure                                                     │
+│     • CANCELLED: pending children terminated by user/admin                                       │
+│                                                                                                  │
+│  4. Frontend actions during/after execution:                                                     │
+│     • Retry failed children: POST /api/v1/vms/batch/{id}/retry                                   │
+│     • Terminate pending children: POST /api/v1/vms/batch/{id}/cancel                             │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ COMPATIBILITY ENDPOINTS                                                                          │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                  │
+│  Existing APIs remain supported for compatibility:                                               │
+│    • POST /api/v1/approvals/batch                                                                │
+│    • POST /api/v1/vms/batch/power                                                                │
+│                                                                                                  │
+│  Internally, both are normalized into the same parent-child ticket pipeline.                     │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### State Transitions
+
+| Scope | Transition Pattern |
+|------|---------------------|
+| Parent ticket | `PENDING_APPROVAL -> APPROVED/IN_PROGRESS -> COMPLETED|PARTIAL_SUCCESS|FAILED|CANCELLED` |
+| Child ticket | `PENDING -> RUNNING -> SUCCESS|FAILED|CANCELLED` |
+
+#### Failure & Edge Cases
+
+- Global or per-user throttling rejection must return actionable retry window.
+- Child failure must not rollback successful siblings.
+- Retry/cancel must target eligible children only and recompute parent aggregate status.
+
+#### Authority Links
+
+- [ADR-0015 §19 Batch Operations V1](../../adr/ADR-0015-governance-model-v2.md#19-batch-operations)
+- [04-governance.md §5.6 Batch Operations](../phases/04-governance.md#56-batch-operations-adr-0015-19)
+- [database/vm-lifecycle-write-model.md §Stage 5.E](../database/vm-lifecycle-write-model.md#stage-5e-batch-parent-child-write-model)
+- [frontend/features/batch-operations-queue.md §2.0 End-to-End UI Storyboard](../frontend/features/batch-operations-queue.md#20-end-to-end-ui-storyboard)
+
+#### Scope Boundary
+
+This stage defines interactive behavior and state semantics only.
+Queue internals, table schema, and worker tuning details are defined in phase and database docs.
+
 ---
 
-### Stage 5.F: Notification System (ADR-0015 §20)
+### Stage 5.F: Notification System {#stage-5f-notification-system}
 
-> **Design Reference**: [04-governance.md §6.3](../phases/04-governance.md#63-notification-system-adr-0015-20)
+#### Purpose
 
-V1 implements platform-internal inbox. No external push channels (email/webhook) in V1.
+Define notification behavior visible to users/admins for request, approval, and VM lifecycle events.
 
-> **ADR-0006 Compliance**: Notification inserts are **synchronous** (within the same DB transaction as business operations), NOT via River Queue. See [04-governance.md §6.3](../phases/04-governance.md#63-notification-system-adr-0015-20) for rationale.
->
-> **V2+ External Channels**: Email/Webhook/Slack planned in [RFC-0018](../../rfc/RFC-0018-external-notification.md).
+#### Actors & Trigger
+
+- Trigger: approval workflow events and VM state transitions.
+- Actors: workflow transaction layer, inbox notification service, frontend polling UI.
+
+#### Interaction Flow
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -2113,10 +2129,36 @@ V1 implements platform-internal inbox. No external push channels (email/webhook)
 │  Mark all read: POST /api/v1/notifications/mark-all-read                                       │
 │                                                                                                  │
 │  ⚠️ V1 Constraint: Poll-based only, no WebSocket push                                           │
-│  ⚠️ V1 Constraint: No external channels (email/webhook) - see RFC for V2+                      │
+│  ⚠️ V1 Constraint: No external channels (email/webhook); V2+ plan is linked below             │
 │                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+#### State Transitions
+
+| Event Type | Delivery Expectation |
+|------|------------------------|
+| Approval required | notify approvers immediately after ticket submission |
+| Approval decision | notify requester after approve/reject |
+| Runtime state change | notify resource owner with latest VM state |
+
+#### Failure & Edge Cases
+
+- Notification write must not be dropped silently; failures must be observable.
+- V1 uses polling only; clients must tolerate eventual consistency.
+- Sensitive details in payload must follow redaction policy before persistence.
+
+#### Authority Links
+
+- [ADR-0015 §20 Notification System](../../adr/ADR-0015-governance-model-v2.md#20-notification-system)
+- [04-governance.md §6.3 Notification System](../phases/04-governance.md#63-notification-system-adr-0015-20)
+- [04-governance.md §7 Audit Logging](../phases/04-governance.md#7-audit-logging)
+- [RFC-0018 §Proposed Solution](../../rfc/RFC-0018-external-notification.md#proposed-solution)
+
+#### Scope Boundary
+
+This stage defines user-visible notification behavior. Channel adapters, delivery retries,
+and provider integration internals are defined in governance and RFC documents.
 
 ---
 
@@ -2124,6 +2166,20 @@ V1 implements platform-internal inbox. No external push channels (email/webhook)
 
 > **Note**: This section defines state machines and DB relationships for core entities.
 > It is a critical reference for frontend and backend development.
+
+### Purpose
+
+Provide canonical state semantics and shared data-model intent for cross-team alignment.
+
+### Actors & Trigger
+
+- Trigger: engineers need consistent interpretation of workflow and runtime states.
+- Actors: backend engineers, frontend engineers, SRE/operations reviewers.
+
+### Interaction Flow
+
+Part 4 is a reference view rather than a user-operation sequence.
+It consolidates entity states, relationship intent, and audit semantics consumed by all flows.
 
 ### Approval Ticket Status State Diagram
 
@@ -2188,11 +2244,7 @@ V1 implements platform-internal inbox. No external push channels (email/webhook)
 │     └─────────────┘     └──────┬──────┘                                                     │
 │                                │                                                            │
 │                                ▼                                                            │
-│                         ┌─────────────┐                                                     │
-│                         │   DELETED   │                                                     │
-│                         │  (deleted)  │                                                     │
-│                         └─────────────┘                                                     │
-│                           (terminal)                                                        │
+│                     (worker hard-deletes DB row; no persisted DELETED state)               │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -2252,152 +2304,62 @@ V1 implements platform-internal inbox. No external push channels (email/webhook)
 
 > **Reference**: ADR-0015 §7 (Deletion & Cascade Constraints) - "audit records are preserved"
 
-> 📦 **Schema**: See [04-governance.md §7 Storage Schema](../phases/04-governance.md#storage-schema) for full DDL and indexes.
+> **Scope boundary**: this section defines audit semantics only.
+> Full schema/DDL/index details are authoritative in:
+> - [04-governance.md §7](../phases/04-governance.md#7-audit-logging)
+> - [database/schema-catalog.md §Table Domains](../database/schema-catalog.md#table-domains)
+> - [database/lifecycle-retention.md §Retention Classes](../database/lifecycle-retention.md#retention-classes-table-centric)
 
-#### Operations That Must Be Audited
+#### Mandatory Coverage
 
-| Category | Action | Trigger | Details (details) |
-|------|---------------|----------|---------------------|
-| **Auth** | `user.login` | Login success | `{method: "oidc", idp: "Corp-SSO"}` |
-| **Auth** | `user.login_failed` | Login failed | `{reason: "invalid_token"}` |
-| **Auth** | `user.logout` | Logout | `{}` |
-| **System** | `system.create` | Create system | `{name: "shop", description: "..."}` |
-| **System** | `system.update` | Update system | `{changes: {description: {old: "...", new: "..."}}}` |
-| **System** | `system.delete` | Delete system | `{confirmation: "shop"}` |
-| **Service** | `service.create` | Create service | `{name: "redis", system_id: "..."}` |
-| **Service** | `service.delete_request` | Submit delete request | `{name: "redis", reason: "service migration"}` |
-| **Service** | `service.delete` | Delete service (after approval) | `{approved_by: "..."}` |
-| **VM** | `vm.request` | Submit VM create request | `{instance_size: "...", template: "...", count: 3}` |
-| **VM** | `vm.create` | VM created | `{cluster: "...", namespace: "..."}` |
-| **VM** | `vm.start` | Start VM | `{}` |
-| **VM** | `vm.stop` | Stop VM | `{graceful: true}` |
-| **VM** | `vm.restart` | Restart VM | `{}` |
-| **VM** | `vm.delete_request` | Submit delete request | `{name: "...", reason: "cleanup"}` |
-| **VM** | `vm.delete` | Delete VM (after approval) | `{approved_by: "..."}`  |
-| **VNC** | `vnc.access` | Access VNC console | `{vm_id: "...", session_duration: 3600}` |
-| **Approval** | `approval.approve` | Approve request | `{ticket_id: "...", final_cluster: "...", final_disk_gb: 100}` |
-| **Approval** | `approval.reject` | Reject request | `{ticket_id: "...", reason: "insufficient resources"}` |
-| **Approval** | `approval.cancel` | Cancel request | `{ticket_id: "...", reason: "no longer needed"}` |
-| **RBAC** | `role.create` | Create custom role | `{name: "CustomViewer", permissions: [...]}` |
-| **RBAC** | `role.update` | Update role permissions | `{role: "Operator", changes: {permissions: {added: [...], removed: [...]}}}` |
-| **RBAC** | `role.delete` | Delete custom role | `{name: "CustomViewer"}` |
-| **RBAC** | `role.assign` | Assign role to user | `{user_id: "...", role: "SystemAdmin", scope: "system:shop"}` |
-| **RBAC** | `role.revoke` | Revoke role | `{user_id: "...", role: "Operator"}` |
-| **RBAC** | `permission.create` | Create permission | `{code: "vm:vnc", description: "..."}` |
-| **RBAC** | `permission.delete` | Delete permission | `{code: "vm:vnc"}` |
-| **Cluster** | `cluster.register` | Register cluster | `{name: "prod-01", environment: "prod", api_server: "..."}` |
-| **Cluster** | `cluster.update` | Update cluster config | `{name: "prod-01", changes: {environment: {old: "test", new: "prod"}}}` |
-| **Cluster** | `cluster.delete` | Delete/deregister cluster | `{name: "prod-01", reason: "cluster offboarding"}` |
-| **Cluster** | `cluster.credential_rotate` | Rotate cluster credentials | `{name: "prod-01", rotated_at: "..."}` |
-| **Template** | `template.create` | Create template | `{name: "centos7-docker", version: 1}` |
-| **Template** | `template.update` | Update template (version+1) | `{name: "centos7-docker", version: 2, changes: {...}}` |
-| **Template** | `template.deprecate` | Deprecate template | `{name: "centos6-base", successor: "centos7-base"}` |
-| **Template** | `template.delete` | Delete template | `{name: "centos6-base", version: 3}` |
-| **InstanceSize** | `instance_size.create` | Create size | `{name: "medium-gpu", cpu: 4, memory: "8Gi", gpu: 1}` |
-| **InstanceSize** | `instance_size.update` | Update size | `{name: "medium-gpu", changes: {memory: {old: "8Gi", new: "16Gi"}}}` |
-| **InstanceSize** | `instance_size.deprecate` | Deprecate size | `{name: "small-legacy"}` |
-| **InstanceSize** | `instance_size.delete` | Delete size | `{name: "small-legacy"}` |
-| **Namespace** | `namespace.create` | Create namespace | `{name: "prod-shop", cluster: "prod-01"}` |
-| **Namespace** | `namespace.delete` | Delete namespace | `{name: "prod-shop"}` |
-| **IdP** | `idp.configure` | Configure IdP | `{type: "oidc", issuer: "...", client_id: "..."}` |
-| **IdP** | `idp.update` | Update IdP config | `{changes: {issuer: {...}}}` |
-| **IdP** | `idp.delete` | Delete IdP config | `{type: "oidc"}` |
-| **IdP** | `idp.sync` | Manually sync IdP groups | `{synced_groups: 15, new_users: 3}` |
-| **IdP** | `idp.mapping_create` | Create group-role mapping | `{idp_group: "DevOps", role: "SystemAdmin", env: "prod"}` |
-| **IdP** | `idp.mapping_update` | Update mapping | `{idp_group: "DevOps", changes: {role: {old: "Viewer", new: "Operator"}}}` |
-| **IdP** | `idp.mapping_delete` | Delete mapping | `{idp_group: "DevOps"}` |
-| **Config** | `config.update` | Update platform config | `{key: "approval.timeout_hours", old: 24, new: 48}` |
+- All state-changing operations (CREATE/UPDATE/DELETE)
+- Sensitive read operations (for example `vnc.access`)
+- Both success and failure paths for submission/approval/execution stages
 
-#### Operations That Do NOT Require Audit (Exceptions)
+#### Canonical Action Naming
 
-The following operations are high-frequency or low sensitivity and are **not** audited:
+| Domain | Canonical Actions (V1) | Notes |
+|------|------|------|
+| Auth | `user.login`, `user.login_failed`, `user.logout` | Authentication events |
+| System | `system.create`, `system.update`, `system.delete_submitted`, `system.delete_executed` | No delete approval ticket |
+| Service | `service.create`, `service.delete_submitted`, `service.delete_executed` | No delete approval ticket |
+| VM | `vm.request`, `vm.create`, `vm.start`, `vm.stop`, `vm.restart`, `vm.delete_submitted`, `vm.delete_approved`, `vm.delete_executed` | Delete requires approval |
+| VNC | `vnc.access` | Sensitive read |
+| Approval | `approval.approve`, `approval.reject`, `approval.cancel` | Ticket decisions |
+| RBAC | `role.create`, `role.update`, `role.delete`, `role.assign`, `role.revoke`, `permission.create`, `permission.delete` | Permission governance |
+| Cluster | `cluster.register`, `cluster.update`, `cluster.delete`, `cluster.credential_rotate` | Cluster lifecycle |
+| Template | `template.create`, `template.update`, `template.deprecate`, `template.delete` | Template lifecycle |
+| InstanceSize | `instance_size.create`, `instance_size.update`, `instance_size.deprecate`, `instance_size.delete` | Sizing lifecycle |
+| Namespace | `namespace.create`, `namespace.delete` | Namespace lifecycle |
+| Auth Provider | `auth_provider.configure`, `auth_provider.update`, `auth_provider.delete`, `auth_provider.sync`, `auth_provider.mapping_create`, `auth_provider.mapping_update`, `auth_provider.mapping_delete` | ADR-0015 amendment: use `auth_provider.*`, not `idp.*` |
+| Config | `config.update` | Platform configuration change |
+
+#### Fields Required in Every Audit Record
+
+- `action`, `actor_id`, `resource_type`, `resource_id`, `created_at`
+- Optional but recommended when available: `parent_type`, `parent_id`, `environment`
+- `details` payload must be redacted per ADR-0019
+
+#### Operations Commonly Exempt from Audit
 
 | Category | Operation | Reason |
-|------|------|-----------|
-| **System checks** | K8s cluster health checks | periodic, no user trigger |
-| **System checks** | VM status sync polling | every minute, too much data |
-| **System checks** | Resource quota checks | internal, low business value |
-| **Read-only** | list queries (`GET /api/v1/*`) | read-only, no state change |
-| **Read-only** | detail queries (`GET /api/v1/*/id`) | read-only, no state change |
-| **Internal** | Worker heartbeats | internal comms |
-| **Internal** | Metrics collection | monitoring data |
+|------|------|------|
+| System checks | Cluster health polling, VM status sync polling | High frequency, no direct user intent |
+| Read-only | List/detail APIs (`GET`) | No state change |
+| Internal | Worker heartbeat, metrics collection | Internal observability traffic |
 
 > **Exception principles**:
-> - All **write** operations (CREATE/UPDATE/DELETE) must be logged
-> - All **sensitive read** operations (e.g., VNC access) must be logged
-> - Pure **system automation** and **read-only queries** may be exempt
+> - Write operations are audited by default.
+> - Exemptions must be explicit and reviewed.
+> - Sensitive reads remain auditable even when not state-changing.
 
-#### Audit Log Examples
-
-```
-Example 1: User submits VM create request
-  INSERT INTO audit_logs (action, actor_id, actor_name, resource_type,
-                          resource_id, parent_type, parent_id, details) VALUES
-    ('vm.request', 'user-001', 'Zhang San', 'approval_ticket', 'ticket-001',
-     'service', 'svc-001',
-     '{"instance_size": "medium-gpu", "template": "centos7-docker",
-       "count": 3, "namespace": "prod-shop"}');
-
-Example 2: Admin approves request
-  INSERT INTO audit_logs (action, actor_id, actor_name, resource_type,
-                          resource_id, details) VALUES
-    ('approval.approve', 'admin-001', 'Admin Li Si', 'approval_ticket', 'ticket-001',
-     '{"final_cluster": "prod-cluster-01", "final_disk_gb": 100,
-       "final_storage_class": "ceph-ssd", "vms_created": 3}');
-
-Example 3: VNC access record
-  INSERT INTO audit_logs (action, actor_id, actor_name, resource_type,
-                          resource_id, details, ip_address) VALUES
-    ('vnc.access', 'user-001', 'Zhang San', 'vm', 'vm-redis-01',
-     '{"session_id": "vnc-xxx", "duration_seconds": 1800}',
-     '192.168.1.100');
-
-Example 4: Delete resource (preserve audit)
-  -- When deleting a VM, write audit log first
-  INSERT INTO audit_logs (action, actor_id, resource_type, resource_id,
-                          parent_type, parent_id, details) VALUES
-    ('vm.delete', 'user-001', 'vm', 'vm-redis-01', 'service', 'svc-001',
-     '{"name": "prod-shop-redis-01", "cluster": "prod-cluster-01",
-       "existed_days": 45, "last_status": "RUNNING"}');
-
-  -- Then hard delete the resource
-  DELETE FROM vms WHERE id = 'vm-redis-01';
-
-  💡 Audit log preserved, resource record removed
-```
-
-#### Audit Log Query Examples
-
-```sql
--- Query all actions for a user
-SELECT * FROM audit_logs
-WHERE actor_id = 'user-001'
-ORDER BY created_at DESC LIMIT 50;
-
--- Query resource history
-SELECT * FROM audit_logs
-WHERE resource_type = 'vm' AND resource_id = 'vm-redis-01'
-ORDER BY created_at DESC;
-
--- Query all approval actions
-SELECT * FROM audit_logs
-WHERE action LIKE 'approval.%'
-ORDER BY created_at DESC;
-
--- Query sensitive prod actions
-SELECT * FROM audit_logs
-WHERE environment = 'prod'
-  AND action IN ('vm.delete', 'system.delete', 'approval.approve')
-ORDER BY created_at DESC;
-```
-
-#### Audit Log Retention Policy
+#### Retention Baseline
 
 | Environment | Retention | Notes |
-|------|----------|------|
-| **Production** | ≥ 1 year | Compliance |
-| **Test** | ≥ 90 days | Configurable shorter |
-| **Sensitive ops** | ≥ 3 years | `*.delete`, `approval.*`, `rbac.*` |
+|------|------|------|
+| Production | >= 1 year | Compliance baseline |
+| Test | >= 90 days | Can be shorter by policy |
+| Sensitive operations | >= 3 years | `*.delete*`, `approval.*`, `rbac.*` |
 
 ---
 
@@ -2414,15 +2376,20 @@ ORDER BY created_at DESC;
 
 ---
 
-### External Approval System Integration (v1+)
+<a id="external-approval-v2-roadmap"></a>
 
-> **Scenario**: integrate with enterprise ITSM (Jira Service Management, ServiceNow, etc.)
+### Approval Provider Plugin Architecture (V2+ Roadmap)
+
+> **Scenario**: integrate with enterprise ITSM (Jira Service Management, ServiceNow, etc.).
+>
+> **V1 Boundary**: V1 implements one unified approval-provider contract with a single built-in
+> provider (`builtin-default`). External systems are plugin adapters in V2+.
 
 #### Design Principles
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                     External Approval Integration Architecture                               │
+│                    Approval Provider Plugin Architecture                                    │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │  ┌──────────────┐                    ┌──────────────┐                    ┌──────────────┐   │
@@ -2431,17 +2398,17 @@ ORDER BY created_at DESC;
 │  └──────────────┘                    └──────────────┘                    └──────────────┘   │
 │                                                                                              │
 │  Key principles:                                                                             │
-│  1. Shepherd focuses on standard APIs, not external workflow internals                        │
-│  2. Async event-driven architecture; do not block users                                       │
-│  3. External approval is pluggable; v1 defaults to built-in approval                          │
+│  1. Shepherd owns canonical ticket states and audit trail                                    │
+│  2. Providers (built-in/external) share one stable contract                                 │
+│  3. Async integration + fail-safe fallback; external failure cannot block built-in path      │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### External Approval Configuration (Web UI, PostgreSQL)
+#### Approval Provider Configuration (External Adapters, Web UI)
 
 > Admin config via **Settings → External Approval Systems → Add**.
-> All configs stored in `external_approval_systems` table.
+> External adapter registry is stored in `external_approval_systems`.
 
 **Webhook security (best practice)**:
 - HTTPS only for all webhook URLs.
@@ -2453,28 +2420,12 @@ References:
 - https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
 - https://docs.stripe.com/webhooks/test
 
-```sql
--- Example: external_approval_systems record
-INSERT INTO external_approval_systems (
-  id, name, type, enabled,
-  webhook_url, webhook_secret, webhook_headers,
-  callback_secret, status_mapping,
-  timeout_seconds, retry_count,
-  created_by
-) VALUES (
-  'eas-001',
-  'Jira Service Management',
-  'webhook',
-  true,
-  'https://jira.company.com/api/v2/tickets',
-  'encrypted:AES256:xxx',  -- encrypted with ENCRYPTION_KEY
-  '{"Authorization": "Bearer ${JIRA_TOKEN}"}',
-  'encrypted:AES256:xxx',  -- HMAC secret for callback verification
-  '{"Approved": "APPROVED", "Rejected": "REJECTED", "Cancelled": "CANCELLED"}',
-  30, 3,
-  'admin'
-);
-```
+Key persisted data (schema authority remains in phase/database docs):
+
+| Object | Representative fields | Purpose |
+|----------|------|------|
+| `external_approval_systems` | `id`, `name`, `type`, `enabled`, `webhook_url`, `webhook_secret`, `timeout_seconds`, `retry_count` | External adapter registry and delivery guardrails |
+| `audit_logs` | `action`, `resource_type`, `resource_id`, `result`, `metadata` | Immutable local trace for external decisions/fallback actions |
 
 #### Webhook Payload (Shepherd → External System)
 
@@ -2560,16 +2511,67 @@ INSERT INTO external_approval_systems (
 | **Security** | Always verify HMAC signature to prevent forged callbacks |
 | **Fallback** | If external system is unavailable, fall back to built-in approval |
 
+### State Transitions (Part 4 Reference)
+
+| Domain | Canonical States |
+|--------|------------------|
+| Approval ticket | `PENDING_APPROVAL`, `APPROVED`, `REJECTED`, `CANCELLED`, `EXECUTING`, `SUCCESS`, `FAILED` |
+| VM runtime | `CREATING`, `RUNNING`, `STOPPING`, `STOPPED`, `FAILED`, `DELETING` |
+| Audit record lifecycle | append-only write, retained/archived per policy |
+
+### Failure & Edge Cases (Part 4 Reference)
+
+- State machine drift across API/UI/worker implementations is prohibited.
+- Any new terminal state must update flow docs, governance docs, and API contracts together.
+- Audit redaction policy violations are security incidents, not formatting defects.
+
+### Authority Links (Part 4)
+
+- [04-governance.md §7 Audit Logging](../phases/04-governance.md#7-audit-logging)
+- [database/schema-catalog.md §Relationship Baseline](../database/schema-catalog.md#relationship-baseline)
+- [database/lifecycle-retention.md §Database Guardrails](../database/lifecycle-retention.md#database-guardrails)
+- [ADR-0015 §11 Approval Timeout Handling](../../adr/ADR-0015-governance-model-v2.md#11-approval-timeout-handling)
+
+### Scope Boundary (Part 4)
+
+This part defines semantic models and cross-component invariants.
+It does not replace schema DDL ownership, API source contracts, or worker implementation playbooks.
+
 ---
 
-## Stage 6: VNC Console Access (ADR-0015 §18, RFC-0011)
+## Stage 6: VNC Console Access {#stage-6-vnc-console-access}
 
-> **Scope**: Browser-based VM console access via noVNC.
->
-> **ADR-0015 §18 Compliance**:
-> - Permission matrix (test/prod environment differentiation)
-> - Token security (single-use, time-bounded, user-binding)
-> - Audit logging requirements
+### Purpose
+
+Define secure browser console access behavior for test and production environments.
+
+### Actors & Trigger
+
+- Trigger: user requests VM console access from VM detail page.
+- Actors: requester, RBAC guard, approval workflow (production), token issuer, VNC proxy.
+
+### Interaction Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Stage 6 Console Access Overview                                                                │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                              │
+│  VM detail page -> user clicks Console / Request Console Access                               │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  Backend guard checks: RBAC (`vnc:access`) + VM state (`RUNNING`)                            │
+│        │                                                                                     │
+│        ├── Test env: issue token -> open noVNC directly                                      │
+│        │                                                                                     │
+│        └── Production env: create approval ticket -> admin approve/reject                    │
+│                 ├── approved: issue token -> open noVNC                                      │
+│                 └── rejected: no console session                                              │
+│                                                                                              │
+│  Both paths append audit records for request/access outcomes                                  │
+│                                                                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ### Permission Matrix
 
@@ -2600,20 +2602,20 @@ INSERT INTO external_approval_systems (
 │  │       "vm_id": "vm-456",           👈 resource binding                                    │
 │  │       "cluster": "cluster-a",                                                            │
 │  │       "namespace": "test-ns",                                                            │
-│  │       "exp": now + 2h,             👈 TTL (ADR-0015)                                      │
+│  │       "exp": now + 2h,             👈 TTL                                                 │
 │  │       "jti": "vnc-token-789",      👈 unique ID for audit                                 │
 │  │       "single_use": true           👈 invalidated after first connection                  │
 │  │     }                                                                                     │
 │  │                                                                                          │
 │  │  4. Open noVNC in new tab/popup:                                                         │
-│  │     GET /vnc/{vm_id}?token={vnc_jwt}                                                     │
+│  │     GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}                                          │
 │  │                                                                                          │
 │  │  5. Backend proxies WebSocket to KubeVirt:                                               │
 │  │     → subresources.kubevirt.io/v1/namespaces/{ns}/virtualmachineinstances/{name}/vnc     │
 │  │                                                                                          │
 │  │  6. Audit log created:                                                                   │
 │  │     INSERT INTO audit_logs (action, actor_id, resource_type, resource_id, details)       │
-│  │     VALUES ('VNC_SESSION_STARTED', 'user-123', 'vm', 'vm-456',                           │
+│  │     VALUES ('vnc.access', 'user-123', 'vm', 'vm-456',                                     │
 │  │             '{"token_id": "vnc-token-789", "environment": "test"}')                       │
 │  │                                                                                          │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘
@@ -2648,6 +2650,31 @@ INSERT INTO external_approval_systems (
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### State Transitions
+
+| Environment | Ticket | Access Outcome |
+|-------------|--------|----------------|
+| Test | no approval ticket | RBAC pass -> token issued -> session started |
+| Production | `PENDING_APPROVAL -> APPROVED/REJECTED` | approved -> token issued; rejected -> no console access |
+
+### Failure & Edge Cases
+
+- VM not in `RUNNING` state must block token issuance.
+- Duplicate pending production request must be rejected idempotently.
+- Token replay after first successful connection must be denied and audited.
+
+### Authority Links
+
+- [ADR-0015 §18 VNC Console Access](../../adr/ADR-0015-governance-model-v2.md#18-vnc-console-access-permissions)
+- [RFC-0011 §V1 Implementation Scope](../../rfc/RFC-0011-vnc-console.md#v1-implementation-scope)
+- [database/vm-lifecycle-write-model.md §Stage 6](../database/vm-lifecycle-write-model.md#stage-6-vnc-access-write-model)
+- [04-governance.md §7 Audit Logging](../phases/04-governance.md#7-audit-logging)
+
+### Scope Boundary
+
+This stage defines interaction behavior and token policy.
+WebSocket proxy internals and storage-specific token tracking implementation are not expanded here.
+
 ### VNC Token Security (V1 Simplified)
 
 | Security Feature | V1 Implementation | ADR-0015 Requirement |
@@ -2656,7 +2683,7 @@ INSERT INTO external_approval_systems (
 | **Time-Bounded** | JWT `exp` = now + 2h | ✅ 2 hours (configurable) |
 | **User-Bound** | JWT `sub` = user_id | ✅ Required |
 | **Encrypted** | AES-256-GCM (shared key management) | ✅ Required |
-| **Audit Logged** | `VNC_SESSION_STARTED` event | ✅ Required |
+| **Audit Logged** | `vnc.access` event | ✅ Required |
 
 > **V1 Limitation**: No active token revocation. Security relies on short TTL and single-use flag.
 
@@ -2666,7 +2693,7 @@ INSERT INTO external_approval_systems (
 # Request VNC access (creates approval ticket in prod)
 POST /api/v1/vms/{vm_id}/console/request
 → Response: { "ticket_id": "...", "status": "PENDING_APPROVAL" }  (prod)
-→ Response: { "vnc_url": "/vnc/{vm_id}?token=..." }              (test)
+→ Response: { "vnc_url": "/api/v1/vms/{vm_id}/vnc?token=..." }  (test)
 
 # WebSocket endpoint for noVNC
 GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}
@@ -2680,19 +2707,14 @@ GET /api/v1/vms/{vm_id}/console/status
 
 ### Database Operations
 
-```sql
--- VNC access request (production environment)
-INSERT INTO approval_tickets (
-    id, type, status, requester_id, resource_type, resource_id, 
-    environment, created_at
-) VALUES (
-    'vnc-ticket-001', 'VNC_ACCESS_REQUESTED', 'PENDING_APPROVAL',
-    'user-123', 'vm', 'vm-456', 'production', NOW()
-);
+| Environment | Persistence Behavior |
+|-------------|----------------------|
+| Test | No approval ticket write; access audit is mandatory. |
+| Production | Create `VNC_ACCESS_REQUESTED` approval ticket, then issue token after approval and append audit records. |
 
--- VNC token usage tracking (inline in JWT, no separate table in V1)
--- Token validation: check JWT signature + exp + jti not in used_tokens cache
--- On first use: add jti to Redis used_tokens set (TTL = token TTL)
-```
+Implementation details and write-set ownership are authoritative in:
+
+- [database/vm-lifecycle-write-model.md §Stage 6](../database/vm-lifecycle-write-model.md#stage-6-vnc-access-write-model)
+- [04-governance.md §7 Audit Logging](../phases/04-governance.md#7-audit-logging)
 
 ---

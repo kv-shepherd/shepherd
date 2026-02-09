@@ -18,13 +18,14 @@
 > | Token Security (single-use, time-bounded, user-binding) | §18 Token Structure |
 > | Encryption Key Management | §18 shared with cluster credentials |
 > | Audit Logging Requirements | §18 Audit Table |
+> | V1 delivery scope freeze (no active revoke API) | §18.1 Addendum |
 >
 > **This RFC covers frontend implementation only:**
 > - noVNC JavaScript library integration
 > - WebSocket proxy implementation
 > - UI/UX for console access
 >
-> All security and permission logic must conform to ADR-0015 §18.
+> All security and permission logic must conform to ADR-0015 §18 and §18.1 addendum.
 
 ---
 
@@ -34,22 +35,27 @@
 
 | Feature | V1 (Simplified) | Full (V2+) |
 |---------|-----------------|------------|
-| Token storage | Inline JWT (no DB table) | VNCAccessToken table |
+| Token storage | Signed JWT + shared replay marker (`jti`, `used_at`) | VNCAccessToken table |
 | Token TTL | 2 hours (ADR-0015) | Configurable |
 | Token revocation | Short TTL only | Active revocation API |
 | Session recording | ❌ Not supported | ✅ Optional |
 | Test env approval | Skip (RBAC check only) | Configurable |
 | Prod env approval | Required | Required |
 
+> **Clarification (ADR-0015 §18.1 Addendum)**:
+> V1 single-use enforcement still requires a shared replay marker (`jti`, `used_at`) across replicas.
+> V1 does not expose an active token revocation API.
+
 ### V1 API Endpoint
 
 ```
-# WebSocket endpoint for noVNC connection
-GET /api/v1/vms/{vm_id}/console
-Upgrade: websocket
-Authorization: Bearer {session_token}
+# Request console access (prod: approval ticket, test: direct URL)
+POST /api/v1/vms/{vm_id}/console/request
 
-# Token-based access (for iframe/popup)
+# Poll approval/access status
+GET /api/v1/vms/{vm_id}/console/status
+
+# WebSocket endpoint for noVNC token-based access
 GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}
 ```
 
@@ -101,8 +107,13 @@ func (h *VNCHandler) ProxyConsole(c *gin.Context) {
 ### API Endpoint
 
 ```
-GET /api/v1/clusters/{cluster}/namespaces/{ns}/vms/{name}/console
-Upgrade: websocket
+# Public API contract aligns with master-flow Stage 6:
+POST /api/v1/vms/{vm_id}/console/request
+GET /api/v1/vms/{vm_id}/console/status
+GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}
+
+# KubeVirt upstream proxy target (internal implementation detail):
+# subresources.kubevirt.io/v1/namespaces/{ns}/virtualmachineinstances/{name}/vnc
 ```
 
 ---
