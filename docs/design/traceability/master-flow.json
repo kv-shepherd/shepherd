@@ -1,0 +1,320 @@
+{
+  "version": 1,
+  "master_flow": "docs/design/interaction-flows/master-flow.md",
+  "stages": [
+    {
+      "id": "stage-1",
+      "phases": [
+        "docs/design/phases/00-prerequisites.md",
+        "docs/design/phases/02-providers.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-0-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0018-instance-size-abstraction.md",
+        "docs/adr/ADR-0023-schema-cache-and-api-standards.md"
+      ],
+      "examples": [
+        "docs/design/examples/config/config.go"
+      ]
+    },
+    {
+      "id": "stage-1-5",
+      "phases": [
+        "docs/design/phases/00-prerequisites.md",
+        "docs/design/phases/01-contracts.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-0-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0025-secret-bootstrap.md"
+      ]
+    },
+    {
+      "id": "stage-2",
+      "phases": [
+        "docs/design/phases/01-contracts.md",
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-1-checklist.md",
+        "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0015-governance-model-v2.md",
+        "docs/adr/ADR-0019-governance-security-baseline-controls.md",
+        "docs/adr/ADR-0026-idp-config-naming.md"
+      ]
+    },
+    {
+      "id": "stage-2-a",
+      "phases": [
+        "docs/design/phases/01-contracts.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-1-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0019-governance-security-baseline-controls.md"
+      ]
+    },
+    {
+      "id": "stage-2-a-plus",
+      "phases": [
+        "docs/design/phases/01-contracts.md",
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-1-checklist.md",
+        "docs/design/checklist/phase-4-checklist.md"
+      ]
+    },
+    {
+      "id": "stage-2-b",
+      "phases": [
+        "docs/design/phases/01-contracts.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-1-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0026-idp-config-naming.md"
+      ]
+    },
+    {
+      "id": "stage-2-c",
+      "phases": [
+        "docs/design/phases/01-contracts.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-1-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0026-idp-config-naming.md"
+      ]
+    },
+    {
+      "id": "stage-2-d",
+      "phases": [
+        "docs/design/phases/01-contracts.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-1-checklist.md"
+      ]
+    },
+    {
+      "id": "stage-2-e",
+      "phases": [
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0005-workflow-extensibility.md"
+      ]
+    },
+    {
+      "id": "stage-3",
+      "phases": [
+        "docs/design/phases/01-contracts.md",
+        "docs/design/phases/02-providers.md",
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-1-checklist.md",
+        "docs/design/checklist/phase-2-checklist.md",
+        "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0014-capability-detection.md",
+        "docs/adr/ADR-0018-instance-size-abstraction.md"
+      ]
+    },
+    {
+      "id": "stage-3-c",
+      "phases": [
+        "docs/design/phases/01-contracts.md",
+        "docs/design/phases/03-service-layer.md",
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-3-checklist.md",
+        "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0017-vm-request-flow-clarification.md"
+      ]
+    },
+    {
+      "id": "stage-3-jit-namespace",
+      "phases": [
+        "docs/design/phases/01-contracts.md",
+        "docs/design/phases/03-service-layer.md",
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-3-checklist.md",
+        "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0017-vm-request-flow-clarification.md",
+        "docs/adr/ADR-0023-schema-cache-and-api-standards.md"
+      ]
+    },
+    {
+      "id": "stage-4-a",
+      "phases": [
+        "docs/design/phases/01-contracts.md",
+        "docs/design/phases/03-service-layer.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-3-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0015-governance-model-v2.md"
+      ]
+    },
+    {
+      "id": "stage-4-a-plus",
+      "phases": [
+        "docs/design/phases/01-contracts.md",
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-1-checklist.md",
+        "docs/design/checklist/phase-4-checklist.md"
+      ]
+    },
+    {
+      "id": "stage-4-b",
+      "phases": [
+        "docs/design/phases/01-contracts.md",
+        "docs/design/phases/03-service-layer.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-3-checklist.md"
+      ]
+    },
+    {
+      "id": "stage-4-c",
+      "phases": [
+        "docs/design/phases/03-service-layer.md",
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-3-checklist.md",
+        "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0015-governance-model-v2.md",
+        "docs/adr/ADR-0019-governance-security-baseline-controls.md"
+      ]
+    },
+    {
+      "id": "stage-5-a",
+      "phases": [
+        "docs/design/phases/03-service-layer.md",
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-3-checklist.md",
+        "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0006-unified-async-model.md",
+        "docs/adr/ADR-0012-hybrid-transaction.md",
+        "docs/adr/ADR-0017-vm-request-flow-clarification.md"
+      ],
+      "examples": [
+        "docs/design/examples/usecase/create_vm.go"
+      ]
+    },
+    {
+      "id": "stage-5-b",
+      "phases": [
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0005-workflow-extensibility.md",
+        "docs/adr/ADR-0006-unified-async-model.md",
+        "docs/adr/ADR-0009-domain-event-pattern.md"
+      ]
+    },
+    {
+      "id": "stage-5b-constraint-note-dedicated-cpu-vs-overcommit",
+      "phases": [
+        "docs/design/phases/01-contracts.md",
+        "docs/design/phases/03-service-layer.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-1-checklist.md",
+        "docs/design/checklist/phase-3-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0018-instance-size-abstraction.md"
+      ]
+    },
+    {
+      "id": "stage-5-d",
+      "phases": [
+        "docs/design/phases/03-service-layer.md",
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0015-governance-model-v2.md"
+      ]
+    },
+    {
+      "id": "stage-5e-batch-operations",
+      "phases": [
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0015-governance-model-v2.md"
+      ],
+      "examples": [
+        "docs/design/examples/usecase/batch_approval.go"
+      ]
+    },
+    {
+      "id": "stage-5f-notification-system",
+      "phases": [
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0015-governance-model-v2.md"
+      ],
+      "examples": [
+        "docs/design/examples/notification/sender.go"
+      ]
+    },
+    {
+      "id": "stage-6-vnc-console-access",
+      "phases": [
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0015-governance-model-v2.md"
+      ]
+    }
+  ]
+}
+

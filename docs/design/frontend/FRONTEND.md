@@ -19,7 +19,7 @@
 | Form Validation | Zod | 3.x | Schema validation |
 | Styling | Tailwind CSS | 4.x | Utility-first CSS |
 
-> **Version Source**: Always refer to [DEPENDENCIES.md](./DEPENDENCIES.md) for pinned versions.
+> **Version Source**: Always refer to [DEPENDENCIES.md](../DEPENDENCIES.md) for pinned versions.
 
 ---
 
@@ -206,6 +206,24 @@ const { data, error } = await api.GET('/api/v1/vms/{id}', {
 
 ---
 
+## Async Batch Queue UX (ADR-0015 §19)
+
+Batch operations follow the parent-child ticket model.
+
+Mandatory frontend behavior:
+
+- Render parent aggregate status and child execution details.
+- Track status through backend `status_url` endpoints until terminal parent state.
+- Support `retry failed children` and `terminate pending children`.
+- Handle `429 Too Many Requests` with `Retry-After` based cooldown.
+
+Detailed specification:
+
+- [Batch Operations Queue UI](./features/batch-operations-queue.md)
+- [master-flow.md Stage 5.E](../interaction-flows/master-flow.md#stage-5e-batch-operations)
+
+---
+
 ## Schema Cache Degradation Strategy (ADR-0023)
 
 > **Reference**: [ADR-0023: Schema Cache Management](../../adr/ADR-0023-schema-cache-and-api-standards.md)
@@ -380,7 +398,7 @@ NEXT_PUBLIC_DEFAULT_LOCALE=en
 
 ## Testing
 
-> **Implementation Guide**: [ADR-0020 Testing Toolchain](./notes/ADR-0020-frontend-testing-toolchain.md)
+> **Implementation Guide**: [ADR-0020 Testing Toolchain](../notes/ADR-0020-frontend-testing-toolchain.md)
 
 ### Testing Stack
 
@@ -435,10 +453,12 @@ web/
 
 ## Related Documentation
 
+- [Frontend Design Index](./README.md)
+- [Batch Queue UI (Parent-Child)](./features/batch-operations-queue.md)
+- [ADR-0030: Design Documentation Layering](../../adr/ADR-0030-design-documentation-layering-and-fullstack-governance.md)
 - [ADR-0020: Frontend Technology Stack](../../adr/ADR-0020-frontend-technology-stack.md)
-- [ADR-0020: Testing Toolchain Implementation](./notes/ADR-0020-frontend-testing-toolchain.md)
+- [ADR-0020: Testing Toolchain Implementation](../notes/ADR-0020-frontend-testing-toolchain.md)
 - [ADR-0021: API Contract-First Design](../../adr/ADR-0021-api-contract-first.md)
 - [ADR-0027: Monorepo Repository Structure](../../adr/ADR-0027-repository-structure-monorepo.md)
-- [01-contracts.md §Error System](./phases/01-contracts.md#6-error-system)
-- [DEPENDENCIES.md](./DEPENDENCIES.md)
-
+- [01-contracts.md §Error System](../phases/01-contracts.md#6-error-system)
+- [DEPENDENCIES.md](../DEPENDENCIES.md)

@@ -1,6 +1,9 @@
 # Checklist Directory
 
-> This directory contains the acceptance checklists split by implementation phase.
+> **Role**: Phase execution checklists under the global acceptance standard.
+>
+> **Global Single Standard**: [../CHECKLIST.md](../CHECKLIST.md) is the only project-wide frontend+backend acceptance baseline.
+> Files in this directory are phase-scoped execution checklists that must stay aligned with it.
 
 ---
 
@@ -18,12 +21,13 @@
 
 ## Usage
 
-1. Each phase checklist should be completed before moving to the next phase
-2. All items marked with `[ ]` must become `[x]` before phase completion
-3. Pre-verification items at the end of each phase validate prerequisites for the next phase
+1. Complete each phase checklist before entering the next phase.
+2. All `[ ]` items must be converted to `[x]` for phase completion.
+3. Any new checklist item must map to an ADR, phase spec, or global checklist entry.
+4. Frontend-impacting changes must update both frontend checklist items and corresponding backend/API checklist items.
 
 ---
 
 ## Main Checklist
 
-For cross-phase verification, progress tracking, and prohibited patterns, see the main [CHECKLIST.md](../CHECKLIST.md).
+For cross-phase verification, progress tracking, and prohibited patterns, use [CHECKLIST.md](../CHECKLIST.md) as the authoritative reference.

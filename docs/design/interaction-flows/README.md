@@ -7,14 +7,18 @@
 
 ## Purpose
 
-This directory serves as the **single source of truth** for all platform interaction flows, used by:
+This directory serves as the **single source of truth for product interaction flows**, used by:
 
 | Role | Usage |
 |------|-------|
 | **Frontend Developers** | UI/UX implementation reference |
-| **Backend Developers** | API and database operation reference |
+| **Backend Developers** | API interaction and state-transition reference |
 | **QA Engineers** | Test case design |
 | **Architects** | System verification |
+
+> **Scope boundary**: CI/tooling enforcement is not defined here.
+> For development governance and CI policy, see [../ci/README.md §Scope Boundary](../ci/README.md#scope-boundary).
+> Database schema/lifecycle/transaction details are defined in [../database/README.md §Document Map](../database/README.md#document-map).
 
 ---
 
@@ -46,7 +50,7 @@ Part 1: Platform Initialization
 │   ├── Stage 2.B: Authentication Configuration (OIDC/LDAP)
 │   ├── Stage 2.C: IdP Group Mapping
 │   ├── Stage 2.D: User Login Flow
-│   └── Stage 2.E: External Approval Systems (NEW)
+│   └── Stage 2.E: Approval Provider Standard (V1 built-in, V2+ external plugin)
 └── Stage 3: Admin Configuration (Cluster/InstanceSize/Template)
 
 Part 2: Resource Management
@@ -127,7 +131,7 @@ This directory content is **extracted from** ADR-0018 Appendix.
 | Date | Version | Change |
 |------|---------|--------|
 | 2026-01-28 | 1.0 | **STABLE**: ADR-0017 and ADR-0018 accepted |
-| 2026-01-26 | 0.1-draft | CNCF normalization: English as canonical, Chinese to i18n/ |
+| 2026-01-26 | 0.1-draft | Documentation normalization: English as canonical, Chinese moved to i18n/ |
 | 2026-01-26 | 0.1-draft | Added: Stage 1.5 Bootstrap, Stage 2.E External Approval Systems |
 | 2026-01-26 | 0.1-draft | Updated: All runtime config via PostgreSQL (removed YAML config) |
 | 2026-01-26 | 0.1-draft | Initial extraction from ADR-0018 |

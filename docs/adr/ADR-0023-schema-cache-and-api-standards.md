@@ -487,9 +487,8 @@ The Schema-Driven UI pattern creates a critical dependency on Schema Cache avail
 | Updating | Background fetch in progress | Loading indicator |
 | Degraded | No schema available | Basic fields only + error alert |
 
-> **Detailed Implementation**: See [FRONTEND.md §Schema Cache Degradation Strategy](../design/FRONTEND.md#schema-cache-degradation-strategy-adr-0023) for code examples, i18n keys, and UI component patterns.
+> **Detailed Implementation**: See [frontend/FRONTEND.md §Schema Cache Degradation Strategy](../design/frontend/FRONTEND.md#schema-cache-degradation-strategy-adr-0023) for code examples, i18n keys, and UI component patterns.
 
 ---
 
 _End of ADR-0023_
-

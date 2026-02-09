@@ -46,6 +46,16 @@ System (Business Line) → Service (Application) → VM Instance
 - **Design Notes** capture proposed changes before ADR acceptance
 - Normative design specs are updated only after ADRs are accepted
 
+## Documentation Map
+
+- [docs/README.md](docs/README.md) - documentation index
+- [docs/adr/README.md](docs/adr/README.md) - ADR catalog and reading order
+- [docs/design/interaction-flows/master-flow.md](docs/design/interaction-flows/master-flow.md) - canonical interaction flow
+- [docs/design/README.md](docs/design/README.md) - implementation design index
+- [docs/design/frontend/README.md](docs/design/frontend/README.md) - frontend design layer
+- [docs/design/database/README.md](docs/design/database/README.md) - database design layer
+- [docs/design/ci/README.md](docs/design/ci/README.md) - CI/governance checks
+
 ## Project Status
 
 > ⚠️ **Pre-Alpha**: Planning and design phase.

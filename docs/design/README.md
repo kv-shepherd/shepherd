@@ -27,13 +27,31 @@ docs/design/
 ├── README.md                 # This file
 ├── DEPENDENCIES.md           # Dependency versions (single source of truth)
 ├── CHECKLIST.md              # Acceptance criteria
+├── interaction-flows/        # Canonical interaction outcomes (master-flow)
+│   ├── README.md             # Interaction flow index
+│   └── master-flow.md        # Product interaction source of truth
 ├── phases/                   # Implementation phase specifications
 │   ├── 00-prerequisites.md   # Project setup, toolchain
 │   ├── 01-contracts.md       # Interface definitions, schemas
 │   ├── 02-providers.md       # KubeVirt provider
 │   ├── 03-service-layer.md   # Business logic, transactions
 │   └── 04-governance.md      # Approval workflow, River Queue
+├── notes/                    # Proposed changes before ADR acceptance
+│   └── README.md             # Design notes guide
+├── database/                 # Database reference layer (schema/lifecycle/transactions/migrations)
+│   ├── README.md             # Database docs index
+│   ├── schema-catalog.md     # Canonical table groups and relationships
+│   ├── lifecycle-retention.md # Hard delete and retention policy baseline
+│   ├── transactions-consistency.md # Transaction and async consistency boundaries
+│   └── migrations.md         # Atlas/River migration rules
 ├── checklist/                # Per-phase acceptance checklists
+├── frontend/                 # Frontend design specifications (ADR-0030)
+│   ├── README.md             # Frontend docs index
+│   ├── FRONTEND.md           # Frontend engineering baseline
+│   ├── architecture/         # Frontend architecture decisions
+│   ├── features/             # Feature interaction and UX specs
+│   ├── contracts/            # API/type contract integration rules
+│   └── testing/              # Frontend testing and CI gates
 ├── examples/                 # Reference implementations
 │   ├── README.md             # Example index
 │   ├── config/               # Configuration management
@@ -43,6 +61,8 @@ docs/design/
 │   ├── domain/               # Domain models, events
 │   ├── provider/             # Provider interfaces
 │   └── usecase/              # Atomic transaction examples
+├── traceability/             # Traceability manifest (ADR-0032)
+│   └── master-flow.json      # Master-flow stage mapping (machine-readable)
 └── ci/                       # CI check scripts
     ├── README.md             # Script index
     └── scripts/              # Check scripts
@@ -168,7 +188,7 @@ docs/design/
 | Pattern | Use Instead |
 |---------|-------------|
 | `import "gorm.io/gorm"` | Ent ORM (ADR-0003) |
-| `go func() { ... }()` | Worker Pool |
+| `go func() { ... }()` | Worker Pool (ADR-0031) |
 | Wire/fx DI | Manual DI (ADR-0013) |
 | K8s calls inside DB transaction | Two-phase pattern (ADR-0012) |
 
@@ -176,7 +196,7 @@ docs/design/
 
 ## Architecture Decisions
 
-All architecture decisions are documented in [docs/adr/](../../adr/). For the authoritative list of **enforced constraints** with CI checks, see [CHECKLIST.md §Core ADR Constraints](./CHECKLIST.md#core-adr-constraints-single-reference-point).
+All architecture decisions are documented in [docs/adr/README.md](../adr/README.md). For the authoritative list of **enforced constraints** with CI checks, see [CHECKLIST.md §Core ADR Constraints](./CHECKLIST.md#core-adr-constraints-single-reference-point).
 
 ---
 
@@ -237,11 +257,13 @@ Reference implementations are in the [examples/](./examples/) directory:
 
 | Document | Description |
 |----------|-------------|
-| ⭐ **[master-flow.md](./interaction-flows/master-flow.md)** | **Single source of truth** for all interaction flows (data input/processing/output). Start here for understanding system behavior. |
+| ⭐ **[master-flow.md](./interaction-flows/master-flow.md)** | **Single source of truth for product interaction outcomes** (data input/processing/output and user-visible behavior). |
+| [database/README.md](./database/README.md) | **Database reference layer** (schema domains, retention lifecycle, transaction boundaries, migration policy) |
 | [DEPENDENCIES.md](./DEPENDENCIES.md) | Version pinning (single source of truth for all dependency versions) |
 | [CHECKLIST.md](./CHECKLIST.md) | Acceptance criteria and **Core ADR Constraints** (single source of truth for CI enforcement) |
-| [FRONTEND.md](./FRONTEND.md) | Frontend engineering specification (i18n, API types) |
-| [ci/README.md](./ci/README.md) | CI scripts index |
+| [frontend/README.md](./frontend/README.md) | Frontend design docs index (required reading before frontend changes) |
+| [frontend/FRONTEND.md](./frontend/FRONTEND.md) | Frontend engineering baseline (i18n, API types, schema fallback) |
+| [ci/README.md](./ci/README.md) | **Authoritative CI/development governance** (quality gates, enforcement scripts, workflow requirements) |
 | [examples/README.md](./examples/README.md) | Code examples index |
 
 ---
@@ -332,6 +354,6 @@ go run cmd/server/main.go
 
 ## References
 
-- [ADR Directory](../../adr/) - Architecture decisions
-- [RFC Directory](../../rfc/) - Future feature proposals
-- [Glossary](../../adr/GLOSSARY.md) - Technical terminology
+- [ADR Directory](../adr/README.md) - Architecture decisions
+- [RFC Directory](../rfc/README.md) - Future feature proposals
+- [Glossary](../adr/GLOSSARY.md) - Technical terminology
