@@ -1,0 +1,48 @@
+# Docs governance checks (blocking).
+#
+# This workflow enforces design/ADR/interaction-flow governance rules:
+# - markdown local link + anchor integrity
+# - master-flow traceability manifest coverage + reference validity
+# - design doc layering and canonical link constraints
+#
+# See: docs/design/ci/scripts/check_design_doc_governance.sh
+
+name: Design Docs Governance
+
+on:
+  pull_request:
+    paths:
+      - 'docs/design/**'
+      - 'docs/adr/**'
+      - 'docs/i18n/**'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/design/**'
+      - 'docs/adr/**'
+      - 'docs/i18n/**'
+
+permissions:
+  contents: read
+
+jobs:
+  design-docs-governance:
+    name: Check Design Docs Governance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Setup Go (for markdown link checker)
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5  # v5.5.0
+        with:
+          go-version: '1.25.6'
+
+      - name: Run governance checks
+        run: bash docs/design/ci/scripts/check_design_doc_governance.sh
+

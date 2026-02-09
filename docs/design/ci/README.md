@@ -6,6 +6,18 @@
 
 ---
 
+## Scope Boundary
+
+This document is the authoritative source for **engineering governance and CI gates**.
+
+- `docs/design/interaction-flows/master-flow.md`: expected product interaction outcomes and user-visible behavior.
+- `docs/design/ci/README.md` (this file): implementation governance, quality gates, and CI enforcement mechanics.
+- `docs/design/phases/*.md`: implementation details that must satisfy both interaction outcomes and CI/ADR constraints.
+
+Do not place CI toolchain policy details in `master-flow.md`; keep those details here and in `docs/design/ci/scripts/`.
+
+---
+
 ## Script Summary
 
 | Script | Check Content | Level | Blocks CI |
@@ -18,14 +30,17 @@
 | [check_no_outbox_import.go](./scripts/check_no_outbox_import.go) | **Block Outbox imports** (use River Queue, ADR-0006) | Required | ✅ Yes |
 | [check_no_redis_import.sh](./scripts/check_no_redis_import.sh) | **Block Redis imports** (removed dependency) | Required | ✅ Yes |
 | [check_river_bypass.go](./scripts/check_river_bypass.go) | **Block direct writes bypassing River Queue** (ADR-0006) | Required | ✅ Yes |
-| [check_naked_goroutine.go](./scripts/check_naked_goroutine.go) | Block naked `go func()` | Required | ✅ Yes |
+| [check_naked_goroutine.go](./scripts/check_naked_goroutine.go) | Block naked `go func()` (ADR-0031) | Required | ✅ Yes |
 | [check_ent_codegen.go](./scripts/check_ent_codegen.go) | Ent code generation sync check | Required | ✅ Yes |
 | [check_manual_di.sh](./scripts/check_manual_di.sh) | **Strict Manual DI convention** (replaces Wire check) | Required | ✅ Yes |
 | [check_sqlc_usage.sh](./scripts/check_sqlc_usage.sh) | **sqlc usage scope** (ADR-0012 whitelist enforcement) | Required | ✅ Yes |
-| [check_semaphore_usage.go](./scripts/check_semaphore_usage.go) | Semaphore Acquire/Release pairing | Required | ✅ Yes |
+| [check_semaphore_usage.go](./scripts/check_semaphore_usage.go) | Semaphore Acquire/Release pairing (ADR-0031) | Required | ✅ Yes |
 | [check_repository_tests.go](./scripts/check_repository_tests.go) | Repository methods must have tests | Required | ✅ Yes |
 | [check_dead_tests.go](./scripts/check_dead_tests.go) | Orphan/invalid test detection | Warning | ⚠️ No |
 | [check_test_assertions.go](./scripts/check_test_assertions.go) | Tests must have assertions | Required | ✅ Yes |
+| [check_markdown_links.go](./scripts/check_markdown_links.go) | Validate local markdown links and anchors | Required | ✅ Yes |
+| [check_master_flow_traceability.go](./scripts/check_master_flow_traceability.go) | Enforce master-flow traceability manifest (ADR-0032) | Required | ✅ Yes |
+| [check_design_doc_governance.sh](./scripts/check_design_doc_governance.sh) | Enforce design doc path/link governance (ADR-0030) | Required | ✅ Yes |
 
 ### Exempt Directories
 
@@ -35,7 +50,6 @@ The following directories are exempt from `check_naked_goroutine.go`:
 |-----------|------------------|
 | `internal/pkg/worker/` | Worker Pool infrastructure itself |
 | `internal/governance/river/` | River Worker managed by its internal mechanism |
-| `cmd/` | Application entry files (e.g., main.go startup logic) |
 
 ### Relationship with ADR-0006 Unified Async Model
 
@@ -69,10 +83,13 @@ The following directories are exempt from `check_naked_goroutine.go`:
 
 ```bash
 # Single script
-go run scripts/ci/check_transaction_boundary.go
+go run docs/design/ci/scripts/check_transaction_boundary.go
+```
 
-# All checks
-make ci-checks
+Docs governance check:
+
+```bash
+bash docs/design/ci/scripts/check_design_doc_governance.sh
 ```
 
 ### CI Integration
@@ -100,7 +117,9 @@ ci/
     ├── check_semaphore_usage.go       # Semaphore usage check
     ├── check_repository_tests.go      # Repository test coverage check
     ├── check_dead_tests.go            # Dead test detection
-    └── check_test_assertions.go       # Test assertion check
+    ├── check_test_assertions.go       # Test assertion check
+    ├── check_markdown_links.go        # Markdown local link/anchor integrity check
+    └── check_design_doc_governance.sh # Design docs governance checks
 ```
 
 ---
@@ -130,6 +149,8 @@ ci/
 | File | Purpose | Final Location |
 |------|---------|----------------|
 | `workflows/api-contract.yaml` | GitHub Actions for spec validation | `.github/workflows/` |
+| `.github/workflows/docs-governance.yaml` | GitHub Actions for design-doc governance checks (active) | `.github/workflows/` |
+| `workflows/docs-links-advisory.yaml` | GitHub Actions for advisory dead-link checks (lychee + custom) | `.github/workflows/` |
 | `scripts/api-check.sh` | Verifies generated code is in sync | `scripts/` |
 | `scripts/openapi-compat.sh` | Enforces OpenAPI compat spec presence/freshness | `scripts/` |
 | `scripts/openapi-compat-generate.sh` | Generates OpenAPI 3.0-compatible spec (placeholder) | `scripts/` |
@@ -145,9 +166,9 @@ ci/
 > **Supply Chain Security**: All CI workflows MUST follow these practices.
 
 | Practice | Requirement | Example |
-|----------|-------------|---------|
+|----------|-------------|----------|
 | **Action Pinning** | Pin to commit SHA, not tags | `actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683` |
-| **Runner Pinning** | Use specific runner version | `ubuntu-22.04` (not `ubuntu-latest`) |
+| **Runner Pinning** | Use specific runner version | `ubuntu-24.04` (not `ubuntu-latest`) |
 | **Minimal Permissions** | Use `permissions:` block | `contents: read`, `pull-requests: read` |
 | **Timeout** | Set job timeout | `timeout-minutes: 10` |
 | **Dependabot** | Auto-update GitHub Actions | Configure `.github/dependabot.yml` |
@@ -199,13 +220,82 @@ When transitioning from Design Phase to Coding Phase:
 2. **Move files** to final locations (see file table above)
 3. **Update root Makefile**: `include build/api.mk`
 4. **Create vacuum ruleset**: Move `vacuum/.vacuum.yaml` to `api/.vacuum.yaml`
-5. **Install vacuum**: `go install github.com/daveshanley/vacuum@v0.14.0` or use `pb33f/vacuum-action@v2` in CI
+5. **Install vacuum**: use the version pinned in [DEPENDENCIES.md](../DEPENDENCIES.md) (or use the pinned `pb33f/vacuum-action` commit in CI)
 6. **Verify**: `make api-lint && make api-generate`
 7. **If needed**: add a spec-compat step (3.1 → 3.0) that writes `api/openapi.compat.yaml` for Go codegen/validation until 3.1 support is available.
 8. **CI enforcement**: run `REQUIRE_OPENAPI_COMPAT=1 make api-compat` once 3.1-only features are used.
 9. **Block merges**: add `make api-check` (and `REQUIRE_OPENAPI_COMPAT=1 make api-compat` when required) as required CI checks before any coding begins.
 10. **Compat generation**: implement `make api-compat-generate` using `libopenapi` overlay support and wire it into CI before enabling `REQUIRE_OPENAPI_COMPAT=1`.
 11. **Implement middleware**: Create `internal/api/middleware/openapi_validator.go` with StrictMode and environment-aware error handling.
+12. **Enable docs governance workflow**: ensure `.github/workflows/docs-governance.yaml` runs `check_design_doc_governance.sh` as a required PR check before coding.
+13. **Verify locally**: `bash docs/design/ci/scripts/check_design_doc_governance.sh`
+14. **Move advisory link workflow**: copy `workflows/docs-links-advisory.yaml` to `.github/workflows/docs-links-advisory.yaml`.
+15. **Enable advisory link report**: keep as non-blocking PR signal (do not mark as required gate).
 
 See [ADR-0021](../../adr/ADR-0021-api-contract-first.md) and [ADR-0029](../../adr/ADR-0029-openapi-toolchain-governance.md) for full design details.
 
+---
+
+## Design Docs Governance Enforcement (ADR-0030)
+
+This directory includes design-phase CI artifacts to prevent frontend/backend documentation drift.
+
+Checks include:
+
+- legacy path usage (`docs/design/FRONTEND.md`)
+- canonical frontend path linkage (`docs/design/frontend/FRONTEND.md`)
+- required database docs layer (`docs/design/database/*.md`)
+- master-flow reference consistency to frontend docs
+- master-flow and interaction-flow reference consistency to database docs
+- phase/checklist/examples alignment to master-flow for batch/delete/VNC canonical endpoints and status models
+- V1 VNC scope traceability anchored by ADR addendum (`ADR-0015 §18.1`)
+- canonical Stage 6 VNC endpoint path consistency (`/api/v1/vms/{vm_id}/vnc`) and no legacy `/vnc/{vm_id}` usage
+- VNC token tracking docs remain PostgreSQL/shared-store compatible (no Redis dependency requirement)
+- checklist authority statements (`CHECKLIST.md` as global standard)
+- markdown local path + heading-anchor integrity (`check_markdown_links.go`, blocking)
+- master-flow traceability manifest coverage and anchor validity (`check_master_flow_traceability.go`, blocking)
+
+## Link Health Policy
+
+- Local link integrity is **blocking**: `check_markdown_links.go` runs inside `check_design_doc_governance.sh` and fails CI on broken local paths/anchors.
+- Traceability drift enforcement is **blocking**: PR workflows must checkout with full history (`fetch-depth: 0`) so diff-based manifest update checks are reliable.
+- External link health is **advisory**: `lychee` runs in `workflows/docs-links-advisory.yaml` as non-blocking due network variability.
+
+## `check_markdown_links.go` Scope and Ignore Policy
+
+### Default Scan Scope
+
+- Running without arguments scans `docs/design` recursively.
+- Running without arguments scans `docs/i18n/zh-CN/design` recursively.
+- Running without arguments scans `docs/adr` recursively.
+- Running with arguments scans only the provided files/directories.
+- Directory arguments are walked recursively for `*.md`.
+- Explicit argument mode is strict: missing roots or empty markdown selection fails immediately.
+
+### What Is Validated
+
+- Local markdown link path existence.
+- Local heading/anchor existence.
+- Directory targets must resolve to `README.md` (or fail).
+- Anchor matching supports GitHub heading slug anchors.
+- Anchor matching supports explicit markdown IDs (`{#id}`).
+- Anchor matching supports HTML ID anchors (`<a id="..."></a>`).
+
+### Ignore Strategy
+
+- External links are not validated by this script (`http://`, `https://`, `mailto:`, `tel:`, `data:`, `javascript:`).
+- Links and anchors inside fenced code blocks are ignored (` ``` ` / `~~~`).
+- Template placeholder policy (to avoid false failures): do not use markdown links with fake targets such as `./ADR-XXXX-xxx.md` or `URL`.
+- Use inline code placeholders (for example, ``ADR-XXXX-xxx.md#section-anchor``) or a neutral real URL like `https://example.com`.
+
+### Recommended Commands
+
+```bash
+# Full default scan
+GOCACHE=/tmp/go-build-cache go run docs/design/ci/scripts/check_markdown_links.go
+
+# Scoped scan (changed docs only)
+GOCACHE=/tmp/go-build-cache go run docs/design/ci/scripts/check_markdown_links.go \
+  docs/design/ci/README.md \
+  docs/design/interaction-flows/master-flow.md
+```

@@ -1,17 +1,7 @@
-// scripts/ci/check_semaphore_usage.go
-
-/*
-信号量使用检查 - CI 强制执行
-
-🛑 检查规则：
-1. semaphore.Acquire() 必须配对 Release()
-2. Release 必须使用 defer（防止 panic 导致泄漏）
-3. 检测可能的信号量泄漏
-
-检测模式：
-- 搜索 Acquire 调用
-- 验证同一函数内有配对的 defer ... Release()
-*/
+// check_semaphore_usage.go enforces ADR-0031 (Concurrency Safety and Worker Pool Standard).
+//
+// Rule: any semaphore Acquire() in a function must have a paired defer Release()
+// within the same function to avoid leaks on early returns/panics.
 
 package main
 
@@ -26,11 +16,11 @@ import (
 )
 
 type funcInfo struct {
-	name          string
-	hasAcquire    bool
-	hasDefer      bool
-	acquireLine   int
-	releaseLine   int
+	name            string
+	hasAcquire      bool
+	hasDefer        bool
+	acquireLine     int
+	releaseLine     int
 	hasDeferRelease bool
 }
 
@@ -56,7 +46,7 @@ func main() {
 				return nil
 			}
 
-			// 遍历所有函数
+			// Inspect all function bodies.
 			ast.Inspect(node, func(n ast.Node) bool {
 				funcDecl, ok := n.(*ast.FuncDecl)
 				if !ok {
@@ -66,7 +56,7 @@ func main() {
 				info := analyzeFuncForSemaphore(funcDecl, fset)
 				if info.hasAcquire && !info.hasDeferRelease {
 					errors = append(errors, fmt.Sprintf(
-						"%s:%d: 函数 %s() 调用了 Acquire() 但未使用 defer Release()",
+						"%s:%d: func %s() calls Acquire() without a paired defer Release()",
 						path, info.acquireLine, info.name,
 					))
 				}
@@ -78,26 +68,27 @@ func main() {
 		})
 
 		if err != nil {
-			fmt.Printf("❌ 遍历目录 %s 失败: %v\n", dir, err)
+			fmt.Printf("[semaphore] FAIL: walk %s: %v\n", dir, err)
+			os.Exit(1)
 		}
 	}
 
 	if len(errors) > 0 {
-		fmt.Println("❌ 发现信号量使用问题:")
+		fmt.Println("[semaphore] FAIL: semaphore Acquire/Release issues found")
 		for _, e := range errors {
-			fmt.Printf("  %s\n", e)
+			fmt.Printf("%s\n", e)
 		}
-		fmt.Println("\n📋 正确模式:")
-		fmt.Println("  if err := sem.Acquire(ctx, 1); err != nil { return err }")
-		fmt.Println("  defer sem.Release(1)")
 		os.Exit(1)
 	}
 
-	fmt.Println("✅ 信号量使用检查通过")
+	fmt.Println("[semaphore] OK")
 }
 
 func analyzeFuncForSemaphore(funcDecl *ast.FuncDecl, fset *token.FileSet) funcInfo {
 	info := funcInfo{name: funcDecl.Name.Name}
+	if funcDecl.Body == nil {
+		return info
+	}
 
 	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
 		switch node := n.(type) {
@@ -113,13 +104,12 @@ func analyzeFuncForSemaphore(funcDecl *ast.FuncDecl, fset *token.FileSet) funcIn
 			}
 		case *ast.DeferStmt:
 			info.hasDefer = true
-			// 检查 defer 的是否是 Release
+			// Check "defer x.Release(...)" and "defer func(){ ... Release(...) }()".
 			if call, ok := node.Call.Fun.(*ast.SelectorExpr); ok {
 				if call.Sel.Name == "Release" {
 					info.hasDeferRelease = true
 				}
 			}
-			// 也检查 defer func() { ... Release() }
 			if funcLit, ok := node.Call.Fun.(*ast.FuncLit); ok {
 				ast.Inspect(funcLit.Body, func(inner ast.Node) bool {
 					if call, ok := inner.(*ast.CallExpr); ok {

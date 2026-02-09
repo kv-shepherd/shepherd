@@ -214,6 +214,19 @@
       ]
     },
     {
+      "id": "stage-4-c-detail",
+      "phases": [
+        "docs/design/phases/03-service-layer.md",
+        "docs/design/phases/04-governance.md"
+      ],
+      "checklists": [
+        "docs/design/checklist/phase-3-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0015-governance-model-v2.md"
+      ]
+    },
+    {
       "id": "stage-5-a",
       "phases": [
         "docs/design/phases/03-service-layer.md",
@@ -317,4 +330,3 @@
     }
   ]
 }
-

@@ -5,7 +5,7 @@
 #
 # Security Notes (ADR-0029):
 # - All third-party actions pinned to specific commit SHAs
-# - Runner version pinned (ubuntu-22.04, not ubuntu-latest)
+# - Runner version pinned (ubuntu-24.04, not ubuntu-latest)
 # - Minimal permissions following least privilege principle
 # - Dependabot configured for automated updates
 
@@ -17,7 +17,7 @@ on:
       - 'api/**'
       - 'internal/api/**'
       - 'web/src/types/api.gen.ts'
-      - '.vacuum.yaml'  # ADR-0029: vacuum replaces spectral
+      - 'api/.vacuum.yaml'  # ADR-0029: vacuum replaces spectral
   push:
     branches: [main]
     paths:
@@ -34,7 +34,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   lint-spec:
     name: Lint OpenAPI Spec
-    runs-on: ubuntu-22.04  # Pin runner version
+    runs-on: ubuntu-24.04  # Pin runner version
     timeout-minutes: 10    # Prevent stuck workflows
     steps:
       # Pin to specific commit SHA for security
@@ -52,7 +52,7 @@ jobs:
       # ADR-0029: Use vacuum instead of spectral (Go-native, 10x faster)
       - name: Run Vacuum Linting
         if: steps.check_file.outputs.exists == 'true'
-        uses: pb33f/vacuum-action@v2
+        uses: pb33f/vacuum-action@e0a6b0297ff1abcac6c415f2eba24fd9018cad58  # v2
         with:
           spec: api/openapi.yaml
           fail_severity: warn
@@ -63,7 +63,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   breaking-changes:
     name: Detect Breaking Changes
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: github.event_name == 'pull_request'
     steps:
@@ -92,7 +92,7 @@ jobs:
 
       - name: Check for Breaking Changes
         if: steps.check_file.outputs.exists == 'true' && env.base_exists == 'true'
-        uses: oasdiff/oasdiff-action/breaking@main
+        uses: oasdiff/oasdiff-action/breaking@1c611ffb1253a72924624aa4fb662e302b3565d3  # v0.0.21
         with:
           base: origin/${{ github.base_ref }}:api/openapi.yaml
           revision: api/openapi.yaml
@@ -101,7 +101,7 @@ jobs:
 
       - name: Generate Changelog
         if: steps.check_file.outputs.exists == 'true' && env.base_exists == 'true'
-        uses: oasdiff/oasdiff-action/changelog@main
+        uses: oasdiff/oasdiff-action/changelog@1c611ffb1253a72924624aa4fb662e302b3565d3  # v0.0.21
         with:
           base: origin/${{ github.base_ref }}:api/openapi.yaml
           revision: api/openapi.yaml
@@ -112,7 +112,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   generated-code-sync:
     name: Verify Generated Code Sync
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: lint-spec
     steps:
@@ -176,7 +176,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   # contract-test:
   #   name: Contract Testing
-  #   runs-on: ubuntu-22.04
+  #   runs-on: ubuntu-24.04
   #   needs: [lint-spec, generated-code-sync]
   #   steps:
   #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683

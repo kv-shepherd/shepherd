@@ -1,0 +1,42 @@
+# Docs Link Health Check (Advisory / Non-Blocking)
+#
+# Design-phase artifact. Move to .github/workflows/docs-links-advisory.yaml
+# when coding phase starts.
+
+name: Docs Link Health (Advisory)
+
+on:
+  pull_request:
+    paths:
+      - 'README.md'
+      - 'docs/**'
+  push:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'docs/**'
+
+permissions:
+  contents: read
+
+jobs:
+  docs-link-health:
+    name: Link Health (non-blocking)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      # External link health is advisory (network-dependent).
+      # Local path/anchor integrity is enforced in docs-governance workflow.
+      - name: Lychee link check (advisory)
+        uses: lycheeverse/lychee-action@a8c4c7cb88f0c7386610c35eb25108e448569cb0  # v2.7.0
+        with:
+          fail: false
+          args: >-
+            --no-progress
+            --verbose
+            --include-fragments
+            --exclude-path ".reference/**"
+            README.md docs
