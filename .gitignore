@@ -19,6 +19,7 @@ coverage.html
 # IDE
 .idea/
 .vscode/
+.windsurf/
 *.swp
 *.swo
 *~
