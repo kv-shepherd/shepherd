@@ -9,9 +9,10 @@
 
 ## Usage Instructions
 
-1. Verify each Phase upon completion using the detailed phase checklists
-2. All ✅ required before proceeding to next phase
-3. ❌ items must be fixed and re-verified
+1. Verify each phase (frontend and backend scope) using the detailed phase checklists.
+2. All ✅ required before proceeding to the next phase.
+3. ❌ items must be fixed and re-verified.
+4. API/flow changes are not complete until OpenAPI, frontend docs, master-flow, and phase docs are all synchronized.
 
 ---
 
@@ -36,12 +37,16 @@
 - [ ] No data races (`go test -race`)
 - [ ] OpenAPI spec and generated Go/TS types are in sync (`make api-check`)
 - [ ] If 3.1-only features are used, `REQUIRE_OPENAPI_COMPAT=1 make api-compat` passes
+- [ ] Design docs governance checks pass (frontend path, master-flow links, checklist authority references)
+- [ ] Master-flow traceability manifest check passes (`check_master_flow_traceability.go`)
 
 ### Architecture Constraints
 
-- [ ] Context correctly passed in all async operations
+- [ ] Context correctly passed in all async operations ([ADR-0031](../adr/ADR-0031-concurrency-and-worker-pool-standard.md) Rule 2)
 - [ ] All K8s calls have timeout set
 - [ ] Service layer has no transaction control code
+- [ ] Batch operations use ADR-0015 parent-child model with two-layer rate limiting
+- [ ] Frontend batch UI exposes parent/child status, retry failed children, and terminate pending children
 
 ### Code-Level Architecture (Code Review Enforcement)
 
@@ -58,6 +63,8 @@
 
 - [ ] `DEPENDENCIES.md` is only source for versions
 - [ ] Other documents don't hardcode versions
+- [ ] `docs/design/frontend/` is used for frontend specs (no legacy `docs/design/FRONTEND.md` links)
+- [ ] `master-flow.md` and phase/frontend docs share consistent status models and endpoint names
 
 ---
 
@@ -65,14 +72,15 @@
 
 | Pattern | Reason | CI Check Script |
 |---------|--------|-----------------|
-| GORM import | Use Ent only | `check_forbidden_imports.go` |
+| GORM import | Use Ent only | `check_no_gorm_import.go` |
 | Redis import | PostgreSQL only in V1 | `check_no_redis_import.sh` |
-| Naked goroutines | Use worker pool | `check_naked_goroutine.go` |
+| Naked goroutines | Use worker pool (ADR-0031) | `check_naked_goroutine.go` |
 | Wire import | Manual DI only | `check_manual_di.sh` |
 | Outbox pattern | Use River directly | `check_no_outbox_import.go` |
 | sqlc outside whitelist | Limited to specific dirs | `check_sqlc_usage.sh` |
 | Handler manages transactions | UseCase layer only | `check_transaction_boundary.go` |
 | K8s calls in transactions | Two-phase pattern only | `check_k8s_in_transaction.go` |
+| Unsafe semaphore usage | Always `defer Release()` (ADR-0031) | `check_semaphore_usage.go` |
 
 ---
 
@@ -88,7 +96,7 @@
 | [ADR-0006](../adr/ADR-0006-unified-async-model.md) | All K8s operations via River Queue | External API calls¹ | CI: `check_river_bypass.go` |
 | [ADR-0009](../adr/ADR-0009-domain-event-pattern.md) | Payload is immutable (append-only) | DomainEvent table | Code Review |
 | [ADR-0012](../adr/ADR-0012-hybrid-transaction.md) | K8s calls outside DB transactions | UseCase layer | CI: `check_k8s_in_transaction.go` |
-| [ADR-0013](../adr/ADR-0013-dependency-injection.md) | Manual DI, no Wire/fx | All DI | CI: `check_manual_di.sh` |
+| [ADR-0013](../adr/ADR-0013-manual-di.md) | Manual DI, no Wire/fx | All DI | CI: `check_manual_di.sh` |
 | [ADR-0015](../adr/ADR-0015-governance-model-v2.md) | Entity decoupling (VM→Service only) | Schema design | Code Review |
 | [ADR-0016](../adr/ADR-0016-go-module-vanity-import.md) | Vanity import: `kv-shepherd.io/shepherd` | All Go imports | Code Review |
 | [ADR-0017](../adr/ADR-0017-vm-request-flow-clarification.md) | User does NOT provide ClusterID; Namespace immutable after submission | VM Request Flow | Code Review |
@@ -98,6 +106,7 @@
 | [ADR-0025](../adr/ADR-0025-secret-bootstrap.md) | Auto-generate secrets on first boot; priority: env vars > DB-generated | Bootstrap flow | Code Review |
 | [ADR-0028](../adr/ADR-0028-oapi-codegen-optional-field-strategy.md) | oapi-codegen with `omitzero`; Go 1.25+ required | API code generation | CI: `make generate` |
 | [ADR-0029](../adr/ADR-0029-openapi-toolchain-governance.md) | Vacuum for linting, libopenapi-validator | API toolchain | CI: `make api-lint` |
+| [ADR-0031](../adr/ADR-0031-concurrency-and-worker-pool-standard.md) | No naked `go` statements; worker pool with context propagation; semaphore Acquire/Release leak-safe | In-process concurrency | CI: `check_naked_goroutine.go`, `check_semaphore_usage.go` |
 
 > ¹ **ADR-0006 Scope Clarification**: "All writes via River Queue" applies to operations requiring external system calls (K8s API).
 > Pure PostgreSQL writes (e.g., Notification, AuditLog, DomainEvent insert) are **synchronous** for transactional atomicity.

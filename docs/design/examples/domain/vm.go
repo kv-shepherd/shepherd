@@ -19,7 +19,6 @@ const (
 	VMStatusStopping VMStatus = "STOPPING" // VM shutting down
 	VMStatusStopped  VMStatus = "STOPPED"  // VM is stopped
 	VMStatusDeleting VMStatus = "DELETING" // VM being deleted
-	VMStatusDeleted  VMStatus = "DELETED"  // VM deleted (soft-delete record)
 	VMStatusFailed   VMStatus = "FAILED"   // VM in error state
 
 	// Extended states (K8s/KubeVirt specific)

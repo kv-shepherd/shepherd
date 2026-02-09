@@ -23,7 +23,7 @@
 //	                                         → Returns: APPROVED
 //
 //	Operation auto-approved by policy     AutoApproveAndEnqueue()
-//	(e.g., CreateVM for privileged user)    → Creates Event + Ticket + Job
+//	(e.g., non-VM operations without approval policy) → Creates Event + Ticket + Job
 //	                                         → All in single atomic TX
 //	                                         → Returns: PROCESSING
 package usecase
@@ -230,7 +230,12 @@ func (uc *CreateVMAtomicUseCase) ApproveAndEnqueue(ctx context.Context, ticketID
 }
 
 // AutoApproveAndEnqueue demonstrates the "Auto-Approval" flow (ADR-0012).
-// Used when the operation does not require human approval (e.g., system-level operations).
+// Used when the operation does not require human approval.
+//
+// NOTE: In V1 default governance policy, CREATE_VM normally requires approval
+// (see master-flow Stage 5 and phase-4 approval matrix). This method remains a
+// reusable pattern for operations/routes that are explicitly configured as
+// auto-approved.
 //
 // Key difference from Execute():
 // - Event + Ticket + River Job are ALL created in a SINGLE atomic transaction

@@ -38,7 +38,7 @@ The initial governance model design had several limitations that would impact lo
 
 ### 1. System Entity Decoupling
 
-**Decision**: Remove namespace, environment, and cluster bindings from System entity. Permissions are managed via separate RBAC tables (see [§22. Authentication & RBAC Strategy](#22-authentication--rbac-strategy)).
+**Decision**: Remove namespace, environment, and cluster bindings from System entity. Permissions are managed via separate RBAC tables (see [§22. Authentication & RBAC Strategy](#22-authentication-rbac-strategy)).
 
 **Rationale**:
 - A System represents a logical business grouping, not an infrastructure deployment unit
@@ -707,7 +707,7 @@ RoleBinding (user_id, role_id, scope_type, scope_id, allowed_environments)
    └── scope_type = "global" → applies to all resources (Admin only)
 ```
 
-**Core RBAC Tables** (see [§22](#22-authentication--rbac-strategy) for full schema):
+**Core RBAC Tables** (see [§22](#22-authentication-rbac-strategy) for full schema):
 
 | Table | Purpose |
 |-------|---------|
@@ -1237,6 +1237,32 @@ func (t *VNCAccessToken) IsValid() bool {
 > 
 > **V2 Consideration**: Session recording for production VMs may be added via RFC.
 
+#### 18.1 V1 Implementation Scope Addendum (2026-02-08) {#adr-0015-vnc-v1-addendum}
+
+> **Type**: Scope clarification addendum.  
+> **Intent**: Keep §18 original decision text unchanged while freezing the V1 coding baseline.
+
+For **V1 implementation and coding kickoff**, the following constraints are normative:
+
+| Topic | V1 Baseline (Effective Now) | V2+ Target |
+|------|------------------------------|------------|
+| Token tracking | Signed JWT + shared replay marker (`jti`, `used_at`) across replicas (PostgreSQL recommended) | Full token lifecycle table + policy controls |
+| Active revocation | **No active revocation API in V1** | Admin-triggered revocation API supported |
+| User binding | JWT `sub` binds token to stable requester identity (internal hash/mapping allowed) | Same baseline plus optional stronger policy controls |
+| Audit events | Request/grant/session events mandatory; revocation event appears when revocation capability is enabled | Full lifecycle audit including revocation actions |
+
+**Scope rule**:
+
+- This addendum applies to V1 delivery scope and resolves the V1 implementation boundary for Stage 6 documents.
+- The revocation-capable model in §18 remains the target architecture for V2+ roadmap, not removed.
+- Do not introduce Redis as a mandatory dependency for V1 token replay protection.
+
+**Cross-reference**:
+
+- [Master Flow Stage 6](../design/interaction-flows/master-flow.md#stage-6-vnc-console-access)
+- [Phase 4 §6.2](../design/phases/04-governance.md#62-vnc-console-permissions-adr-0015-18-rfc-0011)
+- [RFC-0011 §V1 Implementation Scope](../rfc/RFC-0011-vnc-console.md#v1-implementation-scope)
+
 ---
 
 ### 19. Batch Operations
@@ -1636,6 +1662,12 @@ func (RoleBinding) Indexes() []ent.Index {
 ```
 
 #### 22.3 Built-in Roles and Permissions
+
+> ⚠️ **Amendment Notice (ADR-0019)**: Wildcard patterns shown in this historical section
+> (for example `*:*`, `system:*`) are superseded and MUST NOT be used for new implementation.
+> Use explicit `platform:admin` and explicit scoped permissions instead.
+> See [Amendments by Subsequent ADRs](#amendments-by-subsequent-adrs) and
+> [ADR-0019 §2](./ADR-0019-governance-security-baseline-controls.md#2-platform-rbac-least-privilege).
 
 **Permissions (Seeded at initialization)**:
 
@@ -2268,7 +2300,7 @@ func ValidateIDToken(token *oidc.IDToken, expectedIssuer, expectedAudience strin
 |------------------|--------|-------------------|----------|
 | §6. Comprehensive Operation Audit Trail | **AMENDED** | Adds sensitive data redaction requirements (PII, secrets must be redacted in logs) | [ADR-0019 §3](./ADR-0019-governance-security-baseline-controls.md#3-audit-logging-and-sensitive-data-controls) |
 | §16. Naming Conventions | **CONFIRMED** | RFC 1035 naming with additional constraint: consecutive hyphens (`--`) are prohibited | [ADR-0019 §1](./ADR-0019-governance-security-baseline-controls.md#1-naming-policy-most-conservative) |
-| §22.3 Built-in Roles: `*:*` wildcard | **AMENDED** | Wildcard patterns are prohibited. Use explicit `platform:admin` permission instead | [ADR-0019 §2](./ADR-0019-governance-security-baseline-controls.md#2-rbac-least-privilege) |
+| §22.3 Built-in Roles: `*:*` wildcard | **AMENDED** | Wildcard patterns are prohibited. Use explicit `platform:admin` permission instead | [ADR-0019 §2](./ADR-0019-governance-security-baseline-controls.md#2-platform-rbac-least-privilege) |
 
 > **Implementation Guidance**:
 > - **RBAC**: The `*:*` wildcard permission pattern is now **prohibited**. Replace with:
@@ -2290,4 +2322,3 @@ func ValidateIDToken(token *oidc.IDToken, expectedIssuer, expectedAudience strin
 > - **Audit Actions**: Use `auth_provider.*` instead of `idp.*` for audit action naming
 
 ---
-

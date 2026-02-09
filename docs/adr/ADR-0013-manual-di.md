@@ -114,5 +114,5 @@ Wire's primary value proposition (reducing boilerplate code) is significantly di
 
 ## References
 
-- [Wire Deprecation Details](./archived/wire-dependency-injection-archived.md)
+- [Wire vs Manual DI Comparison](#wire-vs-manual-di-comparison)
 - [Uber Go Style Guide - Dependency Injection](https://github.com/uber-go/guide/blob/master/style.md)

@@ -93,14 +93,18 @@
 
 ---
 
-## Template Engine (ADR-0011 SSA Upgrade)
+## Template Engine (ADR-0007, ADR-0011, ADR-0018)
 
-- [ ] Helm basic syntax compatible
-- [ ] Supports Sprig functions
-- [ ] Simulates Helm built-in objects
-- [ ] Supports `_helpers.tpl` helper templates
-- [ ] **Template Lifecycle Management** complete
-- [ ] **Template Save Validation (Dry-Run)** working
+> **Updated per ADR-0018**: Templates define OS image source and cloud-init only. Go Template variables removed.
+
+- [ ] **Template Scope** (after ADR-0018):
+  - [ ] OS image source (DataVolume, ContainerDisk, PVC reference)
+  - [ ] Cloud-init YAML (SSH keys, one-time password, network config)
+  - [ ] Field visibility (`quick_fields`, `advanced_fields` for UI)
+  - [ ] ❌ No Go Template variables (removed per ADR-0018)
+  - [ ] ❌ No RequiredFeatures/Hardware (moved to InstanceSize per ADR-0018)
+- [ ] **Template Lifecycle Management** complete (draft → active → deprecated → archived)
+- [ ] **Template Save Validation** (cloud-init YAML syntax + K8s Dry-Run)
 - [ ] **SSA Resource Submission (ADR-0011)** implemented
 
 ---
@@ -118,13 +122,22 @@
   - [ ] Default sort by `days_pending` (oldest first within priority tier)
   - [ ] `priority_tier` field in response (normal/warning/urgent)
   - [ ] Color coding: 0-3d normal, 4-7d yellow, 7+d red (ADR-0015 §11)
-- [ ] **User Self-Cancellation** API (`POST /approvals/{id}/cancel`)
+- [ ] **User Self-Cancellation** API (`POST /api/v1/approvals/{id}/cancel`)
 - [ ] **AuditLogger** implemented
 - [ ] **Approval API** endpoints complete
 - [ ] Policy matching logic implemented
 - [ ] **Extensible Approval Handler Architecture** designed
 - [ ] **Notification Service (Reserved Interface)** defined
 - [ ] **External State Management** (no pre-approval job insertion)
+
+---
+
+## External Approval Provider Boundary (V1 Interface Only)
+
+- [ ] `ExternalApprovalProvider` contract defined (`SubmitForApproval`, `CheckStatus`, `CancelRequest`)
+- [ ] `external_approval_systems` schema + migration present for adapter registry
+- [ ] V1 runtime keeps built-in approval as required go-live path
+- [ ] External approval adapters are explicitly treated as V2+ plugin roadmap capability
 
 ---
 
@@ -138,7 +151,7 @@
 
 ---
 
-## VNC Console Permissions (ADR-0015 §18)
+## VNC Console Permissions (ADR-0015 §18, §18.1 Addendum)
 
 - [ ] **Environment-Based Access**:
   - [ ] test environment - no approval required
@@ -146,9 +159,10 @@
 - [ ] **VNC Token Security**:
   - [ ] Single-use token
   - [ ] Time-bounded (max 2 hours)
-  - [ ] User-bound (hashed user ID)
+  - [ ] User-bound (`sub` binds token to requester user ID)
   - [ ] AES-256-GCM encryption
-- [ ] **Token Revocation** API
+- [ ] Shared replay marker store (`jti` + `used_at`) works across replicas (no Redis dependency)
+- [ ] V1 has **no active token revocation API** (documented limitation, see ADR-0015 §18.1 addendum); revocation capability is tracked as V2+ enhancement
 - [ ] **VNC Session Audit** logging
 
 ---
@@ -157,18 +171,30 @@
 
 > **Design**: [04-governance.md §5.6](../phases/04-governance.md#56-batch-operations-adr-0015-19)
 
-- [ ] **Batch Approval API** (`POST /api/v1/approvals/batch`)
-  - [ ] Request validation (all ticket_ids exist and are PENDING)
-  - [ ] Individual River jobs enqueued per ticket
-  - [ ] Aggregate response with per-item status
-- [ ] **Batch Power Operations API** (`POST /api/v1/vms/batch/power`)
-  - [ ] Same admin approval required for all VMs in batch
-  - [ ] Individual River jobs per VM
-  - [ ] Partial success handling (return per-item status)
-- [ ] **Frontend Batch Selection UX**
-  - [ ] Checkbox multi-select in list views
-  - [ ] Batch action toolbar (Approve, Reject, Start, Stop)
-  - [ ] Progress indicator during batch submission
+- [ ] **Parent-Child Ticket Schema**
+  - [ ] `batch_approval_tickets` parent table implemented
+  - [ ] `approval_tickets.parent_ticket_id` child linkage implemented
+  - [ ] Parent aggregate counters (`success/failed/pending`) are persisted
+- [ ] **Atomic Submission + Independent Execution**
+  - [ ] Parent + child ticket creation is atomic in one DB transaction
+  - [ ] Child jobs execute independently via River
+  - [ ] Parent status aggregation supports `PARTIAL_SUCCESS`
+- [ ] **Two-Layer Rate Limiting**
+  - [ ] Global limits: pending parent tickets + API request rate
+  - [ ] User limits: pending parent count, pending child count, cooldown
+  - [ ] Admin exemption and override APIs implemented
+- [ ] **Batch APIs**
+  - [ ] `POST /api/v1/vms/batch` submit
+  - [ ] `GET /api/v1/vms/batch/{id}` status query
+  - [ ] `POST /api/v1/vms/batch/{id}/retry` retry failed children
+  - [ ] `POST /api/v1/vms/batch/{id}/cancel` terminate pending children
+  - [ ] Compatibility endpoints (`/api/v1/approvals/batch`, `/api/v1/vms/batch/power`) normalized into same parent-child pipeline
+- [ ] **Frontend Batch Queue UX**
+  - [ ] Parent row + child detail panel implemented
+  - [ ] Status polling uses backend `status_url` until terminal state
+  - [ ] Retry/terminate actions show affected child items explicitly
+  - [ ] `429` with `Retry-After` is handled with countdown and disabled actions
+  - [ ] Accessibility: live status updates announced (`aria-live`)
 
 ---
 
@@ -190,4 +216,3 @@
   - [ ] `APPROVAL_COMPLETED`/`APPROVAL_REJECTED` → requester
   - [ ] `VM_STATUS_CHANGE` → VM owner
 - [ ] **Retention cleanup** (90 days, via River periodic job)
-

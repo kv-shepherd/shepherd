@@ -54,7 +54,7 @@ type InstanceSize struct {
 	// ============================================================
 	SpecOverrides map[string]interface{} `json:"spec_overrides,omitempty"`
 
-	// Enabled flag for soft-delete
+	// Lifecycle toggle for availability control (not a delete marker)
 	Enabled bool `json:"enabled"`
 
 	// Metadata

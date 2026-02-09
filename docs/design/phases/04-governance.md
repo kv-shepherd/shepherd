@@ -33,6 +33,7 @@ Implement governance capabilities:
 > |----------|-----------|-------|
 > | **ADRs** | Decisions (immutable after acceptance) | Architecture decisions and rationale |
 > | **[master-flow.md](../interaction-flows/master-flow.md)** | Interaction principles (single source of truth) | Data sources, flow rationale, user journeys |
+> | **[database/README.md](../database/README.md)** | Database reference layer | Schema domains, lifecycle/retention, transaction boundaries |
 > | **Phase docs (this file)** | Implementation details | Code patterns, schemas, API design |
 > | **[CHECKLIST.md](../CHECKLIST.md)** | ADR constraints reference | Centralized ADR enforcement rules |
 >
@@ -65,7 +66,8 @@ The following features are **explicitly out of scope** for V1:
 
 > ⚠️ **Approval Engine V1 Constraint (ADR-0005)**:
 >
-> V1 approval supports **only two terminal states**: `PENDING_APPROVAL → APPROVED` or `PENDING_APPROVAL → REJECTED`.
+> V1 approval **decision outcomes** are limited to: `PENDING_APPROVAL → APPROVED` or `PENDING_APPROVAL → REJECTED`.
+> Ticket lifecycle may still include out-of-band `CANCELLED` (user action) and execution tracking states.
 > DO NOT design for:
 > - Multi-level approval chains (L1 → L2 → L3)
 > - Withdraw/Countersign/Transfer operations
@@ -431,7 +433,7 @@ draft → active → deprecated → archived
 ### SSA Apply (ADR-0011)
 
 > **Version Requirement**: `controller-runtime v0.22.4+` required for `client.DryRunAll` support.
-> See [DEPENDENCIES.md](../DEPENDENCIES.md) for version matrix.
+> See [DEPENDENCIES.md §Core Dependencies](../DEPENDENCIES.md#core-dependencies) for version matrix.
 
 ```go
 type SSAApplier struct {
@@ -651,82 +653,92 @@ Admin approves request
 
 > **Reference**: [ADR-0015 §19](../../adr/ADR-0015-governance-model-v2.md)
 
-### V1 Design Philosophy
+### Design Goals
 
-Batch operations in V1 are **UX convenience, not atomic transactions**:
+Batch operations MUST follow ADR-0015 §19 as the normative model:
 
-- Frontend allows multi-select for batch approval/power operations
-- Backend receives batch request, enqueues individual River jobs
-- Each operation executes independently (success/failure per item)
-- Aggregate response shows per-item status
+- Parent-child ticket persistence
+- Atomic parent + child ticket creation
+- Independent child execution via River Jobs
+- Two-layer rate limiting (global + user-level)
+- Frontend-visible aggregate and per-child status
 
-### Supported Batch Operations
+### Supported Operations and API Surface
 
-| Operation | Endpoint | V1 Status |
-|-----------|----------|-----------|
-| Batch Approval | `POST /api/v1/approvals/batch` | ✅ Implemented |
-| Batch Power (Start/Stop/Restart) | `POST /api/v1/vms/batch/power` | ✅ Implemented |
-| Batch Delete | ❌ Not in V1 | High risk, requires individual confirmation |
+| Operation | Canonical Endpoint | Notes |
+|-----------|--------------------|-------|
+| Batch VM create/delete | `POST /api/v1/vms/batch` | Creates parent + child tickets atomically |
+| Batch status query | `GET /api/v1/vms/batch/{id}` | Parent summary + child states |
+| Batch retry failed | `POST /api/v1/vms/batch/{id}/retry` | Requeue failed child items only |
+| Batch terminate pending | `POST /api/v1/vms/batch/{id}/cancel` | Cancel not-yet-started children |
+| Batch approval compatibility | `POST /api/v1/approvals/batch` | Supported; normalized into canonical parent-child pipeline |
+| Batch power compatibility | `POST /api/v1/vms/batch/power` | Supported; normalized into canonical parent-child pipeline |
 
-### API Design
+### Parent-Child Data Model
 
-```
-POST /api/v1/approvals/batch
-Content-Type: application/json
+| Entity | Key Fields |
+|--------|------------|
+| `batch_approval_tickets` (parent) | `ticket_id`, `batch_type`, `child_count`, `success_count`, `failed_count`, `pending_count`, `status`, `created_by` |
+| `approval_tickets` (child) | `ticket_id`, `parent_ticket_id`, `sequence_no`, `status`, `attempt_count`, `error_message`, `last_attempt_at` |
 
+### Atomicity and Execution Boundary
+
+| Phase | Guarantee | Implementation |
+|------|-----------|----------------|
+| Submission (parent + all children) | ✅ Atomic | Single DB transaction, rollback on any insert failure |
+| Execution (child jobs) | ❌ Non-atomic by design | Each child runs independently in River |
+| Parent status | ✅ Deterministic aggregation | Computed from aggregate counters (`success/failed/pending`) |
+
+### Two-Layer Rate Limiting (ADR-0015 §19)
+
+| Layer | Limit | Default |
+|------|-------|---------|
+| Global | Max pending parent tickets | `100` |
+| Global | Max batch API requests | `1000 req/min` |
+| User | Max pending parent batch requests per user | `3` |
+| User | Cooldown between submissions | `2 minutes` |
+| User | Max pending child tickets per user | `30` |
+
+Admin override APIs (ADR-0015):
+
+- `POST /api/v1/admin/rate-limits/exemptions`
+- `DELETE /api/v1/admin/rate-limits/exemptions/{user_id}`
+- `PUT /api/v1/admin/rate-limits/users/{user_id}`
+- `GET /api/v1/admin/rate-limits/status`
+
+### Response Contract (Submission)
+
+`POST /api/v1/vms/batch` returns `202 Accepted` with tracking metadata:
+
+```json
 {
-  "ticket_ids": ["TKT-001", "TKT-002", "TKT-003"],
-  "action": "approve",
-  "cluster_id": "cluster-01",           // Required for batch approval
-  "instance_size": "medium",            // Optional override
-  "reason": "Batch approved per policy"
-}
-
-Response (202 Accepted):
-{
-  "batch_id": "BATCH-12345",
-  "total": 3,
-  "accepted": 3,
-  "rejected": 0,
-  "items": [
-    {"ticket_id": "TKT-001", "status": "queued", "job_id": "job-a"},
-    {"ticket_id": "TKT-002", "status": "queued", "job_id": "job-b"},
-    {"ticket_id": "TKT-003", "status": "queued", "job_id": "job-c"}
-  ]
+  "batch_id": "BAT-20260206-001",
+  "status": "PENDING_APPROVAL",
+  "status_url": "/api/v1/vms/batch/BAT-20260206-001",
+  "retry_after_seconds": 2
 }
 ```
 
-### Implementation
+### Frontend Contract (Mandatory)
 
-> **Code Example**: See [`examples/usecase/batch_approval.go`](../examples/usecase/batch_approval.go)
+Frontend implementation MUST follow:
 
-### Batch Power Operation
+- [frontend/features/batch-operations-queue.md](../frontend/features/batch-operations-queue.md)
+- [master-flow.md Stage 5.E](../interaction-flows/master-flow.md#stage-5e-batch-operations)
 
-```
-POST /api/v1/vms/batch/power
-Content-Type: application/json
+Required frontend behavior:
 
-{
-  "vm_ids": ["vm-001", "vm-002"],
-  "action": "start",  // start | stop | restart
-  "reason": "Maintenance complete"
-}
-```
-
-### Frontend UX Guidelines
-
-| Scenario | UI Behavior |
-|----------|-------------|
-| Select multiple items | Enable "Batch Action" button |
-| Mixed environments | Warn if batch includes test+prod items |
-| Partial failure | Show per-item status in result modal |
-| Progress tracking | Poll `/api/v1/batches/{batch_id}/status` for completion |
+- Parent row + child detail visualization
+- Polling by `status_url` until terminal parent status
+- `Retry failed` and `Terminate pending` actions with explicit affected-item feedback
+- `429` handling with `Retry-After` countdown
 
 ### Constraints
 
-- Maximum batch size: **50 items** (configurable)
-- Batch delete **not supported** in V1 (requires individual confirmation per ADR-0015 §13.1)
-- Each item in batch must pass individual validation
+- Max batch size per operation type follows ADR-0015 defaults
+- Item-level validation is required before child insertion
+- Duplicate submit with same idempotency key returns existing parent ticket
+- Partial success is a first-class outcome (`PARTIAL_SUCCESS`)
 
 ---
 
@@ -763,7 +775,7 @@ field.String("description").Optional(),
 > - **DO NOT** add `cluster_id` to `namespace_registry` schema
 > - Namespace ↔ Cluster binding occurs at **VM approval time**, not schema level
 > - Failure to follow this pattern will break multi-cluster namespace sharing
-> - See [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) for complete rationale
+> - See [ADR-0017 §Namespace Just-In-Time Creation](../../adr/ADR-0017-vm-request-flow-clarification.md#namespace-just-in-time-creation-added-2026-01-27) for complete rationale
 
 ### Visibility Rules (via Platform RBAC)
 
@@ -801,9 +813,23 @@ func (s *ApprovalService) Approve(ctx context.Context, ticketID string) error {
 
 ---
 
-## 6.1 Delete Confirmation Mechanism (ADR-0015 §13.1)
+## 6.1 Delete Cascade and Confirmation Mechanism (ADR-0015 §13, §13.1)
 
-> **Tiered confirmation to prevent accidental deletions.**
+> **Primary resources use hard delete** (System/Service/VM) after cascade checks pass.
+> `audit_logs` and `domain_events` are retained for traceability for all delete flows.
+> `approval_tickets` are retained only for operations that require approval (for example, VM create/delete and production VNC requests), and archived per retention policy.
+
+### Cascade Constraints (Hard Delete)
+
+| Entity | Deletion Constraint | Data Retention |
+|--------|---------------------|----------------|
+| System | Must have zero Services | Hard delete system row; keep audit/event records (no delete approval ticket) |
+| Service | Must have zero VMs | Hard delete service row; keep audit/event records (no delete approval ticket) |
+| VM | Direct delete allowed | Hard delete VM row; keep audit/event records and VM-related approval tickets |
+
+### Confirmation Rules (Tiered)
+
+> **Tiered confirmation prevents accidental irreversible deletion.**
 
 | Entity | Environment | Confirmation Method |
 |--------|-------------|---------------------|
@@ -830,7 +856,7 @@ Content-Type: application/json
 
 > **V1 Status**: Simplified implementation (see RFC-0011 for details).
 >
-> **Full Reference**: [Master Flow Stage 6](../interaction-flows/master-flow.md#stage-6-vnc-console-access-adr-0015-18-rfc-0011)
+> **Full Reference**: [Master Flow Stage 6](../interaction-flows/master-flow.md#stage-6-vnc-console-access)
 
 | Environment | VNC Access | Approval Required | Token TTL |
 |-------------|------------|-------------------|-----------|
@@ -841,9 +867,13 @@ Content-Type: application/json
 
 | Feature | V1 (Simplified) | Full (V2+) |
 |---------|-----------------|------------|
-| Token storage | Inline JWT (no DB table) | VNCAccessToken table |
-| Token revocation | Short TTL only | Active revocation API |
+| Token tracking | Signed JWT + shared replay marker (`jti`, `used_at`) | Full token lifecycle table + policy controls |
+| Token revocation | No active revoke API (TTL + single-use only) | Active revocation API |
 | Session recording | ❌ Not supported | ✅ Optional |
+
+> **Traceability note**: V1 boundary is now formalized by
+> [ADR-0015 §18.1 Addendum](../../adr/ADR-0015-governance-model-v2.md#adr-0015-vnc-v1-addendum).
+> The full revocation-capable model in ADR-0015 §18 remains the V2+ target architecture.
 
 ### Production VNC Flow
 
@@ -858,19 +888,22 @@ Content-Type: application/json
 
 | Security Feature | Requirement | V1 Implementation |
 |------------------|-------------|-------------------|
-| **Single Use** | Token invalidated after first connection | JWT `jti` tracked in Redis |
+| **Single Use** | Token invalidated after first connection | JWT `jti` replay marker (`used_at`) in shared store (PostgreSQL recommended) |
 | **Time-Bounded** | Max TTL: 2 hours (configurable) | JWT `exp` claim |
 | **User Binding** | Token includes user ID | JWT `sub` claim |
 | **Encryption** | AES-256-GCM | Shared key management |
-| **Audit Logged** | All sessions recorded | `VNC_SESSION_STARTED` event |
+| **Audit Logged** | All sessions recorded | `vnc.access` event (see [master-flow.md §Canonical Action Naming](../interaction-flows/master-flow.md#canonical-action-naming)) |
+
+> **V1 Note**: No active revoke endpoint. Security relies on short TTL + single-use replay protection.
+> Do not introduce Redis dependency for token tracking.
 
 ### API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `POST /api/v1/vms/{id}/console/request` | POST | Request VNC access (creates approval ticket in prod) |
-| `GET /api/v1/vms/{id}/console/status` | GET | Check access status (for polling) |
-| `GET /api/v1/vms/{id}/vnc?token={jwt}` | WS | WebSocket VNC connection (noVNC) |
+| `POST /api/v1/vms/{vm_id}/console/request` | POST | Request VNC access (creates approval ticket in prod) |
+| `GET /api/v1/vms/{vm_id}/console/status` | GET | Check access status (for polling) |
+| `GET /api/v1/vms/{vm_id}/vnc?token={jwt}` | WS | WebSocket VNC connection (noVNC) |
 
 ---
 
@@ -895,7 +928,7 @@ V1 implements a minimal internal notification system. External push channels (em
 >
 > **Rationale**: ADR-0006's "all writes via River Queue" applies to operations requiring external system calls (K8s API). Notification inserts are local PostgreSQL writes with predictable latency, benefiting from transactional atomicity with business data.
 >
-> **V2+ External Channels**: When email/webhook/Slack adapters are added, those external pushes will use River Queue for retry resilience. See [RFC-0018](../../rfc/RFC-0018-external-notification.md) for planned architecture.
+> **V2+ External Channels**: When email/webhook/Slack adapters are added, those external pushes will use River Queue for retry resilience. See [RFC-0018 §River Queue Integration](../../rfc/RFC-0018-external-notification.md#river-queue-integration) for planned architecture.
 
 ### Data Model
 
@@ -978,11 +1011,20 @@ func RedactSensitiveData(params map[string]interface{}) map[string]interface{} {
 
 ### ActionCodes
 
-| Category | Examples |
-|----------|----------|
-| Submission | REQUEST_SUBMITTED, REQUEST_CANCELLED |
-| Approval | APPROVAL_APPROVED, APPROVAL_REJECTED |
-| Execution | EXECUTION_STARTED, EXECUTION_COMPLETED, EXECUTION_FAILED |
+> **Canonical Naming**: Use dot-notation `{domain}.{action}` per [master-flow.md §Canonical Action Naming](../interaction-flows/master-flow.md#canonical-action-naming).
+
+| Domain | Canonical Actions (V1) | Notes |
+|--------|------------------------|-------|
+| Auth | `user.login`, `user.login_failed`, `user.logout` | Authentication events |
+| System | `system.create`, `system.update`, `system.delete_submitted`, `system.delete_executed` | No delete approval ticket |
+| Service | `service.create`, `service.delete_submitted`, `service.delete_executed` | No delete approval ticket |
+| VM | `vm.request`, `vm.create`, `vm.start`, `vm.stop`, `vm.restart`, `vm.delete_submitted`, `vm.delete_approved`, `vm.delete_executed` | Delete requires approval |
+| VNC | `vnc.access` | Sensitive read |
+| Approval | `approval.approve`, `approval.reject`, `approval.cancel` | Ticket decisions |
+| RBAC | `role.create`, `role.update`, `role.delete`, `role.assign`, `role.revoke` | Permission governance |
+| Cluster | `cluster.register`, `cluster.update`, `cluster.delete`, `cluster.credential_rotate` | Cluster lifecycle |
+| Template | `template.create`, `template.update`, `template.deprecate`, `template.delete` | Template lifecycle |
+| InstanceSize | `instance_size.create`, `instance_size.update`, `instance_size.deprecate`, `instance_size.delete` | Sizing lifecycle |
 
 ### Storage Schema
 
@@ -1190,7 +1232,7 @@ func (v *TokenValidator) Validate(ctx context.Context, rawToken string) (*Claims
 
 ### 8.3 IdP Data Model
 
-> **Reference**: [01-contracts.md](./01-contracts.md) for full schema.
+> **Reference**: [01-contracts.md §3 Core Ent Schemas](./01-contracts.md#3-core-ent-schemas) for full schema.
 
 | Table | Purpose |
 |-------|---------|
@@ -1350,12 +1392,12 @@ Content-Type: application/json
 
 1. **Validate confirmation** - Tier-appropriate confirmation
 2. **Check permissions** - User must have `vm:delete` + resource access
-3. **Create approval ticket** (if prod environment)
+3. **Create approval ticket** (default policy: both test/prod for `DELETE_VM`, ADR-0015 §7)
 4. **On approval**:
    - Mark VM as `DELETING` in database
    - Enqueue River job for K8s deletion
    - River worker deletes VirtualMachine CR
-   - Update status to `DELETED`
+   - Hard delete VM row from primary table after K8s deletion succeeds
 5. **Audit log** - Record deletion with actor, reason, timestamp
 
 ---
@@ -1414,6 +1456,8 @@ If >50% of resources detected as ghosts, halt and alert.
 - [ADR-0019](../../adr/ADR-0019-governance-security-baseline-controls.md) - Governance Security Baseline
 - [ADR-0020](../../adr/ADR-0020-frontend-technology-stack.md) - Frontend Technology Stack
 - [ADR-0027](../../adr/ADR-0027-repository-structure-monorepo.md) - Repository Structure (monorepo with `web/`)
+- [ADR-0030](../../adr/ADR-0030-design-documentation-layering-and-fullstack-governance.md) - Frontend doc layering and full-stack governance
+- [frontend/features/batch-operations-queue.md](../frontend/features/batch-operations-queue.md) - Parent-child queue UI spec
 
 ---
 
@@ -1423,32 +1467,32 @@ If >50% of resources detected as ghosts, halt and alert.
 
 | ADR-0015 Section | Status | Covered In | Notes |
 |------------------|--------|------------|-------|
-| §1 System Entity Decoupling | ✅ Done | [01-contracts.md](01-contracts.md#system-entity) | No namespace/environment/cluster bindings |
-| §2 Service Entity & Permission Inheritance | ✅ Done | [01-contracts.md](01-contracts.md#service-entity) | Runtime inheritance from System |
-| §3 VM Entity Association | ✅ Done | [01-contracts.md](01-contracts.md#vm-entity) | VM → Service only (no direct system_id) |
-| §4 VM Field Control | ✅ Done | [01-contracts.md](01-contracts.md#vmcreaterequest) | User-forbidden fields; amended by ADR-0017 |
+| §1 System Entity Decoupling | ✅ Done | [01-contracts.md §3.1](01-contracts.md#31-system-schema) | No namespace/environment/cluster bindings |
+| §2 Service Entity & Permission Inheritance | ✅ Done | [01-contracts.md §3.2](01-contracts.md#32-service-schema) | Runtime inheritance from System |
+| §3 VM Entity Association | ✅ Done | [01-contracts.md §3](01-contracts.md#3-core-ent-schemas) | VM → Service only (no direct system_id) |
+| §4 VM Field Control | ✅ Done | [01-contracts.md §3.4](01-contracts.md#34-approvalticket-admin-fields-adr-0017) | User-forbidden fields; amended by ADR-0017 |
 | §5 Template Layered Design | ✅ Done | [master-flow.md Stage 1](../interaction-flows/master-flow.md#stage-1) | Amended by ADR-0018 (capability → InstanceSize) |
 | §6 Audit Trail | ✅ Done | Section 7 (this doc) | DomainEvent pattern; redaction per ADR-0019 |
 | §7 Approval Policies | ✅ Done | Section 4 (this doc) | Environment-aware policy matrix |
 | §8 Storage Class | ✅ Done | Section 5.5 (this doc) | Auto-detection, admin default, approval override |
-| §9 Namespace Responsibility | ✅ Done | [01-contracts.md](01-contracts.md#namespace-registry) | Platform does NOT manage K8s RBAC/Quota |
+| §9 Namespace Responsibility | ✅ Done | Section 6 (this doc) + [01-contracts.md §1](01-contracts.md#1-governance-model-hierarchy) | Platform does NOT manage K8s RBAC/Quota |
 | §10 Cancellation | ✅ Done | Section 4 (this doc) | User can cancel pending requests |
 | §11 Approval Timeout | ✅ V1 UI | Section 4 (this doc) | Days pending sort + color warning; no auto-cancel |
-| §12 Resource Adoption | 🔮 V2+ | - | Recovery mechanism for orphan resources |
-| §13 Delete Cascade | ✅ Done | Section 6.1 (this doc) | Hierarchical delete with constraints |
+| §12 Resource Adoption | ✅ V1 Minimal | [02-providers.md §7](02-providers.md#7-resource-adoption-v1-minimal-compensation) | Compensation capability only; no complex reconciliation |
+| §13 Delete Cascade | ✅ Done | Section 6.1 (this doc) | Hierarchical hard delete with constraints; audit/events retained, approval tickets retained where applicable |
 | §13.1 Delete Confirmation | ✅ Done | [master-flow.md Stage 5.D](../interaction-flows/master-flow.md#stage-5-d) | Tiered confirmation (test vs prod) |
 | §14 Platform RBAC | ✅ Done | Section 3 (this doc) | Dual-layer RBAC; ADR-0019 amendments |
 | §15 Cluster Visibility | ✅ Done | Section 5.5 (this doc) | Environment matching; scheduling weight |
-| §16 Global Naming | ✅ Done | [01-contracts.md](01-contracts.md#naming-constraints) | RFC 1035 + ADR-0019 extension |
+| §16 Global Naming | ✅ Done | [01-contracts.md §1.1](01-contracts.md#11-naming-constraints-adr-0019) | RFC 1035 + ADR-0019 extension |
 | §17 Template Snapshot | ✅ Done | [master-flow.md Stage 5.B](../interaction-flows/master-flow.md#stage-5-b) | ApprovalTicket stores immutable snapshot |
 | §18 VNC Permissions | ✅ Done | Section 6.2 (this doc) | Token-based access |
-| §19 Batch Operations | ✅ Done | Section 5.6 (this doc) | Frontend batch → individual River jobs |
+| §19 Batch Operations | ✅ Done | Section 5.6 (this doc) | Parent-child ticket model + two-layer rate limiting + frontend queue contract |
 | §20 Notification System | ✅ V1 Inbox | Section 6.3 (this doc) | Sync writes; external adapters V2+ |
 | §21 Scope Exclusions | 📋 Reference | ADR-0015 | Lists deferred items |
 | §22 Authentication | ✅ V1 Scope | Section 8 (this doc) | OIDC + LDAP; group mapping |
 | External Approval Systems | ⚠️ V1 Interface | - | Standard data interface; plugin layer |
 
-> **Legend**: ✅ Done = Implemented in V1 | 🔮 V2+ = Deferred to future version | ⚠️ V1 Interface = Only data interface defined
+> **Legend**: ✅ Done = Implemented in V1 | ⚠️ Partial = Implemented subset, ADR gap remains | ⚠️ V1 Interface = Only data interface defined
 
 > **Interface-First Design**: Notification and Approval systems use **standard data interfaces** (ADR-0015 §20, §9).
 > V1 implements simple built-in solutions. External integrations (Slack, ServiceNow, Jira) are handled by plugin adapters without core interface changes.
@@ -1466,6 +1510,6 @@ If >50% of resources detected as ghosts, halt and alert.
 | All other directories | ❌ No | Must use Ent ORM |
 
 ```bash
-# CI validation: scripts/check-sqlc-usage.sh
+# CI validation: check_sqlc_usage.sh
 # Fails build if sqlc imported outside whitelist
 ```

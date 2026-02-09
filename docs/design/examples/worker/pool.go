@@ -1,17 +1,23 @@
 // Package worker provides goroutine pool management.
 //
-// Coding Standard (Required): Naked goroutines are forbidden.
-// All concurrency must go through Worker Pool.
+// Coding Standard (ADR-0031): Naked goroutines are forbidden.
+// All concurrency must go through Worker Pool with context propagation.
 //
 // Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/pkg/worker
 package worker
 
 import (
+	"context"
+	"errors"
+
 	"github.com/panjf2000/ants/v2"
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
+
+// ErrPoolClosed is returned when submitting to a closed pool.
+var ErrPoolClosed = errors.New("worker pool is closed")
 
 // PoolConfig contains Worker Pool configuration.
 type PoolConfig struct {
@@ -30,14 +36,30 @@ func DefaultPoolConfig() PoolConfig {
 	}
 }
 
+// Task is a context-aware task function (ADR-0031 Rule 2).
+type Task func(ctx context.Context)
+
 // Pools is the Worker pool collection.
 type Pools struct {
-	General *ants.Pool
-	K8s     *ants.Pool
+	General *Pool
+	K8s     *Pool
+
+	// serviceCtx is the service lifecycle context for detached tasks
+	serviceCtx    context.Context
+	serviceCancel context.CancelFunc
+}
+
+// Pool wraps ants.Pool with context-aware submission (ADR-0031 Rule 2).
+type Pool struct {
+	pool *ants.Pool
+	name string
 }
 
 // NewPools creates Worker pool collection.
-func NewPools(cfg PoolConfig) (*Pools, error) {
+func NewPools(ctx context.Context, cfg PoolConfig) (*Pools, error) {
+	// Create service lifecycle context for detached tasks
+	serviceCtx, serviceCancel := context.WithCancel(ctx)
+
 	// Unified panic recovery
 	panicHandler := func(p interface{}) {
 		logger.Error("Worker panic recovered",
@@ -46,68 +68,146 @@ func NewPools(cfg PoolConfig) (*Pools, error) {
 		)
 	}
 
-	general, err := ants.NewPool(cfg.GeneralPoolSize,
+	generalAnts, err := ants.NewPool(cfg.GeneralPoolSize,
 		ants.WithPanicHandler(panicHandler),
 		ants.WithNonblocking(false),
 	)
 	if err != nil {
+		serviceCancel()
 		return nil, err
 	}
 
-	k8sPool, err := ants.NewPool(cfg.K8sPoolSize,
+	k8sAnts, err := ants.NewPool(cfg.K8sPoolSize,
 		ants.WithPanicHandler(panicHandler),
 		ants.WithNonblocking(false),
 	)
 	if err != nil {
-		general.Release()
+		generalAnts.Release()
+		serviceCancel()
 		return nil, err
 	}
 
 	return &Pools{
-		General: general,
-		K8s:     k8sPool,
+		General:       &Pool{pool: generalAnts, name: "general"},
+		K8s:           &Pool{pool: k8sAnts, name: "k8s"},
+		serviceCtx:    serviceCtx,
+		serviceCancel: serviceCancel,
 	}, nil
 }
 
+// Submit submits a context-aware task (ADR-0031 Rule 2).
+// The task receives the caller's context and SHOULD check ctx.Done() at blocking points.
+// If context is already cancelled, returns ctx.Err() immediately without submitting.
+func (p *Pool) Submit(ctx context.Context, task Task) error {
+	// Fast path: check if context is already cancelled
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	return p.pool.Submit(func() {
+		// Check context again inside worker (may have been cancelled while queued)
+		select {
+		case <-ctx.Done():
+			logger.Debug("Task skipped: context cancelled",
+				zap.String("pool", p.name),
+				zap.Error(ctx.Err()),
+			)
+			return
+		default:
+		}
+		task(ctx)
+	})
+}
+
+// SubmitDetached submits a detached background task (ADR-0031 Rule 2).
+// Detached tasks use the service lifecycle context instead of a request context.
+// Use this for long-running background work that should survive request cancellation
+// but still respect graceful shutdown.
+func (p *Pools) SubmitDetached(poolName string, task Task) error {
+	var pool *Pool
+	switch poolName {
+	case "general":
+		pool = p.General
+	case "k8s":
+		pool = p.K8s
+	default:
+		pool = p.General
+	}
+
+	return pool.pool.Submit(func() {
+		// Check service context
+		select {
+		case <-p.serviceCtx.Done():
+			logger.Debug("Detached task skipped: service shutting down",
+				zap.String("pool", poolName),
+			)
+			return
+		default:
+		}
+		task(p.serviceCtx)
+	})
+}
+
 // Shutdown gracefully shuts down all pools.
+// Cancels service context first, then waits for running tasks.
 func (p *Pools) Shutdown() {
-	p.General.Release()
-	p.K8s.Release()
+	// Signal all detached tasks to stop
+	p.serviceCancel()
+
+	// Release pools (waits for running tasks to complete)
+	p.General.pool.Release()
+	p.K8s.pool.Release()
 }
 
 // Metrics returns pool metrics for observability.
 func (p *Pools) Metrics() map[string]interface{} {
 	return map[string]interface{}{
 		"general": map[string]int{
-			"running": p.General.Running(),
-			"free":    p.General.Free(),
-			"cap":     p.General.Cap(),
+			"running": p.General.pool.Running(),
+			"free":    p.General.pool.Free(),
+			"cap":     p.General.pool.Cap(),
 		},
 		"k8s": map[string]int{
-			"running": p.K8s.Running(),
-			"free":    p.K8s.Free(),
-			"cap":     p.K8s.Cap(),
+			"running": p.K8s.pool.Running(),
+			"free":    p.K8s.pool.Free(),
+			"cap":     p.K8s.pool.Cap(),
 		},
 	}
 }
 
-// Usage Examples:
+// Usage Examples (ADR-0031 Rule 2):
 //
 // ❌ Forbidden: naked goroutine
 // go func() {
 //     result, err := someOperation()
-//     // No panic recovery
-//     // No concurrency control
-//     // No metrics
+//     // No panic recovery, no cancellation, no metrics
 // }()
 //
-// ✅ Correct: use Worker Pool
-// pools.General.Submit(func() {
-//     result, err := someOperation()
-//     if err != nil {
-//         logger.Error("Operation failed", zap.Error(err))
+// ❌ Forbidden: Submit without context (old API)
+// pools.General.Submit(func() { ... })
+//
+// ✅ Correct: Request-scoped task with context propagation
+// pools.General.Submit(ctx, func(ctx context.Context) {
+//     // Check context at blocking points
+//     select {
+//     case <-ctx.Done():
+//         return // Request cancelled, exit early
+//     case result := <-slowOperation(ctx):
+//         processResult(result)
 //     }
-//     // Automatic panic recovery
-//     // Controlled concurrency
-//     // Observable via Metrics()
+// })
+//
+// ✅ Correct: Detached background task (survives request, respects shutdown)
+// pools.SubmitDetached("general", func(ctx context.Context) {
+//     // ctx is service lifecycle context
+//     for {
+//         select {
+//         case <-ctx.Done():
+//             return // Service shutting down
+//         case <-ticker.C:
+//             doPeriodicWork()
+//         }
+//     }
 // })

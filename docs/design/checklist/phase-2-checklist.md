@@ -119,7 +119,7 @@
 
 - [ ] **CapabilityDetector Implementation** complete
 - [ ] **Cluster Schema Extensions** added
-- [ ] **Template Schema Extensions** added
+- [ ] **InstanceSize Capability Requirements** verified (capabilities moved from Template to InstanceSize per ADR-0018)
 - [ ] **ClusterCompatibilityService** implemented
 - [ ] **Health Check Integration** working
 - [ ] **Dry run fallback** implemented

@@ -254,7 +254,7 @@ func hasAllCapabilities(clusterCaps map[string]bool, required []string) bool {
 }
 ```
 
-> **See Also**: [ADR-0018 §Cluster Capability Matching](../../adr/ADR-0018-instance-size-abstraction.md)
+> **See Also**: [ADR-0018 §Cluster Capability Matching](../../adr/ADR-0018-instance-size-abstraction.md#cluster-capability-matching)
 
 ## 6. Schema Cache Lifecycle (ADR-0023)
 
@@ -285,22 +285,34 @@ If schema fetch fails → use embedded fallback → retry on next health check c
 
 > **Frontend Fallback Strategy**: When schema cache fails or version drifts, the Schema-Driven UI provides a Fallback UI Mode with basic fields only. See [master-flow.md §Frontend Schema Fallback Strategy](../interaction-flows/master-flow.md#schema-cache-lifecycle-adr-0023) for detailed UI behavior, alert integration, and implementation notes.
 
-> **See Also**: [ADR-0023 §1 Schema Cache](../../adr/ADR-0023-schema-cache-and-api-standards.md), [master-flow.md §Schema Cache Lifecycle](../interaction-flows/master-flow.md)
+> **See Also**: [ADR-0023 §1 Schema Cache](../../adr/ADR-0023-schema-cache-and-api-standards.md#1-schema-cache-management-policy), [master-flow.md §Schema Cache Lifecycle](../interaction-flows/master-flow.md#schema-cache-lifecycle-adr-0023)
 
-## 7. Resource Adoption (Two-Phase)
+## 7. Resource Adoption (V1 Minimal Compensation)
 
-### Phase 1: Auto-Discovery
+> **Decision Reference**: [ADR-0015 §12](../../adr/ADR-0015-governance-model-v2.md#12-resource-adoption-rules)
+>
+> Adoption is a **recovery capability** for rare inconsistencies (e.g., K8s create succeeded but DB write failed).
+> It is not a full reconciliation framework in V1.
 
-```
-Periodic Scan → Find resources with Shepherd labels but no DB record
-             → Write to pending_adoptions table
-```
-
-### Phase 2: Manual Approval
+### V1 Flow
 
 ```
-Admin reviews pending list → Confirm/Ignore → Write to main table or delete
+Periodic Scan
+  → Find K8s VMs with Shepherd labels but missing DB record
+  → Check adoption criteria (valid Service association)
+  → Write adoptable items to pending_adoptions
+
+Admin Review
+  → Adopt (create DB record) OR Ignore
 ```
+
+### Adoption Criteria (ADR-0015 §12)
+
+| Condition | Adoptable | Action |
+|-----------|-----------|--------|
+| Has `kubevirt-shepherd.io/service` label and Service exists in DB | ✅ Yes | Add to pending list |
+| Shepherd labels exist but Service missing | ❌ No | Ignore as orphan; manual kubectl cleanup if needed |
+| No Shepherd labels | ❌ No | Not platform-managed |
 
 ### PendingAdoption Fields
 
@@ -308,18 +320,25 @@ Admin reviews pending list → Confirm/Ignore → Write to main table or delete
 |-------|------|---------|
 | `cluster_name` | string | Resource location |
 | `namespace` | string | K8s namespace |
-| `system`, `service`, `instance` | string | Governance identifiers |
+| `system`, `service`, `instance` | string | Governance identifiers from labels |
 | `k8s_uid` | string | K8s resource UID |
-| `resource_spec` | JSON | CPU/memory snapshot |
+| `resource_spec` | JSON | Snapshot for admin review |
 | `status` | enum | PENDING, ADOPTED, IGNORED |
 
 ### Admin APIs
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/v1/admin/pending-adoptions` | List pending |
-| `POST .../adopt` | Confirm adoption |
-| `POST .../ignore` | Ignore resource |
+| `GET /api/v1/admin/pending-adoptions` | List pending adoptable resources |
+| `POST .../adopt` | Confirm adoption into DB |
+| `POST .../ignore` | Ignore item (no DB record created) |
+
+### V1 Constraints (Intentional)
+
+- No automatic adoption.
+- No bulk conflict resolution.
+- No automatic deletion of non-adoptable resources.
+- No cross-cluster deduplication logic beyond label + Service existence checks.
 
 ---
 

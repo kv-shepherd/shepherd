@@ -28,7 +28,7 @@
     - [ ] Contains `description` field (optional)
     - [ ] ❌ **No `created_by` field** - inherited from System (ADR-0015 §2)
     - [ ] Contains `next_instance_index` field (**permanently incrementing, no reset**)
-    - [ ] Globally unique name constraint
+    - [ ] Unique name constraint **within parent System** (per [master-flow.md Stage 4.B](../interaction-flows/master-flow.md#stage-4-b))
     - [ ] **User self-service creation, no approval required**
 - [ ] `ent/schema/vm.go` - VM Schema definition
   - [ ] Associates `service_id` **only** (ADR-0015 §3)
@@ -150,6 +150,9 @@
   - [ ] Coverage threshold enforcement (block PR on failure)
 - [ ] Package.json contains required test scripts:
   - [ ] `test`, `test:run`, `test:coverage`, `test:e2e`
+- [ ] Frontend design docs layering (ADR-0030):
+  - [ ] `docs/design/frontend/README.md` exists and links architecture/features/contracts/testing
+  - [ ] Batch queue UX spec exists at `docs/design/frontend/features/batch-operations-queue.md`
 
 ---
 
@@ -171,10 +174,10 @@
 - [ ] Built-in roles seeded (per master-flow.md Stage 2.A):
   - [ ] **Bootstrap** - Initial setup only (`platform:admin`), ⚠️ MUST be disabled after initialization
   - [ ] **PlatformAdmin** - Super admin (`platform:admin`, explicit permission per ADR-0019)
-  - [ ] **SystemAdmin** - Resource management (`system:*`, `service:*`, `vm:*`)
+  - [ ] **SystemAdmin** - Resource management (explicit permissions, e.g. `system:read/write/delete`, `service:read/create/delete`, `vm:read/create/operate/delete`; no wildcard)
   - [ ] **Approver** - Can approve requests (`approval:approve`, `approval:view`)
   - [ ] **Operator** - Power operations (`vm:operate`, `vm:read`)
-  - [ ] **Viewer** - Read-only access (explicit: `system:read`, `service:read`, `vm:read`, `template:read`, `instance_size:read`) ⚠️ **NO `*:read` wildcard** (ADR-0019)
+  - [ ] **Viewer** - Read-only access (explicit: `system:read`, `service:read`, `vm:read`) ⚠️ **NO `*:read` wildcard** (ADR-0019)
 - [ ] Environment-based permission control (`allowed_environments` field)
 
 ---

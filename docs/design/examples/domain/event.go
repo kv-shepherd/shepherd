@@ -153,11 +153,12 @@ type VMCreationPayload struct {
 	ServiceID  string `json:"service_id"`
 	TemplateID string `json:"template_id"`
 	// NOTE: ClusterID is NOT in user request - selected during approval (master-flow.md)
-	// NOTE: Namespace is resolved from Service at execution time
-	CPU      int    `json:"cpu"`
-	MemoryMB int    `json:"memory_mb"`
-	DiskGB   int    `json:"disk_gb,omitempty"`
-	Reason   string `json:"reason"`
+	// NOTE (ADR-0017): Namespace is user-provided and immutable after submission
+	Namespace string `json:"namespace"`
+	CPU       int    `json:"cpu"`
+	MemoryMB  int    `json:"memory_mb"`
+	DiskGB    int    `json:"disk_gb,omitempty"`
+	Reason    string `json:"reason"`
 	// NOTE: Name is platform-generated, not stored in payload (ADR-0015 §4)
 }
 

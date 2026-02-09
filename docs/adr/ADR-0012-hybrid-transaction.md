@@ -189,7 +189,7 @@ func (uc *CreateVMAtomicUseCase) Execute(ctx context.Context, input CreateVMInpu
 ### CI Enforcement
 
 ```bash
-# scripts/check-sqlc-usage.sh
+# check_sqlc_usage.sh
 # Only allow sqlc usage in whitelisted directories
 ```
 

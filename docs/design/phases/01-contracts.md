@@ -32,11 +32,12 @@ Define core contracts and types:
 > |----------|-----------|-------|
 > | **ADRs** | Decisions (immutable after acceptance) | Architecture decisions and rationale |
 > | **[master-flow.md](../interaction-flows/master-flow.md)** | Interaction principles (single source of truth) | Data sources, flow rationale, user journeys |
+> | **[database/README.md](../database/README.md)** | Database reference layer | Schema domains, lifecycle/retention, transaction boundaries |
 > | **Phase docs (this file)** | Implementation details | Code patterns, schemas, API design |
 > | **[CHECKLIST.md](../CHECKLIST.md)** | ADR constraints reference | Centralized ADR enforcement rules |
 >
 > **Cross-Reference Pattern**: When describing "what data" and "why", link to master-flow. This document defines "how to implement".
-> Example: "For the approval flow rationale, see [master-flow.md Stage 3.B](../interaction-flows/master-flow.md#stage-3-b)."
+> Example: "For the approval flow rationale, see [master-flow.md Stage 5.B](../interaction-flows/master-flow.md#stage-5-b)."
 
 ---
 
@@ -57,14 +58,14 @@ Define core contracts and types:
 | **InstanceSize Schema** | `ent/schema/instance_size.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
 | **Users Schema** | `ent/schema/users.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
 | **AuthProviders Schema** | `ent/schema/auth_providers.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
-| **IdPSyncedGroups Schema** | `ent/schema/idp_synced_groups.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md) ³ |
-| **IdPGroupMappings Schema** | `ent/schema/idp_group_mappings.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md) ³ |
-| **Roles Schema** | `ent/schema/roles.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.A](../interaction-flows/master-flow.md) |
-| **RoleBindings Schema** | `ent/schema/role_bindings.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.B](../interaction-flows/master-flow.md) |
-| **ResourceRoleBindings Schema** | `ent/schema/resource_role_bindings.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 4.A+](../interaction-flows/master-flow.md) |
-| **ExternalApprovalSystems Schema** | `ent/schema/external_approval_systems.go` | ⬜ | [RFC-0004](../../rfc/RFC-0004-external-approval.md) ² |
+| **IdPSyncedGroups Schema** | `ent/schema/idp_synced_groups.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md#stage-2-c) ³ |
+| **IdPGroupMappings Schema** | `ent/schema/idp_group_mappings.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md#stage-2-c) ³ |
+| **Roles Schema** | `ent/schema/roles.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.A](../interaction-flows/master-flow.md#stage-2-a) |
+| **RoleBindings Schema** | `ent/schema/role_bindings.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.B](../interaction-flows/master-flow.md#stage-2-b) |
+| **ResourceRoleBindings Schema** | `ent/schema/resource_role_bindings.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 4.A+](../interaction-flows/master-flow.md#stage-4-a-plus) |
+| **ExternalApprovalSystem Schema** | `ent/schema/external_approval_system.go` | ⬜ | [RFC-0004](../../rfc/RFC-0004-external-approval.md) ² |
 | Provider interface | `internal/provider/interface.go` | ⬜ | [examples/provider/interface.go](../examples/provider/interface.go) |
-| Domain models | `internal/domain/` | ⬜ | [examples/domain/](../examples/domain/) |
+| Domain models | `internal/domain/` | ⬜ | [examples/README.md §Directory Structure](../examples/README.md#directory-structure) |
 | Error system | `internal/pkg/errors/errors.go` | ⬜ | - |
 | **OpenAPI Spec (Canonical)** | `api/openapi.yaml` | ⬜ | [ADR-0021](../../adr/ADR-0021-api-contract-first.md) |
 | **OpenAPI Spec (Compat, optional)** | `api/openapi.compat.yaml` | ⬜ | 3.0-compatible artifact for Go toolchain |
@@ -77,7 +78,7 @@ Define core contracts and types:
 
 ## API Contract-First Design (ADR-0021)
 
-> **Principle**: OpenAPI 3.1 specification is the **single source of truth** for all HTTP APIs. See [ADR-0021](../../adr/ADR-0021-api-contract-first.md) for complete rationale.
+> **Principle**: OpenAPI 3.1 specification is the **single source of truth** for all HTTP APIs. See [ADR-0021 §Decision Outcome](../../adr/ADR-0021-api-contract-first.md#decision-outcome) for complete rationale.
 
 ### Spec-First Workflow
 
@@ -132,17 +133,17 @@ Granular error codes for frontend handling:
 | `CLUSTER_UNHEALTHY` | 503 | Target cluster unavailable | ✅ Active |
 | `APPROVAL_REQUIRED` | 202 | Request pending approval | ✅ Active |
 
-> **¹ NAMESPACE_QUOTA_EXCEEDED**: This error is returned when K8s rejects namespace creation due to ResourceQuota limits. The platform does NOT manage K8s quotas — it only reports K8s errors. See [master-flow.md Stage 3 JIT Namespace](../interaction-flows/master-flow.md) for error handling flow.
+> **¹ NAMESPACE_QUOTA_EXCEEDED**: This error is returned when K8s rejects namespace creation due to ResourceQuota limits. The platform does NOT manage K8s quotas — it only reports K8s errors. See [master-flow.md Stage 3 JIT Namespace](../interaction-flows/master-flow.md#stage-3-jit-namespace) for error handling flow.
 >
 > **² QUOTA_EXCEEDED**: Reserved for future tenant-level resource quota system (CPU/Memory/VM count limits). V1 does not implement tenant quotas — this error code is a placeholder for V2+ expansion.
 >
-> **³ NAMESPACE_CREATION_FAILED**: Returned when K8s API call to create namespace fails for reasons other than quota (e.g., network error, RBAC issues). See [master-flow.md Stage 3 JIT Namespace](../interaction-flows/master-flow.md#stage-3-c) for error handling.
+> **³ NAMESPACE_CREATION_FAILED**: Returned when K8s API call to create namespace fails for reasons other than quota (e.g., network error, RBAC issues). See [master-flow.md Stage 3 JIT Namespace](../interaction-flows/master-flow.md#stage-3-jit-namespace) for error handling.
 
 ---
 
 ## 1. Governance Model Hierarchy
 
-> **Updated by [ADR-0015](../../adr/ADR-0015-governance-model-v2.md)**: System is decoupled from namespace/environment. See ADR for complete rationale.
+> **Updated by [ADR-0015](../../adr/ADR-0015-governance-model-v2.md#1-system-entity-decoupling)**: System is decoupled from namespace/environment. See ADR for complete rationale.
 
 ```
 System → Service → VM Instance
@@ -153,7 +154,7 @@ System → Service → VM Instance
 | Level | Example | Uniqueness | User Self-Service | Approval Required |
 |-------|---------|------------|-------------------|-------------------|
 | System | `demo`, `shop` | **Global** | ✅ | No |
-| Service | `redis`, `mysql` | **Global** | ✅ | No |
+| Service | `redis`, `mysql` | **Per System** | ✅ | No |
 | VM Instance | `dev-shop-redis-01` | Per Namespace | ✅ | **Yes** |
 
 **Key Decisions (ADR-0015)**:
@@ -303,7 +304,7 @@ func (Service) Edges() []ent.Edge {
 ### 3.2.1 Auth Provider Schema (auth_providers)
 
 > **Canonical table name**: `auth_providers` (unified standard provider config).  
-> **Reference implementation**: [examples/domain/auth_provider.go](../examples/domain/auth_provider.go)
+> **Reference implementation**: [examples/README.md §Directory Structure](../examples/README.md#directory-structure)
 
 **OIDC requirements**:
 - Use issuer-based discovery and validate `iss` + `aud` on ID tokens (ADR-0015 §22.6).  
@@ -338,7 +339,7 @@ Rules:
 ### 3.2.2 System Secrets Table (ADR-0025)
 
 > **Status**: Accepted (ADR-0025).  
-> **Design notes**: [docs/design/notes/ADR-0025-secret-bootstrap.md](../notes/ADR-0025-secret-bootstrap.md)
+> **Design notes**: [docs/design/notes/ADR-0025-secret-bootstrap.md](../notes/ADR-0025-secret-bootstrap.md#summary)
 
 **Table**: `system_secrets`
 
@@ -404,6 +405,8 @@ VMCreateRequest:
     - service_id
     - template_id
     - instance_size_id
+    - namespace
+    - reason
   properties:
     service_id:
       type: string
@@ -414,6 +417,9 @@ VMCreateRequest:
     instance_size_id:
       type: string
       format: uuid
+    namespace:
+      type: string
+      description: Target K8s namespace (user-provided, immutable after submission)
     reason:
       type: string
     # ⚠️ cluster_id is intentionally ABSENT - see ADR-0017
@@ -432,7 +438,7 @@ VMCreateRequest:
 ## 4. Provider Interfaces
 
 > **Reference**: [examples/provider/interface.go](../examples/provider/interface.go)
-> **Auth Adapter Reference**: [examples/provider/auth_adapter.go](../examples/provider/auth_adapter.go)
+> **Auth Adapter Reference**: [examples/provider/interface.go](../examples/provider/interface.go)
 
 ### Interface Hierarchy
 
@@ -565,7 +571,7 @@ const (
 
 - [CHECKLIST.md](../CHECKLIST.md) - Phase 1 acceptance items
 - [examples/provider/interface.go](../examples/provider/interface.go)
-- [examples/domain/](../examples/domain/)
+- [examples/README.md §Directory Structure](../examples/README.md#directory-structure)
 - [ADR-0005](../../adr/ADR-0005-workflow-extensibility.md) - Workflow Extensibility (Simplified Approval)
 - [ADR-0009](../../adr/ADR-0009-domain-event-pattern.md) - Domain Event Pattern
 - [ADR-0014](../../adr/ADR-0014-capability-detection.md) - Capability Detection
@@ -573,7 +579,7 @@ const (
 - [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Go Module Vanity Import
 - [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) - VM Request Flow (Cluster selection at approval time)
 - [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) - Instance Size Abstraction (InstanceSize, Users, AuthProviders schemas)
-- [RFC-0004](../../rfc/RFC-0004-external-approval.md) - External Approval Systems (Deferred → V1+)
+- [RFC-0004](../../rfc/RFC-0004-external-approval.md) - External Approval Systems (Accepted; V1 interface-only, adapters in V2+)
 
 ---
 
@@ -592,8 +598,9 @@ const (
 > 
 > ApprovalPolicy supports only: `PENDING → APPROVED` or `PENDING → REJECTED` (two paths, no intermediate states).
 
-> **² ExternalApprovalSystems (RFC-0004)**:
+> **² ExternalApprovalSystem (RFC-0004)**:
 > 
-> RFC-0004 status is `Proposed` (P1, V1+ optional). Design defined in [Master Flow Stage 2.E](../interaction-flows/master-flow.md#stage-2-e).
-> Review Period: Until 2026-02-01. This is an **optional feature** - if external approval is not configured, the built-in approval engine is used.
-> Security: TLS mandatory, HMAC signature verification, fallback to built-in on failure.
+> RFC-0004 status is `Accepted`. Design is defined in [Master Flow Stage 2.E](../interaction-flows/master-flow.md#stage-2-e).
+> V1 scope is **interface + schema only** (provider contract and data model), while the go-live execution path remains built-in approval.
+> External adapters are plugin-based roadmap capabilities for V2+.
+> Security baseline for adapter integration: TLS mandatory, HMAC signature verification, fallback to built-in on failure.

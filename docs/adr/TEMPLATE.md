@@ -9,10 +9,10 @@ informed: []  # Stakeholders kept up-to-date (one-way communication)
 
 # ADR-XXXX: [Short Title of Solved Problem and Solution]
 
-> **Review Period**: Until YYYY-MM-DD (48-hour minimum)  
-> **Discussion**: [Issue #XX](https://github.com/kv-shepherd/shepherd/issues/XX)  
-> **Supersedes**: [ADR-XXXX](./ADR-XXXX-xxx.md) *(if applicable)*  
-> **Amends**: [ADR-XXXX §X](./ADR-XXXX-xxx.md) *(if applicable)*
+> **Review Period**: Until YYYY-MM-DD (48-hour minimum)<br>
+> **Discussion**: [Issue #XX](https://github.com/kv-shepherd/shepherd/issues/XX)<br>
+> **Supersedes**: `ADR-XXXX-xxx.md` *(if applicable)*<br>
+> **Amends**: `ADR-XXXX-xxx.md#section-anchor` *(if applicable)*
 
 ---
 
@@ -104,11 +104,11 @@ informed: []  # Stakeholders kept up-to-date (one-way communication)
 
 ### Related Decisions
 
-* [ADR-XXXX](./ADR-XXXX-xxx.md) - {relationship description}
+* `ADR-XXXX-xxx.md` - {relationship description}
 
 ### References
 
-* [Link description](URL)
+* [Link description](https://example.com)
 * Related Issue: [#XX](https://github.com/kv-shepherd/shepherd/issues/XX)
 
 ### Implementation Notes
@@ -148,7 +148,7 @@ DO NOT modify the original content above.
 
 | Original Section | Status | Amendment Details | See Also |
 |------------------|--------|-------------------|----------|
-| §X. [Section Name] | **MOVED** / **SUPERSEDED** / **CLARIFIED** | [Description] | [ADR-XXXX](./ADR-XXXX-xxx.md) |
+| §X. [Section Name] | **MOVED** / **SUPERSEDED** / **CLARIFIED** | [Description] | `ADR-XXXX-xxx.md` |
 
 ---
 -->

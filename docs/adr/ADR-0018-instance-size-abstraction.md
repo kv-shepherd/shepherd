@@ -35,7 +35,7 @@ The following decisions from earlier ADRs and drafts are **DEPRECATED** and shou
 
 | Deprecated Feature | Source ADR/Document | Previous Design | Reason for Deprecation | Current Design |
 |--------------------|---------------------|-----------------|------------------------|----------------|
-| Template capability requirements | **[ADR-0015 §5](./ADR-0015-governance-model-v2.md#5-template-layered-design-quick--advanced)**, **[ADR-0014](./ADR-0014-capability-detection.md)** | Template stored `required_features`, `required_hardware` | Capability requirements are hardware-related, should be with InstanceSize | InstanceSize stores all hardware requirements |
+| Template capability requirements | **[ADR-0015 §5](./ADR-0015-governance-model-v2.md#5-template-layered-design-quick-advanced)**, **[ADR-0014](./ADR-0014-capability-detection.md)** | Template stored `required_features`, `required_hardware` | Capability requirements are hardware-related, should be with InstanceSize | InstanceSize stores all hardware requirements |
 | Template YAML editor | *(Earlier drafts, not in accepted ADR)* | Admin edits raw YAML for template content | Complex UX, error-prone | Form-based: image source selector + cloud-init YAML only |
 | Go Template variables in cloud-init | *(Earlier drafts, not in accepted ADR)* | `{{ .Username }}`, `{{ .SSHPublicKey }}` injected at render time | Unclear variable source, over-engineering | Simple one-time password, user manages post-creation |
 | Platform manages SSH keys | *(Earlier drafts, not in accepted ADR)* | Platform stores and injects user SSH keys | Out of scope, security complexity | Platform provides initial password only; bastion/SSH key management is user/admin responsibility |
@@ -178,6 +178,12 @@ The following decisions from earlier ADRs and drafts are **DEPRECATED** and shou
 **Built-in Role Seeding Logic**:
 
 > **Note**: Per [ADR-0003](./ADR-0003-database-orm.md), all database operations MUST use Ent ORM.
+>
+> ⚠️ **Amendment Notice (ADR-0019)**: Wildcard patterns in the historical snippet below
+> (for example `*:*`, `*:read`) are superseded and MUST NOT be used for new implementation.
+> Use explicit `platform:admin` and explicit scoped permissions.
+> See [Amendments by Subsequent ADRs](#amendments-by-subsequent-adrs) and
+> [ADR-0019 §2](./ADR-0019-governance-security-baseline-controls.md#2-platform-rbac-least-privilege).
 
 ```go
 // On application startup (ADR-0003 compliant: uses Ent ORM)
@@ -2032,7 +2038,7 @@ hasAllCapabilities(c.Capabilities, instanceSize.RequiredCapabilities)
 CREATE TABLE roles (
     id VARCHAR(36) PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
-    permissions JSONB NOT NULL,         -- ['system:*', 'vm:create', ...]
+    permissions JSONB NOT NULL,         -- ['system:read', 'vm:create', ...] (explicit permissions, no wildcard)
     is_builtin BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -2242,7 +2248,7 @@ internal/pkg/jsonpath/          # JSON path extraction utilities
 
 ---
 
-> **Full Details**: The complete interaction flows with all database operations, UI mockups, and detailed state machine diagrams have been moved to [master-flow.md](../design/interaction-flows/master-flow.md) to keep this ADR concise per CNCF best practices.
+> **Full Details**: The complete interaction flows with all database operations, UI mockups, and detailed state machine diagrams have been moved to [master-flow.md](../design/interaction-flows/master-flow.md) to keep this ADR concise and decision-focused.
 
 ---
 
@@ -2290,7 +2296,7 @@ RUNNING/STOPPED → DELETING → DELETED (terminal)
 
 | Original Section | Status | Amendment Details | See Also |
 |------------------|--------|-------------------|----------|
-| §Configuration Storage Strategy: `SeedBuiltinRoles` code example | **AMENDED** | Wildcard `*:*` is now prohibited. Replace with explicit `platform:admin` permission | [ADR-0019 §2](./ADR-0019-governance-security-baseline-controls.md#2-rbac-least-privilege) |
+| §Configuration Storage Strategy: `SeedBuiltinRoles` code example | **AMENDED** | Wildcard `*:*` is now prohibited. Replace with explicit `platform:admin` permission | [ADR-0019 §2](./ADR-0019-governance-security-baseline-controls.md#2-platform-rbac-least-privilege) |
 
 > **Implementation Guidance**:
 > The code example at line 190 showing `{"platform-admin", "PlatformAdmin", []string{"*:*"}}` must be updated to:

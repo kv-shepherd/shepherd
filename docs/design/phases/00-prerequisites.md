@@ -42,6 +42,7 @@ Establish Go project infrastructure:
 | Database | `internal/infrastructure/database.go` | ⬜ | [examples/infrastructure/database.go](../examples/infrastructure/database.go) |
 | Worker pool | `internal/pkg/worker/pool.go` | ⬜ | [examples/worker/pool.go](../examples/worker/pool.go) |
 | CI config | `.github/workflows/ci.yml` | ⬜ | - |
+| Docs governance CI | `.github/workflows/docs-governance.yaml` | ⬜ | [.github/workflows/docs-governance.yaml](../../../.github/workflows/docs-governance.yaml) |
 | Lint config | `.golangci.yml` | ⬜ | - |
 | Dockerfile | `Dockerfile` | ⬜ | - |
 | Data seeding | `cmd/seed/main.go` | ⬜ | - |
@@ -92,7 +93,7 @@ kubevirt-shepherd-go/
 ├── config/                   # Configuration files
 │   ├── seed/                 # Seed data (templates, instance_sizes) - loaded to PostgreSQL
 │   └── mask.yaml             # Field visibility configuration
-├── scripts/ci/               # CI check scripts
+├── docs/design/ci/scripts/    # CI check scripts (design-phase artifacts)
 ├── .github/workflows/
 └── Makefile
 ```
@@ -223,6 +224,7 @@ security:
 ## 4. Worker Pool (Coding Standard - Required)
 
 > **Reference Implementation**: [examples/worker/pool.go](../examples/worker/pool.go)
+> **Decision**: [ADR-0031](../../adr/ADR-0031-concurrency-and-worker-pool-standard.md)
 
 ### Rule: Naked Goroutines Are Forbidden
 
@@ -251,7 +253,7 @@ pools.General.Submit(func() {
 
 ### CI Enforcement
 
-See [ci/scripts/check_naked_goroutine.go](../ci/scripts/check_naked_goroutine.go)
+See [ci/scripts/check_naked_goroutine.go](../ci/scripts/check_naked_goroutine.go) and [ci/scripts/check_semaphore_usage.go](../ci/scripts/check_semaphore_usage.go).
 
 ---
 
@@ -310,8 +312,13 @@ DatabaseClients{
 | `check_ent_codegen.go` | Ent code sync | ✅ Yes |
 | `check_transaction_boundary.go` | Service layer no TX | ✅ Yes |
 | `check_k8s_in_transaction.go` | No K8s in TX | ✅ Yes |
+| `check_master_flow_traceability.go` | Enforce master-flow traceability manifest (ADR-0032) | ✅ Yes |
+| `check_design_doc_governance.sh` | Enforce docs layering/link consistency (ADR-0030) | ✅ Yes |
 
-See [ci/README.md](../ci/README.md) for complete list.
+See [ci/README.md §Script Summary](../ci/README.md#script-summary) for complete list.
+
+> **ADR-0030 Requirement**: Docs governance checks are mandatory before coding starts.
+> Frontend docs must remain under `docs/design/frontend/` with canonical links from `README.md` and `master-flow.md`.
 
 ### Phased CI Strategy
 
@@ -376,7 +383,7 @@ ORDER BY dead_ratio DESC;
 
 ## 8. Data Initialization (ADR-0018)
 
-> **Design**: Application auto-initializes on first startup. See [ADR-0018 §First Deployment](../../adr/ADR-0018-instance-size-abstraction.md) and [master-flow.md Stage 1](../interaction-flows/master-flow.md).
+> **Design**: Application auto-initializes on first startup. See [ADR-0018 §Configuration Storage Strategy](../../adr/ADR-0018-instance-size-abstraction.md#configuration-storage-strategy-added-2026-01-26) and [master-flow.md Stage 1.5](../interaction-flows/master-flow.md#stage-1-5).
 
 ### Auto-Initialization Flow
 
@@ -403,8 +410,8 @@ Application performs these steps on startup (idempotent, `ON CONFLICT DO NOTHING
 | **PlatformAdmin** | `platform:admin` | Super admin - single explicit permission (compile-time constant per ADR-0019) |
 | **SystemAdmin** | `system:read`, `system:write`, `system:delete`, `service:read`, `service:create`, `service:delete`, `vm:read`, `vm:create`, `vm:operate`, `vm:delete`, `vnc:access`, `rbac:manage` | Can manage all resources but not platform config (explicit per ADR-0019) |
 | **Approver** | `approval:approve`, `approval:view`, `vm:read`, `service:read`, `system:read` | Can approve requests, read resources |
-| **Operator** | `vm:operate`, `vm:read`, `service:read`, `system:read` | Can start/stop/restart VMs |
-| **Viewer** | `system:read`, `service:read`, `vm:read`, `template:read`, `instance_size:read` | Read-only access (explicit, no `*:read`) |
+| **Operator** | `vm:operate`, `vm:create`, `vm:read`, `vnc:access`, `service:read`, `system:read` | Can operate VMs, submit creation requests, access VNC |
+| **Viewer** | `system:read`, `service:read`, `vm:read` | Read-only access (explicit, no `*:read`) |
 
 > **Note**: The `platform:admin` permission is an explicit, compile-time constant that grants full access (not a runtime wildcard pattern). The Bootstrap role MUST be disabled after initial setup.
 

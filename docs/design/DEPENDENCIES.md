@@ -167,7 +167,7 @@ func (c *DatabaseClients) Close() {
 
 > **PostgreSQL Stability Guarantees**
 >
-> See [ADR-0008-postgresql-stability.md](../../adr/ADR-0008-postgresql-stability.md)
+> See [ADR-0008-postgresql-stability.md](../adr/ADR-0008-postgresql-stability.md)
 >
 > **Adopted Approach**: River built-in cleanup + Autovacuum aggressive tuning
 >
@@ -177,9 +177,9 @@ func (c *DatabaseClients) Close() {
 > | **Autovacuum Tuning** | Aggressive settings for `river_job` table (`scale_factor=0.01`) |
 > | **Dead Tuple Monitoring** | Prometheus metrics + alert thresholds |
 >
-> **Roadmap**: See [RFC-0001 pg_partman Table Partitioning](../../rfc/RFC-0001-pg-partman.md)
+> **Roadmap**: See [RFC-0001 pg_partman Table Partitioning](../rfc/RFC-0001-pg-partman.md)
 
-> **Decision Record**: [ADR-0003-database-orm.md](../../adr/ADR-0003-database-orm.md)
+> **Decision Record**: [ADR-0003-database-orm.md](../adr/ADR-0003-database-orm.md)
 
 ### Kubernetes Layer
 
@@ -270,11 +270,11 @@ output-options:
 > | **Unstructured Operations** | `k8s.io/apimachinery/pkg/apis/meta/v1/unstructured` | Dynamic object decoding |
 > | **Informer Event Parsing** | `kubevirt.io/api` | Type-safe event handling |
 >
-> **Decision Record**: [ADR-0011-ssa-apply-strategy.md](../../adr/ADR-0011-ssa-apply-strategy.md)
+> **Decision Record**: [ADR-0011-ssa-apply-strategy.md](../adr/ADR-0011-ssa-apply-strategy.md)
 
 > **Important**: Use KubeVirt official client-go for type-safe VM/VMI operations
 >
-> **Decision Record**: [ADR-0001-kubevirt-client.md](../../adr/ADR-0001-kubevirt-client.md)
+> **Decision Record**: [ADR-0001-kubevirt-client.md](../adr/ADR-0001-kubevirt-client.md)
 
 > **Version Compatibility Constraints**:
 > - `kubevirt.io/client-go` v1.7.0 is built for **Kubernetes v1.34**
@@ -411,6 +411,7 @@ replace (
 
 ### Worker Pool (Coding Standard - Required)
 
+> **Decision**: [ADR-0031](../adr/ADR-0031-concurrency-and-worker-pool-standard.md)  
 > **Naked goroutines are forbidden**: All concurrency must go through Worker Pool
 
 | Package | Version | Description |
@@ -527,7 +528,7 @@ replace (
 
 > **Database Selection**: PostgreSQL, supports JSONB indexes, transactional DDL, SKIP LOCKED
 >
-> **Redis Removed**: See [ADR-0013](../../adr/ADR-0013-manual-di.md), Session storage uses PostgreSQL + alexedwards/scs
+> **Redis Removed**: See [ADR-0013](../adr/ADR-0013-manual-di.md), Session storage uses PostgreSQL + alexedwards/scs
 
 ---
 
@@ -734,16 +735,15 @@ go list -m k8s.io/client-go k8s.io/apimachinery k8s.io/api
 
 ## References
 
-- [ADR-0001: KubeVirt Client Selection](../../adr/ADR-0001-kubevirt-client.md)
-- [ADR-0003: Database ORM Selection](../../adr/ADR-0003-database-orm.md)
-- [ADR-0006: Unified Async Model](../../adr/ADR-0006-unified-async-model.md)
-- [ADR-0008: PostgreSQL Stability](../../adr/ADR-0008-postgresql-stability.md)
-- [ADR-0011: SSA Apply Strategy](../../adr/ADR-0011-ssa-apply-strategy.md)
-- [ADR-0012: Hybrid Transaction](../../adr/ADR-0012-hybrid-transaction.md)
-- [ADR-0013: Manual DI](../../adr/ADR-0013-manual-di.md)
-- [ADR-0020: Frontend Technology Stack](../../adr/ADR-0020-frontend-technology-stack.md)
+- [ADR-0001: KubeVirt Client Selection](../adr/ADR-0001-kubevirt-client.md)
+- [ADR-0003: Database ORM Selection](../adr/ADR-0003-database-orm.md)
+- [ADR-0006: Unified Async Model](../adr/ADR-0006-unified-async-model.md)
+- [ADR-0008: PostgreSQL Stability](../adr/ADR-0008-postgresql-stability.md)
+- [ADR-0011: SSA Apply Strategy](../adr/ADR-0011-ssa-apply-strategy.md)
+- [ADR-0012: Hybrid Transaction](../adr/ADR-0012-hybrid-transaction.md)
+- [ADR-0013: Manual DI](../adr/ADR-0013-manual-di.md)
+- [ADR-0020: Frontend Technology Stack](../adr/ADR-0020-frontend-technology-stack.md)
 - [ADR-0020: Testing Toolchain Implementation](./notes/ADR-0020-frontend-testing-toolchain.md)
-- [ADR-0021: API Contract-First](../../adr/ADR-0021-api-contract-first.md)
-- [ADR-0028: oapi-codegen Optional Field Strategy](../../adr/ADR-0028-oapi-codegen-optional-field-strategy.md)
-- [ADR-0029: OpenAPI Toolchain Governance](../../adr/ADR-0029-openapi-toolchain-governance.md)
-
+- [ADR-0021: API Contract-First](../adr/ADR-0021-api-contract-first.md)
+- [ADR-0028: oapi-codegen Optional Field Strategy](../adr/ADR-0028-oapi-codegen-optional-field-strategy.md)
+- [ADR-0029: OpenAPI Toolchain Governance](../adr/ADR-0029-openapi-toolchain-governance.md)

@@ -1,6 +1,8 @@
 # Phase 0 Checklist: Project Initialization and Toolchain
 
 > **Detailed Document**: [phases/00-prerequisites.md](../phases/00-prerequisites.md)
+>
+> **Local preflight (non-CI)**: `bash scripts/preflight/check_pre_coding_readiness.sh`
 
 ---
 
@@ -20,6 +22,13 @@
 - [ ] `golangci-lint` configured (`.golangci.yml`)
 - [ ] Unit test framework configured
 - [ ] Code coverage reporting
+- [ ] **Design Docs Governance CI (ADR-0030)**:
+  - [ ] Enable `.github/workflows/docs-governance.yaml` as a required PR gate
+  - [ ] Workflow runs `bash docs/design/ci/scripts/check_design_doc_governance.sh`
+  - [ ] CI blocks PRs on retired doc path usage and broken canonical design links
+- [ ] **Master-Flow Traceability Manifest (ADR-0032)**:
+  - [ ] `docs/design/traceability/master-flow.json` exists and is updated with flow/phase changes
+  - [ ] CI blocks PRs when traceability manifest check fails (`check_master_flow_traceability.go`)
 - [ ] **API Contract-First CI (ADR-0021, ADR-0029)**:
   - [ ] Move API contract workflow to `.github/workflows/api-contract.yaml`
   - [ ] Move `docs/design/ci/makefile/api.mk` to `build/api.mk`
@@ -32,9 +41,13 @@
   - [ ] CI uses version-pinned GitHub Actions (commit SHA, not tags)
   - [ ] `internal/api/middleware/openapi_validator.go` uses `libopenapi-validator` with StrictMode
 - [ ] **sqlc Usage Scope Check (ADR-0012)**:
-  - [ ] `scripts/check-sqlc-usage.sh` created
+  - [ ] `check_sqlc_usage.sh` created (see [ci/README.md](../ci/README.md#script-summary))
   - [ ] CI blocks: sqlc only allowed in `internal/repository/sqlc/` and `internal/usecase/`
   - [ ] Violations cause CI failure (not just warning)
+- [ ] **Frontend/Backend Documentation Synchronization**:
+  - [ ] `docs/design/frontend/` directory exists with layered subdirectories
+  - [ ] `docs/design/README.md` points to `docs/design/frontend/README.md` and `docs/design/frontend/FRONTEND.md`
+  - [ ] `master-flow.md` frontend references point to `docs/design/frontend/FRONTEND.md`
 
 ---
 
@@ -56,7 +69,7 @@
 - [ ] Session storage configured (PostgreSQL + alexedwards/scs)
 - [ ] Logger (zap) configured
 - [ ] Graceful Shutdown
-- [ ] **Worker Pool (Coding Standard - Required)**:
+- [ ] **Worker Pool (Coding Standard - Required)** (ADR-0031):
   - [ ] `internal/pkg/worker/pool.go` created
   - [ ] Two independent pools: General, K8s
   - [ ] Unified panic recovery
