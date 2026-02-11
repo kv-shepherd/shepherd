@@ -37,6 +37,10 @@ coverage.html
 *.log
 tmp/
 
+# Configuration (only commit .example)
+config/config.yaml
+config.yaml
+
 # Environment and secrets
 .env
 .env.local
@@ -54,3 +58,4 @@ kubeconfig.*
 
 # OS files
 Thumbs.db
+k8s-admin.yaml
