@@ -1,0 +1,35 @@
+# Vacuum ruleset for KubeVirt Shepherd (ADR-0029)
+# Vacuum is Spectral-compatible: https://quobix.com/vacuum/rulesets/
+# Extends the recommended OpenAPI ruleset with project-specific rules.
+extends:
+  - - "spectral:oas"
+    - "recommended"
+
+rules:
+  # Require operation IDs on all endpoints
+  operation-operationId:
+    severity: error
+
+  # Require descriptions on operations
+  operation-description:
+    severity: warn
+
+  # Require tags on operations
+  operation-tags:
+    severity: warn
+
+  # Require info contact
+  info-contact:
+    severity: warn
+
+  # Require info license
+  info-license:
+    severity: warn
+
+  # No eval in markdown
+  no-eval-in-markdown:
+    severity: error
+
+  # No script tags in markdown
+  no-script-tags-in-markdown:
+    severity: error

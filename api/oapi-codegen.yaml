@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oapi-codegen/oapi-codegen/HEAD/configuration-schema.json
+# oapi-codegen v2 configuration for KubeVirt Shepherd (ADR-0021, ADR-0028)
+package: generated
+output: internal/api/generated/server.gen.go
+generate:
+  gin-server: true
+  models: true
+  embedded-spec: true
+output-options:
+  # Go 1.25+ omitzero support (ADR-0028)
+  # Eliminates "Pointer Hell" for optional fields
+  prefer-skip-optional-pointer: true
+  prefer-skip-optional-pointer-with-omitzero: true

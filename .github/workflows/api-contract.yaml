@@ -1,0 +1,186 @@
+# API Contract-First Enforcement (ADR-0021, ADR-0029)
+# This workflow ensures OpenAPI spec remains the single source of truth
+# by validating spec quality, detecting breaking changes, and verifying
+# that generated code stays in sync with the specification.
+#
+# Security Notes (ADR-0029):
+# - All third-party actions pinned to specific commit SHAs
+# - Runner version pinned (ubuntu-24.04, not ubuntu-latest)
+# - Minimal permissions following least privilege principle
+# - Dependabot configured for automated updates
+
+name: API Contract Validation
+
+on:
+  pull_request:
+    paths:
+      - 'api/**'
+      - 'internal/api/**'
+      - 'web/src/types/api.gen.ts'
+      - 'api/.vacuum.yaml'  # ADR-0029: vacuum replaces spectral
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+
+# Principle of Least Privilege (ADR-0029)
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # Stage 1: Validate OpenAPI Specification (ADR-0029: vacuum)
+  # ─────────────────────────────────────────────────────────────────
+  lint-spec:
+    name: Lint OpenAPI Spec
+    runs-on: ubuntu-24.04  # Pin runner version
+    timeout-minutes: 10    # Prevent stuck workflows
+    steps:
+      # Pin to specific commit SHA for security
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Check if spec exists
+        id: check_file
+        run: |
+          if [ -f "api/openapi.yaml" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      # ADR-0029: Use vacuum instead of spectral (Go-native, 10x faster)
+      - name: Run Vacuum Linting
+        if: steps.check_file.outputs.exists == 'true'
+        uses: pb33f/vacuum-action@e0a6b0297ff1abcac6c415f2eba24fd9018cad58  # v2
+        with:
+          openapi_path: api/openapi.yaml
+          ruleset: api/.vacuum.yaml
+          fail_on_error: true
+          print_logs: true
+
+  # ─────────────────────────────────────────────────────────────────
+  # Stage 2: Detect Breaking Changes
+  # ─────────────────────────────────────────────────────────────────
+  breaking-changes:
+    name: Detect Breaking Changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Check if spec exists
+        id: check_file
+        run: |
+          if [ -f "api/openapi.yaml" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fetch base branch
+        if: steps.check_file.outputs.exists == 'true'
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          if git show origin/${{ github.base_ref }}:api/openapi.yaml > /dev/null 2>&1; then
+            echo "base_exists=true" >> $GITHUB_ENV
+          else
+            echo "base_exists=false" >> $GITHUB_ENV
+          fi
+
+      - name: Check for Breaking Changes
+        if: steps.check_file.outputs.exists == 'true' && env.base_exists == 'true'
+        uses: oasdiff/oasdiff-action/breaking@1c611ffb1253a72924624aa4fb662e302b3565d3  # v0.0.21
+        with:
+          base: origin/${{ github.base_ref }}:api/openapi.yaml
+          revision: api/openapi.yaml
+          fail-on: ERR
+          format: github-actions
+
+      - name: Generate Changelog
+        if: steps.check_file.outputs.exists == 'true' && env.base_exists == 'true'
+        uses: oasdiff/oasdiff-action/changelog@1c611ffb1253a72924624aa4fb662e302b3565d3  # v0.0.21
+        with:
+          base: origin/${{ github.base_ref }}:api/openapi.yaml
+          revision: api/openapi.yaml
+          format: markdown
+
+  # ─────────────────────────────────────────────────────────────────
+  # Stage 3: Verify Generated Code is in Sync
+  # ─────────────────────────────────────────────────────────────────
+  generated-code-sync:
+    name: Verify Generated Code Sync
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: lint-spec
+    if: hashFiles('go.mod') != ''
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5  # v5.5.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      # Pin oapi-codegen to exact version for reproducibility
+      - name: Install oapi-codegen
+        run: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.4.1
+
+      - name: Setup Node.js (for TypeScript generation)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          cd web && npm ci
+
+      - name: Regenerate API code
+        run: make api-generate
+
+      - name: Generate OpenAPI compat spec (if required)
+        env:
+          REQUIRE_OPENAPI_COMPAT: ${{ vars.REQUIRE_OPENAPI_COMPAT || '0' }}
+        run: |
+          if [ "${REQUIRE_OPENAPI_COMPAT}" = "1" ]; then
+            make api-compat-generate
+          else
+            echo "Skipping compat generation (REQUIRE_OPENAPI_COMPAT=0)"
+          fi
+
+      - name: Check OpenAPI compat spec (if required)
+        env:
+          REQUIRE_OPENAPI_COMPAT: ${{ vars.REQUIRE_OPENAPI_COMPAT || '0' }}
+        run: make api-compat
+
+      - name: Check for uncommitted changes
+        run: |
+          if [ -n "$(git status --porcelain internal/api/generated/ web/src/types/api.gen.ts 2>/dev/null)" ]; then
+            echo "::error::Generated code is out of sync with OpenAPI spec!"
+            echo ""
+            echo "The following files have uncommitted changes after regeneration:"
+            git status --porcelain internal/api/generated/ web/src/types/api.gen.ts
+            echo ""
+            echo "Please run 'make api-generate' and commit the changes."
+            exit 1
+          fi
+          echo "✅ Generated code is in sync with OpenAPI spec"
+
+  # ─────────────────────────────────────────────────────────────────
+  # Stage 4: Contract Testing (Optional - requires running server)
+  # ─────────────────────────────────────────────────────────────────
+  # contract-test:
+  #   name: Contract Testing
+  #   runs-on: ubuntu-24.04
+  #   needs: [lint-spec, generated-code-sync]
+  #   steps:
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+  #     - name: Run contract tests with libopenapi-validator
+  #       run: make api-contract-test

@@ -1,0 +1,1501 @@
+openapi: 3.1.0
+info:
+  title: KubeVirt Shepherd API
+  description: |
+    API for managing KubeVirt virtual machines and cloud-native governance.
+    Adheres to ADR-0021: API Contract-First Development.
+  version: 1.0.0
+  contact:
+    name: KubeVirt Shepherd Team
+    url: https://github.com/kv-shepherd/shepherd
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: /api/v1
+    description: Production API
+
+tags:
+  - name: health
+    description: Health check endpoints
+  - name: systems
+    description: System management (ADR-0015)
+  - name: services
+    description: Service management
+  - name: vms
+    description: Virtual machine management
+  - name: approval
+    description: Approval workflow (ADR-0005)
+  - name: clusters
+    description: Cluster management
+  - name: templates
+    description: Template management
+  - name: instance-sizes
+    description: Instance size management (ADR-0018)
+  - name: auth
+    description: Authentication
+  - name: admin
+    description: Admin operations
+  - name: audit
+    description: Audit log operations
+  - name: namespaces
+    description: Namespace registry management (ADR-0017)
+  - name: notifications
+    description: Platform inbox notifications (ADR-0015 §20)
+
+paths:
+  # ── Health ──────────────────────────────────────────
+  /health/live:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      operationId: getLiveness
+      security: []
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /health/ready:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      operationId: getReadiness
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Systems ─────────────────────────────────────────
+  /systems:
+    get:
+      tags: [systems]
+      summary: List systems
+      operationId: listSystems
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/SortBy'
+        - $ref: '#/components/parameters/SortOrder'
+      responses:
+        '200':
+          description: System list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [systems]
+      summary: Create system (self-service, no approval)
+      operationId: createSystem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemCreateRequest'
+      responses:
+        '201':
+          description: System created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/System'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /systems/{system_id}:
+    get:
+      tags: [systems]
+      summary: Get system by ID
+      operationId: getSystem
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+      responses:
+        '200':
+          description: System details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/System'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [systems]
+      summary: Delete system
+      description: |
+        Requires typing system name to confirm (ADR-0015 §13).
+        Cascade constraint: must have zero child services.
+      operationId: deleteSystem
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/ConfirmName'
+      responses:
+        '204':
+          description: System deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ── Services ────────────────────────────────────────
+  /systems/{system_id}/services:
+    get:
+      tags: [services]
+      summary: List services in a system
+      operationId: listServices
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Service list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceList'
+    post:
+      tags: [services]
+      summary: Create service (self-service, no approval)
+      operationId: createService
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceCreateRequest'
+      responses:
+        '201':
+          description: Service created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /systems/{system_id}/services/{service_id}:
+    get:
+      tags: [services]
+      summary: Get service details
+      operationId: getService
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/ServiceID'
+      responses:
+        '200':
+          description: Service details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [services]
+      summary: Delete service
+      description: |
+        Cascade constraint: must have zero child VMs.
+        Requires confirm=true query parameter (ADR-0015 §13).
+      operationId: deleteService
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/ServiceID'
+        - $ref: '#/components/parameters/Confirm'
+      responses:
+        '204':
+          description: Service deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ── VMs ─────────────────────────────────────────────
+  /vms:
+    get:
+      tags: [vms]
+      summary: List VMs
+      operationId: listVMs
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/SortBy'
+        - $ref: '#/components/parameters/SortOrder'
+        - name: namespace
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VM list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMList'
+
+  /vms/request:
+    post:
+      tags: [vms]
+      summary: Submit VM creation request (requires approval)
+      operationId: createVMRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMCreateRequest'
+      responses:
+        '202':
+          description: Request accepted, pending approval
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalTicketResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /vms/{vm_id}:
+    get:
+      tags: [vms]
+      summary: Get VM by ID
+      operationId: getVM
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '200':
+          description: VM details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VM'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [vms]
+      summary: Delete VM
+      description: |
+        Async via River (ADR-0006). Returns 202 Accepted with event_id.
+        test env: requires confirm=true query parameter.
+        prod env: requires confirm_name matching VM name exactly.
+        Tiered confirmation per ADR-0015 §13.
+      operationId: deleteVM
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+        - $ref: '#/components/parameters/Confirm'
+        - $ref: '#/components/parameters/ConfirmName'
+      responses:
+        '202':
+          description: Deletion accepted (approval ticket created)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteVMResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vm_id}/start:
+    post:
+      tags: [vms]
+      summary: Start VM
+      operationId: startVM
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '202':
+          description: Start accepted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vms/{vm_id}/stop:
+    post:
+      tags: [vms]
+      summary: Stop VM
+      operationId: stopVM
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '202':
+          description: Stop accepted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vms/{vm_id}/restart:
+    post:
+      tags: [vms]
+      summary: Restart VM
+      operationId: restartVM
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '202':
+          description: Restart accepted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Approval ────────────────────────────────────────
+  /approvals:
+    get:
+      tags: [approval]
+      summary: List approval tickets
+      operationId: listApprovals
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
+      responses:
+        '200':
+          description: Approval ticket list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalTicketList'
+
+  /approvals/{ticket_id}/approve:
+    post:
+      tags: [approval]
+      summary: Approve a request
+      operationId: approveTicket
+      parameters:
+        - $ref: '#/components/parameters/TicketID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecisionRequest'
+      responses:
+        '204':
+          description: Request approved
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /approvals/{ticket_id}/reject:
+    post:
+      tags: [approval]
+      summary: Reject a request
+      operationId: rejectTicket
+      parameters:
+        - $ref: '#/components/parameters/TicketID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectDecisionRequest'
+      responses:
+        '204':
+          description: Request rejected
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Clusters ────────────────────────────────────────
+  /admin/clusters:
+    get:
+      tags: [clusters, admin]
+      summary: List clusters
+      operationId: listClusters
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Cluster list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterList'
+    post:
+      tags: [clusters, admin]
+      summary: Register a cluster
+      operationId: createCluster
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterCreateRequest'
+      responses:
+        '201':
+          description: Cluster registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+
+  # ── Templates ───────────────────────────────────────
+  /templates:
+    get:
+      tags: [templates]
+      summary: List templates
+      operationId: listTemplates
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Template list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateList'
+
+  # ── Instance Sizes ──────────────────────────────────
+  /instance-sizes:
+    get:
+      tags: [instance-sizes]
+      summary: List instance sizes
+      operationId: listInstanceSizes
+      responses:
+        '200':
+          description: Instance size list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceSizeList'
+
+  # ── Auth ────────────────────────────────────────────
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login with credentials
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Get current user info
+      operationId: getCurrentUser
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/change-password:
+    post:
+      tags: [auth]
+      summary: Change current user password
+      operationId: changePassword
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ── Namespace Registry (ADR-0017) ────────────────────
+  /admin/namespaces:
+    get:
+      tags: [namespaces, admin]
+      summary: List registered namespaces
+      operationId: listNamespaces
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: environment
+          in: query
+          description: Filter by environment type
+          schema:
+            type: string
+            enum: [test, prod]
+      responses:
+        '200':
+          description: Namespace list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NamespaceRegistryList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [namespaces, admin]
+      summary: Register a namespace
+      operationId: createNamespace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NamespaceCreateRequest'
+      responses:
+        '201':
+          description: Namespace registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NamespaceRegistry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/namespaces/{namespace_id}:
+    get:
+      tags: [namespaces, admin]
+      summary: Get namespace by ID
+      operationId: getNamespace
+      parameters:
+        - $ref: '#/components/parameters/NamespaceID'
+      responses:
+        '200':
+          description: Namespace details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NamespaceRegistry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [namespaces, admin]
+      summary: Update namespace
+      operationId: updateNamespace
+      parameters:
+        - $ref: '#/components/parameters/NamespaceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NamespaceUpdateRequest'
+      responses:
+        '200':
+          description: Namespace updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NamespaceRegistry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [namespaces, admin]
+      summary: Delete namespace
+      description: |
+        Only allowed if no VMs are deployed in this namespace.
+        Requires confirm_name for safety.
+      operationId: deleteNamespace
+      parameters:
+        - $ref: '#/components/parameters/NamespaceID'
+        - $ref: '#/components/parameters/ConfirmName'
+      responses:
+        '204':
+          description: Namespace deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ── Cluster Environment Update ───────────────────────
+  /admin/clusters/{cluster_id}/environment:
+    put:
+      tags: [clusters, admin]
+      summary: Update cluster environment
+      operationId: updateClusterEnvironment
+      parameters:
+        - name: cluster_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterEnvironmentUpdate'
+      responses:
+        '200':
+          description: Cluster environment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Notifications (ADR-0015 §20) ─────────────────────
+  /notifications:
+    get:
+      tags: [notifications]
+      summary: List notifications for current user
+      operationId: listNotifications
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: unread_only
+          in: query
+          description: Filter to unread notifications only
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Notification list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /notifications/unread-count:
+    get:
+      tags: [notifications]
+      summary: Get unread notification count
+      operationId: getUnreadCount
+      responses:
+        '200':
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCount'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /notifications/{notification_id}/read:
+    post:
+      tags: [notifications]
+      summary: Mark notification as read
+      operationId: markNotificationRead
+      parameters:
+        - $ref: '#/components/parameters/NotificationID'
+      responses:
+        '204':
+          description: Notification marked as read
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notifications/read-all:
+    post:
+      tags: [notifications]
+      summary: Mark all notifications as read
+      operationId: markAllNotificationsRead
+      responses:
+        '204':
+          description: All notifications marked as read
+
+  # ── Audit Logs ──────────────────────────────────────
+  /audit-logs:
+    get:
+      tags: [audit, admin]
+      summary: List audit logs
+      operationId: listAuditLogs
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: actor
+          in: query
+          schema:
+            type: string
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+        - name: resource_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Audit log list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  # ── Security Schemes ────────────────────────────────
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  # ── Reusable Parameters (ADR-0023 Pagination) ──────
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: Page number (1-indexed)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      description: Items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    SortBy:
+      name: sort_by
+      in: query
+      description: Field to sort by
+      schema:
+        type: string
+    SortOrder:
+      name: sort_order
+      in: query
+      description: Sort direction
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
+    SystemID:
+      name: system_id
+      in: path
+      required: true
+      schema:
+        type: string
+    VMID:
+      name: vm_id
+      in: path
+      required: true
+      schema:
+        type: string
+    TicketID:
+      name: ticket_id
+      in: path
+      required: true
+      schema:
+        type: string
+    ServiceID:
+      name: service_id
+      in: path
+      required: true
+      schema:
+        type: string
+    Confirm:
+      name: confirm
+      in: query
+      description: Simple deletion confirmation flag (ADR-0015 §13)
+      schema:
+        type: boolean
+    ConfirmName:
+      name: confirm_name
+      in: query
+      description: |
+        Type resource name to confirm deletion (ADR-0015 §13 addendum).
+        Must match the resource name exactly.
+      schema:
+        type: string
+    NamespaceID:
+      name: namespace_id
+      in: path
+      required: true
+      schema:
+        type: string
+    NotificationID:
+      name: notification_id
+      in: path
+      required: true
+      schema:
+        type: string
+
+  # ── Reusable Responses ──────────────────────────────
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Resource conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  # ── Schemas ─────────────────────────────────────────
+  schemas:
+    # ── Common ──────────────────────────────────────
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        version:
+          type: string
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+
+    Error:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code (frontend handles i18n)
+        message:
+          type: string
+          description: English log message (not for UI display)
+        params:
+          type: object
+          additionalProperties: true
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
+
+    # ── System ──────────────────────────────────────
+    System:
+      type: object
+      required: [id, name, created_by, created_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          maxLength: 15
+        description:
+          type: string
+        created_by:
+          type: string
+        tenant_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SystemCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 15
+          pattern: '^[a-z]([a-z0-9-]*[a-z0-9])?$'
+          description: RFC 1035 compliant name (ADR-0019)
+        description:
+          type: string
+
+    SystemList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/System'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── Service ─────────────────────────────────────
+    Service:
+      type: object
+      required: [id, name, system_id, created_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        system_id:
+          type: string
+        next_instance_index:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    ServiceCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 15
+          pattern: '^[a-z]([a-z0-9-]*[a-z0-9])?$'
+        description:
+          type: string
+
+    ServiceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── VM ──────────────────────────────────────────
+    VM:
+      type: object
+      required: [id, name, namespace, status]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        namespace:
+          type: string
+        cluster_id:
+          type: string
+        status:
+          type: string
+          enum: [CREATING, RUNNING, STOPPING, STOPPED, DELETING, FAILED, PENDING, MIGRATING, PAUSED, UNKNOWN]
+        hostname:
+          type: string
+        service_id:
+          type: string
+        instance:
+          type: string
+        ticket_id:
+          type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    VMCreateRequest:
+      type: object
+      required: [service_id, template_id, instance_size_id, namespace, reason]
+      properties:
+        service_id:
+          type: string
+          format: uuid
+        template_id:
+          type: string
+          format: uuid
+        instance_size_id:
+          type: string
+          format: uuid
+        namespace:
+          type: string
+          description: Target K8s namespace (immutable after submission, ADR-0017)
+        reason:
+          type: string
+        # ⚠️ cluster_id is intentionally ABSENT — see ADR-0017
+
+    VMList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VM'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── Approval ────────────────────────────────────
+    ApprovalTicketResponse:
+      type: object
+      required: [ticket_id, status]
+      properties:
+        ticket_id:
+          type: string
+        status:
+          type: string
+          enum: [PENDING]
+
+    ApprovalTicket:
+      type: object
+      required: [id, event_id, status, requester]
+      properties:
+        id:
+          type: string
+        event_id:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
+        operation_type:
+          type: string
+          enum: [CREATE, DELETE]
+          description: Type of operation this ticket represents (ADR-0015)
+        requester:
+          type: string
+        approver:
+          type: string
+        reason:
+          type: string
+        reject_reason:
+          type: string
+        target_vm_id:
+          type: string
+          description: For DELETE tickets, the VM being deleted
+        target_vm_name:
+          type: string
+          description: For DELETE tickets, the VM name (for display)
+        created_at:
+          type: string
+          format: date-time
+
+    ApprovalTicketList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApprovalTicket'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    DeleteVMResponse:
+      type: object
+      required: [ticket_id, event_id, status]
+      properties:
+        ticket_id:
+          type: string
+        event_id:
+          type: string
+        status:
+          type: string
+          enum: [PENDING]
+
+    ApprovalDecisionRequest:
+      type: object
+      properties:
+        selected_cluster_id:
+          type: string
+          description: Admin selects target cluster (ADR-0017)
+        selected_storage_class:
+          type: string
+        comment:
+          type: string
+
+    RejectDecisionRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+
+    # ── Cluster ─────────────────────────────────────
+    Cluster:
+      type: object
+      required: [id, name, api_server_url, status]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        display_name:
+          type: string
+        api_server_url:
+          type: string
+        status:
+          type: string
+          enum: [UNKNOWN, HEALTHY, UNHEALTHY, UNREACHABLE]
+        environment:
+          type: string
+          enum: [test, prod]
+          description: Cluster environment type (ADR-0015 §1, §15)
+        kubevirt_version:
+          type: string
+        storage_classes:
+          type: array
+          items:
+            type: string
+          description: Auto-detected StorageClass list (ADR-0015 §8)
+        default_storage_class:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    ClusterCreateRequest:
+      type: object
+      required: [name, kubeconfig]
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        environment:
+          type: string
+          enum: [test, prod]
+          default: test
+        kubeconfig:
+          type: string
+          format: byte
+          description: Base64-encoded kubeconfig (stored encrypted, ADR-0012)
+
+    ClusterEnvironmentUpdate:
+      type: object
+      required: [environment]
+      properties:
+        environment:
+          type: string
+          enum: [test, prod]
+
+    ClusterList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cluster'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── Template ────────────────────────────────────
+    Template:
+      type: object
+      required: [id, name, version]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        version:
+          type: integer
+        os_family:
+          type: string
+        os_version:
+          type: string
+        enabled:
+          type: boolean
+
+    TemplateList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Template'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── Instance Size (ADR-0018) ────────────────────
+    InstanceSize:
+      type: object
+      required: [id, name, cpu_cores, memory_mb]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        cpu_cores:
+          type: integer
+        memory_mb:
+          type: integer
+        disk_gb:
+          type: integer
+        dedicated_cpu:
+          type: boolean
+        requires_gpu:
+          type: boolean
+        requires_sriov:
+          type: boolean
+        requires_hugepages:
+          type: boolean
+        hugepages_size:
+          type: string
+        spec_overrides:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+
+    InstanceSizeList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InstanceSize'
+
+    # ── Auth ────────────────────────────────────────
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+
+    LoginResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        force_password_change:
+          type: boolean
+
+    UserInfo:
+      type: object
+      required: [id, username]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+
+    ChangePasswordRequest:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password:
+          type: string
+          format: password
+        new_password:
+          type: string
+          format: password
+
+    # ── Audit Log ──────────────────────────────────────
+    AuditLog:
+      type: object
+      required: [id, action, resource_type, resource_id, actor, created_at]
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        actor:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    AuditLogList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    # ── Namespace Registry (ADR-0017) ────────────────
+    NamespaceRegistry:
+      type: object
+      required: [id, name, environment]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: Globally unique namespace name (RFC 1035)
+        environment:
+          type: string
+          enum: [test, prod]
+        description:
+          type: string
+        enabled:
+          type: boolean
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    NamespaceCreateRequest:
+      type: object
+      required: [name, environment]
+      properties:
+        name:
+          type: string
+          maxLength: 63
+          description: Must follow RFC 1035 naming (ADR-0019)
+        environment:
+          type: string
+          enum: [test, prod]
+        description:
+          type: string
+          maxLength: 512
+
+    NamespaceUpdateRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          maxLength: 512
+        enabled:
+          type: boolean
+
+    NamespaceRegistryList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NamespaceRegistry'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── Notification (ADR-0015 §20) ──────────────────
+    Notification:
+      type: object
+      required: [id, type, title, message, read, created_at]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [APPROVAL_PENDING, APPROVAL_COMPLETED, APPROVAL_REJECTED, VM_STATUS_CHANGE]
+        title:
+          type: string
+        message:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        read:
+          type: boolean
+        read_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    NotificationList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    UnreadCount:
+      type: object
+      required: [count]
+      properties:
+        count:
+          type: integer
+
+security:
+  - BearerAuth: []
