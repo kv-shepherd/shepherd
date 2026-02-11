@@ -34,19 +34,27 @@ Establish Go project infrastructure:
 
 | Deliverable | File Path | Status | Example |
 |-------------|-----------|--------|---------|
-| Go module | `go.mod`, `go.sum` | ⬜ | - |
-| Entry point | `cmd/server/main.go` | ⬜ | - |
-| Configuration | `internal/config/config.go` | ⬜ | [examples/config/config.go](../examples/config/config.go) |
-| Logging | `internal/pkg/logger/logger.go` | ⬜ | - |
-| Health checks | `internal/api/handlers/health.go` | ⬜ | [examples/handlers/health.go](../examples/handlers/health.go) |
-| Database | `internal/infrastructure/database.go` | ⬜ | [examples/infrastructure/database.go](../examples/infrastructure/database.go) |
-| Worker pool | `internal/pkg/worker/pool.go` | ⬜ | [examples/worker/pool.go](../examples/worker/pool.go) |
-| CI config | `.github/workflows/ci.yml` | ⬜ | - |
-| Docs governance CI | `.github/workflows/docs-governance.yaml` | ⬜ | [.github/workflows/docs-governance.yaml](../../../.github/workflows/docs-governance.yaml) |
-| Lint config | `.golangci.yml` | ⬜ | - |
-| Dockerfile | `Dockerfile` | ⬜ | - |
-| Data seeding | `cmd/seed/main.go` | ⬜ | - |
-| River migration | `migrations/river/` | ⬜ | - |
+| Go module | `go.mod`, `go.sum` | ✅ | - |
+| Entry point | `cmd/server/main.go` | ✅ | - |
+| Configuration | `internal/config/config.go` | ✅ | [examples/config/config.go](../examples/config/config.go) |
+| Logging | `internal/pkg/logger/logger.go` | ✅ | - |
+| Health checks | `internal/api/handlers/health.go` | ✅ | [examples/handlers/health.go](../examples/handlers/health.go) |
+| Database | `internal/infrastructure/database.go` | ✅ | [examples/infrastructure/database.go](../examples/infrastructure/database.go) |
+| Worker pool | `internal/pkg/worker/pool.go` | ✅ | [examples/worker/pool.go](../examples/worker/pool.go) |
+| CI config | `.github/workflows/ci.yml` | ✅ | - |
+| Docs governance CI | `.github/workflows/docs-governance.yaml` | ✅ | [.github/workflows/docs-governance.yaml](../../../.github/workflows/docs-governance.yaml) |
+| Lint config | `.golangci.yml` | ✅ | - |
+| Dockerfile | `Dockerfile` | ✅ | - |
+| Data seeding | `cmd/seed/main.go` | ✅ | - |
+| River migration | `migrations/river/` | ⏳ | *Deferred to [Phase 4](04-governance.md) when River is introduced* |
+| Error handling | `internal/pkg/errors/errors.go` | ✅ | *Added: structured AppError types* |
+| Error middleware | `internal/api/middleware/error_handler.go` | ✅ | *Added: Gin centralized error handling* |
+| OpenAPI validator | `internal/api/middleware/openapi_validator.go` | ⏳ | *Placeholder; full impl in [Phase 1](01-contracts.md)* |
+| Modular DI | `internal/app/modules/*.go` | ✅ | *Module interface + infrastructure + domain stubs* |
+| API contract CI | `.github/workflows/api-contract.yaml` | ✅ | - |
+| API tooling | `build/api.mk`, `api/.vacuum.yaml` | ✅ | - |
+| Config example | `config/config.yaml.example` | ✅ | - |
+| Dependabot | `.github/dependabot.yml` | ✅ | - |
 
 ---
 
@@ -442,14 +450,14 @@ go run cmd/server/main.go
 
 ## Acceptance Criteria
 
-- [ ] `go build ./...` no errors
-- [ ] `go test ./...` passes
-- [ ] `golangci-lint run` no errors
-- [ ] Docker image builds successfully
-- [ ] `/health/live` returns 200
-- [ ] `/health/ready` checks database
-- [ ] First startup auto-seeds admin account
-- [ ] River migration tables created
+- [x] `go build ./...` no errors
+- [x] `go test ./...` passes — *7 test packages, all pass with `-race`*
+- [ ] `golangci-lint run` no errors — *Config ready; requires golangci-lint binary installed*
+- [ ] Docker image builds successfully — *Dockerfile ready; requires Docker daemon*
+- [x] `/health/live` returns 200 — *Verified via unit test*
+- [x] `/health/ready` checks database — *Handler ready with DB pool ping*
+- [ ] First startup auto-seeds admin account — *Placeholder ready; full impl in [Phase 5](05-auth-api-frontend.md)*
+- [ ] River migration tables created — *Deferred to [Phase 4](04-governance.md)*
 
 ---
 

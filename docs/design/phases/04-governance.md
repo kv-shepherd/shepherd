@@ -77,15 +77,26 @@ The following features are **explicitly out of scope** for V1:
 
 ## Deliverables
 
-| Deliverable | File Path | Status | Example |
-|-------------|-----------|--------|---------|
-| Atlas config | `atlas.hcl` | ⬜ | - |
-| River Jobs | `internal/jobs/` | ⬜ | - |
-| EventDispatcher | `internal/domain/dispatcher.go` | ⬜ | - |
-| ApprovalGateway | `internal/governance/approval/` | ⬜ | - |
-| AuditLogger | `internal/governance/audit/` | ⬜ | - |
-| TemplateService | `internal/service/template.go` | ⬜ | - |
-| SSAApplier | `internal/provider/ssa_applier.go` | ⬜ | - |
+> **Last Updated**: 2026-02-11
+
+| Deliverable | File Path | Status | Notes |
+|-------------|-----------|--------|-------|
+| Atlas config | `atlas.hcl` | ⬜ | Deferred (requires running DB) |
+| River Jobs | `internal/jobs/vm_create.go`, `vm_delete.go`, `vm_power.go` | ✅ | VMCreate/Delete/Power workers with retry + idempotency guard + audit |
+| EventDispatcher | `internal/domain/dispatcher.go` | ✅ | - |
+| Domain Event Payloads | `internal/domain/event.go` | ✅ | VMCreationPayload, VMDeletePayload, VMPowerPayload |
+| ApprovalGateway | `internal/governance/approval/gateway.go` | ✅ | Approve/Reject/Cancel/ListPending + ADR-0012 atomic writer integration |
+| ApprovalValidator | `internal/service/approval_validator.go` | ✅ | Cluster health + overcommit + dedicated CPU conflict + capability matching (GPU/SR-IOV/Hugepages) |
+| AuditLogger | `internal/governance/audit/logger.go` | ✅ | LogAction + LogVMOperation |
+| TemplateService | `internal/service/template_service.go` | ✅ | - |
+| VM Handlers | `internal/api/handlers/server_vm.go` | ✅ | CRUD + Delete + Power ops + tiered confirm params (test/prod) |
+| System Handlers | `internal/api/handlers/server_system.go` | ✅ | CRUD + GetService/DeleteService + confirm_name query param via generated params |
+| Approval Handlers | `internal/api/handlers/server_approval.go` | ✅ | ListPending/Approve/Reject/Cancel + DELETE ticket target VM enrichment |
+| Namespace Handlers | `internal/api/handlers/server_namespace.go` | ✅ | CRUD (List/Create/Get/Update/Delete) with environment filter + confirm_name delete gate |
+| Notification Handlers | `internal/api/handlers/server_notification.go` | ✅ | List/UnreadCount/MarkRead/MarkAllRead; triggers/sender pending |
+| Admin Handlers | `internal/api/handlers/server_admin.go` | ✅ | Clusters/Templates/InstanceSizes CRUD + UpdateClusterEnvironment (omitzero adapted) |
+| SSAApplier | `internal/provider/ssa_applier.go` | ⬜ | Deferred |
+| OpenAPI Spec | `api/openapi.yaml` | ✅ | 38 endpoints total; Namespace CRUD + Notification + omitzero value types (ADR-0028) |
 
 ---
 
@@ -842,13 +853,33 @@ func (s *ApprovalService) Approve(ctx context.Context, ticketID string) error {
 # Test VM Delete - simple confirm parameter
 DELETE /api/v1/vms/{id}?confirm=true
 
-# Prod VM Delete - requires typing VM name
-DELETE /api/v1/vms/{id}
-Content-Type: application/json
-{
-  "confirm_name": "prod-shop-redis-01"  // Must match VM name exactly
-}
+# Prod VM Delete - requires typing VM name (query param per ADR-0015 §13 addendum)
+DELETE /api/v1/vms/{id}?confirm_name=prod-shop-redis-01
+
+# Service Delete - confirm=true required
+DELETE /api/v1/systems/{sys_id}/services/{svc_id}?confirm=true
+
+# System Delete - confirm_name required
+DELETE /api/v1/systems/{sys_id}?confirm_name=my-system
 ```
+
+### ✅ Implementation Progress (audited 2026-02-10T23:59)
+
+| Item | Status | Details |
+|------|--------|---------|
+| DeleteVM handler | ✅ Done | State guard + DomainEvent + River job + audit |
+| DeleteVM confirm mechanism | ✅ Done | Tiered: `confirm=true` (test) or `confirm_name` matching VM name (prod) |
+| DeleteSystem handler | ✅ Done | Cascade check (child Service count == 0) + hard delete + audit |
+| DeleteSystem confirm param | ✅ Done | Uses `confirm_name` query param via generated params (ADR-0015 §13 addendum) |
+| DeleteService handler | ✅ Done | Cascade check (child VM count == 0) + `confirm=true` gate + hard delete + audit |
+| GetService handler | ✅ Done | Verifies service belongs to system + returns service detail |
+| OpenAPI: DeleteVM params | ✅ Done | Added `confirm` and `confirm_name` query params |
+| OpenAPI: DeleteService | ✅ Done | Endpoint defined with `confirm` query param |
+| OpenAPI: DeleteSystem params | ✅ Done | Added `confirm_name` query param |
+| ApprovalTicket.operation_type | ✅ Done | Enum field (`CREATE`/`DELETE`) with `CREATE` default |
+| VM delete approval ticket flow | ✅ Done | DeleteVM use case creates `operation_type=DELETE` ticket and routes through approval gateway |
+
+> **Remaining**: Batch/Notification/VNC are still out of current implementation scope.
 
 ---
 
@@ -947,23 +978,30 @@ V1 implements a minimal internal notification system. External push channels (em
 
 The notification system uses a decoupled `NotificationSender` interface:
 
-- **V1**: `InboxSender` (stores to PostgreSQL)
+- **V1**: `InboxSender` (stores to PostgreSQL) — ✅ Implemented (`internal/notification/sender.go`)
 - **V2+**: Add `EmailSender`, `WebhookSender`, `SlackSender` via plugin
 
 ### Trigger Points
 
-| Event | Notification Type | Recipients |
-|-------|-------------------|------------|
-| VM request submitted | `APPROVAL_PENDING` | Approvers (PlatformAdmin) |
-| Request approved | `APPROVAL_COMPLETED` | Requester |
-| Request rejected | `APPROVAL_REJECTED` | Requester |
-| VM power state changed | `VM_STATUS_CHANGE` | VM owner |
+| Event | Notification Type | Recipients | Status |
+|-------|-------------------|------------|--------|
+| VM request submitted | `APPROVAL_PENDING` | Approvers (users with `approval:approve` permission) | ✅ Implemented |
+| Request approved | `APPROVAL_COMPLETED` | Requester | ✅ Implemented |
+| Request rejected | `APPROVAL_REJECTED` | Requester | ✅ Implemented |
+| VM power state changed | `VM_STATUS_CHANGE` | VM owner | ✅ Implemented |
+
+> **Implementation Details** (2026-02-11):
+>
+> - **Triggers**: `internal/notification/triggers.go` — `OnTicketSubmitted`, `OnTicketApproved`, `OnTicketRejected`, `OnVMStatusChanged`
+> - **Integration**: `ApprovalGateway.SetNotifier()` calls triggers on approve/reject; `CreateVMRequest`/`DeleteVM` handlers call `OnTicketSubmitted`
+> - **DI Wiring**: `ApprovalModule` wires `InboxSender → Triggers → Gateway.SetNotifier`
+> - **Frontend**: `NotificationBell` component in `web/src/components/ui/NotificationBell.tsx` (badge + popover + mark-read)
 
 ### V1 Constraints
 
 - **No external push**: Email/webhook adapters in V2+
-- **Poll-based**: Frontend polls unread count every 30s
-- **Retention**: Auto-cleanup after 90 days (via River periodic job)
+- **Poll-based**: Frontend polls unread count every 30s (via TanStack Query `refetchInterval`)
+- **Retention**: Auto-cleanup after 90 days (via River periodic job) — not yet implemented
 
 ---
 
@@ -1375,17 +1413,15 @@ func (s *AuthzService) CheckResourceAccess(ctx context.Context, userID, resource
 | Entity | Environment | Confirmation Required |
 |--------|-------------|----------------------|
 | VM | test | `?confirm=true` query param |
-| VM | prod | Request body with `confirm_name` matching VM name |
+| VM | prod | `?confirm_name=<vm-name>` query param |
 | Service | all | `?confirm=true` query param |
-| System | all | Request body with `confirm_name` matching system name |
+| System | all | `?confirm_name=<system-name>` query param |
 
 ### 11.2 Deletion API
 
 ```
 DELETE /api/v1/vms/{id}?confirm=true           # Test environment
-DELETE /api/v1/vms/{id}                         # Prod environment
-Content-Type: application/json
-{"confirm_name": "prod-shop-redis-01"}
+DELETE /api/v1/vms/{id}?confirm_name=prod-shop-redis-01   # Prod environment
 ```
 
 ### 11.3 Deletion Flow
@@ -1397,7 +1433,7 @@ Content-Type: application/json
    - Mark VM as `DELETING` in database
    - Enqueue River job for K8s deletion
    - River worker deletes VirtualMachine CR
-   - Hard delete VM row from primary table after K8s deletion succeeds
+   - Keep VM in `DELETING` tombstone state after K8s deletion (cleanup can be handled by periodic maintenance)
 5. **Audit log** - Record deletion with actor, reason, timestamp
 
 ---

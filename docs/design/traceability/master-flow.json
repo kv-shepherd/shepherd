@@ -322,7 +322,8 @@
     {
       "id": "stage-6-vnc-console-access",
       "phases": [
-        "docs/design/phases/04-governance.md"
+        "docs/design/phases/04-governance.md",
+        "docs/design/phases/05-auth-api-frontend.md"
       ],
       "checklists": [
         "docs/design/checklist/phase-4-checklist.md"

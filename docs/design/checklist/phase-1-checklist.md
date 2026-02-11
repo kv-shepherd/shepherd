@@ -1,6 +1,8 @@
 # Phase 1 Checklist: Core Contract Definitions
 
 > **Detailed Document**: [phases/01-contracts.md](../phases/01-contracts.md)
+>
+> **Implementation Status**: 🔄 Partial (~80%) — Ent schemas complete, CI enforcement and frontend type generation gaps
 
 ---
 
@@ -10,67 +12,67 @@
 >
 > System is a logical grouping decoupled from namespace. Namespace specified at VM creation.
 
-- [ ] `ent/schema/` directory created
-- [ ] **Governance Model Core Schema**:
-  - [ ] `ent/schema/system.go` - System/Project (e.g., demo, shop)
-    - [ ] Contains `id` field (immutable)
-    - [ ] Contains `description` field (optional)
-    - [ ] Contains `created_by` field
-    - [ ] Contains `tenant_id` field (default: "default", reserved for multi-tenancy)
-    - [ ] ❌ **No `namespace` field** (ADR-0015 §1)
-    - [ ] ❌ **No `environment` field** (ADR-0015 §1)
-    - [ ] ❌ **No `maintainers` field** - use RoleBinding table (ADR-0015 §22)
-    - [ ] Globally unique name constraint
-    - [ ] **User self-service creation, no approval required**
-  - [ ] `ent/schema/service.go` - Service (e.g., redis, mysql)
-    - [ ] Contains `id` field (immutable)
-    - [ ] Contains `name` field (**immutable after creation**, ADR-0015 §2)
-    - [ ] Contains `description` field (optional)
-    - [ ] ❌ **No `created_by` field** - inherited from System (ADR-0015 §2)
-    - [ ] Contains `next_instance_index` field (**permanently incrementing, no reset**)
-    - [ ] Unique name constraint **within parent System** (per [master-flow.md Stage 4.B](../interaction-flows/master-flow.md#stage-4-b))
-    - [ ] **User self-service creation, no approval required**
-- [ ] `ent/schema/vm.go` - VM Schema definition
-  - [ ] Associates `service_id` **only** (ADR-0015 §3)
-  - [ ] ❌ **No `system_id` field** - obtain via service edge (ADR-0015 §3)
-  - [ ] `instance` field stores instance number (e.g., "01")
-- [ ] `ent/schema/vm_revision.go` - VM version history
-- [ ] `ent/schema/audit_log.go` - Audit log Schema
-- [ ] `ent/schema/approval_ticket.go` - Approval ticket (Governance Core)
-- [ ] `ent/schema/approval_policy.go` - Approval policy (Governance Core)
-- [ ] `ent/schema/cluster.go` - Multi-cluster credential management
-- [ ] `ent/schema/template.go` - Template definition
-- [ ] `ent/schema/resource_spec.go` - Resource spec template
-- [ ] `ent/schema/pending_adoption.go` - Pending adoption resources
-- [ ] `ent/schema/domain_event.go` - Domain event (ADR-0009)
-- [ ] `ent/schema/infra_worker_pod.go` - Worker Pod registry
+- [x] `ent/schema/` directory created
+- [x] **Governance Model Core Schema**:
+  - [x] `ent/schema/system.go` - System/Project (e.g., demo, shop)
+    - [x] Contains `id` field (immutable)
+    - [x] Contains `description` field (optional)
+    - [x] Contains `created_by` field
+    - [x] Contains `tenant_id` field (default: "default", reserved for multi-tenancy)
+    - [x] ❌ **No `namespace` field** (ADR-0015 §1)
+    - [x] ❌ **No `environment` field** (ADR-0015 §1)
+    - [x] ❌ **No `maintainers` field** - use RoleBinding table (ADR-0015 §22)
+    - [x] Globally unique name constraint
+    - [x] **User self-service creation, no approval required**
+  - [x] `ent/schema/service.go` - Service (e.g., redis, mysql)
+    - [x] Contains `id` field (immutable)
+    - [x] Contains `name` field (**immutable after creation**, ADR-0015 §2)
+    - [x] Contains `description` field (optional)
+    - [x] ❌ **No `created_by` field** - inherited from System (ADR-0015 §2)
+    - [x] Contains `next_instance_index` field (**permanently incrementing, no reset**)
+    - [x] Unique name constraint **within parent System** (per [master-flow.md Stage 4.B](../interaction-flows/master-flow.md#stage-4-b))
+    - [x] **User self-service creation, no approval required**
+- [x] `ent/schema/vm.go` - VM Schema definition
+  - [x] Associates `service_id` **only** (ADR-0015 §3)
+  - [x] ❌ **No `system_id` field** - obtain via service edge (ADR-0015 §3)
+  - [x] `instance` field stores instance number (e.g., "01")
+- [x] `ent/schema/vm_revision.go` - VM version history
+- [x] `ent/schema/audit_log.go` - Audit log Schema
+- [x] `ent/schema/approval_ticket.go` - Approval ticket (Governance Core)
+- [x] `ent/schema/approval_policy.go` - Approval policy (Governance Core)
+- [x] `ent/schema/cluster.go` - Multi-cluster credential management
+- [x] `ent/schema/template.go` - Template definition
+- [x] `ent/schema/instance_size.go` - Instance size (ADR-0018, replaces resource_spec)
+- [x] `ent/schema/pending_adoption.go` - Pending adoption resources
+- [x] `ent/schema/domain_event.go` - Domain event (ADR-0009)
+- [ ] `ent/schema/infra_worker_pod.go` - Worker Pod registry (deferred to Phase 4+)
 
 ---
 
 ## ResourceSpec Overcommit Design
 
-- [ ] `cpu_request` defaults to `cpu_limit` (no overcommit)
-- [ ] `memory_request_mb` defaults to `memory_limit_mb`
-- [ ] Admin can set `request < limit` for overcommit
-- [ ] User-facing API only returns limit fields
+- [x] `cpu_request` defaults to `cpu_limit` (no overcommit)
+- [x] `memory_request_mb` defaults to `memory_limit_mb`
+- [x] Admin can set `request < limit` for overcommit
+- [x] User-facing API only returns limit fields
 
 ---
 
 ## Instance Number Design (Permanently Incrementing)
 
-- [ ] `Service.next_instance_index` only increases
-- [ ] VM creation auto-increments
-- [ ] ❌ No reset API provided
+- [x] `Service.next_instance_index` only increases
+- [x] VM creation auto-increments
+- [x] ❌ No reset API provided
 
 ---
 
 ## Multi-cluster Credential Management
 
-- [ ] **Cluster Schema Fields** complete
-- [ ] **Encryption Service** (`internal/pkg/crypto/cluster_crypto.go`) implemented
-- [ ] **CredentialProvider Interface** (Strategy Pattern) defined
-- [ ] **ClusterRepository** methods implemented
-- [ ] **Admin API** for dynamic cluster management
+- [x] **Cluster Schema Fields** complete
+- [ ] **Encryption Service** (`internal/pkg/crypto/cluster_crypto.go`) implemented (deferred to Phase 4+)
+- [x] **CredentialProvider Interface** (Strategy Pattern) defined
+- [ ] **ClusterRepository** methods implemented (deferred to Phase 2+)
+- [ ] **Admin API** for dynamic cluster management (deferred to Phase 3+)
 - [ ] **File-based Approach Forbidden** (CI detection)
 
 ---
@@ -88,12 +90,12 @@
 
 ## Contract Interfaces
 
-- [ ] `InfrastructureProvider` base interface definition
-- [ ] `KubeVirtProvider` specialized interface definition
-- [ ] `ResourceSpec` type definition
-- [ ] `ResourceStatus` type definition
-- [ ] `ValidationResult` type definition
-- [ ] KubeVirt-specific types defined
+- [x] `InfrastructureProvider` base interface definition
+- [x] `KubeVirtProvider` specialized interface definition
+- [x] `ResourceSpec` type definition
+- [x] `ResourceStatus` type definition
+- [x] `ValidationResult` type definition
+- [x] KubeVirt-specific types defined
 
 ---
 
@@ -101,12 +103,12 @@
 
 > **Details**: See [CI README §API Contract-First](../ci/README.md#api-contract-first-enforcement-adr-0021-adr-0029) for full implementation guidance.
 
-- [ ] `api/openapi.yaml` exists and is OpenAPI 3.1 canonical spec
+- [x] `api/openapi.yaml` exists and is OpenAPI 3.1 canonical spec (953 lines, full P1 coverage)
 - [ ] `api/.vacuum.yaml` exists and `make api-lint` passes (ADR-0029: vacuum replaces spectral)
-- [ ] `api/oapi-codegen.yaml` exists and targets `internal/api/generated/`
-- [ ] `make api-generate` produces:
-  - [ ] `internal/api/generated/` Go server types
-  - [ ] `web/src/types/api.gen.ts` TypeScript types
+- [x] `api/oapi-codegen.yaml` exists and targets `internal/api/generated/` — *Phase 5: v2 format with gin-server + models*
+- [x] `make api-generate` produces:
+  - [x] `internal/api/generated/` Go server types — *Phase 5: 1393 lines, ServerInterface with 28 endpoints*
+  - [ ] `web/src/types/api.gen.ts` TypeScript types — *Phase 5: pending*
 - [ ] `make api-check` passes with no uncommitted generated changes
 - [ ] If 3.1-only features are used:
   - [ ] `api/openapi.compat.yaml` is generated (3.0-compatible)
@@ -121,9 +123,9 @@
 > **Purpose**: Ensure generated Go types use `omitzero` tag to eliminate pointer hell.    
 > **Status**: ADR-0028 **Accepted** ✅. See [ADR-0028](../../adr/ADR-0028-oapi-codegen-optional-field-strategy.md).
 
-- [ ] `go.mod` requires Go 1.25+ (enables `omitzero` support)
-- [ ] `api/oapi-codegen.yaml` contains:
-  - [ ] `output-options.prefer-skip-optional-pointer-with-omitzero: true`
+- [x] `go.mod` requires Go 1.25+ (enables `omitzero` support) — *Go 1.25.7*
+- [x] `api/oapi-codegen.yaml` contains:
+  - [x] `output-options.prefer-skip-optional-pointer-with-omitzero: true`
 - [ ] **Generated types verification** (Code Review enforcement):
   - [ ] Optional-only fields use value types with `json:",omitzero"` tag
   - [ ] `nullable: true` fields use pointer types with `json:",omitempty"` tag
@@ -158,26 +160,26 @@
 
 ## Extension Interfaces
 
-- [ ] **AuthProvider Interface** defined
-- [ ] **JWT Implementation** completed
-- [ ] **ApprovalProvider Interface** defined
-- [ ] **NotificationProvider Interface** defined
+- [x] **AuthProvider Interface** defined (`internal/provider/auth.go`)
+- [x] **JWT Implementation** completed — *Phase 5: `middleware/jwt.go` HS256 + JWTClaims + JWTAuth middleware*
+- [x] **ApprovalProvider Interface** defined (`internal/provider/auth.go`)
+- [x] **NotificationProvider Interface** defined (`internal/provider/auth.go`)
 
 ---
 
 ## Platform RBAC Schema (ADR-0015 §22, ADR-0019)
 
-- [ ] `ent/schema/permission.go` - Atomic permission definitions
-- [ ] `ent/schema/role.go` - Role = bundle of permissions
-- [ ] `ent/schema/role_binding.go` - User-role assignments with scope
-- [ ] `ent/schema/resource_role_binding.go` - Resource-level member management (owner/admin/member/viewer)
-- [ ] Built-in roles seeded (per master-flow.md Stage 2.A):
-  - [ ] **Bootstrap** - Initial setup only (`platform:admin`), ⚠️ MUST be disabled after initialization
-  - [ ] **PlatformAdmin** - Super admin (`platform:admin`, explicit permission per ADR-0019)
-  - [ ] **SystemAdmin** - Resource management (explicit permissions, e.g. `system:read/write/delete`, `service:read/create/delete`, `vm:read/create/operate/delete`; no wildcard)
-  - [ ] **Approver** - Can approve requests (`approval:approve`, `approval:view`)
-  - [ ] **Operator** - Power operations (`vm:operate`, `vm:read`)
-  - [ ] **Viewer** - Read-only access (explicit: `system:read`, `service:read`, `vm:read`) ⚠️ **NO `*:read` wildcard** (ADR-0019)
+- [ ] `ent/schema/permission.go` - Atomic permission definitions (deferred — permissions stored as JSON in role)
+- [x] `ent/schema/role.go` - Role = bundle of permissions
+- [x] `ent/schema/role_binding.go` - User-role assignments with scope
+- [x] `ent/schema/resource_role_binding.go` - Resource-level member management (owner/admin/member/viewer)
+- [x] Built-in roles seeded (per master-flow.md Stage 2.A) — *Phase 5: `cmd/seed/main.go`*:
+  - [x] **Bootstrap** - Initial setup only (`platform:admin`), ⚠️ MUST be disabled after initialization
+  - [x] **PlatformAdmin** - Super admin (`platform:admin`, explicit permission per ADR-0019)
+  - [x] **SystemAdmin** - Resource management (explicit permissions)
+  - [x] **Approver** - Can approve requests (`approval:approve`, `approval:view`)
+  - [x] **Operator** - Power operations (`vm:operate`, `vm:read`)
+  - [x] **Viewer** - Read-only access (explicit: `system:read`, `service:read`, `vm:read`)
 - [ ] Environment-based permission control (`allowed_environments` field)
 
 ---
@@ -192,17 +194,17 @@
 
 ## Error System
 
-- [ ] `AppError` struct definition
-- [ ] `ErrorCode` constants definition
-- [ ] Errors only contain `code` + `params`, no hardcoded messages
+- [x] `AppError` struct definition
+- [x] `ErrorCode` constants definition
+- [x] Errors only contain `code` + `params`, no hardcoded messages
 
 ---
 
 ## Context
 
-- [ ] `AppContext` struct definition
-- [ ] Context passing uses `context.Context`
-- [ ] Request ID middleware
+- [x] `AppContext` struct definition — *Phase 5: context helpers in `middleware/request_id.go`*
+- [x] Context passing uses `context.Context` — *SetUserContext/GetUserID/GetUsername/GetRoles*
+- [x] Request ID middleware — *Phase 5: X-Request-ID with UUID v7*
 
 ## Go Module Configuration (ADR-0016)
 
@@ -214,6 +216,10 @@
 
 ## Pre-Phase 2 Verification
 
-- [ ] `go generate ./ent` generates code without errors
-- [ ] Ent Schema unit tests 100% pass
-- [ ] Provider interface definitions compile without errors
+- [x] `go generate ./ent` generates code without errors
+- [ ] Ent Schema unit tests 100% pass (unit tests deferred — requires testcontainers)
+- [x] Provider interface definitions compile without errors
+- [x] `go vet ./...` passes
+- [x] `go build ./...` passes
+- [x] `go test -race ./...` passes
+- [x] `stdlib.OpenDBFromPool` integrated in `database.go`

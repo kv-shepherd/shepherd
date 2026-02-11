@@ -45,13 +45,14 @@ Integrate service layer with providers:
 
 | Deliverable | File Path | Status | Example |
 |-------------|-----------|--------|---------|
-| Composition Root | `internal/app/bootstrap.go` | ⬜ | - |
-| VMService | `internal/service/vm_service.go` | ⬜ | - |
-| CreateVMUseCase | `internal/usecase/create_vm.go` | ⬜ | [examples/usecase/create_vm.go](../examples/usecase/create_vm.go) |
-| VMHandler | `internal/api/handlers/vm.go` | ⬜ | - |
-| **InstanceSizeService** | `internal/service/instance_size.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
-| **InstanceSizeHandler** | `internal/api/handlers/instance_size.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
-| CI check | `scripts/ci/check_manual_di.sh` | ⬜ | - |
+| Composition Root | `internal/app/bootstrap.go` | ✅ | Phase 0 |
+| VMService | `internal/service/vm_service.go` | ✅ | - |
+| CreateVMUseCase | `internal/usecase/create_vm.go` | ✅ | [examples/usecase/create_vm.go](../examples/usecase/create_vm.go) |
+| VMHandler | `internal/api/handlers/vm.go` | ✅ | - |
+| SystemHandler | `internal/api/handlers/system.go` | ✅ | - |
+| **InstanceSizeService** | `internal/service/instance_size_service.go` | ✅ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
+| **InstanceSizeHandler** | `internal/api/handlers/instance_size.go` | ⬜ | Deferred |
+| CI check | `scripts/ci/check_manual_di.sh` | ⬜ | Deferred |
 
 ---
 

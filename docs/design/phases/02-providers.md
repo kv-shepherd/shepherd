@@ -54,13 +54,14 @@ Implement infrastructure providers:
 
 | Deliverable | File Path | Status | Example |
 |-------------|-----------|--------|---------|
-| KubeVirtProvider | `internal/provider/kubevirt.go` | ⬜ | - |
-| MockProvider | `internal/provider/mock.go` | ⬜ | - |
-| Domain models | `internal/domain/` | ⬜ | [examples/domain/vm.go](../examples/domain/vm.go) |
-| KubeVirtMapper | `internal/provider/mapper.go` | ⬜ | - |
-| ResourceWatcher | `internal/provider/watcher.go` | ⬜ | - |
-| ClusterHealthChecker | `internal/provider/health_checker.go` | ⬜ | - |
-| CapabilityDetector | `internal/provider/capability.go` | ⬜ | - |
+| KubeVirtProvider | `internal/provider/kubevirt.go` | ✅ | - |
+| ClientInterface | `internal/provider/client.go` | ✅ | Anti-Corruption Layer |
+| MockProvider | `internal/provider/mock.go` | ✅ | - |
+| Domain models | `internal/domain/` | ✅ | [examples/domain/vm.go](../examples/domain/vm.go) |
+| KubeVirtMapper | `internal/provider/mapper.go` | ✅ | - |
+| ResourceWatcher | `internal/provider/watcher.go` | ⬜ | Deferred |
+| ClusterHealthChecker | `internal/provider/health_checker.go` | ✅ | - |
+| CapabilityDetector | `internal/provider/capability.go` | ✅ | - |
 
 ---
 

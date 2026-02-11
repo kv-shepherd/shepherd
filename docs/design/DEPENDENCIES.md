@@ -20,12 +20,12 @@
 
 | Item | Version | Notes |
 |------|---------|-------|
-| **Go** | `1.25.6` | **Recommended latest stable** (released 2026-01-15, includes security patches) |
+| **Go** | `1.25.7` | **Recommended latest stable** (released 2026-02-04, includes security patches) |
 
 > **Go Version Strategy (ADR-0028)**: 
 > - **Minimum**: Go 1.24 (required for `omitzero` tag support, ADR-0028)
 > - **CI Enforced**: Go 1.25+ (ADR-0028 §Confirmation)
-> - **Recommended**: Go 1.25.6 (latest stable with security patches)
+> - **Recommended**: Go 1.25.7 (latest stable with security patches)
 > - Dependencies: Gin v1.11.0 requires Go 1.23+, KubeVirt client-go requires Go 1.24+
 > - Code is backward compatible with Go 1.24, but CI blocks builds below Go 1.25
 
@@ -35,7 +35,7 @@
 
 > **Version Selection Strategy**: 
 > - Use exact versions, prefer mature versions with multiple patches
-> - All versions verified via `proxy.golang.org` on 2026-01-19
+> - All versions verified via `proxy.golang.org` on 2026-02-09
 
 > **Version Verification Method**:
 > ```bash
@@ -58,7 +58,7 @@
 | `entgo.io/ent` | `v0.14.5` | 2025-07 | Entity framework (type-safe ORM, **latest stable**) |
 | `ariga.io/atlas` | `v1.0.0` | 2025-12 | Schema migration tool (GA release) |
 | `ariga.io/atlas-go-sdk` | `v0.10.0` | 2025-12 | Atlas Go SDK |
-| `github.com/riverqueue/river` | `v0.30.0` | 2026-01 | PostgreSQL-native job queue (**latest stable**) |
+| `github.com/riverqueue/river` | `v0.30.2` | 2026-01 | PostgreSQL-native job queue (**latest stable**) |
 | `github.com/sqlc-dev/sqlc` | `v1.30.0` | 2025-09 | Type-safe SQL code generation (**ADR-0012 core transaction**) |
 
 ### Connection Pool Architecture (ADR-0012 Update)
@@ -185,12 +185,12 @@ func (c *DatabaseClients) Close() {
 
 | Package | Version | Release Date | Description |
 |---------|---------|--------------|-------------|
-| `k8s.io/client-go` | `v0.34.0` | 2025-12 | K8s official client (aligned with K8s 1.34) |
-| `k8s.io/apimachinery` | `v0.34.0` | 2025-12 | K8s API machinery |
-| `k8s.io/api` | `v0.34.0` | 2025-12 | K8s API types |
+| `k8s.io/client-go` | `v0.33.5` | 2025-12 | K8s official client (aligned with K8s 1.33) |
+| `k8s.io/apimachinery` | `v0.33.5` | 2025-12 | K8s API machinery |
+| `k8s.io/api` | `v0.33.5` | 2025-12 | K8s API types |
 | `kubevirt.io/client-go` | `v1.7.0` | 2025-11-27 | **KubeVirt official client** (Informer usage) |
 | `kubevirt.io/api` | `v1.7.0` | 2025-11-27 | KubeVirt API type definitions |
-| `sigs.k8s.io/controller-runtime` | `v0.22.4` | 2025-11-03 | **SSA Apply core dependency** (ADR-0011), compatible with k8s.io v0.34.0 |
+| `sigs.k8s.io/controller-runtime` | `v0.22.5` | 2025-12 | **SSA Apply core dependency** (ADR-0011), compatible with k8s.io v0.33.x |
 
 ---
 
@@ -277,21 +277,22 @@ output-options:
 > **Decision Record**: [ADR-0001-kubevirt-client.md](../adr/ADR-0001-kubevirt-client.md)
 
 > **Version Compatibility Constraints**:
-> - `kubevirt.io/client-go` v1.7.0 is built for **Kubernetes v1.34**
-> - Also supports K8s v1.32 ~ v1.34
-> - **Must** use `k8s.io/client-go` **v0.34.x** series
-> - **Do not** upgrade to `k8s.io/client-go` v0.35.x+ (API type incompatibility)
+> - `kubevirt.io/client-go` v1.7.0 is built for **Kubernetes v1.33** (k8s.io v0.33.5 per kubevirt go.mod)
+> - Also supports K8s v1.32 ~ v1.33
+> - **Must** use `k8s.io/client-go` **v0.33.x** series
+> - **Do not** upgrade to `k8s.io/client-go` v0.34.x+ until kubevirt v1.8.0 GA (API type incompatibility risk)
 > - All three k8s.io packages must use **exactly the same version**
 
-> **Compatibility Verification Record** (2026-01-19):
+> **Compatibility Verification Record** (2026-02-09, corrected from kubevirt v1.7.0 go.mod):
 >
 > | Package Pair | Status | Verification Method |
 > |--------------|--------|---------------------|
-> | `controller-runtime v0.22.4` + `client-go v0.34.0` | ✅ Compatible | Official compatibility matrix |
-> | `kubevirt.io/client-go v1.7.0` + `client-go v0.34.0` | ✅ Compatible | KubeVirt v1.7.0 built for K8s 1.34 |
-> | `controller-runtime v0.22.4` + `kubevirt.io/client-go v1.7.0` | ✅ Compatible | Both use `client-go v0.34.x` |
+> | `controller-runtime v0.22.5` + `client-go v0.33.5` | ✅ Compatible | controller-runtime v0.22.x uses k8s.io v0.33.0 |
+> | `kubevirt.io/client-go v1.7.0` + `client-go v0.33.5` | ✅ Compatible | KubeVirt v1.7.0 go.mod replace directives use v0.33.5 |
+> | `controller-runtime v0.22.5` + `kubevirt.io/client-go v1.7.0` | ✅ Compatible | Both use `client-go v0.33.x` |
 >
 > **Note**: Actual compatibility must be verified via `go mod tidy && go build` during Phase 0.
+> **Upgrade Path**: When kubevirt v1.8.0 GA releases, upgrade to k8s.io v0.34.x + controller-runtime v0.23.x.
 
 ### K8s Dependency Hell Prevention
 
@@ -321,19 +322,19 @@ go 1.25
 require (
     kubevirt.io/client-go v1.7.0
     kubevirt.io/api v1.7.0
-    k8s.io/client-go v0.34.0
-    k8s.io/apimachinery v0.34.0
-    k8s.io/api v0.34.0
+    k8s.io/client-go v0.33.5
+    k8s.io/apimachinery v0.33.5
+    k8s.io/api v0.33.5
 )
 
-// Force lock K8s dependency versions
+// Force lock K8s dependency versions (match kubevirt.io/client-go v1.7.0)
 replace (
-    k8s.io/api => k8s.io/api v0.34.0
-    k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.34.0
-    k8s.io/apimachinery => k8s.io/apimachinery v0.34.0
-    k8s.io/apiserver => k8s.io/apiserver v0.34.0
-    k8s.io/client-go => k8s.io/client-go v0.34.0
-    k8s.io/component-base => k8s.io/component-base v0.34.0
+    k8s.io/api => k8s.io/api v0.33.5
+    k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.33.5
+    k8s.io/apimachinery => k8s.io/apimachinery v0.33.5
+    k8s.io/apiserver => k8s.io/apiserver v0.33.5
+    k8s.io/client-go => k8s.io/client-go v0.33.5
+    k8s.io/component-base => k8s.io/component-base v0.33.5
 )
 ```
 
@@ -348,8 +349,8 @@ replace (
 
 | Package | Version | Release Date | Description |
 |---------|---------|--------------|-------------|
-| `github.com/alexedwards/scs/v2` | `v2.8.0` | 2025-10 | HTTP Session management (OWASP security spec) |
-| `github.com/alexedwards/scs/postgresstore` | `v2.8.0` | 2025-10 | PostgreSQL Session Store |
+| `github.com/alexedwards/scs/v2` | `v2.9.0` | 2026-01 | HTTP Session management (OWASP security spec) |
+| `github.com/alexedwards/scs/postgresstore` | `v2.9.0` | 2026-01 | PostgreSQL Session Store |
 | `github.com/sony/gobreaker` | `v1.0.0` | Stable | Circuit breaker pattern (ResourceWatcher usage) |
 
 > **Distributed Lock Best Practices**:
@@ -364,8 +365,8 @@ replace (
 | Package | Version | Release Date | Description |
 |---------|---------|--------------|-------------|
 | `go.uber.org/zap` | `v1.27.1` | 2025-11-19 | High-performance structured logging |
-| `go.opentelemetry.io/otel` | `v1.39.0` | 2025-12-08 | OpenTelemetry API |
-| `go.opentelemetry.io/otel/sdk` | `v1.39.0` | 2025-12-08 | OpenTelemetry SDK |
+| `go.opentelemetry.io/otel` | `v1.40.0` | 2026-02 | OpenTelemetry API |
+| `go.opentelemetry.io/otel/sdk` | `v1.40.0` | 2026-02 | OpenTelemetry SDK |
 | `go.opentelemetry.io/otel/exporters/prometheus` | `v0.61.0` | 2025-12 | Prometheus exporter |
 | `github.com/prometheus/client_golang` | `v1.21.0` | 2025-12 | Prometheus client |
 
@@ -416,7 +417,7 @@ replace (
 
 | Package | Version | Description |
 |---------|---------|-------------|
-| `github.com/panjf2000/ants/v2` | `v2.11.4` | High-performance goroutine pool |
+| `github.com/panjf2000/ants/v2` | `v2.11.5` | High-performance goroutine pool |
 | `golang.org/x/sync` | `v0.12.0` | Semaphore and errgroup |
 
 > **Why Forbid Naked `go func()`**:
@@ -473,7 +474,7 @@ replace (
 | `go.uber.org/mock` | `v0.5.2` | Mock generation (uber maintained) |
 | `github.com/testcontainers/testcontainers-go` | `v0.40.0` | Docker container testing (replaces SQLite) |
 | `github.com/testcontainers/testcontainers-go/modules/postgres` | `v0.40.0` | PostgreSQL module |
-| `sigs.k8s.io/controller-runtime` | `v0.22.4` | Test environment (envtest) |
+| `sigs.k8s.io/controller-runtime` | `v0.22.5` | Test environment (envtest) |
 
 > **Test Database Strategy**:
 > 
@@ -523,7 +524,7 @@ replace (
 | Middleware | Version | Support Cycle |
 |------------|---------|---------------|
 | **PostgreSQL** | `18.x` | Latest stable |
-| **Kubernetes** | `1.32+` | Test baseline 1.34 (aligned with kubevirt.io/client-go v1.7.0) |
+| **Kubernetes** | `1.32+` | Test baseline 1.33 (aligned with kubevirt.io/client-go v1.7.0) |
 | **KubeVirt** | `1.6+` | Recommended 1.7+ |
 
 > **Database Selection**: PostgreSQL, supports JSONB indexes, transactional DDL, SKIP LOCKED
@@ -641,25 +642,25 @@ require (
     entgo.io/ent v0.14.5
     ariga.io/atlas v1.0.0
     github.com/jackc/pgx/v5 v5.8.0
-    github.com/riverqueue/river v0.30.0
+    github.com/riverqueue/river v0.30.2
     
-    // Kubernetes (must match kubevirt.io/client-go v1.7.0)
-    k8s.io/client-go v0.34.0
-    k8s.io/apimachinery v0.34.0
-    k8s.io/api v0.34.0
+    // Kubernetes (must match kubevirt.io/client-go v1.7.0 → k8s.io v0.33.5)
+    k8s.io/client-go v0.33.5
+    k8s.io/apimachinery v0.33.5
+    k8s.io/api v0.33.5
     kubevirt.io/client-go v1.7.0
     kubevirt.io/api v1.7.0
     
     // Session storage (replaces Redis)
-    github.com/alexedwards/scs/v2 v2.8.0
-    github.com/alexedwards/scs/postgresstore v2.8.0
+    github.com/alexedwards/scs/v2 v2.9.0
+    github.com/alexedwards/scs/postgresstore v2.9.0
     
     // Logging and observability
     go.uber.org/zap v1.27.1
-    go.opentelemetry.io/otel v1.39.0
+    go.opentelemetry.io/otel v1.40.0
     
     // Worker Pool (Coding Standard - Required)
-    github.com/panjf2000/ants/v2 v2.11.4
+    github.com/panjf2000/ants/v2 v2.11.5
     golang.org/x/sync v0.12.0
     
     // OpenAPI Tooling (ADR-0029 Go-native)
@@ -671,11 +672,11 @@ require (
     github.com/testcontainers/testcontainers-go v0.40.0
 )
 
-// Force lock K8s dependency versions
+// Force lock K8s dependency versions (match kubevirt.io/client-go v1.7.0)
 replace (
-    k8s.io/api => k8s.io/api v0.34.0
-    k8s.io/apimachinery => k8s.io/apimachinery v0.34.0
-    k8s.io/client-go => k8s.io/client-go v0.34.0
+    k8s.io/api => k8s.io/api v0.33.5
+    k8s.io/apimachinery => k8s.io/apimachinery v0.33.5
+    k8s.io/client-go => k8s.io/client-go v0.33.5
 )
 ```
 
@@ -711,9 +712,9 @@ replace (
 
 ```bash
 # Upgrade all k8s.io packages simultaneously
-go get k8s.io/client-go@v0.34.0
-go get k8s.io/apimachinery@v0.34.0
-go get k8s.io/api@v0.34.0
+go get k8s.io/client-go@v0.33.5
+go get k8s.io/apimachinery@v0.33.5
+go get k8s.io/api@v0.33.5
 go mod tidy
 ```
 

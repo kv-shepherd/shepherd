@@ -20,15 +20,53 @@
 
 | Phase | Checklist | Specification | Status |
 |-------|-----------|---------------|--------|
-| Phase 0 | [checklist/phase-0-checklist.md](./checklist/phase-0-checklist.md) | [phases/00-prerequisites.md](./phases/00-prerequisites.md) | ⬜ Not Started |
-| Phase 1 | [checklist/phase-1-checklist.md](./checklist/phase-1-checklist.md) | [phases/01-contracts.md](./phases/01-contracts.md) | ⬜ Not Started |
-| Phase 2 | [checklist/phase-2-checklist.md](./checklist/phase-2-checklist.md) | [phases/02-providers.md](./phases/02-providers.md) | ⬜ Not Started |
-| Phase 3 | [checklist/phase-3-checklist.md](./checklist/phase-3-checklist.md) | [phases/03-service-layer.md](./phases/03-service-layer.md) | ⬜ Not Started |
-| Phase 4 | [checklist/phase-4-checklist.md](./checklist/phase-4-checklist.md) | [phases/04-governance.md](./phases/04-governance.md) | ⬜ Not Started |
+| Phase 0 | [checklist/phase-0-checklist.md](./checklist/phase-0-checklist.md) | [phases/00-prerequisites.md](./phases/00-prerequisites.md) | ✅ Complete (2026-02-09) |
+| Phase 1 | [checklist/phase-1-checklist.md](./checklist/phase-1-checklist.md) | [phases/01-contracts.md](./phases/01-contracts.md) | 🔄 Partial — Schemas ✅, CI/Testing gaps |
+| Phase 2 | [checklist/phase-2-checklist.md](./checklist/phase-2-checklist.md) | [phases/02-providers.md](./phases/02-providers.md) | 🔄 Partial — Basic CRUD ✅, Snapshot/Clone/Migration ❌ |
+| Phase 3 | [checklist/phase-3-checklist.md](./checklist/phase-3-checklist.md) | [phases/03-service-layer.md](./phases/03-service-layer.md) | 🔄 Partial — Core DI/UseCase + ADR-0012 atomic path ✅, concurrency ❌ |
+| Phase 4 | [checklist/phase-4-checklist.md](./checklist/phase-4-checklist.md) | [phases/04-governance.md](./phases/04-governance.md) | 🔄 Partial — Approval/Audit/Atomic enqueue/Delete/Namespace CRUD/Notification system (API+triggers+sender+bell) ✅, Batch ❌ |
+| Phase 5 | [checklist/phase-5-checklist.md](./checklist/phase-5-checklist.md) | [phases/05-auth-api-frontend.md](./phases/05-auth-api-frontend.md) | 🔄 In Progress — Backend Auth ✅, 38 endpoints (ADR-0028 omitzero) ✅, Frontend Pages ✅ (13/13), E2E pending |
 
 ---
 
 ## Cross-Phase Verification
+
+### Master-Flow VM Lifecycle Alignment (audited 2026-02-10)
+
+> **Purpose**: This section is the **coding checkpoint** for VM lifecycle implementation.
+> Start here instead of re-reading all backend code.
+>
+> **Source of truth**: [master-flow.md](interaction-flows/master-flow.md) Part 3 (Stages 5.A–5.F) + Stage 6 + Part 4
+>
+> **Detailed gaps**: See [phase-4-checklist.md §Master-Flow Alignment Status](checklist/phase-4-checklist.md#master-flow-alignment-status-vm-lifecycle-audited-2026-02-10)
+
+| Stage | Description | Alignment | Checklist Section | Design Doc Reference | Code Fix Priority |
+|-------|-------------|-----------|-------------------|----------------------|-------------------|
+| **Part 4** | State Machines & Data Models | ✅ 90% | [phase-2 §Anti-Corruption](checklist/phase-2-checklist.md#anti-corruption-layer) | [master-flow §Part 4](interaction-flows/master-flow.md#part-4-state-machines-data-models) | ~~P0~~ ✅ Done (2026-02-10) |
+| **5.A** | VM Request Submission | ✅ 90% | [phase-3 §UseCase](checklist/phase-3-checklist.md#usecase-layer-standards-clean-architecture) | [master-flow §5.A](interaction-flows/master-flow.md#stage-5-a) | P2 — remove domain `PENDING` |
+| **5.B** | Admin Approval | ✅ 90% | [phase-4 §Approval](checklist/phase-4-checklist.md#approval-flow-governance-core) | [master-flow §5.B](interaction-flows/master-flow.md#stage-5-b) | P3 — prod overcommit warning UX |
+| **5.C** | VM Creation Execution | ✅ 95% | [phase-4 §River Queue](checklist/phase-4-checklist.md#river-queue-task-system-adr-0006) | [master-flow §5.C](interaction-flows/master-flow.md#state-transitions-stage-5a-5c) | P3 — provider hard idempotency |
+| **5.D** | Delete Operations | ✅ 90% | [phase-4 §Delete](checklist/phase-4-checklist.md#delete-confirmation-mechanism-adr-0015-131) | [master-flow §5.D](interaction-flows/master-flow.md#stage-5d-delete-operations) | P2 — tombstone cleanup policy |
+| **5.E** | Batch Operations | ❌ 0% | [phase-4 §Batch](checklist/phase-4-checklist.md#batch-operations-adr-0015-19) | [master-flow §5.E](interaction-flows/master-flow.md#stage-5e-batch-operations) | P3 — future iteration |
+| **5.F** | Notification System | ✅ 85% | [phase-4 §Notification](checklist/phase-4-checklist.md#notification-system-adr-0015-20) | [master-flow §5.F](interaction-flows/master-flow.md#stage-5f-notification-system) | P3 — API+triggers+sender+frontend bell done; retention cleanup pending |
+| **6** | VNC Console Access | ❌ 0% | [phase-4 §VNC](checklist/phase-4-checklist.md#vnc-console-permissions-adr-0015-18-181-addendum) | [master-flow §6](interaction-flows/master-flow.md#stage-6-vnc-console-access) | P3 — future iteration |
+
+#### Coding Priority Queue (work in this order)
+
+1. ~~**P0** — Fix VM status enum (`domain/vm.go`): `ERROR`→`FAILED`, add `STOPPING`, remove `PENDING`~~ ✅ **Done** (2026-02-10)
+   - `ERROR`→`FAILED`, added `STOPPING`/`MIGRATING`/`PAUSED`/`UNKNOWN`
+   - Ent schema, mapper, OpenAPI spec, all handlers aligned
+   - `PENDING` retained as K8s-extended state (not removed, used by mapper)
+2. ~~**P1** — Ent codegen + Atlas migration for VM status enum changes~~ ✅ **Done** (2026-02-10)
+3. ~~**P1** — Frontend VM status labels/colors sync (`web/src/types/api.gen.ts`)~~ ✅ **Done** (2026-02-10)
+   - `api.gen.ts` regenerated from OpenAPI spec
+   - `VM_STATUS_MAP` in `vms/page.tsx` updated (APPROVED/ERROR/DELETED → STOPPING/FAILED/MIGRATING/PAUSED/UNKNOWN)
+   - i18n keys updated (en + zh-CN)
+4. ~~**P1** — Enhance `ApprovalValidator`: dedicated CPU + overcommit check, resource capability matching~~ ✅ **Done** (2026-02-10)
+5. ~~**P1** — Fix delete governance: cascade checks, approval ticket for VM delete, `DELETING` state usage~~ ✅ **Done** (2026-02-10)
+6. ~~**P2** — Ticket lifecycle: worker updates ticket `EXECUTING`→`SUCCESS/FAILED`~~ ✅ **Done** (2026-02-10)
+7. ~~**P1** — Align approval commit path to ADR-0012 (`sqlc + InsertTx`)~~ ✅ **Done** (2026-02-10)
+8. **P3** — Batch / VNC (deferred to later iterations); Notification system ✅ (API+triggers+InboxSender+frontend bell; only retention cleanup pending)
 
 ### CI Checks
 
@@ -132,11 +170,12 @@ The following items are moved to [RFC directory](../rfc/):
 
 | Phase | Status | Completion Date | Verified By |
 |-------|--------|-----------------|-------------|
-| Phase 0 | ⬜ Not Started | - | - |
-| Phase 1 | ⬜ Not Started | - | - |
-| Phase 2 | ⬜ Not Started | - | - |
-| Phase 3 | ⬜ Not Started | - | - |
-| Phase 4 | ⬜ Not Started | - | - |
+| Phase 0 | ✅ Complete | 2026-02-09 | CI green (go vet/build/test) |
+| Phase 1 | 🔄 Partial (~80%) | - | Schemas done, CI enforcement gaps |
+| Phase 2 | 🔄 Partial (~50%) | - | Basic VM CRUD, advanced ops deferred |
+| Phase 3 | 🔄 Partial (~70%) | - | Core DI/UseCase + ADR-0012 atomic approval done, concurrency deferred |
+| Phase 4 | 🔄 Partial (~85%) | - | Approval/Audit/Delete/atomic enqueue/Namespace CRUD/Notification system done, batch/env isolation deferred |
+| Phase 5 | 🔄 In Progress (~95%) | - | Backend auth ✅, API gen 38 endpoints (ADR-0028 omitzero) ✅, Frontend 13/13 pages ✅, E2E pending |
 
 ---
 

@@ -1,31 +1,39 @@
 # Phase 2 Checklist: Provider Implementation
 
 > **Detailed Document**: [phases/02-providers.md](../phases/02-providers.md)
+>
+> **Implementation Status**: 🔄 Partial (~50%) — Basic VM CRUD + mapper done, Snapshot/Clone/Migration/ResourceWatcher deferred
 
 ---
 
 ## Anti-Corruption Layer
 
-- [ ] **Domain Model Definition** (`internal/domain/`):
-  - [ ] `vm.go` - VM domain model (decoupled from K8s VirtualMachine)
-  - [ ] `snapshot.go` - Snapshot domain model
-  - [ ] `VMStatus` internal enum (PENDING, RUNNING, STOPPED, FAILED, MIGRATING)
-- [ ] **KubeVirtMapper** (`internal/provider/mapper.go`):
-  - [ ] `MapVM()` - Maps VirtualMachine + VMI to `domain.VM`
-  - [ ] `MapSnapshot()` - Maps VirtualMachineSnapshot to `domain.VMSnapshot`
-  - [ ] `MapVMList()` - Batch mapping with VMI lookup optimization
-  - [ ] **Defensive Programming**: All pointer fields must check nil
-  - [ ] **Error Extraction**: Extract from Status.PrintableStatus and Conditions
-- [ ] **Provider Integration**: All methods return `domain.*` types
+- [x] **Domain Model Definition** (`internal/domain/`):
+  - [x] `vm.go` - VM domain model (decoupled from K8s VirtualMachine)
+  - [x] `snapshot.go` - Snapshot domain model (in vm.go)
+  - [x] `VMStatus` internal enum (PENDING, RUNNING, STOPPED, FAILED, MIGRATING)
+- [x] **KubeVirtMapper** (`internal/provider/mapper.go`):
+  - [x] `MapVM()` - Maps VirtualMachine + VMI to `domain.VM`
+  - [x] `MapSnapshot()` - Maps VirtualMachineSnapshot to `domain.VMSnapshot`
+  - [x] `MapVMList()` - Batch mapping with VMI lookup optimization
+  - [x] **Defensive Programming**: All pointer fields must check nil
+  - [x] **Error Extraction**: Extract from Status.PrintableStatus and Conditions
+- [x] **Provider Integration**: All methods return `domain.*` types
+
+> ⚠️ **Master-Flow Alignment Issue (P0, audited 2026-02-10)**:
+> `domain/vm.go` declares `VMStatusError = "ERROR"` but master-flow state diagram uses `FAILED`.
+> Also missing `STOPPING` transitional state. `PENDING` status should not exist at VM domain level
+> (VM row is not created until approval per master-flow Stage 5.A).
+> **Fix**: Rename `ERROR` → `FAILED`, add `STOPPING`, remove domain-level `PENDING`.
 
 ---
 
 ## VM Basic Operations
 
-- [ ] Using `kubevirt.io/client-go` official client
-- [ ] `GetVM`, `ListVMs`, `CreateVM`, `UpdateVM`, `DeleteVM` implemented
-- [ ] `StartVM`, `StopVM`, `RestartVM`, `PauseVM`, `UnpauseVM` implemented
-- [ ] VMI queries (`GetVMI`, `ListVMIs`)
+- [x] Using `kubevirt.io/api` types + custom client interface (kubecli bound at composition root)
+- [x] `GetVM`, `ListVMs`, `CreateVM`, `UpdateVM`, `DeleteVM` implemented
+- [x] `StartVM`, `StopVM`, `RestartVM`, `PauseVM`, `UnpauseVM` implemented
+- [x] VMI queries (via `VirtualMachineInstanceClient` interface)
 
 ---
 
@@ -73,24 +81,24 @@
 > **Purpose**: Ensure provider interfaces follow capability interface segregation for testability.
 > **Reference**: [examples/provider/interface.go](../examples/provider/interface.go)
 
-- [ ] **Capability interfaces defined** (`internal/provider/interface.go`):
-  - [ ] `InfrastructureProvider` - Base VM lifecycle
-  - [ ] `SnapshotProvider` - Snapshot operations
-  - [ ] `CloneProvider` - Clone operations
-  - [ ] `MigrationProvider` - Migration operations
-  - [ ] `InstanceTypeProvider` - Instance type queries
-  - [ ] `ConsoleProvider` - Console access
-- [ ] **`KubeVirtProvider` embeds all capability interfaces** (Code Review enforcement)
-- [ ] **Service layer depends on narrow interfaces** (e.g., `SnapshotProvider` only when only snapshot is needed)
-- [ ] ❌ **No monolithic interface dependencies** - avoid depending on full `KubeVirtProvider` when a narrow interface suffices
+- [x] **Capability interfaces defined** (`internal/provider/interface.go`):
+  - [x] `InfrastructureProvider` - Base VM lifecycle
+  - [x] `SnapshotProvider` - Snapshot operations
+  - [x] `CloneProvider` - Clone operations
+  - [x] `MigrationProvider` - Migration operations
+  - [x] `InstanceTypeProvider` - Instance type queries
+  - [x] `ConsoleProvider` - Console access
+- [x] **`KubeVirtProvider` embeds all capability interfaces** (Code Review enforcement)
+- [x] **Service layer depends on narrow interfaces** (e.g., `SnapshotProvider` only when only snapshot is needed)
+- [x] ❌ **No monolithic interface dependencies** - avoid depending on full `KubeVirtProvider` when a narrow interface suffices
 
 ---
 
 ## MockProvider
 
-- [ ] Interface identical to `KubeVirtProvider`
-- [ ] In-memory storage implementation
-- [ ] Supports `Seed()` and `Reset()` test methods
+- [x] Interface identical to `KubeVirtProvider`
+- [x] In-memory storage implementation
+- [x] Supports `Seed()` and `Reset()` test methods
 
 ---
 
@@ -109,27 +117,27 @@
 
 ## Cluster Health Check
 
-- [ ] **ClusterHealthChecker** implemented
-- [ ] **Health Check Logic** complete
-- [ ] **Status Enum** defined (UNKNOWN, HEALTHY, UNHEALTHY, UNREACHABLE)
+- [x] **ClusterHealthChecker** implemented (`internal/provider/health_checker.go`)
+- [x] **Health Check Logic** complete (periodic + on-demand)
+- [x] **Status Enum** defined (UNKNOWN, HEALTHY, UNHEALTHY, UNREACHABLE)
 
 ---
 
 ## Cluster Capability Detection (ADR-0014)
 
-- [ ] **CapabilityDetector Implementation** complete
-- [ ] **Cluster Schema Extensions** added
-- [ ] **InstanceSize Capability Requirements** verified (capabilities moved from Template to InstanceSize per ADR-0018)
-- [ ] **ClusterCompatibilityService** implemented
-- [ ] **Health Check Integration** working
-- [ ] **Dry run fallback** implemented
+- [x] **CapabilityDetector Implementation** complete (`internal/provider/capability.go`)
+- [x] **Cluster Schema Extensions** added
+- [x] **InstanceSize Capability Requirements** verified (capabilities moved from Template to InstanceSize per ADR-0018)
+- [x] **HasAllCapabilities** for cluster-instancesize matching implemented
+- [x] **Health Check Integration** working (piggybacks on health check cycle)
+- [x] **Dry run fallback** implemented (ValidateSpec with DryRunAll)
 
 ---
 
 ## Resource Adoption Security
 
 - [ ] **Discovery Mechanism** (Label-based only) implemented
-- [ ] **PendingAdoption Table** schema complete
+- [x] **PendingAdoption Table** schema complete
 - [ ] **Admin API** for adoption management
 - [ ] **Periodic Scan** configured
 - [ ] **Audit Log** for adoption operations
@@ -147,16 +155,19 @@
 
 ## Approval Protocol Skeleton
 
-- [ ] Approval ticket data model
-- [ ] Approval policy data model
-- [ ] State machine definition
-- [ ] Interface definitions
-- [ ] Database migration scripts
+- [x] Approval ticket data model (Ent schema)
+- [x] Approval policy data model (Ent schema)
+- [x] State machine definition (PENDING → APPROVED/REJECTED/CANCELLED)
+- [x] Interface definitions (`ApprovalProvider` in `internal/provider/auth.go`)
+- [ ] Database migration scripts (Atlas — Phase 4)
 
 ---
 
 ## Pre-Phase 3 Verification
 
-- [ ] KubeVirtProvider unit tests pass (using Mock Client)
-- [ ] ResourceWatcher `410 Gone` handling test passes
-- [ ] Mapper defensive code test coverage > 80%
+- [ ] KubeVirtProvider unit tests pass (using Mock Client) — requires testcontainers
+- [ ] ResourceWatcher `410 Gone` handling test passes — deferred
+- [ ] Mapper defensive code test coverage > 80% — deferred
+- [x] `go vet ./...` passes
+- [x] `go build ./...` passes
+- [x] `go test -race ./...` passes
