@@ -2283,6 +2283,15 @@ func ValidateIDToken(token *oidc.IDToken, expectedIssuer, expectedAudience strin
 > - `ClusterID`: Moved from user input to admin approval workflow. Administrators select the target cluster based on namespace environment, cluster capacity, and capability requirements.
 > - `Namespace`: User-provided and **immutable after submission**. Admin can only approve/reject, never modify. This prevents permission escalation attacks.
 
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §15. Namespace Responsibility Boundary: `namespace_registry` schema with `cluster_id` field | **SUPERSEDED** | Namespace is a global logical entity, NOT bound to a single cluster. Remove `cluster_id` from `namespace_registry`. A namespace can be provisioned across multiple clusters sharing the same environment type. | [ADR-0017 §Namespace Schema Correction](./ADR-0017-vm-request-flow-clarification.md) |
+| §New Schemas Required (line 2199): `namespace_registry.go` field list | **AMENDED** | Remove `cluster_id` from the required fields. Correct fields: `name`, `environment` (test/prod) | [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) |
+
+> **Implementation Guidance**:
+> - `namespace_registry` schema must NOT contain `cluster_id`. Namespace-to-cluster mapping is resolved at runtime based on environment type matching.
+> - The schema shown in §15 (containing `cluster_id`) is historical and must not be followed for implementation.
+
 ### ADR-0018: Instance Size Abstraction (2026-01-28)
 
 | Original Section | Status | Amendment Details | See Also |
@@ -2320,5 +2329,45 @@ func ValidateIDToken(token *oidc.IDToken, expectedIssuer, expectedAudience strin
 > - **Table Name**: Use `auth_providers` as the canonical table name
 > - **API Paths**: Use `/api/v1/admin/auth-providers/{id}/...` instead of `/api/v1/admin/idp/{id}/...`
 > - **Audit Actions**: Use `auth_provider.*` instead of `idp.*` for audit action naming
+
+### §13 Delete Confirmation: HTTP Method Compliance Addendum (2026-02-10) {#adr-0015-delete-confirm-addendum}
+
+> **Type**: Implementation transport amendment.
+> **Intent**: Keep §13 original confirmation semantics unchanged while aligning with HTTP/OpenAPI standards.
+
+**Background**: §13 originally specified `confirm_name` in DELETE request body for System and production VM deletions. During implementation, the following constraints were identified:
+
+1. **RFC 9110 (HTTP Semantics)**: "A client SHOULD NOT generate content in a DELETE request unless made directly to an origin server that has previously indicated [...] that such a request has a purpose" — content in DELETE "has no generally defined semantics" and "might lead some implementations to reject the request".
+2. **OpenAPI 3.0**: Explicitly removed `requestBody` support for GET, DELETE, and HEAD methods. `oapi-codegen` (our code generator per ADR-0021/0028) will not generate body bindings for DELETE operations.
+3. **Infrastructure risk**: Proxies and load balancers (including cloud LBs) may silently strip DELETE request bodies.
+
+**Amendment**: The `confirm_name` field is transmitted as a **query parameter** instead of request body. All other confirmation semantics from §13 remain unchanged:
+
+| Original (§13) | Amended Transport | Semantics |
+|-----------------|-------------------|-----------|
+| VM (test): `confirm=true` query param | **Unchanged** | Same |
+| VM (prod): `confirm_name` in body | `confirm_name` as **query parameter** | Same validation: must match VM name exactly |
+| Service: `confirm=true` query param | **Unchanged** | Same |
+| System: `confirm_name` in body | `confirm_name` as **query parameter** | Same validation: must match system name exactly |
+
+**Updated API examples**:
+
+```bash
+# Test VM Delete - unchanged
+DELETE /api/v1/vms/{id}?confirm=true
+
+# Prod VM Delete - confirm_name moved to query param
+DELETE /api/v1/vms/{id}?confirm_name=prod-shop-redis-01
+
+# Service Delete - unchanged
+DELETE /api/v1/services/{id}?confirm=true
+
+# System Delete - confirm_name moved to query param
+DELETE /api/v1/systems/{id}?confirm_name=shop
+```
+
+**Error responses**: `DELETE_CONFIRMATION_REQUIRED` and `CONFIRMATION_NAME_MISMATCH` error types from §13 remain unchanged. The error response structure is identical regardless of transport mechanism.
+
+**Scope rule**: This addendum applies to V1 implementation. The "type resource name" UX pattern is preserved in the frontend — the frontend requires the user to type the name, then passes it as a query parameter to the backend API.
 
 ---

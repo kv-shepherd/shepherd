@@ -40,8 +40,8 @@
 | [ADR-0028](./ADR-0028-oapi-codegen-optional-field-strategy.md) | oapi-codegen Optional Field Strategy | **Accepted** | - |
 | [ADR-0029](./ADR-0029-openapi-toolchain-governance.md) | OpenAPI Toolchain Governance | **Accepted** | - |
 | [ADR-0030](./ADR-0030-design-documentation-layering-and-fullstack-governance.md) | Design Documentation Layering and Full-Stack Governance | **Accepted** | - |
-| [ADR-0031](./ADR-0031-concurrency-and-worker-pool-standard.md) | Concurrency Safety and Worker Pool Standard | **Proposed** | - |
-| [ADR-0032](./ADR-0032-master-flow-traceability-manifest.md) | Master-Flow Traceability Manifest and Drift Enforcement | **Proposed** | - |
+| [ADR-0031](./ADR-0031-concurrency-and-worker-pool-standard.md) | Concurrency Safety and Worker Pool Standard | **Accepted** | - |
+| [ADR-0032](./ADR-0032-master-flow-traceability-manifest.md) | Master-Flow Traceability Manifest and Drift Enforcement | **Accepted** | - |
 
 > ⚠️ **¹ ADR-0009 Partial Supersession Notice**:
 >

@@ -29,7 +29,8 @@
         "docs/design/checklist/phase-0-checklist.md"
       ],
       "adrs": [
-        "docs/adr/ADR-0025-secret-bootstrap.md"
+        "docs/adr/ADR-0025-secret-bootstrap.md",
+        "docs/adr/ADR-0032-master-flow-traceability-manifest.md"
       ]
     },
     {
@@ -130,7 +131,8 @@
       ],
       "adrs": [
         "docs/adr/ADR-0014-capability-detection.md",
-        "docs/adr/ADR-0018-instance-size-abstraction.md"
+        "docs/adr/ADR-0018-instance-size-abstraction.md",
+        "docs/adr/ADR-0031-concurrency-and-worker-pool-standard.md"
       ]
     },
     {
