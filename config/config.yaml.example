@@ -1,0 +1,56 @@
+# KubeVirt Shepherd Configuration Example
+# Copy to config.yaml and modify for your environment.
+# Environment variables override all file-based settings (ADR-0018).
+
+server:
+  port: 8080
+  read_timeout: "30s"
+  write_timeout: "30s"
+  shutdown_timeout: "30s"
+
+database:
+  # Option 1: Use DATABASE_URL (takes precedence)
+  # url: "postgres://shepherd:secret@localhost:5432/shepherd?sslmode=disable"
+  # Option 2: Individual fields
+  host: localhost
+  port: 5432
+  user: shepherd
+  password: ""
+  database: shepherd
+  sslmode: disable
+  # ADR-0012: Shared pool for Ent + River + sqlc
+  max_conns: 50
+  min_conns: 5
+  max_conn_lifetime: "1h"
+  max_conn_idle_time: "10m"
+  auto_migrate: false
+
+session:
+  lifetime: "24h"
+  idle_timeout: "30m"
+  cookie: "session_id"
+  secure: true
+  http_only: true
+
+k8s:
+  cluster_concurrency: 20
+  operation_timeout: "5m"
+
+log:
+  level: info      # debug, info, warn, error
+  format: json     # json or console
+
+river:
+  max_workers: 10
+  completed_job_retention_period: "24h"
+
+security:
+  # ADR-0025: Auto-generated on first boot if missing
+  # encryption_key: ""   # 32-byte base64 key (openssl rand -base64 32)
+  # session_secret: ""   # 32-byte base64 key (openssl rand -base64 32)
+  password_policy:
+    mode: nist          # "nist" (default) or "legacy"
+
+worker:
+  general_pool_size: 100
+  k8s_pool_size: 50
