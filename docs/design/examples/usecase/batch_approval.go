@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package usecase provides batch operation examples.
 //
 // Reference: ADR-0015 §19, 04-governance.md §5.6

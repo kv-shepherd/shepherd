@@ -1,3 +1,5 @@
+//go:build ignore
+
 /*
 CI 检查脚本: 禁止 Outbox 导入和引用
 

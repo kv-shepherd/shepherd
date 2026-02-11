@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package config provides configuration management for KubeVirt Shepherd.
 //
 // Configuration is loaded from:

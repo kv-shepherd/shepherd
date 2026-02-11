@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package handlers provides HTTP request handlers.
 //
 // Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/handler

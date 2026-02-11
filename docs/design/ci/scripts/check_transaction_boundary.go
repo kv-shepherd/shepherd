@@ -1,3 +1,5 @@
+//go:build ignore
+
 // scripts/ci/check_transaction_boundary.go
 
 /*

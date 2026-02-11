@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package usecase provides Clean Architecture use cases.
 //
 // ADR-0012: Demonstrates hybrid atomic transaction pattern.

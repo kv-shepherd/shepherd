@@ -1,3 +1,5 @@
+//go:build ignore
+
 // check_semaphore_usage.go enforces ADR-0031 (Concurrency Safety and Worker Pool Standard).
 //
 // Rule: any semaphore Acquire() in a function must have a paired defer Release()

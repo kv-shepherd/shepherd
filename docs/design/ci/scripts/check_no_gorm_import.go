@@ -1,3 +1,5 @@
+//go:build ignore
+
 // scripts/ci/check_legacy_orm.go
 
 /*

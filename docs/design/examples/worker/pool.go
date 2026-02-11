@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package worker provides goroutine pool management.
 //
 // Coding Standard (ADR-0031): Naked goroutines are forbidden.

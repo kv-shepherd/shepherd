@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package provider defines the infrastructure provider interfaces.
 //
 // This is the Anti-Corruption Layer between the platform and KubeVirt.

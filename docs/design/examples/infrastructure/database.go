@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package infrastructure provides database and connection pool setup.
 //
 // ADR-0012: Uses shared pgxpool for Ent, River, and sqlc.

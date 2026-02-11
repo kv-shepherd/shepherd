@@ -1,3 +1,5 @@
+//go:build ignore
+
 // scripts/ci/check_forbidden_imports.go
 
 /*

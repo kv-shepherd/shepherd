@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package domain provides domain models and event patterns.
 //
 // ADR-0009: Domain Event Pattern (Claim Check, not Event Sourcing)

@@ -1,3 +1,5 @@
+//go:build ignore
+
 // scripts/ci/check_k8s_in_transaction.go
 
 /*

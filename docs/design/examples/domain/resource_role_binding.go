@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package domain provides example domain entities for KubeVirt Shepherd.
 //
 // This file defines resource-level RBAC entities per ADR-0018 §Stage 2.A+, §Stage 4.A+.

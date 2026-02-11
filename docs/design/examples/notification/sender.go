@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package notification provides the notification system implementation.
 //
 // Reference: ADR-0015 §20, 04-governance.md §6.3

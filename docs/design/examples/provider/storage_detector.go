@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package provider provides storage detection utilities.
 //
 // Reference: ADR-0015 §8, 04-governance.md §5.5

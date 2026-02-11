@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package domain provides example domain entities for KubeVirt Shepherd.
 //
 // This file defines the InstanceSize entity per ADR-0018.

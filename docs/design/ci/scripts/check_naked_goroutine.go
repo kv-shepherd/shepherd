@@ -1,3 +1,5 @@
+//go:build ignore
+
 // check_naked_goroutine.go enforces ADR-0031 (Concurrency Safety and Worker Pool Standard).
 //
 // Rule: no naked `go` statements under internal/ (non-test) code.
@@ -8,6 +10,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -56,16 +59,62 @@ func main() {
 			}
 		}
 
+		// Check for file-level nolint comment.
+		if hasFileNolint(path, "naked-goroutine") {
+			return nil
+		}
+
 		fset := token.NewFileSet()
-		node, err := parser.ParseFile(fset, path, nil, 0)
+		node, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
 		if err != nil {
 			return nil
+		}
+
+		// Build set of function positions suppressed by nolint.
+		type lineRange struct{ start, end int }
+		var suppressedRanges []lineRange
+		for _, decl := range node.Decls {
+			funcDecl, ok := decl.(*ast.FuncDecl)
+			if !ok || funcDecl.Body == nil {
+				continue
+			}
+			// Check doc comments on the function.
+			if funcDecl.Doc != nil {
+				for _, c := range funcDecl.Doc.List {
+					if strings.Contains(c.Text, "nolint:naked-goroutine") {
+						bodyStart := fset.Position(funcDecl.Body.Pos()).Line
+						bodyEnd := fset.Position(funcDecl.Body.End()).Line
+						suppressedRanges = append(suppressedRanges, lineRange{bodyStart, bodyEnd})
+					}
+				}
+			}
+		}
+		// Also check standalone inline nolint comments (not attached to functions).
+		for _, cg := range node.Comments {
+			for _, c := range cg.List {
+				if strings.Contains(c.Text, "nolint:naked-goroutine") {
+					commentLine := fset.Position(c.Pos()).Line
+					// Suppress same line and next line.
+					suppressedRanges = append(suppressedRanges, lineRange{commentLine, commentLine + 1})
+				}
+			}
+		}
+		isSuppressed := func(line int) bool {
+			for _, r := range suppressedRanges {
+				if line >= r.start && line <= r.end {
+					return true
+				}
+			}
+			return false
 		}
 
 		// Detect any "go" statement.
 		ast.Inspect(node, func(n ast.Node) bool {
 			if goStmt, ok := n.(*ast.GoStmt); ok {
 				pos := fset.Position(goStmt.Pos())
+				if isSuppressed(pos.Line) {
+					return true // Suppressed by nolint
+				}
 				errors = append(errors, fmt.Sprintf(
 					"%s:%d: naked goroutine is forbidden; use worker pool submission (e.g. pools.General.Submit())",
 					path, pos.Line,
@@ -91,4 +140,22 @@ func main() {
 	}
 
 	fmt.Println("[naked-goroutine] OK")
+}
+
+// hasFileNolint scans the first 20 lines of a file for a file-level nolint comment.
+func hasFileNolint(path, tag string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for i := 0; i < 20 && scanner.Scan(); i++ {
+		line := scanner.Text()
+		if strings.Contains(line, "nolint:"+tag) {
+			return true
+		}
+	}
+	return false
 }

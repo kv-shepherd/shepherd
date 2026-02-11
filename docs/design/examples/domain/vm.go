@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package domain provides domain models.
 //
 // Anti-Corruption Layer: These types are decoupled from K8s types.

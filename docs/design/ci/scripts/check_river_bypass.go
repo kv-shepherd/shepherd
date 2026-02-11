@@ -1,3 +1,5 @@
+//go:build ignore
+
 // scripts/ci/check_river_bypass.go
 
 /*
@@ -33,8 +35,6 @@ import (
 var protectedEntities = map[string]bool{
 	"VM":             true,
 	"VirtualMachine": true,
-	"ApprovalTicket": true,
-	"Ticket":         true,
 	"Service":        true,
 	"System":         true,
 	"Cluster":        true,
@@ -54,11 +54,20 @@ var writeMethods = map[string]bool{
 }
 
 // Exempted entities (synchronous writes allowed per ADR exception)
+//   - Notification, AuditLog: per 04-governance.md §6.3
+//   - DomainEvent: part of the claim-check transaction (ADR-0009)
+//   - ApprovalTicket: ADR-0006 line 133-134 explicitly states approval logic is
+//     implemented via DomainEvent + ApprovalTicket tables, and River Job is inserted
+//     AFTER approval (not before). Lines 163-166 clarify async mandate targets
+//     K8s API calls and external I/O, not internal DB writes.
+//   - Session: auth session management, no K8s interaction.
 var exemptedEntities = map[string]bool{
-	"Notification": true,
-	"DomainEvent":  true,
-	"AuditLog":     true,
-	"Session":      true,
+	"Notification":   true,
+	"DomainEvent":    true,
+	"AuditLog":       true,
+	"Session":        true,
+	"ApprovalTicket": true,
+	"Ticket":         true,
 }
 
 type bypassVisitor struct {
