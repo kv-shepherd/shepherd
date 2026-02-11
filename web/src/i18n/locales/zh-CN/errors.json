@@ -1,0 +1,11 @@
+{
+    "NAMESPACE_PERMISSION_DENIED": "您没有创建命名空间 '{{namespace}}' 的权限",
+    "NAMESPACE_CREATION_FAILED": "创建命名空间 '{{namespace}}' 失败：{{reason}}",
+    "CLUSTER_UNHEALTHY": "集群 '{{cluster}}' 当前不可用",
+    "APPROVAL_REQUIRED": "此操作需要审批",
+    "INVALID_CREDENTIALS": "用户名或密码无效",
+    "TOKEN_EXPIRED": "您的会话已过期，请重新登录。",
+    "FORBIDDEN": "您没有执行此操作的权限",
+    "NOT_FOUND": "未找到请求的资源",
+    "INTERNAL_ERROR": "发生内部错误，请稍后重试。"
+}

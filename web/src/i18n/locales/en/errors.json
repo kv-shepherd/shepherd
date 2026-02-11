@@ -1,0 +1,11 @@
+{
+    "NAMESPACE_PERMISSION_DENIED": "You don't have permission to create namespace '{{namespace}}'",
+    "NAMESPACE_CREATION_FAILED": "Failed to create namespace '{{namespace}}': {{reason}}",
+    "CLUSTER_UNHEALTHY": "Cluster '{{cluster}}' is currently unavailable",
+    "APPROVAL_REQUIRED": "This action requires approval",
+    "INVALID_CREDENTIALS": "Invalid username or password",
+    "TOKEN_EXPIRED": "Your session has expired. Please login again.",
+    "FORBIDDEN": "You do not have permission to perform this action",
+    "NOT_FOUND": "The requested resource was not found",
+    "INTERNAL_ERROR": "An internal error occurred. Please try again later."
+}
