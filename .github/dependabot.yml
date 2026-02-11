@@ -6,6 +6,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # KubeVirt/K8s stack is intentionally pinned; upgrade in manual batch windows.
+    ignore:
+      - dependency-name: "k8s.io/*"
+      - dependency-name: "kubevirt.io/*"
+      - dependency-name: "sigs.k8s.io/*"
     labels:
       - "dependencies"
       - "go"

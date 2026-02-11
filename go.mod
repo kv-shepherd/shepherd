@@ -113,3 +113,11 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.6.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+// Lock Kubernetes core dependencies to match kubevirt.io/client-go v1.7.0 baseline.
+replace (
+	k8s.io/api => k8s.io/api v0.33.5
+	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.33.5
+	k8s.io/apimachinery => k8s.io/apimachinery v0.33.5
+	k8s.io/client-go => k8s.io/client-go v0.33.5
+)
