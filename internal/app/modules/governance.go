@@ -2,10 +2,12 @@ package modules
 
 import (
 	"context"
+	"time"
 
 	"github.com/riverqueue/river"
 
 	"kv-shepherd.io/shepherd/internal/api/handlers"
+	"kv-shepherd.io/shepherd/internal/jobs"
 )
 
 // GovernanceModule is a domain boundary placeholder for system/service/RBAC composition.
@@ -23,6 +25,11 @@ func (m *GovernanceModule) Name() string { return "governance" }
 
 func (m *GovernanceModule) ContributeServerDeps(_ *handlers.ServerDeps) {}
 
-func (m *GovernanceModule) RegisterWorkers(_ *river.Workers) {}
+func (m *GovernanceModule) RegisterWorkers(workers *river.Workers) {
+	if workers == nil || m == nil || m.infra == nil || m.infra.EntClient == nil {
+		return
+	}
+	river.AddWorker(workers, jobs.NewNotificationCleanupWorker(m.infra.EntClient, 90*24*time.Hour))
+}
 
 func (m *GovernanceModule) Shutdown(context.Context) error { return nil }

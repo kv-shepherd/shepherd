@@ -4,6 +4,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/riverqueue/river"
@@ -12,6 +13,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/app/modules"
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/infrastructure"
+	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/pkg/worker"
 )
 
@@ -45,6 +47,19 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 		infra.Close()
 		return nil, fmt.Errorf("init river workers: %w", err)
 	}
+	// Notification retention cleanup (master-flow Stage 5.F): run daily and once
+	// on startup to avoid long-lived inbox bloat.
+	if infra.RiverClient != nil {
+		infra.RiverClient.PeriodicJobs().Add(
+			river.NewPeriodicJob(
+				river.PeriodicInterval(24*time.Hour),
+				func() (river.JobArgs, *river.InsertOpts) {
+					return jobs.NotificationCleanupArgs{}, nil
+				},
+				&river.PeriodicJobOpts{RunOnStart: true},
+			),
+		)
+	}
 
 	approvalModule, err := modules.NewApprovalModule(infra)
 	if err != nil {
@@ -53,11 +68,12 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 	}
 
 	allModules := append(baseModules, approvalModule)
-	server := handlers.NewServer(modules.NewServerDeps(cfg, infra, allModules))
+	serverDeps := modules.NewServerDeps(cfg, infra, allModules)
+	server := handlers.NewServer(serverDeps)
 
 	return &Application{
 		Config:  cfg,
-		Router:  newRouter(server, []byte(cfg.Security.SessionSecret)),
+		Router:  newRouter(server, serverDeps.JWTCfg),
 		DB:      infra.DB,
 		Pools:   infra.Pools,
 		Modules: allModules,

@@ -123,7 +123,8 @@ func (c *DatabaseClients) InitRiverClient(workers *river.Workers, cfg config.Riv
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: cfg.MaxWorkers},
 		},
-		Workers: workers,
+		Workers:                     workers,
+		CompletedJobRetentionPeriod: cfg.CompletedJobRetentionPeriod,
 	})
 	if err != nil {
 		return fmt.Errorf("create river client: %w", err)
