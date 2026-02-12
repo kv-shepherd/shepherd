@@ -11,7 +11,6 @@ import { useState } from 'react';
 import {
     Table,
     Button,
-    Space,
     Typography,
     Tag,
     Input,
@@ -20,6 +19,7 @@ import {
     Row,
     Col,
     Badge,
+    Popover,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -129,11 +129,24 @@ export default function AuditLogPage() {
             dataIndex: 'details',
             key: 'details',
             ellipsis: true,
-            render: (details: Record<string, unknown>) => (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                    {details ? JSON.stringify(details).slice(0, 100) : '—'}
-                </Text>
-            ),
+            render: (details: Record<string, unknown>) => {
+                if (!details || Object.keys(details).length === 0) return <Text type="secondary">—</Text>;
+                return (
+                    <Popover
+                        content={
+                            <pre style={{ maxWidth: 400, maxHeight: 300, overflow: 'auto', fontSize: 12 }}>
+                                {JSON.stringify(details, null, 2)}
+                            </pre>
+                        }
+                        title={t('audit.details')}
+                        trigger="click"
+                    >
+                        <Text code style={{ cursor: 'pointer', fontSize: 12 }}>
+                            {'{...}'}
+                        </Text>
+                    </Popover>
+                );
+            },
         },
         {
             title: t('audit.timestamp'),
@@ -219,6 +232,7 @@ export default function AuditLogPage() {
                         onChange: (p, ps) => { setPage(p); setPageSize(ps); },
                     }}
                     size="middle"
+                    scroll={{ x: 'max-content' }}
                 />
             </Card>
         </div>

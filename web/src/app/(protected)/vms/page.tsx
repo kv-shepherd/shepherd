@@ -105,6 +105,13 @@ export default function VMsPage() {
     const [form] = Form.useForm();
     const [selectedSystemId, setSelectedSystemId] = useState<string>('');
 
+    // Watch form fields for wizard (replaces getFieldValue in render/useMemo which causes "not connected" warning)
+    const selectedTemplateId = Form.useWatch('template_id', form);
+    const selectedSizeId = Form.useWatch('instance_size_id', form);
+    const namespaceValue = Form.useWatch('namespace', form);
+    const reasonValue = Form.useWatch('reason', form);
+    const serviceIdValue = Form.useWatch('service_id', form);
+
     // Data fetches
     const { data: vmData, isLoading, refetch } = useApiGet<VMList>(
         ['vms', page, pageSize],
@@ -287,14 +294,12 @@ export default function VMsPage() {
 
     // Wizard helpers
     const selectedTemplate = useMemo(() => {
-        const tplId = form.getFieldValue('template_id');
-        return templatesData?.items?.find((t: Template) => t.id === tplId);
-    }, [form, templatesData, wizardStep]);
+        return templatesData?.items?.find((t: Template) => t.id === selectedTemplateId);
+    }, [selectedTemplateId, templatesData]);
 
     const selectedSize = useMemo(() => {
-        const sizeId = form.getFieldValue('instance_size_id');
-        return sizesData?.items?.find((s: InstanceSize) => s.id === sizeId);
-    }, [form, sizesData, wizardStep]);
+        return sizesData?.items?.find((s: InstanceSize) => s.id === selectedSizeId);
+    }, [selectedSizeId, sizesData]);
 
     const wizardSteps = [
         { title: t('wizard.step.service') },
@@ -339,7 +344,7 @@ export default function VMsPage() {
                                 value={selectedSystemId || undefined}
                                 onChange={(val) => {
                                     setSelectedSystemId(val);
-                                    form.setFieldValue('service_id', undefined);
+                                    setTimeout(() => form.setFieldValue('service_id', undefined), 0);
                                 }}
                                 options={systemsData?.items?.map((s) => ({
                                     label: s.name,
@@ -469,7 +474,7 @@ export default function VMsPage() {
                         />
                         <Descriptions bordered column={1} size="small">
                             <Descriptions.Item label={t('wizard.confirm_service')}>
-                                {servicesData?.items?.find((s) => s.id === form.getFieldValue('service_id'))?.name ?? '—'}
+                                {servicesData?.items?.find((s) => s.id === serviceIdValue)?.name ?? '—'}
                             </Descriptions.Item>
                             <Descriptions.Item label={t('wizard.confirm_template')}>
                                 {selectedTemplate?.display_name || selectedTemplate?.name || '—'}
@@ -483,10 +488,10 @@ export default function VMsPage() {
                                 )}
                             </Descriptions.Item>
                             <Descriptions.Item label={t('wizard.confirm_namespace')}>
-                                <Tag>{form.getFieldValue('namespace')}</Tag>
+                                <Tag>{namespaceValue}</Tag>
                             </Descriptions.Item>
                             <Descriptions.Item label={t('wizard.confirm_reason')}>
-                                {form.getFieldValue('reason')}
+                                {reasonValue}
                             </Descriptions.Item>
                         </Descriptions>
                     </div>

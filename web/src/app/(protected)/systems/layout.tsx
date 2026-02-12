@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
-import ProtectedLayout from '@/components/layouts/ProtectedLayout';
 
 export const metadata: Metadata = {
-    title: 'Systems - KubeVirt Shepherd',
+    title: 'Systems',
 };
 
 export default function SystemsLayout({
@@ -10,5 +9,5 @@ export default function SystemsLayout({
 }: {
     children: React.ReactNode;
 }) {
-    return <ProtectedLayout>{children}</ProtectedLayout>;
+    return <>{children}</>;
 }

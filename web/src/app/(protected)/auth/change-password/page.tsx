@@ -89,10 +89,10 @@ export default function ChangePasswordPage() {
                     />
                     <div>
                         <Title level={3} style={{ marginBottom: 4 }}>
-                            {t('auth.change_password', '修改密码')}
+                            {t('auth.change_password')}
                         </Title>
                         <Text type="secondary">
-                            {t('auth.change_password_hint', '首次登录请修改默认密码')}
+                            {t('auth.change_password_hint')}
                         </Text>
                     </div>
                 </Space>
@@ -118,25 +118,25 @@ export default function ChangePasswordPage() {
                     <Form.Item
                         name="current_password"
                         rules={[
-                            { required: true, message: t('validation.password_required', '请输入当前密码') },
+                            { required: true, message: t('validation.password_required') },
                         ]}
                     >
                         <Input.Password
                             prefix={<LockOutlined />}
-                            placeholder={t('auth.current_password', '当前密码')}
+                            placeholder={t('auth.current_password')}
                         />
                     </Form.Item>
 
                     <Form.Item
                         name="new_password"
                         rules={[
-                            { required: true, message: t('validation.password_required', '请输入新密码') },
-                            { min: 8, message: t('validation.password_min', '密码至少 8 个字符') },
+                            { required: true, message: t('validation.password_required') },
+                            { min: 8, message: t('validation.password_min') },
                         ]}
                     >
                         <Input.Password
                             prefix={<LockOutlined />}
-                            placeholder={t('auth.new_password', '新密码')}
+                            placeholder={t('auth.new_password')}
                         />
                     </Form.Item>
 
@@ -144,20 +144,20 @@ export default function ChangePasswordPage() {
                         name="confirm_password"
                         dependencies={['new_password']}
                         rules={[
-                            { required: true, message: t('validation.confirm_password_required', '请确认新密码') },
+                            { required: true, message: t('validation.confirm_password_required') },
                             ({ getFieldValue }) => ({
                                 validator(_, value) {
                                     if (!value || getFieldValue('new_password') === value) {
                                         return Promise.resolve();
                                     }
-                                    return Promise.reject(new Error(t('validation.password_mismatch', '两次密码不一致')));
+                                    return Promise.reject(new Error(t('validation.password_mismatch')));
                                 },
                             }),
                         ]}
                     >
                         <Input.Password
                             prefix={<LockOutlined />}
-                            placeholder={t('auth.confirm_password', '确认新密码')}
+                            placeholder={t('auth.confirm_password')}
                         />
                     </Form.Item>
 
@@ -173,7 +173,7 @@ export default function ChangePasswordPage() {
                                 fontWeight: 600,
                             }}
                         >
-                            {t('auth.change_password', '修改密码')}
+                            {t('auth.change_password')}
                         </Button>
                     </Form.Item>
                 </Form>

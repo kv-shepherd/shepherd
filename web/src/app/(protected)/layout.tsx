@@ -2,10 +2,13 @@ import type { Metadata } from 'next';
 import ProtectedLayout from '@/components/layouts/ProtectedLayout';
 
 export const metadata: Metadata = {
-    title: 'Services - KubeVirt Shepherd',
+    title: {
+        template: '%s - KubeVirt Shepherd',
+        default: 'KubeVirt Shepherd',
+    },
 };
 
-export default function ServicesLayout({
+export default function ProtectedRouteLayout({
     children,
 }: {
     children: React.ReactNode;
