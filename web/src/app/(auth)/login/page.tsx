@@ -13,7 +13,7 @@
  */
 import { useState } from 'react';
 import { Card, Form, Input, Button, Typography, Space, Alert } from 'antd';
-import { UserOutlined, LockOutlined, CloudServerOutlined } from '@ant-design/icons';
+import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -68,8 +68,10 @@ export default function LoginPage() {
                     size="large"
                     style={{ width: '100%', textAlign: 'center', marginBottom: 32 }}
                 >
-                    <CloudServerOutlined
-                        style={{ fontSize: 48, color: '#1677ff' }}
+                    <img
+                        src="/logo-wide.svg"
+                        alt="Shepherd"
+                        style={{ width: 220, height: 'auto' }}
                     />
                     <div>
                         <Title level={3} style={{ marginBottom: 4 }}>

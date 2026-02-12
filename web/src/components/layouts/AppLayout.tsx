@@ -120,7 +120,7 @@ export default function AppLayout({
     return (
         <ProLayout
             title="Shepherd"
-            logo={<CloudServerOutlined style={{ fontSize: 28, color: '#1677ff' }} />}
+            logo={<img src="/logo-icon.svg" alt="Shepherd" width={32} height={32} />}
             route={getMenuRoutes(t)}
             location={{ pathname }}
             fixSiderbar
