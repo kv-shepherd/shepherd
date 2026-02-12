@@ -83,9 +83,9 @@ export default function LoginPage() {
                     <Image
                         src="/logo-wide.svg"
                         alt="Shepherd"
-                        width={220}
-                        height={64}
-                        style={{ height: 'auto', maxWidth: '100%' }}
+                        width={180}
+                        height={52}
+                        style={{ width: 'auto', height: 52, maxWidth: '100%' }}
                     />
                     <div>
                         <Title level={3} style={{ marginBottom: 4 }}>

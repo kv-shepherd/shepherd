@@ -30,6 +30,10 @@ export default function Providers({
     children: React.ReactNode;
 }) {
     const { i18n } = useTranslation();
+    const normalizedLanguage = React.useMemo(() => {
+        const lang = (i18n.resolvedLanguage ?? i18n.language ?? 'en').toLowerCase();
+        return lang.startsWith('zh') ? 'zh-CN' : 'en';
+    }, [i18n.language, i18n.resolvedLanguage]);
     const [queryClient] = useState(
         () =>
             new QueryClient({
@@ -46,7 +50,7 @@ export default function Providers({
     return (
         <QueryClientProvider client={queryClient}>
             <ConfigProvider
-                locale={antdLocaleMap[i18n.language] ?? enUS}
+                locale={antdLocaleMap[normalizedLanguage] ?? enUS}
                 theme={{
                     algorithm: theme.defaultAlgorithm,
                     token: {

@@ -119,6 +119,10 @@ export default function AppLayout({
     const { t, i18n } = useTranslation('common');
     const { user, logout } = useAuthStore();
     const route = React.useMemo(() => getMenuRoutes(t), [t]);
+    const languageKey = React.useMemo(() => {
+        const lang = (i18n.resolvedLanguage ?? i18n.language ?? 'en').toLowerCase();
+        return lang.startsWith('zh') ? 'zh-CN' : 'en';
+    }, [i18n.language, i18n.resolvedLanguage]);
 
     const handleLanguageChange = (lang: string) => {
         void i18n.changeLanguage(lang);
@@ -162,7 +166,7 @@ export default function AppLayout({
                                 onClick: () => handleLanguageChange('zh-CN'),
                             },
                         ],
-                        selectedKeys: [i18n.language],
+                        selectedKeys: [languageKey],
                     }}
                     placement="bottomRight"
                 >
@@ -194,34 +198,36 @@ export default function AppLayout({
                 title: user?.display_name ?? user?.username ?? 'User',
                 size: 'small',
                 render: (_props, dom) => (
-                    <Dropdown
-                        menu={{
-                            items: [
-                                {
-                                    key: 'username',
-                                    label: (
-                                        <Text strong>
-                                            {user?.display_name ?? user?.username}
-                                        </Text>
-                                    ),
-                                    disabled: true,
-                                },
-                                { type: 'divider' },
-                                {
-                                    key: 'logout',
-                                    icon: <LogoutOutlined />,
-                                    label: t('auth.logout'),
-                                    danger: true,
-                                    onClick: () => {
-                                        logout();
-                                        router.push('/login');
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Dropdown
+                            menu={{
+                                items: [
+                                    {
+                                        key: 'username',
+                                        label: (
+                                            <Text strong>
+                                                {user?.display_name ?? user?.username}
+                                            </Text>
+                                        ),
+                                        disabled: true,
                                     },
-                                },
-                            ],
-                        }}
-                    >
-                        {dom}
-                    </Dropdown>
+                                    { type: 'divider' },
+                                    {
+                                        key: 'logout',
+                                        icon: <LogoutOutlined />,
+                                        label: t('auth.logout'),
+                                        danger: true,
+                                        onClick: () => {
+                                            logout();
+                                            router.push('/login');
+                                        },
+                                    },
+                                ],
+                            }}
+                        >
+                            {dom}
+                        </Dropdown>
+                    </div>
                 ),
             }}
         >

@@ -83,7 +83,13 @@ export default function ChangePasswordPage() {
                     size="large"
                     style={{ width: '100%', textAlign: 'center', marginBottom: 32 }}
                 >
-                    <Image src="/logo-wide.svg" alt="Shepherd" width={220} height={56} />
+                    <Image
+                        src="/logo-wide.svg"
+                        alt="Shepherd"
+                        width={180}
+                        height={52}
+                        style={{ width: 'auto', height: 52, maxWidth: '100%' }}
+                    />
                     <div>
                         <Title level={3} style={{ marginBottom: 4 }}>
                             {t('auth.change_password')}
