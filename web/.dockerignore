@@ -1,0 +1,19 @@
+
+# Next.js
+.next/
+out/
+coverage/
+node_modules/
+.turbo/
+npm-debug.log
+yarn-error.log
+
+# IDE
+.idea/
+.vscode/
+
+# Env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local

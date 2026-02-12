@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: shepherd
+      POSTGRES_PASSWORD: shepherd_password
+      POSTGRES_DB: shepherd_db
+    ports:
+      - "5432:5432"
+    # Ephemeral dev DB: no persistent volume mounted.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shepherd -d shepherd_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    image: shepherd-server
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: "postgres://shepherd:shepherd_password@db:5432/shepherd_db?sslmode=disable"
+      DATABASE_AUTO_MIGRATE: "true"
+      SECURITY_SESSION_SECRET: "dev-secret-key-must-be-32-bytes-long!!"
+      SECURITY_ENCRYPTION_KEY: "dev-encryption-key-32-bytes-long!!"
+      GIN_MODE: debug
+      # Keep wildcard disabled by default; use nginx single-origin ingress instead.
+      SERVER_ALLOW_CREDENTIALS: "true"
+      SERVER_UNSAFE_ALLOW_ALL_ORIGINS: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    image: shepherd-web
+    environment:
+      NEXT_PUBLIC_API_URL: "/api/v1"
+      # Enable only when filesystem events are unreliable.
+      WATCHPACK_POLLING: "${WATCHPACK_POLLING:-false}"
+    volumes:
+      - ../../web:/app
+      - ../../web/node_modules:/app/node_modules
+    depends_on:
+      - server
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - web
+      - server

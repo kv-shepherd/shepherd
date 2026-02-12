@@ -64,6 +64,20 @@ System (Business Line) → Service (Application) → VM Instance
 - [x] Implementation specifications  
 - [ ] Core implementation
 
+## Local Development
+
+Use the integrated Docker workflow to start/reset frontend, backend, and database together:
+
+```bash
+./start-dev.sh
+```
+
+- Web ingress: `http://localhost:3000`
+- API direct (diagnostic): `http://localhost:8080`
+- PostgreSQL: `localhost:5432`
+
+See `docs/design/frontend/local-dev-docker.md` for topology and workflow details.
+
 ## Community
 
 - [GitHub Issues][issues] - Bug reports and feature requests

@@ -1,0 +1,34 @@
+
+# Git
+.git
+.gitignore
+
+# Go
+bin/
+coverage.out
+coverage.html
+vendor/
+
+# Node/Web
+web/node_modules/
+web/.next/
+web/coverage/
+web/.turbo/
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# IDE
+.vscode/
+.idea/
+
+# Agent
+.agent/
+.env
+.env.local
+
+# Temp
+tmp/
+
+# Documentation (unless needed for build which typically isn't for binary)
+docs/

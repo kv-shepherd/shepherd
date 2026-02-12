@@ -15,9 +15,10 @@ Frontend docs are layered by concern to prevent drift and to keep alignment with
 
 1. [FRONTEND.md](./FRONTEND.md) - baseline frontend engineering standard
 2. [architecture/README.md](./architecture/README.md) - app-level architecture and boundaries
-3. [features/batch-operations-queue.md](./features/batch-operations-queue.md) - parent-child batch queue UX and state model
-4. [contracts/README.md](./contracts/README.md) - API contract and generated type integration
-5. [testing/README.md](./testing/README.md) - frontend test and CI gates
+3. [local-dev-docker.md](./local-dev-docker.md) - integrated local Docker workflow and ingress model
+4. [features/batch-operations-queue.md](./features/batch-operations-queue.md) - parent-child batch queue UX and state model
+5. [contracts/README.md](./contracts/README.md) - API contract and generated type integration
+6. [testing/README.md](./testing/README.md) - frontend test and CI gates
 
 ## Alignment Rules
 
