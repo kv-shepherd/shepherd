@@ -13,12 +13,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
-
-	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
 // Config is the root configuration structure.
@@ -113,9 +112,10 @@ type RiverConfig struct {
 // SecurityConfig contains security-related settings.
 // ADR-0025: Auto-generate secrets on first boot if missing.
 type SecurityConfig struct {
-	EncryptionKey  string         `mapstructure:"encryption_key"`
-	SessionSecret  string         `mapstructure:"session_secret"`
-	PasswordPolicy PasswordPolicy `mapstructure:"password_policy"`
+	EncryptionKey       string         `mapstructure:"encryption_key"`
+	SessionSecret       string         `mapstructure:"session_secret"`
+	JWTVerificationKeys []string       `mapstructure:"jwt_verification_keys"`
+	PasswordPolicy      PasswordPolicy `mapstructure:"password_policy"`
 }
 
 // PasswordPolicy defines password validation rules.
@@ -133,6 +133,11 @@ type WorkerConfig struct {
 	GeneralPoolSize int `mapstructure:"general_pool_size"`
 	K8sPoolSize     int `mapstructure:"k8s_pool_size"`
 }
+
+var (
+	bootstrapLoggerOnce sync.Once
+	bootstrapLogger     *zap.Logger
+)
 
 // Load reads configuration from file and environment variables.
 // ADR-0018: Standard environment variables without prefix (DATABASE_URL, SERVER_PORT, etc.).
@@ -196,7 +201,8 @@ func (c *Config) ensureSecrets() error {
 			return fmt.Errorf("auto-generate session secret: %w", err)
 		}
 		c.Security.SessionSecret = secret
-		logger.Warn("auto-generated session_secret (ADR-0025); set SECURITY_SESSION_SECRET env var for persistence",
+		logBootstrapWarn(
+			"auto-generated session_secret (ADR-0025); set SECURITY_SESSION_SECRET env var for persistence",
 			zap.Int("length", len(secret)),
 		)
 	}
@@ -206,11 +212,28 @@ func (c *Config) ensureSecrets() error {
 			return fmt.Errorf("auto-generate encryption key: %w", err)
 		}
 		c.Security.EncryptionKey = key
-		logger.Warn("auto-generated encryption_key (ADR-0025); set SECURITY_ENCRYPTION_KEY env var for persistence",
+		logBootstrapWarn(
+			"auto-generated encryption_key (ADR-0025); set SECURITY_ENCRYPTION_KEY env var for persistence",
 			zap.Int("length", len(key)),
 		)
 	}
 	return nil
+}
+
+func logBootstrapWarn(msg string, fields ...zap.Field) {
+	bootstrapLoggerOnce.Do(func() {
+		cfg := zap.NewProductionConfig()
+		cfg.Level = zap.NewAtomicLevelAt(zap.WarnLevel)
+
+		l, err := cfg.Build()
+		if err != nil {
+			bootstrapLogger = zap.NewNop()
+			return
+		}
+		bootstrapLogger = l
+	})
+
+	bootstrapLogger.Warn(msg, fields...)
 }
 
 // generateSecureRandomHex produces a hex-encoded string of n random bytes.
@@ -263,6 +286,7 @@ func setDefaults(v *viper.Viper) {
 
 	// Security (ADR-0025)
 	v.SetDefault("security.password_policy.mode", "nist")
+	v.SetDefault("security.jwt_verification_keys", []string{})
 
 	// Worker Pool (ADR-0031)
 	v.SetDefault("worker.general_pool_size", 100)

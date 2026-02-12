@@ -19,6 +19,8 @@ import (
 	"kv-shepherd.io/shepherd/ent"
 )
 
+const passwordHashCost = 12
+
 // Login handles POST /auth/login (Stage 1.5).
 func (s *Server) Login(c *gin.Context) {
 	var req generated.LoginRequest
@@ -32,13 +34,13 @@ func (s *Server) Login(c *gin.Context) {
 		Where(entuser.EnabledEQ(true)).
 		Only(c.Request.Context())
 	if err != nil {
-		logger.Warn("login failed: user not found", zap.String("username", req.Username))
+		logger.Warn("login failed: invalid credentials")
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "INVALID_CREDENTIALS"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		logger.Warn("login failed: invalid password", zap.String("username", req.Username))
+		logger.Warn("login failed: invalid credentials")
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "INVALID_CREDENTIALS"})
 		return
 	}
@@ -144,7 +146,7 @@ func (s *Server) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), passwordHashCost)
 	if err != nil {
 		logger.Error("failed to hash new password", zap.Error(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -209,7 +211,7 @@ func (s *Server) loadUserRolesAndPermissions(ctx context.Context, userID string)
 
 // HashPassword hashes a password using bcrypt (used by seed command).
 func HashPassword(password string) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), passwordHashCost)
 	if err != nil {
 		return "", err
 	}

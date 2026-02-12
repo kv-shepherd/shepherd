@@ -21,10 +21,10 @@ var adminPrefixes = []string{
 	"/api/v1/audit-logs",
 }
 
-func newRouter(server generated.ServerInterface, signingKey []byte) *gin.Engine {
+func newRouter(server generated.ServerInterface, jwtCfg middleware.JWTConfig) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), middleware.RequestID(), middleware.ErrorHandler())
-	router.Use(jwtSkipPublic(signingKey))
+	router.Use(jwtSkipPublic(jwtCfg))
 	router.Use(rbacAdminRoutes())
 
 	generated.RegisterHandlersWithOptions(router, server, generated.GinServerOptions{
@@ -34,8 +34,8 @@ func newRouter(server generated.ServerInterface, signingKey []byte) *gin.Engine 
 }
 
 // jwtSkipPublic returns middleware that applies JWT auth only on non-public routes.
-func jwtSkipPublic(signingKey []byte) gin.HandlerFunc {
-	jwtMw := middleware.JWTAuth(signingKey)
+func jwtSkipPublic(jwtCfg middleware.JWTConfig) gin.HandlerFunc {
+	jwtMw := middleware.JWTAuthWithConfig(jwtCfg)
 	return func(c *gin.Context) {
 		for _, prefix := range publicPrefixes {
 			if strings.HasPrefix(c.Request.URL.Path, prefix) {
