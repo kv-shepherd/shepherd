@@ -1,0 +1,53 @@
+name: DCO Check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: Validate Signed-off-by
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Verify DCO sign-off on all PR commits
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_ref="${{ github.base_ref }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+
+          git fetch --no-tags --prune origin "${base_ref}:${base_ref}"
+
+          range="${base_ref}..${head_sha}"
+          commits=$(git rev-list --no-merges "$range")
+
+          if [ -z "$commits" ]; then
+            echo "No commits to validate"
+            exit 0
+          fi
+
+          missing=0
+          while IFS= read -r sha; do
+            [ -z "$sha" ] && continue
+            msg=$(git show -s --format=%B "$sha")
+            if ! printf '%s\n' "$msg" | grep -Eiq '^Signed-off-by:\s+.+<.+>$'; then
+              echo "Missing Signed-off-by in commit: $sha"
+              git show -s --format='  %h %s (author: %an <%ae>)' "$sha"
+              missing=1
+            fi
+          done <<< "$commits"
+
+          if [ "$missing" -ne 0 ]; then
+            echo "DCO check failed: one or more commits are missing Signed-off-by lines."
+            exit 1
+          fi
+
+          echo "DCO check passed."
