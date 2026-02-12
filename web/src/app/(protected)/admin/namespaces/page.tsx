@@ -21,7 +21,6 @@ import {
     Select,
     Switch,
     Card,
-    Popconfirm,
     Tooltip,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';

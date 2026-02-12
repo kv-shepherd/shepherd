@@ -9,7 +9,6 @@
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions } from '@tanstack/react-query';
-import { api } from '@/lib/api/client';
 
 /**
  * API error shape — matches backend Error schema.

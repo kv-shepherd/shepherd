@@ -9,6 +9,7 @@
  * Uses the same visual style as the login page.
  */
 import { useState } from 'react';
+import Image from 'next/image';
 import { Card, Form, Input, Button, Typography, Space, Alert } from 'antd';
 import { LockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -82,11 +83,7 @@ export default function ChangePasswordPage() {
                     size="large"
                     style={{ width: '100%', textAlign: 'center', marginBottom: 32 }}
                 >
-                    <img
-                        src="/logo-wide.svg"
-                        alt="Shepherd"
-                        style={{ width: 220, height: 'auto' }}
-                    />
+                    <Image src="/logo-wide.svg" alt="Shepherd" width={220} height={56} />
                     <div>
                         <Title level={3} style={{ marginBottom: 4 }}>
                             {t('auth.change_password')}

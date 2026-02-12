@@ -10,6 +10,7 @@
  * Auth route group (auth) uses its own layout without sidebar.
  */
 import React from 'react';
+import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import {
     DashboardOutlined,
@@ -28,7 +29,7 @@ import {
 } from '@ant-design/icons';
 import { ProLayout } from '@ant-design/pro-components';
 import type { ProLayoutProps } from '@ant-design/pro-components';
-import { Dropdown, Avatar, Typography } from 'antd';
+import { Dropdown, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
 import NotificationBell from '@/components/ui/NotificationBell';
@@ -120,7 +121,7 @@ export default function AppLayout({
     return (
         <ProLayout
             title="Shepherd"
-            logo={<img src="/logo-icon.svg" alt="Shepherd" width={32} height={32} />}
+            logo={<Image src="/logo-icon.svg" alt="Shepherd" width={32} height={32} />}
             route={getMenuRoutes(t)}
             location={{ pathname }}
             fixSiderbar

@@ -38,7 +38,6 @@ import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { useApiGet, useApiAction } from '@/hooks/useApiQuery';
 import type { components } from '@/types/api.gen';
-import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
 
 const { Text, Paragraph } = Typography;
@@ -87,7 +86,6 @@ function formatRelativeTime(dateStr: string): string {
 export default function NotificationBell() {
     const router = useRouter();
     const { t } = useTranslation('common');
-    const queryClient = useQueryClient();
     const [open, setOpen] = useState(false);
 
     // Fetch unread count (poll every 30s).

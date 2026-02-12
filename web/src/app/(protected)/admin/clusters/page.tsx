@@ -18,7 +18,6 @@ import {
     Modal,
     Form,
     Input,
-    Upload,
     Card,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -26,7 +25,6 @@ import {
     PlusOutlined,
     ReloadOutlined,
     ClusterOutlined,
-    UploadOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
