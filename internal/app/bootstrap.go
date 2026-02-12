@@ -73,7 +73,7 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 
 	return &Application{
 		Config:  cfg,
-		Router:  newRouter(server, serverDeps.JWTCfg),
+		Router:  newRouter(cfg, server, serverDeps.JWTCfg),
 		DB:      infra.DB,
 		Pools:   infra.Pools,
 		Modules: allModules,

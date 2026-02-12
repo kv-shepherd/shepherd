@@ -34,10 +34,14 @@ type Config struct {
 
 // ServerConfig contains HTTP server settings.
 type ServerConfig struct {
-	Port            int           `mapstructure:"port"`
-	ReadTimeout     time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout    time.Duration `mapstructure:"write_timeout"`
-	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
+	Port             int           `mapstructure:"port"`
+	ReadTimeout      time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout     time.Duration `mapstructure:"write_timeout"`
+	ShutdownTimeout  time.Duration `mapstructure:"shutdown_timeout"`
+	AllowedOrigins   []string      `mapstructure:"allowed_origins"`
+	AllowCredentials bool          `mapstructure:"allow_credentials"`
+	// UnsafeAllowAllOrigins disables origin allowlist checks and must only be used in trusted local development.
+	UnsafeAllowAllOrigins bool `mapstructure:"unsafe_allow_all_origins"`
 }
 
 // DatabaseConfig contains PostgreSQL connection settings.
@@ -251,8 +255,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.read_timeout", "30s")
 	v.SetDefault("server.write_timeout", "30s")
 	v.SetDefault("server.shutdown_timeout", "30s")
+	v.SetDefault("server.allowed_origins", []string{"http://localhost:3000", "http://127.0.0.1:3000"})
+	v.SetDefault("server.allow_credentials", true)
+	v.SetDefault("server.unsafe_allow_all_origins", false)
 
 	// Database (ADR-0012 shared pool)
+	v.SetDefault("database.url", "")
 	v.SetDefault("database.host", "localhost")
 	v.SetDefault("database.port", 5432)
 	v.SetDefault("database.user", "shepherd")

@@ -23,6 +23,12 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Server.ReadTimeout != 30*time.Second {
 		t.Errorf("Server.ReadTimeout = %v, want 30s", cfg.Server.ReadTimeout)
 	}
+	if !cfg.Server.AllowCredentials {
+		t.Errorf("Server.AllowCredentials = %v, want true", cfg.Server.AllowCredentials)
+	}
+	if cfg.Server.UnsafeAllowAllOrigins {
+		t.Errorf("Server.UnsafeAllowAllOrigins = %v, want false", cfg.Server.UnsafeAllowAllOrigins)
+	}
 
 	// Database defaults
 	if cfg.Database.Host != "localhost" {
@@ -116,5 +122,46 @@ func TestDatabaseConfig_DSN(t *testing.T) {
 				t.Errorf("DSN() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoad_DatabaseURLFromEnv(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://shepherd:shepherd_password@db:5432/shepherd_db?sslmode=disable")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	want := "postgres://shepherd:shepherd_password@db:5432/shepherd_db?sslmode=disable"
+	if cfg.Database.URL != want {
+		t.Fatalf("Database.URL = %q, want %q", cfg.Database.URL, want)
+	}
+	if cfg.Database.DSN() != want {
+		t.Fatalf("Database.DSN() = %q, want %q", cfg.Database.DSN(), want)
+	}
+}
+
+func TestLoad_ServerCORSFlagsFromEnv(t *testing.T) {
+	t.Setenv("SERVER_ALLOWED_ORIGINS", "https://example.com")
+	t.Setenv("SERVER_ALLOW_CREDENTIALS", "false")
+	t.Setenv("SERVER_UNSAFE_ALLOW_ALL_ORIGINS", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if got := len(cfg.Server.AllowedOrigins); got != 1 {
+		t.Fatalf("len(Server.AllowedOrigins) = %d, want 1", got)
+	}
+	if got := cfg.Server.AllowedOrigins[0]; got != "https://example.com" {
+		t.Fatalf("Server.AllowedOrigins[0] = %q, want %q", got, "https://example.com")
+	}
+	if cfg.Server.AllowCredentials {
+		t.Fatalf("Server.AllowCredentials = %v, want false", cfg.Server.AllowCredentials)
+	}
+	if !cfg.Server.UnsafeAllowAllOrigins {
+		t.Fatalf("Server.UnsafeAllowAllOrigins = %v, want true", cfg.Server.UnsafeAllowAllOrigins)
 	}
 }

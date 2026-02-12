@@ -7,6 +7,14 @@ server:
   read_timeout: "30s"
   write_timeout: "30s"
   shutdown_timeout: "30s"
+  # CORS allowlist (comma-separated env override: SERVER_ALLOWED_ORIGINS)
+  allowed_origins:
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
+  # Keep true only if browser cookies/credentialed CORS are required
+  allow_credentials: true
+  # Unsafe dev-only switch; do not enable in shared/prod environments
+  unsafe_allow_all_origins: false
 
 database:
   # Option 1: Use DATABASE_URL (takes precedence)
