@@ -14,7 +14,9 @@ import type { paths } from '@/types/api.gen';
 import createClient from 'openapi-fetch';
 import { AUTH_STORAGE_KEY } from '@/stores/auth';
 
-const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080/api/v1';
+// Use relative path to leverage Next.js rewrites (see next.config.ts)
+// This fixes access from remote IPs (e.g. 10.x.x.x) by proxying through the Next.js server
+const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1';
 
 export const api = createClient<paths>({
   baseUrl,

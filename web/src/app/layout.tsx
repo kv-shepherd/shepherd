@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { AntdRegistry } from '@ant-design/nextjs-registry';
+import NextTopLoader from 'nextjs-toploader';
 import './globals.css';
 import Providers from './providers';
 
@@ -17,6 +18,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
+        <NextTopLoader showSpinner={false} color="#1677ff" />
         <AntdRegistry>
           <Providers>{children}</Providers>
         </AntdRegistry>

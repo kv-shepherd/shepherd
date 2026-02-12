@@ -46,7 +46,12 @@ export function useAuth() {
             if (data) {
                 // Token is now auto-attached via middleware from localStorage.
                 // Fetch user info after login to get full user profile.
-                const { data: userInfo } = await api.GET('/auth/me');
+                // FIX: explicitly pass token in header because localStorage might not be updated yet for middleware
+                const { data: userInfo } = await api.GET('/auth/me', {
+                    headers: {
+                        Authorization: `Bearer ${data.token}`,
+                    },
+                });
 
                 if (userInfo) {
                     // Store token + user in Zustand (persisted to localStorage)

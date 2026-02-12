@@ -19,6 +19,20 @@ const nextConfig: NextConfig = {
       "zod",
     ],
   },
+
+  // Proxy API requests to backend server (solves CORS & remote access issues)
+  // When accessing from 10.x.x.x:3000, requests to /api/v1 go to localhost:8080
+  async rewrites() {
+    // In Docker, this should be "http://server:8080". Locally, "http://localhost:8080".
+    const apiUrl = process.env.INTERNAL_API_URL || "http://localhost:8080";
+
+    return [
+      {
+        source: "/api/v1/:path*",
+        destination: `${apiUrl}/api/v1/:path*`,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
