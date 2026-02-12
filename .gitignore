@@ -36,6 +36,7 @@ coverage.html
 # Build artifacts
 *.log
 tmp/
+server
 
 # Configuration (only commit .example)
 config/config.yaml
