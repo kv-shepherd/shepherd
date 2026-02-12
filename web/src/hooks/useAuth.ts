@@ -12,12 +12,15 @@ import { App } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
 import { api } from '@/lib/api/client';
+import type { components } from '@/types/api.gen';
 import type { ApiErrorResponse } from './useApiQuery';
 
 interface LoginPayload {
     username: string;
     password: string;
 }
+
+type UserInfo = components['schemas']['UserInfo'];
 
 export function useAuth() {
     const router = useRouter();
@@ -56,7 +59,11 @@ export function useAuth() {
                     }
                 } else {
                     // If we can't fetch user info, still store token and redirect
-                    login(data.token, { username: payload.username } as any, data.force_password_change ?? false);
+                    const fallbackUser: UserInfo = {
+                        id: payload.username,
+                        username: payload.username,
+                    };
+                    login(data.token, fallbackUser, data.force_password_change ?? false);
                     router.push('/dashboard');
                 }
             }
