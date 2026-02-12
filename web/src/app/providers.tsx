@@ -9,10 +9,12 @@
  * - i18n (internationalization)
  */
 import React, { useState } from 'react';
+import '@ant-design/v5-patch-for-react-19';
 import { ConfigProvider, App as AntdApp, theme } from 'antd';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import zhCN from 'antd/locale/zh_CN';
 import enUS from 'antd/locale/en_US';
+import { useTranslation } from 'react-i18next';
 
 // Initialize i18n (side-effect import)
 import '@/i18n';
@@ -24,11 +26,10 @@ const antdLocaleMap: Record<string, typeof enUS> = {
 
 export default function Providers({
     children,
-    locale = 'en',
 }: {
     children: React.ReactNode;
-    locale?: string;
 }) {
+    const { i18n } = useTranslation();
     const [queryClient] = useState(
         () =>
             new QueryClient({
@@ -45,7 +46,7 @@ export default function Providers({
     return (
         <QueryClientProvider client={queryClient}>
             <ConfigProvider
-                locale={antdLocaleMap[locale] ?? enUS}
+                locale={antdLocaleMap[i18n.language] ?? enUS}
                 theme={{
                     algorithm: theme.defaultAlgorithm,
                     token: {

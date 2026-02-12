@@ -12,6 +12,7 @@
 import React from 'react';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
+import Link from 'next/link';
 import {
     DashboardOutlined,
     CloudServerOutlined,
@@ -115,14 +116,19 @@ export default function AppLayout({
 }) {
     const router = useRouter();
     const pathname = usePathname();
-    const { t } = useTranslation('common');
+    const { t, i18n } = useTranslation('common');
     const { user, logout } = useAuthStore();
+    const route = React.useMemo(() => getMenuRoutes(t), [t]);
+
+    const handleLanguageChange = (lang: string) => {
+        void i18n.changeLanguage(lang);
+    };
 
     return (
         <ProLayout
             title="Shepherd"
             logo={<Image src="/logo-icon.svg" alt="Shepherd" width={32} height={32} />}
-            route={getMenuRoutes(t)}
+            route={route}
             location={{ pathname }}
             fixSiderbar
             fixedHeader
@@ -141,18 +147,47 @@ export default function AppLayout({
                 },
             }}
             actionsRender={() => [
-                <NotificationBell key="notifications" />,
+                <Dropdown
+                    key="language"
+                    menu={{
+                        items: [
+                            {
+                                key: 'en',
+                                label: 'English',
+                                onClick: () => handleLanguageChange('en'),
+                            },
+                            {
+                                key: 'zh-CN',
+                                label: '简体中文',
+                                onClick: () => handleLanguageChange('zh-CN'),
+                            },
+                        ],
+                        selectedKeys: [i18n.language],
+                    }}
+                    placement="bottomRight"
+                >
+                    <div
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 32,
+                            height: 32,
+                            cursor: 'pointer',
+                            borderRadius: '50%',
+                            transition: 'background-color 0.3s',
+                        }}
+                        className="action-icon"
+                    >
+                        <GlobalOutlined style={{ fontSize: 18 }} />
+                    </div>
+                </Dropdown>,
+                <NotificationBell key="notification" />,
             ]}
             menuItemRender={(item, dom) => (
-                <div
-                    onClick={() => {
-                        if (item.path) {
-                            router.push(item.path);
-                        }
-                    }}
-                >
+                <Link href={item.path || '#'} legacyBehavior={false} style={{ width: '100%', display: 'block' }}>
                     {dom}
-                </div>
+                </Link>
             )}
             avatarProps={{
                 src: undefined,
