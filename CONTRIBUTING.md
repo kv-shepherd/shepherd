@@ -235,6 +235,10 @@ See [docs/design/ci/README.md](docs/design/ci/README.md) for the complete list.
 - Document exported types and functions
 - Write tests for new functionality
 
+For detailed project-specific style rules (file/function size limits, import ordering, naming conventions, logging standards), see [docs/design/CODING_STYLE.md](docs/design/CODING_STYLE.md).
+
+For security coding practices (input validation, tenant isolation, secrets management), see [docs/design/SECURITY_CODING.md](docs/design/SECURITY_CODING.md).
+
 ### License Headers (If Applicable)
 
 If this repository uses license headers or boilerplate checks, all new source files must include the required header. Follow the exact format used by existing files in the same directory and any repo-specific scripts or guidelines.
@@ -271,6 +275,15 @@ and remove any Pending Changes blocks.
 
 ```bash
 go test ./...
+
+# With race detection (CI default)
+go test -race ./...
+
+# Specific package
+go test ./internal/service/...
+
+# Specific test
+go test -run TestVMService_CreateVM ./...
 ```
 
 ### Integration Tests (requires Docker)
@@ -279,9 +292,46 @@ go test ./...
 go test -tags=integration ./...
 ```
 
+Integration tests use testcontainers and require the `//go:build integration` build tag.
+
 ### Test Coverage
 
-Aim for ≥60% test coverage on new code.
+| Code Type | Minimum Coverage |
+|-----------|------------------|
+| New code (general) | ≥60% |
+| Critical paths (auth, authorization, data persistence) | ≥80% |
+
+```bash
+# Generate coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```
+
+**Prohibited**: Committing skipped or disabled tests (`t.Skip()` without issue reference).
+
+### Test Naming
+
+```go
+func TestTypeName_MethodName(t *testing.T)            // Standard
+func TestTypeName_MethodName_Scenario(t *testing.T)    // Specific scenario
+func BenchmarkTypeName_MethodName(b *testing.B)        // Benchmark
+```
+
+### Test Patterns
+
+- **Table-Driven Tests**: Preferred for testing multiple scenarios.
+- **Arrange-Act-Assert**: Structure each test with clear setup, execution, and verification.
+- **Interface-Based Mocks**: Use manual mock implementations. No mock generation frameworks in V1.
+- **Test Fixtures**: Place test data files in `testdata/` directories alongside the test.
+
+### Prohibited Test Practices
+
+| Practice | Rule |
+|----------|------|
+| Test interdependence | Tests must not depend on other tests' execution or results |
+| `time.Sleep()` in tests | Use `require.Eventually()` for async assertions |
+| Ignoring errors | Always assert on returned errors |
+| Testing implementation details | Test observable behavior, not internal state |
 
 ## Review Process
 

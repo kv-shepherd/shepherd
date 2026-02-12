@@ -261,6 +261,8 @@ Reference implementations are in the [examples/](./examples/) directory:
 | [database/README.md](./database/README.md) | **Database reference layer** (schema domains, retention lifecycle, transaction boundaries, migration policy) |
 | [DEPENDENCIES.md](./DEPENDENCIES.md) | Version pinning (single source of truth for all dependency versions) |
 | [CHECKLIST.md](./CHECKLIST.md) | Acceptance criteria and **Core ADR Constraints** (single source of truth for CI enforcement) |
+| [CODING_STYLE.md](./CODING_STYLE.md) | Go coding style guide (file/function limits, import order, logging, naming conventions) |
+| [SECURITY_CODING.md](./SECURITY_CODING.md) | Security coding practices (secrets, input validation, tenant isolation, RBAC) |
 | [frontend/README.md](./frontend/README.md) | Frontend design docs index (required reading before frontend changes) |
 | [frontend/FRONTEND.md](./frontend/FRONTEND.md) | Frontend engineering baseline (i18n, API types, schema fallback) |
 | [ci/README.md](./ci/README.md) | **Authoritative CI/development governance** (quality gates, enforcement scripts, workflow requirements) |
