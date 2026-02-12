@@ -42,6 +42,7 @@
 | [ADR-0030](./ADR-0030-design-documentation-layering-and-fullstack-governance.md) | Design Documentation Layering and Full-Stack Governance | **Accepted** | - |
 | [ADR-0031](./ADR-0031-concurrency-and-worker-pool-standard.md) | Concurrency Safety and Worker Pool Standard | **Accepted** | - |
 | [ADR-0032](./ADR-0032-master-flow-traceability-manifest.md) | Master-Flow Traceability Manifest and Drift Enforcement | **Accepted** | - |
+| [ADR-0033](./ADR-0033-realtime-notification-acceleration.md) | Realtime Notification Acceleration with PostgreSQL LISTEN/NOTIFY | **Proposed** | - |
 
 > ⚠️ **¹ ADR-0009 Partial Supersession Notice**:
 >

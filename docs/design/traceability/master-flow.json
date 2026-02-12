@@ -315,7 +315,8 @@
         "docs/design/checklist/phase-4-checklist.md"
       ],
       "adrs": [
-        "docs/adr/ADR-0015-governance-model-v2.md"
+        "docs/adr/ADR-0015-governance-model-v2.md",
+        "docs/adr/ADR-0033-realtime-notification-acceleration.md"
       ],
       "examples": [
         "docs/design/examples/notification/sender.go"
