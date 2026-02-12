@@ -9,10 +9,12 @@
 ## Authentication System (Stage 1.5)
 
 - [x] **Local Login**: POST `/api/v1/auth/login` with bcrypt password verification
+- [x] **Password Hash Cost**: bcrypt cost fixed to `12` (`handlers/server_auth.go`)
 - [x] **JWT Token Signing**: HS256 with configurable secret + expiry (`middleware/jwt.go`)
 - [x] **Force Password Change**: Default admin must change password on first login
 - [x] **Current User**: GET `/api/v1/auth/me` returns user info + roles + permissions
 - [x] **Change Password**: POST `/api/v1/auth/change-password` with old/new password validation
+- [x] **Credential Log Redaction**: login failure logs do not include username/password/token
 - [x] **AuthHandler** (`handlers/auth.go`) — Login, GetCurrentUser, ChangePassword
 - [x] **AuthModule** (`modules/auth.go`) — Public routes (login) + JWT-protected routes (me, change-password)
 
@@ -23,6 +25,9 @@
 - [x] Bearer token extraction from `Authorization` header
 - [x] JWTClaims with user_id, username, roles, permissions
 - [x] `GenerateToken()` and `JWTAuth()` middleware functions
+- [x] Parser options hardened: valid methods allow-list + issuer/exp/nbf/iat verification
+- [x] Signing key rotation support: verify with `SigningKey + jwt_verification_keys`
+- [x] Revocation check hook in middleware (`RevocationChecker`); V1 still has no active revoke API
 - [x] Integration with RequestID middleware (X-Request-ID with UUID v7)
 
 ---

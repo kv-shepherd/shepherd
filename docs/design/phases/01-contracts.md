@@ -70,7 +70,7 @@ Define core contracts and types:
 | **OpenAPI Spec (Canonical)** | `api/openapi.yaml` | ⬜ | [ADR-0021](../../adr/ADR-0021-api-contract-first.md) |
 | **OpenAPI Spec (Compat, optional)** | `api/openapi.compat.yaml` | ⬜ | 3.0-compatible artifact for Go toolchain |
 | **Go API Generated Types** | `internal/api/generated/` | ⬜ | `make api-generate` |
-| **TS API Generated Types** | `web/src/types/api.gen.ts` | ⬜ | `make api-generate` |
+| **TS API Generated Types** | `web/src/types/api.gen.ts` | ✅ | `make api-generate` |
 
 > ³ **V1 Scope**: IdP authentication (OIDC + LDAP) is fully implemented in V1.
 

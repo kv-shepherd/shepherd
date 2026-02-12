@@ -52,14 +52,19 @@ Phase 5 bridges the backend to a usable product by implementing:
 ### Local Authentication (Stage 1.5 of master-flow.md)
 
 - **Login**: POST `/api/v1/auth/login` with username/password (bcrypt verification)
+- **Password Hashing**: bcrypt cost fixed to 12 for seed + password change paths
 - **JWT Signing**: HS256 with configurable secret, 24h default expiry
 - **Force Password Change**: First login with default password requires immediate change
 - **Current User**: GET `/api/v1/auth/me` returns user info + roles + permissions
+- **Credential Failure Logging**: login failure logs keep generic messages (no username/password/token leakage)
 
 ### JWT Middleware
 
 - Bearer token extraction from `Authorization` header
 - Claims injection into `context.Context` (user_id, username, roles, permissions)
+- Validation hardening: method allow-list + issuer + `exp` + `nbf` + `iat` checks
+- Key rotation verification path: active signing key + optional legacy verification key list
+- Revocation extension point: optional JTI checker hook (V1 has no active revoke API yet)
 - Integration with RequestID middleware for audit trail
 
 ### RBAC Middleware (Stage 4.A+ of master-flow.md)

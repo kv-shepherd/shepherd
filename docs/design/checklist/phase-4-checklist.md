@@ -2,9 +2,9 @@
 
 > **Detailed Document**: [phases/04-governance.md](../phases/04-governance.md)
 >
-> **Implementation Status**: 🔄 Partial (~85%) — Approval flow/ADR-0012 atomic commit/Audit log/Delete handlers/ApprovalValidator/Confirm params/Notification system (API+triggers+sender+frontend bell)/Namespace CRUD handlers + frontend admin pages (Namespaces/Templates/InstanceSizes) completed; Environment isolation/Batch deferred
+> **Implementation Status**: 🔄 Partial (~90%) — Approval flow/ADR-0012 atomic commit/Audit log/Delete handlers/ApprovalValidator/Confirm params/Notification system (API+triggers+sender+frontend bell+retention cleanup)/Namespace CRUD handlers + frontend admin pages (Namespaces/Templates/InstanceSizes) completed; Environment isolation/Batch deferred
 >
-> **Last Audited**: 2026-02-11T15:30 (Session: Admin pages implementation + client-side search refinement)
+> **Last Audited**: 2026-02-11T20:30 (Session: Notification retention cleanup + frontend testing toolchain + contract sync)
 
 ---
 
@@ -21,7 +21,7 @@
 | 5.C | VM Creation Execution | ✅ 95% | Provider-side hard idempotency (AlreadyExists/object ownership check) can be further strengthened | P3 |
 | 5.D | Delete Operations | ✅ 90% | VM tombstone cleanup policy after successful K8s deletion still pending | P2 |
 | 5.E | Batch Operations | ❌ 0% | Completely unimplemented (parent-child model, throttling, APIs) | P3 |
-| 5.F | Notification System | ✅ 85% | API handlers + triggers + InboxSender + frontend NotificationBell all implemented; retention cleanup pending | P3 |
+| 5.F | Notification System | ✅ 95% | V1 inbox notification flow implemented end-to-end (API + triggers + InboxSender + NotificationBell + 90-day retention cleanup) | P3 |
 | 6 | VNC Console Access | ❌ 0% | Completely unimplemented (token, proxy, environment-based approval) | P3 |
 | Part 4 | State Machines | ✅ 90% | ~~`FAILED`, `DELETING`, `STOPPING` states~~ added; ~~`PENDING` clarified~~ as K8s-only | P2-done |
 
@@ -333,8 +333,8 @@
 - [x] **API Endpoints** (`internal/api/handlers/server_notification.go`):
   - [x] `GET /api/v1/notifications` - List user's notifications (paginated, unread_only filter)
   - [x] `GET /api/v1/notifications/unread-count` - Unread count for badge
-  - [x] `POST /api/v1/notifications/{id}/read` - Mark as read
-  - [x] `POST /api/v1/notifications/read-all` - Mark all as read
+  - [x] `PATCH /api/v1/notifications/{notification_id}/read` - Mark as read
+  - [x] `POST /api/v1/notifications/mark-all-read` - Mark all as read
 - [x] **Notification Triggers** (`internal/notification/triggers.go`):
   - [x] `APPROVAL_PENDING` → approvers (users with `approval:approve` permission)
   - [x] `APPROVAL_COMPLETED`/`APPROVAL_REJECTED` → requester
@@ -351,4 +351,4 @@
   - [x] Mark-all-read action
   - [x] Integrated into `AppLayout.tsx` header via `actionsRender`
 - [x] **i18n**: notification keys in en + zh-CN (`common.json`)
-- [ ] **Retention cleanup** (90 days, via River periodic job)
+- [x] **Retention cleanup** (90 days, via River periodic job) — *Implemented via `internal/jobs/notification_cleanup.go`, worker registration, and periodic schedule in bootstrap*

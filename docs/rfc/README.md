@@ -17,7 +17,7 @@
 | [RFC-0005](./RFC-0005-event-archiving.md) | Physical Event Archiving ¹ | Deferred | P2 | DomainEvent table too large |
 | [RFC-0006](./RFC-0006-hot-reload.md) | Configuration Admin API ² | Deferred | P2 | Dynamic config via API |
 | [RFC-0007](./RFC-0007-redis-cache.md) | Redis Cache Support | Deferred | P3 | Cache miss causing bottleneck |
-| [RFC-0008](./RFC-0008-extended-auth.md) | Extended Auth Providers ⁴ | Deferred | P2 | MFA or SAML 2.0 required |
+| [RFC-0008](./RFC-0008-extended-auth.md) | Extended Auth Providers ⁴ | Deferred | P2 | MFA/SAML 2.0 or active token revocation required |
 | [RFC-0009](./RFC-0009-pgbouncer.md) | PgBouncer Dual Pool | Deferred | P3 | Enterprise deployment |
 | [RFC-0010](./RFC-0010-observability.md) | Observability Stack | Deferred | P2 | Metrics/Tracing required |
 | [RFC-0011](./RFC-0011-vnc-console.md) | VNC Console (noVNC) ³⁴ | **Proposed** | **P1** | V1 core feature |

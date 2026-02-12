@@ -93,7 +93,7 @@ The following features are **explicitly out of scope** for V1:
 | System Handlers | `internal/api/handlers/server_system.go` | ✅ | CRUD + GetService/DeleteService + confirm_name query param via generated params |
 | Approval Handlers | `internal/api/handlers/server_approval.go` | ✅ | ListPending/Approve/Reject/Cancel + DELETE ticket target VM enrichment |
 | Namespace Handlers | `internal/api/handlers/server_namespace.go` | ✅ | CRUD (List/Create/Get/Update/Delete) with environment filter + confirm_name delete gate |
-| Notification Handlers | `internal/api/handlers/server_notification.go` | ✅ | List/UnreadCount/MarkRead/MarkAllRead; triggers/sender pending |
+| Notification Handlers | `internal/api/handlers/server_notification.go` | ✅ | List/UnreadCount/MarkRead/MarkAllRead; triggers/sender integrated; retention cleanup scheduled |
 | Admin Handlers | `internal/api/handlers/server_admin.go` | ✅ | Clusters/Templates/InstanceSizes CRUD + UpdateClusterEnvironment (omitzero adapted) |
 | SSAApplier | `internal/provider/ssa_applier.go` | ⬜ | Deferred |
 | OpenAPI Spec | `api/openapi.yaml` | ✅ | 38 endpoints total; Namespace CRUD + Notification + omitzero value types (ADR-0028) |
@@ -879,7 +879,7 @@ DELETE /api/v1/systems/{sys_id}?confirm_name=my-system
 | ApprovalTicket.operation_type | ✅ Done | Enum field (`CREATE`/`DELETE`) with `CREATE` default |
 | VM delete approval ticket flow | ✅ Done | DeleteVM use case creates `operation_type=DELETE` ticket and routes through approval gateway |
 
-> **Remaining**: Batch/Notification/VNC are still out of current implementation scope.
+> **Remaining**: Batch/VNC are still out of current implementation scope.
 
 ---
 
@@ -971,7 +971,7 @@ V1 implements a minimal internal notification system. External push channels (em
 |----------|--------|-------------|
 | `GET /api/v1/notifications` | GET | List user's notifications (paginated) |
 | `GET /api/v1/notifications/unread-count` | GET | Get unread count for badge display |
-| `PATCH /api/v1/notifications/{id}/read` | PATCH | Mark notification as read |
+| `PATCH /api/v1/notifications/{notification_id}/read` | PATCH | Mark notification as read |
 | `POST /api/v1/notifications/mark-all-read` | POST | Mark all notifications as read |
 
 ### Decoupled Interface (V2+ Ready)
@@ -1001,7 +1001,7 @@ The notification system uses a decoupled `NotificationSender` interface:
 
 - **No external push**: Email/webhook adapters in V2+
 - **Poll-based**: Frontend polls unread count every 30s (via TanStack Query `refetchInterval`)
-- **Retention**: Auto-cleanup after 90 days (via River periodic job) — not yet implemented
+- **Retention**: Auto-cleanup after 90 days (via River periodic job) — ✅ implemented (`internal/jobs/notification_cleanup.go`)
 
 ---
 

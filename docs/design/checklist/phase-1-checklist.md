@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/01-contracts.md](../phases/01-contracts.md)
 >
-> **Implementation Status**: 🔄 Partial (~80%) — Ent schemas complete, CI enforcement and frontend type generation gaps
+> **Implementation Status**: 🔄 Partial (~90%) — Ent schemas complete, TS API types + frontend testing toolchain completed, contract CI hardening gaps remain
 
 ---
 
@@ -108,7 +108,7 @@
 - [x] `api/oapi-codegen.yaml` exists and targets `internal/api/generated/` — *Phase 5: v2 format with gin-server + models*
 - [x] `make api-generate` produces:
   - [x] `internal/api/generated/` Go server types — *Phase 5: 1393 lines, ServerInterface with 28 endpoints*
-  - [ ] `web/src/types/api.gen.ts` TypeScript types — *Phase 5: pending*
+  - [x] `web/src/types/api.gen.ts` TypeScript types — *Regenerated from `api/openapi.yaml`*
 - [ ] `make api-check` passes with no uncommitted generated changes
 - [ ] If 3.1-only features are used:
   - [ ] `api/openapi.compat.yaml` is generated (3.0-compatible)
@@ -138,23 +138,23 @@
 
 > **Implementation Guide**: [ADR-0020 Testing Toolchain](../notes/ADR-0020-frontend-testing-toolchain.md)
 
-- [ ] `web/vitest.config.ts` exists with coverage thresholds configured:
-  - [ ] `coverage.thresholds.lines: 80`
-  - [ ] `coverage.thresholds.functions: 80`
-  - [ ] `coverage.thresholds.branches: 75`
-  - [ ] `coverage.thresholds.statements: 80`
-- [ ] `web/tests/setup.ts` exists with MSW initialization
-- [ ] `web/tests/mocks/handlers.ts` exists for API mocking
-- [ ] `web/playwright.config.ts` exists for E2E testing
-- [ ] `.github/workflows/frontend-tests.yml` exists with:
-  - [ ] Unit test job with coverage reporting
-  - [ ] E2E test job with Playwright
-  - [ ] Coverage threshold enforcement (block PR on failure)
-- [ ] Package.json contains required test scripts:
-  - [ ] `test`, `test:run`, `test:coverage`, `test:e2e`
-- [ ] Frontend design docs layering (ADR-0030):
-  - [ ] `docs/design/frontend/README.md` exists and links architecture/features/contracts/testing
-  - [ ] Batch queue UX spec exists at `docs/design/frontend/features/batch-operations-queue.md`
+- [x] `web/vitest.config.ts` exists with coverage thresholds configured:
+  - [x] `coverage.thresholds.lines: 80`
+  - [x] `coverage.thresholds.functions: 80`
+  - [x] `coverage.thresholds.branches: 75`
+  - [x] `coverage.thresholds.statements: 80`
+- [x] `web/tests/setup.ts` exists with MSW initialization
+- [x] `web/tests/mocks/handlers.ts` exists for API mocking
+- [x] `web/playwright.config.ts` exists for E2E testing
+- [x] `.github/workflows/frontend-tests.yml` exists with:
+  - [x] Unit test job with coverage reporting
+  - [x] E2E test job with Playwright
+  - [x] Coverage threshold enforcement (block PR on failure)
+- [x] Package.json contains required test scripts:
+  - [x] `test`, `test:run`, `test:coverage`, `test:e2e`
+- [x] Frontend design docs layering (ADR-0030):
+  - [x] `docs/design/frontend/README.md` exists and links architecture/features/contracts/testing
+  - [x] Batch queue UX spec exists at `docs/design/frontend/features/batch-operations-queue.md`
 
 ---
 

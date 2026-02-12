@@ -62,8 +62,8 @@
   - [x] **Unified Pool**: Ent + River + sqlc share same `pgxpool.Pool` — *Architecture ready, consumers added in Phase 1+*
   - [x] **Forbidden**: Creating separate `sql.Open()` and `pgxpool.New()` (doubles connections)
   - [x] `MaxConns=50`, `MinConns=5`, `MaxConnLifetime=1h`
-- [ ] **PostgreSQL Stability Guarantees (ADR-0008)**: — *River client initialized; stability tuning deferred*
-  - [ ] **River Built-in Cleanup**: `CompletedJobRetentionPeriod=24h` — *River client initialized, retention config pending*
+- [ ] **PostgreSQL Stability Guarantees (ADR-0008)**: — *Partially implemented: River client initialized and completed-job retention configured; remaining vacuum/monitoring tuning deferred*
+  - [x] **River Built-in Cleanup**: `CompletedJobRetentionPeriod=24h` — *Configured in `internal/infrastructure/database.go` River client init*
   - [ ] **Aggressive Autovacuum**: `ALTER TABLE river_job SET (autovacuum_vacuum_scale_factor=0.01)`
   - [ ] Dead tuple monitoring view `river_health` created
   - [ ] Prometheus metrics configured (`river_dead_tuple_ratio`)

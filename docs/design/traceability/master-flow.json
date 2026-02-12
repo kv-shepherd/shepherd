@@ -23,10 +23,12 @@
       "id": "stage-1-5",
       "phases": [
         "docs/design/phases/00-prerequisites.md",
-        "docs/design/phases/01-contracts.md"
+        "docs/design/phases/01-contracts.md",
+        "docs/design/phases/05-auth-api-frontend.md"
       ],
       "checklists": [
-        "docs/design/checklist/phase-0-checklist.md"
+        "docs/design/checklist/phase-0-checklist.md",
+        "docs/design/checklist/phase-5-checklist.md"
       ],
       "adrs": [
         "docs/adr/ADR-0025-secret-bootstrap.md",
