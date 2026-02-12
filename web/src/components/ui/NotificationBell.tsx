@@ -107,7 +107,7 @@ export default function NotificationBell() {
     // Mark single notification as read.
     const markRead = useApiAction<string>(
         (notificationId: string) =>
-            api.POST('/notifications/{notification_id}/read', {
+            api.PATCH('/notifications/{notification_id}/read', {
                 params: { path: { notification_id: notificationId } },
             }),
         {
@@ -117,7 +117,7 @@ export default function NotificationBell() {
 
     // Mark all as read.
     const markAllRead = useApiAction(
-        () => api.POST('/notifications/read-all'),
+        () => api.POST('/notifications/mark-all-read'),
         {
             invalidateKeys: [['notifications', 'unread-count'], ['notifications', 'list']],
         }

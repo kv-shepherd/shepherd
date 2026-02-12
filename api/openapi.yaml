@@ -717,7 +717,7 @@ paths:
           $ref: '#/components/responses/Unauthorized'
 
   /notifications/{notification_id}/read:
-    post:
+    patch:
       tags: [notifications]
       summary: Mark notification as read
       operationId: markNotificationRead
@@ -729,7 +729,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /notifications/read-all:
+  /notifications/mark-all-read:
     post:
       tags: [notifications]
       summary: Mark all notifications as read

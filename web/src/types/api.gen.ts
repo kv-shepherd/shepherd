@@ -482,15 +482,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark notification as read */
-        post: operations["markNotificationRead"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Mark notification as read */
+        patch: operations["markNotificationRead"];
         trace?: never;
     };
-    "/notifications/read-all": {
+    "/notifications/mark-all-read": {
         parameters: {
             query?: never;
             header?: never;

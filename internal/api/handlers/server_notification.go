@@ -93,7 +93,7 @@ func (s *Server) GetUnreadCount(c *gin.Context) {
 	c.JSON(http.StatusOK, generated.UnreadCount{Count: count})
 }
 
-// MarkNotificationRead handles POST /notifications/{notification_id}/read.
+// MarkNotificationRead handles PATCH /notifications/{notification_id}/read.
 func (s *Server) MarkNotificationRead(c *gin.Context, notificationId generated.NotificationID) {
 	ctx := c.Request.Context()
 	userID := middleware.GetUserID(ctx)
@@ -134,7 +134,7 @@ func (s *Server) MarkNotificationRead(c *gin.Context, notificationId generated.N
 	c.Status(http.StatusNoContent)
 }
 
-// MarkAllNotificationsRead handles POST /notifications/read-all.
+// MarkAllNotificationsRead handles POST /notifications/mark-all-read.
 func (s *Server) MarkAllNotificationsRead(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.GetUserID(ctx)
