@@ -95,6 +95,7 @@ func seedBuiltInRoles(ctx context.Context, client *ent.Client) error {
 			ID: "role-platform-admin", Name: "PlatformAdmin", DisplayName: "Platform Administrator",
 			Description: "Full platform management including cluster and security configuration",
 			Permissions: []string{
+				"platform:admin", // ADR-0019: explicit super-admin permission
 				"cluster:register", "cluster:read", "cluster:update", "cluster:delete",
 				"namespace:manage", "template:manage", "instance_size:manage",
 				"approval:approve", "approval:reject",

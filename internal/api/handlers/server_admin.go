@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"gopkg.in/yaml.v3"
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/auditlog"
@@ -16,6 +18,29 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
+
+// kubeConfig is a minimal struct for parsing kubeconfig YAML.
+// Only the fields we need (clusters[].cluster.server) are defined.
+type kubeConfig struct {
+	Clusters []struct {
+		Cluster struct {
+			Server string `yaml:"server"`
+		} `yaml:"cluster"`
+		Name string `yaml:"name"`
+	} `yaml:"clusters"`
+}
+
+// parseAPIServerURL extracts the first cluster's server URL from kubeconfig YAML bytes.
+func parseAPIServerURL(data []byte) (string, error) {
+	var kc kubeConfig
+	if err := yaml.Unmarshal(data, &kc); err != nil {
+		return "", fmt.Errorf("invalid kubeconfig YAML: %w", err)
+	}
+	if len(kc.Clusters) == 0 || kc.Clusters[0].Cluster.Server == "" {
+		return "", fmt.Errorf("kubeconfig contains no cluster server URL")
+	}
+	return kc.Clusters[0].Cluster.Server, nil
+}
 
 // ListClusters handles GET /admin/clusters.
 func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParams) {
@@ -76,12 +101,23 @@ func (s *Server) CreateCluster(c *gin.Context) {
 		return
 	}
 
+	// Parse api_server_url from kubeconfig (V1: full kubeconfig only).
+	apiServerURL, err := parseAPIServerURL(req.Kubeconfig)
+	if err != nil {
+		logger.Warn("failed to parse kubeconfig", zap.Error(err), zap.String("actor", actor))
+		c.JSON(http.StatusBadRequest, generated.Error{
+			Code:    "INVALID_KUBECONFIG",
+			Message: err.Error(),
+		})
+		return
+	}
+
 	id, _ := uuid.NewV7()
 	create := s.client.Cluster.Create().
 		SetID(id.String()).
 		SetName(req.Name).
-		SetAPIServerURL(""). // Extracted from kubeconfig in Phase 2.
-		SetEncryptedKubeconfig(req.Kubeconfig).
+		SetAPIServerURL(apiServerURL).
+		SetEncryptedKubeconfig(req.Kubeconfig). // V1: stored as plaintext; Phase 2 adds AES-256-GCM
 		SetStatus(cluster.StatusUNKNOWN).
 		SetCreatedBy(actor)
 	if req.DisplayName != "" {

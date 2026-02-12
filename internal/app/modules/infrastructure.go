@@ -34,6 +34,14 @@ func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure
 		return nil, fmt.Errorf("init database: %w", err)
 	}
 
+	// Dev-mode: auto-create Ent tables + River queue tables.
+	if cfg.Database.AutoMigrate {
+		if err := db.AutoMigrate(ctx); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("auto-migrate: %w", err)
+		}
+	}
+
 	pools, err := worker.NewPools(ctx, worker.PoolConfig{
 		GeneralPoolSize: cfg.Worker.GeneralPoolSize,
 		K8sPoolSize:     cfg.Worker.K8sPoolSize,

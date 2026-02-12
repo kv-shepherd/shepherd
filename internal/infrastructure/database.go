@@ -19,9 +19,11 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivermigrate"
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
+	entmigrate "kv-shepherd.io/shepherd/ent/migrate"
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
@@ -114,6 +116,41 @@ func NewDatabaseClients(ctx context.Context, cfg config.DatabaseConfig) (*Databa
 		EntClient:  entClient,
 		WorkerPool: workerPool,
 	}, nil
+}
+
+// AutoMigrate runs Ent schema migration and River queue table migration.
+// Only use in development; production should use Atlas-managed migrations.
+func (c *DatabaseClients) AutoMigrate(ctx context.Context) error {
+	// 1. Ent schema creation (creates all tables defined in ent/schema)
+	logger.Info("Running Ent auto-migration...")
+	if err := c.EntClient.Schema.Create(ctx,
+		entmigrate.WithDropIndex(true),
+		entmigrate.WithDropColumn(true),
+		entmigrate.WithForeignKeys(true),
+	); err != nil {
+		return fmt.Errorf("ent auto-migrate: %w", err)
+	}
+	logger.Info("Ent auto-migration completed")
+
+	// 2. River queue table migration (creates river_job, river_queue, etc.)
+	logger.Info("Running River migration...")
+	migrator, err := rivermigrate.New(riverpgxv5.New(c.Pool), nil)
+	if err != nil {
+		return fmt.Errorf("create river migrator: %w", err)
+	}
+	res, err := migrator.Migrate(ctx, rivermigrate.DirectionUp, nil)
+	if err != nil {
+		return fmt.Errorf("river migrate up: %w", err)
+	}
+	if len(res.Versions) > 0 {
+		logger.Info("River migration completed",
+			zap.Int("versions_applied", len(res.Versions)),
+		)
+	} else {
+		logger.Info("River migration: already up-to-date")
+	}
+
+	return nil
 }
 
 // InitRiverClient creates a River client with registered workers.
