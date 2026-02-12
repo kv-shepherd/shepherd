@@ -104,6 +104,9 @@ jobs:
       - name: Check no Redis imports (ADR)
         run: bash docs/design/ci/scripts/check_no_redis_import.sh
 
+      - name: Check Ent codegen sync (ADR-0003)
+        run: go run docs/design/ci/scripts/check_ent_codegen.go
+
       - name: Check manual DI - no Wire/Dig (ADR-0013)
         run: bash docs/design/ci/scripts/check_manual_di.sh
 
