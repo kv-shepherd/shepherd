@@ -32,7 +32,8 @@
       ],
       "adrs": [
         "docs/adr/ADR-0025-secret-bootstrap.md",
-        "docs/adr/ADR-0032-master-flow-traceability-manifest.md"
+        "docs/adr/ADR-0032-master-flow-traceability-manifest.md",
+        "docs/adr/ADR-0034-master-flow-spec-driven-test-first.md"
       ]
     },
     {

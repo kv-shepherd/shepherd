@@ -43,6 +43,7 @@
 | [ADR-0031](./ADR-0031-concurrency-and-worker-pool-standard.md) | Concurrency Safety and Worker Pool Standard | **Accepted** | - |
 | [ADR-0032](./ADR-0032-master-flow-traceability-manifest.md) | Master-Flow Traceability Manifest and Drift Enforcement | **Accepted** | - |
 | [ADR-0033](./ADR-0033-realtime-notification-acceleration.md) | Realtime Notification Acceleration with PostgreSQL LISTEN/NOTIFY | **Proposed** | - |
+| [ADR-0034](./ADR-0034-master-flow-spec-driven-test-first.md) | Master-Flow Spec-Driven Test-First Execution Standard | **Proposed** | - |
 
 > ⚠️ **¹ ADR-0009 Partial Supersession Notice**:
 >
