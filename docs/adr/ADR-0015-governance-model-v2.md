@@ -2371,3 +2371,16 @@ DELETE /api/v1/systems/{id}?confirm_name=shop
 **Scope rule**: This addendum applies to V1 implementation. The "type resource name" UX pattern is preserved in the frontend — the frontend requires the user to type the name, then passes it as a query parameter to the backend API.
 
 ---
+
+### ADR-0035: Auth Provider Plugin Boundary and Type Discovery (2026-02-15)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §22.5 Login Flow with IdP (OIDC/LDAP concrete examples) | **CLARIFIED** | Runtime auth-provider integration must remain provider-agnostic and resolve provider behavior through plugin registry contracts. OIDC/LDAP in §22.5 are historical examples, not core-only branch logic requirements. | ADR-0035 (proposed, issue #236) |
+| §22.6 IdP Configuration Schema (`type` static examples) | **CLARIFIED** | Provider type options are runtime-registered and API-discoverable (`GET /api/v1/admin/auth-provider-types`), and create/update validation must reject unregistered types. | ADR-0035 (proposed, issue #236) |
+| §22.7 API Endpoints for RBAC (`/admin/idp/*` historical naming) | **CLARIFIED** | For auth-provider administration, runtime/Frontend must consume canonical `auth_provider` paths and discovery APIs; do not reintroduce provider-specific hardcoded branching in handlers or frontend option lists. | ADR-0035 (proposed, issue #236) |
+
+> **Implementation Guidance**:
+> - Core auth-provider runtime remains plugin-standard and provider-agnostic.
+> - Frontend provider type options must come from discovery API, not hardcoded OIDC/LDAP arrays.
+> - CI must keep enforcing this boundary using dedicated plugin-boundary checks.
