@@ -84,7 +84,8 @@
         "docs/design/checklist/phase-1-checklist.md"
       ],
       "adrs": [
-        "docs/adr/ADR-0026-idp-config-naming.md"
+        "docs/adr/ADR-0026-idp-config-naming.md",
+        "docs/adr/ADR-0035-auth-provider-plugin-boundary.md"
       ]
     },
     {
@@ -96,7 +97,8 @@
         "docs/design/checklist/phase-1-checklist.md"
       ],
       "adrs": [
-        "docs/adr/ADR-0026-idp-config-naming.md"
+        "docs/adr/ADR-0026-idp-config-naming.md",
+        "docs/adr/ADR-0035-auth-provider-plugin-boundary.md"
       ]
     },
     {
