@@ -1,0 +1,241 @@
+{
+  "version": 1,
+  "master_flow": "docs/design/interaction-flows/master-flow.md",
+  "required_stages": [
+    "stage-1",
+    "stage-1-5",
+    "stage-2",
+    "stage-2-a",
+    "stage-2-a-plus",
+    "stage-2-b",
+    "stage-2-c",
+    "stage-2-d",
+    "stage-2-e",
+    "stage-3",
+    "stage-3-c",
+    "stage-3-jit-namespace",
+    "stage-4-a",
+    "stage-4-a-plus",
+    "stage-4-b",
+    "stage-4-c",
+    "stage-4-c-detail",
+    "stage-5-a",
+    "stage-5-b",
+    "stage-5b-constraint-note-dedicated-cpu-vs-overcommit",
+    "stage-5-d",
+    "stage-5e-batch-operations",
+    "stage-5f-notification-system",
+    "stage-6-vnc-console-access"
+  ],
+  "stages": [
+    {
+      "id": "stage-1",
+      "tests": [
+        "internal/config/config_test.go",
+        "internal/app/bootstrap_test.go"
+      ]
+    },
+    {
+      "id": "stage-1-5",
+      "tests": [
+        "internal/config/secret_bootstrap_test.go",
+        "internal/api/handlers/server_auth_test.go"
+      ]
+    },
+    {
+      "id": "stage-2",
+      "tests": [
+        "cmd/seed/main_test.go",
+        "internal/api/middleware/jwt_test.go",
+        "internal/api/middleware/rbac_test.go"
+      ]
+    },
+    {
+      "id": "stage-2-a",
+      "tests": [
+        "cmd/seed/main_test.go",
+        "internal/api/middleware/rbac_test.go"
+      ]
+    },
+    {
+      "id": "stage-2-a-plus",
+      "tests": [
+        "internal/api/middleware/rbac_test.go",
+        "internal/api/handlers/member_test.go"
+      ]
+    },
+    {
+      "id": "stage-2-b",
+      "tests": [
+        "internal/api/middleware/jwt_test.go",
+        "internal/api/handlers/server_admin_identity_test.go",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ]
+    },
+    {
+      "id": "stage-2-c",
+      "tests": [
+        "internal/api/middleware/jwt_test.go",
+        "internal/api/handlers/server_admin_identity_test.go",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ]
+    },
+    {
+      "id": "stage-2-d",
+      "tests": [
+        "internal/api/handlers/environment_visibility_test.go",
+        "internal/api/middleware/jwt_test.go",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ]
+    },
+    {
+      "id": "stage-2-e",
+      "tests": [
+        "internal/app/modules/approval_test.go",
+        "internal/governance/approval/gateway_behavior_test.go",
+        "internal/governance/approval/gateway_test.go",
+        "web/src/features/admin-approvals/hooks/useAdminApprovalsController.test.tsx"
+      ]
+    },
+    {
+      "id": "stage-3",
+      "tests": [
+        "internal/provider/kubevirt_test.go",
+        "internal/api/handlers/server_admin_catalog_test.go",
+        "internal/api/handlers/permission_enforcement_test.go",
+        "web/src/features/admin-templates/hooks/useAdminTemplatesController.test.tsx",
+        "web/src/features/admin-instance-sizes/hooks/useAdminInstanceSizesController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ]
+    },
+    {
+      "id": "stage-3-c",
+      "tests": [
+        "internal/usecase/approval_atomic_test.go",
+        "internal/jobs/vm_create_test.go"
+      ]
+    },
+    {
+      "id": "stage-3-jit-namespace",
+      "tests": [
+        "internal/jobs/vm_create_test.go",
+        "internal/service/approval_validator_test.go",
+        "internal/usecase/approval_atomic_test.go"
+      ]
+    },
+    {
+      "id": "stage-4-a",
+      "tests": [
+        "internal/api/handlers/member_test.go",
+        "internal/api/handlers/server_system_behavior_test.go",
+        "internal/api/handlers/server_system_stage_test.go",
+        "internal/api/middleware/rbac_test.go",
+        "web/src/features/systems-management/hooks/useSystemsManagementController.test.tsx",
+        "web/src/features/systems-management/hooks/useSystemMembersController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ]
+    },
+    {
+      "id": "stage-4-a-plus",
+      "tests": [
+        "internal/api/middleware/rbac_test.go",
+        "internal/api/handlers/member_test.go",
+        "web/src/features/systems-management/hooks/useSystemMembersController.test.tsx"
+      ]
+    },
+    {
+      "id": "stage-4-b",
+      "tests": [
+        "internal/api/handlers/server_system_behavior_test.go",
+        "internal/api/handlers/server_system_stage_test.go",
+        "internal/api/middleware/rbac_test.go",
+        "web/src/features/services-management/hooks/useServicesManagementController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ]
+    },
+    {
+      "id": "stage-4-c",
+      "tests": [
+        "internal/api/handlers/server_system_behavior_test.go",
+        "internal/api/handlers/server_system_stage_test.go",
+        "internal/api/middleware/openapi_validator_test.go",
+        "web/src/features/systems-management/hooks/useSystemsManagementController.test.tsx",
+        "web/src/features/services-management/hooks/useServicesManagementController.test.tsx"
+      ]
+    },
+    {
+      "id": "stage-4-c-detail",
+      "tests": [
+        "internal/api/handlers/server_system_behavior_test.go",
+        "internal/api/handlers/server_system_stage_test.go",
+        "internal/api/middleware/openapi_validator_test.go",
+        "web/src/features/systems-management/hooks/useSystemsManagementController.test.tsx",
+        "web/src/features/services-management/hooks/useServicesManagementController.test.tsx"
+      ]
+    },
+    {
+      "id": "stage-5-a",
+      "tests": [
+        "internal/usecase/create_vm_test.go",
+        "internal/jobs/vm_create_test.go",
+        "web/src/features/vm-management/hooks/useVMManagementController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ]
+    },
+    {
+      "id": "stage-5-b",
+      "tests": [
+        "internal/governance/approval/gateway_behavior_test.go",
+        "internal/governance/approval/gateway_test.go",
+        "internal/service/approval_validator_test.go",
+        "web/src/features/admin-approvals/hooks/useAdminApprovalsController.test.tsx"
+      ]
+    },
+    {
+      "id": "stage-5b-constraint-note-dedicated-cpu-vs-overcommit",
+      "tests": [
+        "internal/service/approval_validator_test.go"
+      ]
+    },
+    {
+      "id": "stage-5-d",
+      "tests": [
+        "internal/api/handlers/server_system_behavior_test.go",
+        "internal/usecase/delete_vm_test.go",
+        "web/src/features/services-management/hooks/useServicesManagementController.test.tsx",
+        "web/src/features/systems-management/hooks/useSystemsManagementController.test.tsx",
+        "web/src/features/vm-management/hooks/useVMManagementController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ]
+    },
+    {
+      "id": "stage-5e-batch-operations",
+      "tests": [
+        "internal/api/handlers/server_vm_batch_test.go",
+        "internal/api/handlers/server_vm_batch_behavior_test.go",
+        "web/src/features/vm-management/hooks/useVMManagementController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ]
+    },
+    {
+      "id": "stage-5f-notification-system",
+      "tests": [
+        "internal/jobs/notification_cleanup_test.go",
+        "internal/api/handlers/server_notification_behavior_test.go",
+        "web/src/features/notifications/hooks/useNotificationsController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ]
+    },
+    {
+      "id": "stage-6-vnc-console-access",
+      "tests": [
+        "internal/service/vnc_policy_test.go",
+        "internal/service/vnc_token_test.go",
+        "internal/api/handlers/server_vm_console_behavior_test.go",
+        "internal/governance/approval/gateway_behavior_test.go",
+        "web/src/features/vm-management/hooks/useVMManagementController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ]
+    }
+  ]
+}

@@ -217,7 +217,7 @@ func (c *DatabaseClients) Close() {
 
 | Package | Version | Release Date | Description |
 |---------|---------|--------------|-------------|
-| `vacuum` | `>= v0.14.0` | 2025-12 | Go-native OpenAPI linter (replaces spectral), 10x faster |
+| `vacuum` | `v0.23.8` | 2026-02 | Go-native OpenAPI linter (replaces spectral), pinned for reproducible CI/local |
 | `github.com/pb33f/libopenapi` | `>= v0.31.0` | 2025-11 | Lossless OpenAPI parsing, Overlay support |
 | `github.com/pb33f/libopenapi-validator` | `>= v0.6.0` | 2025-10 | **StrictMode** request/response validation |
 | `github.com/getkin/kin-openapi` | `>= v0.131.0` | 2025-03 | OpenAPI parsing (oapi-codegen transitive dependency) |
@@ -233,8 +233,9 @@ func (c *DatabaseClients) Close() {
 
 | Package | Version | Release Date | Description |
 |---------|---------|--------------|-------------|
-| `github.com/oapi-codegen/oapi-codegen/v2` | `>= v2.5.0` | 2026-01 | Go server/client code generation |
-| `openapi-typescript` | `>= v7.0.0` | 2025-12 | TypeScript type generation (Node.js) |
+| `github.com/oapi-codegen/oapi-codegen/v2` | `v2.5.0` | 2026-01 | Go server/client code generation (`go tool oapi-codegen`) |
+| `openapi-typescript` | `7.12.0` | 2025-12 | TypeScript type generation (Node.js, `npm exec`) |
+| `github.com/oasdiff/oasdiff` | `v1.11.10` | 2026-02 | OpenAPI breaking-change/changelog detection |
 
 #### oapi-codegen Configuration (ADR-0028 omitzero)
 
@@ -689,8 +690,10 @@ replace (
 | `golangci-lint` | `v1.63.0` | Static code analysis |
 | `goimports` | Latest | Import formatting |
 | `mockgen` | `v0.5.2` | Mock generation (uber-go/mock) |
-| `vacuum` | `>= v0.14.0` | OpenAPI linting (Go-native, ADR-0029) |
-| `oapi-codegen` | `>= v2.5.0` | Go code generation from OpenAPI (ADR-0021) |
+| `vacuum` | `v0.23.8` | OpenAPI linting (Go-native, ADR-0029) |
+| `oapi-codegen` | `v2.5.0` | Go code generation from OpenAPI (ADR-0021/ADR-0028) |
+| `openapi-typescript` | `7.12.0` | TypeScript types generation from OpenAPI |
+| `oasdiff` | `v1.11.10` | OpenAPI breaking-change/changelog analysis |
 
 ---
 

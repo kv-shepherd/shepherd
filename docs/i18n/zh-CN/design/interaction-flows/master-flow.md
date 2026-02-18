@@ -2525,8 +2525,10 @@ Part 4 属于参考视图，不是用户操作流程。
 │  │       "single_use": true           👈 首次连接后失效                                     │
 │  │     }                                                                                    │
 │  │                                                                                          │
-│  │  4. 在新标签页/弹窗打开 noVNC:                                                           │
-│  │     GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}                                         │
+│  │  4. 通过安全引导通道在新标签页/弹窗打开 noVNC:                                            │
+│  │     Set-Cookie: vnc_bootstrap=<opaque>; HttpOnly; Secure; SameSite=Strict; Max-Age=60   │
+│  │     GET /api/v1/vms/{vm_id}/vnc                                                          │
+│  │     （URL 查询参数中不允许携带 bearer token）                                             │
 │  │                                                                                          │
 │  │  5. 后端代理 WebSocket 到 KubeVirt:                                                      │
 │  │     → subresources.kubevirt.io/v1/namespaces/{ns}/virtualmachineinstances/{name}/vnc    │
@@ -2610,11 +2612,12 @@ Part 4 属于参考视图，不是用户操作流程。
 # 请求 VNC 访问（生产环境创建审批工单）
 POST /api/v1/vms/{vm_id}/console/request
 → 响应: { "ticket_id": "...", "status": "PENDING_APPROVAL" }  (生产)
-→ 响应: { "vnc_url": "/api/v1/vms/{vm_id}/vnc?token=..." }  (测试)
+→ 响应: { "vnc_url": "/api/v1/vms/{vm_id}/vnc", "bootstrap": "set-cookie" }  (测试)
 
 # VNC WebSocket 端点
-GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}
+GET /api/v1/vms/{vm_id}/vnc
 Upgrade: websocket
+Cookie: vnc_bootstrap=<一次性凭据>
 → 代理到 KubeVirt VNC 子资源
 
 # 检查控制台访问状态（轮询用）

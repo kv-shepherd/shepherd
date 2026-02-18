@@ -1,0 +1,2 @@
+# Paths/prefixes exempt from strict changed-code-has-tests guard.
+# Keep this list minimal and temporary.

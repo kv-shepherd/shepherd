@@ -1,0 +1,9 @@
+# Temporary legacy exceptions for route-shell architecture gate.
+# Format: path|max_lines|max_mutations
+# Default thresholds (no entry): <=300 lines and <=0 write API calls in page.tsx
+#
+# Policy:
+# - Entries are temporary migration debt.
+# - Remove each entry after route refactor.
+#
+# Current status: empty (strict mode).

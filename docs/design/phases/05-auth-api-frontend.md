@@ -1,12 +1,12 @@
 # Phase 5: Authentication, API Completion & Frontend
 
-> **Status**: In Progress (~95%)
+> **Status**: In Progress (~97%)
 > **Started**: 2026-02-09
 > **Dependencies**: Phase 0-4 completed
 
 ## Deliverables
 
-> **Last Updated**: 2026-02-11
+> **Last Updated**: 2026-02-14
 
 | Deliverable | File Path | Status | Notes |
 |-------------|-----------|--------|-------|
@@ -15,7 +15,7 @@
 | RBAC Middleware | `internal/middleware/rbac.go` | ✅ | RequirePermission + RequireResourceAccess |
 | Member Handler | `internal/api/handlers/member.go` | ✅ | ResourceRoleBinding CRUD + audit |
 | oapi-codegen config | `api/oapi-codegen.yaml` | ✅ | v2 format, gin-server + models |
-| Generated Server | `internal/api/generated/server.gen.go` | ✅ | 38 endpoints (ADR-0028 omitzero value types), all model types |
+| Generated Server | `internal/api/generated/server.gen.go` | ✅ | 44 endpoints (ADR-0028 omitzero value types), all model types |
 | openapi-typescript | `web/src/types/api.gen.ts` | ✅ | Auto-generated from OpenAPI spec |
 | Seed Command | `cmd/seed/main.go` | ✅ | 6 roles + default admin |
 | Bootstrap | `internal/app/bootstrap.go` | ✅ | 65 lines ≤ 100 limit (ADR-0022) |
@@ -28,9 +28,9 @@
 | Frontend: Audit Logs | `web/src/app/admin/audit/page.tsx` | ✅ | Filtering + pagination |
 | Frontend: Clusters | `web/src/app/admin/clusters/page.tsx` | ✅ | GET/POST with kubeconfig |
 | Frontend: Namespaces | `web/src/app/admin/namespaces/page.tsx` | ✅ | CRUD + confirm_name delete (ADR-0015 §13) |
-| Frontend: Templates | `web/src/app/admin/templates/page.tsx` | ✅ | Read-only list with column filters + deferred search |
-| Frontend: Instance Sizes | `web/src/app/admin/instance-sizes/page.tsx` | ✅ | Read-only list with capability filters + sort |
-| Frontend: Users | `web/src/app/admin/users/page.tsx` | ✅ | User management |
+| Frontend: Templates | `web/src/app/admin/templates/page.tsx` | ✅ | CRUD + column filters + deferred search + JSON spec editor |
+| Frontend: Instance Sizes | `web/src/app/admin/instance-sizes/page.tsx` | ✅ | CRUD + capability filters + sort + JSON spec_overrides editor |
+| Frontend: Users | `web/src/app/(protected)/admin/users/page.tsx` | ✅ | User directory + system member management |
 | Namespace Handlers | `internal/api/handlers/server_namespace.go` | ✅ | CRUD with environment filter + confirm_name delete gate |
 | Notification Handlers | `internal/api/handlers/server_notification.go` | ✅ | List/UnreadCount/MarkRead/MarkAllRead + InboxSender + Triggers + Frontend Bell |
 | Admin Handlers | `internal/api/handlers/server_admin.go` | ✅ | Clusters/Templates/InstanceSizes + UpdateClusterEnvironment |
@@ -157,8 +157,8 @@ Phase 5 bridges the backend to a usable product by implementing:
 - Audit log viewer (admin)
 - Clusters management (admin)
 - Namespaces management (admin: CRUD + confirm_name delete)
-- Templates viewer (admin: read-only, column filters, deferred search)
-- Instance Sizes viewer (admin: read-only, capability filters, sort)
+- Templates management (admin: CRUD, column filters, deferred search)
+- Instance Sizes management (admin: CRUD, capability filters, sort)
 
 ---
 

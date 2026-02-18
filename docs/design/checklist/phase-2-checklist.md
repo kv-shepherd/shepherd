@@ -120,6 +120,7 @@
 - [x] **ClusterHealthChecker** implemented (`internal/provider/health_checker.go`)
 - [x] **Health Check Logic** complete (periodic + on-demand)
 - [x] **Status Enum** defined (UNKNOWN, HEALTHY, UNHEALTHY, UNREACHABLE)
+- [x] **App Lifecycle Wiring** complete (`internal/app/lifecycle.go` starts loop and persists `clusters.status`)
 
 ---
 

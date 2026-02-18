@@ -671,8 +671,35 @@ Batch operations MUST follow ADR-0015 §19 as the normative model:
 - Parent-child ticket persistence
 - Atomic parent + child ticket creation
 - Independent child execution via River Jobs
-- Two-layer rate limiting (global + user-level)
+- two-layer rate limiting (global + user-level)
 - Frontend-visible aggregate and per-child status
+
+### Runtime Progress Snapshot (2026-02-14)
+
+- Implemented baseline:
+  - `POST /api/v1/vms/batch`
+  - `POST /api/v1/vms/batch/power` (compatibility endpoint)
+  - `GET /api/v1/vms/batch/{id}`
+  - `POST /api/v1/vms/batch/{id}/retry`
+  - `POST /api/v1/vms/batch/{id}/cancel`
+  - `POST /api/v1/approvals/batch` (compat submit alias)
+- Implemented runtime guards:
+  - parent+child atomic submission transaction
+  - idempotency key replay to existing `batch_id`
+  - global/user pending-parent throttling baseline
+  - global request-rate ceiling (per-minute)
+  - user pending-child ceiling + submit cooldown
+  - dedicated parent projection row (`batch_approval_tickets`) persisted at submit time
+  - parent aggregate counters/status persisted and continuously updated from child execution outcomes
+  - parent approval dispatches child create/delete tickets into independent River execution
+  - retry endpoint requeues failed children through approval path; cancel endpoint terminates pending children
+  - admin rate-limit override APIs landed:
+    - `POST /api/v1/admin/rate-limits/exemptions`
+    - `DELETE /api/v1/admin/rate-limits/exemptions/{user_id}`
+    - `PUT /api/v1/admin/rate-limits/users/{user_id}`
+    - `GET /api/v1/admin/rate-limits/status`
+- Still pending:
+  - frontend batch queue UX contract
 
 ### Supported Operations and API Surface
 
@@ -879,7 +906,7 @@ DELETE /api/v1/systems/{sys_id}?confirm_name=my-system
 | ApprovalTicket.operation_type | ✅ Done | Enum field (`CREATE`/`DELETE`) with `CREATE` default |
 | VM delete approval ticket flow | ✅ Done | DeleteVM use case creates `operation_type=DELETE` ticket and routes through approval gateway |
 
-> **Remaining**: Batch/VNC are still out of current implementation scope.
+> **Remaining**: Batch Stage 5.E baseline is implemented end-to-end (backend + frontend queue UX + `status_url` polling + 429 cooldown + affected-child feedback + `aria-live`). Stage 6 VNC baseline and shared PostgreSQL replay marker are implemented; noVNC proxy internals and credential encryption hardening are ongoing.
 
 ---
 
@@ -934,7 +961,7 @@ DELETE /api/v1/systems/{sys_id}?confirm_name=my-system
 |----------|--------|-------------|
 | `POST /api/v1/vms/{vm_id}/console/request` | POST | Request VNC access (creates approval ticket in prod) |
 | `GET /api/v1/vms/{vm_id}/console/status` | GET | Check access status (for polling) |
-| `GET /api/v1/vms/{vm_id}/vnc?token={jwt}` | WS | WebSocket VNC connection (noVNC) |
+| `GET /api/v1/vms/{vm_id}/vnc` | WS | WebSocket VNC connection (noVNC), bootstrap credential via secure cookie (no query token) |
 
 ---
 
@@ -1518,17 +1545,17 @@ If >50% of resources detected as ghosts, halt and alert.
 | §13 Delete Cascade | ✅ Done | Section 6.1 (this doc) | Hierarchical hard delete with constraints; audit/events retained, approval tickets retained where applicable |
 | §13.1 Delete Confirmation | ✅ Done | [master-flow.md Stage 5.D](../interaction-flows/master-flow.md#stage-5-d) | Tiered confirmation (test vs prod) |
 | §14 Platform RBAC | ✅ Done | Section 3 (this doc) | Dual-layer RBAC; ADR-0019 amendments |
-| §15 Cluster Visibility | ✅ Done | Section 5.5 (this doc) | Environment matching; scheduling weight |
+| §15 Cluster Visibility | ✅ Done | Section 6 (this doc) | Namespace/cluster env matching enforced in approval+worker; `allowed_environments` visibility filtering enforced in namespace/VM query-read path |
 | §16 Global Naming | ✅ Done | [01-contracts.md §1.1](01-contracts.md#11-naming-constraints-adr-0019) | RFC 1035 + ADR-0019 extension |
 | §17 Template Snapshot | ✅ Done | [master-flow.md Stage 5.B](../interaction-flows/master-flow.md#stage-5-b) | ApprovalTicket stores immutable snapshot |
-| §18 VNC Permissions | ✅ Done | Section 6.2 (this doc) | Token-based access |
-| §19 Batch Operations | ✅ Done | Section 5.6 (this doc) | Parent-child ticket model + two-layer rate limiting + frontend queue contract |
+| §18 VNC Permissions | ⚠️ Partial | Section 6.2 (this doc) | V1 Stage 6 baseline implemented (request/status/open + approval + audit + single-use credential); proxy internals hardening continues |
+| §19 Batch Operations | ⚠️ Partial | Section 5.6 (this doc) | Runtime API + child execution dispatch + two-layer throttling + parent projection persistence + admin override APIs + `/vms/batch/power` compatibility execution implemented (`/vms/batch` submit/query/retry/cancel + `/vms/batch/power` + `/approvals/batch` + `/admin/rate-limits/*`), but frontend queue UX is still pending |
 | §20 Notification System | ✅ V1 Inbox | Section 6.3 (this doc) | Sync writes; external adapters V2+ |
 | §21 Scope Exclusions | 📋 Reference | ADR-0015 | Lists deferred items |
-| §22 Authentication | ✅ V1 Scope | Section 8 (this doc) | OIDC + LDAP; group mapping |
+| §22 Authentication | ⚠️ Partial | Section 8 (this doc) | Local/JWT core exists; OIDC/LDAP group-mapping flow pending |
 | External Approval Systems | ⚠️ V1 Interface | - | Standard data interface; plugin layer |
 
-> **Legend**: ✅ Done = Implemented in V1 | ⚠️ Partial = Implemented subset, ADR gap remains | ⚠️ V1 Interface = Only data interface defined
+> **Legend**: ✅ Done = Implemented in V1 | ⚠️ Partial = Implemented subset, ADR gap remains | ❌ Deferred = planned but not implemented | ⚠️ V1 Interface = Only data interface defined
 
 > **Interface-First Design**: Notification and Approval systems use **standard data interfaces** (ADR-0015 §20, §9).
 > V1 implements simple built-in solutions. External integrations (Slack, ServiceNow, Jira) are handled by plugin adapters without core interface changes.

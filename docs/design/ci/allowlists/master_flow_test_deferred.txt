@@ -1,0 +1,3 @@
+# Required master-flow stages that are intentionally deferred from executable
+# stage-test mapping. Remove entry immediately once mapped tests land.
+# 2026-02-14: empty (all required stages mapped to executable tests).

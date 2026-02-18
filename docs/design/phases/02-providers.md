@@ -365,8 +365,8 @@ func (p *MockProvider) Reset() { ... }
 - [ ] MockProvider matches KubeVirtProvider interface
 - [ ] MapVM handles nil fields correctly
 - [ ] ResourceWatcher 410 handling tested
-- [ ] Health check updates cluster status
-- [ ] Capability detector runs on health check
+- [x] Health check updates cluster status
+- [x] Capability detector runs on health check
 - [ ] Adoption discovery works
 
 ---

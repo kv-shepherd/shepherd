@@ -19,3 +19,4 @@
 - Batch queue model: [features/batch-operations-queue.md](../features/batch-operations-queue.md)
 - OpenAPI contract workflow: [../contracts/README.md](../contracts/README.md)
 - Testing and CI gates: [../testing/README.md](../testing/README.md)
+- Strict route separation: [strict-separation.md](./strict-separation.md)

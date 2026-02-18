@@ -1,0 +1,3 @@
+# master-flow API paths intentionally deferred from current OpenAPI contract.
+# Format: normalized path (without /api/v1 prefix; path params normalized to {})
+# Keep this list minimal. Remove an entry immediately after implementation lands.

@@ -55,8 +55,9 @@ POST /api/v1/vms/{vm_id}/console/request
 # Poll approval/access status
 GET /api/v1/vms/{vm_id}/console/status
 
-# WebSocket endpoint for noVNC token-based access
-GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}
+# WebSocket endpoint for noVNC (no bearer token in URL)
+GET /api/v1/vms/{vm_id}/vnc
+# bootstrap credential carried by secure channel (preferred: HttpOnly cookie)
 ```
 
 ---
@@ -110,7 +111,8 @@ func (h *VNCHandler) ProxyConsole(c *gin.Context) {
 # Public API contract aligns with master-flow Stage 6:
 POST /api/v1/vms/{vm_id}/console/request
 GET /api/v1/vms/{vm_id}/console/status
-GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}
+GET /api/v1/vms/{vm_id}/vnc
+# bootstrap credential carried by secure channel (preferred: HttpOnly cookie)
 
 # KubeVirt upstream proxy target (internal implementation detail):
 # subresources.kubevirt.io/v1/namespaces/{ns}/virtualmachineinstances/{name}/vnc
@@ -129,5 +131,7 @@ GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}
 ## References
 
 - [ADR-0015: Governance Model V2 §18](../adr/ADR-0015-governance-model-v2.md) - VNC security specifications
+- [RFC 9700 §4.3.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.3.2) - Access token in URI query is forbidden
+- [OWASP WebSocket Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/WebSocket_Security_Cheat_Sheet.html)
 - [KubeVirt Console Access](https://kubevirt.io/user-guide/virtual_machines/accessing_virtual_machines/)
 - [noVNC](https://novnc.com/)

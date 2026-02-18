@@ -30,18 +30,30 @@
   - [x] CI blocks PRs on retired doc path usage and broken canonical design links
 - [x] **Master-Flow Traceability Manifest (ADR-0032)**:
   - [x] `docs/design/traceability/master-flow.json` exists and is updated with flow/phase changes
-  - [ ] CI blocks PRs when traceability manifest check fails (`check_master_flow_traceability.go`) — *Script exists in `docs/design/ci/scripts/`, CI integration deferred to Phase 1 when real flow changes occur*
+  - [x] CI blocks PRs when traceability manifest check fails (`check_master_flow_traceability.go`) — *Integrated in `.github/workflows/ci.yml` (`ci-checks` job)*
+- [x] **Master-Flow Spec-Driven Test-First Gate (ADR-0034)**:
+  - [x] `docs/design/traceability/master-flow-tests.json` defines required stage→test mappings
+  - [x] Deferred required-stage test debt is explicit in `docs/design/ci/allowlists/master_flow_test_deferred.txt`
+  - [x] CI blocks PRs when required-stage coverage/deferred hygiene check fails (`check_master_flow_test_matrix.go`)
 - [x] **API Contract-First CI (ADR-0021, ADR-0029)**:
   - [x] Move API contract workflow to `.github/workflows/api-contract.yaml`
   - [x] Move `docs/design/ci/makefile/api.mk` to `build/api.mk`
   - [x] Include `build/api.mk` from root `Makefile`
+  - [x] Add strict OpenAPI critical contract gate (`check_openapi_critical_contract.go`) to block accidental deletion of required paths/schemas/global security
+  - [x] Add strict OpenAPI fingerprint lock gate (`check_openapi_critical_fingerprint.go`) to force intentional review when critical contract nodes change
+  - [x] Add strict runtime placeholder gate (`check_no_runtime_placeholders.go`) to block TODO/FIXME/placeholder/stub markers in runtime code
+  - [x] Add strict provider wiring gate (`check_provider_wiring.go`) to enforce runtime real-provider wiring and mock rejection
+  - [x] Add strict module noop-hook gate (`check_module_noop_hooks.go`) to block silent noop module wiring unless explicitly allowlisted
+  - [x] Add strict VM create spec completeness gate (`check_vm_create_spec_completeness.go`) to enforce `spec_overrides` passthrough in Stage 5.C
+  - [x] Add strict critical-test-presence gate (`check_critical_test_presence.go`) to require paired test coverage on critical runtime paths
+  - [x] Add strict Stage 5.C behavior-test gate (`check_stage5c_behavior_tests.go`) to enforce key scenario assertions (advanced overrides + invalid-path rejection)
   - [x] Add CI step: `make api-check` — *Defined in `build/api.mk`, runs via api-contract.yaml*
   - [ ] If 3.1-only features are used: add CI step `REQUIRE_OPENAPI_COMPAT=1 make api-compat` — *Deferred: no 3.1-only features yet*
-  - [ ] Implement `make api-compat-generate` before enabling compat enforcement — *Deferred: same as above*
+  - [x] Implement `make api-compat-generate` minimal generator (3.1 → 3.0.3 rewrite + 3.1 keyword guard) — *Full overlay transform still recommended before strict compat in 3.1-heavy specs*
 - [x] **OpenAPI Toolchain (ADR-0029)**: See [CI README §API Contract-First](../ci/README.md#api-contract-first-enforcement-adr-0021-adr-0029) for details
   - [x] `api/.vacuum.yaml` created (vacuum replaces spectral)
   - [x] CI uses version-pinned GitHub Actions (commit SHA, not tags)
-  - [x] `internal/api/middleware/openapi_validator.go` — *Placeholder created; full `libopenapi-validator` StrictMode impl deferred to [Phase 1](../phases/01-contracts.md) when OpenAPI spec is complete*
+  - [x] `internal/api/middleware/openapi_validator.go` — *Runtime request/response OpenAPI validation is implemented and router-wired (`internal/app/router.go`)*
 - [x] **sqlc Usage Scope Check (ADR-0012)**:
   - [x] `check_sqlc_usage.sh` created (see [ci/README.md](../ci/README.md#script-summary))
   - [x] CI blocks: sqlc only allowed in `internal/repository/sqlc/` and `internal/usecase/`
@@ -124,7 +136,6 @@ The following items are architecturally prepared but depend on packages/features
 | Item | Blocked By | Target Phase |
 |------|-----------|--------------|
 | `stdlib.OpenDBFromPool` for Ent | Ent ORM v0.14.5 | [Phase 1: Contracts](../phases/01-contracts.md) |
-| `openapi_validator.go` full impl | Complete OpenAPI spec | [Phase 1: Contracts](../phases/01-contracts.md) |
 | River stability (ADR-0008) | River Queue v0.30.2 | [Phase 4: Governance](../phases/04-governance.md) |
 | Session storage (scs) | Auth implementation | [Phase 5: Auth/API/Frontend](../phases/05-auth-api-frontend.md) |
 | Admin seed (ADR-0018) | User model + auth | [Phase 5: Auth/API/Frontend](../phases/05-auth-api-frontend.md) |

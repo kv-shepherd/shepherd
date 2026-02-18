@@ -13,6 +13,7 @@
 2. All ✅ required before proceeding to the next phase.
 3. ❌ items must be fixed and re-verified.
 4. API/flow changes are not complete until OpenAPI, frontend docs, master-flow, and phase docs are all synchronized.
+5. Gate-first rule: complete [ci/GATE_HARDENING_CHECKLIST.md](./ci/GATE_HARDENING_CHECKLIST.md) before new feature delivery.
 
 ---
 
@@ -24,8 +25,8 @@
 | Phase 1 | [checklist/phase-1-checklist.md](./checklist/phase-1-checklist.md) | [phases/01-contracts.md](./phases/01-contracts.md) | 🔄 Partial — Schemas + TS types + frontend testing toolchain ✅, contract CI hardening gaps |
 | Phase 2 | [checklist/phase-2-checklist.md](./checklist/phase-2-checklist.md) | [phases/02-providers.md](./phases/02-providers.md) | 🔄 Partial — Basic CRUD ✅, Snapshot/Clone/Migration ❌ |
 | Phase 3 | [checklist/phase-3-checklist.md](./checklist/phase-3-checklist.md) | [phases/03-service-layer.md](./phases/03-service-layer.md) | 🔄 Partial — Core DI/UseCase + ADR-0012 atomic path ✅, concurrency ❌ |
-| Phase 4 | [checklist/phase-4-checklist.md](./checklist/phase-4-checklist.md) | [phases/04-governance.md](./phases/04-governance.md) | 🔄 Partial — Approval/Audit/Atomic enqueue/Delete/Namespace CRUD/Notification system (API+triggers+sender+bell+retention cleanup) ✅, Batch ❌ |
-| Phase 5 | [checklist/phase-5-checklist.md](./checklist/phase-5-checklist.md) | [phases/05-auth-api-frontend.md](./phases/05-auth-api-frontend.md) | 🔄 In Progress — Backend Auth ✅ (JWT hardening + bcrypt cost 12 + log redaction), 38 endpoints (ADR-0028 omitzero) ✅, Frontend Pages ✅ (13/13), E2E pending |
+| Phase 4 | [checklist/phase-4-checklist.md](./checklist/phase-4-checklist.md) | [phases/04-governance.md](./phases/04-governance.md) | 🔄 Partial — Approval/Audit/Atomic enqueue/Delete/Namespace CRUD/Notification system (API+triggers+sender+bell+retention cleanup) ✅, environment scheduling + visibility filtering ✅, Stage 5.E backend + frontend queue UX (`status_url` polling/429 cooldown/affected-child feedback/aria-live) ✅, Stage 6 VNC baseline + shared PG replay marker ✅ |
+| Phase 5 | [checklist/phase-5-checklist.md](./checklist/phase-5-checklist.md) | [phases/05-auth-api-frontend.md](./phases/05-auth-api-frontend.md) | 🔄 In Progress — Backend Auth ✅ (JWT hardening + bcrypt cost 12 + log redaction), 44 endpoints (ADR-0028 omitzero) ✅, Frontend routes feature-complete for Stage-5 (Users/member management included), E2E pending |
 
 ---
 
@@ -47,9 +48,9 @@
 | **5.B** | Admin Approval | ✅ 90% | [phase-4 §Approval](checklist/phase-4-checklist.md#approval-flow-governance-core) | [master-flow §5.B](interaction-flows/master-flow.md#stage-5-b) | P3 — prod overcommit warning UX |
 | **5.C** | VM Creation Execution | ✅ 95% | [phase-4 §River Queue](checklist/phase-4-checklist.md#river-queue-task-system-adr-0006) | [master-flow §5.C](interaction-flows/master-flow.md#state-transitions-stage-5a-5c) | P3 — provider hard idempotency |
 | **5.D** | Delete Operations | ✅ 90% | [phase-4 §Delete](checklist/phase-4-checklist.md#delete-confirmation-mechanism-adr-0015-131) | [master-flow §5.D](interaction-flows/master-flow.md#stage-5d-delete-operations) | P2 — tombstone cleanup policy |
-| **5.E** | Batch Operations | ❌ 0% | [phase-4 §Batch](checklist/phase-4-checklist.md#batch-operations-adr-0015-19) | [master-flow §5.E](interaction-flows/master-flow.md#stage-5e-batch-operations) | P3 — future iteration |
+| **5.E** | Batch Operations | ✅ 96% | [phase-4 §Batch](checklist/phase-4-checklist.md#batch-operations-adr-0015-19) | [master-flow §5.E](interaction-flows/master-flow.md#stage-5e-batch-operations) | P2 — API + child execution dispatch + two-layer throttling + parent projection + admin override APIs + `/vms/batch/power` + frontend queue UX (`status_url` tracking/429 cooldown/affected-child feedback/aria-live) complete; export-result UX pending |
 | **5.F** | Notification System | ✅ 95% | [phase-4 §Notification](checklist/phase-4-checklist.md#notification-system-adr-0015-20) | [master-flow §5.F](interaction-flows/master-flow.md#stage-5f-notification-system) | P3 — V1 inbox flow complete (API+triggers+sender+frontend bell+retention cleanup); external channels deferred to V2+ |
-| **6** | VNC Console Access | ❌ 0% | [phase-4 §VNC](checklist/phase-4-checklist.md#vnc-console-permissions-adr-0015-18-181-addendum) | [master-flow §6](interaction-flows/master-flow.md#stage-6-vnc-console-access) | P3 — future iteration |
+| **6** | VNC Console Access | ✅ 90% | [phase-4 §VNC](checklist/phase-4-checklist.md#vnc-console-permissions-adr-0015-18-181-addendum) | [master-flow §6](interaction-flows/master-flow.md#stage-6-vnc-console-access) | P2 — noVNC proxy internals and transport hardening rollout validation |
 
 #### Coding Priority Queue (work in this order)
 
@@ -66,7 +67,7 @@
 5. ~~**P1** — Fix delete governance: cascade checks, approval ticket for VM delete, `DELETING` state usage~~ ✅ **Done** (2026-02-10)
 6. ~~**P2** — Ticket lifecycle: worker updates ticket `EXECUTING`→`SUCCESS/FAILED`~~ ✅ **Done** (2026-02-10)
 7. ~~**P1** — Align approval commit path to ADR-0012 (`sqlc + InsertTx`)~~ ✅ **Done** (2026-02-10)
-8. **P3** — Batch / VNC (deferred to later iterations); Notification system ✅ (V1 inbox flow complete)
+8. **P2/P3** — Batch API + child execution dispatch + two-layer throttling + parent projection + admin override APIs + `/vms/batch/power` + frontend queue UX completed (Stage 5.E baseline); Stage 6 VNC baseline completed with shared PG replay marker and now requires rollout validation + proxy internals/credential encryption hardening; Notification system ✅ (V1 inbox flow complete)
 
 ### CI Checks
 
@@ -77,6 +78,7 @@
 - [ ] If 3.1-only features are used, `REQUIRE_OPENAPI_COMPAT=1 make api-compat` passes
 - [ ] Design docs governance checks pass (frontend path, master-flow links, checklist authority references)
 - [ ] Master-flow traceability manifest check passes (`check_master_flow_traceability.go`)
+- [ ] Master-flow required-stage test matrix gate passes (`check_master_flow_test_matrix.go`)
 
 ### Architecture Constraints
 
@@ -112,6 +114,7 @@
 |---------|--------|-----------------|
 | GORM import | Use Ent only | `check_no_gorm_import.go` |
 | Redis import | PostgreSQL only in V1 | `check_no_redis_import.sh` |
+| SQLite usage in tests | PostgreSQL-only policy across runtime and tests | `check_no_sqlite_in_tests.go` |
 | Naked goroutines | Use worker pool (ADR-0031) | `check_naked_goroutine.go` |
 | Wire import | Manual DI only | `check_manual_di.sh` |
 | Outbox pattern | Use River directly | `check_no_outbox_import.go` |
@@ -119,6 +122,7 @@
 | Handler manages transactions | UseCase layer only | `check_transaction_boundary.go` |
 | K8s calls in transactions | Two-phase pattern only | `check_k8s_in_transaction.go` |
 | Unsafe semaphore usage | Always `defer Release()` (ADR-0031) | `check_semaphore_usage.go` |
+| Runtime code change without corresponding test delta | Enforce test-first delivery | `check_changed_code_has_tests.sh` |
 
 ---
 
@@ -131,11 +135,12 @@
 | ADR | Constraint | Scope | Enforcement |
 |-----|------------|-------|-------------|
 | [ADR-0003](../adr/ADR-0003-database-orm.md) | Ent ORM only, no GORM | All data access | CI: `check_no_gorm_import.go` |
+| [ADR-0008](../adr/ADR-0008-postgresql-stability.md) | PostgreSQL-only baseline; no SQLite fallback in test path | Runtime + tests | CI: `check_no_sqlite_in_tests.go` |
 | [ADR-0006](../adr/ADR-0006-unified-async-model.md) | All K8s operations via River Queue | External API calls¹ | CI: `check_river_bypass.go` |
 | [ADR-0009](../adr/ADR-0009-domain-event-pattern.md) | Payload is immutable (append-only) | DomainEvent table | Code Review |
 | [ADR-0012](../adr/ADR-0012-hybrid-transaction.md) | K8s calls outside DB transactions | UseCase layer | CI: `check_k8s_in_transaction.go` |
 | [ADR-0013](../adr/ADR-0013-manual-di.md) | Manual DI, no Wire/fx | All DI | CI: `check_manual_di.sh` |
-| [ADR-0015](../adr/ADR-0015-governance-model-v2.md) | Entity decoupling (VM→Service only) | Schema design | Code Review |
+| [ADR-0015](../adr/ADR-0015-governance-model-v2.md) | Entity decoupling (VM→Service only) + VNC credential transport hardening (no URI query token) | Schema design + Stage 6 VNC flow | CI: `check_stage6_vnc_baseline.go` + Code Review |
 | [ADR-0016](../adr/ADR-0016-go-module-vanity-import.md) | Vanity import: `kv-shepherd.io/shepherd` | All Go imports | Code Review |
 | [ADR-0017](../adr/ADR-0017-vm-request-flow-clarification.md) | User does NOT provide ClusterID; Namespace immutable after submission | VM Request Flow | Code Review |
 | [ADR-0018](../adr/ADR-0018-instance-size-abstraction.md) | InstanceSize hybrid model (indexed columns + JSONB); snapshot at approval | Schema design | Code Review |
@@ -145,6 +150,7 @@
 | [ADR-0028](../adr/ADR-0028-oapi-codegen-optional-field-strategy.md) | oapi-codegen with `omitzero`; Go 1.25+ required | API code generation | CI: `make generate` |
 | [ADR-0029](../adr/ADR-0029-openapi-toolchain-governance.md) | Vacuum for linting, libopenapi-validator | API toolchain | CI: `make api-lint` |
 | [ADR-0031](../adr/ADR-0031-concurrency-and-worker-pool-standard.md) | No naked `go` statements; worker pool with context propagation; semaphore Acquire/Release leak-safe | In-process concurrency | CI: `check_naked_goroutine.go`, `check_semaphore_usage.go` |
+| [ADR-0034](../adr/ADR-0034-master-flow-spec-driven-test-first.md) | Required master-flow stages must have executable tests or explicit deferred debt; runtime code diffs must carry test diffs | Cross-layer interaction delivery | CI: `check_master_flow_test_matrix.go`, `check_changed_code_has_tests.sh` |
 
 > ¹ **ADR-0006 Scope Clarification**: "All writes via River Queue" applies to operations requiring external system calls (K8s API).
 > Pure PostgreSQL writes (e.g., Notification, AuditLog, DomainEvent insert) are **synchronous** for transactional atomicity.
@@ -174,8 +180,8 @@ The following items are moved to [RFC directory](../rfc/):
 | Phase 1 | 🔄 Partial (~90%) | - | Schemas + TS API types + frontend testing toolchain done, contract CI hardening gaps |
 | Phase 2 | 🔄 Partial (~50%) | - | Basic VM CRUD, advanced ops deferred |
 | Phase 3 | 🔄 Partial (~70%) | - | Core DI/UseCase + ADR-0012 atomic approval done, concurrency deferred |
-| Phase 4 | 🔄 Partial (~90%) | - | Approval/Audit/Delete/atomic enqueue/Namespace CRUD/Notification system (+retention cleanup) done, batch/env isolation deferred |
-| Phase 5 | 🔄 In Progress (~95%) | - | Backend auth ✅, API gen 38 endpoints (ADR-0028 omitzero) ✅, Frontend 13/13 pages ✅, E2E pending |
+| Phase 4 | 🔄 Partial (~99%) | - | Approval/Audit/Delete/atomic enqueue/Namespace CRUD/Notification system (+retention cleanup) done, namespace↔cluster env matching + RBAC env visibility filtering enforced, Stage 5.E batch submit/query/retry/cancel (+ `POST /vms/batch/power`) + child execution dispatch + two-layer throttling + parent projection + admin override APIs + frontend queue UX (`status_url` polling + 429 cooldown + affected-child feedback + aria-live) implemented, Stage 6 VNC baseline + shared PG replay marker implemented (cookie bootstrap + approval flow), noVNC proxy internals/credential encryption hardening pending |
+| Phase 5 | 🔄 In Progress (~93%) | - | Backend auth ✅, API gen 44 endpoints (ADR-0028 omitzero) ✅, frontend routes feature-complete for Stage-5 (Users/member-management included), E2E pending |
 
 ---
 

@@ -1,0 +1,4 @@
+# Allowed legacy route-shell exceptions.
+# Policy: this lock can only shrink with migration; adding new paths requires explicit governance update.
+#
+# Current status: empty (strict mode).

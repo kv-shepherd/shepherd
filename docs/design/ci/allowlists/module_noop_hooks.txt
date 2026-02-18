@@ -1,0 +1,5 @@
+# No-op module hook allowlist.
+# Format:
+#   <workspace-relative-go-file-path>:<MethodName>
+#
+# Keep empty by default. No-op ContributeServerDeps/RegisterWorkers hooks are discouraged.

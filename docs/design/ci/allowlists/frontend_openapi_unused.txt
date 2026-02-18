@@ -1,0 +1,2 @@
+# OpenAPI operations intentionally not consumed by frontend yet.
+# Format: METHOD /path

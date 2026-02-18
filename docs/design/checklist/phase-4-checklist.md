@@ -2,9 +2,11 @@
 
 > **Detailed Document**: [phases/04-governance.md](../phases/04-governance.md)
 >
-> **Implementation Status**: 🔄 Partial (~90%) — Approval flow/ADR-0012 atomic commit/Audit log/Delete handlers/ApprovalValidator/Confirm params/Notification system (API+triggers+sender+frontend bell+retention cleanup)/Namespace CRUD handlers + frontend admin pages (Namespaces/Templates/InstanceSizes) completed; Environment isolation/Batch deferred
+> **Implementation Status**: 🔄 Partial (~99%) — Approval flow/ADR-0012 atomic commit/Audit log/Delete handlers/ApprovalValidator/Confirm params/Notification system (API+triggers+sender+frontend bell+retention cleanup)/Namespace CRUD handlers + frontend admin pages (Namespaces/Templates/InstanceSizes) completed; Environment isolation scheduling + visibility filtering implemented (approval+worker+query/read path); Stage 5.E backend + frontend queue UX baseline is closed (batch create/delete + batch power + admin override APIs + parent-child dispatch/counters + `status_url` tracking + 429 cooldown + affected-child feedback + `aria-live`), Stage 6 VNC baseline implemented (request/status/open + approval + audit + single-use credential + shared PG replay marker), remaining hardening primarily focuses on advanced credential encryption/proxy internals
 >
-> **Last Audited**: 2026-02-11T20:30 (Session: Notification retention cleanup + frontend testing toolchain + contract sync)
+> **Last Audited**: 2026-02-15T22:35 (Session: Stage 6 replay marker hardening + PG cross-instance verification)
+>
+> **Gate Checklist**: [../ci/GATE_HARDENING_CHECKLIST.md](../ci/GATE_HARDENING_CHECKLIST.md)
 
 ---
 
@@ -20,9 +22,9 @@
 | 5.B | Admin Approval | ✅ 90% | Prod overcommit informational warning (`request ≠ limit`) not yet surfaced | P3 |
 | 5.C | VM Creation Execution | ✅ 95% | Provider-side hard idempotency (AlreadyExists/object ownership check) can be further strengthened | P3 |
 | 5.D | Delete Operations | ✅ 90% | VM tombstone cleanup policy after successful K8s deletion still pending | P2 |
-| 5.E | Batch Operations | ❌ 0% | Completely unimplemented (parent-child model, throttling, APIs) | P3 |
+| 5.E | Batch Operations | ✅ 96% | Canonical API baseline + parent-child linkage + submit throttling (pending parent + global/min + pending child + cooldown) + parent approval dispatch to independent child workers + retry/cancel + parent projection table persisted counters + admin override APIs + `/vms/batch/power` compatibility execution + frontend queue UX (`status_url` polling / `429 Retry-After` countdown / affected-child feedback / `aria-live`) implemented; export-result UX pending | P2 |
 | 5.F | Notification System | ✅ 95% | V1 inbox notification flow implemented end-to-end (API + triggers + InboxSender + NotificationBell + 90-day retention cleanup) | P3 |
-| 6 | VNC Console Access | ❌ 0% | Completely unimplemented (token, proxy, environment-based approval) | P3 |
+| 6 | VNC Console Access | ⚠️ 95% | Stage 6 baseline + shared PG replay marker implemented; proxy internals + credential encryption hardening rollout validation pending | P2 |
 | Part 4 | State Machines | ✅ 90% | ~~`FAILED`, `DELETING`, `STOPPING` states~~ added; ~~`PENDING` clarified~~ as K8s-only | P2-done |
 
 ### Blocking Issues (must fix before further feature work)
@@ -68,8 +70,8 @@
 | ✅ Frontend NotificationBell | `web/src/components/ui/NotificationBell.tsx` | Badge + Popover + mark-read + 30s polling |
 | ✅ i18n: notification keys | `web/src/i18n/locales/{en,zh-CN}/common.json` | notification.title/empty/markAllRead/type.* keys |
 | ✅ Namespace Admin Page | `web/src/app/admin/namespaces/page.tsx` | CRUD + confirm_name delete gate (ADR-0015 §13) |
-| ✅ Templates Admin Page | `web/src/app/admin/templates/page.tsx` | Read-only list with column filters + useDeferredValue search |
-| ✅ InstanceSizes Admin Page | `web/src/app/admin/instance-sizes/page.tsx` | Read-only list with capability filters + numeric sorters |
+| ✅ Templates Admin Page | `web/src/app/admin/templates/page.tsx` | CRUD list/forms + column filters + useDeferredValue search |
+| ✅ InstanceSizes Admin Page | `web/src/app/admin/instance-sizes/page.tsx` | CRUD list/forms + capability filters + numeric sorters |
 | ✅ i18n: admin page keys | `web/src/i18n/locales/{en,zh-CN}/admin.json` | 44+ keys for namespaces/templates/instanceSizes |
 | ✅ Navigation updated | `web/src/components/layouts/AppLayout.tsx` | 3 new admin menu entries with icons |
 
@@ -119,18 +121,18 @@
 
 ## Environment Isolation (ADR-0015 §1, §15)
 
-- [ ] **Schema Fields**:
-  - [ ] `Cluster.environment` - Cluster environment type (test/prod)
-  - [ ] `ent/schema/namespace_registry.go` - Namespace registry with explicit environment
-    - [ ] Contains `name` field
-    - [ ] Contains `environment` field (test/prod) - **explicitly set by admin**
-    - [ ] Does NOT contain `cluster_id` field (ADR-0017)
-  - [ ] ❌ **No `System.environment`** - System is decoupled from environment (ADR-0015 §1)
+- [x] **Schema Fields**:
+  - [x] `Cluster.environment` - Cluster environment type (test/prod)
+  - [x] `ent/schema/namespace_registry.go` - Namespace registry with explicit environment
+    - [x] Contains `name` field
+    - [x] Contains `environment` field (test/prod) - **explicitly set by admin**
+    - [x] Does NOT contain `cluster_id` field (ADR-0017)
+  - [x] ❌ **No `System.environment`** - System is decoupled from environment (ADR-0015 §1)
 - [ ] **Platform RBAC**:
-  - [ ] `RoleBinding.allowed_environments` field
-  - [ ] Environment-based query filtering
-- [ ] **Visibility Filtering** - users see only namespaces matching their allowed_environments
-- [ ] **Scheduling Constraints** - namespace environment must match cluster environment
+  - [x] `RoleBinding.allowed_environments` field
+  - [x] Environment-based query filtering (`ListNamespaces`, `ListVMs`)
+- [x] **Visibility Filtering** - users see only namespaces matching their allowed_environments (includes VM read/request path guard)
+- [x] **Scheduling Constraints** - namespace environment must match cluster environment (`ApprovalValidator` + `VMCreateWorker` runtime guard)
 
 ---
 
@@ -214,19 +216,23 @@
 - [x] **Directory Structure** created (`internal/governance/approval/`)
 - [x] **ApprovalGateway** implemented (`gateway.go` — Approve, Reject, Cancel, ListPending)
 - [x] **Admin Parameter Modification** supported (selected_cluster_id, selected_storage_class)
+- [x] **Approval Snapshot Persistence** complete (`template_snapshot`, `instance_size_snapshot`, `modified_spec` persisted in atomic approval write)
 - [ ] **Full Replacement Safety Protection** implemented (deferred)
 - [x] **Request Type Enum** defined (domain event types)
 - [x] **State Flow** implemented (PENDING → APPROVED/REJECTED/CANCELLED)
 - [x] **Post-Execution Ticket Status**: Worker updates ticket `APPROVED → EXECUTING → SUCCESS/FAILED`
+- [x] **VM Create Status Progression**: `vm_create` worker persists `CREATING -> RUNNING|FAILED` on execution result
+- [x] **Duplicate Pending Guard Scope**: same-resource + same-operation check with `existing_ticket_id` in error params
 - [ ] **User View - My Requests** API (deferred)
 - [x] **Admin View - Approval Workbench** API (ListPending sorted oldest first)
   - [x] Default sort by `days_pending` (oldest first within priority tier)
   - [x] `priority_tier` field in response (normal/warning/urgent) — `PriorityTier()` function
   - [x] Color coding: 0-3d normal, 4-7d yellow, 7+d red (ADR-0015 §11)
-- [x] **User Self-Cancellation** API (Gateway.Cancel validates requester)
-- [x] `POST /api/v1/approvals/{id}/cancel` documented as canonical self-cancellation endpoint
+- [x] **User Self-Cancellation (HTTP API)** implemented
+  - OpenAPI route + handler + `Gateway.Cancel` error mapping are now wired
+- [x] `POST /api/v1/approvals/{id}/cancel` implemented and contract-defined
 - [x] **AuditLogger** implemented (`internal/governance/audit/logger.go`)
-- [x] **Approval API** endpoints complete — *Phase 5: `handlers/approval.go` ListPending/Approve/Reject/Cancel + `modules/approval.go`*
+- [x] **Approval API** endpoints complete (list/approve/reject/cancel)
 - [ ] Policy matching logic implemented (deferred)
 - [ ] **Extensible Approval Handler Architecture** designed (deferred)
 - [x] **Notification Service (Reserved Interface)** defined (`internal/provider/auth.go`)
@@ -277,17 +283,17 @@
 
 ## VNC Console Permissions (ADR-0015 §18, §18.1 Addendum)
 
-- [ ] **Environment-Based Access**:
-  - [ ] test environment - no approval required
-  - [ ] prod environment - requires approval ticket
+- [x] **Environment-Based Access**:
+  - [x] test environment - no approval required
+  - [x] prod environment - requires approval ticket
 - [ ] **VNC Token Security**:
-  - [ ] Single-use token
-  - [ ] Time-bounded (max 2 hours)
-  - [ ] User-bound (`sub` binds token to requester user ID)
+  - [x] Single-use token
+  - [x] Time-bounded (max 2 hours)
+  - [x] User-bound (`sub` binds token to requester user ID)
   - [ ] AES-256-GCM encryption
-- [ ] Shared replay marker store (`jti` + `used_at`) works across replicas (no Redis dependency)
-- [ ] V1 has **no active token revocation API** (documented limitation, see ADR-0015 §18.1 addendum); revocation capability is tracked as V2+ enhancement
-- [ ] **VNC Session Audit** logging
+- [x] Shared replay marker store (`jti` + `used_at`) works across replicas (no Redis dependency)
+- [x] V1 has **no active token revocation API** (documented limitation, see ADR-0015 §18.1 addendum); revocation capability is tracked as V2+ enhancement
+- [x] **VNC Session Audit** logging
 
 ---
 
@@ -295,30 +301,33 @@
 
 > **Design**: [04-governance.md §5.6](../phases/04-governance.md#56-batch-operations-adr-0015-19)
 
-- [ ] **Parent-Child Ticket Schema**
-  - [ ] `batch_approval_tickets` parent table implemented
-  - [ ] `approval_tickets.parent_ticket_id` child linkage implemented
-  - [ ] Parent aggregate counters (`success/failed/pending`) are persisted
-- [ ] **Atomic Submission + Independent Execution**
-  - [ ] Parent + child ticket creation is atomic in one DB transaction
-  - [ ] Child jobs execute independently via River
-  - [ ] Parent status aggregation supports `PARTIAL_SUCCESS`
-- [ ] **Two-Layer Rate Limiting**
-  - [ ] Global limits: pending parent tickets + API request rate
-  - [ ] User limits: pending parent count, pending child count, cooldown
-  - [ ] Admin exemption and override APIs implemented
-- [ ] **Batch APIs**
-  - [ ] `POST /api/v1/vms/batch` submit
-  - [ ] `GET /api/v1/vms/batch/{id}` status query
-  - [ ] `POST /api/v1/vms/batch/{id}/retry` retry failed children
-  - [ ] `POST /api/v1/vms/batch/{id}/cancel` terminate pending children
-  - [ ] Compatibility endpoints (`/api/v1/approvals/batch`, `/api/v1/vms/batch/power`) normalized into same parent-child pipeline
-- [ ] **Frontend Batch Queue UX**
-  - [ ] Parent row + child detail panel implemented
-  - [ ] Status polling uses backend `status_url` until terminal state
-  - [ ] Retry/terminate actions show affected child items explicitly
-  - [ ] `429` with `Retry-After` is handled with countdown and disabled actions
-  - [ ] Accessibility: live status updates announced (`aria-live`)
+- [x] **Parent-Child Ticket Schema**
+  - [x] `batch_approval_tickets` parent table implemented
+  - [x] `approval_tickets.parent_ticket_id` child linkage implemented
+  - [x] Parent aggregate counters (`success/failed/pending`) are persisted
+- [x] **Atomic Submission + Independent Execution**
+  - [x] Parent + child ticket creation is atomic in one DB transaction
+  - [x] Child jobs execute independently via River (parent approval dispatches child create/delete jobs)
+  - [x] Parent status aggregation supports `PARTIAL_SUCCESS` (runtime-computed response model)
+- [x] **Two-Layer Rate Limiting**
+  - [x] Global pending parent limit
+  - [x] Global API request rate
+  - [x] User pending parent limit
+  - [x] User pending child count + cooldown
+  - [x] Admin exemption and override APIs implemented (`POST/DELETE /admin/rate-limits/exemptions`, `PUT /admin/rate-limits/users/{user_id}`, `GET /admin/rate-limits/status`)
+- [x] **Batch APIs**
+  - [x] `POST /api/v1/vms/batch` submit
+  - [x] `POST /api/v1/vms/batch/power` compatibility submit
+  - [x] `GET /api/v1/vms/batch/{id}` status query
+  - [x] `POST /api/v1/vms/batch/{id}/retry` retry failed children
+  - [x] `POST /api/v1/vms/batch/{id}/cancel` terminate pending children
+  - [x] Compatibility endpoints fully normalized into same parent-child + execution pipeline (`/approvals/batch` + `/vms/batch/power`)
+- [x] **Frontend Batch Queue UX**
+  - [x] Parent row + child detail panel implemented
+  - [x] Status polling uses backend `status_url` until terminal state
+  - [x] Retry/terminate actions show affected child items explicitly
+  - [x] `429` with `Retry-After` is handled with countdown and disabled actions
+  - [x] Accessibility: live status updates announced (`aria-live`)
 
 ---
 

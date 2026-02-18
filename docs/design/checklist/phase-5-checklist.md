@@ -2,7 +2,9 @@
 
 > **Detailed Document**: [phases/05-auth-api-frontend.md](../phases/05-auth-api-frontend.md)
 >
-> **Implementation Status**: 🔄 In Progress (2026-02-11) — Backend ✅, Frontend pages ✅ (13/13 admin pages), E2E verification pending
+> **Implementation Status**: 🔄 In Progress (2026-02-14) — Backend + frontend member/user management landed, E2E verification pending
+>
+> **Gate Checklist**: [../ci/GATE_HARDENING_CHECKLIST.md](../ci/GATE_HARDENING_CHECKLIST.md)
 
 ---
 
@@ -37,14 +39,14 @@
 - [x] `RequirePermission()` — Global permission check middleware
 - [x] `RequireResourceAccess()` — Resource-level permission with hierarchy walk-up
 - [x] `ResourceRoleChecker` — VM → Service → System inheritance chain traversal
-- [x] **MemberHandler** (`handlers/member.go`) — ResourceRoleBinding CRUD with audit logging
+- [x] **MemberHandler** (`internal/api/handlers/member.go`) — ResourceRoleBinding CRUD with audit logging
 
 ---
 
 ## API Contract-First Code Generation (ADR-0021)
 
 - [x] `api/oapi-codegen.yaml` v2 format with gin-server + models generation
-- [x] `internal/api/generated/server.gen.go` — 38 endpoints (omitzero value types via ADR-0028), all model types
+- [x] `internal/api/generated/server.gen.go` — 44 endpoints (omitzero value types via ADR-0028), all model types
 - [x] `make api-gen` Makefile target
 - [x] `make ent-gen` Makefile target
 - [x] `make generate` composite target (ent-gen + api-gen)
@@ -103,7 +105,7 @@
 - [ ] **Form Validation**: Zod 3.x (i18n validation messages pending)
 - [x] **Internationalization**: react-i18next 15.x (en + zh-CN, 5 namespaces)
 - [x] **API Client**: openapi-typescript + openapi-fetch (type-safe from contract)
-- [x] **Pages** (13/13 routes):
+- [x] **Pages feature-complete** (13/13 routes exist and are production-ready for current Stage-5 scope):
   - [x] Login page (with force password change flow)
   - [x] Dashboard / System overview (real API: health, stats)
   - [x] System CRUD management (GET/POST/DELETE with RFC 1035 validation)
@@ -113,8 +115,9 @@
   - [x] Audit log viewer (admin: filtering + pagination)
   - [x] Clusters management (admin: GET/POST with kubeconfig)
   - [x] Namespaces management (admin: CRUD + confirm_name delete gate, ADR-0015 §13)
-  - [x] Templates viewer (admin: read-only list, column filters + useDeferredValue search)
-  - [x] Instance Sizes viewer (admin: read-only list, capability filters + sort)
+  - [x] Templates management (admin: CRUD list/forms + column filters + useDeferredValue search)
+  - [x] Instance Sizes management (admin: CRUD list/forms + capability filters + sort)
+  - [x] Users management page (admin) — user directory + system member CRUD (`web/src/app/(protected)/admin/users/page.tsx`)
 - [x] **Auth Integration**: JWT token in localStorage, auto-attach via middleware, 401 redirect
 - [x] **openapi-typescript** generates `web/src/types/api.gen.ts`
 - [x] **Notification Bell** (`web/src/components/ui/NotificationBell.tsx`):

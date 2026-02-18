@@ -1,7 +1,7 @@
 # ADR-0034 Implementation: Master-Flow Spec-Driven Test-First
 
 > **Parent ADR**: [ADR-0034](../../adr/ADR-0034-master-flow-spec-driven-test-first.md)  
-> **Status**: Implementation specification draft for ADR-0034 (parent ADR status: **proposed**)  
+> **Status**: Implementation specification draft for ADR-0034 (parent ADR status: **accepted**)  
 > **Date**: 2026-02-14
 
 ---

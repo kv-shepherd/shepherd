@@ -58,7 +58,7 @@ database development.
 
 | ADR | Constraint | Scope |
 |-----|------------|-------|
-| **ADR-0006** | All write operations use **unified async model** (request → 202 → River Queue) | All state-changing operations |
+| **ADR-0006** | External side-effect operations use **unified async model** (request → 202 → River Queue); pure PostgreSQL transactional writes may remain synchronous | State-changing operations that coordinate external systems |
 | **ADR-0009** | River Jobs carry **EventID only** (Claim Check); DomainEvent payload is **immutable** | All River Jobs |
 | **ADR-0012** | Atomic transactions: Ent for ORM, **sqlc for core transactions only** | All DB operations |
 
@@ -98,7 +98,7 @@ Every `Stage` section MUST follow this order:
 | Topic | Canonical Conclusion |
 |------|----------------------|
 | **Name governance** | Platform-managed logical names follow ADR-0019 constraints and must pass centralized validation. |
-| **Write model** | State-changing operations follow unified async model (`request -> 202 -> River`) per [ADR-0006 §Decision](../../adr/ADR-0006-unified-async-model.md#decision). |
+| **Write model** | Operations with external side effects (for example K8s/provider calls and external notifications) follow unified async model (`request -> 202 -> River`) per [ADR-0006 §Decision](../../adr/ADR-0006-unified-async-model.md#decision); pure PostgreSQL writes may remain synchronous inside atomic transactions. |
 | **Event integrity** | River jobs use EventID-only claim-check; event payload is immutable per [ADR-0009 §Constraint 1](../../adr/ADR-0009-domain-event-pattern.md#constraint-1-domainevent-payload-immutability-append-only). |
 | **Transaction boundary** | Core cross-aggregate writes use atomic Ent+sqlc transaction model per [ADR-0012 §Adopt Ent + sqlc Hybrid Mode](../../adr/ADR-0012-hybrid-transaction.md#adopt-ent-sqlc-hybrid-mode). |
 | **Delete semantics** | Primary resource rows are hard-deleted (with optional transient `DELETING`), while audit/workflow/event records are retained/archived per [ADR-0015 §13](../../adr/ADR-0015-governance-model-v2.md#13-deletion-cascade-constraints). |
@@ -550,37 +550,43 @@ Establish authentication, authorization, and initial security defaults required 
                                            ▼
 > **Standard Provider Output**: All auth providers (OIDC/LDAP/SSO) are normalized via adapter layer into a common payload for RBAC mapping. See [ADR-0026 §Standard Provider Output](../../adr/ADR-0026-idp-config-naming.md#standard-provider-output-contract).
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                     Stage 2.B: Configure Authentication (OIDC/LDAP)                          │
+│                Stage 2.B: Configure Authentication Providers (Plugin Standard)                │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │  Platform admin actions:                                                                      │
 │                                                                                              │
-│  ┌─ Step 1: Choose auth type ────────────────────────────────────────────────────────────┐   │
+│  ┌─ Step 1: Choose provider type (from registered plugins) ─────────────────────────────┐   │
 │  │                                                                                        │   │
-│  │  Authentication Configuration                                                         │   │
+│  │  Authentication Provider Configuration                                                │   │
 │  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
-│  │  │  Auth type:                                                                       │   │   │
+│  │  │  Provider type:                                                                   │   │   │
 │  │  │                                                                                  │   │   │
-│  │  │  ◉ OIDC (recommended) - Azure AD, Okta, Keycloak, Google Workspace               │   │   │
-│  │  │  ○ LDAP               - Active Directory, OpenLDAP                               │   │   │
-│  │  │  ○ Built-in users     - dev/test only                                            │   │   │
+│  │  │  ◉ OIDC (plugin) - Azure AD, Okta, Keycloak, Google Workspace                    │   │   │
+│  │  │  ○ LDAP (plugin) - Active Directory, OpenLDAP                                    │   │   │
+│  │  │  ○ SSO (plugin)  - Enterprise SSO adapter                                        │   │   │
+│  │  │  ○ Generic (plugin contract) - custom provider implementing standard fields       │   │   │
 │  │  │                                                                                  │   │   │
 │  │  │  [Next →]                                                                         │   │   │
 │  │  └────────────────────────────────────────────────────────────────────────────────┘   │   │
 │  │                                                                                        │   │
 │  └────────────────────────────────────────────────────────────────────────────────────────┘   │
 │                                                                                              │
-│  ┌─ Step 2: OIDC configuration ───────────────────────────────────────────────────────────┐   │
+│  ┌─ Step 2: Configure provider config (schema-driven) ───────────────────────────────────┐   │
 │  │                                                                                        │   │
-│  │  OIDC Provider Configuration                                                          │   │
+│  │  Provider Configuration                                                               │   │
 │  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
 │  │  │  Provider name:  [Corp-SSO                    ]                                  │   │   │
-│  │  │  Issuer URL:     [https://sso.company.com/realms/main]                           │   │   │
-│  │  │  Client ID:      [shepherd-platform           ]                                  │   │   │
-│  │  │  Client Secret:  [••••••••••••                ] 👁                               │   │   │
+│  │  │  Auth type:      [oidc                        ]                                  │   │   │
+│  │  │  Config JSON:                                                                      │   │   │
+│  │  │  {                                                                                 │   │   │
+│  │  │    "issuer": "https://sso.company.com/realms/main",                               │   │   │
+│  │  │    "client_id": "shepherd-platform",                                               │   │   │
+│  │  │    "client_secret": "••••••",                                                      │   │   │
+│  │  │    "claims_mapping": {"groups":"groups"}                                           │   │   │
+│  │  │  }                                                                                  │   │   │
 │  │  │                                                                                  │   │   │
-│  │  │  Callback URL (copy to IdP):                                                     │   │   │
-│  │  │  📋 https://shepherd.company.com/api/v1/auth/oidc/callback                       │   │   │
+│  │  │  Callback URL (provider callback endpoint):                                       │   │   │
+│  │  │  📋 https://shepherd.company.com/api/v1/auth/providers/{provider_id}/callback    │   │   │
 │  │  │                                                                                  │   │   │
 │  │  │  [Test connection]  [Save config]                                                │   │   │
 │  │  └────────────────────────────────────────────────────────────────────────────────┘   │   │
@@ -589,12 +595,12 @@ Establish authentication, authorization, and initial security defaults required 
 │                                                                                              │
 │  📦 Database operations:                                                                     │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  INSERT INTO auth_providers (id, type, name, enabled, issuer, client_id,           │
-│  │    client_secret_encrypted, scopes, claims_mapping, default_role_id,               │
-│  │    default_allowed_environments) VALUES                                            │
-│  │  ('idp-001', 'oidc', 'Corp-SSO', true, 'https://sso.company.com/realms/main',       │
-│  │   'shepherd-platform', 'encrypted:xxx', ARRAY['openid','profile','email'],         │
-│  │   '{"groups":"groups","groups_format":"array"}', 'role-viewer', ARRAY['test']);    │
+│  │  INSERT INTO auth_providers (id, auth_type, name, enabled, config, created_by)      │
+│  │  VALUES ('idp-001', 'oidc', 'Corp-SSO', true,                                        │
+│  │          '{"issuer":"https://sso.company.com/realms/main",                           │
+│  │            "client_id":"shepherd-platform",                                          │
+│  │            "claims_mapping":{"groups":"groups"}}',                                   │
+│  │          'admin-001');                                                                │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -608,7 +614,7 @@ Establish authentication, authorization, and initial security defaults required 
 │                                                                                              │
 │  ┌─ Step 1: Fetch sample user data ─────────────────────────────────────────────────────┐   │
 │  │                                                                                        │   │
-│  │  API: GET /api/v1/admin/auth-providers/{id}/sample                                                │
+│  │  Endpoint (deferred): /api/v1/admin/auth-providers/{provider_id}/sample                          │
 │  │  System pulls 10 users' token data from IdP and extracts available fields:            │
 │  │                                                                                        │
 │  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
@@ -676,14 +682,13 @@ Establish authentication, authorization, and initial security defaults required 
 │  ┌────────────────────────────────────────────────────────────────────────────────────────┐ │
 │  │  1. User visits https://shepherd.company.com                                           │
 │  │                                                                                        │
-│  │  2. Redirect to IdP login                                                              │
-│  │     → https://sso.company.com/realms/main/protocol/openid-connect/auth?                │
-│  │       client_id=shepherd-platform&redirect_uri=...                                    │
+│  │  2. Redirect to provider auth endpoint                                                 │
+│  │     → [provider_config.auth_url]?client_id=...&redirect_uri=...                       │
 │  │                                                                                        │
 │  │  3. User completes IdP authentication                                                  │
 │  │                                                                                        │
-│  │  4. IdP calls back Shepherd                                                            │
-│  │     ← https://shepherd.company.com/api/v1/auth/oidc/callback?code=xxx                  │
+│  │  4. Provider calls back Shepherd                                                       │
+│  │     ← https://shepherd.company.com/api/v1/auth/providers/{provider_id}/callback?...   │
 │  │                                                                                        │
 │  │  5. Shepherd processing:                                                               │
 │  │     a. Validate token (signature, issuer, audience)                                   │
@@ -725,8 +730,8 @@ Establish authentication, authorization, and initial security defaults required 
 
 | Login Method | Use Case | Permission Source |
 |-------------|----------|-------------------|
-| **OIDC** | Production (recommended) | IdP group → mapping rules → RoleBindings |
-| **LDAP** | Legacy AD environment | LDAP group → mapping rules → RoleBindings |
+| **OIDC plugin** | Production (recommended) | IdP group → mapping rules → RoleBindings |
+| **LDAP plugin** | Legacy AD environment | LDAP group → mapping rules → RoleBindings |
 | **Built-in users** | Dev/test | Manual user + RoleBindings |
 
 #### Dual-layer Permission Model Summary
@@ -750,7 +755,7 @@ Establish authentication, authorization, and initial security defaults required 
 ```
 Full permission check flow:
 
-User requests access to resource R (e.g., GET /api/v1/systems/sys-001)
+User requests access to resource R (e.g., GET /api/v1/systems/{system_id})
 
 ┌─ Step 1: Global permission check ───────────────────────────────────────────────┐
 │  Query role_bindings → aggregate permissions                                    │
@@ -1064,8 +1069,8 @@ external systems are integrated as provider plugins without changing approval st
 │  │                                                                                          │ │
 │  │  Before saving, admin can validate InstanceSize against target clusters:                 │ │
 │  │                                                                                          │ │
-│  │  POST /api/v1/admin/instance-sizes?dryRun=All                                            │ │
-│  │  POST /api/v1/admin/instance-sizes?dryRun=All&targetCluster={cluster_id}                 │ │
+│  │  Deferred endpoint pattern: /api/v1/instance-sizes?dryRun=All                            │ │
+│  │  Deferred endpoint pattern: /api/v1/instance-sizes?dryRun=All&targetCluster={cluster_id} │ │
 │  │                                                                                          │ │
 │  │  Validation Stages:                                                                      │ │
 │  │  ┌────────────────────────────────────────────────────────────────────────────────────┐  │ │
@@ -2596,7 +2601,7 @@ Define secure browser console access behavior for test and production environmen
 │  │     b. VM is in RUNNING state                                                            │
 │  │     c. Environment is test (no approval required)                                         │
 │  │                                                                                          │
-│  │  3. Generate VNC Token (JWT):                                                            │
+│  │  3. Generate VNC access grant (JWT claim + one-time bootstrap credential):              │
 │  │     {                                                                                     │
 │  │       "sub": "user-123",           👈 user binding                                        │
 │  │       "vm_id": "vm-456",           👈 resource binding                                    │
@@ -2607,8 +2612,10 @@ Define secure browser console access behavior for test and production environmen
 │  │       "single_use": true           👈 invalidated after first connection                  │
 │  │     }                                                                                     │
 │  │                                                                                          │
-│  │  4. Open noVNC in new tab/popup:                                                         │
-│  │     GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}                                          │
+│  │  4. Open noVNC in new tab/popup using secure bootstrap channel:                          │
+│  │     Set-Cookie: vnc_bootstrap=<opaque>; HttpOnly; Secure; SameSite=Strict; Max-Age=60   │
+│  │     GET /api/v1/vms/{vm_id}/vnc                                                           │
+│  │     (no bearer token in URL query)                                                        │
 │  │                                                                                          │
 │  │  5. Backend proxies WebSocket to KubeVirt:                                               │
 │  │     → subresources.kubevirt.io/v1/namespaces/{ns}/virtualmachineinstances/{name}/vnc     │
@@ -2639,7 +2646,7 @@ Define secure browser console access behavior for test and production environmen
 │  │  5. Admin approves (same flow as VM request approval)                                     │
 │  │                                                                                          │
 │  │  6. On approval:                                                                         │
-│  │     a. Generate VNC Token (same structure as test env)                                   │
+│  │     a. Generate VNC access grant (same structure as test env)                            │
 │  │     b. Notify user with access link                                                       │
 │  │     c. User opens noVNC in new tab                                                       │
 │  │                                                                                          │
@@ -2654,14 +2661,14 @@ Define secure browser console access behavior for test and production environmen
 
 | Environment | Ticket | Access Outcome |
 |-------------|--------|----------------|
-| Test | no approval ticket | RBAC pass -> token issued -> session started |
-| Production | `PENDING_APPROVAL -> APPROVED/REJECTED` | approved -> token issued; rejected -> no console access |
+| Test | no approval ticket | RBAC pass -> access grant issued -> session started |
+| Production | `PENDING_APPROVAL -> APPROVED/REJECTED` | approved -> access grant issued; rejected -> no console access |
 
 ### Failure & Edge Cases
 
-- VM not in `RUNNING` state must block token issuance.
+- VM not in `RUNNING` state must block access grant issuance.
 - Duplicate pending production request must be rejected idempotently.
-- Token replay after first successful connection must be denied and audited.
+- Bootstrap credential replay after first successful connection must be denied and audited.
 
 ### Authority Links
 
@@ -2693,17 +2700,22 @@ WebSocket proxy internals and storage-specific token tracking implementation are
 # Request VNC access (creates approval ticket in prod)
 POST /api/v1/vms/{vm_id}/console/request
 → Response: { "ticket_id": "...", "status": "PENDING_APPROVAL" }  (prod)
-→ Response: { "vnc_url": "/api/v1/vms/{vm_id}/vnc?token=..." }  (test)
+→ Response: { "vnc_url": "/api/v1/vms/{vm_id}/vnc", "bootstrap": "set-cookie" }  (test)
 
 # WebSocket endpoint for noVNC
-GET /api/v1/vms/{vm_id}/vnc?token={vnc_jwt}
+GET /api/v1/vms/{vm_id}/vnc
 Upgrade: websocket
+Cookie: vnc_bootstrap=<opaque one-time credential>
 → Proxies to KubeVirt VNC subresource
 
 # Check console access status (for polling)
 GET /api/v1/vms/{vm_id}/console/status
 → Response: { "status": "APPROVED", "vnc_url": "..." } | { "status": "PENDING" }
 ```
+
+Compatibility rule:
+- New implementation MUST NOT pass bearer/session token in URI query for VNC access.
+- Legacy query-token compatibility, if temporarily retained, must be behind migration flag and removed before GA.
 
 ### Database Operations
 

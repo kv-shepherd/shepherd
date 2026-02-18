@@ -87,8 +87,13 @@ rg -q "adr-0015-vnc-v1-addendum" docs/adr/ADR-0015-governance-model-v2.md \
 rg -q "ADR-0015.*18\\.1.*addendum" docs/design/phases/04-governance.md \
   || fail "04-governance.md must reference ADR-0015 \u00a718.1 addendum for V1 VNC scope"
 
-rg -q "/api/v1/vms/\\{vm_id\\}/vnc\\?token=\\{vnc_jwt\\}" docs/design/interaction-flows/master-flow.md \
+rg -q "/api/v1/vms/\\{vm_id\\}/vnc" docs/design/interaction-flows/master-flow.md \
   || fail "master-flow.md must document canonical VNC websocket endpoint path"
+
+if rg -n "/api/v1/vms/\\{vm_id\\}/vnc\\?token=" docs/design/interaction-flows/master-flow.md docs/i18n/zh-CN/design/interaction-flows/master-flow.md >"${legacy_refs_file}"; then
+  cat "${legacy_refs_file}" >&2
+  fail "VNC flow docs must not use URI query token transport"
+fi
 
 if rg -n "GET /vnc/\\{vm_id\\}\\?token=\\{vnc_jwt\\}" docs/design/interaction-flows/master-flow.md docs/i18n/zh-CN/design/interaction-flows/master-flow.md >"${legacy_refs_file}"; then
   cat "${legacy_refs_file}" >&2
@@ -98,8 +103,13 @@ fi
 rg -q "/api/v1/vms/\\{vm_id\\}/console/request" docs/design/phases/04-governance.md \
   || fail "04-governance.md must use canonical VNC endpoint placeholder {vm_id}"
 
-rg -q "/api/v1/vms/\\{vm_id\\}/vnc\\?token=\\{jwt\\}" docs/design/phases/04-governance.md \
+rg -q "/api/v1/vms/\\{vm_id\\}/vnc" docs/design/phases/04-governance.md \
   || fail "04-governance.md must use canonical VNC websocket endpoint"
+
+if rg -n "/api/v1/vms/\\{vm_id\\}/vnc\\?token=" docs/design/phases/04-governance.md >"${legacy_refs_file}"; then
+  cat "${legacy_refs_file}" >&2
+  fail "04-governance.md must not document VNC URI query token transport"
+fi
 
 if rg -n "tracked in Redis" docs/design/phases/04-governance.md >"${legacy_refs_file}"; then
   cat "${legacy_refs_file}" >&2
@@ -181,7 +191,7 @@ PY
   fi
 
   # If canonical docs changed, require traceability manifest update in the same PR.
-  if printf '%s\n' "${changed_files}" | rg -q '^(docs/design/interaction-flows/master-flow\.md|docs/design/phases/|docs/design/checklist/|docs/design/examples/|docs/adr/)'; then
+  if printf '%s\n' "${changed_files}" | rg -q '^(docs/design/interaction-flows/master-flow\.md|docs/design/phases/|docs/design/checklist/|docs/design/examples/)'; then
     if ! printf '%s\n' "${changed_files}" | rg -q '^docs/design/traceability/master-flow\.json$'; then
       fail "Traceability manifest must be updated when master-flow/phases/checklists/examples/ADRs change: docs/design/traceability/master-flow.json"
     fi

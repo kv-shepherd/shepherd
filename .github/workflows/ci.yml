@@ -86,19 +86,137 @@ jobs:
           name: coverage
           path: coverage.out
 
-  ci-checks:
-    name: CI Checks
+  master-flow-strict:
+    name: Master-Flow Strict
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 45
     if: ${{ hashFiles('go.mod') != '' }}
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: shepherd
+          POSTGRES_PASSWORD: shepherd
+          POSTGRES_DB: shepherd_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
           go-version: "1.25"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "web/package-lock.json"
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix web
+
+      - name: Install Playwright browsers
+        run: cd web && npx playwright install --with-deps chromium
+
+      - name: Check master-flow API alignment
+        run: go run docs/design/ci/scripts/check_master_flow_api_alignment.go
+
+      - name: Check master-flow test matrix
+        run: go run docs/design/ci/scripts/check_master_flow_test_matrix.go
+
+      - name: Check master-flow traceability
+        run: go run docs/design/ci/scripts/check_master_flow_traceability.go
+
+      - name: Check strict test-first delta guard
+        run: bash docs/design/ci/scripts/check_changed_code_has_tests.sh
+
+      - name: Check PostgreSQL-only tests
+        run: go run docs/design/ci/scripts/check_no_sqlite_in_tests.go
+
+      - name: Check Stage 3 admin catalog baseline (strict gate)
+        run: go run docs/design/ci/scripts/check_stage3_admin_catalog_baseline.go
+
+      - name: Check Stage 4 system/service baseline (strict gate)
+        run: go run docs/design/ci/scripts/check_stage4_system_service_baseline.go
+
+      - name: Check Stage 5.D delete baseline (strict gate)
+        run: go run docs/design/ci/scripts/check_stage5d_delete_baseline.go
+
+      - name: Check Stage 6 VNC baseline (strict gate)
+        run: go run docs/design/ci/scripts/check_stage6_vnc_baseline.go
+
+      - name: Check live e2e no-mock policy (strict gate)
+        run: bash docs/design/ci/scripts/check_live_e2e_no_mock.sh
+
+      - name: Check explicit handler RBAC guards
+        run: go run docs/design/ci/scripts/check_handler_explicit_rbac_guards.go
+
+      - name: Backend behavior suites (PostgreSQL)
+        env:
+          DATABASE_URL: postgres://shepherd:shepherd@localhost:5432/shepherd_test?sslmode=disable
+        run: |
+          go test -count=1 ./internal/api/handlers
+          go test -count=1 ./internal/governance/approval
+          go test -count=1 ./internal/usecase
+          go test -count=1 ./internal/jobs
+          go test -count=1 ./internal/service
+
+      - name: Frontend typecheck
+        run: npm run typecheck --prefix web
+
+      - name: Frontend unit tests
+        run: npm run test:run --prefix web
+
+      - name: Frontend e2e tests
+        env:
+          DATABASE_URL: postgres://shepherd:shepherd@localhost:5432/shepherd_test?sslmode=disable
+        run: bash scripts/run_e2e_live.sh --no-db-wrapper
+
+  ci-checks:
+    name: CI Checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    if: ${{ hashFiles('go.mod') != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        with:
+          go-version: "1.25"
+
+      - name: Setup Node.js (for OpenAPI TS generation)
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "web/package-lock.json"
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix web
+
+      - name: Frontend typecheck (contract sync)
+        run: npm run typecheck --prefix web
+
+      - name: Frontend unit tests (strict gate)
+        run: npm run test:run --prefix web
+
+      - name: Check strict test-first delta guard
+        run: bash docs/design/ci/scripts/check_changed_code_has_tests.sh
 
       - name: Check no Redis imports (ADR)
         run: bash docs/design/ci/scripts/check_no_redis_import.sh
@@ -112,11 +230,23 @@ jobs:
       - name: Check no GORM imports (ADR-0003)
         run: go run docs/design/ci/scripts/check_no_gorm_import.go
 
+      - name: Check no SQLite in tests (PostgreSQL-only policy)
+        run: go run docs/design/ci/scripts/check_no_sqlite_in_tests.go
+
       - name: Check naked goroutines (ADR-0031)
         run: go run docs/design/ci/scripts/check_naked_goroutine.go
 
       - name: Check forbidden imports
         run: go run docs/design/ci/scripts/check_forbidden_imports.go
+
+      - name: Check no runtime placeholders/TODO markers
+        run: go run docs/design/ci/scripts/check_no_runtime_placeholders.go
+
+      - name: Check no runtime mock provider wiring
+        run: go run docs/design/ci/scripts/check_no_runtime_mock.go
+
+      - name: Check provider wiring (real KubeVirt only)
+        run: go run docs/design/ci/scripts/check_provider_wiring.go
 
       - name: Check sqlc usage scope (ADR-0012)
         run: bash docs/design/ci/scripts/check_sqlc_usage.sh
@@ -137,6 +267,12 @@ jobs:
       - name: Validate OpenAPI spec (ADR-0021)
         run: go run docs/design/ci/scripts/check_validate_spec.go
 
+      - name: Check OpenAPI critical contract (strict gate)
+        run: go run docs/design/ci/scripts/check_openapi_critical_contract.go
+
+      - name: Check OpenAPI critical fingerprint lock (strict gate)
+        run: go run docs/design/ci/scripts/check_openapi_critical_fingerprint.go
+
       - name: Check API contract sync (ADR-0021)
         run: bash docs/design/ci/scripts/api-check.sh
 
@@ -145,6 +281,84 @@ jobs:
 
       - name: Check River job args claim-check (ADR-0009)
         run: go run docs/design/ci/scripts/check_river_job_args.go
+
+      - name: Check VM create status progression (Stage 5.C)
+        run: go run docs/design/ci/scripts/check_vm_create_status_progression.go
+
+      - name: Check VM create spec completeness (Stage 5.C)
+        run: go run docs/design/ci/scripts/check_vm_create_spec_completeness.go
+
+      - name: Check critical test presence (strict gate)
+        run: go run docs/design/ci/scripts/check_critical_test_presence.go
+
+      - name: Check Stage 5.C behavior tests (strict gate)
+        run: go run docs/design/ci/scripts/check_stage5c_behavior_tests.go
+
+      - name: Check Stage 3 admin catalog baseline (strict gate)
+        run: go run docs/design/ci/scripts/check_stage3_admin_catalog_baseline.go
+
+      - name: Check Stage 4 system/service baseline (strict gate)
+        run: go run docs/design/ci/scripts/check_stage4_system_service_baseline.go
+
+      - name: Check Stage 5.D delete baseline (strict gate)
+        run: go run docs/design/ci/scripts/check_stage5d_delete_baseline.go
+
+      - name: Check duplicate guard scope (Stage 5.A)
+        run: go run docs/design/ci/scripts/check_duplicate_guard_scope.go
+
+      - name: Check environment isolation enforcement (ADR-0015 §15)
+        run: go run docs/design/ci/scripts/check_environment_isolation_enforcement.go
+
+      - name: Check Stage 5.E batch baseline (strict gate)
+        run: go run docs/design/ci/scripts/check_stage5e_batch_baseline.go
+
+      - name: Check Stage 6 VNC baseline (strict gate)
+        run: go run docs/design/ci/scripts/check_stage6_vnc_baseline.go
+
+      - name: Check live e2e no-mock policy (strict gate)
+        run: bash docs/design/ci/scripts/check_live_e2e_no_mock.sh
+
+      - name: Check no global platform-admin route gate
+        run: go run docs/design/ci/scripts/check_no_global_platform_admin_gate.go
+
+      - name: Check explicit handler RBAC guards
+        run: go run docs/design/ci/scripts/check_handler_explicit_rbac_guards.go
+
+      - name: Check auth-provider plugin boundary (strict gate)
+        run: go run docs/design/ci/scripts/check_auth_provider_plugin_boundary.go
+
+      - name: Check frontend/OpenAPI usage sync (strict gate)
+        run: go run docs/design/ci/scripts/check_frontend_openapi_usage.go
+
+      - name: Check frontend non-English hardcoded literals
+        run: go run docs/design/ci/scripts/check_frontend_no_non_english_literals.go
+
+      - name: Check frontend placeholder pages (strict gate)
+        run: go run docs/design/ci/scripts/check_frontend_no_placeholder_pages.go
+
+      - name: Check frontend route shell architecture (strict gate)
+        run: go run docs/design/ci/scripts/check_frontend_route_shell_architecture.go
+
+      - name: Check doc claims consistency (strict gate)
+        run: go run docs/design/ci/scripts/check_doc_claims_consistency.go
+
+      - name: Check master-flow API alignment (strict gate)
+        run: go run docs/design/ci/scripts/check_master_flow_api_alignment.go
+
+      - name: Check master-flow test matrix coverage (ADR-0034)
+        run: go run docs/design/ci/scripts/check_master_flow_test_matrix.go
+
+      - name: Check master-flow traceability (ADR-0032)
+        run: go run docs/design/ci/scripts/check_master_flow_traceability.go
+
+      - name: Check markdown links (docs integrity)
+        run: go run docs/design/ci/scripts/check_markdown_links.go
+
+      - name: Check design docs governance (ADR-0030)
+        run: bash docs/design/ci/scripts/check_design_doc_governance.sh
+
+      - name: Check module noop hooks (strict gate)
+        run: go run docs/design/ci/scripts/check_module_noop_hooks.go
 
       - name: Check test assertions (ISSUE-018)
         run: go run docs/design/ci/scripts/check_test_assertions.go

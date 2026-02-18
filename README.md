@@ -37,7 +37,7 @@ System (Business Line) → Service (Application) → VM Instance
 | **Governance First** | This is a governance platform, not a scheduling platform. Reliability over speed. |
 | **Eventually Consistent** | Batch operations complete reliably via queue processing, not aggressively in parallel. |
 | **PostgreSQL Only** | Single database dependency (PostgreSQL 18+). No Redis, no external message queues. |
-| **Async by Default** | All write operations return `202 Accepted` and execute asynchronously. |
+| **Async by Default** | Operations with external side effects return `202 Accepted` and execute asynchronously via River; pure PostgreSQL transactional writes may remain synchronous for atomicity. |
 | **Platform RBAC** | RBAC managed in PostgreSQL, not Kubernetes. Permission queries isolated from cluster control plane. |
 
 ## Decision Documents

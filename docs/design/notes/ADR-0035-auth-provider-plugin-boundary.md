@@ -1,7 +1,7 @@
 # ADR-0035 Implementation: Auth Provider Plugin Boundary and Type Discovery
 
 > **Parent ADR**: [ADR-0035](../../adr/ADR-0035-auth-provider-plugin-boundary.md)  
-> **Status**: Implementation specification draft (parent ADR status: **proposed**)  
+> **Status**: Implementation specification draft (parent ADR status: **accepted**)  
 > **Date**: 2026-02-15
 
 ---

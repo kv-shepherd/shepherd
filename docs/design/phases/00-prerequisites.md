@@ -49,7 +49,7 @@ Establish Go project infrastructure:
 | River migration | `migrations/river/` | ⏳ | *Deferred to [Phase 4](04-governance.md) when River is introduced* |
 | Error handling | `internal/pkg/errors/errors.go` | ✅ | *Added: structured AppError types* |
 | Error middleware | `internal/api/middleware/error_handler.go` | ✅ | *Added: Gin centralized error handling* |
-| OpenAPI validator | `internal/api/middleware/openapi_validator.go` | ⏳ | *Placeholder; full impl in [Phase 1](01-contracts.md)* |
+| OpenAPI validator | `internal/api/middleware/openapi_validator.go` | ✅ | *Request/response runtime validation implemented and wired via router middleware* |
 | Modular DI | `internal/app/modules/*.go` | ✅ | *Module interface + infrastructure + domain stubs* |
 | API contract CI | `.github/workflows/api-contract.yaml` | ✅ | - |
 | API tooling | `build/api.mk`, `api/.vacuum.yaml` | ✅ | - |
@@ -321,6 +321,7 @@ DatabaseClients{
 | `check_transaction_boundary.go` | Service layer no TX | ✅ Yes |
 | `check_k8s_in_transaction.go` | No K8s in TX | ✅ Yes |
 | `check_master_flow_traceability.go` | Enforce master-flow traceability manifest (ADR-0032) | ✅ Yes |
+| `check_master_flow_test_matrix.go` | Enforce required stage test matrix coverage/deferred debt (ADR-0034) | ✅ Yes |
 | `check_design_doc_governance.sh` | Enforce docs layering/link consistency (ADR-0030) | ✅ Yes |
 
 See [ci/README.md §Script Summary](../ci/README.md#script-summary) for complete list.

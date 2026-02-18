@@ -12,6 +12,8 @@ This document is the authoritative source for **engineering governance and CI ga
 
 - `docs/design/interaction-flows/master-flow.md`: expected product interaction outcomes and user-visible behavior.
 - `docs/design/ci/README.md` (this file): implementation governance, quality gates, and CI enforcement mechanics.
+- `docs/design/ci/MASTER_FLOW_STRICT_TEST_FLOW.md`: mandatory spec-driven test execution order (fail -> rework).
+- `docs/design/ci/GATE_HARDENING_CHECKLIST.md`: gate-first remediation queue and verified drift register.
 - `docs/design/phases/*.md`: implementation details that must satisfy both interaction outcomes and CI/ADR constraints.
 
 Do not place CI toolchain policy details in `master-flow.md`; keep those details here and in `docs/design/ci/scripts/`.
@@ -25,12 +27,37 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 | [check_transaction_boundary.go](./scripts/check_transaction_boundary.go) | Service layer must not manage transactions | Required | ✅ Yes |
 | [check_k8s_in_transaction.go](./scripts/check_k8s_in_transaction.go) | No K8s API calls inside transactions | Required | ✅ Yes |
 | [check_validate_spec.go](./scripts/check_validate_spec.go) | No ValidateSpec calls inside transactions | Required | ✅ Yes |
+| [check_openapi_critical_contract.go](./scripts/check_openapi_critical_contract.go) | Enforce stage-critical OpenAPI contracts (auth/vm/approval/audit/notification + global BearerAuth) | Required | ✅ Yes |
+| [check_openapi_critical_fingerprint.go](./scripts/check_openapi_critical_fingerprint.go) | Lock SHA256 fingerprints for critical OpenAPI nodes (intentional-change only) | Required | ✅ Yes |
 | [check_forbidden_imports.go](./scripts/check_forbidden_imports.go) | Block fake client, hardcoded paths | Required | ✅ Yes |
+| [check_no_runtime_placeholders.go](./scripts/check_no_runtime_placeholders.go) | Block TODO/FIXME/placeholder/stub markers in runtime code | Required | ✅ Yes |
+| [check_no_runtime_mock.go](./scripts/check_no_runtime_mock.go) | Block runtime `NewMockProvider()` wiring (test-only mock) | Required | ✅ Yes |
+| [check_provider_wiring.go](./scripts/check_provider_wiring.go) | Enforce runtime wiring path uses real `NewKubeVirtProvider()` and VM module rejects `mock` provider | Required | ✅ Yes |
 | [check_no_gorm_import.go](./scripts/check_no_gorm_import.go) | **Block GORM imports** (migrated to Ent) | Required | ✅ Yes |
+| [check_no_sqlite_in_tests.go](./scripts/check_no_sqlite_in_tests.go) | Block SQLite usage in tests and `go.mod` (PostgreSQL-only policy) | Required | ✅ Yes |
 | [check_no_outbox_import.go](./scripts/check_no_outbox_import.go) | **Block Outbox imports** (use River Queue, ADR-0006) | Required | ✅ Yes |
 | [check_no_redis_import.sh](./scripts/check_no_redis_import.sh) | **Block Redis imports** (removed dependency) | Required | ✅ Yes |
 | [check_river_bypass.go](./scripts/check_river_bypass.go) | **Block direct writes bypassing River Queue** (ADR-0006) | Required | ✅ Yes |
 | [check_naked_goroutine.go](./scripts/check_naked_goroutine.go) | Block naked `go func()` (ADR-0031) | Required | ✅ Yes |
+| [check_vm_create_status_progression.go](./scripts/check_vm_create_status_progression.go) | Enforce Stage 5.C VM status persistence (`CREATING -> RUNNING|FAILED`) | Required | ✅ Yes |
+| [check_vm_create_spec_completeness.go](./scripts/check_vm_create_spec_completeness.go) | Enforce Stage 5.C carries `spec_overrides` through Worker→Provider rendering path | Required | ✅ Yes |
+| [check_critical_test_presence.go](./scripts/check_critical_test_presence.go) | Require paired `_test.go` coverage for critical runtime paths (worker/provider/usecase/gateway/validator) | Required | ✅ Yes |
+| [check_stage5c_behavior_tests.go](./scripts/check_stage5c_behavior_tests.go) | Enforce Stage 5.C critical behavior tests/scenarios (spec_overrides mapping + invalid path rejection) | Required | ✅ Yes |
+| [check_stage5d_delete_baseline.go](./scripts/check_stage5d_delete_baseline.go) | Enforce Stage 5.D delete confirmation/cascade baseline across OpenAPI + runtime handlers + backend/frontend tests | Required | ✅ Yes |
+| [check_duplicate_guard_scope.go](./scripts/check_duplicate_guard_scope.go) | Enforce duplicate guard uses same-resource scope + returns `existing_ticket_id` | Required | ✅ Yes |
+| [check_environment_isolation_enforcement.go](./scripts/check_environment_isolation_enforcement.go) | Enforce namespace/cluster environment matching checks in approval + worker runtime paths | Required | ✅ Yes |
+| [check_stage5e_batch_baseline.go](./scripts/check_stage5e_batch_baseline.go) | Enforce Stage 5.E batch canonical endpoints (+ `/vms/batch/power` compatibility) + admin rate-limit override endpoints + handler/idempotency/rate-limit baseline + gateway child-dispatch + parent-status sync fragments; remove stale deferred allowlist entries | Required | ✅ Yes |
+| [check_stage6_vnc_baseline.go](./scripts/check_stage6_vnc_baseline.go) | Enforce Stage 6 VNC canonical endpoints + handler/token/gateway baseline + behavior tests + stale deferred allowlist cleanup | Required | ✅ Yes |
+| [check_live_e2e_no_mock.sh](./scripts/check_live_e2e_no_mock.sh) | Block network route-mocking patterns in strict live e2e spec (`master-flow-live.spec.ts`) | Required | ✅ Yes |
+| [check_no_global_platform_admin_gate.go](./scripts/check_no_global_platform_admin_gate.go) | Block route-level global `platform:admin` middleware and legacy rate-limit admin helper; require handler-level granular permissions | Required | ✅ Yes |
+| [check_handler_explicit_rbac_guards.go](./scripts/check_handler_explicit_rbac_guards.go) | Enforce explicit fail-closed RBAC guards for high-risk handlers (`member`, `namespace`, `/templates`, `/instance-sizes`) | Required | ✅ Yes |
+| [check_auth_provider_plugin_boundary.go](./scripts/check_auth_provider_plugin_boundary.go) | Enforce auth-provider runtime/frontend/OpenAPI stay plugin-standard (no OIDC/LDAP hardcoded branches) | Required | ✅ Yes |
+| [check_frontend_openapi_usage.go](./scripts/check_frontend_openapi_usage.go) | Enforce each OpenAPI operation is consumed by frontend or explicitly deferred; guard system delete `confirm_name` flow | Required | ✅ Yes |
+| [check_frontend_no_non_english_literals.go](./scripts/check_frontend_no_non_english_literals.go) | Block non-English hardcoded literals in frontend source (except `i18n/locales`) | Required | ✅ Yes |
+| [check_frontend_no_placeholder_pages.go](./scripts/check_frontend_no_placeholder_pages.go) | Block placeholder/stub markers in frontend route pages (`app/**/page.tsx`) | Required | ✅ Yes |
+| [check_frontend_route_shell_architecture.go](./scripts/check_frontend_route_shell_architecture.go) | Enforce route-shell thresholds for `app/**/page.tsx` (page size + write API call count), with explicit legacy allowlist + lock to prevent allowlist expansion | Required | ✅ Yes |
+| [check_changed_code_has_tests.sh](./scripts/check_changed_code_has_tests.sh) | Enforce strict test-first delta: runtime code changes must include corresponding test changes | Required | ✅ Yes |
+| [check_module_noop_hooks.go](./scripts/check_module_noop_hooks.go) | Block silent noop `ContributeServerDeps` / `RegisterWorkers` hooks unless allowlisted | Required | ✅ Yes |
 | [check_ent_codegen.go](./scripts/check_ent_codegen.go) | Ent code generation sync check | Required | ✅ Yes |
 | [check_manual_di.sh](./scripts/check_manual_di.sh) | **Strict Manual DI convention** (replaces Wire check) | Required | ✅ Yes |
 | [check_sqlc_usage.sh](./scripts/check_sqlc_usage.sh) | **sqlc usage scope** (ADR-0012 whitelist enforcement) | Required | ✅ Yes |
@@ -38,6 +65,10 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 | [check_repository_tests.go](./scripts/check_repository_tests.go) | Repository methods must have tests | Required | ✅ Yes |
 | [check_dead_tests.go](./scripts/check_dead_tests.go) | Orphan/invalid test detection | Warning | ⚠️ No |
 | [check_test_assertions.go](./scripts/check_test_assertions.go) | Tests must have assertions | Required | ✅ Yes |
+| [check_doc_claims_consistency.go](./scripts/check_doc_claims_consistency.go) | Block checklist \"done\" claims that lack implementation evidence | Required | ✅ Yes |
+| [check_master_flow_api_alignment.go](./scripts/check_master_flow_api_alignment.go) | Enforce every master-flow API path is either in OpenAPI or explicit deferred allowlist | Required | ✅ Yes |
+| [check_master_flow_test_matrix.go](./scripts/check_master_flow_test_matrix.go) | Enforce required master-flow stages have executable tests or explicit deferred entries (ADR-0034 strict profile: full stage set) | Required | ✅ Yes |
+| [check_master_flow_completion_readiness.go](./scripts/check_master_flow_completion_readiness.go) | Full-completion claim gate: deferred/exemption allowlists must all be empty | Required (for completion claim) | ✅ Yes |
 | [check_markdown_links.go](./scripts/check_markdown_links.go) | Validate local markdown links and anchors | Required | ✅ Yes |
 | [check_master_flow_traceability.go](./scripts/check_master_flow_traceability.go) | Enforce master-flow traceability manifest (ADR-0032) | Required | ✅ Yes |
 | [check_design_doc_governance.sh](./scripts/check_design_doc_governance.sh) | Enforce design doc path/link governance (ADR-0030) | Required | ✅ Yes |
@@ -84,6 +115,38 @@ The following directories are exempt from `check_naked_goroutine.go`:
 ```bash
 # Single script
 go run docs/design/ci/scripts/check_transaction_boundary.go
+
+# Spec-driven stage coverage
+go run docs/design/ci/scripts/check_master_flow_test_matrix.go
+
+# PostgreSQL-only test policy
+go run docs/design/ci/scripts/check_no_sqlite_in_tests.go
+
+# Strict test-first delta (diff against origin/main)
+bash docs/design/ci/scripts/check_changed_code_has_tests.sh
+
+# Strict live e2e must not contain page.route/route.fulfill mocks
+bash docs/design/ci/scripts/check_live_e2e_no_mock.sh
+
+# Full master-flow completion claim (no deferred/exemption debt)
+go run docs/design/ci/scripts/check_master_flow_completion_readiness.go
+
+# End-to-end strict chain (requires DATABASE_URL)
+make master-flow-strict
+
+# Run strict live e2e only (no mock routes; requires backend env)
+bash scripts/run_e2e_live.sh --no-db-wrapper
+
+# Isolated Docker PostgreSQL wrapper (auto start/wait/cleanup)
+./scripts/run_with_docker_pg.sh -- make master-flow-strict
+make master-flow-strict-docker-pg
+
+# Backend PostgreSQL suites with isolated Docker PostgreSQL
+./scripts/run_with_docker_pg.sh
+make test-backend-docker-pg
+
+# Completion claim gate
+make master-flow-completion
 ```
 
 Docs governance check:
@@ -103,21 +166,62 @@ See the build job in `.github/workflows/ci.yml`.
 ```
 ci/
 ├── README.md                      # This file
+├── MASTER_FLOW_STRICT_TEST_FLOW.md # Spec-driven strict execution flow
+├── GATE_HARDENING_CHECKLIST.md    # Gate-first remediation queue
+├── allowlists/
+│   ├── master_flow_api_deferred.txt # Explicit deferred API paths from master-flow
+│   ├── master_flow_test_deferred.txt # Explicit deferred required stage test coverage (strict profile expects empty)
+│   ├── frontend_openapi_unused.txt   # Explicit backend operations intentionally not wired in frontend yet
+│   ├── frontend_route_shell_legacy.txt # Temporary legacy route-shell threshold exceptions
+│   ├── test_delta_guard_exempt.txt   # Temporary exemptions for strict changed-code-has-tests gate
+│   └── module_noop_hooks.txt      # Explicit allowlist for noop module hook methods
+├── locks/
+│   ├── frontend-route-shell-legacy.lock # Lockfile for allowed legacy route-shell exception paths
+│   └── openapi-critical.lock       # Fingerprint lock for critical OpenAPI nodes
 └── scripts/
     ├── check_transaction_boundary.go  # Transaction boundary check
     ├── check_k8s_in_transaction.go    # K8s transaction call check
     ├── check_validate_spec.go         # ValidateSpec transaction check
+    ├── check_openapi_critical_contract.go # Critical OpenAPI node regression check
+    ├── check_openapi_critical_fingerprint.go # Critical OpenAPI fingerprint lock check
     ├── check_forbidden_imports.go     # Forbidden import check
+    ├── check_no_runtime_placeholders.go # Runtime TODO/placeholder marker check
+    ├── check_no_runtime_mock.go       # Runtime MockProvider wiring check
+    ├── check_provider_wiring.go       # Runtime provider wiring path check
     ├── check_no_gorm_import.go        # Block GORM imports (migrated to Ent)
+    ├── check_no_sqlite_in_tests.go    # Block SQLite usage in tests/go.mod
     ├── check_no_outbox_import.go      # Block Outbox imports
     ├── check_no_redis_import.sh       # Block Redis imports
     ├── check_naked_goroutine.go       # Naked goroutine check
+    ├── check_vm_create_status_progression.go # Stage 5.C VM status persistence check
+    ├── check_vm_create_spec_completeness.go # Stage 5.C spec_overrides passthrough check
+    ├── check_critical_test_presence.go # Critical runtime path test-presence check
+    ├── check_stage5c_behavior_tests.go # Stage 5.C behavior-level test scenario check
+    ├── check_stage5d_delete_baseline.go # Stage 5.D delete confirmation/cascade baseline check
+    ├── check_duplicate_guard_scope.go # Stage 5.A duplicate guard scope check
+    ├── check_environment_isolation_enforcement.go # Environment isolation runtime enforcement check
+    ├── check_stage5e_batch_baseline.go # Stage 5.E batch runtime+contract baseline check
+    ├── check_stage6_vnc_baseline.go # Stage 6 VNC runtime+contract baseline check
+    ├── check_live_e2e_no_mock.sh # Strict live e2e must not use route-mocking APIs
+    ├── check_no_global_platform_admin_gate.go # Forbid route-level global platform:admin gate + legacy rate-limit helper
+    ├── check_handler_explicit_rbac_guards.go # Enforce explicit fail-closed RBAC guards for key handlers
+    ├── check_auth_provider_plugin_boundary.go # Auth-provider plugin boundary + anti-hardcode guard
+    ├── check_frontend_openapi_usage.go # Frontend/OpenAPI operation usage sync check
+    ├── check_frontend_no_non_english_literals.go # Frontend hardcoded non-English literal check
+    ├── check_frontend_no_placeholder_pages.go # Frontend placeholder route-page marker check
+    ├── check_frontend_route_shell_architecture.go # Frontend route shell threshold gate
+    ├── check_changed_code_has_tests.sh # Runtime code diff must include test diff
+    ├── check_module_noop_hooks.go     # Noop module hook allowlist enforcement
     ├── check_ent_codegen.go           # Ent code generation sync check
     ├── check_manual_di.sh             # Strict Manual DI convention check (replaces Wire)
     ├── check_semaphore_usage.go       # Semaphore usage check
     ├── check_repository_tests.go      # Repository test coverage check
     ├── check_dead_tests.go            # Dead test detection
     ├── check_test_assertions.go       # Test assertion check
+    ├── check_doc_claims_consistency.go # Doc \"done\" claim vs implementation consistency
+    ├── check_master_flow_api_alignment.go # master-flow API vs OpenAPI (+ deferred allowlist)
+    ├── check_master_flow_test_matrix.go # master-flow stage test coverage/deferred hygiene
+    ├── check_master_flow_completion_readiness.go # full-completion claim requires zero deferred/exemption entries
     ├── check_markdown_links.go        # Markdown local link/anchor integrity check
     └── check_design_doc_governance.sh # Design docs governance checks
 ```
@@ -153,7 +257,7 @@ ci/
 | `workflows/docs-links-advisory.yaml` | GitHub Actions for advisory dead-link checks (lychee + custom) | `.github/workflows/` |
 | `scripts/api-check.sh` | Verifies generated code is in sync | `scripts/` |
 | `scripts/openapi-compat.sh` | Enforces OpenAPI compat spec presence/freshness | `scripts/` |
-| `scripts/openapi-compat-generate.sh` | Generates OpenAPI 3.0-compatible spec (placeholder) | `scripts/` |
+| `scripts/openapi-compat-generate.sh` | Generates a minimal OpenAPI 3.0.3 compat artifact (rewrites version; fails on detected 3.1-only keywords) | `scripts/` |
 | ~~`spectral/.spectral.yaml`~~ | ~~OpenAPI linting rules~~ | ~~Deprecated by ADR-0029~~ |
 | `vacuum/.vacuum.yaml` | **Vacuum ruleset** (ADR-0029) | `api/` |
 | `api-templates/openapi.yaml` | Starting OpenAPI specification | `api/` |
@@ -181,7 +285,8 @@ ci/
 - **Frontend types**: `openapi-typescript` can consume OpenAPI 3.1 directly.
 - **Contract validation**: `libopenapi-validator` (ADR-0029) validates requests/responses against the OpenAPI spec in middleware with **StrictMode**.
 - **Compat enforcement**: `openapi-compat.sh` checks `api/openapi.compat.yaml` is present and up to date; set `REQUIRE_OPENAPI_COMPAT=1` in CI to block merges when compat spec is required.
-- **Compat generation**: Use `libopenapi` overlay support (Go-native, replaces oas-patch) to produce a 3.0-compatible spec.
+- **Compat generation**: `openapi-compat-generate.sh` currently performs a minimal 3.0.3 rewrite and blocks obvious 3.1-only keywords; upgrade to a full overlay transform before enabling strict compat in 3.1-heavy specs.
+- **Critical fingerprint lock**: `check_openapi_critical_fingerprint.go` compares critical OpenAPI nodes against `docs/design/ci/locks/openapi-critical.lock`; after intentional contract change, refresh with `go run docs/design/ci/scripts/check_openapi_critical_fingerprint.go -write-lock` in the same commit.
 - **Version pinning**: tool versions must be read from `docs/design/DEPENDENCIES.md` (do not hardcode in other docs).
 
 ### Spectral to Vacuum Migration
@@ -225,8 +330,8 @@ When transitioning from Design Phase to Coding Phase:
 7. **If needed**: add a spec-compat step (3.1 → 3.0) that writes `api/openapi.compat.yaml` for Go codegen/validation until 3.1 support is available.
 8. **CI enforcement**: run `REQUIRE_OPENAPI_COMPAT=1 make api-compat` once 3.1-only features are used.
 9. **Block merges**: add `make api-check` (and `REQUIRE_OPENAPI_COMPAT=1 make api-compat` when required) as required CI checks before any coding begins.
-10. **Compat generation**: implement `make api-compat-generate` using `libopenapi` overlay support and wire it into CI before enabling `REQUIRE_OPENAPI_COMPAT=1`.
-11. **Implement middleware**: Create `internal/api/middleware/openapi_validator.go` with StrictMode and environment-aware error handling.
+10. **Compat generation hardening**: replace the current minimal compat rewrite with a full overlay-based transform before enabling `REQUIRE_OPENAPI_COMPAT=1` for 3.1-heavy specs.
+11. **Enforce middleware**: Keep `internal/api/middleware/openapi_validator.go` runtime validator implemented and router-wired (`internal/app/router.go`), with environment-aware error handling.
 12. **Enable docs governance workflow**: ensure `.github/workflows/docs-governance.yaml` runs `check_design_doc_governance.sh` as a required PR check before coding.
 13. **Verify locally**: `bash docs/design/ci/scripts/check_design_doc_governance.sh`
 14. **Move advisory link workflow**: copy `workflows/docs-links-advisory.yaml` to `.github/workflows/docs-links-advisory.yaml`.

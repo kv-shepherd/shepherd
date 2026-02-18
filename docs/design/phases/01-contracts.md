@@ -306,11 +306,11 @@ func (Service) Edges() []ent.Edge {
 > **Canonical table name**: `auth_providers` (unified standard provider config).  
 > **Reference implementation**: [examples/README.md §Directory Structure](../examples/README.md#directory-structure)
 
-**OIDC requirements**:
+**Plugin-specific security requirements (when plugin type is `oidc`)**:
 - Use issuer-based discovery and validate `iss` + `aud` on ID tokens (ADR-0015 §22.6).  
 - Store client secrets encrypted at rest.
 
-**LDAP requirements**:
+**Plugin-specific security requirements (when plugin type is `ldap`)**:
 - TLS required (`ldaps://` or StartTLS).  
 - Bind credentials encrypted at rest.
 
@@ -335,6 +335,7 @@ Adapters MUST normalize all external providers into a common output payload:
 Rules:
 - Core auth/RBAC logic consumes only this normalized output.
 - Provider-specific fields must be mapped in the adapter layer.
+- Core runtime MUST NOT hardcode provider branches (e.g. OIDC/LDAP-specific `switch` in auth-provider handlers).
 
 ### 3.2.2 System Secrets Table (ADR-0025)
 
