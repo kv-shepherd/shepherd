@@ -105,6 +105,7 @@ export function AdminNamespacesContent() {
                             type="text"
                             size="small"
                             icon={<EditOutlined />}
+                            data-testid={`namespace-action-edit-${record.id}`}
                             onClick={() => namespaces.openEditModal(record)}
                         />
                     </Tooltip>
@@ -114,6 +115,7 @@ export function AdminNamespacesContent() {
                             size="small"
                             danger
                             icon={<DeleteOutlined />}
+                            data-testid={`namespace-action-delete-${record.id}`}
                             onClick={() => namespaces.openDeleteModal(record)}
                         />
                     </Tooltip>
@@ -131,7 +133,7 @@ export function AdminNamespacesContent() {
     };
 
     return (
-        <div>
+        <div data-testid="admin-namespaces-page">
             {namespaces.messageContextHolder}
             <div style={{
                 display: 'flex',
@@ -148,16 +150,18 @@ export function AdminNamespacesContent() {
                         placeholder={t('namespaces.filter_env')}
                         allowClear
                         style={{ width: 160 }}
+                        data-testid="namespaces-env-filter"
                         value={namespaces.envFilter || undefined}
                         onChange={namespaces.changeEnvFilter}
                         options={ENV_OPTIONS.map((item) => ({ ...item }))}
                     />
-                    <Button icon={<ReloadOutlined />} onClick={() => namespaces.refetch()}>
+                    <Button icon={<ReloadOutlined />} data-testid="namespaces-refresh-btn" onClick={() => namespaces.refetch()}>
                         {t('common:button.refresh')}
                     </Button>
                     <Button
                         type="primary"
                         icon={<PlusOutlined />}
+                        data-testid="namespace-create-button"
                         onClick={namespaces.openCreateModal}
                     >
                         {t('namespaces.add')}
@@ -189,6 +193,7 @@ export function AdminNamespacesContent() {
                 onCancel={namespaces.closeCreateModal}
                 confirmLoading={namespaces.createPending}
                 forceRender
+                data-testid="namespace-create-modal"
             >
                 <Form form={namespaces.createForm} layout="vertical" name="create-namespace">
                     <Form.Item
@@ -230,6 +235,7 @@ export function AdminNamespacesContent() {
                 onCancel={namespaces.closeEditModal}
                 confirmLoading={namespaces.updatePending}
                 forceRender
+                data-testid="namespace-edit-modal"
             >
                 <Form form={namespaces.editForm} layout="vertical" name="edit-namespace">
                     <Paragraph type="secondary" style={{ marginBottom: 16 }}>
@@ -267,6 +273,7 @@ export function AdminNamespacesContent() {
                     disabled: namespaces.deleteConfirmName !== namespaces.deletingNs?.name,
                 }}
                 okText={t('common:button.delete')}
+                data-testid="namespace-delete-modal"
             >
                 <Paragraph>
                     {t('namespaces.delete_confirm', { name: namespaces.deletingNs?.name })}
@@ -278,6 +285,7 @@ export function AdminNamespacesContent() {
                     value={namespaces.deleteConfirmName}
                     onChange={(e) => namespaces.setDeleteConfirmName(e.target.value)}
                     placeholder={namespaces.deletingNs?.name}
+                    data-testid="namespace-delete-confirm-input"
                     status={
                         namespaces.deleteConfirmName && namespaces.deleteConfirmName !== namespaces.deletingNs?.name
                             ? 'error'

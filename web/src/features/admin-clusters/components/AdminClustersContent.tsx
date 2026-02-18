@@ -71,6 +71,7 @@ export function AdminClustersContent() {
                 <Select
                     value={env ?? 'test'}
                     style={{ width: 120 }}
+                    data-testid={`cluster-env-select-${record.id}`}
                     options={[
                         { value: 'test', label: t('clusters.env_test') },
                         { value: 'prod', label: t('clusters.env_prod') },
@@ -110,7 +111,7 @@ export function AdminClustersContent() {
     ];
 
     return (
-        <div>
+        <div data-testid="admin-clusters-page">
             {clusters.messageContextHolder}
             <div style={{
                 display: 'flex',
@@ -123,10 +124,10 @@ export function AdminClustersContent() {
                     <Text type="secondary">{t('clusters.subtitle')}</Text>
                 </div>
                 <Space>
-                    <Button icon={<ReloadOutlined />} onClick={() => clusters.refetch()}>
+                    <Button icon={<ReloadOutlined />} data-testid="clusters-refresh-btn" onClick={() => clusters.refetch()}>
                         {t('common:button.refresh')}
                     </Button>
-                    <Button type="primary" icon={<PlusOutlined />} onClick={clusters.openCreateModal}>
+                    <Button type="primary" icon={<PlusOutlined />} data-testid="cluster-create-button" onClick={clusters.openCreateModal}>
                         {t('clusters.add')}
                     </Button>
                 </Space>
@@ -156,6 +157,7 @@ export function AdminClustersContent() {
                 onCancel={clusters.closeCreateModal}
                 confirmLoading={clusters.createPending}
                 forceRender
+                data-testid="cluster-create-modal"
             >
                 <Form form={clusters.form} layout="vertical" name="create-cluster">
                     <Form.Item

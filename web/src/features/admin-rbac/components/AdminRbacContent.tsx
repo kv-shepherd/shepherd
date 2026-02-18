@@ -97,6 +97,7 @@ export function AdminRbacContent() {
                         size="small"
                         icon={<EditOutlined />}
                         disabled={role.built_in}
+                        data-testid={`rbac-role-action-edit-${role.id}`}
                         onClick={() => rbac.openEditRoleModal(role)}
                     >
                         {t('common:button.edit')}
@@ -106,6 +107,7 @@ export function AdminRbacContent() {
                         danger
                         icon={<DeleteOutlined />}
                         disabled={role.built_in}
+                        data-testid={`rbac-role-action-delete-${role.id}`}
                         onClick={() => rbac.openDeleteRoleModal(role)}
                     >
                         {t('common:button.delete')}
@@ -171,6 +173,7 @@ export function AdminRbacContent() {
                     <Button
                         danger
                         size="small"
+                        data-testid={`rbac-binding-action-delete-${binding.id}`}
                         loading={rbac.deleteBindingPending && rbac.deletingBindingId === binding.id}
                     >
                         {t('common:button.delete')}
@@ -218,7 +221,7 @@ export function AdminRbacContent() {
     );
 
     return (
-        <div>
+        <div data-testid="admin-rbac-page">
             {rbac.messageContextHolder}
             <div style={{ marginBottom: 24 }}>
                 <Title level={4} style={{ margin: 0 }}>{t('rbac.title')}</Title>
@@ -238,7 +241,7 @@ export function AdminRbacContent() {
                         }}>
                             {t('common:button.refresh')}
                         </Button>
-                        <Button type="primary" icon={<PlusOutlined />} onClick={rbac.openCreateRoleModal}>
+                        <Button type="primary" icon={<PlusOutlined />} data-testid="rbac-role-create-button" onClick={rbac.openCreateRoleModal}>
                             {t('rbac.roles.add')}
                         </Button>
                     </Space>
@@ -269,7 +272,7 @@ export function AdminRbacContent() {
                         }}>
                             {t('common:button.refresh')}
                         </Button>
-                        <Button type="primary" icon={<PlusOutlined />} onClick={rbac.openAddBindingModal}>
+                        <Button type="primary" icon={<PlusOutlined />} data-testid="rbac-binding-create-button" onClick={rbac.openAddBindingModal}>
                             {t('rbac.bindings.add')}
                         </Button>
                     </Space>
@@ -285,6 +288,7 @@ export function AdminRbacContent() {
                         value={rbac.selectedUserId || undefined}
                         loading={rbac.usersLoading}
                         placeholder={t('rbac.bindings.select_user_placeholder')}
+                        data-testid="rbac-user-selector"
                         onChange={(value) => rbac.setSelectedUserId(value)}
                         options={rbac.users.map((user) => ({
                             value: user.id,
@@ -330,9 +334,10 @@ export function AdminRbacContent() {
                 onCancel={rbac.closeCreateRoleModal}
                 confirmLoading={rbac.createRolePending}
                 destroyOnHidden={true}
+                data-testid="rbac-role-create-modal"
             >
                 <Form form={rbac.roleCreateForm} layout="vertical" preserve={false}>
-                    <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}> 
+                    <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
                         <Input />
                     </Form.Item>
                     <Form.Item name="display_name" label={t('common:table.display_name')}>
@@ -341,7 +346,7 @@ export function AdminRbacContent() {
                     <Form.Item name="description" label={t('common:table.description')}>
                         <Input.TextArea rows={3} />
                     </Form.Item>
-                    <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}> 
+                    <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}>
                         <Select mode="multiple" options={rbac.permissionOptions} optionFilterProp="label" />
                     </Form.Item>
                     <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked" initialValue={true}>
@@ -359,6 +364,7 @@ export function AdminRbacContent() {
                 onCancel={rbac.closeEditRoleModal}
                 confirmLoading={rbac.updateRolePending}
                 destroyOnHidden={true}
+                data-testid="rbac-role-edit-modal"
             >
                 <Form form={rbac.roleEditForm} layout="vertical" preserve={false}>
                     <Form.Item name="display_name" label={t('common:table.display_name')}>
@@ -367,7 +373,7 @@ export function AdminRbacContent() {
                     <Form.Item name="description" label={t('common:table.description')}>
                         <Input.TextArea rows={3} />
                     </Form.Item>
-                    <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}> 
+                    <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}>
                         <Select mode="multiple" options={rbac.permissionOptions} optionFilterProp="label" />
                     </Form.Item>
                     <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked">
@@ -396,12 +402,13 @@ export function AdminRbacContent() {
                 onCancel={rbac.closeAddBindingModal}
                 confirmLoading={rbac.createBindingPending}
                 destroyOnHidden={true}
+                data-testid="rbac-binding-add-modal"
             >
                 <Form form={rbac.bindingForm} layout="vertical" preserve={false}>
                     <Form.Item label={t('rbac.bindings.select_user')}>
                         <Input value={rbac.selectedUser?.display_name || rbac.selectedUser?.username || ''} readOnly />
                     </Form.Item>
-                    <Form.Item name="role_id" label={t('rbac.bindings.role')} rules={[{ required: true }]}> 
+                    <Form.Item name="role_id" label={t('rbac.bindings.role')} rules={[{ required: true }]}>
                         <Select options={roleOptions} optionFilterProp="label" showSearch />
                     </Form.Item>
                     <Form.Item name="scope_type" label={t('rbac.bindings.scope_type')} rules={[{ required: true }]} initialValue="global">

@@ -108,6 +108,7 @@ export function AdminUsersContent() {
                     <Button
                         size="small"
                         icon={<EditOutlined />}
+                        data-testid={`user-action-edit-${record.id}`}
                         onClick={() => users.openEditUserModal(record)}
                     >
                         {t('common:button.edit')}
@@ -122,6 +123,7 @@ export function AdminUsersContent() {
                             size="small"
                             danger
                             icon={<DeleteOutlined />}
+                            data-testid={`user-action-delete-${record.id}`}
                             loading={users.deleteUserPending && users.deletingUserId === record.id}
                         >
                             {t('common:button.delete')}
@@ -161,6 +163,7 @@ export function AdminUsersContent() {
                     value={role}
                     options={memberRoleOptions}
                     style={{ width: 170 }}
+                    data-testid={`member-role-select-${record.user_id}`}
                     onChange={(nextRole) => users.updateMemberRole(
                         record.user_id,
                         nextRole as NonNullable<SystemMemberRoleUpdateRequest['role']>
@@ -180,7 +183,7 @@ export function AdminUsersContent() {
                     okText={t('common:button.confirm')}
                     cancelText={t('common:button.cancel')}
                 >
-                    <Button danger size="small" loading={users.removePending}>
+                    <Button danger size="small" data-testid={`member-action-remove-${record.user_id}`} loading={users.removePending}>
                         {t('common:button.delete')}
                     </Button>
                 </Popconfirm>
@@ -236,6 +239,7 @@ export function AdminUsersContent() {
                 <Space wrap>
                     <Button
                         size="small"
+                        data-testid={`ratelimit-action-exempt-${record.user_id}`}
                         onClick={() => {
                             setSelectedRateLimitUserID(record.user_id);
                             exemptionForm.resetFields();
@@ -246,6 +250,7 @@ export function AdminUsersContent() {
                     </Button>
                     <Button
                         size="small"
+                        data-testid={`ratelimit-action-override-${record.user_id}`}
                         onClick={() => {
                             setSelectedRateLimitUserID(record.user_id);
                             overrideForm.setFieldsValue({
@@ -264,7 +269,7 @@ export function AdminUsersContent() {
                         okText={t('common:button.confirm')}
                         cancelText={t('common:button.cancel')}
                     >
-                        <Button size="small" danger disabled={!record.exempted} loading={users.rateLimitMutationPending}>
+                        <Button size="small" danger data-testid={`ratelimit-action-remove-exempt-${record.user_id}`} disabled={!record.exempted} loading={users.rateLimitMutationPending}>
                             {t('users.rate_limit.remove_exemption')}
                         </Button>
                     </Popconfirm>
@@ -292,7 +297,7 @@ export function AdminUsersContent() {
     }));
 
     return (
-        <div>
+        <div data-testid="admin-users-page">
             {users.messageContextHolder}
             <div style={{ marginBottom: 24 }}>
                 <Title level={4} style={{ margin: 0 }}>{t('users.title')}</Title>
@@ -309,7 +314,7 @@ export function AdminUsersContent() {
                         <Button icon={<ReloadOutlined />} onClick={() => users.refetchUsers()}>
                             {t('common:button.refresh')}
                         </Button>
-                        <Button type="primary" icon={<PlusOutlined />} onClick={users.openCreateUserModal}>
+                        <Button type="primary" icon={<PlusOutlined />} data-testid="user-create-button" onClick={users.openCreateUserModal}>
                             {t('users.directory.add')}
                         </Button>
                     </Space>
@@ -343,6 +348,7 @@ export function AdminUsersContent() {
                 onCancel={users.closeCreateUserModal}
                 confirmLoading={users.createUserPending}
                 destroyOnHidden={true}
+                data-testid="user-create-modal"
             >
                 <Form form={users.createUserForm} layout="vertical" preserve={false}>
                     <Form.Item
@@ -396,6 +402,7 @@ export function AdminUsersContent() {
                 onCancel={users.closeEditUserModal}
                 confirmLoading={users.updateUserPending}
                 destroyOnHidden={true}
+                data-testid="user-edit-modal"
             >
                 <Form form={users.editUserForm} layout="vertical" preserve={false}>
                     <Form.Item name="display_name" label={t('common:table.display_name')}>
@@ -439,6 +446,7 @@ export function AdminUsersContent() {
                         <Button
                             type="primary"
                             icon={<PlusOutlined />}
+                            data-testid="member-add-button"
                             onClick={users.openAddModal}
                             disabled={!users.selectedSystemId}
                         >
@@ -455,6 +463,7 @@ export function AdminUsersContent() {
                         loading={users.systemsLoading}
                         value={users.selectedSystemId}
                         placeholder={t('users.members.select_system_placeholder')}
+                        data-testid="users-system-selector"
                         onChange={(value) => users.setSelectedSystemId(value)}
                         options={users.systems.map((system) => ({ value: system.id, label: system.name }))}
                         showSearch
@@ -503,6 +512,7 @@ export function AdminUsersContent() {
                 onCancel={users.closeAddModal}
                 confirmLoading={users.addPending}
                 destroyOnHidden={true}
+                data-testid="member-add-modal"
             >
                 <Form form={users.addForm} layout="vertical" preserve={false}>
                     <Form.Item
@@ -557,6 +567,7 @@ export function AdminUsersContent() {
                 }}
                 confirmLoading={users.rateLimitMutationPending}
                 destroyOnHidden={true}
+                data-testid="ratelimit-exemption-modal"
             >
                 <Form form={exemptionForm} layout="vertical" preserve={false}>
                     <Form.Item label={t('users.rate_limit.user_id')}>
@@ -594,6 +605,7 @@ export function AdminUsersContent() {
                 }}
                 confirmLoading={users.rateLimitMutationPending}
                 destroyOnHidden={true}
+                data-testid="ratelimit-override-modal"
             >
                 <Form form={overrideForm} layout="vertical" preserve={false}>
                     <Form.Item label={t('users.rate_limit.user_id')}>

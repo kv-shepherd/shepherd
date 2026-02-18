@@ -147,6 +147,7 @@ export function AdminApprovalsContent() {
                             type="primary"
                             size="small"
                             icon={<CheckCircleOutlined />}
+                            data-testid={`approval-action-approve-${record.id}`}
                             onClick={() => approvals.openApproveModal(record)}
                         >
                             {t('common:button.approve')}
@@ -155,6 +156,7 @@ export function AdminApprovalsContent() {
                             danger
                             size="small"
                             icon={<CloseCircleOutlined />}
+                            data-testid={`approval-action-reject-${record.id}`}
                             onClick={() => approvals.openRejectModal(record)}
                         >
                             {t('common:button.reject')}
@@ -168,6 +170,7 @@ export function AdminApprovalsContent() {
                             <Button
                                 size="small"
                                 icon={<ExclamationCircleOutlined />}
+                                data-testid={`approval-action-cancel-${record.id}`}
                                 loading={approvals.cancelPending}
                             >
                                 {t('cancel')}
@@ -180,7 +183,7 @@ export function AdminApprovalsContent() {
     ];
 
     return (
-        <div>
+        <div data-testid="admin-approvals-page">
             {approvals.messageContextHolder}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                 <div>
@@ -189,6 +192,7 @@ export function AdminApprovalsContent() {
                 </div>
                 <Space>
                     <Segmented
+                        data-testid="approvals-status-filter"
                         value={approvals.statusFilter}
                         onChange={(value) => approvals.changeStatusFilter(value as 'ALL' | ApprovalStatus)}
                         options={STATUS_FILTER_OPTIONS.map((option) => ({
@@ -196,7 +200,7 @@ export function AdminApprovalsContent() {
                             value: option.key,
                         }))}
                     />
-                    <Button icon={<ReloadOutlined />} onClick={() => approvals.refetch()}>
+                    <Button icon={<ReloadOutlined />} data-testid="approvals-refresh-btn" onClick={() => approvals.refetch()}>
                         {t('common:button.refresh')}
                     </Button>
                 </Space>
@@ -251,6 +255,7 @@ export function AdminApprovalsContent() {
                 onCancel={approvals.closeApproveModal}
                 confirmLoading={approvals.approvePending}
                 forceRender
+                data-testid="approve-modal"
             >
                 <Form form={approvals.approveForm} layout="vertical" name="approve-form">
                     {approvals.approveModal?.operation_type !== 'DELETE' && (
@@ -331,6 +336,7 @@ export function AdminApprovalsContent() {
                 onCancel={approvals.closeRejectModal}
                 confirmLoading={approvals.rejectPending}
                 forceRender
+                data-testid="reject-modal"
             >
                 <Form form={approvals.rejectForm} layout="vertical" name="reject-form">
                     <Form.Item
