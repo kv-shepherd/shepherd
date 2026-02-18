@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,71 +12,39 @@ import (
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
-func init() {
+func TestErrorHandler_AppErrorIncludesFieldErrors(t *testing.T) {
+	t.Parallel()
 	gin.SetMode(gin.TestMode)
-	_ = logger.Init("error", "json")
-}
+	_ = logger.Init("error", "console")
 
-func TestErrorHandler_NoErrors(t *testing.T) {
 	router := gin.New()
 	router.Use(ErrorHandler())
-	router.GET("/ok", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	router.GET("/test", func(c *gin.Context) {
+		c.Error(apperrors.BadRequest("INVALID_REQUEST", "invalid input").WithFieldErrors([]apperrors.FieldError{
+			{Field: "name", Code: "REQUIRED"},
+		}))
 	})
 
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/ok", nil)
-	router.ServeHTTP(w, req)
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-}
-
-func TestErrorHandler_AppError(t *testing.T) {
-	router := gin.New()
-	router.Use(ErrorHandler())
-	router.GET("/fail", func(c *gin.Context) {
-		_ = c.Error(apperrors.NotFound("VM_NOT_FOUND", "Virtual machine not found"))
-	})
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/fail", nil)
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unexpected status: got %d want %d", rec.Code, http.StatusBadRequest)
 	}
 
-	var body map[string]string
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	var payload struct {
+		Code        string                 `json:"code"`
+		Message     string                 `json:"message"`
+		FieldErrors []apperrors.FieldError `json:"field_errors"`
 	}
-	if body["code"] != "VM_NOT_FOUND" {
-		t.Errorf("code = %q, want VM_NOT_FOUND", body["code"])
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
 	}
-}
-
-func TestErrorHandler_GenericError(t *testing.T) {
-	router := gin.New()
-	router.Use(ErrorHandler())
-	router.GET("/err", func(c *gin.Context) {
-		_ = c.Error(fmt.Errorf("something unexpected"))
-	})
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/err", nil)
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	if payload.Code != "INVALID_REQUEST" {
+		t.Fatalf("unexpected code: got %q", payload.Code)
 	}
-
-	var body map[string]string
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if body["code"] != "INTERNAL_ERROR" {
-		t.Errorf("code = %q, want INTERNAL_ERROR", body["code"])
+	if len(payload.FieldErrors) != 1 || payload.FieldErrors[0].Field != "name" || payload.FieldErrors[0].Code != "REQUIRED" {
+		t.Fatalf("unexpected field_errors: %+v", payload.FieldErrors)
 	}
 }

@@ -21,11 +21,14 @@ type VM struct {
 
 // VMSpec represents the desired state of a VM.
 type VMSpec struct {
+	Name     string            `json:"name,omitempty"`
 	CPU      int               `json:"cpu"`
 	MemoryMB int               `json:"memory_mb"`
 	DiskGB   int               `json:"disk_gb,omitempty"`
 	Image    string            `json:"image,omitempty"`
 	Labels   map[string]string `json:"labels,omitempty"`
+	// SpecOverrides carries advanced KubeVirt spec path/value overrides (ADR-0018 Hybrid Model).
+	SpecOverrides map[string]interface{} `json:"spec_overrides,omitempty"`
 }
 
 // VMStatus represents the current status of a VM.

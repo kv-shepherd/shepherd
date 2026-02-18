@@ -42,9 +42,16 @@ const (
 	EventBatchDeleteRequested EventType = "BATCH_DELETE_REQUESTED"
 	EventBatchDeleteCompleted EventType = "BATCH_DELETE_COMPLETED"
 	EventBatchDeleteFailed    EventType = "BATCH_DELETE_FAILED"
+	EventBatchPowerRequested  EventType = "BATCH_POWER_REQUESTED"
+	EventBatchPowerCompleted  EventType = "BATCH_POWER_COMPLETED"
+	EventBatchPowerFailed     EventType = "BATCH_POWER_FAILED"
 
 	// Request Lifecycle (ADR-0015 §10)
 	EventRequestCancelled EventType = "REQUEST_CANCELLED"
+
+	// VNC Access (ADR-0015 §18)
+	EventVNCAccessRequested EventType = "VNC_ACCESS_REQUESTED"
+	EventVNCAccessGranted   EventType = "VNC_ACCESS_GRANTED"
 
 	// System/Service Events
 	EventSystemCreated  EventType = "SYSTEM_CREATED"
@@ -129,5 +136,30 @@ type VMPowerPayload struct {
 
 // ToJSON converts payload to JSON bytes.
 func (p VMPowerPayload) ToJSON() ([]byte, error) {
+	return json.Marshal(p)
+}
+
+// BatchVMItemPayload represents one child item in a batch request.
+type BatchVMItemPayload struct {
+	VMID           string `json:"vm_id,omitempty"`
+	ServiceID      string `json:"service_id,omitempty"`
+	TemplateID     string `json:"template_id,omitempty"`
+	InstanceSizeID string `json:"instance_size_id,omitempty"`
+	Namespace      string `json:"namespace,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+}
+
+// BatchVMRequestPayload is the parent payload for batch submit requests.
+type BatchVMRequestPayload struct {
+	Operation   string               `json:"operation"`
+	RequestID   string               `json:"request_id,omitempty"`
+	Reason      string               `json:"reason,omitempty"`
+	SubmittedBy string               `json:"submitted_by"`
+	SubmittedAt time.Time            `json:"submitted_at"`
+	Items       []BatchVMItemPayload `json:"items"`
+}
+
+// ToJSON converts payload to JSON bytes.
+func (p BatchVMRequestPayload) ToJSON() ([]byte, error) {
 	return json.Marshal(p)
 }

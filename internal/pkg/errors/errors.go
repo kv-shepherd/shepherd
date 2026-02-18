@@ -32,8 +32,21 @@ type AppError struct {
 	// HTTPStatus is the corresponding HTTP status code.
 	HTTPStatus int `json:"-"`
 
+	// Params carries structured context for frontend/i18n interpolation.
+	Params map[string]interface{} `json:"params,omitempty"`
+
+	// FieldErrors carries field-level validation details for form binding.
+	FieldErrors []FieldError `json:"field_errors,omitempty"`
+
 	// Err is the wrapped underlying error.
 	Err error `json:"-"`
+}
+
+// FieldError describes a field-level validation failure.
+type FieldError struct {
+	Field   string `json:"field"`
+	Code    string `json:"code"`
+	Message string `json:"message,omitempty"`
 }
 
 // Error implements the error interface.
@@ -66,6 +79,24 @@ func Wrap(err error, code, message string, httpStatus int) *AppError {
 		HTTPStatus: httpStatus,
 		Err:        err,
 	}
+}
+
+// WithParams attaches structured parameters to the error.
+func (e *AppError) WithParams(params map[string]interface{}) *AppError {
+	if e == nil || len(params) == 0 {
+		return e
+	}
+	e.Params = params
+	return e
+}
+
+// WithFieldErrors attaches field-level errors to the AppError.
+func (e *AppError) WithFieldErrors(fieldErrors []FieldError) *AppError {
+	if e == nil || len(fieldErrors) == 0 {
+		return e
+	}
+	e.FieldErrors = fieldErrors
+	return e
 }
 
 // Common error constructors.

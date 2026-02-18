@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
@@ -77,10 +78,12 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	if err != nil {
 		return fmt.Errorf("fetch domain event %s: %w", eventID, err)
 	}
+	setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusEXECUTING)
 
 	// Step 2: Parse payload.
 	var payload domain.VMPowerPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
 		return river.JobCancel(fmt.Errorf("unmarshal power payload for event %s: %w", eventID, err))
 	}
 
@@ -97,6 +100,7 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	case "restart":
 		execErr = w.vmService.RestartVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
 	default:
+		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
 		return river.JobCancel(fmt.Errorf("unknown power operation: %s", operation))
 	}
 
@@ -110,6 +114,7 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 		}
 
 		logAuditVMOp(ctx, w.auditLogger, operation+"_failed", payload.VMName, payload.Actor, eventID)
+		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
 		return fmt.Errorf("execute k8s %s for event %s: %w", operation, eventID, execErr)
 	}
 
@@ -135,6 +140,7 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	}
 
 	logAuditVMOp(ctx, w.auditLogger, operation, payload.VMName, payload.Actor, eventID)
+	setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusSUCCESS)
 
 	logger.Info("VM power operation completed",
 		zap.String("event_id", eventID),

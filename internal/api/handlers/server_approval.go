@@ -25,6 +25,9 @@ type vmTargetInfo struct {
 // ListApprovals handles GET /approvals.
 func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsParams) {
 	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "approval:view") {
+		return
+	}
 
 	query := s.client.ApprovalTicket.Query()
 
@@ -113,6 +116,9 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 // ApproveTicket handles POST /approvals/{ticket_id}/approve.
 func (s *Server) ApproveTicket(c *gin.Context, ticketId generated.TicketID) {
 	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "approval:approve") {
+		return
+	}
 	actor := middleware.GetUserID(ctx)
 	if actor == "" {
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
@@ -148,6 +154,9 @@ func (s *Server) ApproveTicket(c *gin.Context, ticketId generated.TicketID) {
 // RejectTicket handles POST /approvals/{ticket_id}/reject.
 func (s *Server) RejectTicket(c *gin.Context, ticketId generated.TicketID) {
 	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "approval:approve") {
+		return
+	}
 	actor := middleware.GetUserID(ctx)
 	if actor == "" {
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
@@ -174,6 +183,38 @@ func (s *Server) RejectTicket(c *gin.Context, ticketId generated.TicketID) {
 			zap.String("actor", actor),
 		)
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "REJECT_FAILED"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// CancelTicket handles POST /approvals/{ticket_id}/cancel.
+func (s *Server) CancelTicket(c *gin.Context, ticketId generated.TicketID) {
+	ctx := c.Request.Context()
+	if !requireAnyGlobalPermission(c, "approval:approve", "vm:create", "vm:delete", "vnc:access") {
+		return
+	}
+	actor := middleware.GetUserID(ctx)
+	if actor == "" {
+		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+		return
+	}
+
+	if err := s.gateway.Cancel(ctx, ticketId, actor); err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			c.JSON(appErr.HTTPStatus, generated.Error{
+				Code:    appErr.Code,
+				Message: appErr.Message,
+			})
+			return
+		}
+		logger.Error("ticket cancellation failed",
+			zap.Error(err),
+			zap.String("ticket_id", ticketId),
+			zap.String("actor", actor),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 

@@ -5,12 +5,11 @@ import (
 	"time"
 
 	"github.com/riverqueue/river"
-
-	"kv-shepherd.io/shepherd/internal/api/handlers"
 	"kv-shepherd.io/shepherd/internal/jobs"
 )
 
-// GovernanceModule is a domain boundary placeholder for system/service/RBAC composition.
+// GovernanceModule is the governance-domain composition boundary for
+// system/service/RBAC capabilities.
 // Current HTTP server implementation is centralized in handlers.Server, so this module
 // contributes through shared server deps and remains a no-op for workers.
 type GovernanceModule struct {
@@ -22,8 +21,6 @@ func NewGovernanceModule(infra *Infrastructure) *GovernanceModule {
 }
 
 func (m *GovernanceModule) Name() string { return "governance" }
-
-func (m *GovernanceModule) ContributeServerDeps(_ *handlers.ServerDeps) {}
 
 func (m *GovernanceModule) RegisterWorkers(workers *river.Workers) {
 	if workers == nil || m == nil || m.infra == nil || m.infra.EntClient == nil {

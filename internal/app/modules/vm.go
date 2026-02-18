@@ -2,12 +2,12 @@ package modules
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/riverqueue/river"
 
 	"kv-shepherd.io/shepherd/internal/api/handlers"
 	"kv-shepherd.io/shepherd/internal/jobs"
-	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/usecase"
 )
@@ -21,9 +21,27 @@ type VMModule struct {
 }
 
 // NewVMModule creates a VM module with explicit constructor wiring.
-func NewVMModule(infra *Infrastructure) *VMModule {
-	vmSvc := service.NewVMService(provider.NewMockProvider())
-	createVM := usecase.NewCreateVMUseCase(infra.EntClient, vmSvc, service.NewInstanceSizeService(infra.EntClient))
+func NewVMModule(infra *Infrastructure) (*VMModule, error) {
+	if infra == nil {
+		return nil, fmt.Errorf("infrastructure is required")
+	}
+	if infra.VMProvider == nil {
+		return nil, fmt.Errorf("vm provider is not configured")
+	}
+	if infra.VMProvider.Type() == "mock" {
+		return nil, fmt.Errorf("mock provider is forbidden in runtime module wiring")
+	}
+	if infra.EntClient == nil {
+		return nil, fmt.Errorf("ent client is required")
+	}
+
+	vmSvc := service.NewVMService(infra.VMProvider)
+	createVM := usecase.NewCreateVMUseCase(
+		infra.EntClient,
+		vmSvc,
+		service.NewInstanceSizeService(infra.EntClient),
+		service.NewTemplateService(infra.EntClient),
+	).WithAuditLogger(infra.AuditLogger)
 	deleteVM := usecase.NewDeleteVMUseCase(infra.EntClient).WithAuditLogger(infra.AuditLogger)
 
 	return &VMModule{
@@ -31,7 +49,7 @@ func NewVMModule(infra *Infrastructure) *VMModule {
 		vmService:  vmSvc,
 		createVMUC: createVM,
 		deleteVMUC: deleteVM,
-	}
+	}, nil
 }
 
 func (m *VMModule) Name() string { return "vm" }

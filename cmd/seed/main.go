@@ -53,8 +53,8 @@ func run() error {
 
 	logger.Info("Starting data seeding...")
 
-	// TODO: Run Atlas migrations before seeding (requires atlas CLI or Go SDK)
-	// TODO: Run River migrations (river migrate-up)
+	// Database and River migrations are expected to be executed before seeding.
+	// This command only performs idempotent data bootstrap.
 
 	// Seed built-in roles (master-flow.md Stage 2.A, ADR-0015 §22)
 	if err := seedBuiltInRoles(ctx, client); err != nil {
@@ -79,16 +79,14 @@ type builtInRole struct {
 	Permissions []string
 }
 
-// seedBuiltInRoles creates built-in roles with explicit permissions (no wildcards, ADR-0019).
-// Uses ON CONFLICT DO NOTHING pattern for idempotency.
-func seedBuiltInRoles(ctx context.Context, client *ent.Client) error {
-	roles := []builtInRole{
+func builtInRoles() []builtInRole {
+	return []builtInRole{
 		{
 			ID: "role-bootstrap", Name: "Bootstrap", DisplayName: "Bootstrap Admin",
 			Description: "First-run bootstrap role, auto-revoked after setup",
 			Permissions: []string{
-				"platform:configure", "role:manage", "auth:configure",
-				"cluster:register", "namespace:manage", "template:manage", "instance_size:manage",
+				// Stage 2.A: bootstrap role keeps explicit super-admin permission only.
+				"platform:admin",
 			},
 		},
 		{
@@ -96,37 +94,31 @@ func seedBuiltInRoles(ctx context.Context, client *ent.Client) error {
 			Description: "Full platform management including cluster and security configuration",
 			Permissions: []string{
 				"platform:admin", // ADR-0019: explicit super-admin permission
-				"cluster:register", "cluster:read", "cluster:update", "cluster:delete",
-				"namespace:manage", "template:manage", "instance_size:manage",
-				"approval:approve", "approval:reject",
-				"role:manage", "auth:configure",
-				"system:read", "service:read", "vm:read", "vm:create", "vm:delete",
-				"vm:power", "audit:read",
 			},
 		},
 		{
 			ID: "role-system-admin", Name: "SystemAdmin", DisplayName: "System Administrator",
 			Description: "Manages systems and services within assigned scope",
 			Permissions: []string{
-				"system:create", "system:read", "system:update", "system:delete",
-				"service:create", "service:read", "service:update", "service:delete",
-				"vm:read", "vm:create", "vm:delete", "vm:power",
-				"member:manage",
+				"system:read", "system:write", "system:delete",
+				"service:read", "service:create", "service:delete",
+				"vm:read", "vm:create", "vm:operate", "vm:delete",
+				"vnc:access", "rbac:manage",
 			},
 		},
 		{
 			ID: "role-approver", Name: "Approver", DisplayName: "Approver",
 			Description: "Reviews and approves/rejects VM creation requests",
 			Permissions: []string{
-				"approval:approve", "approval:reject", "approval:read",
-				"vm:read", "system:read", "service:read", "cluster:read",
+				"approval:approve", "approval:view",
+				"vm:read", "service:read", "system:read",
 			},
 		},
 		{
 			ID: "role-operator", Name: "Operator", DisplayName: "Operator",
 			Description: "Day-to-day VM operations within assigned scope",
 			Permissions: []string{
-				"vm:read", "vm:create", "vm:power",
+				"vm:operate", "vm:create", "vm:read", "vnc:access",
 				"system:read", "service:read",
 			},
 		},
@@ -138,7 +130,12 @@ func seedBuiltInRoles(ctx context.Context, client *ent.Client) error {
 			},
 		},
 	}
+}
 
+// seedBuiltInRoles creates built-in roles with explicit permissions (no wildcards, ADR-0019).
+// Uses ON CONFLICT DO NOTHING pattern for idempotency.
+func seedBuiltInRoles(ctx context.Context, client *ent.Client) error {
+	roles := builtInRoles()
 	for _, r := range roles {
 		_, err := client.Role.Create().
 			SetID(r.ID).

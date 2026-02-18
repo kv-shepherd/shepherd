@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -100,7 +101,7 @@ func (s *Server) GetCurrentUser(c *gin.Context) {
 		return
 	}
 
-	roles, _, err := s.loadUserRolesAndPermissions(c.Request.Context(), user.ID)
+	roles, permissions, err := s.loadUserRolesAndPermissions(c.Request.Context(), user.ID)
 	if err != nil {
 		logger.Error("failed to load roles for current user", zap.Error(err), zap.String("user_id", user.ID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -118,6 +119,7 @@ func (s *Server) GetCurrentUser(c *gin.Context) {
 		Email:       user.Email,
 		DisplayName: user.DisplayName,
 		Roles:       roleNames,
+		Permissions: permissions,
 	})
 }
 
@@ -205,6 +207,7 @@ func (s *Server) loadUserRolesAndPermissions(ctx context.Context, userID string)
 	for p := range permSet {
 		permissions = append(permissions, p)
 	}
+	sort.Strings(permissions)
 
 	return roles, permissions, nil
 }

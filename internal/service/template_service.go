@@ -55,6 +55,15 @@ func (s *TemplateService) ListTemplates(ctx context.Context) ([]*ent.Template, e
 		All(ctx)
 }
 
+// GetByID returns a template by ID.
+func (s *TemplateService) GetByID(ctx context.Context, id string) (*ent.Template, error) {
+	t, err := s.client.Template.Get(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get template %s: %w", id, err)
+	}
+	return t, nil
+}
+
 // CreateTemplate creates a new template version.
 func (s *TemplateService) CreateTemplate(ctx context.Context, id, name, createdBy string, version int, spec map[string]interface{}) (*ent.Template, error) {
 	t, err := s.client.Template.Create().

@@ -9,6 +9,7 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 )
 
@@ -24,9 +25,15 @@ func NewApprovalValidator(client *ent.Client) *ApprovalValidator {
 
 // ValidateApproval checks:
 // 1. Selected cluster exists and is healthy
-// 2. Instance size overcommit + dedicatedCpuPlacement constraint
+// 2. Namespace environment matches cluster environment (ADR-0015 §15)
+// 3. Instance size overcommit + dedicatedCpuPlacement constraint
 // Returns nil if validation passes.
-func (v *ApprovalValidator) ValidateApproval(ctx context.Context, clusterID string, instanceSizeID string) error {
+func (v *ApprovalValidator) ValidateApproval(
+	ctx context.Context,
+	clusterID string,
+	instanceSizeID string,
+	namespace string,
+) error {
 	var (
 		cl               *ent.Cluster
 		clusterCapSet    map[string]struct{}
@@ -54,7 +61,31 @@ func (v *ApprovalValidator) ValidateApproval(ctx context.Context, clusterID stri
 		}
 	}
 
-	// 2. Validate InstanceSize constraints and capability matching.
+	// 2. Validate namespace environment isolation.
+	if strings.TrimSpace(namespace) != "" {
+		ns, err := v.client.NamespaceRegistry.Query().
+			Where(namespaceregistry.NameEQ(strings.TrimSpace(namespace))).
+			Only(ctx)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				return apperrors.BadRequest(apperrors.CodeValidationFailed, "namespace not found in registry")
+			}
+			return fmt.Errorf("query namespace registry by name: %w", err)
+		}
+		if !ns.Enabled {
+			return apperrors.BadRequest(apperrors.CodeValidationFailed,
+				fmt.Sprintf("namespace %s is disabled", ns.Name))
+		}
+		if cl == nil {
+			return apperrors.BadRequest(apperrors.CodeValidationFailed,
+				"selected cluster is required for namespace environment matching")
+		}
+		if err := validateNamespaceClusterEnvironment(string(ns.Environment), string(cl.Environment)); err != nil {
+			return err
+		}
+	}
+
+	// 3. Validate InstanceSize constraints and capability matching.
 	if instanceSizeID != "" {
 		size, err := v.client.InstanceSize.Get(ctx, instanceSizeID)
 		if err != nil {
@@ -84,6 +115,24 @@ func (v *ApprovalValidator) ValidateApproval(ctx context.Context, clusterID stri
 		}
 	}
 
+	return nil
+}
+
+func validateNamespaceClusterEnvironment(namespaceEnv, clusterEnv string) error {
+	nsEnv := strings.TrimSpace(strings.ToLower(namespaceEnv))
+	clEnv := strings.TrimSpace(strings.ToLower(clusterEnv))
+	if nsEnv == "" || clEnv == "" {
+		return apperrors.BadRequest(
+			apperrors.CodeValidationFailed,
+			fmt.Sprintf("namespace/cluster environment is incomplete (namespace=%q cluster=%q)", namespaceEnv, clusterEnv),
+		)
+	}
+	if nsEnv != clEnv {
+		return apperrors.BadRequest(
+			"NAMESPACE_CLUSTER_ENV_MISMATCH",
+			fmt.Sprintf("namespace environment %q does not match selected cluster environment %q", nsEnv, clEnv),
+		)
+	}
 	return nil
 }
 

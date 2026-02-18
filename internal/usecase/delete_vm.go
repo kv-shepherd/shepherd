@@ -8,12 +8,16 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalticket"
+	"kv-shepherd.io/shepherd/ent/domainevent"
+	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
@@ -70,22 +74,13 @@ func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*D
 		return nil, fmt.Errorf("get VM %s: %w", input.VMID, err)
 	}
 
-	// Step 2: Confirmation gate (ADR-0015 §13 addendum).
-	confirmed := false
-	if input.Confirm {
-		confirmed = true
+	// Step 2: Resolve namespace environment and apply tiered confirmation policy (ADR-0015 §13).
+	nsEnv, err := uc.resolveNamespaceEnvironment(ctx, vm.Namespace)
+	if err != nil {
+		return nil, err
 	}
-	if input.ConfirmName != "" {
-		if input.ConfirmName == vm.Name {
-			confirmed = true
-		} else {
-			return nil, apperrors.BadRequest("CONFIRMATION_NAME_MISMATCH",
-				fmt.Sprintf("expected '%s', got '%s'", vm.Name, input.ConfirmName))
-		}
-	}
-	if !confirmed {
-		return nil, apperrors.BadRequest("DELETE_CONFIRMATION_REQUIRED",
-			"deletion requires confirm=true or confirm_name matching VM name")
+	if err := validateDeleteConfirmationByEnvironment(vm.Name, nsEnv, input.Confirm, input.ConfirmName); err != nil {
+		return nil, err
 	}
 
 	// Step 3: State guard — only STOPPED or FAILED VMs can be deleted.
@@ -94,16 +89,20 @@ func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*D
 			fmt.Sprintf("cannot delete VM in %s state, must be STOPPED or FAILED", vm.Status))
 	}
 
-	// Step 4: Duplicate pending guard — prevent multiple delete requests for same VM.
-	existingCount, err := uc.entClient.ApprovalTicket.Query().
-		Where(
-			approvalticket.StatusEQ(approvalticket.StatusPENDING),
-			approvalticket.OperationTypeEQ(approvalticket.OperationTypeDELETE),
-			approvalticket.RequesterEQ(input.RequestedBy),
-		).Count(ctx)
-	if err == nil && existingCount > 0 {
-		return nil, apperrors.Conflict(apperrors.CodeDuplicateRequest,
-			"a pending VM delete request already exists for this user")
+	// Step 4: Duplicate pending guard — same resource + same operation.
+	existingTicket, err := uc.findPendingDeleteDuplicate(ctx, input.VMID)
+	if err != nil {
+		return nil, fmt.Errorf("check duplicate delete request: %w", err)
+	}
+	if existingTicket != nil {
+		return nil, apperrors.Conflict(
+			apperrors.CodeDuplicateRequest,
+			"a pending VM delete request already exists for this resource",
+		).WithParams(map[string]interface{}{
+			"existing_ticket_id": existingTicket.ID,
+			"operation":          "DELETE_VM",
+			"resource_id":        input.VMID,
+		})
 	}
 
 	// Step 5: Build domain event payload.
@@ -181,4 +180,116 @@ func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*D
 		EventID:  eventID,
 		Status:   "PENDING",
 	}, nil
+}
+
+func (uc *DeleteVMUseCase) resolveNamespaceEnvironment(ctx context.Context, namespace string) (namespaceregistry.Environment, error) {
+	name := strings.TrimSpace(namespace)
+	if name == "" {
+		return "", apperrors.BadRequest("NAMESPACE_REQUIRED", "vm namespace is empty")
+	}
+
+	registry, err := uc.entClient.NamespaceRegistry.Query().
+		Where(
+			namespaceregistry.NameEQ(name),
+			namespaceregistry.EnabledEQ(true),
+		).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return "", apperrors.BadRequest(
+				"NAMESPACE_ENVIRONMENT_NOT_FOUND",
+				fmt.Sprintf("namespace %q is not registered or disabled", name),
+			)
+		}
+		return "", fmt.Errorf("query namespace registry for %q: %w", name, err)
+	}
+	return registry.Environment, nil
+}
+
+func validateDeleteConfirmationByEnvironment(
+	vmName string,
+	environment namespaceregistry.Environment,
+	confirm bool,
+	confirmName string,
+) error {
+	name := strings.TrimSpace(vmName)
+	confirmName = strings.TrimSpace(confirmName)
+
+	switch environment {
+	case namespaceregistry.EnvironmentTest:
+		if confirm {
+			return nil
+		}
+		return apperrors.BadRequest(
+			"DELETE_CONFIRMATION_REQUIRED",
+			"test environment deletion requires confirm=true",
+		)
+	case namespaceregistry.EnvironmentProd:
+		if confirmName == "" {
+			return apperrors.BadRequest(
+				"DELETE_CONFIRMATION_REQUIRED",
+				"prod environment deletion requires confirm_name matching VM name",
+			)
+		}
+		if confirmName != name {
+			return apperrors.BadRequest(
+				"CONFIRMATION_NAME_MISMATCH",
+				fmt.Sprintf("expected '%s', got '%s'", name, confirmName),
+			)
+		}
+		return nil
+	default:
+		return apperrors.BadRequest(
+			"UNSUPPORTED_NAMESPACE_ENVIRONMENT",
+			fmt.Sprintf("unsupported namespace environment: %s", environment),
+		)
+	}
+}
+
+func (uc *DeleteVMUseCase) findPendingDeleteDuplicate(
+	ctx context.Context,
+	vmID string,
+) (*ent.ApprovalTicket, error) {
+	events, err := uc.entClient.DomainEvent.Query().
+		Where(
+			domainevent.EventTypeEQ(string(domain.EventVMDeletionRequested)),
+			domainevent.AggregateTypeEQ("vm"),
+			domainevent.AggregateIDEQ(strings.TrimSpace(vmID)),
+			domainevent.StatusEQ(domainevent.StatusPENDING),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, event := range events {
+		var payload domain.VMDeletePayload
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			logger.Warn("skip malformed VM delete payload while checking duplicates",
+				zap.String("event_id", event.ID),
+				zap.Error(err),
+			)
+			continue
+		}
+		if strings.TrimSpace(payload.VMID) != strings.TrimSpace(vmID) {
+			continue
+		}
+
+		ticket, err := uc.entClient.ApprovalTicket.Query().
+			Where(
+				approvalticket.EventIDEQ(event.ID),
+				approvalticket.OperationTypeEQ(approvalticket.OperationTypeDELETE),
+				approvalticket.StatusEQ(approvalticket.StatusPENDING),
+			).
+			Only(ctx)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				continue
+			}
+			return nil, err
+		}
+		return ticket, nil
+	}
+
+	return nil, nil
 }

@@ -19,12 +19,6 @@ var publicPrefixes = []string{
 	"/api/v1/health/",
 }
 
-// adminPrefixes are routes that require platform:admin role.
-var adminPrefixes = []string{
-	"/api/v1/admin/",
-	"/api/v1/audit-logs",
-}
-
 func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg middleware.JWTConfig) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), middleware.RequestID(), middleware.ErrorHandler())
@@ -32,7 +26,7 @@ func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg midd
 	router.Use(cors.New(buildCORSConfig(cfg)))
 
 	router.Use(jwtSkipPublic(jwtCfg))
-	router.Use(rbacAdminRoutes())
+	router.Use(middleware.MustOpenAPIValidator("/api/v1"))
 
 	generated.RegisterHandlersWithOptions(router, server, generated.GinServerOptions{
 		BaseURL: "/api/v1",
@@ -89,19 +83,5 @@ func jwtSkipPublic(jwtCfg middleware.JWTConfig) gin.HandlerFunc {
 			}
 		}
 		jwtMw(c)
-	}
-}
-
-// rbacAdminRoutes returns middleware enforcing platform:admin on admin endpoints.
-func rbacAdminRoutes() gin.HandlerFunc {
-	adminMw := middleware.RequirePermission("platform:admin")
-	return func(c *gin.Context) {
-		for _, prefix := range adminPrefixes {
-			if strings.HasPrefix(c.Request.URL.Path, prefix) {
-				adminMw(c)
-				return
-			}
-		}
-		c.Next()
 	}
 }

@@ -8,13 +8,16 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalticket"
+	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
@@ -45,6 +48,7 @@ type CreateVMUseCase struct {
 	entClient       *ent.Client
 	vmService       *service.VMService
 	instanceSizeSvc *service.InstanceSizeService
+	templateSvc     *service.TemplateService
 	auditLogger     *audit.Logger
 }
 
@@ -53,11 +57,13 @@ func NewCreateVMUseCase(
 	entClient *ent.Client,
 	vmService *service.VMService,
 	instanceSizeSvc *service.InstanceSizeService,
+	templateSvc *service.TemplateService,
 ) *CreateVMUseCase {
 	return &CreateVMUseCase{
 		entClient:       entClient,
 		vmService:       vmService,
 		instanceSizeSvc: instanceSizeSvc,
+		templateSvc:     templateSvc,
 	}
 }
 
@@ -72,21 +78,38 @@ func (uc *CreateVMUseCase) WithAuditLogger(al *audit.Logger) *CreateVMUseCase {
 // Phase 2: After approval, K8s create is executed by River worker.
 // master-flow.md Stage 5.A: includes duplicate pending guard + audit log.
 func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*CreateVMOutput, error) {
+	if uc.templateSvc == nil {
+		return nil, fmt.Errorf("template service is not configured")
+	}
+
+	// Validate template exists
+	_, err := uc.templateSvc.GetByID(ctx, input.TemplateID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid template: %w", err)
+	}
+
 	// Validate instance size exists
-	_, err := uc.instanceSizeSvc.GetByID(ctx, input.InstanceSizeID)
+	_, err = uc.instanceSizeSvc.GetByID(ctx, input.InstanceSizeID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid instance size: %w", err)
 	}
 
-	// Duplicate pending guard (master-flow.md Stage 5.A)
-	existingCount, err := uc.entClient.ApprovalTicket.Query().
-		Where(
-			approvalticket.StatusEQ(approvalticket.StatusPENDING),
-			approvalticket.RequesterEQ(input.RequestedBy),
-		).Count(ctx)
-	if err == nil && existingCount > 0 {
-		return nil, apperrors.Conflict(apperrors.CodeDuplicateRequest,
-			"a pending VM request already exists for this user")
+	// Duplicate pending guard (master-flow.md Stage 5.A):
+	// same resource + same operation must return existing ticket reference.
+	existingTicket, err := uc.findPendingCreateDuplicate(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("check duplicate create request: %w", err)
+	}
+	if existingTicket != nil {
+		return nil, apperrors.Conflict(
+			apperrors.CodeDuplicateRequest,
+			"a pending VM create request already exists for this resource",
+		).WithParams(map[string]interface{}{
+			"existing_ticket_id": existingTicket.ID,
+			"operation":          "CREATE_VM",
+			"resource_id":        strings.TrimSpace(input.ServiceID),
+			"namespace":          strings.TrimSpace(input.Namespace),
+		})
 	}
 
 	// Create domain event payload
@@ -125,6 +148,7 @@ func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*C
 		ticket, err := tx.ApprovalTicket.Create().
 			SetID(generateID()).
 			SetEventID(event.ID).
+			SetOperationType(approvalticket.OperationTypeCREATE).
 			SetRequester(input.RequestedBy).
 			SetReason(input.Reason).
 			Save(ctx)
@@ -161,6 +185,60 @@ func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*C
 		EventID:  eventID,
 		Status:   "PENDING",
 	}, nil
+}
+
+func (uc *CreateVMUseCase) findPendingCreateDuplicate(
+	ctx context.Context,
+	input CreateVMInput,
+) (*ent.ApprovalTicket, error) {
+	events, err := uc.entClient.DomainEvent.Query().
+		Where(
+			domainevent.EventTypeEQ(string(domain.EventVMCreationRequested)),
+			domainevent.AggregateTypeEQ("vm"),
+			domainevent.AggregateIDEQ(strings.TrimSpace(input.ServiceID)),
+			domainevent.StatusEQ(domainevent.StatusPENDING),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, event := range events {
+		var existing domain.VMCreationPayload
+		if err := json.Unmarshal(event.Payload, &existing); err != nil {
+			logger.Warn("skip malformed VM create payload while checking duplicates",
+				zap.String("event_id", event.ID),
+				zap.Error(err),
+			)
+			continue
+		}
+		if !sameCreateResource(existing, input) {
+			continue
+		}
+
+		ticket, err := uc.entClient.ApprovalTicket.Query().
+			Where(
+				approvalticket.EventIDEQ(event.ID),
+				approvalticket.OperationTypeEQ(approvalticket.OperationTypeCREATE),
+				approvalticket.StatusEQ(approvalticket.StatusPENDING),
+			).
+			Only(ctx)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				continue
+			}
+			return nil, err
+		}
+		return ticket, nil
+	}
+	return nil, nil
+}
+
+func sameCreateResource(existing domain.VMCreationPayload, input CreateVMInput) bool {
+	return strings.TrimSpace(existing.ServiceID) == strings.TrimSpace(input.ServiceID) &&
+		strings.TrimSpace(existing.TemplateID) == strings.TrimSpace(input.TemplateID) &&
+		strings.TrimSpace(existing.InstanceSizeID) == strings.TrimSpace(input.InstanceSizeID) &&
+		strings.TrimSpace(existing.Namespace) == strings.TrimSpace(input.Namespace)
 }
 
 // withTx executes a function within a transaction.

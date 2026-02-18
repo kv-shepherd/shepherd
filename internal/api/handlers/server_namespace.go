@@ -9,16 +9,40 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
-	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
 // ListNamespaces handles GET /admin/namespaces.
 func (s *Server) ListNamespaces(c *gin.Context, params generated.ListNamespacesParams) {
-	ctx := c.Request.Context()
+	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "cluster:read", "cluster:write", "cluster:manage")
+	if !ok {
+		return
+	}
 
 	query := s.client.NamespaceRegistry.Query()
+	visibility, err := s.resolveNamespaceVisibility(c)
+	if err != nil {
+		logger.Error("failed to resolve namespace visibility", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if visibility.restricted {
+		if len(visibility.envs) == 0 {
+			c.JSON(http.StatusOK, generated.NamespaceRegistryList{
+				Items: []generated.NamespaceRegistry{},
+				Pagination: generated.Pagination{
+					Page:       1,
+					PerPage:    20,
+					Total:      0,
+					TotalPages: 0,
+				},
+			})
+			return
+		}
+		query = query.Where(namespaceregistry.EnvironmentIn(visibility.envs...))
+	}
 
 	// Filter by environment (omitzero: empty string = not specified).
 	if params.Environment != "" {
@@ -67,10 +91,8 @@ func (s *Server) ListNamespaces(c *gin.Context, params generated.ListNamespacesP
 
 // CreateNamespace handles POST /admin/namespaces.
 func (s *Server) CreateNamespace(c *gin.Context) {
-	ctx := c.Request.Context()
-	actor := middleware.GetUserID(ctx)
-	if actor == "" {
-		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	if !ok {
 		return
 	}
 
@@ -114,7 +136,10 @@ func (s *Server) CreateNamespace(c *gin.Context) {
 
 // GetNamespace handles GET /admin/namespaces/{namespace_id}.
 func (s *Server) GetNamespace(c *gin.Context, namespaceId generated.NamespaceID) {
-	ctx := c.Request.Context()
+	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "cluster:read", "cluster:write", "cluster:manage")
+	if !ok {
+		return
+	}
 
 	ns, err := s.client.NamespaceRegistry.Get(ctx, namespaceId)
 	if err != nil {
@@ -126,16 +151,33 @@ func (s *Server) GetNamespace(c *gin.Context, namespaceId generated.NamespaceID)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	visibility, err := s.resolveNamespaceVisibility(c)
+	if err != nil {
+		logger.Error("failed to resolve namespace visibility", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if visibility.restricted {
+		visible := false
+		for _, env := range visibility.envs {
+			if ns.Environment == env {
+				visible = true
+				break
+			}
+		}
+		if !visible {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "NAMESPACE_NOT_FOUND"})
+			return
+		}
+	}
 
 	c.JSON(http.StatusOK, namespaceToAPI(ns))
 }
 
 // UpdateNamespace handles PUT /admin/namespaces/{namespace_id}.
 func (s *Server) UpdateNamespace(c *gin.Context, namespaceId generated.NamespaceID) {
-	ctx := c.Request.Context()
-	actor := middleware.GetUserID(ctx)
-	if actor == "" {
-		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	if !ok {
 		return
 	}
 
@@ -172,8 +214,10 @@ func (s *Server) UpdateNamespace(c *gin.Context, namespaceId generated.Namespace
 // DeleteNamespace handles DELETE /admin/namespaces/{namespace_id}.
 // ADR-0015 §13 addendum: confirm_name query param required.
 func (s *Server) DeleteNamespace(c *gin.Context, namespaceId generated.NamespaceID, params generated.DeleteNamespaceParams) {
-	ctx := c.Request.Context()
-	actor := middleware.GetUserID(ctx)
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	if !ok {
+		return
+	}
 
 	ns, err := s.client.NamespaceRegistry.Get(ctx, namespaceId)
 	if err != nil {
@@ -195,7 +239,20 @@ func (s *Server) DeleteNamespace(c *gin.Context, namespaceId generated.Namespace
 		return
 	}
 
-	// TODO: Check for VMs using this namespace before deletion.
+	// Prevent namespace deletion when live VM records still reference it.
+	vmCount, err := s.client.VM.Query().Where(vm.NamespaceEQ(ns.Name)).Count(ctx)
+	if err != nil {
+		logger.Error("failed to check namespace usage", zap.Error(err), zap.String("namespace", ns.Name))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if vmCount > 0 {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "NAMESPACE_IN_USE",
+			Message: "namespace is referenced by existing VM records",
+		})
+		return
+	}
 
 	if err := s.client.NamespaceRegistry.DeleteOneID(namespaceId).Exec(ctx); err != nil {
 		logger.Error("failed to delete namespace", zap.Error(err), zap.String("namespace_id", namespaceId))

@@ -36,12 +36,14 @@ func ErrorHandler() gin.HandlerFunc {
 				zap.Int("status", appErr.HTTPStatus),
 				zap.Error(appErr.Err),
 			)
-			c.JSON(appErr.HTTPStatus, gin.H{
-				"code":    appErr.Code,
-				"message": appErr.Message,
-			})
-			return
-		}
+				c.JSON(appErr.HTTPStatus, gin.H{
+					"code":         appErr.Code,
+					"message":      appErr.Message,
+					"params":       appErr.Params,
+					"field_errors": appErr.FieldErrors,
+				})
+				return
+			}
 
 		// Fallback: generic 500 error
 		logger.Error("Unhandled request error", zap.Error(err))

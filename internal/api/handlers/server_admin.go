@@ -15,7 +15,6 @@ import (
 	"kv-shepherd.io/shepherd/ent/instancesize"
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
 	"kv-shepherd.io/shepherd/internal/api/generated"
-	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
@@ -44,6 +43,9 @@ func parseAPIServerURL(data []byte) (string, error) {
 
 // ListClusters handles GET /admin/clusters.
 func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParams) {
+	if !requireAnyGlobalPermission(c, "cluster:read", "cluster:manage") {
+		return
+	}
 	ctx := c.Request.Context()
 
 	query := s.client.Cluster.Query()
@@ -88,10 +90,8 @@ func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParam
 
 // CreateCluster handles POST /admin/clusters.
 func (s *Server) CreateCluster(c *gin.Context) {
-	ctx := c.Request.Context()
-	actor := middleware.GetUserID(ctx)
-	if actor == "" {
-		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	if !ok {
 		return
 	}
 
@@ -153,10 +153,8 @@ func (s *Server) CreateCluster(c *gin.Context) {
 
 // UpdateClusterEnvironment handles PUT /admin/clusters/{cluster_id}/environment.
 func (s *Server) UpdateClusterEnvironment(c *gin.Context, clusterId string) {
-	ctx := c.Request.Context()
-	actor := middleware.GetUserID(ctx)
-	if actor == "" {
-		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	if !ok {
 		return
 	}
 
@@ -190,6 +188,9 @@ func (s *Server) UpdateClusterEnvironment(c *gin.Context, clusterId string) {
 
 // ListTemplates handles GET /templates.
 func (s *Server) ListTemplates(c *gin.Context, params generated.ListTemplatesParams) {
+	if !requireAnyGlobalPermission(c, "vm:create", "template:read", "template:manage") {
+		return
+	}
 	ctx := c.Request.Context()
 
 	query := s.client.Template.Query().
@@ -234,6 +235,9 @@ func (s *Server) ListTemplates(c *gin.Context, params generated.ListTemplatesPar
 
 // ListInstanceSizes handles GET /instance-sizes.
 func (s *Server) ListInstanceSizes(c *gin.Context) {
+	if !requireAnyGlobalPermission(c, "vm:create", "instance_size:read", "instance_size:write") {
+		return
+	}
 	ctx := c.Request.Context()
 
 	sizes, err := s.client.InstanceSize.Query().
@@ -258,6 +262,9 @@ func (s *Server) ListInstanceSizes(c *gin.Context) {
 
 // ListAuditLogs handles GET /audit-logs.
 func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsParams) {
+	if !requireGlobalPermission(c, "audit:read") {
+		return
+	}
 	ctx := c.Request.Context()
 
 	query := s.client.AuditLog.Query()

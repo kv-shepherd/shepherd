@@ -16,12 +16,16 @@ type Module interface {
 	// Name returns a stable module identifier for logging/debugging.
 	Name() string
 
-	// ContributeServerDeps injects module-owned dependencies into the HTTP server deps.
-	ContributeServerDeps(*handlers.ServerDeps)
-
-	// RegisterWorkers registers module workers into a shared River worker registry.
-	RegisterWorkers(*river.Workers)
-
 	// Shutdown performs module-local graceful cleanup.
 	Shutdown(context.Context) error
+}
+
+// ServerDepsContributor is implemented by modules that need to inject HTTP server deps.
+type ServerDepsContributor interface {
+	ContributeServerDeps(*handlers.ServerDeps)
+}
+
+// WorkerRegistrar is implemented by modules that register River workers.
+type WorkerRegistrar interface {
+	RegisterWorkers(*river.Workers)
 }

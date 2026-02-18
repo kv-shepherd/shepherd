@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/riverqueue/river"
-
 	"kv-shepherd.io/shepherd/internal/api/handlers"
 	"kv-shepherd.io/shepherd/internal/governance/approval"
 	"kv-shepherd.io/shepherd/internal/notification"
@@ -44,7 +42,5 @@ func (m *ApprovalModule) ContributeServerDeps(deps *handlers.ServerDeps) {
 	deps.Gateway = m.gateway
 	deps.Notifier = m.notifier
 }
-
-func (m *ApprovalModule) RegisterWorkers(_ *river.Workers) {}
 
 func (m *ApprovalModule) Shutdown(context.Context) error { return nil }

@@ -11,6 +11,9 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	"kv-shepherd.io/shepherd/ent/instancesize"
+	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	enttemplate "kv-shepherd.io/shepherd/ent/template"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
@@ -24,8 +27,39 @@ import (
 // ListVMs handles GET /vms.
 func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "vm:read") {
+		return
+	}
 
 	query := s.client.VM.Query()
+	visibility, err := s.resolveNamespaceVisibility(c)
+	if err != nil {
+		logger.Error("failed to resolve VM namespace visibility", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if visibility.restricted {
+		visibleNamespaces, err := s.listVisibleNamespaceNames(ctx, visibility)
+		if err != nil {
+			logger.Error("failed to load visible namespaces", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+		if len(visibleNamespaces) == 0 {
+			page, perPage := defaultPagination(params.Page, params.PerPage)
+			c.JSON(http.StatusOK, generated.VMList{
+				Items: []generated.VM{},
+				Pagination: generated.Pagination{
+					Page:       page,
+					PerPage:    perPage,
+					Total:      0,
+					TotalPages: 0,
+				},
+			})
+			return
+		}
+		query = query.Where(entvm.NamespaceIn(visibleNamespaces...))
+	}
 
 	// Filter by status.
 	if params.Status != "" {
@@ -74,9 +108,87 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 	})
 }
 
+// GetVMRequestContext handles GET /vms/request-context.
+// Returns user-visible wizard context to avoid client-side fan-out and drift.
+func (s *Server) GetVMRequestContext(c *gin.Context) {
+	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "vm:create") {
+		return
+	}
+
+	visibility, err := s.resolveNamespaceVisibility(c)
+	if err != nil {
+		logger.Error("failed to resolve VM request context namespace visibility", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	namespaceQuery := s.client.NamespaceRegistry.Query().
+		Where(namespaceregistry.EnabledEQ(true))
+	if visibility.restricted {
+		if len(visibility.envs) == 0 {
+			namespaceQuery = nil
+		} else {
+			namespaceQuery = namespaceQuery.Where(namespaceregistry.EnvironmentIn(visibility.envs...))
+		}
+	}
+
+	namespaces := make([]string, 0)
+	if namespaceQuery != nil {
+		namespaces, err = namespaceQuery.
+			Order(ent.Asc(namespaceregistry.FieldName)).
+			Select(namespaceregistry.FieldName).
+			Strings(ctx)
+		if err != nil {
+			logger.Error("failed to list request-context namespaces", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+	}
+
+	templates, err := s.client.Template.Query().
+		Where(enttemplate.EnabledEQ(true)).
+		Order(ent.Asc(enttemplate.FieldName)).
+		All(ctx)
+	if err != nil {
+		logger.Error("failed to list request-context templates", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	sizes, err := s.client.InstanceSize.Query().
+		Where(instancesize.EnabledEQ(true)).
+		Order(ent.Asc(instancesize.FieldSortOrder)).
+		All(ctx)
+	if err != nil {
+		logger.Error("failed to list request-context instance sizes", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	templateItems := make([]generated.Template, 0, len(templates))
+	for _, t := range templates {
+		templateItems = append(templateItems, templateToAPI(t))
+	}
+
+	sizeItems := make([]generated.InstanceSize, 0, len(sizes))
+	for _, sz := range sizes {
+		sizeItems = append(sizeItems, instanceSizeToAPI(sz))
+	}
+
+	c.JSON(http.StatusOK, generated.VMRequestContext{
+		Namespaces:    namespaces,
+		Templates:     templateItems,
+		InstanceSizes: sizeItems,
+	})
+}
+
 // CreateVMRequest handles POST /vms/request (requires approval).
 func (s *Server) CreateVMRequest(c *gin.Context) {
 	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "vm:create") {
+		return
+	}
 	actor := middleware.GetUserID(ctx)
 	if actor == "" {
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
@@ -86,6 +198,25 @@ func (s *Server) CreateVMRequest(c *gin.Context) {
 	var req generated.VMCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+		return
+	}
+	visibility, err := s.resolveNamespaceVisibility(c)
+	if err != nil {
+		logger.Error("failed to resolve VM request namespace visibility", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	visible, err := s.isNamespaceVisible(ctx, req.Namespace, visibility)
+	if err != nil {
+		logger.Error("failed to check namespace visibility for VM request", zap.Error(err), zap.String("namespace", req.Namespace))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if !visible {
+		c.JSON(http.StatusForbidden, generated.Error{
+			Code:    "NAMESPACE_ENV_FORBIDDEN",
+			Message: "namespace is not visible under current environment permissions",
+		})
 		return
 	}
 
@@ -98,6 +229,16 @@ func (s *Server) CreateVMRequest(c *gin.Context) {
 		RequestedBy:    actor,
 	})
 	if err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			// Keep endpoint contract-compatible with current OpenAPI (400 on request failure),
+			// while preserving machine-readable code/params.
+			c.JSON(http.StatusBadRequest, generated.Error{
+				Code:    appErr.Code,
+				Message: appErr.Message,
+				Params:  appErr.Params,
+			})
+			return
+		}
 		logger.Error("VM request failed",
 			zap.Error(err),
 			zap.String("actor", actor),
@@ -121,6 +262,9 @@ func (s *Server) CreateVMRequest(c *gin.Context) {
 // GetVM handles GET /vms/{vm_id}.
 func (s *Server) GetVM(c *gin.Context, vmId generated.VMID) {
 	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "vm:read") {
+		return
+	}
 
 	vm, err := s.client.VM.Get(ctx, vmId)
 	if err != nil {
@@ -130,6 +274,22 @@ func (s *Server) GetVM(c *gin.Context, vmId generated.VMID) {
 		}
 		logger.Error("failed to get VM", zap.Error(err), zap.String("vm_id", vmId))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	visibility, err := s.resolveNamespaceVisibility(c)
+	if err != nil {
+		logger.Error("failed to resolve VM namespace visibility", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	visible, err := s.isNamespaceVisible(ctx, vm.Namespace, visibility)
+	if err != nil {
+		logger.Error("failed to check VM namespace visibility", zap.Error(err), zap.String("vm_id", vmId))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if !visible {
+		c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
 		return
 	}
 
@@ -142,6 +302,9 @@ func (s *Server) GetVM(c *gin.Context, vmId generated.VMID) {
 // Admin approval triggers River job execution via Gateway.approveDelete.
 func (s *Server) DeleteVM(c *gin.Context, vmId generated.VMID, params generated.DeleteVMParams) {
 	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "vm:delete") {
+		return
+	}
 	actor := middleware.GetUserID(ctx)
 
 	// Build use case input from params.
@@ -159,6 +322,7 @@ func (s *Server) DeleteVM(c *gin.Context, vmId generated.VMID, params generated.
 			c.JSON(appErr.HTTPStatus, generated.Error{
 				Code:    appErr.Code,
 				Message: appErr.Message,
+				Params:  appErr.Params,
 			})
 			return
 		}
@@ -189,6 +353,9 @@ func (s *Server) DeleteVM(c *gin.Context, vmId generated.VMID, params generated.
 // StartVM handles POST /vms/{vm_id}/start.
 // ISSUE-001: Async via River (ADR-0006). Returns 202 Accepted.
 func (s *Server) StartVM(c *gin.Context, vmId generated.VMID) {
+	if !requireGlobalPermission(c, "vm:operate") {
+		return
+	}
 	vm, err := s.client.VM.Get(c.Request.Context(), vmId)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -215,6 +382,9 @@ func (s *Server) StartVM(c *gin.Context, vmId generated.VMID) {
 // StopVM handles POST /vms/{vm_id}/stop.
 // ISSUE-001: Async via River (ADR-0006). Returns 202 Accepted.
 func (s *Server) StopVM(c *gin.Context, vmId generated.VMID) {
+	if !requireGlobalPermission(c, "vm:operate") {
+		return
+	}
 	vm, err := s.client.VM.Get(c.Request.Context(), vmId)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -240,6 +410,9 @@ func (s *Server) StopVM(c *gin.Context, vmId generated.VMID) {
 // RestartVM handles POST /vms/{vm_id}/restart.
 // ISSUE-001: Async via River (ADR-0006). Returns 202 Accepted.
 func (s *Server) RestartVM(c *gin.Context, vmId generated.VMID) {
+	if !requireGlobalPermission(c, "vm:operate") {
+		return
+	}
 	vm, err := s.client.VM.Get(c.Request.Context(), vmId)
 	if err != nil {
 		if ent.IsNotFound(err) {

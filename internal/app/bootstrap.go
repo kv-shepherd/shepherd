@@ -9,21 +9,26 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/riverqueue/river"
 
+	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/internal/api/handlers"
 	"kv-shepherd.io/shepherd/internal/app/modules"
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/infrastructure"
 	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/pkg/worker"
+	"kv-shepherd.io/shepherd/internal/provider"
+	_ "kv-shepherd.io/shepherd/plugins/authprovider/autoreg"
 )
 
 // Application holds composed application dependencies.
 type Application struct {
-	Config  *config.Config
-	Router  *gin.Engine
-	DB      *infrastructure.DatabaseClients
-	Pools   *worker.Pools
-	Modules []modules.Module
+	Config      *config.Config
+	Router      *gin.Engine
+	DB          *infrastructure.DatabaseClients
+	Pools       *worker.Pools
+	Modules     []modules.Module
+	EntClient   *ent.Client
+	HealthCheck *provider.ClusterHealthChecker
 }
 
 // Bootstrap initializes all dependencies using module-oriented manual DI.
@@ -33,15 +38,25 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 		return nil, fmt.Errorf("init infrastructure: %w", err)
 	}
 
+	vmModule, err := modules.NewVMModule(infra)
+	if err != nil {
+		infra.Close()
+		return nil, fmt.Errorf("init vm module: %w", err)
+	}
+
 	baseModules := []modules.Module{
-		modules.NewVMModule(infra),
+		vmModule,
 		modules.NewGovernanceModule(infra),
 		modules.NewAdminModule(infra),
 	}
 
 	workers := river.NewWorkers()
 	for _, mod := range baseModules {
-		mod.RegisterWorkers(workers)
+		registrar, ok := mod.(modules.WorkerRegistrar)
+		if !ok {
+			continue
+		}
+		registrar.RegisterWorkers(workers)
 	}
 	if err := infra.InitRiver(workers); err != nil {
 		infra.Close()
@@ -72,10 +87,12 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 	server := handlers.NewServer(serverDeps)
 
 	return &Application{
-		Config:  cfg,
-		Router:  newRouter(cfg, server, serverDeps.JWTCfg),
-		DB:      infra.DB,
-		Pools:   infra.Pools,
-		Modules: allModules,
+		Config:      cfg,
+		Router:      newRouter(cfg, server, serverDeps.JWTCfg),
+		DB:          infra.DB,
+		Pools:       infra.Pools,
+		Modules:     allModules,
+		EntClient:   infra.EntClient,
+		HealthCheck: infra.HealthCheck,
 	}, nil
 }

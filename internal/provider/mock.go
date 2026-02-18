@@ -67,8 +67,16 @@ func (p *MockProvider) ListVMs(_ context.Context, _, namespace string, _ ListOpt
 func (p *MockProvider) CreateVM(_ context.Context, _, namespace string, spec *domain.VMSpec) (*domain.VM, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if spec == nil {
+		spec = &domain.VMSpec{}
+	}
+	name := ""
+	name = spec.Name
+	if name == "" {
+		name = fmt.Sprintf("mock-vm-%d", len(p.vms)+1)
+	}
 	vm := &domain.VM{
-		Name:      fmt.Sprintf("mock-vm-%d", len(p.vms)+1),
+		Name:      name,
 		Namespace: namespace,
 		Status:    domain.VMStatusCreating,
 		Spec:      *spec,

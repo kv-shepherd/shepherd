@@ -32,6 +32,7 @@ type Server struct {
 	jwtCfg      middleware.JWTConfig
 	audit       *audit.Logger
 	vmService   *service.VMService
+	vncTokens   *service.VNCTokenManager
 	createVMUC  *usecase.CreateVMUseCase
 	deleteVMUC  *usecase.DeleteVMUseCase
 	gateway     *approval.Gateway
@@ -47,6 +48,7 @@ type ServerDeps struct {
 	JWTCfg      middleware.JWTConfig
 	Audit       *audit.Logger
 	VMService   *service.VMService
+	VNCTokens   *service.VNCTokenManager
 	CreateVMUC  *usecase.CreateVMUseCase
 	DeleteVMUC  *usecase.DeleteVMUseCase
 	Gateway     *approval.Gateway
@@ -56,12 +58,22 @@ type ServerDeps struct {
 
 // NewServer creates a new Server with all dependencies.
 func NewServer(deps ServerDeps) *Server {
+	vncTokens := deps.VNCTokens
+	if vncTokens == nil {
+		var replay service.VNCReplayStore
+		if deps.Pool != nil {
+			replay = service.NewPostgresVNCReplayStore(deps.Pool)
+		}
+		vncTokens = service.NewVNCTokenManager(deps.JWTCfg.SigningKey, deps.JWTCfg.Issuer, service.DefaultVNCTokenTTL, replay)
+	}
+
 	return &Server{
 		client:      deps.EntClient,
 		pool:        deps.Pool,
 		jwtCfg:      deps.JWTCfg,
 		audit:       deps.Audit,
 		vmService:   deps.VMService,
+		vncTokens:   vncTokens,
 		createVMUC:  deps.CreateVMUC,
 		deleteVMUC:  deps.DeleteVMUC,
 		gateway:     deps.Gateway,

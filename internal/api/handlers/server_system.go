@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
+	rrb "kv-shepherd.io/shepherd/ent/resourcerolebinding"
 	entservice "kv-shepherd.io/shepherd/ent/service"
 	entsystem "kv-shepherd.io/shepherd/ent/system"
 	"kv-shepherd.io/shepherd/internal/api/generated"
@@ -18,8 +19,50 @@ import (
 // ListSystems handles GET /systems.
 func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams) {
 	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "system:read") {
+		return
+	}
+	actor := middleware.GetUserID(ctx)
 
 	query := s.client.System.Query()
+	if !hasPlatformAdmin(c) {
+		bindings, err := s.client.ResourceRoleBinding.Query().
+			Where(
+				rrb.UserIDEQ(actor),
+				rrb.ResourceTypeEQ("system"),
+			).
+			All(ctx)
+		if err != nil {
+			logger.Error("failed to query system bindings", zap.Error(err), zap.String("actor", actor))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+
+		if len(bindings) == 0 {
+			page, perPage := defaultPagination(params.Page, params.PerPage)
+			c.JSON(http.StatusOK, generated.SystemList{
+				Items: []generated.System{},
+				Pagination: generated.Pagination{
+					Page:       page,
+					PerPage:    perPage,
+					Total:      0,
+					TotalPages: 0,
+				},
+			})
+			return
+		}
+
+		systemIDs := make([]string, 0, len(bindings))
+		seen := make(map[string]struct{}, len(bindings))
+		for _, b := range bindings {
+			if _, ok := seen[b.ResourceID]; ok {
+				continue
+			}
+			seen[b.ResourceID] = struct{}{}
+			systemIDs = append(systemIDs, b.ResourceID)
+		}
+		query = query.Where(entsystem.IDIn(systemIDs...))
+	}
 
 	// Pagination.
 	page, perPage := defaultPagination(params.Page, params.PerPage)
@@ -63,11 +106,10 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 // CreateSystem handles POST /systems (self-service, no approval).
 func (s *Server) CreateSystem(c *gin.Context) {
 	ctx := c.Request.Context()
-	actor := middleware.GetUserID(ctx)
-	if actor == "" {
-		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+	if !requireGlobalPermission(c, "system:write") {
 		return
 	}
+	actor := middleware.GetUserID(ctx)
 
 	var req generated.SystemCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -147,6 +189,12 @@ func (s *Server) CreateSystem(c *gin.Context) {
 // GetSystem handles GET /systems/{system_id}.
 func (s *Server) GetSystem(c *gin.Context, systemId generated.SystemID) {
 	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "system:read") {
+		return
+	}
+	if _, ok := s.requireSystemRole(c, systemId, "view"); !ok {
+		return
+	}
 
 	sys, err := s.client.System.Get(ctx, systemId)
 	if err != nil {
@@ -162,11 +210,70 @@ func (s *Server) GetSystem(c *gin.Context, systemId generated.SystemID) {
 	c.JSON(http.StatusOK, systemToAPI(sys))
 }
 
+// UpdateSystem handles PATCH /systems/{system_id}.
+// Stage 4.C: only description is mutable; name is immutable.
+func (s *Server) UpdateSystem(c *gin.Context, systemId generated.SystemID) {
+	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "system:write") {
+		return
+	}
+	actor, ok := s.requireSystemRole(c, systemId, "update")
+	if !ok {
+		return
+	}
+
+	var req generated.SystemUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+		return
+	}
+
+	existing, err := s.client.System.Get(ctx, systemId)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "SYSTEM_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to get system for update", zap.Error(err), zap.String("system_id", systemId))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	updated, err := s.client.System.UpdateOneID(systemId).
+		SetDescription(req.Description).
+		Save(ctx)
+	if err != nil {
+		logger.Error("failed to update system",
+			zap.Error(err),
+			zap.String("system_id", systemId),
+			zap.String("actor", actor),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if s.audit != nil {
+		_ = s.audit.LogAction(ctx, "system.update", "system", systemId, actor, map[string]interface{}{
+			"field": "description",
+			"old":   existing.Description,
+			"new":   req.Description,
+		})
+	}
+
+	c.JSON(http.StatusOK, systemToAPI(updated))
+}
+
 // DeleteSystem handles DELETE /systems/{system_id}.
 // ADR-0015 §13 addendum: confirm_name query param required.
 func (s *Server) DeleteSystem(c *gin.Context, systemId generated.SystemID, params generated.DeleteSystemParams) {
 	ctx := c.Request.Context()
-	actor := middleware.GetUserID(ctx)
+	if !requireGlobalPermission(c, "system:delete") {
+		return
+	}
+	actor, ok := s.requireSystemRole(c, systemId, "delete")
+	if !ok {
+		return
+	}
 
 	// Check for child services via edge.
 	count, err := s.client.System.Query().
@@ -225,6 +332,12 @@ func (s *Server) DeleteSystem(c *gin.Context, systemId generated.SystemID, param
 // ListServices handles GET /systems/{system_id}/services.
 func (s *Server) ListServices(c *gin.Context, systemId generated.SystemID, params generated.ListServicesParams) {
 	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "service:read") {
+		return
+	}
+	if _, ok := s.requireSystemRole(c, systemId, "view"); !ok {
+		return
+	}
 
 	// Query services via system edge.
 	query := s.client.System.Query().
@@ -272,9 +385,11 @@ func (s *Server) ListServices(c *gin.Context, systemId generated.SystemID, param
 // CreateService handles POST /systems/{system_id}/services.
 func (s *Server) CreateService(c *gin.Context, systemId generated.SystemID) {
 	ctx := c.Request.Context()
-	actor := middleware.GetUserID(ctx)
-	if actor == "" {
-		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+	if !requireGlobalPermission(c, "service:create") {
+		return
+	}
+	actor, ok := s.requireSystemRole(c, systemId, "create")
+	if !ok {
 		return
 	}
 
@@ -337,6 +452,12 @@ func (s *Server) CreateService(c *gin.Context, systemId generated.SystemID) {
 // GetService handles GET /systems/{system_id}/services/{service_id}.
 func (s *Server) GetService(c *gin.Context, systemId generated.SystemID, serviceId generated.ServiceID) {
 	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "service:read") {
+		return
+	}
+	if _, ok := s.requireSystemRole(c, systemId, "view"); !ok {
+		return
+	}
 
 	// Verify the service exists and belongs to the given system.
 	svc, err := s.client.Service.Query().
@@ -362,12 +483,82 @@ func (s *Server) GetService(c *gin.Context, systemId generated.SystemID, service
 	c.JSON(http.StatusOK, serviceToAPI(svc, systemId))
 }
 
+// UpdateService handles PATCH /systems/{system_id}/services/{service_id}.
+// Stage 4.C: only description is mutable; name is immutable.
+func (s *Server) UpdateService(c *gin.Context, systemId generated.SystemID, serviceId generated.ServiceID) {
+	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "service:create") {
+		return
+	}
+	actor, ok := s.requireSystemRole(c, systemId, "update")
+	if !ok {
+		return
+	}
+
+	var req generated.ServiceUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+		return
+	}
+
+	existing, err := s.client.Service.Query().
+		Where(
+			entservice.IDEQ(serviceId),
+			entservice.HasSystemWith(entsystem.IDEQ(systemId)),
+		).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "SERVICE_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to get service for update",
+			zap.Error(err),
+			zap.String("system_id", systemId),
+			zap.String("service_id", serviceId),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	updated, err := s.client.Service.UpdateOneID(serviceId).
+		SetDescription(req.Description).
+		Save(ctx)
+	if err != nil {
+		logger.Error("failed to update service",
+			zap.Error(err),
+			zap.String("system_id", systemId),
+			zap.String("service_id", serviceId),
+			zap.String("actor", actor),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if s.audit != nil {
+		_ = s.audit.LogAction(ctx, "service.update", "service", serviceId, actor, map[string]interface{}{
+			"system_id": systemId,
+			"field":     "description",
+			"old":       existing.Description,
+			"new":       req.Description,
+		})
+	}
+
+	c.JSON(http.StatusOK, serviceToAPI(updated, systemId))
+}
+
 // DeleteService handles DELETE /systems/{system_id}/services/{service_id}.
 // ADR-0015 §13: requires confirm=true query param.
 // Cascade constraint: must have zero child VMs.
 func (s *Server) DeleteService(c *gin.Context, systemId generated.SystemID, serviceId generated.ServiceID, params generated.DeleteServiceParams) {
 	ctx := c.Request.Context()
-	actor := middleware.GetUserID(ctx)
+	if !requireGlobalPermission(c, "service:delete") {
+		return
+	}
+	actor, ok := s.requireSystemRole(c, systemId, "delete")
+	if !ok {
+		return
+	}
 
 	// Verify the service exists and belongs to the given system.
 	svc, err := s.client.Service.Query().

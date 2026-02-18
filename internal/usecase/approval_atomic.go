@@ -7,6 +7,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -44,6 +45,10 @@ func NewApprovalAtomicWriter(pool *pgxpool.Pool, riverClient *river.Client[pgx.T
 func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	ctx context.Context,
 	ticketID, eventID, approver, clusterID, storageClass, serviceID, namespace, requesterID string,
+	selectedTemplateVersion int,
+	templateSnapshot map[string]interface{},
+	instanceSizeSnapshot map[string]interface{},
+	modifiedSpec map[string]interface{},
 ) (vmID, vmName string, err error) {
 	if w.pool == nil || w.riverClient == nil || w.queries == nil {
 		return "", "", fmt.Errorf("approval atomic writer is not initialized")
@@ -59,13 +64,33 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := w.queries.WithTx(tx)
+	templateSnapshotBytes, err := marshalJSONOrNull(templateSnapshot)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal template snapshot: %w", err)
+	}
+	instanceSizeSnapshotBytes, err := marshalJSONOrNull(instanceSizeSnapshot)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal instance size snapshot: %w", err)
+	}
+	modifiedSpecBytes, err := marshalJSONOrNull(modifiedSpec)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal modified spec: %w", err)
+	}
+	templateVersion := pgtype.Int4{}
+	if selectedTemplateVersion > 0 {
+		templateVersion = pgtype.Int4{Int32: int32(selectedTemplateVersion), Valid: true}
+	}
 
 	affected, err := qtx.ApproveCreateTicket(ctx, sqlcrepo.ApproveCreateTicketParams{
-		Approver:             pgtype.Text{String: approver, Valid: true},
-		SelectedClusterID:    pgtype.Text{String: clusterID, Valid: true},
-		SelectedStorageClass: strings.TrimSpace(storageClass),
-		ID:                   ticketID,
-		EventID:              eventID,
+		Approver:                pgtype.Text{String: approver, Valid: true},
+		SelectedClusterID:       pgtype.Text{String: clusterID, Valid: true},
+		SelectedTemplateVersion: templateVersion,
+		SelectedStorageClass:    strings.TrimSpace(storageClass),
+		TemplateSnapshot:        templateSnapshotBytes,
+		InstanceSizeSnapshot:    instanceSizeSnapshotBytes,
+		ModifiedSpec:            modifiedSpecBytes,
+		ID:                      ticketID,
+		EventID:                 eventID,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("approve create ticket %s: %w", ticketID, err)
@@ -124,6 +149,17 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	}
 
 	return vmID, vmName, nil
+}
+
+func marshalJSONOrNull(value map[string]interface{}) ([]byte, error) {
+	if len(value) == 0 {
+		return nil, nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 // ApproveDeleteAndEnqueue atomically:

@@ -35,7 +35,11 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 		if mod == nil {
 			continue
 		}
-		mod.ContributeServerDeps(&deps)
+		contributor, ok := mod.(ServerDepsContributor)
+		if !ok {
+			continue
+		}
+		contributor.ContributeServerDeps(&deps)
 	}
 	return deps
 }
