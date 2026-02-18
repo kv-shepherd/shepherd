@@ -219,3 +219,15 @@ See [ADR-0012](./ADR-0012-hybrid-transaction.md) for details.
 - [River Queue Documentation](https://riverqueue.com/docs)
 - [ADR-0008: PostgreSQL Stability](./ADR-0008-postgresql-stability.md)
 - [ADR-0012: Hybrid Transaction Strategy](./ADR-0012-hybrid-transaction.md)
+
+---
+
+## Scope Clarification Addendum (2026-02-14) {#adr-0006-scope-clarification-2026-02-14}
+
+> **Type**: Clarification addendum (no change to original decision intent).
+
+To avoid ambiguity from shorthand phrases like "all writes async", this ADR scope is clarified as:
+
+- River is mandatory for writes that coordinate **external side effects** (for example Kubernetes/provider calls, external channels).
+- Pure PostgreSQL writes that require transaction-level atomicity (for example audit/event/notification persistence in the same business transaction) may remain synchronous.
+- This clarification aligns with this ADR's existing notification exception and with [ADR-0012](./ADR-0012-hybrid-transaction.md).

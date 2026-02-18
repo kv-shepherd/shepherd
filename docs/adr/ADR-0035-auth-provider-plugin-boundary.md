@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"  # proposed | accepted | deprecated | superseded by ADR-XXXX
+status: "accepted"  # proposed | accepted | deprecated | superseded by ADR-XXXX
 date: 2026-02-15
 deciders: ["@jindyzhao"]
 consulted: ["@jindyzhao"]
@@ -10,7 +10,7 @@ informed: ["@jindyzhao"]
 # ADR-0035: Auth Provider Plugin Boundary and Type Discovery
 
 > **Review Period**: Until 2026-02-17 (48-hour minimum)<br>
-> **Discussion**: TBD (Issue link required before acceptance)<br>
+> **Discussion**: Issue #236<br>
 > **Amends**: [ADR-0026](./ADR-0026-idp-config-naming.md#standard-provider-output-contract)
 
 ---
@@ -83,7 +83,7 @@ Runtime and frontend had drift risk from provider-specific assumptions
 
 * [ADR-0026](./ADR-0026-idp-config-naming.md) - standardized provider output contract
 * [ADR-0021](./ADR-0021-api-contract-first.md) - API contract-first governance
-* ADR-0034 (proposed, tracked in issue #235) - test-first/spec-driven enforcement
+* ADR-0034 (accepted, tracked in issue #235) - test-first/spec-driven enforcement
 
 ### References
 
@@ -104,3 +104,4 @@ Runtime and frontend had drift risk from provider-specific assumptions
 |------|--------|--------|
 | 2026-02-15 | @jindyzhao | Initial draft |
 | 2026-02-15 | @jindyzhao | Status set to proposed pending public review/issue linkage |
+| 2026-02-17 | @jindyzhao | Status promoted to accepted after review period |

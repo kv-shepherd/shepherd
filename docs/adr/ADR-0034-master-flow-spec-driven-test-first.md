@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"  # proposed | accepted | deprecated | superseded by ADR-XXXX
+status: "accepted"  # proposed | accepted | deprecated | superseded by ADR-XXXX
 date: 2026-02-14
 deciders: ["@jindyzhao"]
 consulted: ["@jindyzhao"]
@@ -10,7 +10,7 @@ informed: ["@jindyzhao"]
 # ADR-0034: Master-Flow Spec-Driven Test-First Execution Standard
 
 > **Review Period**: Until 2026-02-17 (48-hour minimum)  
-> **Discussion**: TBD (Issue link required before acceptance)  
+> **Discussion**: Issue #235  
 > **Related**: [ADR-0015](./ADR-0015-governance-model-v2.md), [ADR-0021](./ADR-0021-api-contract-first.md), [ADR-0030](./ADR-0030-design-documentation-layering-and-fullstack-governance.md), [ADR-0032](./ADR-0032-master-flow-traceability-manifest.md)
 
 ---
@@ -131,3 +131,4 @@ Detailed rollout and file-level impacts are tracked in:
 |------|--------|--------|
 | 2026-02-14 | @jindyzhao | Initial draft |
 | 2026-02-15 | @jindyzhao | Status set to proposed pending public review/issue linkage |
+| 2026-02-17 | @jindyzhao | Status promoted to accepted after review period |

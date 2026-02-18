@@ -118,3 +118,16 @@ Adapters MUST normalize all external providers into a common output payload:
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-01-30 | @jindyzhao | Initial draft |
+
+---
+
+## Amendments by Subsequent ADRs
+
+> ⚠️ **Notice**: The sections above remain unchanged for historical traceability.
+
+### ADR-0035: Auth Provider Plugin Boundary and Type Discovery (2026-02-15)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §Decision Outcome / Consequences | **CLARIFIED** | Core auth-provider runtime must remain plugin-standard and provider-agnostic; provider types are runtime-registered and API-discoverable (`/admin/auth-provider-types`). | [ADR-0035](./ADR-0035-auth-provider-plugin-boundary.md) |
+| §Implementation Notes | **CLARIFIED** | Frontend type options must come from discovery API, not hardcoded OIDC/LDAP lists. | [ADR-0035](./ADR-0035-auth-provider-plugin-boundary.md) |
