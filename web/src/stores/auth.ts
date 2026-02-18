@@ -19,12 +19,14 @@ interface AuthState {
     user: UserInfo | null;
     isAuthenticated: boolean;
     forcePasswordChange: boolean;
+    hasHydrated: boolean;
 
     // Actions
     login: (token: string, user: UserInfo, forcePasswordChange?: boolean) => void;
     logout: () => void;
     updateUser: (user: UserInfo) => void;
     clearForcePasswordChange: () => void;
+    setHasHydrated: (value: boolean) => void;
 }
 
 /** Zustand store key used in localStorage */
@@ -38,6 +40,7 @@ export const useAuthStore = create<AuthState>()(
             user: null,
             isAuthenticated: false,
             forcePasswordChange: false,
+            hasHydrated: false,
 
             // Actions
             login: (token, user, forcePasswordChange = false) =>
@@ -59,6 +62,8 @@ export const useAuthStore = create<AuthState>()(
             updateUser: (user) => set({ user }),
 
             clearForcePasswordChange: () => set({ forcePasswordChange: false }),
+
+            setHasHydrated: (value) => set({ hasHydrated: value }),
         }),
         {
             name: AUTH_STORAGE_KEY,
@@ -74,6 +79,9 @@ export const useAuthStore = create<AuthState>()(
                 user: state.user,
                 isAuthenticated: state.isAuthenticated,
             }),
+            onRehydrateStorage: () => (state) => {
+                state?.setHasHydrated(true);
+            },
         }
     )
 );

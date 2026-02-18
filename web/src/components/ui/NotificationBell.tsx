@@ -36,6 +36,7 @@ import {
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useApiGet, useApiAction } from '@/hooks/useApiQuery';
 import type { components } from '@/types/api.gen';
 import { api } from '@/lib/api/client';
@@ -50,37 +51,37 @@ const typeConfig: Record<NotificationType, { color: string; icon: React.ReactNod
     APPROVAL_PENDING: {
         color: 'orange',
         icon: <ClockCircleOutlined />,
-        label: 'Pending Approval',
+        label: 'notification.type.approval_pending',
     },
     APPROVAL_COMPLETED: {
         color: 'green',
         icon: <CheckCircleOutlined />,
-        label: 'Approved',
+        label: 'notification.type.approval_completed',
     },
     APPROVAL_REJECTED: {
         color: 'red',
         icon: <CloseCircleOutlined />,
-        label: 'Rejected',
+        label: 'notification.type.approval_rejected',
     },
     VM_STATUS_CHANGE: {
         color: 'blue',
         icon: <DesktopOutlined />,
-        label: 'VM Status',
+        label: 'notification.type.vm_status_change',
     },
 };
 
 /** Relative time formatter */
-function formatRelativeTime(dateStr: string): string {
+function formatRelativeTime(dateStr: string, t: TFunction<'common'>): string {
     const now = Date.now();
     const date = new Date(dateStr).getTime();
     const diff = now - date;
     const minutes = Math.floor(diff / 60000);
-    if (minutes < 1) return 'just now';
-    if (minutes < 60) return `${minutes}m ago`;
+    if (minutes < 1) return t('notification.time.just_now', { defaultValue: 'just now' });
+    if (minutes < 60) return t('notification.time.minutes_ago', { count: minutes, defaultValue: `${minutes}m ago` });
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
+    if (hours < 24) return t('notification.time.hours_ago', { count: hours, defaultValue: `${hours}h ago` });
     const days = Math.floor(hours / 24);
-    return `${days}d ago`;
+    return t('notification.time.days_ago', { count: days, defaultValue: `${days}d ago` });
 }
 
 export default function NotificationBell() {
@@ -236,7 +237,7 @@ export default function NotificationBell() {
                                                 color={config.color}
                                                 style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}
                                             >
-                                                {config.label}
+                                                {t(config.label, { defaultValue: config.label })}
                                             </Tag>
                                         </Space>
                                     }
@@ -250,7 +251,7 @@ export default function NotificationBell() {
                                                 {item.message}
                                             </Paragraph>
                                             <Text type="secondary" style={{ fontSize: 11 }}>
-                                                {formatRelativeTime(item.created_at)}
+                                                {formatRelativeTime(item.created_at, t)}
                                             </Text>
                                         </div>
                                     }
@@ -271,6 +272,27 @@ export default function NotificationBell() {
                     }}
                 />
             )}
+
+            <div
+                style={{
+                    borderTop: '1px solid #f0f0f0',
+                    padding: '8px 12px',
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                }}
+            >
+                <Button
+                    type="link"
+                    size="small"
+                    data-testid="notification-view-all"
+                    onClick={() => {
+                        setOpen(false);
+                        router.push('/notifications');
+                    }}
+                >
+                    {t('notification.viewAll', 'View all')}
+                </Button>
+            </div>
         </div>
     );
 
@@ -286,11 +308,13 @@ export default function NotificationBell() {
         >
             <Tooltip title={t('notification.title', 'Notifications')}>
                 <Badge count={unreadCount} size="small" offset={[-2, 4]}>
-                    <BellOutlined
+                    <Button
+                        type="text"
+                        data-testid="notification-bell-trigger"
+                        aria-label={t('notification.title', 'Notifications')}
+                        icon={<BellOutlined />}
                         style={{
                             fontSize: 18,
-                            cursor: 'pointer',
-                            padding: '4px 8px',
                             color: '#595959',
                         }}
                     />

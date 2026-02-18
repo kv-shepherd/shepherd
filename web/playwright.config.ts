@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const isCI = !!process.env.CI;
+const webPort = Number(process.env.PW_WEB_PORT ?? 3000);
+const baseURL = process.env.PW_BASE_URL ?? `http://127.0.0.1:${webPort}`;
 
 export default defineConfig({
 	testDir: './tests/e2e',
@@ -10,7 +12,7 @@ export default defineConfig({
 	workers: isCI ? 1 : undefined,
 	reporter: isCI ? [['github'], ['html', { open: 'never' }]] : 'list',
 	use: {
-		baseURL: 'http://127.0.0.1:3000',
+		baseURL,
 		trace: 'on-first-retry',
 		screenshot: 'only-on-failure',
 	},
@@ -21,10 +23,9 @@ export default defineConfig({
 		},
 	],
 	webServer: {
-		command: isCI ? 'npm run build && npm run start' : 'npm run dev',
-		url: 'http://127.0.0.1:3000',
+		command: isCI ? `npm run build && npm run start -- --port ${webPort}` : `npm run dev -- --port ${webPort}`,
+		url: baseURL,
 		reuseExistingServer: !isCI,
 		timeout: 180_000,
 	},
 });
-

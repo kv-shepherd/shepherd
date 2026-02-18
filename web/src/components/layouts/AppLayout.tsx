@@ -19,6 +19,7 @@ import {
     AppstoreOutlined,
     DesktopOutlined,
     AuditOutlined,
+    BellOutlined,
     ClusterOutlined,
     TeamOutlined,
     LogoutOutlined,
@@ -27,6 +28,8 @@ import {
     GlobalOutlined,
     HddOutlined,
     ProfileOutlined,
+    SafetyCertificateOutlined,
+    KeyOutlined,
 } from '@ant-design/icons';
 import { ProLayout } from '@ant-design/pro-components';
 import type { ProLayoutProps } from '@ant-design/pro-components';
@@ -34,6 +37,7 @@ import { Dropdown, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
 import NotificationBell from '@/components/ui/NotificationBell';
+import { hasPermission, PLATFORM_ADMIN_PERMISSION } from '@/lib/auth/permissions';
 
 const { Text } = Typography;
 
@@ -41,13 +45,17 @@ const { Text } = Typography;
  * Navigation route configuration.
  * Maps to FRONTEND.md directory structure.
  */
-const getMenuRoutes = (t: (key: string) => string): ProLayoutProps['route'] => ({
-    path: '/',
-    routes: [
+const getMenuRoutes = (t: (key: string) => string, includeAdmin: boolean): ProLayoutProps['route'] => {
+    const routes: NonNullable<ProLayoutProps['route']>['routes'] = [
         {
             path: '/dashboard',
             name: t('nav.dashboard'),
             icon: <DashboardOutlined />,
+        },
+        {
+            path: '/notifications',
+            name: t('nav.notifications'),
+            icon: <BellOutlined />,
         },
         {
             path: '/systems',
@@ -64,7 +72,10 @@ const getMenuRoutes = (t: (key: string) => string): ProLayoutProps['route'] => (
             name: t('nav.vms'),
             icon: <DesktopOutlined />,
         },
-        {
+    ];
+
+    if (includeAdmin) {
+        routes.push({
             name: 'Admin',
             icon: <SettingOutlined />,
             path: '/admin',
@@ -100,14 +111,29 @@ const getMenuRoutes = (t: (key: string) => string): ProLayoutProps['route'] => (
                     icon: <TeamOutlined />,
                 },
                 {
+                    path: '/admin/rbac',
+                    name: t('nav.rbac'),
+                    icon: <SafetyCertificateOutlined />,
+                },
+                {
+                    path: '/admin/auth-providers',
+                    name: t('nav.auth_providers'),
+                    icon: <KeyOutlined />,
+                },
+                {
                     path: '/admin/audit',
                     name: t('nav.audit'),
                     icon: <FileTextOutlined />,
                 },
             ],
-        },
-    ],
-});
+        });
+    }
+
+    return {
+        path: '/',
+        routes,
+    };
+};
 
 export default function AppLayout({
     children,
@@ -118,7 +144,8 @@ export default function AppLayout({
     const pathname = usePathname();
     const { t, i18n } = useTranslation('common');
     const { user, logout } = useAuthStore();
-    const route = React.useMemo(() => getMenuRoutes(t), [t]);
+    const canAccessAdmin = hasPermission(user, PLATFORM_ADMIN_PERMISSION);
+    const route = React.useMemo(() => getMenuRoutes(t, canAccessAdmin), [t, canAccessAdmin]);
     const languageKey = React.useMemo(() => {
         const lang = (i18n.resolvedLanguage ?? i18n.language ?? 'en').toLowerCase();
         return lang.startsWith('zh') ? 'zh-CN' : 'en';
@@ -130,6 +157,7 @@ export default function AppLayout({
 
     return (
         <ProLayout
+            style={{ minHeight: '100vh' }}
             title="Shepherd"
             logo={<Image src="/logo-icon.svg" alt="Shepherd" width={32} height={32} />}
             route={route}
@@ -162,7 +190,7 @@ export default function AppLayout({
                             },
                             {
                                 key: 'zh-CN',
-                                label: '简体中文',
+                                label: 'Simplified Chinese',
                                 onClick: () => handleLanguageChange('zh-CN'),
                             },
                         ],

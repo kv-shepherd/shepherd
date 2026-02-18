@@ -52,7 +52,11 @@ describe('useApiGet', () => {
 		);
 
 		await waitFor(() => expect(result.current.isError).toBe(true));
-		expect(result.current.error).toEqual(apiError);
+		expect(result.current.error).toMatchObject({
+			code: 'NOT_FOUND',
+			message: 'not found',
+			status: 404,
+		});
 	});
 
 	it('returns EMPTY_RESPONSE when no data is provided', async () => {
@@ -117,8 +121,37 @@ describe('useApiMutation', () => {
 			{ wrapper }
 		);
 
-		await expect(result.current.mutateAsync('ignored')).rejects.toEqual(apiError);
-		expect(onError).toHaveBeenCalledWith(apiError);
+		await expect(result.current.mutateAsync('ignored')).rejects.toMatchObject({
+			code: 'CONFLICT',
+			message: 'duplicate',
+			status: 409,
+		});
+		expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+			code: 'CONFLICT',
+			status: 409,
+		}));
+	});
+
+	it('extracts retry_after_seconds from Retry-After header', async () => {
+		const { wrapper } = createTestHarness();
+
+		const { result } = renderHook(
+			() =>
+				useApiMutation(async () => ({
+					error: { code: 'BATCH_RATE_LIMITED', message: 'limited' },
+					response: new Response(null, {
+						status: 429,
+						headers: { 'Retry-After': '8' },
+					}),
+				})),
+			{ wrapper }
+		);
+
+		await expect(result.current.mutateAsync('ignored')).rejects.toMatchObject({
+			code: 'BATCH_RATE_LIMITED',
+			status: 429,
+			retry_after_seconds: 8,
+		});
 	});
 });
 
@@ -167,4 +200,3 @@ describe('useApiAction', () => {
 		});
 	});
 });
-

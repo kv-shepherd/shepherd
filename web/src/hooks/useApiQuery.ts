@@ -18,6 +18,33 @@ export interface ApiErrorResponse {
     code: string;
     message?: string;
     params?: Record<string, unknown>;
+    status?: number;
+    retry_after_seconds?: number;
+    field_errors?: Array<{
+        field: string;
+        code: string;
+        message?: string;
+    }>;
+}
+
+function normalizeApiError(
+    error: ApiErrorResponse | undefined,
+    response: Response | undefined,
+): ApiErrorResponse {
+    const retryHeader = response?.headers.get('Retry-After');
+    const retryAfterSeconds = retryHeader ? Number(retryHeader) : NaN;
+    const base: ApiErrorResponse = error ?? {
+        code: response?.ok ? 'UNKNOWN_ERROR' : 'HTTP_ERROR',
+        message: response ? `HTTP ${response.status}` : undefined,
+    };
+    const normalized: ApiErrorResponse = {
+        ...base,
+        status: typeof base.status === 'number' ? base.status : response?.status,
+    };
+    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+        normalized.retry_after_seconds = retryAfterSeconds;
+    }
+    return normalized;
 }
 
 /**
@@ -37,8 +64,8 @@ export function useApiGet<T>(
     return useQuery<T, ApiErrorResponse>({
         queryKey,
         queryFn: async () => {
-            const { data, error } = await fetcher();
-            if (error) throw error;
+            const { data, error, response } = await fetcher();
+            if (error) throw normalizeApiError(error, response);
             if (!data) throw { code: 'EMPTY_RESPONSE', message: 'No data returned' };
             return data;
         },
@@ -66,8 +93,9 @@ export function useApiMutation<TRequest, TResponse = unknown>(
 
     return useMutation<TResponse, ApiErrorResponse, TRequest>({
         mutationFn: async (req: TRequest) => {
-            const { data, error } = await mutationFn(req);
-            if (error) throw error;
+            const { data, error, response } = await mutationFn(req);
+            if (error) throw normalizeApiError(error, response);
+            if (!response.ok) throw normalizeApiError(undefined, response);
             return data as TResponse;
         },
         onSuccess: (data) => {
@@ -105,8 +133,8 @@ export function useApiAction<TRequest = void>(
     return useMutation<void, ApiErrorResponse, TRequest>({
         mutationFn: async (req: TRequest) => {
             const { error, response } = await actionFn(req);
-            if (error) throw error;
-            if (!response.ok) throw { code: 'UNEXPECTED_ERROR', message: `HTTP ${response.status}` };
+            if (error) throw normalizeApiError(error, response);
+            if (!response.ok) throw normalizeApiError({ code: 'UNEXPECTED_ERROR', message: `HTTP ${response.status}` }, response);
         },
         onSuccess: () => {
             if (options?.invalidateKeys) {

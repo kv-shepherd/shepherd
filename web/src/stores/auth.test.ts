@@ -20,6 +20,10 @@ describe('auth store', () => {
 		resetAuthStore();
 	});
 
+	it('keeps storage key stable for persisted auth schema', () => {
+		expect(AUTH_STORAGE_KEY).toBe('shepherd-auth');
+	});
+
 	it('sets authenticated state on login', () => {
 		const user: UserInfo = { id: 'u-alice', username: 'alice' };
 

@@ -35,5 +35,7 @@
     "filter.failed": "失败",
     "filter.approved": "已批准",
     "filter.rejected": "已驳回",
-    "filter.cancelled": "已取消"
+    "filter.cancelled": "已取消",
+    "cancel": "取消申请",
+    "cancel_confirm": "确认取消该待审批工单吗？"
 }

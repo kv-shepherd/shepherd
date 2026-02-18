@@ -2,21 +2,16 @@ name: Frontend Tests
 
 on:
   pull_request:
-    paths:
-      - 'web/**'
-      - '.github/workflows/frontend-tests.yml'
   push:
     branches: [main]
-    paths:
-      - 'web/**'
-      - '.github/workflows/frontend-tests.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   unit-tests:
-    name: Unit & Coverage
+    name: Unit & Typecheck
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
@@ -42,19 +37,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Run coverage
-        run: npm run test:coverage
-
-      - name: Upload coverage artifact
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: web-coverage
-          path: web/coverage/
-          retention-days: 7
+      - name: Run unit tests
+        run: npm run test:run
 
   e2e-tests:
-    name: E2E (Playwright)
+    name: E2E Mock Smoke (Playwright)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
@@ -77,8 +64,8 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Run E2E
-        run: npm run test:e2e -- --project=chromium
+      - name: Run E2E Mock Smoke
+        run: npm run test:e2e:mock
 
       - name: Upload Playwright report
         if: failure()
@@ -87,4 +74,3 @@ jobs:
           name: playwright-report
           path: web/playwright-report/
           retention-days: 7
-

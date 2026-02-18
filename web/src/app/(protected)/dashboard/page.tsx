@@ -54,6 +54,12 @@ export default function DashboardPage() {
         { refetchInterval: 30000 }
     );
 
+    const { data: liveness, isLoading: livenessLoading } = useApiGet<Health>(
+        ['health-live'],
+        () => api.GET('/health/live'),
+        { refetchInterval: 30000 }
+    );
+
     // Fetch aggregated data for stats
     const { data: systems, isLoading: systemsLoading } = useApiGet<SystemList>(
         ['systems', 'dashboard'],
@@ -70,12 +76,15 @@ export default function DashboardPage() {
         () => api.GET('/approvals', { params: { query: { status: 'PENDING', per_page: 1 } } })
     );
 
-    const isLoading = healthLoading || systemsLoading || vmsLoading || approvalsLoading;
+    const isLoading = healthLoading || livenessLoading || systemsLoading || vmsLoading || approvalsLoading;
 
     const healthStatus = useMemo(() => {
-        if (!health) return { status: 'unknown', color: '#d9d9d9', icon: <WarningOutlined /> };
-        const mapped = HEALTH_STATUS_MAP[health.status] ?? HEALTH_STATUS_MAP.error;
-        return { status: health.status, ...mapped };
+        if (!health || typeof health.status !== 'string') {
+            return { status: 'unknown', color: '#d9d9d9', icon: <WarningOutlined /> };
+        }
+        const normalized = health.status.toLowerCase();
+        const mapped = HEALTH_STATUS_MAP[normalized] ?? HEALTH_STATUS_MAP.error;
+        return { status: normalized, ...mapped };
     }, [health]);
 
     const stats = useMemo(() => [
@@ -112,7 +121,7 @@ export default function DashboardPage() {
         <div>
             <div style={{ marginBottom: 24 }}>
                 <Title level={4} style={{ margin: 0 }}>{t('nav.dashboard')}</Title>
-                <Text type="secondary">System overview and statistics</Text>
+                <Text type="secondary">{t('dashboard.subtitle')}</Text>
             </div>
 
             {/* Health Status Banner */}
@@ -129,8 +138,9 @@ export default function DashboardPage() {
                         <Text strong>Platform Health</Text>
                         <br />
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                            Status: {healthStatus.status.toUpperCase()}
+                            Status: {String(healthStatus.status || 'unknown').toUpperCase()}
                             {health?.version && ` · v${health.version}`}
+                            {typeof liveness?.status === 'string' && ` · Live: ${liveness.status.toUpperCase()}`}
                         </Text>
                     </div>
                 </Space>

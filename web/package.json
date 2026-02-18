@@ -12,6 +12,8 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:mock": "playwright test web/tests/e2e/master-flow-smoke.spec.ts --project=chromium",
+    "test:e2e:live": "playwright test web/tests/e2e/master-flow-live.spec.ts --project=chromium",
     "api:generate": "openapi-typescript ../api/openapi.yaml -o src/types/api.gen.ts"
   },
   "dependencies": {
@@ -35,6 +37,7 @@
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",
+    "@tanstack/eslint-plugin-query": "^5.91.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

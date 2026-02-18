@@ -35,5 +35,7 @@
     "filter.failed": "Failed",
     "filter.approved": "Approved",
     "filter.rejected": "Rejected",
-    "filter.cancelled": "Cancelled"
+    "filter.cancelled": "Cancelled",
+    "cancel": "Cancel Request",
+    "cancel_confirm": "Cancel this pending ticket?"
 }

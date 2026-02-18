@@ -50,15 +50,15 @@ const ACTION_COLORS: Record<string, string> = {
     LOGIN: 'geekblue',
 };
 
-const RESOURCE_TYPE_OPTIONS = [
-    { label: 'All', value: '' },
-    { label: 'VM', value: 'vm' },
-    { label: 'System', value: 'system' },
-    { label: 'Service', value: 'service' },
-    { label: 'Approval', value: 'approval' },
-    { label: 'Cluster', value: 'cluster' },
-    { label: 'User', value: 'user' },
-];
+function normalizeActionKey(action?: string): string {
+    return (action ?? '').trim().toLowerCase().replace(/[.\s-]+/g, '_');
+}
+
+function actionSuffix(action?: string): string {
+    const normalized = normalizeActionKey(action);
+    const tokens = normalized.split('_').filter(Boolean);
+    return tokens.at(-1) ?? normalized;
+}
 
 export default function AuditLogPage() {
     const { t } = useTranslation(['admin', 'common']);
@@ -70,6 +70,20 @@ export default function AuditLogPage() {
         resource_type: '',
         resource_id: '',
     });
+    const resourceTypeOptions = [
+        { label: t('audit.resource_option.all'), value: '' },
+        { label: t('audit.resource_option.vm'), value: 'vm' },
+        { label: t('audit.resource_option.system'), value: 'system' },
+        { label: t('audit.resource_option.service'), value: 'service' },
+        { label: t('audit.resource_option.approval_ticket'), value: 'approval_ticket' },
+        { label: t('audit.resource_option.cluster'), value: 'cluster' },
+        { label: t('audit.resource_option.user'), value: 'user' },
+        { label: t('audit.resource_option.namespace'), value: 'namespace' },
+        { label: t('audit.resource_option.template'), value: 'template' },
+        { label: t('audit.resource_option.instance_size'), value: 'instance_size' },
+        { label: t('audit.resource_option.role'), value: 'role' },
+        { label: t('audit.resource_option.auth_provider'), value: 'auth_provider' },
+    ];
 
     // Fetch audit logs via typed api client (ADR-0021 contract-first).
     // JWT token is automatically attached by the api client middleware.
@@ -96,11 +110,18 @@ export default function AuditLogPage() {
             dataIndex: 'action',
             key: 'action',
             width: 130,
-            render: (action: string) => (
-                <Tag color={ACTION_COLORS[action?.toUpperCase()] ?? 'default'}>
-                    {action?.toUpperCase()}
-                </Tag>
-            ),
+            render: (action: string) => {
+                const normalized = normalizeActionKey(action);
+                const normalizedLabel = t(`audit.action_code.${normalized}`, { defaultValue: '' });
+                const suffix = actionSuffix(action);
+                const fallbackLabel = t(`audit.action_code.${suffix}`, { defaultValue: action?.toUpperCase() ?? '—' });
+                const label = normalizedLabel || fallbackLabel;
+                return (
+                    <Tag color={ACTION_COLORS[suffix.toUpperCase()] ?? ACTION_COLORS[action?.toUpperCase()] ?? 'default'}>
+                        {label}
+                    </Tag>
+                );
+            },
         },
         {
             title: t('audit.actor'),
@@ -113,7 +134,12 @@ export default function AuditLogPage() {
             dataIndex: 'resource_type',
             key: 'resource_type',
             width: 130,
-            render: (type: string) => <Badge status="processing" text={type} />,
+            render: (type: string) => (
+                <Badge
+                    status="processing"
+                    text={t(`audit.resource_option.${(type ?? '').toLowerCase()}`, { defaultValue: type })}
+                />
+            ),
         },
         {
             title: t('audit.resource_id'),
@@ -183,7 +209,7 @@ export default function AuditLogPage() {
                             placeholder={t('audit.filter.resource_type')}
                             value={filters.resource_type || undefined}
                             onChange={(val) => setFilters((f) => ({ ...f, resource_type: val || '' }))}
-                            options={RESOURCE_TYPE_OPTIONS}
+                            options={resourceTypeOptions}
                             allowClear
                         />
                     </Col>
