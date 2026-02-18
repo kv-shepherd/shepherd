@@ -20,6 +20,8 @@ type Tx struct {
 	AuditLog *AuditLogClient
 	// AuthProvider is the client for interacting with the AuthProvider builders.
 	AuthProvider *AuthProviderClient
+	// BatchApprovalTicket is the client for interacting with the BatchApprovalTicket builders.
+	BatchApprovalTicket *BatchApprovalTicketClient
 	// Cluster is the client for interacting with the Cluster builders.
 	Cluster *ClusterClient
 	// DomainEvent is the client for interacting with the DomainEvent builders.
@@ -38,6 +40,10 @@ type Tx struct {
 	Notification *NotificationClient
 	// PendingAdoption is the client for interacting with the PendingAdoption builders.
 	PendingAdoption *PendingAdoptionClient
+	// RateLimitExemption is the client for interacting with the RateLimitExemption builders.
+	RateLimitExemption *RateLimitExemptionClient
+	// RateLimitUserOverride is the client for interacting with the RateLimitUserOverride builders.
+	RateLimitUserOverride *RateLimitUserOverrideClient
 	// ResourceRoleBinding is the client for interacting with the ResourceRoleBinding builders.
 	ResourceRoleBinding *ResourceRoleBindingClient
 	// Role is the client for interacting with the Role builders.
@@ -193,6 +199,7 @@ func (tx *Tx) init() {
 	tx.ApprovalTicket = NewApprovalTicketClient(tx.config)
 	tx.AuditLog = NewAuditLogClient(tx.config)
 	tx.AuthProvider = NewAuthProviderClient(tx.config)
+	tx.BatchApprovalTicket = NewBatchApprovalTicketClient(tx.config)
 	tx.Cluster = NewClusterClient(tx.config)
 	tx.DomainEvent = NewDomainEventClient(tx.config)
 	tx.ExternalApprovalSystem = NewExternalApprovalSystemClient(tx.config)
@@ -202,6 +209,8 @@ func (tx *Tx) init() {
 	tx.NamespaceRegistry = NewNamespaceRegistryClient(tx.config)
 	tx.Notification = NewNotificationClient(tx.config)
 	tx.PendingAdoption = NewPendingAdoptionClient(tx.config)
+	tx.RateLimitExemption = NewRateLimitExemptionClient(tx.config)
+	tx.RateLimitUserOverride = NewRateLimitUserOverrideClient(tx.config)
 	tx.ResourceRoleBinding = NewResourceRoleBindingClient(tx.config)
 	tx.Role = NewRoleClient(tx.config)
 	tx.RoleBinding = NewRoleBindingClient(tx.config)

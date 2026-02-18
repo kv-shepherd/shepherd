@@ -4,10 +4,17 @@ SET
     status = 'APPROVED',
     approver = sqlc.arg(approver),
     selected_cluster_id = sqlc.arg(selected_cluster_id),
+    selected_template_version = CASE
+        WHEN sqlc.narg(selected_template_version)::int IS NULL THEN selected_template_version
+        ELSE sqlc.narg(selected_template_version)::int
+    END,
     selected_storage_class = CASE
         WHEN sqlc.arg(selected_storage_class)::text = '' THEN selected_storage_class
         ELSE sqlc.arg(selected_storage_class)::text
     END,
+    template_snapshot = COALESCE(sqlc.narg(template_snapshot)::jsonb, template_snapshot),
+    instance_size_snapshot = COALESCE(sqlc.narg(instance_size_snapshot)::jsonb, instance_size_snapshot),
+    modified_spec = COALESCE(sqlc.narg(modified_spec)::jsonb, modified_spec),
     updated_at = NOW()
 WHERE
     id = sqlc.arg(id)

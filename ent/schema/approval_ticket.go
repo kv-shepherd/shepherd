@@ -30,7 +30,7 @@ func (ApprovalTicket) Fields() []ent.Field {
 			NotEmpty().
 			Immutable(), // Reference to DomainEvent
 		field.Enum("operation_type").
-			Values("CREATE", "DELETE").
+			Values("CREATE", "DELETE", "VNC_ACCESS").
 			Default("CREATE"). // Backward compatible; existing tickets are CREATE
 			Comment("Distinguishes CREATE vs DELETE approval tickets (Phase 4 governance)"),
 		field.Enum("status").

@@ -74,9 +74,14 @@ func UpdatedAt(v time.Time) predicate.IdPGroupMapping {
 	return predicate.IdPGroupMapping(sql.FieldEQ(FieldUpdatedAt, v))
 }
 
-// SyncedGroupID applies equality check predicate on the "synced_group_id" field. It's identical to SyncedGroupIDEQ.
-func SyncedGroupID(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldEQ(FieldSyncedGroupID, v))
+// ProviderID applies equality check predicate on the "provider_id" field. It's identical to ProviderIDEQ.
+func ProviderID(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldEQ(FieldProviderID, v))
+}
+
+// ExternalGroupID applies equality check predicate on the "external_group_id" field. It's identical to ExternalGroupIDEQ.
+func ExternalGroupID(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldEQ(FieldExternalGroupID, v))
 }
 
 // RoleID applies equality check predicate on the "role_id" field. It's identical to RoleIDEQ.
@@ -84,9 +89,14 @@ func RoleID(v string) predicate.IdPGroupMapping {
 	return predicate.IdPGroupMapping(sql.FieldEQ(FieldRoleID, v))
 }
 
-// Scope applies equality check predicate on the "scope" field. It's identical to ScopeEQ.
-func Scope(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldEQ(FieldScope, v))
+// ScopeType applies equality check predicate on the "scope_type" field. It's identical to ScopeTypeEQ.
+func ScopeType(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldEQ(FieldScopeType, v))
+}
+
+// ScopeID applies equality check predicate on the "scope_id" field. It's identical to ScopeIDEQ.
+func ScopeID(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldEQ(FieldScopeID, v))
 }
 
 // CreatedBy applies equality check predicate on the "created_by" field. It's identical to CreatedByEQ.
@@ -174,69 +184,134 @@ func UpdatedAtLTE(v time.Time) predicate.IdPGroupMapping {
 	return predicate.IdPGroupMapping(sql.FieldLTE(FieldUpdatedAt, v))
 }
 
-// SyncedGroupIDEQ applies the EQ predicate on the "synced_group_id" field.
-func SyncedGroupIDEQ(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldEQ(FieldSyncedGroupID, v))
+// ProviderIDEQ applies the EQ predicate on the "provider_id" field.
+func ProviderIDEQ(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldEQ(FieldProviderID, v))
 }
 
-// SyncedGroupIDNEQ applies the NEQ predicate on the "synced_group_id" field.
-func SyncedGroupIDNEQ(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldNEQ(FieldSyncedGroupID, v))
+// ProviderIDNEQ applies the NEQ predicate on the "provider_id" field.
+func ProviderIDNEQ(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldNEQ(FieldProviderID, v))
 }
 
-// SyncedGroupIDIn applies the In predicate on the "synced_group_id" field.
-func SyncedGroupIDIn(vs ...string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldIn(FieldSyncedGroupID, vs...))
+// ProviderIDIn applies the In predicate on the "provider_id" field.
+func ProviderIDIn(vs ...string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldIn(FieldProviderID, vs...))
 }
 
-// SyncedGroupIDNotIn applies the NotIn predicate on the "synced_group_id" field.
-func SyncedGroupIDNotIn(vs ...string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldNotIn(FieldSyncedGroupID, vs...))
+// ProviderIDNotIn applies the NotIn predicate on the "provider_id" field.
+func ProviderIDNotIn(vs ...string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldNotIn(FieldProviderID, vs...))
 }
 
-// SyncedGroupIDGT applies the GT predicate on the "synced_group_id" field.
-func SyncedGroupIDGT(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldGT(FieldSyncedGroupID, v))
+// ProviderIDGT applies the GT predicate on the "provider_id" field.
+func ProviderIDGT(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldGT(FieldProviderID, v))
 }
 
-// SyncedGroupIDGTE applies the GTE predicate on the "synced_group_id" field.
-func SyncedGroupIDGTE(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldGTE(FieldSyncedGroupID, v))
+// ProviderIDGTE applies the GTE predicate on the "provider_id" field.
+func ProviderIDGTE(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldGTE(FieldProviderID, v))
 }
 
-// SyncedGroupIDLT applies the LT predicate on the "synced_group_id" field.
-func SyncedGroupIDLT(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldLT(FieldSyncedGroupID, v))
+// ProviderIDLT applies the LT predicate on the "provider_id" field.
+func ProviderIDLT(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldLT(FieldProviderID, v))
 }
 
-// SyncedGroupIDLTE applies the LTE predicate on the "synced_group_id" field.
-func SyncedGroupIDLTE(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldLTE(FieldSyncedGroupID, v))
+// ProviderIDLTE applies the LTE predicate on the "provider_id" field.
+func ProviderIDLTE(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldLTE(FieldProviderID, v))
 }
 
-// SyncedGroupIDContains applies the Contains predicate on the "synced_group_id" field.
-func SyncedGroupIDContains(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldContains(FieldSyncedGroupID, v))
+// ProviderIDContains applies the Contains predicate on the "provider_id" field.
+func ProviderIDContains(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldContains(FieldProviderID, v))
 }
 
-// SyncedGroupIDHasPrefix applies the HasPrefix predicate on the "synced_group_id" field.
-func SyncedGroupIDHasPrefix(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldHasPrefix(FieldSyncedGroupID, v))
+// ProviderIDHasPrefix applies the HasPrefix predicate on the "provider_id" field.
+func ProviderIDHasPrefix(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldHasPrefix(FieldProviderID, v))
 }
 
-// SyncedGroupIDHasSuffix applies the HasSuffix predicate on the "synced_group_id" field.
-func SyncedGroupIDHasSuffix(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldHasSuffix(FieldSyncedGroupID, v))
+// ProviderIDHasSuffix applies the HasSuffix predicate on the "provider_id" field.
+func ProviderIDHasSuffix(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldHasSuffix(FieldProviderID, v))
 }
 
-// SyncedGroupIDEqualFold applies the EqualFold predicate on the "synced_group_id" field.
-func SyncedGroupIDEqualFold(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldEqualFold(FieldSyncedGroupID, v))
+// ProviderIDEqualFold applies the EqualFold predicate on the "provider_id" field.
+func ProviderIDEqualFold(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldEqualFold(FieldProviderID, v))
 }
 
-// SyncedGroupIDContainsFold applies the ContainsFold predicate on the "synced_group_id" field.
-func SyncedGroupIDContainsFold(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldContainsFold(FieldSyncedGroupID, v))
+// ProviderIDContainsFold applies the ContainsFold predicate on the "provider_id" field.
+func ProviderIDContainsFold(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldContainsFold(FieldProviderID, v))
+}
+
+// ExternalGroupIDEQ applies the EQ predicate on the "external_group_id" field.
+func ExternalGroupIDEQ(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldEQ(FieldExternalGroupID, v))
+}
+
+// ExternalGroupIDNEQ applies the NEQ predicate on the "external_group_id" field.
+func ExternalGroupIDNEQ(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldNEQ(FieldExternalGroupID, v))
+}
+
+// ExternalGroupIDIn applies the In predicate on the "external_group_id" field.
+func ExternalGroupIDIn(vs ...string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldIn(FieldExternalGroupID, vs...))
+}
+
+// ExternalGroupIDNotIn applies the NotIn predicate on the "external_group_id" field.
+func ExternalGroupIDNotIn(vs ...string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldNotIn(FieldExternalGroupID, vs...))
+}
+
+// ExternalGroupIDGT applies the GT predicate on the "external_group_id" field.
+func ExternalGroupIDGT(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldGT(FieldExternalGroupID, v))
+}
+
+// ExternalGroupIDGTE applies the GTE predicate on the "external_group_id" field.
+func ExternalGroupIDGTE(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldGTE(FieldExternalGroupID, v))
+}
+
+// ExternalGroupIDLT applies the LT predicate on the "external_group_id" field.
+func ExternalGroupIDLT(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldLT(FieldExternalGroupID, v))
+}
+
+// ExternalGroupIDLTE applies the LTE predicate on the "external_group_id" field.
+func ExternalGroupIDLTE(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldLTE(FieldExternalGroupID, v))
+}
+
+// ExternalGroupIDContains applies the Contains predicate on the "external_group_id" field.
+func ExternalGroupIDContains(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldContains(FieldExternalGroupID, v))
+}
+
+// ExternalGroupIDHasPrefix applies the HasPrefix predicate on the "external_group_id" field.
+func ExternalGroupIDHasPrefix(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldHasPrefix(FieldExternalGroupID, v))
+}
+
+// ExternalGroupIDHasSuffix applies the HasSuffix predicate on the "external_group_id" field.
+func ExternalGroupIDHasSuffix(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldHasSuffix(FieldExternalGroupID, v))
+}
+
+// ExternalGroupIDEqualFold applies the EqualFold predicate on the "external_group_id" field.
+func ExternalGroupIDEqualFold(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldEqualFold(FieldExternalGroupID, v))
+}
+
+// ExternalGroupIDContainsFold applies the ContainsFold predicate on the "external_group_id" field.
+func ExternalGroupIDContainsFold(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldContainsFold(FieldExternalGroupID, v))
 }
 
 // RoleIDEQ applies the EQ predicate on the "role_id" field.
@@ -304,79 +379,164 @@ func RoleIDContainsFold(v string) predicate.IdPGroupMapping {
 	return predicate.IdPGroupMapping(sql.FieldContainsFold(FieldRoleID, v))
 }
 
-// ScopeEQ applies the EQ predicate on the "scope" field.
-func ScopeEQ(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldEQ(FieldScope, v))
+// ScopeTypeEQ applies the EQ predicate on the "scope_type" field.
+func ScopeTypeEQ(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldEQ(FieldScopeType, v))
 }
 
-// ScopeNEQ applies the NEQ predicate on the "scope" field.
-func ScopeNEQ(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldNEQ(FieldScope, v))
+// ScopeTypeNEQ applies the NEQ predicate on the "scope_type" field.
+func ScopeTypeNEQ(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldNEQ(FieldScopeType, v))
 }
 
-// ScopeIn applies the In predicate on the "scope" field.
-func ScopeIn(vs ...string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldIn(FieldScope, vs...))
+// ScopeTypeIn applies the In predicate on the "scope_type" field.
+func ScopeTypeIn(vs ...string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldIn(FieldScopeType, vs...))
 }
 
-// ScopeNotIn applies the NotIn predicate on the "scope" field.
-func ScopeNotIn(vs ...string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldNotIn(FieldScope, vs...))
+// ScopeTypeNotIn applies the NotIn predicate on the "scope_type" field.
+func ScopeTypeNotIn(vs ...string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldNotIn(FieldScopeType, vs...))
 }
 
-// ScopeGT applies the GT predicate on the "scope" field.
-func ScopeGT(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldGT(FieldScope, v))
+// ScopeTypeGT applies the GT predicate on the "scope_type" field.
+func ScopeTypeGT(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldGT(FieldScopeType, v))
 }
 
-// ScopeGTE applies the GTE predicate on the "scope" field.
-func ScopeGTE(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldGTE(FieldScope, v))
+// ScopeTypeGTE applies the GTE predicate on the "scope_type" field.
+func ScopeTypeGTE(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldGTE(FieldScopeType, v))
 }
 
-// ScopeLT applies the LT predicate on the "scope" field.
-func ScopeLT(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldLT(FieldScope, v))
+// ScopeTypeLT applies the LT predicate on the "scope_type" field.
+func ScopeTypeLT(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldLT(FieldScopeType, v))
 }
 
-// ScopeLTE applies the LTE predicate on the "scope" field.
-func ScopeLTE(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldLTE(FieldScope, v))
+// ScopeTypeLTE applies the LTE predicate on the "scope_type" field.
+func ScopeTypeLTE(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldLTE(FieldScopeType, v))
 }
 
-// ScopeContains applies the Contains predicate on the "scope" field.
-func ScopeContains(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldContains(FieldScope, v))
+// ScopeTypeContains applies the Contains predicate on the "scope_type" field.
+func ScopeTypeContains(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldContains(FieldScopeType, v))
 }
 
-// ScopeHasPrefix applies the HasPrefix predicate on the "scope" field.
-func ScopeHasPrefix(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldHasPrefix(FieldScope, v))
+// ScopeTypeHasPrefix applies the HasPrefix predicate on the "scope_type" field.
+func ScopeTypeHasPrefix(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldHasPrefix(FieldScopeType, v))
 }
 
-// ScopeHasSuffix applies the HasSuffix predicate on the "scope" field.
-func ScopeHasSuffix(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldHasSuffix(FieldScope, v))
+// ScopeTypeHasSuffix applies the HasSuffix predicate on the "scope_type" field.
+func ScopeTypeHasSuffix(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldHasSuffix(FieldScopeType, v))
 }
 
-// ScopeIsNil applies the IsNil predicate on the "scope" field.
-func ScopeIsNil() predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldIsNull(FieldScope))
+// ScopeTypeIsNil applies the IsNil predicate on the "scope_type" field.
+func ScopeTypeIsNil() predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldIsNull(FieldScopeType))
 }
 
-// ScopeNotNil applies the NotNil predicate on the "scope" field.
-func ScopeNotNil() predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldNotNull(FieldScope))
+// ScopeTypeNotNil applies the NotNil predicate on the "scope_type" field.
+func ScopeTypeNotNil() predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldNotNull(FieldScopeType))
 }
 
-// ScopeEqualFold applies the EqualFold predicate on the "scope" field.
-func ScopeEqualFold(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldEqualFold(FieldScope, v))
+// ScopeTypeEqualFold applies the EqualFold predicate on the "scope_type" field.
+func ScopeTypeEqualFold(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldEqualFold(FieldScopeType, v))
 }
 
-// ScopeContainsFold applies the ContainsFold predicate on the "scope" field.
-func ScopeContainsFold(v string) predicate.IdPGroupMapping {
-	return predicate.IdPGroupMapping(sql.FieldContainsFold(FieldScope, v))
+// ScopeTypeContainsFold applies the ContainsFold predicate on the "scope_type" field.
+func ScopeTypeContainsFold(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldContainsFold(FieldScopeType, v))
+}
+
+// ScopeIDEQ applies the EQ predicate on the "scope_id" field.
+func ScopeIDEQ(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldEQ(FieldScopeID, v))
+}
+
+// ScopeIDNEQ applies the NEQ predicate on the "scope_id" field.
+func ScopeIDNEQ(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldNEQ(FieldScopeID, v))
+}
+
+// ScopeIDIn applies the In predicate on the "scope_id" field.
+func ScopeIDIn(vs ...string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldIn(FieldScopeID, vs...))
+}
+
+// ScopeIDNotIn applies the NotIn predicate on the "scope_id" field.
+func ScopeIDNotIn(vs ...string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldNotIn(FieldScopeID, vs...))
+}
+
+// ScopeIDGT applies the GT predicate on the "scope_id" field.
+func ScopeIDGT(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldGT(FieldScopeID, v))
+}
+
+// ScopeIDGTE applies the GTE predicate on the "scope_id" field.
+func ScopeIDGTE(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldGTE(FieldScopeID, v))
+}
+
+// ScopeIDLT applies the LT predicate on the "scope_id" field.
+func ScopeIDLT(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldLT(FieldScopeID, v))
+}
+
+// ScopeIDLTE applies the LTE predicate on the "scope_id" field.
+func ScopeIDLTE(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldLTE(FieldScopeID, v))
+}
+
+// ScopeIDContains applies the Contains predicate on the "scope_id" field.
+func ScopeIDContains(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldContains(FieldScopeID, v))
+}
+
+// ScopeIDHasPrefix applies the HasPrefix predicate on the "scope_id" field.
+func ScopeIDHasPrefix(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldHasPrefix(FieldScopeID, v))
+}
+
+// ScopeIDHasSuffix applies the HasSuffix predicate on the "scope_id" field.
+func ScopeIDHasSuffix(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldHasSuffix(FieldScopeID, v))
+}
+
+// ScopeIDIsNil applies the IsNil predicate on the "scope_id" field.
+func ScopeIDIsNil() predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldIsNull(FieldScopeID))
+}
+
+// ScopeIDNotNil applies the NotNil predicate on the "scope_id" field.
+func ScopeIDNotNil() predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldNotNull(FieldScopeID))
+}
+
+// ScopeIDEqualFold applies the EqualFold predicate on the "scope_id" field.
+func ScopeIDEqualFold(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldEqualFold(FieldScopeID, v))
+}
+
+// ScopeIDContainsFold applies the ContainsFold predicate on the "scope_id" field.
+func ScopeIDContainsFold(v string) predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldContainsFold(FieldScopeID, v))
+}
+
+// AllowedEnvironmentsIsNil applies the IsNil predicate on the "allowed_environments" field.
+func AllowedEnvironmentsIsNil() predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldIsNull(FieldAllowedEnvironments))
+}
+
+// AllowedEnvironmentsNotNil applies the NotNil predicate on the "allowed_environments" field.
+func AllowedEnvironmentsNotNil() predicate.IdPGroupMapping {
+	return predicate.IdPGroupMapping(sql.FieldNotNull(FieldAllowedEnvironments))
 }
 
 // CreatedByEQ applies the EQ predicate on the "created_by" field.

@@ -16,6 +16,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/auditlog"
 	"kv-shepherd.io/shepherd/ent/authprovider"
+	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
 	"kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
@@ -25,6 +26,8 @@ import (
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	"kv-shepherd.io/shepherd/ent/notification"
 	"kv-shepherd.io/shepherd/ent/pendingadoption"
+	"kv-shepherd.io/shepherd/ent/ratelimitexemption"
+	"kv-shepherd.io/shepherd/ent/ratelimituseroverride"
 	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
 	"kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
@@ -99,6 +102,7 @@ func checkColumn(t, c string) error {
 			approvalticket.Table:         approvalticket.ValidColumn,
 			auditlog.Table:               auditlog.ValidColumn,
 			authprovider.Table:           authprovider.ValidColumn,
+			batchapprovalticket.Table:    batchapprovalticket.ValidColumn,
 			cluster.Table:                cluster.ValidColumn,
 			domainevent.Table:            domainevent.ValidColumn,
 			externalapprovalsystem.Table: externalapprovalsystem.ValidColumn,
@@ -108,6 +112,8 @@ func checkColumn(t, c string) error {
 			namespaceregistry.Table:      namespaceregistry.ValidColumn,
 			notification.Table:           notification.ValidColumn,
 			pendingadoption.Table:        pendingadoption.ValidColumn,
+			ratelimitexemption.Table:     ratelimitexemption.ValidColumn,
+			ratelimituseroverride.Table:  ratelimituseroverride.ValidColumn,
 			resourcerolebinding.Table:    resourcerolebinding.ValidColumn,
 			role.Table:                   role.ValidColumn,
 			rolebinding.Table:            rolebinding.ValidColumn,

@@ -18,6 +18,9 @@ type AuditLog func(*sql.Selector)
 // AuthProvider is the predicate function for authprovider builders.
 type AuthProvider func(*sql.Selector)
 
+// BatchApprovalTicket is the predicate function for batchapprovalticket builders.
+type BatchApprovalTicket func(*sql.Selector)
+
 // Cluster is the predicate function for cluster builders.
 type Cluster func(*sql.Selector)
 
@@ -44,6 +47,12 @@ type Notification func(*sql.Selector)
 
 // PendingAdoption is the predicate function for pendingadoption builders.
 type PendingAdoption func(*sql.Selector)
+
+// RateLimitExemption is the predicate function for ratelimitexemption builders.
+type RateLimitExemption func(*sql.Selector)
+
+// RateLimitUserOverride is the predicate function for ratelimituseroverride builders.
+type RateLimitUserOverride func(*sql.Selector)
 
 // ResourceRoleBinding is the predicate function for resourcerolebinding builders.
 type ResourceRoleBinding func(*sql.Selector)

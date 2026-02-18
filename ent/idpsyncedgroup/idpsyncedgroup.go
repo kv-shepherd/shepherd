@@ -23,6 +23,8 @@ const (
 	FieldExternalGroupID = "external_group_id"
 	// FieldGroupName holds the string denoting the group_name field in the database.
 	FieldGroupName = "group_name"
+	// FieldSourceField holds the string denoting the source_field field in the database.
+	FieldSourceField = "source_field"
 	// FieldDescription holds the string denoting the description field in the database.
 	FieldDescription = "description"
 	// FieldLastSyncedAt holds the string denoting the last_synced_at field in the database.
@@ -39,6 +41,7 @@ var Columns = []string{
 	FieldProviderID,
 	FieldExternalGroupID,
 	FieldGroupName,
+	FieldSourceField,
 	FieldDescription,
 	FieldLastSyncedAt,
 }
@@ -99,6 +102,11 @@ func ByExternalGroupID(opts ...sql.OrderTermOption) OrderOption {
 // ByGroupName orders the results by the group_name field.
 func ByGroupName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupName, opts...).ToFunc()
+}
+
+// BySourceField orders the results by the source_field field.
+func BySourceField(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceField, opts...).ToFunc()
 }
 
 // ByDescription orders the results by the description field.

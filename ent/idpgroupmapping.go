@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -21,12 +22,18 @@ type IdPGroupMapping struct {
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
-	// SyncedGroupID holds the value of the "synced_group_id" field.
-	SyncedGroupID string `json:"synced_group_id,omitempty"`
+	// ProviderID holds the value of the "provider_id" field.
+	ProviderID string `json:"provider_id,omitempty"`
+	// ExternalGroupID holds the value of the "external_group_id" field.
+	ExternalGroupID string `json:"external_group_id,omitempty"`
 	// RoleID holds the value of the "role_id" field.
 	RoleID string `json:"role_id,omitempty"`
-	// Scope holds the value of the "scope" field.
-	Scope string `json:"scope,omitempty"`
+	// ScopeType holds the value of the "scope_type" field.
+	ScopeType string `json:"scope_type,omitempty"`
+	// ScopeID holds the value of the "scope_id" field.
+	ScopeID string `json:"scope_id,omitempty"`
+	// AllowedEnvironments holds the value of the "allowed_environments" field.
+	AllowedEnvironments []string `json:"allowed_environments,omitempty"`
 	// CreatedBy holds the value of the "created_by" field.
 	CreatedBy    string `json:"created_by,omitempty"`
 	selectValues sql.SelectValues
@@ -37,7 +44,9 @@ func (*IdPGroupMapping) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case idpgroupmapping.FieldID, idpgroupmapping.FieldSyncedGroupID, idpgroupmapping.FieldRoleID, idpgroupmapping.FieldScope, idpgroupmapping.FieldCreatedBy:
+		case idpgroupmapping.FieldAllowedEnvironments:
+			values[i] = new([]byte)
+		case idpgroupmapping.FieldID, idpgroupmapping.FieldProviderID, idpgroupmapping.FieldExternalGroupID, idpgroupmapping.FieldRoleID, idpgroupmapping.FieldScopeType, idpgroupmapping.FieldScopeID, idpgroupmapping.FieldCreatedBy:
 			values[i] = new(sql.NullString)
 		case idpgroupmapping.FieldCreatedAt, idpgroupmapping.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -74,11 +83,17 @@ func (_m *IdPGroupMapping) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.UpdatedAt = value.Time
 			}
-		case idpgroupmapping.FieldSyncedGroupID:
+		case idpgroupmapping.FieldProviderID:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field synced_group_id", values[i])
+				return fmt.Errorf("unexpected type %T for field provider_id", values[i])
 			} else if value.Valid {
-				_m.SyncedGroupID = value.String
+				_m.ProviderID = value.String
+			}
+		case idpgroupmapping.FieldExternalGroupID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field external_group_id", values[i])
+			} else if value.Valid {
+				_m.ExternalGroupID = value.String
 			}
 		case idpgroupmapping.FieldRoleID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -86,11 +101,25 @@ func (_m *IdPGroupMapping) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.RoleID = value.String
 			}
-		case idpgroupmapping.FieldScope:
+		case idpgroupmapping.FieldScopeType:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field scope", values[i])
+				return fmt.Errorf("unexpected type %T for field scope_type", values[i])
 			} else if value.Valid {
-				_m.Scope = value.String
+				_m.ScopeType = value.String
+			}
+		case idpgroupmapping.FieldScopeID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field scope_id", values[i])
+			} else if value.Valid {
+				_m.ScopeID = value.String
+			}
+		case idpgroupmapping.FieldAllowedEnvironments:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field allowed_environments", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.AllowedEnvironments); err != nil {
+					return fmt.Errorf("unmarshal field allowed_environments: %w", err)
+				}
 			}
 		case idpgroupmapping.FieldCreatedBy:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -140,14 +169,23 @@ func (_m *IdPGroupMapping) String() string {
 	builder.WriteString("updated_at=")
 	builder.WriteString(_m.UpdatedAt.Format(time.ANSIC))
 	builder.WriteString(", ")
-	builder.WriteString("synced_group_id=")
-	builder.WriteString(_m.SyncedGroupID)
+	builder.WriteString("provider_id=")
+	builder.WriteString(_m.ProviderID)
+	builder.WriteString(", ")
+	builder.WriteString("external_group_id=")
+	builder.WriteString(_m.ExternalGroupID)
 	builder.WriteString(", ")
 	builder.WriteString("role_id=")
 	builder.WriteString(_m.RoleID)
 	builder.WriteString(", ")
-	builder.WriteString("scope=")
-	builder.WriteString(_m.Scope)
+	builder.WriteString("scope_type=")
+	builder.WriteString(_m.ScopeType)
+	builder.WriteString(", ")
+	builder.WriteString("scope_id=")
+	builder.WriteString(_m.ScopeID)
+	builder.WriteString(", ")
+	builder.WriteString("allowed_environments=")
+	builder.WriteString(fmt.Sprintf("%v", _m.AllowedEnvironments))
 	builder.WriteString(", ")
 	builder.WriteString("created_by=")
 	builder.WriteString(_m.CreatedBy)

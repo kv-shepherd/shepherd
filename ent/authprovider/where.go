@@ -79,6 +79,11 @@ func Name(v string) predicate.AuthProvider {
 	return predicate.AuthProvider(sql.FieldEQ(FieldName, v))
 }
 
+// AuthType applies equality check predicate on the "auth_type" field. It's identical to AuthTypeEQ.
+func AuthType(v string) predicate.AuthProvider {
+	return predicate.AuthProvider(sql.FieldEQ(FieldAuthType, v))
+}
+
 // Enabled applies equality check predicate on the "enabled" field. It's identical to EnabledEQ.
 func Enabled(v bool) predicate.AuthProvider {
 	return predicate.AuthProvider(sql.FieldEQ(FieldEnabled, v))
@@ -240,23 +245,68 @@ func NameContainsFold(v string) predicate.AuthProvider {
 }
 
 // AuthTypeEQ applies the EQ predicate on the "auth_type" field.
-func AuthTypeEQ(v AuthType) predicate.AuthProvider {
+func AuthTypeEQ(v string) predicate.AuthProvider {
 	return predicate.AuthProvider(sql.FieldEQ(FieldAuthType, v))
 }
 
 // AuthTypeNEQ applies the NEQ predicate on the "auth_type" field.
-func AuthTypeNEQ(v AuthType) predicate.AuthProvider {
+func AuthTypeNEQ(v string) predicate.AuthProvider {
 	return predicate.AuthProvider(sql.FieldNEQ(FieldAuthType, v))
 }
 
 // AuthTypeIn applies the In predicate on the "auth_type" field.
-func AuthTypeIn(vs ...AuthType) predicate.AuthProvider {
+func AuthTypeIn(vs ...string) predicate.AuthProvider {
 	return predicate.AuthProvider(sql.FieldIn(FieldAuthType, vs...))
 }
 
 // AuthTypeNotIn applies the NotIn predicate on the "auth_type" field.
-func AuthTypeNotIn(vs ...AuthType) predicate.AuthProvider {
+func AuthTypeNotIn(vs ...string) predicate.AuthProvider {
 	return predicate.AuthProvider(sql.FieldNotIn(FieldAuthType, vs...))
+}
+
+// AuthTypeGT applies the GT predicate on the "auth_type" field.
+func AuthTypeGT(v string) predicate.AuthProvider {
+	return predicate.AuthProvider(sql.FieldGT(FieldAuthType, v))
+}
+
+// AuthTypeGTE applies the GTE predicate on the "auth_type" field.
+func AuthTypeGTE(v string) predicate.AuthProvider {
+	return predicate.AuthProvider(sql.FieldGTE(FieldAuthType, v))
+}
+
+// AuthTypeLT applies the LT predicate on the "auth_type" field.
+func AuthTypeLT(v string) predicate.AuthProvider {
+	return predicate.AuthProvider(sql.FieldLT(FieldAuthType, v))
+}
+
+// AuthTypeLTE applies the LTE predicate on the "auth_type" field.
+func AuthTypeLTE(v string) predicate.AuthProvider {
+	return predicate.AuthProvider(sql.FieldLTE(FieldAuthType, v))
+}
+
+// AuthTypeContains applies the Contains predicate on the "auth_type" field.
+func AuthTypeContains(v string) predicate.AuthProvider {
+	return predicate.AuthProvider(sql.FieldContains(FieldAuthType, v))
+}
+
+// AuthTypeHasPrefix applies the HasPrefix predicate on the "auth_type" field.
+func AuthTypeHasPrefix(v string) predicate.AuthProvider {
+	return predicate.AuthProvider(sql.FieldHasPrefix(FieldAuthType, v))
+}
+
+// AuthTypeHasSuffix applies the HasSuffix predicate on the "auth_type" field.
+func AuthTypeHasSuffix(v string) predicate.AuthProvider {
+	return predicate.AuthProvider(sql.FieldHasSuffix(FieldAuthType, v))
+}
+
+// AuthTypeEqualFold applies the EqualFold predicate on the "auth_type" field.
+func AuthTypeEqualFold(v string) predicate.AuthProvider {
+	return predicate.AuthProvider(sql.FieldEqualFold(FieldAuthType, v))
+}
+
+// AuthTypeContainsFold applies the ContainsFold predicate on the "auth_type" field.
+func AuthTypeContainsFold(v string) predicate.AuthProvider {
+	return predicate.AuthProvider(sql.FieldContainsFold(FieldAuthType, v))
 }
 
 // EnabledEQ applies the EQ predicate on the "enabled" field.

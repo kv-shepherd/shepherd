@@ -27,6 +27,8 @@ type IdPSyncedGroup struct {
 	ExternalGroupID string `json:"external_group_id,omitempty"`
 	// GroupName holds the value of the "group_name" field.
 	GroupName string `json:"group_name,omitempty"`
+	// SourceField holds the value of the "source_field" field.
+	SourceField string `json:"source_field,omitempty"`
 	// Description holds the value of the "description" field.
 	Description string `json:"description,omitempty"`
 	// LastSyncedAt holds the value of the "last_synced_at" field.
@@ -39,7 +41,7 @@ func (*IdPSyncedGroup) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case idpsyncedgroup.FieldID, idpsyncedgroup.FieldProviderID, idpsyncedgroup.FieldExternalGroupID, idpsyncedgroup.FieldGroupName, idpsyncedgroup.FieldDescription:
+		case idpsyncedgroup.FieldID, idpsyncedgroup.FieldProviderID, idpsyncedgroup.FieldExternalGroupID, idpsyncedgroup.FieldGroupName, idpsyncedgroup.FieldSourceField, idpsyncedgroup.FieldDescription:
 			values[i] = new(sql.NullString)
 		case idpsyncedgroup.FieldCreatedAt, idpsyncedgroup.FieldUpdatedAt, idpsyncedgroup.FieldLastSyncedAt:
 			values[i] = new(sql.NullTime)
@@ -93,6 +95,12 @@ func (_m *IdPSyncedGroup) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field group_name", values[i])
 			} else if value.Valid {
 				_m.GroupName = value.String
+			}
+		case idpsyncedgroup.FieldSourceField:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_field", values[i])
+			} else if value.Valid {
+				_m.SourceField = value.String
 			}
 		case idpsyncedgroup.FieldDescription:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -157,6 +165,9 @@ func (_m *IdPSyncedGroup) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("group_name=")
 	builder.WriteString(_m.GroupName)
+	builder.WriteString(", ")
+	builder.WriteString("source_field=")
+	builder.WriteString(_m.SourceField)
 	builder.WriteString(", ")
 	builder.WriteString("description=")
 	builder.WriteString(_m.Description)

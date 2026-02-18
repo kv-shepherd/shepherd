@@ -7,7 +7,7 @@ import (
 )
 
 // AuthProvider holds the schema definition for the AuthProvider entity.
-// Unified standard provider config for OIDC, LDAP, SSO, WeCom, Feishu, DingTalk.
+// Standardized auth provider records. Concrete providers are adapter-registered.
 type AuthProvider struct {
 	ent.Schema
 }
@@ -27,8 +27,8 @@ func (AuthProvider) Fields() []ent.Field {
 			Immutable(),
 		field.String("name").
 			NotEmpty(),
-		field.Enum("auth_type").
-			Values("oidc", "ldap", "sso", "wecom", "feishu", "dingtalk"),
+		field.String("auth_type").
+			NotEmpty(),
 		field.JSON("config", map[string]interface{}{}).
 			Sensitive(), // Provider-specific config (encrypted fields inside)
 		field.Bool("enabled").

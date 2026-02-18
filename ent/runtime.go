@@ -9,6 +9,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/auditlog"
 	"kv-shepherd.io/shepherd/ent/authprovider"
+	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
 	"kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
@@ -18,6 +19,8 @@ import (
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	"kv-shepherd.io/shepherd/ent/notification"
 	"kv-shepherd.io/shepherd/ent/pendingadoption"
+	"kv-shepherd.io/shepherd/ent/ratelimitexemption"
+	"kv-shepherd.io/shepherd/ent/ratelimituseroverride"
 	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
 	"kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
@@ -129,6 +132,10 @@ func init() {
 	authproviderDescName := authproviderFields[1].Descriptor()
 	// authprovider.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	authprovider.NameValidator = authproviderDescName.Validators[0].(func(string) error)
+	// authproviderDescAuthType is the schema descriptor for auth_type field.
+	authproviderDescAuthType := authproviderFields[2].Descriptor()
+	// authprovider.AuthTypeValidator is a validator for the "auth_type" field. It is called by the builders before save.
+	authprovider.AuthTypeValidator = authproviderDescAuthType.Validators[0].(func(string) error)
 	// authproviderDescEnabled is the schema descriptor for enabled field.
 	authproviderDescEnabled := authproviderFields[4].Descriptor()
 	// authprovider.DefaultEnabled holds the default value on creation for the enabled field.
@@ -141,6 +148,49 @@ func init() {
 	authproviderDescCreatedBy := authproviderFields[6].Descriptor()
 	// authprovider.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	authprovider.CreatedByValidator = authproviderDescCreatedBy.Validators[0].(func(string) error)
+	batchapprovalticketMixin := schema.BatchApprovalTicket{}.Mixin()
+	batchapprovalticketMixinFields0 := batchapprovalticketMixin[0].Fields()
+	_ = batchapprovalticketMixinFields0
+	batchapprovalticketFields := schema.BatchApprovalTicket{}.Fields()
+	_ = batchapprovalticketFields
+	// batchapprovalticketDescCreatedAt is the schema descriptor for created_at field.
+	batchapprovalticketDescCreatedAt := batchapprovalticketMixinFields0[0].Descriptor()
+	// batchapprovalticket.DefaultCreatedAt holds the default value on creation for the created_at field.
+	batchapprovalticket.DefaultCreatedAt = batchapprovalticketDescCreatedAt.Default.(func() time.Time)
+	// batchapprovalticketDescUpdatedAt is the schema descriptor for updated_at field.
+	batchapprovalticketDescUpdatedAt := batchapprovalticketMixinFields0[1].Descriptor()
+	// batchapprovalticket.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	batchapprovalticket.DefaultUpdatedAt = batchapprovalticketDescUpdatedAt.Default.(func() time.Time)
+	// batchapprovalticket.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	batchapprovalticket.UpdateDefaultUpdatedAt = batchapprovalticketDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// batchapprovalticketDescChildCount is the schema descriptor for child_count field.
+	batchapprovalticketDescChildCount := batchapprovalticketFields[2].Descriptor()
+	// batchapprovalticket.DefaultChildCount holds the default value on creation for the child_count field.
+	batchapprovalticket.DefaultChildCount = batchapprovalticketDescChildCount.Default.(int)
+	// batchapprovalticket.ChildCountValidator is a validator for the "child_count" field. It is called by the builders before save.
+	batchapprovalticket.ChildCountValidator = batchapprovalticketDescChildCount.Validators[0].(func(int) error)
+	// batchapprovalticketDescSuccessCount is the schema descriptor for success_count field.
+	batchapprovalticketDescSuccessCount := batchapprovalticketFields[3].Descriptor()
+	// batchapprovalticket.DefaultSuccessCount holds the default value on creation for the success_count field.
+	batchapprovalticket.DefaultSuccessCount = batchapprovalticketDescSuccessCount.Default.(int)
+	// batchapprovalticket.SuccessCountValidator is a validator for the "success_count" field. It is called by the builders before save.
+	batchapprovalticket.SuccessCountValidator = batchapprovalticketDescSuccessCount.Validators[0].(func(int) error)
+	// batchapprovalticketDescFailedCount is the schema descriptor for failed_count field.
+	batchapprovalticketDescFailedCount := batchapprovalticketFields[4].Descriptor()
+	// batchapprovalticket.DefaultFailedCount holds the default value on creation for the failed_count field.
+	batchapprovalticket.DefaultFailedCount = batchapprovalticketDescFailedCount.Default.(int)
+	// batchapprovalticket.FailedCountValidator is a validator for the "failed_count" field. It is called by the builders before save.
+	batchapprovalticket.FailedCountValidator = batchapprovalticketDescFailedCount.Validators[0].(func(int) error)
+	// batchapprovalticketDescPendingCount is the schema descriptor for pending_count field.
+	batchapprovalticketDescPendingCount := batchapprovalticketFields[5].Descriptor()
+	// batchapprovalticket.DefaultPendingCount holds the default value on creation for the pending_count field.
+	batchapprovalticket.DefaultPendingCount = batchapprovalticketDescPendingCount.Default.(int)
+	// batchapprovalticket.PendingCountValidator is a validator for the "pending_count" field. It is called by the builders before save.
+	batchapprovalticket.PendingCountValidator = batchapprovalticketDescPendingCount.Validators[0].(func(int) error)
+	// batchapprovalticketDescCreatedBy is the schema descriptor for created_by field.
+	batchapprovalticketDescCreatedBy := batchapprovalticketFields[8].Descriptor()
+	// batchapprovalticket.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
+	batchapprovalticket.CreatedByValidator = batchapprovalticketDescCreatedBy.Validators[0].(func(string) error)
 	clusterMixin := schema.Cluster{}.Mixin()
 	clusterMixinFields0 := clusterMixin[0].Fields()
 	_ = clusterMixinFields0
@@ -253,16 +303,20 @@ func init() {
 	idpgroupmapping.DefaultUpdatedAt = idpgroupmappingDescUpdatedAt.Default.(func() time.Time)
 	// idpgroupmapping.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	idpgroupmapping.UpdateDefaultUpdatedAt = idpgroupmappingDescUpdatedAt.UpdateDefault.(func() time.Time)
-	// idpgroupmappingDescSyncedGroupID is the schema descriptor for synced_group_id field.
-	idpgroupmappingDescSyncedGroupID := idpgroupmappingFields[1].Descriptor()
-	// idpgroupmapping.SyncedGroupIDValidator is a validator for the "synced_group_id" field. It is called by the builders before save.
-	idpgroupmapping.SyncedGroupIDValidator = idpgroupmappingDescSyncedGroupID.Validators[0].(func(string) error)
+	// idpgroupmappingDescProviderID is the schema descriptor for provider_id field.
+	idpgroupmappingDescProviderID := idpgroupmappingFields[1].Descriptor()
+	// idpgroupmapping.ProviderIDValidator is a validator for the "provider_id" field. It is called by the builders before save.
+	idpgroupmapping.ProviderIDValidator = idpgroupmappingDescProviderID.Validators[0].(func(string) error)
+	// idpgroupmappingDescExternalGroupID is the schema descriptor for external_group_id field.
+	idpgroupmappingDescExternalGroupID := idpgroupmappingFields[2].Descriptor()
+	// idpgroupmapping.ExternalGroupIDValidator is a validator for the "external_group_id" field. It is called by the builders before save.
+	idpgroupmapping.ExternalGroupIDValidator = idpgroupmappingDescExternalGroupID.Validators[0].(func(string) error)
 	// idpgroupmappingDescRoleID is the schema descriptor for role_id field.
-	idpgroupmappingDescRoleID := idpgroupmappingFields[2].Descriptor()
+	idpgroupmappingDescRoleID := idpgroupmappingFields[3].Descriptor()
 	// idpgroupmapping.RoleIDValidator is a validator for the "role_id" field. It is called by the builders before save.
 	idpgroupmapping.RoleIDValidator = idpgroupmappingDescRoleID.Validators[0].(func(string) error)
 	// idpgroupmappingDescCreatedBy is the schema descriptor for created_by field.
-	idpgroupmappingDescCreatedBy := idpgroupmappingFields[4].Descriptor()
+	idpgroupmappingDescCreatedBy := idpgroupmappingFields[7].Descriptor()
 	// idpgroupmapping.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	idpgroupmapping.CreatedByValidator = idpgroupmappingDescCreatedBy.Validators[0].(func(string) error)
 	idpsyncedgroupMixin := schema.IdPSyncedGroup{}.Mixin()
@@ -484,6 +538,56 @@ func init() {
 	pendingadoptionDescResourceType := pendingadoptionFields[4].Descriptor()
 	// pendingadoption.ResourceTypeValidator is a validator for the "resource_type" field. It is called by the builders before save.
 	pendingadoption.ResourceTypeValidator = pendingadoptionDescResourceType.Validators[0].(func(string) error)
+	ratelimitexemptionMixin := schema.RateLimitExemption{}.Mixin()
+	ratelimitexemptionMixinFields0 := ratelimitexemptionMixin[0].Fields()
+	_ = ratelimitexemptionMixinFields0
+	ratelimitexemptionFields := schema.RateLimitExemption{}.Fields()
+	_ = ratelimitexemptionFields
+	// ratelimitexemptionDescCreatedAt is the schema descriptor for created_at field.
+	ratelimitexemptionDescCreatedAt := ratelimitexemptionMixinFields0[0].Descriptor()
+	// ratelimitexemption.DefaultCreatedAt holds the default value on creation for the created_at field.
+	ratelimitexemption.DefaultCreatedAt = ratelimitexemptionDescCreatedAt.Default.(func() time.Time)
+	// ratelimitexemptionDescUpdatedAt is the schema descriptor for updated_at field.
+	ratelimitexemptionDescUpdatedAt := ratelimitexemptionMixinFields0[1].Descriptor()
+	// ratelimitexemption.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	ratelimitexemption.DefaultUpdatedAt = ratelimitexemptionDescUpdatedAt.Default.(func() time.Time)
+	// ratelimitexemption.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	ratelimitexemption.UpdateDefaultUpdatedAt = ratelimitexemptionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// ratelimitexemptionDescExemptedBy is the schema descriptor for exempted_by field.
+	ratelimitexemptionDescExemptedBy := ratelimitexemptionFields[1].Descriptor()
+	// ratelimitexemption.ExemptedByValidator is a validator for the "exempted_by" field. It is called by the builders before save.
+	ratelimitexemption.ExemptedByValidator = ratelimitexemptionDescExemptedBy.Validators[0].(func(string) error)
+	ratelimituseroverrideMixin := schema.RateLimitUserOverride{}.Mixin()
+	ratelimituseroverrideMixinFields0 := ratelimituseroverrideMixin[0].Fields()
+	_ = ratelimituseroverrideMixinFields0
+	ratelimituseroverrideFields := schema.RateLimitUserOverride{}.Fields()
+	_ = ratelimituseroverrideFields
+	// ratelimituseroverrideDescCreatedAt is the schema descriptor for created_at field.
+	ratelimituseroverrideDescCreatedAt := ratelimituseroverrideMixinFields0[0].Descriptor()
+	// ratelimituseroverride.DefaultCreatedAt holds the default value on creation for the created_at field.
+	ratelimituseroverride.DefaultCreatedAt = ratelimituseroverrideDescCreatedAt.Default.(func() time.Time)
+	// ratelimituseroverrideDescUpdatedAt is the schema descriptor for updated_at field.
+	ratelimituseroverrideDescUpdatedAt := ratelimituseroverrideMixinFields0[1].Descriptor()
+	// ratelimituseroverride.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	ratelimituseroverride.DefaultUpdatedAt = ratelimituseroverrideDescUpdatedAt.Default.(func() time.Time)
+	// ratelimituseroverride.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	ratelimituseroverride.UpdateDefaultUpdatedAt = ratelimituseroverrideDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// ratelimituseroverrideDescMaxPendingParents is the schema descriptor for max_pending_parents field.
+	ratelimituseroverrideDescMaxPendingParents := ratelimituseroverrideFields[1].Descriptor()
+	// ratelimituseroverride.MaxPendingParentsValidator is a validator for the "max_pending_parents" field. It is called by the builders before save.
+	ratelimituseroverride.MaxPendingParentsValidator = ratelimituseroverrideDescMaxPendingParents.Validators[0].(func(int) error)
+	// ratelimituseroverrideDescMaxPendingChildren is the schema descriptor for max_pending_children field.
+	ratelimituseroverrideDescMaxPendingChildren := ratelimituseroverrideFields[2].Descriptor()
+	// ratelimituseroverride.MaxPendingChildrenValidator is a validator for the "max_pending_children" field. It is called by the builders before save.
+	ratelimituseroverride.MaxPendingChildrenValidator = ratelimituseroverrideDescMaxPendingChildren.Validators[0].(func(int) error)
+	// ratelimituseroverrideDescCooldownSeconds is the schema descriptor for cooldown_seconds field.
+	ratelimituseroverrideDescCooldownSeconds := ratelimituseroverrideFields[3].Descriptor()
+	// ratelimituseroverride.CooldownSecondsValidator is a validator for the "cooldown_seconds" field. It is called by the builders before save.
+	ratelimituseroverride.CooldownSecondsValidator = ratelimituseroverrideDescCooldownSeconds.Validators[0].(func(int) error)
+	// ratelimituseroverrideDescUpdatedBy is the schema descriptor for updated_by field.
+	ratelimituseroverrideDescUpdatedBy := ratelimituseroverrideFields[5].Descriptor()
+	// ratelimituseroverride.UpdatedByValidator is a validator for the "updated_by" field. It is called by the builders before save.
+	ratelimituseroverride.UpdatedByValidator = ratelimituseroverrideDescUpdatedBy.Validators[0].(func(string) error)
 	resourcerolebindingMixin := schema.ResourceRoleBinding{}.Mixin()
 	resourcerolebindingMixinFields0 := resourcerolebindingMixin[0].Fields()
 	_ = resourcerolebindingMixinFields0

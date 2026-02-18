@@ -54,31 +54,46 @@ SET
     status = 'APPROVED',
     approver = $1,
     selected_cluster_id = $2,
-    selected_storage_class = CASE
-        WHEN $3::text = '' THEN selected_storage_class
-        ELSE $3::text
+    selected_template_version = CASE
+        WHEN $3::int IS NULL THEN selected_template_version
+        ELSE $3::int
     END,
+    selected_storage_class = CASE
+        WHEN $4::text = '' THEN selected_storage_class
+        ELSE $4::text
+    END,
+    template_snapshot = COALESCE($5::jsonb, template_snapshot),
+    instance_size_snapshot = COALESCE($6::jsonb, instance_size_snapshot),
+    modified_spec = COALESCE($7::jsonb, modified_spec),
     updated_at = NOW()
 WHERE
-    id = $4
-    AND event_id = $5
+    id = $8
+    AND event_id = $9
     AND status = 'PENDING'
     AND operation_type = 'CREATE'
 `
 
 type ApproveCreateTicketParams struct {
-	Approver             pgtype.Text `db:"approver" json:"approver"`
-	SelectedClusterID    pgtype.Text `db:"selected_cluster_id" json:"selected_cluster_id"`
-	SelectedStorageClass string      `db:"selected_storage_class" json:"selected_storage_class"`
-	ID                   string      `db:"id" json:"id"`
-	EventID              string      `db:"event_id" json:"event_id"`
+	Approver                pgtype.Text `db:"approver" json:"approver"`
+	SelectedClusterID       pgtype.Text `db:"selected_cluster_id" json:"selected_cluster_id"`
+	SelectedTemplateVersion pgtype.Int4 `db:"selected_template_version" json:"selected_template_version"`
+	SelectedStorageClass    string      `db:"selected_storage_class" json:"selected_storage_class"`
+	TemplateSnapshot        []byte      `db:"template_snapshot" json:"template_snapshot"`
+	InstanceSizeSnapshot    []byte      `db:"instance_size_snapshot" json:"instance_size_snapshot"`
+	ModifiedSpec            []byte      `db:"modified_spec" json:"modified_spec"`
+	ID                      string      `db:"id" json:"id"`
+	EventID                 string      `db:"event_id" json:"event_id"`
 }
 
 func (q *Queries) ApproveCreateTicket(ctx context.Context, arg ApproveCreateTicketParams) (int64, error) {
 	result, err := q.db.Exec(ctx, approveCreateTicket,
 		arg.Approver,
 		arg.SelectedClusterID,
+		arg.SelectedTemplateVersion,
 		arg.SelectedStorageClass,
+		arg.TemplateSnapshot,
+		arg.InstanceSizeSnapshot,
+		arg.ModifiedSpec,
 		arg.ID,
 		arg.EventID,
 	)

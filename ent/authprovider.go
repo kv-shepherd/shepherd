@@ -25,7 +25,7 @@ type AuthProvider struct {
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// AuthType holds the value of the "auth_type" field.
-	AuthType authprovider.AuthType `json:"auth_type,omitempty"`
+	AuthType string `json:"auth_type,omitempty"`
 	// Config holds the value of the "config" field.
 	Config map[string]interface{} `json:"-"`
 	// Enabled holds the value of the "enabled" field.
@@ -95,7 +95,7 @@ func (_m *AuthProvider) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field auth_type", values[i])
 			} else if value.Valid {
-				_m.AuthType = authprovider.AuthType(value.String)
+				_m.AuthType = value.String
 			}
 		case authprovider.FieldConfig:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -169,7 +169,7 @@ func (_m *AuthProvider) String() string {
 	builder.WriteString(_m.Name)
 	builder.WriteString(", ")
 	builder.WriteString("auth_type=")
-	builder.WriteString(fmt.Sprintf("%v", _m.AuthType))
+	builder.WriteString(_m.AuthType)
 	builder.WriteString(", ")
 	builder.WriteString("config=<sensitive>")
 	builder.WriteString(", ")

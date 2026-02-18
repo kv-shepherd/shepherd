@@ -19,6 +19,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/auditlog"
 	"kv-shepherd.io/shepherd/ent/authprovider"
+	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
 	"kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
@@ -28,6 +29,8 @@ import (
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	"kv-shepherd.io/shepherd/ent/notification"
 	"kv-shepherd.io/shepherd/ent/pendingadoption"
+	"kv-shepherd.io/shepherd/ent/ratelimitexemption"
+	"kv-shepherd.io/shepherd/ent/ratelimituseroverride"
 	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
 	"kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
@@ -53,6 +56,8 @@ type Client struct {
 	AuditLog *AuditLogClient
 	// AuthProvider is the client for interacting with the AuthProvider builders.
 	AuthProvider *AuthProviderClient
+	// BatchApprovalTicket is the client for interacting with the BatchApprovalTicket builders.
+	BatchApprovalTicket *BatchApprovalTicketClient
 	// Cluster is the client for interacting with the Cluster builders.
 	Cluster *ClusterClient
 	// DomainEvent is the client for interacting with the DomainEvent builders.
@@ -71,6 +76,10 @@ type Client struct {
 	Notification *NotificationClient
 	// PendingAdoption is the client for interacting with the PendingAdoption builders.
 	PendingAdoption *PendingAdoptionClient
+	// RateLimitExemption is the client for interacting with the RateLimitExemption builders.
+	RateLimitExemption *RateLimitExemptionClient
+	// RateLimitUserOverride is the client for interacting with the RateLimitUserOverride builders.
+	RateLimitUserOverride *RateLimitUserOverrideClient
 	// ResourceRoleBinding is the client for interacting with the ResourceRoleBinding builders.
 	ResourceRoleBinding *ResourceRoleBindingClient
 	// Role is the client for interacting with the Role builders.
@@ -106,6 +115,7 @@ func (c *Client) init() {
 	c.ApprovalTicket = NewApprovalTicketClient(c.config)
 	c.AuditLog = NewAuditLogClient(c.config)
 	c.AuthProvider = NewAuthProviderClient(c.config)
+	c.BatchApprovalTicket = NewBatchApprovalTicketClient(c.config)
 	c.Cluster = NewClusterClient(c.config)
 	c.DomainEvent = NewDomainEventClient(c.config)
 	c.ExternalApprovalSystem = NewExternalApprovalSystemClient(c.config)
@@ -115,6 +125,8 @@ func (c *Client) init() {
 	c.NamespaceRegistry = NewNamespaceRegistryClient(c.config)
 	c.Notification = NewNotificationClient(c.config)
 	c.PendingAdoption = NewPendingAdoptionClient(c.config)
+	c.RateLimitExemption = NewRateLimitExemptionClient(c.config)
+	c.RateLimitUserOverride = NewRateLimitUserOverrideClient(c.config)
 	c.ResourceRoleBinding = NewResourceRoleBindingClient(c.config)
 	c.Role = NewRoleClient(c.config)
 	c.RoleBinding = NewRoleBindingClient(c.config)
@@ -221,6 +233,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ApprovalTicket:         NewApprovalTicketClient(cfg),
 		AuditLog:               NewAuditLogClient(cfg),
 		AuthProvider:           NewAuthProviderClient(cfg),
+		BatchApprovalTicket:    NewBatchApprovalTicketClient(cfg),
 		Cluster:                NewClusterClient(cfg),
 		DomainEvent:            NewDomainEventClient(cfg),
 		ExternalApprovalSystem: NewExternalApprovalSystemClient(cfg),
@@ -230,6 +243,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		NamespaceRegistry:      NewNamespaceRegistryClient(cfg),
 		Notification:           NewNotificationClient(cfg),
 		PendingAdoption:        NewPendingAdoptionClient(cfg),
+		RateLimitExemption:     NewRateLimitExemptionClient(cfg),
+		RateLimitUserOverride:  NewRateLimitUserOverrideClient(cfg),
 		ResourceRoleBinding:    NewResourceRoleBindingClient(cfg),
 		Role:                   NewRoleClient(cfg),
 		RoleBinding:            NewRoleBindingClient(cfg),
@@ -263,6 +278,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ApprovalTicket:         NewApprovalTicketClient(cfg),
 		AuditLog:               NewAuditLogClient(cfg),
 		AuthProvider:           NewAuthProviderClient(cfg),
+		BatchApprovalTicket:    NewBatchApprovalTicketClient(cfg),
 		Cluster:                NewClusterClient(cfg),
 		DomainEvent:            NewDomainEventClient(cfg),
 		ExternalApprovalSystem: NewExternalApprovalSystemClient(cfg),
@@ -272,6 +288,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		NamespaceRegistry:      NewNamespaceRegistryClient(cfg),
 		Notification:           NewNotificationClient(cfg),
 		PendingAdoption:        NewPendingAdoptionClient(cfg),
+		RateLimitExemption:     NewRateLimitExemptionClient(cfg),
+		RateLimitUserOverride:  NewRateLimitUserOverrideClient(cfg),
 		ResourceRoleBinding:    NewResourceRoleBindingClient(cfg),
 		Role:                   NewRoleClient(cfg),
 		RoleBinding:            NewRoleBindingClient(cfg),
@@ -311,11 +329,12 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.ApprovalPolicy, c.ApprovalTicket, c.AuditLog, c.AuthProvider, c.Cluster,
-		c.DomainEvent, c.ExternalApprovalSystem, c.IdPGroupMapping, c.IdPSyncedGroup,
-		c.InstanceSize, c.NamespaceRegistry, c.Notification, c.PendingAdoption,
-		c.ResourceRoleBinding, c.Role, c.RoleBinding, c.Service, c.System,
-		c.SystemSecret, c.Template, c.User, c.VM, c.VMRevision,
+		c.ApprovalPolicy, c.ApprovalTicket, c.AuditLog, c.AuthProvider,
+		c.BatchApprovalTicket, c.Cluster, c.DomainEvent, c.ExternalApprovalSystem,
+		c.IdPGroupMapping, c.IdPSyncedGroup, c.InstanceSize, c.NamespaceRegistry,
+		c.Notification, c.PendingAdoption, c.RateLimitExemption,
+		c.RateLimitUserOverride, c.ResourceRoleBinding, c.Role, c.RoleBinding,
+		c.Service, c.System, c.SystemSecret, c.Template, c.User, c.VM, c.VMRevision,
 	} {
 		n.Use(hooks...)
 	}
@@ -325,11 +344,12 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.ApprovalPolicy, c.ApprovalTicket, c.AuditLog, c.AuthProvider, c.Cluster,
-		c.DomainEvent, c.ExternalApprovalSystem, c.IdPGroupMapping, c.IdPSyncedGroup,
-		c.InstanceSize, c.NamespaceRegistry, c.Notification, c.PendingAdoption,
-		c.ResourceRoleBinding, c.Role, c.RoleBinding, c.Service, c.System,
-		c.SystemSecret, c.Template, c.User, c.VM, c.VMRevision,
+		c.ApprovalPolicy, c.ApprovalTicket, c.AuditLog, c.AuthProvider,
+		c.BatchApprovalTicket, c.Cluster, c.DomainEvent, c.ExternalApprovalSystem,
+		c.IdPGroupMapping, c.IdPSyncedGroup, c.InstanceSize, c.NamespaceRegistry,
+		c.Notification, c.PendingAdoption, c.RateLimitExemption,
+		c.RateLimitUserOverride, c.ResourceRoleBinding, c.Role, c.RoleBinding,
+		c.Service, c.System, c.SystemSecret, c.Template, c.User, c.VM, c.VMRevision,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -346,6 +366,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AuditLog.mutate(ctx, m)
 	case *AuthProviderMutation:
 		return c.AuthProvider.mutate(ctx, m)
+	case *BatchApprovalTicketMutation:
+		return c.BatchApprovalTicket.mutate(ctx, m)
 	case *ClusterMutation:
 		return c.Cluster.mutate(ctx, m)
 	case *DomainEventMutation:
@@ -364,6 +386,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Notification.mutate(ctx, m)
 	case *PendingAdoptionMutation:
 		return c.PendingAdoption.mutate(ctx, m)
+	case *RateLimitExemptionMutation:
+		return c.RateLimitExemption.mutate(ctx, m)
+	case *RateLimitUserOverrideMutation:
+		return c.RateLimitUserOverride.mutate(ctx, m)
 	case *ResourceRoleBindingMutation:
 		return c.ResourceRoleBinding.mutate(ctx, m)
 	case *RoleMutation:
@@ -918,6 +944,139 @@ func (c *AuthProviderClient) mutate(ctx context.Context, m *AuthProviderMutation
 		return (&AuthProviderDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AuthProvider mutation op: %q", m.Op())
+	}
+}
+
+// BatchApprovalTicketClient is a client for the BatchApprovalTicket schema.
+type BatchApprovalTicketClient struct {
+	config
+}
+
+// NewBatchApprovalTicketClient returns a client for the BatchApprovalTicket from the given config.
+func NewBatchApprovalTicketClient(c config) *BatchApprovalTicketClient {
+	return &BatchApprovalTicketClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `batchapprovalticket.Hooks(f(g(h())))`.
+func (c *BatchApprovalTicketClient) Use(hooks ...Hook) {
+	c.hooks.BatchApprovalTicket = append(c.hooks.BatchApprovalTicket, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `batchapprovalticket.Intercept(f(g(h())))`.
+func (c *BatchApprovalTicketClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BatchApprovalTicket = append(c.inters.BatchApprovalTicket, interceptors...)
+}
+
+// Create returns a builder for creating a BatchApprovalTicket entity.
+func (c *BatchApprovalTicketClient) Create() *BatchApprovalTicketCreate {
+	mutation := newBatchApprovalTicketMutation(c.config, OpCreate)
+	return &BatchApprovalTicketCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BatchApprovalTicket entities.
+func (c *BatchApprovalTicketClient) CreateBulk(builders ...*BatchApprovalTicketCreate) *BatchApprovalTicketCreateBulk {
+	return &BatchApprovalTicketCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BatchApprovalTicketClient) MapCreateBulk(slice any, setFunc func(*BatchApprovalTicketCreate, int)) *BatchApprovalTicketCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BatchApprovalTicketCreateBulk{err: fmt.Errorf("calling to BatchApprovalTicketClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BatchApprovalTicketCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BatchApprovalTicketCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BatchApprovalTicket.
+func (c *BatchApprovalTicketClient) Update() *BatchApprovalTicketUpdate {
+	mutation := newBatchApprovalTicketMutation(c.config, OpUpdate)
+	return &BatchApprovalTicketUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BatchApprovalTicketClient) UpdateOne(_m *BatchApprovalTicket) *BatchApprovalTicketUpdateOne {
+	mutation := newBatchApprovalTicketMutation(c.config, OpUpdateOne, withBatchApprovalTicket(_m))
+	return &BatchApprovalTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BatchApprovalTicketClient) UpdateOneID(id string) *BatchApprovalTicketUpdateOne {
+	mutation := newBatchApprovalTicketMutation(c.config, OpUpdateOne, withBatchApprovalTicketID(id))
+	return &BatchApprovalTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BatchApprovalTicket.
+func (c *BatchApprovalTicketClient) Delete() *BatchApprovalTicketDelete {
+	mutation := newBatchApprovalTicketMutation(c.config, OpDelete)
+	return &BatchApprovalTicketDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BatchApprovalTicketClient) DeleteOne(_m *BatchApprovalTicket) *BatchApprovalTicketDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BatchApprovalTicketClient) DeleteOneID(id string) *BatchApprovalTicketDeleteOne {
+	builder := c.Delete().Where(batchapprovalticket.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BatchApprovalTicketDeleteOne{builder}
+}
+
+// Query returns a query builder for BatchApprovalTicket.
+func (c *BatchApprovalTicketClient) Query() *BatchApprovalTicketQuery {
+	return &BatchApprovalTicketQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBatchApprovalTicket},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BatchApprovalTicket entity by its id.
+func (c *BatchApprovalTicketClient) Get(ctx context.Context, id string) (*BatchApprovalTicket, error) {
+	return c.Query().Where(batchapprovalticket.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BatchApprovalTicketClient) GetX(ctx context.Context, id string) *BatchApprovalTicket {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *BatchApprovalTicketClient) Hooks() []Hook {
+	return c.hooks.BatchApprovalTicket
+}
+
+// Interceptors returns the client interceptors.
+func (c *BatchApprovalTicketClient) Interceptors() []Interceptor {
+	return c.inters.BatchApprovalTicket
+}
+
+func (c *BatchApprovalTicketClient) mutate(ctx context.Context, m *BatchApprovalTicketMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BatchApprovalTicketCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BatchApprovalTicketUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BatchApprovalTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BatchApprovalTicketDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BatchApprovalTicket mutation op: %q", m.Op())
 	}
 }
 
@@ -2131,6 +2290,272 @@ func (c *PendingAdoptionClient) mutate(ctx context.Context, m *PendingAdoptionMu
 		return (&PendingAdoptionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown PendingAdoption mutation op: %q", m.Op())
+	}
+}
+
+// RateLimitExemptionClient is a client for the RateLimitExemption schema.
+type RateLimitExemptionClient struct {
+	config
+}
+
+// NewRateLimitExemptionClient returns a client for the RateLimitExemption from the given config.
+func NewRateLimitExemptionClient(c config) *RateLimitExemptionClient {
+	return &RateLimitExemptionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `ratelimitexemption.Hooks(f(g(h())))`.
+func (c *RateLimitExemptionClient) Use(hooks ...Hook) {
+	c.hooks.RateLimitExemption = append(c.hooks.RateLimitExemption, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `ratelimitexemption.Intercept(f(g(h())))`.
+func (c *RateLimitExemptionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RateLimitExemption = append(c.inters.RateLimitExemption, interceptors...)
+}
+
+// Create returns a builder for creating a RateLimitExemption entity.
+func (c *RateLimitExemptionClient) Create() *RateLimitExemptionCreate {
+	mutation := newRateLimitExemptionMutation(c.config, OpCreate)
+	return &RateLimitExemptionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RateLimitExemption entities.
+func (c *RateLimitExemptionClient) CreateBulk(builders ...*RateLimitExemptionCreate) *RateLimitExemptionCreateBulk {
+	return &RateLimitExemptionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RateLimitExemptionClient) MapCreateBulk(slice any, setFunc func(*RateLimitExemptionCreate, int)) *RateLimitExemptionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RateLimitExemptionCreateBulk{err: fmt.Errorf("calling to RateLimitExemptionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RateLimitExemptionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RateLimitExemptionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RateLimitExemption.
+func (c *RateLimitExemptionClient) Update() *RateLimitExemptionUpdate {
+	mutation := newRateLimitExemptionMutation(c.config, OpUpdate)
+	return &RateLimitExemptionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RateLimitExemptionClient) UpdateOne(_m *RateLimitExemption) *RateLimitExemptionUpdateOne {
+	mutation := newRateLimitExemptionMutation(c.config, OpUpdateOne, withRateLimitExemption(_m))
+	return &RateLimitExemptionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RateLimitExemptionClient) UpdateOneID(id string) *RateLimitExemptionUpdateOne {
+	mutation := newRateLimitExemptionMutation(c.config, OpUpdateOne, withRateLimitExemptionID(id))
+	return &RateLimitExemptionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RateLimitExemption.
+func (c *RateLimitExemptionClient) Delete() *RateLimitExemptionDelete {
+	mutation := newRateLimitExemptionMutation(c.config, OpDelete)
+	return &RateLimitExemptionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RateLimitExemptionClient) DeleteOne(_m *RateLimitExemption) *RateLimitExemptionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RateLimitExemptionClient) DeleteOneID(id string) *RateLimitExemptionDeleteOne {
+	builder := c.Delete().Where(ratelimitexemption.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RateLimitExemptionDeleteOne{builder}
+}
+
+// Query returns a query builder for RateLimitExemption.
+func (c *RateLimitExemptionClient) Query() *RateLimitExemptionQuery {
+	return &RateLimitExemptionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRateLimitExemption},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RateLimitExemption entity by its id.
+func (c *RateLimitExemptionClient) Get(ctx context.Context, id string) (*RateLimitExemption, error) {
+	return c.Query().Where(ratelimitexemption.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RateLimitExemptionClient) GetX(ctx context.Context, id string) *RateLimitExemption {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *RateLimitExemptionClient) Hooks() []Hook {
+	return c.hooks.RateLimitExemption
+}
+
+// Interceptors returns the client interceptors.
+func (c *RateLimitExemptionClient) Interceptors() []Interceptor {
+	return c.inters.RateLimitExemption
+}
+
+func (c *RateLimitExemptionClient) mutate(ctx context.Context, m *RateLimitExemptionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RateLimitExemptionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RateLimitExemptionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RateLimitExemptionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RateLimitExemptionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RateLimitExemption mutation op: %q", m.Op())
+	}
+}
+
+// RateLimitUserOverrideClient is a client for the RateLimitUserOverride schema.
+type RateLimitUserOverrideClient struct {
+	config
+}
+
+// NewRateLimitUserOverrideClient returns a client for the RateLimitUserOverride from the given config.
+func NewRateLimitUserOverrideClient(c config) *RateLimitUserOverrideClient {
+	return &RateLimitUserOverrideClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `ratelimituseroverride.Hooks(f(g(h())))`.
+func (c *RateLimitUserOverrideClient) Use(hooks ...Hook) {
+	c.hooks.RateLimitUserOverride = append(c.hooks.RateLimitUserOverride, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `ratelimituseroverride.Intercept(f(g(h())))`.
+func (c *RateLimitUserOverrideClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RateLimitUserOverride = append(c.inters.RateLimitUserOverride, interceptors...)
+}
+
+// Create returns a builder for creating a RateLimitUserOverride entity.
+func (c *RateLimitUserOverrideClient) Create() *RateLimitUserOverrideCreate {
+	mutation := newRateLimitUserOverrideMutation(c.config, OpCreate)
+	return &RateLimitUserOverrideCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RateLimitUserOverride entities.
+func (c *RateLimitUserOverrideClient) CreateBulk(builders ...*RateLimitUserOverrideCreate) *RateLimitUserOverrideCreateBulk {
+	return &RateLimitUserOverrideCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RateLimitUserOverrideClient) MapCreateBulk(slice any, setFunc func(*RateLimitUserOverrideCreate, int)) *RateLimitUserOverrideCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RateLimitUserOverrideCreateBulk{err: fmt.Errorf("calling to RateLimitUserOverrideClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RateLimitUserOverrideCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RateLimitUserOverrideCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RateLimitUserOverride.
+func (c *RateLimitUserOverrideClient) Update() *RateLimitUserOverrideUpdate {
+	mutation := newRateLimitUserOverrideMutation(c.config, OpUpdate)
+	return &RateLimitUserOverrideUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RateLimitUserOverrideClient) UpdateOne(_m *RateLimitUserOverride) *RateLimitUserOverrideUpdateOne {
+	mutation := newRateLimitUserOverrideMutation(c.config, OpUpdateOne, withRateLimitUserOverride(_m))
+	return &RateLimitUserOverrideUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RateLimitUserOverrideClient) UpdateOneID(id string) *RateLimitUserOverrideUpdateOne {
+	mutation := newRateLimitUserOverrideMutation(c.config, OpUpdateOne, withRateLimitUserOverrideID(id))
+	return &RateLimitUserOverrideUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RateLimitUserOverride.
+func (c *RateLimitUserOverrideClient) Delete() *RateLimitUserOverrideDelete {
+	mutation := newRateLimitUserOverrideMutation(c.config, OpDelete)
+	return &RateLimitUserOverrideDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RateLimitUserOverrideClient) DeleteOne(_m *RateLimitUserOverride) *RateLimitUserOverrideDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RateLimitUserOverrideClient) DeleteOneID(id string) *RateLimitUserOverrideDeleteOne {
+	builder := c.Delete().Where(ratelimituseroverride.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RateLimitUserOverrideDeleteOne{builder}
+}
+
+// Query returns a query builder for RateLimitUserOverride.
+func (c *RateLimitUserOverrideClient) Query() *RateLimitUserOverrideQuery {
+	return &RateLimitUserOverrideQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRateLimitUserOverride},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RateLimitUserOverride entity by its id.
+func (c *RateLimitUserOverrideClient) Get(ctx context.Context, id string) (*RateLimitUserOverride, error) {
+	return c.Query().Where(ratelimituseroverride.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RateLimitUserOverrideClient) GetX(ctx context.Context, id string) *RateLimitUserOverride {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *RateLimitUserOverrideClient) Hooks() []Hook {
+	return c.hooks.RateLimitUserOverride
+}
+
+// Interceptors returns the client interceptors.
+func (c *RateLimitUserOverrideClient) Interceptors() []Interceptor {
+	return c.inters.RateLimitUserOverride
+}
+
+func (c *RateLimitUserOverrideClient) mutate(ctx context.Context, m *RateLimitUserOverrideMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RateLimitUserOverrideCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RateLimitUserOverrideUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RateLimitUserOverrideUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RateLimitUserOverrideDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RateLimitUserOverride mutation op: %q", m.Op())
 	}
 }
 
@@ -3643,16 +4068,18 @@ func (c *VMRevisionClient) mutate(ctx context.Context, m *VMRevisionMutation) (V
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		ApprovalPolicy, ApprovalTicket, AuditLog, AuthProvider, Cluster, DomainEvent,
-		ExternalApprovalSystem, IdPGroupMapping, IdPSyncedGroup, InstanceSize,
-		NamespaceRegistry, Notification, PendingAdoption, ResourceRoleBinding, Role,
+		ApprovalPolicy, ApprovalTicket, AuditLog, AuthProvider, BatchApprovalTicket,
+		Cluster, DomainEvent, ExternalApprovalSystem, IdPGroupMapping, IdPSyncedGroup,
+		InstanceSize, NamespaceRegistry, Notification, PendingAdoption,
+		RateLimitExemption, RateLimitUserOverride, ResourceRoleBinding, Role,
 		RoleBinding, Service, System, SystemSecret, Template, User, VM,
 		VMRevision []ent.Hook
 	}
 	inters struct {
-		ApprovalPolicy, ApprovalTicket, AuditLog, AuthProvider, Cluster, DomainEvent,
-		ExternalApprovalSystem, IdPGroupMapping, IdPSyncedGroup, InstanceSize,
-		NamespaceRegistry, Notification, PendingAdoption, ResourceRoleBinding, Role,
+		ApprovalPolicy, ApprovalTicket, AuditLog, AuthProvider, BatchApprovalTicket,
+		Cluster, DomainEvent, ExternalApprovalSystem, IdPGroupMapping, IdPSyncedGroup,
+		InstanceSize, NamespaceRegistry, Notification, PendingAdoption,
+		RateLimitExemption, RateLimitUserOverride, ResourceRoleBinding, Role,
 		RoleBinding, Service, System, SystemSecret, Template, User, VM,
 		VMRevision []ent.Interceptor
 	}

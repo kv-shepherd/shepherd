@@ -15,6 +15,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/auditlog"
 	"kv-shepherd.io/shepherd/ent/authprovider"
+	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
 	"kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
@@ -25,6 +26,8 @@ import (
 	"kv-shepherd.io/shepherd/ent/notification"
 	"kv-shepherd.io/shepherd/ent/pendingadoption"
 	"kv-shepherd.io/shepherd/ent/predicate"
+	"kv-shepherd.io/shepherd/ent/ratelimitexemption"
+	"kv-shepherd.io/shepherd/ent/ratelimituseroverride"
 	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
 	"kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
@@ -50,6 +53,7 @@ const (
 	TypeApprovalTicket         = "ApprovalTicket"
 	TypeAuditLog               = "AuditLog"
 	TypeAuthProvider           = "AuthProvider"
+	TypeBatchApprovalTicket    = "BatchApprovalTicket"
 	TypeCluster                = "Cluster"
 	TypeDomainEvent            = "DomainEvent"
 	TypeExternalApprovalSystem = "ExternalApprovalSystem"
@@ -59,6 +63,8 @@ const (
 	TypeNamespaceRegistry      = "NamespaceRegistry"
 	TypeNotification           = "Notification"
 	TypePendingAdoption        = "PendingAdoption"
+	TypeRateLimitExemption     = "RateLimitExemption"
+	TypeRateLimitUserOverride  = "RateLimitUserOverride"
 	TypeResourceRoleBinding    = "ResourceRoleBinding"
 	TypeRole                   = "Role"
 	TypeRoleBinding            = "RoleBinding"
@@ -2900,7 +2906,7 @@ type AuthProviderMutation struct {
 	created_at    *time.Time
 	updated_at    *time.Time
 	name          *string
-	auth_type     *authprovider.AuthType
+	auth_type     *string
 	_config       *map[string]interface{}
 	enabled       *bool
 	sort_order    *int
@@ -3125,12 +3131,12 @@ func (m *AuthProviderMutation) ResetName() {
 }
 
 // SetAuthType sets the "auth_type" field.
-func (m *AuthProviderMutation) SetAuthType(at authprovider.AuthType) {
-	m.auth_type = &at
+func (m *AuthProviderMutation) SetAuthType(s string) {
+	m.auth_type = &s
 }
 
 // AuthType returns the value of the "auth_type" field in the mutation.
-func (m *AuthProviderMutation) AuthType() (r authprovider.AuthType, exists bool) {
+func (m *AuthProviderMutation) AuthType() (r string, exists bool) {
 	v := m.auth_type
 	if v == nil {
 		return
@@ -3141,7 +3147,7 @@ func (m *AuthProviderMutation) AuthType() (r authprovider.AuthType, exists bool)
 // OldAuthType returns the old "auth_type" field's value of the AuthProvider entity.
 // If the AuthProvider object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AuthProviderMutation) OldAuthType(ctx context.Context) (v authprovider.AuthType, err error) {
+func (m *AuthProviderMutation) OldAuthType(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldAuthType is only allowed on UpdateOne operations")
 	}
@@ -3463,7 +3469,7 @@ func (m *AuthProviderMutation) SetField(name string, value ent.Value) error {
 		m.SetName(v)
 		return nil
 	case authprovider.FieldAuthType:
-		v, ok := value.(authprovider.AuthType)
+		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -3635,6 +3641,1054 @@ func (m *AuthProviderMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *AuthProviderMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown AuthProvider edge %s", name)
+}
+
+// BatchApprovalTicketMutation represents an operation that mutates the BatchApprovalTicket nodes in the graph.
+type BatchApprovalTicketMutation struct {
+	config
+	op               Op
+	typ              string
+	id               *string
+	created_at       *time.Time
+	updated_at       *time.Time
+	batch_type       *batchapprovalticket.BatchType
+	child_count      *int
+	addchild_count   *int
+	success_count    *int
+	addsuccess_count *int
+	failed_count     *int
+	addfailed_count  *int
+	pending_count    *int
+	addpending_count *int
+	status           *batchapprovalticket.Status
+	request_id       *string
+	created_by       *string
+	reason           *string
+	clearedFields    map[string]struct{}
+	done             bool
+	oldValue         func(context.Context) (*BatchApprovalTicket, error)
+	predicates       []predicate.BatchApprovalTicket
+}
+
+var _ ent.Mutation = (*BatchApprovalTicketMutation)(nil)
+
+// batchapprovalticketOption allows management of the mutation configuration using functional options.
+type batchapprovalticketOption func(*BatchApprovalTicketMutation)
+
+// newBatchApprovalTicketMutation creates new mutation for the BatchApprovalTicket entity.
+func newBatchApprovalTicketMutation(c config, op Op, opts ...batchapprovalticketOption) *BatchApprovalTicketMutation {
+	m := &BatchApprovalTicketMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeBatchApprovalTicket,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withBatchApprovalTicketID sets the ID field of the mutation.
+func withBatchApprovalTicketID(id string) batchapprovalticketOption {
+	return func(m *BatchApprovalTicketMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *BatchApprovalTicket
+		)
+		m.oldValue = func(ctx context.Context) (*BatchApprovalTicket, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().BatchApprovalTicket.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withBatchApprovalTicket sets the old BatchApprovalTicket of the mutation.
+func withBatchApprovalTicket(node *BatchApprovalTicket) batchapprovalticketOption {
+	return func(m *BatchApprovalTicketMutation) {
+		m.oldValue = func(context.Context) (*BatchApprovalTicket, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m BatchApprovalTicketMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m BatchApprovalTicketMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of BatchApprovalTicket entities.
+func (m *BatchApprovalTicketMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *BatchApprovalTicketMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *BatchApprovalTicketMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().BatchApprovalTicket.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *BatchApprovalTicketMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *BatchApprovalTicketMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the BatchApprovalTicket entity.
+// If the BatchApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BatchApprovalTicketMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *BatchApprovalTicketMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *BatchApprovalTicketMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *BatchApprovalTicketMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the BatchApprovalTicket entity.
+// If the BatchApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BatchApprovalTicketMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *BatchApprovalTicketMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetBatchType sets the "batch_type" field.
+func (m *BatchApprovalTicketMutation) SetBatchType(bt batchapprovalticket.BatchType) {
+	m.batch_type = &bt
+}
+
+// BatchType returns the value of the "batch_type" field in the mutation.
+func (m *BatchApprovalTicketMutation) BatchType() (r batchapprovalticket.BatchType, exists bool) {
+	v := m.batch_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBatchType returns the old "batch_type" field's value of the BatchApprovalTicket entity.
+// If the BatchApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BatchApprovalTicketMutation) OldBatchType(ctx context.Context) (v batchapprovalticket.BatchType, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBatchType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBatchType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBatchType: %w", err)
+	}
+	return oldValue.BatchType, nil
+}
+
+// ResetBatchType resets all changes to the "batch_type" field.
+func (m *BatchApprovalTicketMutation) ResetBatchType() {
+	m.batch_type = nil
+}
+
+// SetChildCount sets the "child_count" field.
+func (m *BatchApprovalTicketMutation) SetChildCount(i int) {
+	m.child_count = &i
+	m.addchild_count = nil
+}
+
+// ChildCount returns the value of the "child_count" field in the mutation.
+func (m *BatchApprovalTicketMutation) ChildCount() (r int, exists bool) {
+	v := m.child_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChildCount returns the old "child_count" field's value of the BatchApprovalTicket entity.
+// If the BatchApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BatchApprovalTicketMutation) OldChildCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChildCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChildCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChildCount: %w", err)
+	}
+	return oldValue.ChildCount, nil
+}
+
+// AddChildCount adds i to the "child_count" field.
+func (m *BatchApprovalTicketMutation) AddChildCount(i int) {
+	if m.addchild_count != nil {
+		*m.addchild_count += i
+	} else {
+		m.addchild_count = &i
+	}
+}
+
+// AddedChildCount returns the value that was added to the "child_count" field in this mutation.
+func (m *BatchApprovalTicketMutation) AddedChildCount() (r int, exists bool) {
+	v := m.addchild_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetChildCount resets all changes to the "child_count" field.
+func (m *BatchApprovalTicketMutation) ResetChildCount() {
+	m.child_count = nil
+	m.addchild_count = nil
+}
+
+// SetSuccessCount sets the "success_count" field.
+func (m *BatchApprovalTicketMutation) SetSuccessCount(i int) {
+	m.success_count = &i
+	m.addsuccess_count = nil
+}
+
+// SuccessCount returns the value of the "success_count" field in the mutation.
+func (m *BatchApprovalTicketMutation) SuccessCount() (r int, exists bool) {
+	v := m.success_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSuccessCount returns the old "success_count" field's value of the BatchApprovalTicket entity.
+// If the BatchApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BatchApprovalTicketMutation) OldSuccessCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSuccessCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSuccessCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSuccessCount: %w", err)
+	}
+	return oldValue.SuccessCount, nil
+}
+
+// AddSuccessCount adds i to the "success_count" field.
+func (m *BatchApprovalTicketMutation) AddSuccessCount(i int) {
+	if m.addsuccess_count != nil {
+		*m.addsuccess_count += i
+	} else {
+		m.addsuccess_count = &i
+	}
+}
+
+// AddedSuccessCount returns the value that was added to the "success_count" field in this mutation.
+func (m *BatchApprovalTicketMutation) AddedSuccessCount() (r int, exists bool) {
+	v := m.addsuccess_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSuccessCount resets all changes to the "success_count" field.
+func (m *BatchApprovalTicketMutation) ResetSuccessCount() {
+	m.success_count = nil
+	m.addsuccess_count = nil
+}
+
+// SetFailedCount sets the "failed_count" field.
+func (m *BatchApprovalTicketMutation) SetFailedCount(i int) {
+	m.failed_count = &i
+	m.addfailed_count = nil
+}
+
+// FailedCount returns the value of the "failed_count" field in the mutation.
+func (m *BatchApprovalTicketMutation) FailedCount() (r int, exists bool) {
+	v := m.failed_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFailedCount returns the old "failed_count" field's value of the BatchApprovalTicket entity.
+// If the BatchApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BatchApprovalTicketMutation) OldFailedCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFailedCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFailedCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFailedCount: %w", err)
+	}
+	return oldValue.FailedCount, nil
+}
+
+// AddFailedCount adds i to the "failed_count" field.
+func (m *BatchApprovalTicketMutation) AddFailedCount(i int) {
+	if m.addfailed_count != nil {
+		*m.addfailed_count += i
+	} else {
+		m.addfailed_count = &i
+	}
+}
+
+// AddedFailedCount returns the value that was added to the "failed_count" field in this mutation.
+func (m *BatchApprovalTicketMutation) AddedFailedCount() (r int, exists bool) {
+	v := m.addfailed_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetFailedCount resets all changes to the "failed_count" field.
+func (m *BatchApprovalTicketMutation) ResetFailedCount() {
+	m.failed_count = nil
+	m.addfailed_count = nil
+}
+
+// SetPendingCount sets the "pending_count" field.
+func (m *BatchApprovalTicketMutation) SetPendingCount(i int) {
+	m.pending_count = &i
+	m.addpending_count = nil
+}
+
+// PendingCount returns the value of the "pending_count" field in the mutation.
+func (m *BatchApprovalTicketMutation) PendingCount() (r int, exists bool) {
+	v := m.pending_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPendingCount returns the old "pending_count" field's value of the BatchApprovalTicket entity.
+// If the BatchApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BatchApprovalTicketMutation) OldPendingCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPendingCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPendingCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPendingCount: %w", err)
+	}
+	return oldValue.PendingCount, nil
+}
+
+// AddPendingCount adds i to the "pending_count" field.
+func (m *BatchApprovalTicketMutation) AddPendingCount(i int) {
+	if m.addpending_count != nil {
+		*m.addpending_count += i
+	} else {
+		m.addpending_count = &i
+	}
+}
+
+// AddedPendingCount returns the value that was added to the "pending_count" field in this mutation.
+func (m *BatchApprovalTicketMutation) AddedPendingCount() (r int, exists bool) {
+	v := m.addpending_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPendingCount resets all changes to the "pending_count" field.
+func (m *BatchApprovalTicketMutation) ResetPendingCount() {
+	m.pending_count = nil
+	m.addpending_count = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *BatchApprovalTicketMutation) SetStatus(b batchapprovalticket.Status) {
+	m.status = &b
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *BatchApprovalTicketMutation) Status() (r batchapprovalticket.Status, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the BatchApprovalTicket entity.
+// If the BatchApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BatchApprovalTicketMutation) OldStatus(ctx context.Context) (v batchapprovalticket.Status, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *BatchApprovalTicketMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *BatchApprovalTicketMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *BatchApprovalTicketMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the BatchApprovalTicket entity.
+// If the BatchApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BatchApprovalTicketMutation) OldRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ClearRequestID clears the value of the "request_id" field.
+func (m *BatchApprovalTicketMutation) ClearRequestID() {
+	m.request_id = nil
+	m.clearedFields[batchapprovalticket.FieldRequestID] = struct{}{}
+}
+
+// RequestIDCleared returns if the "request_id" field was cleared in this mutation.
+func (m *BatchApprovalTicketMutation) RequestIDCleared() bool {
+	_, ok := m.clearedFields[batchapprovalticket.FieldRequestID]
+	return ok
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *BatchApprovalTicketMutation) ResetRequestID() {
+	m.request_id = nil
+	delete(m.clearedFields, batchapprovalticket.FieldRequestID)
+}
+
+// SetCreatedBy sets the "created_by" field.
+func (m *BatchApprovalTicketMutation) SetCreatedBy(s string) {
+	m.created_by = &s
+}
+
+// CreatedBy returns the value of the "created_by" field in the mutation.
+func (m *BatchApprovalTicketMutation) CreatedBy() (r string, exists bool) {
+	v := m.created_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedBy returns the old "created_by" field's value of the BatchApprovalTicket entity.
+// If the BatchApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BatchApprovalTicketMutation) OldCreatedBy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedBy: %w", err)
+	}
+	return oldValue.CreatedBy, nil
+}
+
+// ResetCreatedBy resets all changes to the "created_by" field.
+func (m *BatchApprovalTicketMutation) ResetCreatedBy() {
+	m.created_by = nil
+}
+
+// SetReason sets the "reason" field.
+func (m *BatchApprovalTicketMutation) SetReason(s string) {
+	m.reason = &s
+}
+
+// Reason returns the value of the "reason" field in the mutation.
+func (m *BatchApprovalTicketMutation) Reason() (r string, exists bool) {
+	v := m.reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReason returns the old "reason" field's value of the BatchApprovalTicket entity.
+// If the BatchApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *BatchApprovalTicketMutation) OldReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReason: %w", err)
+	}
+	return oldValue.Reason, nil
+}
+
+// ClearReason clears the value of the "reason" field.
+func (m *BatchApprovalTicketMutation) ClearReason() {
+	m.reason = nil
+	m.clearedFields[batchapprovalticket.FieldReason] = struct{}{}
+}
+
+// ReasonCleared returns if the "reason" field was cleared in this mutation.
+func (m *BatchApprovalTicketMutation) ReasonCleared() bool {
+	_, ok := m.clearedFields[batchapprovalticket.FieldReason]
+	return ok
+}
+
+// ResetReason resets all changes to the "reason" field.
+func (m *BatchApprovalTicketMutation) ResetReason() {
+	m.reason = nil
+	delete(m.clearedFields, batchapprovalticket.FieldReason)
+}
+
+// Where appends a list predicates to the BatchApprovalTicketMutation builder.
+func (m *BatchApprovalTicketMutation) Where(ps ...predicate.BatchApprovalTicket) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the BatchApprovalTicketMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *BatchApprovalTicketMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.BatchApprovalTicket, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *BatchApprovalTicketMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *BatchApprovalTicketMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (BatchApprovalTicket).
+func (m *BatchApprovalTicketMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *BatchApprovalTicketMutation) Fields() []string {
+	fields := make([]string, 0, 11)
+	if m.created_at != nil {
+		fields = append(fields, batchapprovalticket.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, batchapprovalticket.FieldUpdatedAt)
+	}
+	if m.batch_type != nil {
+		fields = append(fields, batchapprovalticket.FieldBatchType)
+	}
+	if m.child_count != nil {
+		fields = append(fields, batchapprovalticket.FieldChildCount)
+	}
+	if m.success_count != nil {
+		fields = append(fields, batchapprovalticket.FieldSuccessCount)
+	}
+	if m.failed_count != nil {
+		fields = append(fields, batchapprovalticket.FieldFailedCount)
+	}
+	if m.pending_count != nil {
+		fields = append(fields, batchapprovalticket.FieldPendingCount)
+	}
+	if m.status != nil {
+		fields = append(fields, batchapprovalticket.FieldStatus)
+	}
+	if m.request_id != nil {
+		fields = append(fields, batchapprovalticket.FieldRequestID)
+	}
+	if m.created_by != nil {
+		fields = append(fields, batchapprovalticket.FieldCreatedBy)
+	}
+	if m.reason != nil {
+		fields = append(fields, batchapprovalticket.FieldReason)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *BatchApprovalTicketMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case batchapprovalticket.FieldCreatedAt:
+		return m.CreatedAt()
+	case batchapprovalticket.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case batchapprovalticket.FieldBatchType:
+		return m.BatchType()
+	case batchapprovalticket.FieldChildCount:
+		return m.ChildCount()
+	case batchapprovalticket.FieldSuccessCount:
+		return m.SuccessCount()
+	case batchapprovalticket.FieldFailedCount:
+		return m.FailedCount()
+	case batchapprovalticket.FieldPendingCount:
+		return m.PendingCount()
+	case batchapprovalticket.FieldStatus:
+		return m.Status()
+	case batchapprovalticket.FieldRequestID:
+		return m.RequestID()
+	case batchapprovalticket.FieldCreatedBy:
+		return m.CreatedBy()
+	case batchapprovalticket.FieldReason:
+		return m.Reason()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *BatchApprovalTicketMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case batchapprovalticket.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case batchapprovalticket.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case batchapprovalticket.FieldBatchType:
+		return m.OldBatchType(ctx)
+	case batchapprovalticket.FieldChildCount:
+		return m.OldChildCount(ctx)
+	case batchapprovalticket.FieldSuccessCount:
+		return m.OldSuccessCount(ctx)
+	case batchapprovalticket.FieldFailedCount:
+		return m.OldFailedCount(ctx)
+	case batchapprovalticket.FieldPendingCount:
+		return m.OldPendingCount(ctx)
+	case batchapprovalticket.FieldStatus:
+		return m.OldStatus(ctx)
+	case batchapprovalticket.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case batchapprovalticket.FieldCreatedBy:
+		return m.OldCreatedBy(ctx)
+	case batchapprovalticket.FieldReason:
+		return m.OldReason(ctx)
+	}
+	return nil, fmt.Errorf("unknown BatchApprovalTicket field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BatchApprovalTicketMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case batchapprovalticket.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case batchapprovalticket.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case batchapprovalticket.FieldBatchType:
+		v, ok := value.(batchapprovalticket.BatchType)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBatchType(v)
+		return nil
+	case batchapprovalticket.FieldChildCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChildCount(v)
+		return nil
+	case batchapprovalticket.FieldSuccessCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSuccessCount(v)
+		return nil
+	case batchapprovalticket.FieldFailedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFailedCount(v)
+		return nil
+	case batchapprovalticket.FieldPendingCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPendingCount(v)
+		return nil
+	case batchapprovalticket.FieldStatus:
+		v, ok := value.(batchapprovalticket.Status)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case batchapprovalticket.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case batchapprovalticket.FieldCreatedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedBy(v)
+		return nil
+	case batchapprovalticket.FieldReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReason(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BatchApprovalTicket field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *BatchApprovalTicketMutation) AddedFields() []string {
+	var fields []string
+	if m.addchild_count != nil {
+		fields = append(fields, batchapprovalticket.FieldChildCount)
+	}
+	if m.addsuccess_count != nil {
+		fields = append(fields, batchapprovalticket.FieldSuccessCount)
+	}
+	if m.addfailed_count != nil {
+		fields = append(fields, batchapprovalticket.FieldFailedCount)
+	}
+	if m.addpending_count != nil {
+		fields = append(fields, batchapprovalticket.FieldPendingCount)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *BatchApprovalTicketMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case batchapprovalticket.FieldChildCount:
+		return m.AddedChildCount()
+	case batchapprovalticket.FieldSuccessCount:
+		return m.AddedSuccessCount()
+	case batchapprovalticket.FieldFailedCount:
+		return m.AddedFailedCount()
+	case batchapprovalticket.FieldPendingCount:
+		return m.AddedPendingCount()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *BatchApprovalTicketMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case batchapprovalticket.FieldChildCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddChildCount(v)
+		return nil
+	case batchapprovalticket.FieldSuccessCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSuccessCount(v)
+		return nil
+	case batchapprovalticket.FieldFailedCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFailedCount(v)
+		return nil
+	case batchapprovalticket.FieldPendingCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPendingCount(v)
+		return nil
+	}
+	return fmt.Errorf("unknown BatchApprovalTicket numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *BatchApprovalTicketMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(batchapprovalticket.FieldRequestID) {
+		fields = append(fields, batchapprovalticket.FieldRequestID)
+	}
+	if m.FieldCleared(batchapprovalticket.FieldReason) {
+		fields = append(fields, batchapprovalticket.FieldReason)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *BatchApprovalTicketMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *BatchApprovalTicketMutation) ClearField(name string) error {
+	switch name {
+	case batchapprovalticket.FieldRequestID:
+		m.ClearRequestID()
+		return nil
+	case batchapprovalticket.FieldReason:
+		m.ClearReason()
+		return nil
+	}
+	return fmt.Errorf("unknown BatchApprovalTicket nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *BatchApprovalTicketMutation) ResetField(name string) error {
+	switch name {
+	case batchapprovalticket.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case batchapprovalticket.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case batchapprovalticket.FieldBatchType:
+		m.ResetBatchType()
+		return nil
+	case batchapprovalticket.FieldChildCount:
+		m.ResetChildCount()
+		return nil
+	case batchapprovalticket.FieldSuccessCount:
+		m.ResetSuccessCount()
+		return nil
+	case batchapprovalticket.FieldFailedCount:
+		m.ResetFailedCount()
+		return nil
+	case batchapprovalticket.FieldPendingCount:
+		m.ResetPendingCount()
+		return nil
+	case batchapprovalticket.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case batchapprovalticket.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case batchapprovalticket.FieldCreatedBy:
+		m.ResetCreatedBy()
+		return nil
+	case batchapprovalticket.FieldReason:
+		m.ResetReason()
+		return nil
+	}
+	return fmt.Errorf("unknown BatchApprovalTicket field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *BatchApprovalTicketMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *BatchApprovalTicketMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *BatchApprovalTicketMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *BatchApprovalTicketMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *BatchApprovalTicketMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *BatchApprovalTicketMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *BatchApprovalTicketMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown BatchApprovalTicket unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *BatchApprovalTicketMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown BatchApprovalTicket edge %s", name)
 }
 
 // ClusterMutation represents an operation that mutates the Cluster nodes in the graph.
@@ -6340,19 +7394,23 @@ func (m *ExternalApprovalSystemMutation) ResetEdge(name string) error {
 // IdPGroupMappingMutation represents an operation that mutates the IdPGroupMapping nodes in the graph.
 type IdPGroupMappingMutation struct {
 	config
-	op              Op
-	typ             string
-	id              *string
-	created_at      *time.Time
-	updated_at      *time.Time
-	synced_group_id *string
-	role_id         *string
-	scope           *string
-	created_by      *string
-	clearedFields   map[string]struct{}
-	done            bool
-	oldValue        func(context.Context) (*IdPGroupMapping, error)
-	predicates      []predicate.IdPGroupMapping
+	op                         Op
+	typ                        string
+	id                         *string
+	created_at                 *time.Time
+	updated_at                 *time.Time
+	provider_id                *string
+	external_group_id          *string
+	role_id                    *string
+	scope_type                 *string
+	scope_id                   *string
+	allowed_environments       *[]string
+	appendallowed_environments []string
+	created_by                 *string
+	clearedFields              map[string]struct{}
+	done                       bool
+	oldValue                   func(context.Context) (*IdPGroupMapping, error)
+	predicates                 []predicate.IdPGroupMapping
 }
 
 var _ ent.Mutation = (*IdPGroupMappingMutation)(nil)
@@ -6531,40 +7589,76 @@ func (m *IdPGroupMappingMutation) ResetUpdatedAt() {
 	m.updated_at = nil
 }
 
-// SetSyncedGroupID sets the "synced_group_id" field.
-func (m *IdPGroupMappingMutation) SetSyncedGroupID(s string) {
-	m.synced_group_id = &s
+// SetProviderID sets the "provider_id" field.
+func (m *IdPGroupMappingMutation) SetProviderID(s string) {
+	m.provider_id = &s
 }
 
-// SyncedGroupID returns the value of the "synced_group_id" field in the mutation.
-func (m *IdPGroupMappingMutation) SyncedGroupID() (r string, exists bool) {
-	v := m.synced_group_id
+// ProviderID returns the value of the "provider_id" field in the mutation.
+func (m *IdPGroupMappingMutation) ProviderID() (r string, exists bool) {
+	v := m.provider_id
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldSyncedGroupID returns the old "synced_group_id" field's value of the IdPGroupMapping entity.
+// OldProviderID returns the old "provider_id" field's value of the IdPGroupMapping entity.
 // If the IdPGroupMapping object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *IdPGroupMappingMutation) OldSyncedGroupID(ctx context.Context) (v string, err error) {
+func (m *IdPGroupMappingMutation) OldProviderID(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldSyncedGroupID is only allowed on UpdateOne operations")
+		return v, errors.New("OldProviderID is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldSyncedGroupID requires an ID field in the mutation")
+		return v, errors.New("OldProviderID requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldSyncedGroupID: %w", err)
+		return v, fmt.Errorf("querying old value for OldProviderID: %w", err)
 	}
-	return oldValue.SyncedGroupID, nil
+	return oldValue.ProviderID, nil
 }
 
-// ResetSyncedGroupID resets all changes to the "synced_group_id" field.
-func (m *IdPGroupMappingMutation) ResetSyncedGroupID() {
-	m.synced_group_id = nil
+// ResetProviderID resets all changes to the "provider_id" field.
+func (m *IdPGroupMappingMutation) ResetProviderID() {
+	m.provider_id = nil
+}
+
+// SetExternalGroupID sets the "external_group_id" field.
+func (m *IdPGroupMappingMutation) SetExternalGroupID(s string) {
+	m.external_group_id = &s
+}
+
+// ExternalGroupID returns the value of the "external_group_id" field in the mutation.
+func (m *IdPGroupMappingMutation) ExternalGroupID() (r string, exists bool) {
+	v := m.external_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExternalGroupID returns the old "external_group_id" field's value of the IdPGroupMapping entity.
+// If the IdPGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdPGroupMappingMutation) OldExternalGroupID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExternalGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExternalGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExternalGroupID: %w", err)
+	}
+	return oldValue.ExternalGroupID, nil
+}
+
+// ResetExternalGroupID resets all changes to the "external_group_id" field.
+func (m *IdPGroupMappingMutation) ResetExternalGroupID() {
+	m.external_group_id = nil
 }
 
 // SetRoleID sets the "role_id" field.
@@ -6603,53 +7697,167 @@ func (m *IdPGroupMappingMutation) ResetRoleID() {
 	m.role_id = nil
 }
 
-// SetScope sets the "scope" field.
-func (m *IdPGroupMappingMutation) SetScope(s string) {
-	m.scope = &s
+// SetScopeType sets the "scope_type" field.
+func (m *IdPGroupMappingMutation) SetScopeType(s string) {
+	m.scope_type = &s
 }
 
-// Scope returns the value of the "scope" field in the mutation.
-func (m *IdPGroupMappingMutation) Scope() (r string, exists bool) {
-	v := m.scope
+// ScopeType returns the value of the "scope_type" field in the mutation.
+func (m *IdPGroupMappingMutation) ScopeType() (r string, exists bool) {
+	v := m.scope_type
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldScope returns the old "scope" field's value of the IdPGroupMapping entity.
+// OldScopeType returns the old "scope_type" field's value of the IdPGroupMapping entity.
 // If the IdPGroupMapping object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *IdPGroupMappingMutation) OldScope(ctx context.Context) (v string, err error) {
+func (m *IdPGroupMappingMutation) OldScopeType(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldScope is only allowed on UpdateOne operations")
+		return v, errors.New("OldScopeType is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldScope requires an ID field in the mutation")
+		return v, errors.New("OldScopeType requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldScope: %w", err)
+		return v, fmt.Errorf("querying old value for OldScopeType: %w", err)
 	}
-	return oldValue.Scope, nil
+	return oldValue.ScopeType, nil
 }
 
-// ClearScope clears the value of the "scope" field.
-func (m *IdPGroupMappingMutation) ClearScope() {
-	m.scope = nil
-	m.clearedFields[idpgroupmapping.FieldScope] = struct{}{}
+// ClearScopeType clears the value of the "scope_type" field.
+func (m *IdPGroupMappingMutation) ClearScopeType() {
+	m.scope_type = nil
+	m.clearedFields[idpgroupmapping.FieldScopeType] = struct{}{}
 }
 
-// ScopeCleared returns if the "scope" field was cleared in this mutation.
-func (m *IdPGroupMappingMutation) ScopeCleared() bool {
-	_, ok := m.clearedFields[idpgroupmapping.FieldScope]
+// ScopeTypeCleared returns if the "scope_type" field was cleared in this mutation.
+func (m *IdPGroupMappingMutation) ScopeTypeCleared() bool {
+	_, ok := m.clearedFields[idpgroupmapping.FieldScopeType]
 	return ok
 }
 
-// ResetScope resets all changes to the "scope" field.
-func (m *IdPGroupMappingMutation) ResetScope() {
-	m.scope = nil
-	delete(m.clearedFields, idpgroupmapping.FieldScope)
+// ResetScopeType resets all changes to the "scope_type" field.
+func (m *IdPGroupMappingMutation) ResetScopeType() {
+	m.scope_type = nil
+	delete(m.clearedFields, idpgroupmapping.FieldScopeType)
+}
+
+// SetScopeID sets the "scope_id" field.
+func (m *IdPGroupMappingMutation) SetScopeID(s string) {
+	m.scope_id = &s
+}
+
+// ScopeID returns the value of the "scope_id" field in the mutation.
+func (m *IdPGroupMappingMutation) ScopeID() (r string, exists bool) {
+	v := m.scope_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScopeID returns the old "scope_id" field's value of the IdPGroupMapping entity.
+// If the IdPGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdPGroupMappingMutation) OldScopeID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScopeID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScopeID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScopeID: %w", err)
+	}
+	return oldValue.ScopeID, nil
+}
+
+// ClearScopeID clears the value of the "scope_id" field.
+func (m *IdPGroupMappingMutation) ClearScopeID() {
+	m.scope_id = nil
+	m.clearedFields[idpgroupmapping.FieldScopeID] = struct{}{}
+}
+
+// ScopeIDCleared returns if the "scope_id" field was cleared in this mutation.
+func (m *IdPGroupMappingMutation) ScopeIDCleared() bool {
+	_, ok := m.clearedFields[idpgroupmapping.FieldScopeID]
+	return ok
+}
+
+// ResetScopeID resets all changes to the "scope_id" field.
+func (m *IdPGroupMappingMutation) ResetScopeID() {
+	m.scope_id = nil
+	delete(m.clearedFields, idpgroupmapping.FieldScopeID)
+}
+
+// SetAllowedEnvironments sets the "allowed_environments" field.
+func (m *IdPGroupMappingMutation) SetAllowedEnvironments(s []string) {
+	m.allowed_environments = &s
+	m.appendallowed_environments = nil
+}
+
+// AllowedEnvironments returns the value of the "allowed_environments" field in the mutation.
+func (m *IdPGroupMappingMutation) AllowedEnvironments() (r []string, exists bool) {
+	v := m.allowed_environments
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowedEnvironments returns the old "allowed_environments" field's value of the IdPGroupMapping entity.
+// If the IdPGroupMapping object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdPGroupMappingMutation) OldAllowedEnvironments(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowedEnvironments is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowedEnvironments requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowedEnvironments: %w", err)
+	}
+	return oldValue.AllowedEnvironments, nil
+}
+
+// AppendAllowedEnvironments adds s to the "allowed_environments" field.
+func (m *IdPGroupMappingMutation) AppendAllowedEnvironments(s []string) {
+	m.appendallowed_environments = append(m.appendallowed_environments, s...)
+}
+
+// AppendedAllowedEnvironments returns the list of values that were appended to the "allowed_environments" field in this mutation.
+func (m *IdPGroupMappingMutation) AppendedAllowedEnvironments() ([]string, bool) {
+	if len(m.appendallowed_environments) == 0 {
+		return nil, false
+	}
+	return m.appendallowed_environments, true
+}
+
+// ClearAllowedEnvironments clears the value of the "allowed_environments" field.
+func (m *IdPGroupMappingMutation) ClearAllowedEnvironments() {
+	m.allowed_environments = nil
+	m.appendallowed_environments = nil
+	m.clearedFields[idpgroupmapping.FieldAllowedEnvironments] = struct{}{}
+}
+
+// AllowedEnvironmentsCleared returns if the "allowed_environments" field was cleared in this mutation.
+func (m *IdPGroupMappingMutation) AllowedEnvironmentsCleared() bool {
+	_, ok := m.clearedFields[idpgroupmapping.FieldAllowedEnvironments]
+	return ok
+}
+
+// ResetAllowedEnvironments resets all changes to the "allowed_environments" field.
+func (m *IdPGroupMappingMutation) ResetAllowedEnvironments() {
+	m.allowed_environments = nil
+	m.appendallowed_environments = nil
+	delete(m.clearedFields, idpgroupmapping.FieldAllowedEnvironments)
 }
 
 // SetCreatedBy sets the "created_by" field.
@@ -6722,21 +7930,30 @@ func (m *IdPGroupMappingMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *IdPGroupMappingMutation) Fields() []string {
-	fields := make([]string, 0, 6)
+	fields := make([]string, 0, 9)
 	if m.created_at != nil {
 		fields = append(fields, idpgroupmapping.FieldCreatedAt)
 	}
 	if m.updated_at != nil {
 		fields = append(fields, idpgroupmapping.FieldUpdatedAt)
 	}
-	if m.synced_group_id != nil {
-		fields = append(fields, idpgroupmapping.FieldSyncedGroupID)
+	if m.provider_id != nil {
+		fields = append(fields, idpgroupmapping.FieldProviderID)
+	}
+	if m.external_group_id != nil {
+		fields = append(fields, idpgroupmapping.FieldExternalGroupID)
 	}
 	if m.role_id != nil {
 		fields = append(fields, idpgroupmapping.FieldRoleID)
 	}
-	if m.scope != nil {
-		fields = append(fields, idpgroupmapping.FieldScope)
+	if m.scope_type != nil {
+		fields = append(fields, idpgroupmapping.FieldScopeType)
+	}
+	if m.scope_id != nil {
+		fields = append(fields, idpgroupmapping.FieldScopeID)
+	}
+	if m.allowed_environments != nil {
+		fields = append(fields, idpgroupmapping.FieldAllowedEnvironments)
 	}
 	if m.created_by != nil {
 		fields = append(fields, idpgroupmapping.FieldCreatedBy)
@@ -6753,12 +7970,18 @@ func (m *IdPGroupMappingMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedAt()
 	case idpgroupmapping.FieldUpdatedAt:
 		return m.UpdatedAt()
-	case idpgroupmapping.FieldSyncedGroupID:
-		return m.SyncedGroupID()
+	case idpgroupmapping.FieldProviderID:
+		return m.ProviderID()
+	case idpgroupmapping.FieldExternalGroupID:
+		return m.ExternalGroupID()
 	case idpgroupmapping.FieldRoleID:
 		return m.RoleID()
-	case idpgroupmapping.FieldScope:
-		return m.Scope()
+	case idpgroupmapping.FieldScopeType:
+		return m.ScopeType()
+	case idpgroupmapping.FieldScopeID:
+		return m.ScopeID()
+	case idpgroupmapping.FieldAllowedEnvironments:
+		return m.AllowedEnvironments()
 	case idpgroupmapping.FieldCreatedBy:
 		return m.CreatedBy()
 	}
@@ -6774,12 +7997,18 @@ func (m *IdPGroupMappingMutation) OldField(ctx context.Context, name string) (en
 		return m.OldCreatedAt(ctx)
 	case idpgroupmapping.FieldUpdatedAt:
 		return m.OldUpdatedAt(ctx)
-	case idpgroupmapping.FieldSyncedGroupID:
-		return m.OldSyncedGroupID(ctx)
+	case idpgroupmapping.FieldProviderID:
+		return m.OldProviderID(ctx)
+	case idpgroupmapping.FieldExternalGroupID:
+		return m.OldExternalGroupID(ctx)
 	case idpgroupmapping.FieldRoleID:
 		return m.OldRoleID(ctx)
-	case idpgroupmapping.FieldScope:
-		return m.OldScope(ctx)
+	case idpgroupmapping.FieldScopeType:
+		return m.OldScopeType(ctx)
+	case idpgroupmapping.FieldScopeID:
+		return m.OldScopeID(ctx)
+	case idpgroupmapping.FieldAllowedEnvironments:
+		return m.OldAllowedEnvironments(ctx)
 	case idpgroupmapping.FieldCreatedBy:
 		return m.OldCreatedBy(ctx)
 	}
@@ -6805,12 +8034,19 @@ func (m *IdPGroupMappingMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetUpdatedAt(v)
 		return nil
-	case idpgroupmapping.FieldSyncedGroupID:
+	case idpgroupmapping.FieldProviderID:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetSyncedGroupID(v)
+		m.SetProviderID(v)
+		return nil
+	case idpgroupmapping.FieldExternalGroupID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExternalGroupID(v)
 		return nil
 	case idpgroupmapping.FieldRoleID:
 		v, ok := value.(string)
@@ -6819,12 +8055,26 @@ func (m *IdPGroupMappingMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetRoleID(v)
 		return nil
-	case idpgroupmapping.FieldScope:
+	case idpgroupmapping.FieldScopeType:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetScope(v)
+		m.SetScopeType(v)
+		return nil
+	case idpgroupmapping.FieldScopeID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScopeID(v)
+		return nil
+	case idpgroupmapping.FieldAllowedEnvironments:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowedEnvironments(v)
 		return nil
 	case idpgroupmapping.FieldCreatedBy:
 		v, ok := value.(string)
@@ -6863,8 +8113,14 @@ func (m *IdPGroupMappingMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *IdPGroupMappingMutation) ClearedFields() []string {
 	var fields []string
-	if m.FieldCleared(idpgroupmapping.FieldScope) {
-		fields = append(fields, idpgroupmapping.FieldScope)
+	if m.FieldCleared(idpgroupmapping.FieldScopeType) {
+		fields = append(fields, idpgroupmapping.FieldScopeType)
+	}
+	if m.FieldCleared(idpgroupmapping.FieldScopeID) {
+		fields = append(fields, idpgroupmapping.FieldScopeID)
+	}
+	if m.FieldCleared(idpgroupmapping.FieldAllowedEnvironments) {
+		fields = append(fields, idpgroupmapping.FieldAllowedEnvironments)
 	}
 	return fields
 }
@@ -6880,8 +8136,14 @@ func (m *IdPGroupMappingMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *IdPGroupMappingMutation) ClearField(name string) error {
 	switch name {
-	case idpgroupmapping.FieldScope:
-		m.ClearScope()
+	case idpgroupmapping.FieldScopeType:
+		m.ClearScopeType()
+		return nil
+	case idpgroupmapping.FieldScopeID:
+		m.ClearScopeID()
+		return nil
+	case idpgroupmapping.FieldAllowedEnvironments:
+		m.ClearAllowedEnvironments()
 		return nil
 	}
 	return fmt.Errorf("unknown IdPGroupMapping nullable field %s", name)
@@ -6897,14 +8159,23 @@ func (m *IdPGroupMappingMutation) ResetField(name string) error {
 	case idpgroupmapping.FieldUpdatedAt:
 		m.ResetUpdatedAt()
 		return nil
-	case idpgroupmapping.FieldSyncedGroupID:
-		m.ResetSyncedGroupID()
+	case idpgroupmapping.FieldProviderID:
+		m.ResetProviderID()
+		return nil
+	case idpgroupmapping.FieldExternalGroupID:
+		m.ResetExternalGroupID()
 		return nil
 	case idpgroupmapping.FieldRoleID:
 		m.ResetRoleID()
 		return nil
-	case idpgroupmapping.FieldScope:
-		m.ResetScope()
+	case idpgroupmapping.FieldScopeType:
+		m.ResetScopeType()
+		return nil
+	case idpgroupmapping.FieldScopeID:
+		m.ResetScopeID()
+		return nil
+	case idpgroupmapping.FieldAllowedEnvironments:
+		m.ResetAllowedEnvironments()
 		return nil
 	case idpgroupmapping.FieldCreatedBy:
 		m.ResetCreatedBy()
@@ -6972,6 +8243,7 @@ type IdPSyncedGroupMutation struct {
 	provider_id       *string
 	external_group_id *string
 	group_name        *string
+	source_field      *string
 	description       *string
 	last_synced_at    *time.Time
 	clearedFields     map[string]struct{}
@@ -7264,6 +8536,55 @@ func (m *IdPSyncedGroupMutation) ResetGroupName() {
 	m.group_name = nil
 }
 
+// SetSourceField sets the "source_field" field.
+func (m *IdPSyncedGroupMutation) SetSourceField(s string) {
+	m.source_field = &s
+}
+
+// SourceField returns the value of the "source_field" field in the mutation.
+func (m *IdPSyncedGroupMutation) SourceField() (r string, exists bool) {
+	v := m.source_field
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceField returns the old "source_field" field's value of the IdPSyncedGroup entity.
+// If the IdPSyncedGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdPSyncedGroupMutation) OldSourceField(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceField is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceField requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceField: %w", err)
+	}
+	return oldValue.SourceField, nil
+}
+
+// ClearSourceField clears the value of the "source_field" field.
+func (m *IdPSyncedGroupMutation) ClearSourceField() {
+	m.source_field = nil
+	m.clearedFields[idpsyncedgroup.FieldSourceField] = struct{}{}
+}
+
+// SourceFieldCleared returns if the "source_field" field was cleared in this mutation.
+func (m *IdPSyncedGroupMutation) SourceFieldCleared() bool {
+	_, ok := m.clearedFields[idpsyncedgroup.FieldSourceField]
+	return ok
+}
+
+// ResetSourceField resets all changes to the "source_field" field.
+func (m *IdPSyncedGroupMutation) ResetSourceField() {
+	m.source_field = nil
+	delete(m.clearedFields, idpsyncedgroup.FieldSourceField)
+}
+
 // SetDescription sets the "description" field.
 func (m *IdPSyncedGroupMutation) SetDescription(s string) {
 	m.description = &s
@@ -7396,7 +8717,7 @@ func (m *IdPSyncedGroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *IdPSyncedGroupMutation) Fields() []string {
-	fields := make([]string, 0, 7)
+	fields := make([]string, 0, 8)
 	if m.created_at != nil {
 		fields = append(fields, idpsyncedgroup.FieldCreatedAt)
 	}
@@ -7411,6 +8732,9 @@ func (m *IdPSyncedGroupMutation) Fields() []string {
 	}
 	if m.group_name != nil {
 		fields = append(fields, idpsyncedgroup.FieldGroupName)
+	}
+	if m.source_field != nil {
+		fields = append(fields, idpsyncedgroup.FieldSourceField)
 	}
 	if m.description != nil {
 		fields = append(fields, idpsyncedgroup.FieldDescription)
@@ -7436,6 +8760,8 @@ func (m *IdPSyncedGroupMutation) Field(name string) (ent.Value, bool) {
 		return m.ExternalGroupID()
 	case idpsyncedgroup.FieldGroupName:
 		return m.GroupName()
+	case idpsyncedgroup.FieldSourceField:
+		return m.SourceField()
 	case idpsyncedgroup.FieldDescription:
 		return m.Description()
 	case idpsyncedgroup.FieldLastSyncedAt:
@@ -7459,6 +8785,8 @@ func (m *IdPSyncedGroupMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldExternalGroupID(ctx)
 	case idpsyncedgroup.FieldGroupName:
 		return m.OldGroupName(ctx)
+	case idpsyncedgroup.FieldSourceField:
+		return m.OldSourceField(ctx)
 	case idpsyncedgroup.FieldDescription:
 		return m.OldDescription(ctx)
 	case idpsyncedgroup.FieldLastSyncedAt:
@@ -7507,6 +8835,13 @@ func (m *IdPSyncedGroupMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetGroupName(v)
 		return nil
+	case idpsyncedgroup.FieldSourceField:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceField(v)
+		return nil
 	case idpsyncedgroup.FieldDescription:
 		v, ok := value.(string)
 		if !ok {
@@ -7551,6 +8886,9 @@ func (m *IdPSyncedGroupMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *IdPSyncedGroupMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(idpsyncedgroup.FieldSourceField) {
+		fields = append(fields, idpsyncedgroup.FieldSourceField)
+	}
 	if m.FieldCleared(idpsyncedgroup.FieldDescription) {
 		fields = append(fields, idpsyncedgroup.FieldDescription)
 	}
@@ -7571,6 +8909,9 @@ func (m *IdPSyncedGroupMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *IdPSyncedGroupMutation) ClearField(name string) error {
 	switch name {
+	case idpsyncedgroup.FieldSourceField:
+		m.ClearSourceField()
+		return nil
 	case idpsyncedgroup.FieldDescription:
 		m.ClearDescription()
 		return nil
@@ -7599,6 +8940,9 @@ func (m *IdPSyncedGroupMutation) ResetField(name string) error {
 		return nil
 	case idpsyncedgroup.FieldGroupName:
 		m.ResetGroupName()
+		return nil
+	case idpsyncedgroup.FieldSourceField:
+		m.ResetSourceField()
 		return nil
 	case idpsyncedgroup.FieldDescription:
 		m.ResetDescription()
@@ -11620,6 +12964,1435 @@ func (m *PendingAdoptionMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *PendingAdoptionMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown PendingAdoption edge %s", name)
+}
+
+// RateLimitExemptionMutation represents an operation that mutates the RateLimitExemption nodes in the graph.
+type RateLimitExemptionMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *string
+	created_at    *time.Time
+	updated_at    *time.Time
+	exempted_by   *string
+	reason        *string
+	expires_at    *time.Time
+	clearedFields map[string]struct{}
+	done          bool
+	oldValue      func(context.Context) (*RateLimitExemption, error)
+	predicates    []predicate.RateLimitExemption
+}
+
+var _ ent.Mutation = (*RateLimitExemptionMutation)(nil)
+
+// ratelimitexemptionOption allows management of the mutation configuration using functional options.
+type ratelimitexemptionOption func(*RateLimitExemptionMutation)
+
+// newRateLimitExemptionMutation creates new mutation for the RateLimitExemption entity.
+func newRateLimitExemptionMutation(c config, op Op, opts ...ratelimitexemptionOption) *RateLimitExemptionMutation {
+	m := &RateLimitExemptionMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRateLimitExemption,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRateLimitExemptionID sets the ID field of the mutation.
+func withRateLimitExemptionID(id string) ratelimitexemptionOption {
+	return func(m *RateLimitExemptionMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RateLimitExemption
+		)
+		m.oldValue = func(ctx context.Context) (*RateLimitExemption, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RateLimitExemption.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRateLimitExemption sets the old RateLimitExemption of the mutation.
+func withRateLimitExemption(node *RateLimitExemption) ratelimitexemptionOption {
+	return func(m *RateLimitExemptionMutation) {
+		m.oldValue = func(context.Context) (*RateLimitExemption, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RateLimitExemptionMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RateLimitExemptionMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of RateLimitExemption entities.
+func (m *RateLimitExemptionMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RateLimitExemptionMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RateLimitExemptionMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RateLimitExemption.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *RateLimitExemptionMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *RateLimitExemptionMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the RateLimitExemption entity.
+// If the RateLimitExemption object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RateLimitExemptionMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *RateLimitExemptionMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *RateLimitExemptionMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *RateLimitExemptionMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the RateLimitExemption entity.
+// If the RateLimitExemption object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RateLimitExemptionMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *RateLimitExemptionMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetExemptedBy sets the "exempted_by" field.
+func (m *RateLimitExemptionMutation) SetExemptedBy(s string) {
+	m.exempted_by = &s
+}
+
+// ExemptedBy returns the value of the "exempted_by" field in the mutation.
+func (m *RateLimitExemptionMutation) ExemptedBy() (r string, exists bool) {
+	v := m.exempted_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExemptedBy returns the old "exempted_by" field's value of the RateLimitExemption entity.
+// If the RateLimitExemption object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RateLimitExemptionMutation) OldExemptedBy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExemptedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExemptedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExemptedBy: %w", err)
+	}
+	return oldValue.ExemptedBy, nil
+}
+
+// ResetExemptedBy resets all changes to the "exempted_by" field.
+func (m *RateLimitExemptionMutation) ResetExemptedBy() {
+	m.exempted_by = nil
+}
+
+// SetReason sets the "reason" field.
+func (m *RateLimitExemptionMutation) SetReason(s string) {
+	m.reason = &s
+}
+
+// Reason returns the value of the "reason" field in the mutation.
+func (m *RateLimitExemptionMutation) Reason() (r string, exists bool) {
+	v := m.reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReason returns the old "reason" field's value of the RateLimitExemption entity.
+// If the RateLimitExemption object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RateLimitExemptionMutation) OldReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReason: %w", err)
+	}
+	return oldValue.Reason, nil
+}
+
+// ClearReason clears the value of the "reason" field.
+func (m *RateLimitExemptionMutation) ClearReason() {
+	m.reason = nil
+	m.clearedFields[ratelimitexemption.FieldReason] = struct{}{}
+}
+
+// ReasonCleared returns if the "reason" field was cleared in this mutation.
+func (m *RateLimitExemptionMutation) ReasonCleared() bool {
+	_, ok := m.clearedFields[ratelimitexemption.FieldReason]
+	return ok
+}
+
+// ResetReason resets all changes to the "reason" field.
+func (m *RateLimitExemptionMutation) ResetReason() {
+	m.reason = nil
+	delete(m.clearedFields, ratelimitexemption.FieldReason)
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (m *RateLimitExemptionMutation) SetExpiresAt(t time.Time) {
+	m.expires_at = &t
+}
+
+// ExpiresAt returns the value of the "expires_at" field in the mutation.
+func (m *RateLimitExemptionMutation) ExpiresAt() (r time.Time, exists bool) {
+	v := m.expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiresAt returns the old "expires_at" field's value of the RateLimitExemption entity.
+// If the RateLimitExemption object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RateLimitExemptionMutation) OldExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiresAt: %w", err)
+	}
+	return oldValue.ExpiresAt, nil
+}
+
+// ClearExpiresAt clears the value of the "expires_at" field.
+func (m *RateLimitExemptionMutation) ClearExpiresAt() {
+	m.expires_at = nil
+	m.clearedFields[ratelimitexemption.FieldExpiresAt] = struct{}{}
+}
+
+// ExpiresAtCleared returns if the "expires_at" field was cleared in this mutation.
+func (m *RateLimitExemptionMutation) ExpiresAtCleared() bool {
+	_, ok := m.clearedFields[ratelimitexemption.FieldExpiresAt]
+	return ok
+}
+
+// ResetExpiresAt resets all changes to the "expires_at" field.
+func (m *RateLimitExemptionMutation) ResetExpiresAt() {
+	m.expires_at = nil
+	delete(m.clearedFields, ratelimitexemption.FieldExpiresAt)
+}
+
+// Where appends a list predicates to the RateLimitExemptionMutation builder.
+func (m *RateLimitExemptionMutation) Where(ps ...predicate.RateLimitExemption) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RateLimitExemptionMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RateLimitExemptionMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RateLimitExemption, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RateLimitExemptionMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RateLimitExemptionMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RateLimitExemption).
+func (m *RateLimitExemptionMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RateLimitExemptionMutation) Fields() []string {
+	fields := make([]string, 0, 5)
+	if m.created_at != nil {
+		fields = append(fields, ratelimitexemption.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, ratelimitexemption.FieldUpdatedAt)
+	}
+	if m.exempted_by != nil {
+		fields = append(fields, ratelimitexemption.FieldExemptedBy)
+	}
+	if m.reason != nil {
+		fields = append(fields, ratelimitexemption.FieldReason)
+	}
+	if m.expires_at != nil {
+		fields = append(fields, ratelimitexemption.FieldExpiresAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RateLimitExemptionMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case ratelimitexemption.FieldCreatedAt:
+		return m.CreatedAt()
+	case ratelimitexemption.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case ratelimitexemption.FieldExemptedBy:
+		return m.ExemptedBy()
+	case ratelimitexemption.FieldReason:
+		return m.Reason()
+	case ratelimitexemption.FieldExpiresAt:
+		return m.ExpiresAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RateLimitExemptionMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case ratelimitexemption.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case ratelimitexemption.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case ratelimitexemption.FieldExemptedBy:
+		return m.OldExemptedBy(ctx)
+	case ratelimitexemption.FieldReason:
+		return m.OldReason(ctx)
+	case ratelimitexemption.FieldExpiresAt:
+		return m.OldExpiresAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown RateLimitExemption field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RateLimitExemptionMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case ratelimitexemption.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case ratelimitexemption.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case ratelimitexemption.FieldExemptedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExemptedBy(v)
+		return nil
+	case ratelimitexemption.FieldReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReason(v)
+		return nil
+	case ratelimitexemption.FieldExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiresAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RateLimitExemption field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RateLimitExemptionMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RateLimitExemptionMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RateLimitExemptionMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown RateLimitExemption numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RateLimitExemptionMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(ratelimitexemption.FieldReason) {
+		fields = append(fields, ratelimitexemption.FieldReason)
+	}
+	if m.FieldCleared(ratelimitexemption.FieldExpiresAt) {
+		fields = append(fields, ratelimitexemption.FieldExpiresAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RateLimitExemptionMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RateLimitExemptionMutation) ClearField(name string) error {
+	switch name {
+	case ratelimitexemption.FieldReason:
+		m.ClearReason()
+		return nil
+	case ratelimitexemption.FieldExpiresAt:
+		m.ClearExpiresAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RateLimitExemption nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RateLimitExemptionMutation) ResetField(name string) error {
+	switch name {
+	case ratelimitexemption.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case ratelimitexemption.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case ratelimitexemption.FieldExemptedBy:
+		m.ResetExemptedBy()
+		return nil
+	case ratelimitexemption.FieldReason:
+		m.ResetReason()
+		return nil
+	case ratelimitexemption.FieldExpiresAt:
+		m.ResetExpiresAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RateLimitExemption field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RateLimitExemptionMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RateLimitExemptionMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RateLimitExemptionMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RateLimitExemptionMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RateLimitExemptionMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RateLimitExemptionMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RateLimitExemptionMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown RateLimitExemption unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RateLimitExemptionMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown RateLimitExemption edge %s", name)
+}
+
+// RateLimitUserOverrideMutation represents an operation that mutates the RateLimitUserOverride nodes in the graph.
+type RateLimitUserOverrideMutation struct {
+	config
+	op                      Op
+	typ                     string
+	id                      *string
+	created_at              *time.Time
+	updated_at              *time.Time
+	max_pending_parents     *int
+	addmax_pending_parents  *int
+	max_pending_children    *int
+	addmax_pending_children *int
+	cooldown_seconds        *int
+	addcooldown_seconds     *int
+	reason                  *string
+	updated_by              *string
+	clearedFields           map[string]struct{}
+	done                    bool
+	oldValue                func(context.Context) (*RateLimitUserOverride, error)
+	predicates              []predicate.RateLimitUserOverride
+}
+
+var _ ent.Mutation = (*RateLimitUserOverrideMutation)(nil)
+
+// ratelimituseroverrideOption allows management of the mutation configuration using functional options.
+type ratelimituseroverrideOption func(*RateLimitUserOverrideMutation)
+
+// newRateLimitUserOverrideMutation creates new mutation for the RateLimitUserOverride entity.
+func newRateLimitUserOverrideMutation(c config, op Op, opts ...ratelimituseroverrideOption) *RateLimitUserOverrideMutation {
+	m := &RateLimitUserOverrideMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRateLimitUserOverride,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRateLimitUserOverrideID sets the ID field of the mutation.
+func withRateLimitUserOverrideID(id string) ratelimituseroverrideOption {
+	return func(m *RateLimitUserOverrideMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RateLimitUserOverride
+		)
+		m.oldValue = func(ctx context.Context) (*RateLimitUserOverride, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RateLimitUserOverride.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRateLimitUserOverride sets the old RateLimitUserOverride of the mutation.
+func withRateLimitUserOverride(node *RateLimitUserOverride) ratelimituseroverrideOption {
+	return func(m *RateLimitUserOverrideMutation) {
+		m.oldValue = func(context.Context) (*RateLimitUserOverride, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RateLimitUserOverrideMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RateLimitUserOverrideMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of RateLimitUserOverride entities.
+func (m *RateLimitUserOverrideMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RateLimitUserOverrideMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RateLimitUserOverrideMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RateLimitUserOverride.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *RateLimitUserOverrideMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *RateLimitUserOverrideMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the RateLimitUserOverride entity.
+// If the RateLimitUserOverride object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RateLimitUserOverrideMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *RateLimitUserOverrideMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *RateLimitUserOverrideMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *RateLimitUserOverrideMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the RateLimitUserOverride entity.
+// If the RateLimitUserOverride object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RateLimitUserOverrideMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *RateLimitUserOverrideMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetMaxPendingParents sets the "max_pending_parents" field.
+func (m *RateLimitUserOverrideMutation) SetMaxPendingParents(i int) {
+	m.max_pending_parents = &i
+	m.addmax_pending_parents = nil
+}
+
+// MaxPendingParents returns the value of the "max_pending_parents" field in the mutation.
+func (m *RateLimitUserOverrideMutation) MaxPendingParents() (r int, exists bool) {
+	v := m.max_pending_parents
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMaxPendingParents returns the old "max_pending_parents" field's value of the RateLimitUserOverride entity.
+// If the RateLimitUserOverride object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RateLimitUserOverrideMutation) OldMaxPendingParents(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMaxPendingParents is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMaxPendingParents requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMaxPendingParents: %w", err)
+	}
+	return oldValue.MaxPendingParents, nil
+}
+
+// AddMaxPendingParents adds i to the "max_pending_parents" field.
+func (m *RateLimitUserOverrideMutation) AddMaxPendingParents(i int) {
+	if m.addmax_pending_parents != nil {
+		*m.addmax_pending_parents += i
+	} else {
+		m.addmax_pending_parents = &i
+	}
+}
+
+// AddedMaxPendingParents returns the value that was added to the "max_pending_parents" field in this mutation.
+func (m *RateLimitUserOverrideMutation) AddedMaxPendingParents() (r int, exists bool) {
+	v := m.addmax_pending_parents
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearMaxPendingParents clears the value of the "max_pending_parents" field.
+func (m *RateLimitUserOverrideMutation) ClearMaxPendingParents() {
+	m.max_pending_parents = nil
+	m.addmax_pending_parents = nil
+	m.clearedFields[ratelimituseroverride.FieldMaxPendingParents] = struct{}{}
+}
+
+// MaxPendingParentsCleared returns if the "max_pending_parents" field was cleared in this mutation.
+func (m *RateLimitUserOverrideMutation) MaxPendingParentsCleared() bool {
+	_, ok := m.clearedFields[ratelimituseroverride.FieldMaxPendingParents]
+	return ok
+}
+
+// ResetMaxPendingParents resets all changes to the "max_pending_parents" field.
+func (m *RateLimitUserOverrideMutation) ResetMaxPendingParents() {
+	m.max_pending_parents = nil
+	m.addmax_pending_parents = nil
+	delete(m.clearedFields, ratelimituseroverride.FieldMaxPendingParents)
+}
+
+// SetMaxPendingChildren sets the "max_pending_children" field.
+func (m *RateLimitUserOverrideMutation) SetMaxPendingChildren(i int) {
+	m.max_pending_children = &i
+	m.addmax_pending_children = nil
+}
+
+// MaxPendingChildren returns the value of the "max_pending_children" field in the mutation.
+func (m *RateLimitUserOverrideMutation) MaxPendingChildren() (r int, exists bool) {
+	v := m.max_pending_children
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMaxPendingChildren returns the old "max_pending_children" field's value of the RateLimitUserOverride entity.
+// If the RateLimitUserOverride object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RateLimitUserOverrideMutation) OldMaxPendingChildren(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMaxPendingChildren is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMaxPendingChildren requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMaxPendingChildren: %w", err)
+	}
+	return oldValue.MaxPendingChildren, nil
+}
+
+// AddMaxPendingChildren adds i to the "max_pending_children" field.
+func (m *RateLimitUserOverrideMutation) AddMaxPendingChildren(i int) {
+	if m.addmax_pending_children != nil {
+		*m.addmax_pending_children += i
+	} else {
+		m.addmax_pending_children = &i
+	}
+}
+
+// AddedMaxPendingChildren returns the value that was added to the "max_pending_children" field in this mutation.
+func (m *RateLimitUserOverrideMutation) AddedMaxPendingChildren() (r int, exists bool) {
+	v := m.addmax_pending_children
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearMaxPendingChildren clears the value of the "max_pending_children" field.
+func (m *RateLimitUserOverrideMutation) ClearMaxPendingChildren() {
+	m.max_pending_children = nil
+	m.addmax_pending_children = nil
+	m.clearedFields[ratelimituseroverride.FieldMaxPendingChildren] = struct{}{}
+}
+
+// MaxPendingChildrenCleared returns if the "max_pending_children" field was cleared in this mutation.
+func (m *RateLimitUserOverrideMutation) MaxPendingChildrenCleared() bool {
+	_, ok := m.clearedFields[ratelimituseroverride.FieldMaxPendingChildren]
+	return ok
+}
+
+// ResetMaxPendingChildren resets all changes to the "max_pending_children" field.
+func (m *RateLimitUserOverrideMutation) ResetMaxPendingChildren() {
+	m.max_pending_children = nil
+	m.addmax_pending_children = nil
+	delete(m.clearedFields, ratelimituseroverride.FieldMaxPendingChildren)
+}
+
+// SetCooldownSeconds sets the "cooldown_seconds" field.
+func (m *RateLimitUserOverrideMutation) SetCooldownSeconds(i int) {
+	m.cooldown_seconds = &i
+	m.addcooldown_seconds = nil
+}
+
+// CooldownSeconds returns the value of the "cooldown_seconds" field in the mutation.
+func (m *RateLimitUserOverrideMutation) CooldownSeconds() (r int, exists bool) {
+	v := m.cooldown_seconds
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCooldownSeconds returns the old "cooldown_seconds" field's value of the RateLimitUserOverride entity.
+// If the RateLimitUserOverride object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RateLimitUserOverrideMutation) OldCooldownSeconds(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCooldownSeconds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCooldownSeconds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCooldownSeconds: %w", err)
+	}
+	return oldValue.CooldownSeconds, nil
+}
+
+// AddCooldownSeconds adds i to the "cooldown_seconds" field.
+func (m *RateLimitUserOverrideMutation) AddCooldownSeconds(i int) {
+	if m.addcooldown_seconds != nil {
+		*m.addcooldown_seconds += i
+	} else {
+		m.addcooldown_seconds = &i
+	}
+}
+
+// AddedCooldownSeconds returns the value that was added to the "cooldown_seconds" field in this mutation.
+func (m *RateLimitUserOverrideMutation) AddedCooldownSeconds() (r int, exists bool) {
+	v := m.addcooldown_seconds
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCooldownSeconds clears the value of the "cooldown_seconds" field.
+func (m *RateLimitUserOverrideMutation) ClearCooldownSeconds() {
+	m.cooldown_seconds = nil
+	m.addcooldown_seconds = nil
+	m.clearedFields[ratelimituseroverride.FieldCooldownSeconds] = struct{}{}
+}
+
+// CooldownSecondsCleared returns if the "cooldown_seconds" field was cleared in this mutation.
+func (m *RateLimitUserOverrideMutation) CooldownSecondsCleared() bool {
+	_, ok := m.clearedFields[ratelimituseroverride.FieldCooldownSeconds]
+	return ok
+}
+
+// ResetCooldownSeconds resets all changes to the "cooldown_seconds" field.
+func (m *RateLimitUserOverrideMutation) ResetCooldownSeconds() {
+	m.cooldown_seconds = nil
+	m.addcooldown_seconds = nil
+	delete(m.clearedFields, ratelimituseroverride.FieldCooldownSeconds)
+}
+
+// SetReason sets the "reason" field.
+func (m *RateLimitUserOverrideMutation) SetReason(s string) {
+	m.reason = &s
+}
+
+// Reason returns the value of the "reason" field in the mutation.
+func (m *RateLimitUserOverrideMutation) Reason() (r string, exists bool) {
+	v := m.reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReason returns the old "reason" field's value of the RateLimitUserOverride entity.
+// If the RateLimitUserOverride object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RateLimitUserOverrideMutation) OldReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReason: %w", err)
+	}
+	return oldValue.Reason, nil
+}
+
+// ClearReason clears the value of the "reason" field.
+func (m *RateLimitUserOverrideMutation) ClearReason() {
+	m.reason = nil
+	m.clearedFields[ratelimituseroverride.FieldReason] = struct{}{}
+}
+
+// ReasonCleared returns if the "reason" field was cleared in this mutation.
+func (m *RateLimitUserOverrideMutation) ReasonCleared() bool {
+	_, ok := m.clearedFields[ratelimituseroverride.FieldReason]
+	return ok
+}
+
+// ResetReason resets all changes to the "reason" field.
+func (m *RateLimitUserOverrideMutation) ResetReason() {
+	m.reason = nil
+	delete(m.clearedFields, ratelimituseroverride.FieldReason)
+}
+
+// SetUpdatedBy sets the "updated_by" field.
+func (m *RateLimitUserOverrideMutation) SetUpdatedBy(s string) {
+	m.updated_by = &s
+}
+
+// UpdatedBy returns the value of the "updated_by" field in the mutation.
+func (m *RateLimitUserOverrideMutation) UpdatedBy() (r string, exists bool) {
+	v := m.updated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedBy returns the old "updated_by" field's value of the RateLimitUserOverride entity.
+// If the RateLimitUserOverride object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RateLimitUserOverrideMutation) OldUpdatedBy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedBy: %w", err)
+	}
+	return oldValue.UpdatedBy, nil
+}
+
+// ResetUpdatedBy resets all changes to the "updated_by" field.
+func (m *RateLimitUserOverrideMutation) ResetUpdatedBy() {
+	m.updated_by = nil
+}
+
+// Where appends a list predicates to the RateLimitUserOverrideMutation builder.
+func (m *RateLimitUserOverrideMutation) Where(ps ...predicate.RateLimitUserOverride) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RateLimitUserOverrideMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RateLimitUserOverrideMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RateLimitUserOverride, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RateLimitUserOverrideMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RateLimitUserOverrideMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RateLimitUserOverride).
+func (m *RateLimitUserOverrideMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RateLimitUserOverrideMutation) Fields() []string {
+	fields := make([]string, 0, 7)
+	if m.created_at != nil {
+		fields = append(fields, ratelimituseroverride.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, ratelimituseroverride.FieldUpdatedAt)
+	}
+	if m.max_pending_parents != nil {
+		fields = append(fields, ratelimituseroverride.FieldMaxPendingParents)
+	}
+	if m.max_pending_children != nil {
+		fields = append(fields, ratelimituseroverride.FieldMaxPendingChildren)
+	}
+	if m.cooldown_seconds != nil {
+		fields = append(fields, ratelimituseroverride.FieldCooldownSeconds)
+	}
+	if m.reason != nil {
+		fields = append(fields, ratelimituseroverride.FieldReason)
+	}
+	if m.updated_by != nil {
+		fields = append(fields, ratelimituseroverride.FieldUpdatedBy)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RateLimitUserOverrideMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case ratelimituseroverride.FieldCreatedAt:
+		return m.CreatedAt()
+	case ratelimituseroverride.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case ratelimituseroverride.FieldMaxPendingParents:
+		return m.MaxPendingParents()
+	case ratelimituseroverride.FieldMaxPendingChildren:
+		return m.MaxPendingChildren()
+	case ratelimituseroverride.FieldCooldownSeconds:
+		return m.CooldownSeconds()
+	case ratelimituseroverride.FieldReason:
+		return m.Reason()
+	case ratelimituseroverride.FieldUpdatedBy:
+		return m.UpdatedBy()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RateLimitUserOverrideMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case ratelimituseroverride.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case ratelimituseroverride.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case ratelimituseroverride.FieldMaxPendingParents:
+		return m.OldMaxPendingParents(ctx)
+	case ratelimituseroverride.FieldMaxPendingChildren:
+		return m.OldMaxPendingChildren(ctx)
+	case ratelimituseroverride.FieldCooldownSeconds:
+		return m.OldCooldownSeconds(ctx)
+	case ratelimituseroverride.FieldReason:
+		return m.OldReason(ctx)
+	case ratelimituseroverride.FieldUpdatedBy:
+		return m.OldUpdatedBy(ctx)
+	}
+	return nil, fmt.Errorf("unknown RateLimitUserOverride field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RateLimitUserOverrideMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case ratelimituseroverride.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case ratelimituseroverride.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case ratelimituseroverride.FieldMaxPendingParents:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMaxPendingParents(v)
+		return nil
+	case ratelimituseroverride.FieldMaxPendingChildren:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMaxPendingChildren(v)
+		return nil
+	case ratelimituseroverride.FieldCooldownSeconds:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCooldownSeconds(v)
+		return nil
+	case ratelimituseroverride.FieldReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReason(v)
+		return nil
+	case ratelimituseroverride.FieldUpdatedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RateLimitUserOverride field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RateLimitUserOverrideMutation) AddedFields() []string {
+	var fields []string
+	if m.addmax_pending_parents != nil {
+		fields = append(fields, ratelimituseroverride.FieldMaxPendingParents)
+	}
+	if m.addmax_pending_children != nil {
+		fields = append(fields, ratelimituseroverride.FieldMaxPendingChildren)
+	}
+	if m.addcooldown_seconds != nil {
+		fields = append(fields, ratelimituseroverride.FieldCooldownSeconds)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RateLimitUserOverrideMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case ratelimituseroverride.FieldMaxPendingParents:
+		return m.AddedMaxPendingParents()
+	case ratelimituseroverride.FieldMaxPendingChildren:
+		return m.AddedMaxPendingChildren()
+	case ratelimituseroverride.FieldCooldownSeconds:
+		return m.AddedCooldownSeconds()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RateLimitUserOverrideMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case ratelimituseroverride.FieldMaxPendingParents:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMaxPendingParents(v)
+		return nil
+	case ratelimituseroverride.FieldMaxPendingChildren:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMaxPendingChildren(v)
+		return nil
+	case ratelimituseroverride.FieldCooldownSeconds:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCooldownSeconds(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RateLimitUserOverride numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RateLimitUserOverrideMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(ratelimituseroverride.FieldMaxPendingParents) {
+		fields = append(fields, ratelimituseroverride.FieldMaxPendingParents)
+	}
+	if m.FieldCleared(ratelimituseroverride.FieldMaxPendingChildren) {
+		fields = append(fields, ratelimituseroverride.FieldMaxPendingChildren)
+	}
+	if m.FieldCleared(ratelimituseroverride.FieldCooldownSeconds) {
+		fields = append(fields, ratelimituseroverride.FieldCooldownSeconds)
+	}
+	if m.FieldCleared(ratelimituseroverride.FieldReason) {
+		fields = append(fields, ratelimituseroverride.FieldReason)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RateLimitUserOverrideMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RateLimitUserOverrideMutation) ClearField(name string) error {
+	switch name {
+	case ratelimituseroverride.FieldMaxPendingParents:
+		m.ClearMaxPendingParents()
+		return nil
+	case ratelimituseroverride.FieldMaxPendingChildren:
+		m.ClearMaxPendingChildren()
+		return nil
+	case ratelimituseroverride.FieldCooldownSeconds:
+		m.ClearCooldownSeconds()
+		return nil
+	case ratelimituseroverride.FieldReason:
+		m.ClearReason()
+		return nil
+	}
+	return fmt.Errorf("unknown RateLimitUserOverride nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RateLimitUserOverrideMutation) ResetField(name string) error {
+	switch name {
+	case ratelimituseroverride.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case ratelimituseroverride.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case ratelimituseroverride.FieldMaxPendingParents:
+		m.ResetMaxPendingParents()
+		return nil
+	case ratelimituseroverride.FieldMaxPendingChildren:
+		m.ResetMaxPendingChildren()
+		return nil
+	case ratelimituseroverride.FieldCooldownSeconds:
+		m.ResetCooldownSeconds()
+		return nil
+	case ratelimituseroverride.FieldReason:
+		m.ResetReason()
+		return nil
+	case ratelimituseroverride.FieldUpdatedBy:
+		m.ResetUpdatedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown RateLimitUserOverride field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RateLimitUserOverrideMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RateLimitUserOverrideMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RateLimitUserOverrideMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RateLimitUserOverrideMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RateLimitUserOverrideMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RateLimitUserOverrideMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RateLimitUserOverrideMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown RateLimitUserOverride unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RateLimitUserOverrideMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown RateLimitUserOverride edge %s", name)
 }
 
 // ResourceRoleBindingMutation represents an operation that mutates the ResourceRoleBinding nodes in the graph.

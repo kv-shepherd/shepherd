@@ -55,7 +55,7 @@ func (_c *AuthProviderCreate) SetName(v string) *AuthProviderCreate {
 }
 
 // SetAuthType sets the "auth_type" field.
-func (_c *AuthProviderCreate) SetAuthType(v authprovider.AuthType) *AuthProviderCreate {
+func (_c *AuthProviderCreate) SetAuthType(v string) *AuthProviderCreate {
 	_c.mutation.SetAuthType(v)
 	return _c
 }
@@ -248,7 +248,7 @@ func (_c *AuthProviderCreate) createSpec() (*AuthProvider, *sqlgraph.CreateSpec)
 		_node.Name = value
 	}
 	if value, ok := _c.mutation.AuthType(); ok {
-		_spec.SetField(authprovider.FieldAuthType, field.TypeEnum, value)
+		_spec.SetField(authprovider.FieldAuthType, field.TypeString, value)
 		_node.AuthType = value
 	}
 	if value, ok := _c.mutation.Config(); ok {

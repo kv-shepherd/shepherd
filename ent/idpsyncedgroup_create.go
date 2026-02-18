@@ -66,6 +66,20 @@ func (_c *IdPSyncedGroupCreate) SetGroupName(v string) *IdPSyncedGroupCreate {
 	return _c
 }
 
+// SetSourceField sets the "source_field" field.
+func (_c *IdPSyncedGroupCreate) SetSourceField(v string) *IdPSyncedGroupCreate {
+	_c.mutation.SetSourceField(v)
+	return _c
+}
+
+// SetNillableSourceField sets the "source_field" field if the given value is not nil.
+func (_c *IdPSyncedGroupCreate) SetNillableSourceField(v *string) *IdPSyncedGroupCreate {
+	if v != nil {
+		_c.SetSourceField(*v)
+	}
+	return _c
+}
+
 // SetDescription sets the "description" field.
 func (_c *IdPSyncedGroupCreate) SetDescription(v string) *IdPSyncedGroupCreate {
 	_c.mutation.SetDescription(v)
@@ -231,6 +245,10 @@ func (_c *IdPSyncedGroupCreate) createSpec() (*IdPSyncedGroup, *sqlgraph.CreateS
 	if value, ok := _c.mutation.GroupName(); ok {
 		_spec.SetField(idpsyncedgroup.FieldGroupName, field.TypeString, value)
 		_node.GroupName = value
+	}
+	if value, ok := _c.mutation.SourceField(); ok {
+		_spec.SetField(idpsyncedgroup.FieldSourceField, field.TypeString, value)
+		_node.SourceField = value
 	}
 	if value, ok := _c.mutation.Description(); ok {
 		_spec.SetField(idpsyncedgroup.FieldDescription, field.TypeString, value)

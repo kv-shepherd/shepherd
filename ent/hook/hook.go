@@ -57,6 +57,18 @@ func (f AuthProviderFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AuthProviderMutation", m)
 }
 
+// The BatchApprovalTicketFunc type is an adapter to allow the use of ordinary
+// function as BatchApprovalTicket mutator.
+type BatchApprovalTicketFunc func(context.Context, *ent.BatchApprovalTicketMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BatchApprovalTicketFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BatchApprovalTicketMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BatchApprovalTicketMutation", m)
+}
+
 // The ClusterFunc type is an adapter to allow the use of ordinary
 // function as Cluster mutator.
 type ClusterFunc func(context.Context, *ent.ClusterMutation) (ent.Value, error)
@@ -163,6 +175,30 @@ func (f PendingAdoptionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Va
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PendingAdoptionMutation", m)
+}
+
+// The RateLimitExemptionFunc type is an adapter to allow the use of ordinary
+// function as RateLimitExemption mutator.
+type RateLimitExemptionFunc func(context.Context, *ent.RateLimitExemptionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RateLimitExemptionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RateLimitExemptionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RateLimitExemptionMutation", m)
+}
+
+// The RateLimitUserOverrideFunc type is an adapter to allow the use of ordinary
+// function as RateLimitUserOverride mutator.
+type RateLimitUserOverrideFunc func(context.Context, *ent.RateLimitUserOverrideMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RateLimitUserOverrideFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RateLimitUserOverrideMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RateLimitUserOverrideMutation", m)
 }
 
 // The ResourceRoleBindingFunc type is an adapter to allow the use of ordinary

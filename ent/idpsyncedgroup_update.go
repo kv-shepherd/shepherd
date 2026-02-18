@@ -76,6 +76,26 @@ func (_u *IdPSyncedGroupUpdate) SetNillableGroupName(v *string) *IdPSyncedGroupU
 	return _u
 }
 
+// SetSourceField sets the "source_field" field.
+func (_u *IdPSyncedGroupUpdate) SetSourceField(v string) *IdPSyncedGroupUpdate {
+	_u.mutation.SetSourceField(v)
+	return _u
+}
+
+// SetNillableSourceField sets the "source_field" field if the given value is not nil.
+func (_u *IdPSyncedGroupUpdate) SetNillableSourceField(v *string) *IdPSyncedGroupUpdate {
+	if v != nil {
+		_u.SetSourceField(*v)
+	}
+	return _u
+}
+
+// ClearSourceField clears the value of the "source_field" field.
+func (_u *IdPSyncedGroupUpdate) ClearSourceField() *IdPSyncedGroupUpdate {
+	_u.mutation.ClearSourceField()
+	return _u
+}
+
 // SetDescription sets the "description" field.
 func (_u *IdPSyncedGroupUpdate) SetDescription(v string) *IdPSyncedGroupUpdate {
 	_u.mutation.SetDescription(v)
@@ -201,6 +221,12 @@ func (_u *IdPSyncedGroupUpdate) sqlSave(ctx context.Context) (_node int, err err
 	if value, ok := _u.mutation.GroupName(); ok {
 		_spec.SetField(idpsyncedgroup.FieldGroupName, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.SourceField(); ok {
+		_spec.SetField(idpsyncedgroup.FieldSourceField, field.TypeString, value)
+	}
+	if _u.mutation.SourceFieldCleared() {
+		_spec.ClearField(idpsyncedgroup.FieldSourceField, field.TypeString)
+	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(idpsyncedgroup.FieldDescription, field.TypeString, value)
 	}
@@ -278,6 +304,26 @@ func (_u *IdPSyncedGroupUpdateOne) SetNillableGroupName(v *string) *IdPSyncedGro
 	if v != nil {
 		_u.SetGroupName(*v)
 	}
+	return _u
+}
+
+// SetSourceField sets the "source_field" field.
+func (_u *IdPSyncedGroupUpdateOne) SetSourceField(v string) *IdPSyncedGroupUpdateOne {
+	_u.mutation.SetSourceField(v)
+	return _u
+}
+
+// SetNillableSourceField sets the "source_field" field if the given value is not nil.
+func (_u *IdPSyncedGroupUpdateOne) SetNillableSourceField(v *string) *IdPSyncedGroupUpdateOne {
+	if v != nil {
+		_u.SetSourceField(*v)
+	}
+	return _u
+}
+
+// ClearSourceField clears the value of the "source_field" field.
+func (_u *IdPSyncedGroupUpdateOne) ClearSourceField() *IdPSyncedGroupUpdateOne {
+	_u.mutation.ClearSourceField()
 	return _u
 }
 
@@ -435,6 +481,12 @@ func (_u *IdPSyncedGroupUpdateOne) sqlSave(ctx context.Context) (_node *IdPSynce
 	}
 	if value, ok := _u.mutation.GroupName(); ok {
 		_spec.SetField(idpsyncedgroup.FieldGroupName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SourceField(); ok {
+		_spec.SetField(idpsyncedgroup.FieldSourceField, field.TypeString, value)
+	}
+	if _u.mutation.SourceFieldCleared() {
+		_spec.ClearField(idpsyncedgroup.FieldSourceField, field.TypeString)
 	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(idpsyncedgroup.FieldDescription, field.TypeString, value)

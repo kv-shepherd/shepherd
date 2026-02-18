@@ -89,6 +89,11 @@ func GroupName(v string) predicate.IdPSyncedGroup {
 	return predicate.IdPSyncedGroup(sql.FieldEQ(FieldGroupName, v))
 }
 
+// SourceField applies equality check predicate on the "source_field" field. It's identical to SourceFieldEQ.
+func SourceField(v string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldEQ(FieldSourceField, v))
+}
+
 // Description applies equality check predicate on the "description" field. It's identical to DescriptionEQ.
 func Description(v string) predicate.IdPSyncedGroup {
 	return predicate.IdPSyncedGroup(sql.FieldEQ(FieldDescription, v))
@@ -372,6 +377,81 @@ func GroupNameEqualFold(v string) predicate.IdPSyncedGroup {
 // GroupNameContainsFold applies the ContainsFold predicate on the "group_name" field.
 func GroupNameContainsFold(v string) predicate.IdPSyncedGroup {
 	return predicate.IdPSyncedGroup(sql.FieldContainsFold(FieldGroupName, v))
+}
+
+// SourceFieldEQ applies the EQ predicate on the "source_field" field.
+func SourceFieldEQ(v string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldEQ(FieldSourceField, v))
+}
+
+// SourceFieldNEQ applies the NEQ predicate on the "source_field" field.
+func SourceFieldNEQ(v string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldNEQ(FieldSourceField, v))
+}
+
+// SourceFieldIn applies the In predicate on the "source_field" field.
+func SourceFieldIn(vs ...string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldIn(FieldSourceField, vs...))
+}
+
+// SourceFieldNotIn applies the NotIn predicate on the "source_field" field.
+func SourceFieldNotIn(vs ...string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldNotIn(FieldSourceField, vs...))
+}
+
+// SourceFieldGT applies the GT predicate on the "source_field" field.
+func SourceFieldGT(v string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldGT(FieldSourceField, v))
+}
+
+// SourceFieldGTE applies the GTE predicate on the "source_field" field.
+func SourceFieldGTE(v string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldGTE(FieldSourceField, v))
+}
+
+// SourceFieldLT applies the LT predicate on the "source_field" field.
+func SourceFieldLT(v string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldLT(FieldSourceField, v))
+}
+
+// SourceFieldLTE applies the LTE predicate on the "source_field" field.
+func SourceFieldLTE(v string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldLTE(FieldSourceField, v))
+}
+
+// SourceFieldContains applies the Contains predicate on the "source_field" field.
+func SourceFieldContains(v string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldContains(FieldSourceField, v))
+}
+
+// SourceFieldHasPrefix applies the HasPrefix predicate on the "source_field" field.
+func SourceFieldHasPrefix(v string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldHasPrefix(FieldSourceField, v))
+}
+
+// SourceFieldHasSuffix applies the HasSuffix predicate on the "source_field" field.
+func SourceFieldHasSuffix(v string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldHasSuffix(FieldSourceField, v))
+}
+
+// SourceFieldIsNil applies the IsNil predicate on the "source_field" field.
+func SourceFieldIsNil() predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldIsNull(FieldSourceField))
+}
+
+// SourceFieldNotNil applies the NotNil predicate on the "source_field" field.
+func SourceFieldNotNil() predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldNotNull(FieldSourceField))
+}
+
+// SourceFieldEqualFold applies the EqualFold predicate on the "source_field" field.
+func SourceFieldEqualFold(v string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldEqualFold(FieldSourceField, v))
+}
+
+// SourceFieldContainsFold applies the ContainsFold predicate on the "source_field" field.
+func SourceFieldContainsFold(v string) predicate.IdPSyncedGroup {
+	return predicate.IdPSyncedGroup(sql.FieldContainsFold(FieldSourceField, v))
 }
 
 // DescriptionEQ applies the EQ predicate on the "description" field.

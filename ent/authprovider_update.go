@@ -49,13 +49,13 @@ func (_u *AuthProviderUpdate) SetNillableName(v *string) *AuthProviderUpdate {
 }
 
 // SetAuthType sets the "auth_type" field.
-func (_u *AuthProviderUpdate) SetAuthType(v authprovider.AuthType) *AuthProviderUpdate {
+func (_u *AuthProviderUpdate) SetAuthType(v string) *AuthProviderUpdate {
 	_u.mutation.SetAuthType(v)
 	return _u
 }
 
 // SetNillableAuthType sets the "auth_type" field if the given value is not nil.
-func (_u *AuthProviderUpdate) SetNillableAuthType(v *authprovider.AuthType) *AuthProviderUpdate {
+func (_u *AuthProviderUpdate) SetNillableAuthType(v *string) *AuthProviderUpdate {
 	if v != nil {
 		_u.SetAuthType(*v)
 	}
@@ -197,7 +197,7 @@ func (_u *AuthProviderUpdate) sqlSave(ctx context.Context) (_node int, err error
 		_spec.SetField(authprovider.FieldName, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.AuthType(); ok {
-		_spec.SetField(authprovider.FieldAuthType, field.TypeEnum, value)
+		_spec.SetField(authprovider.FieldAuthType, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Config(); ok {
 		_spec.SetField(authprovider.FieldConfig, field.TypeJSON, value)
@@ -255,13 +255,13 @@ func (_u *AuthProviderUpdateOne) SetNillableName(v *string) *AuthProviderUpdateO
 }
 
 // SetAuthType sets the "auth_type" field.
-func (_u *AuthProviderUpdateOne) SetAuthType(v authprovider.AuthType) *AuthProviderUpdateOne {
+func (_u *AuthProviderUpdateOne) SetAuthType(v string) *AuthProviderUpdateOne {
 	_u.mutation.SetAuthType(v)
 	return _u
 }
 
 // SetNillableAuthType sets the "auth_type" field if the given value is not nil.
-func (_u *AuthProviderUpdateOne) SetNillableAuthType(v *authprovider.AuthType) *AuthProviderUpdateOne {
+func (_u *AuthProviderUpdateOne) SetNillableAuthType(v *string) *AuthProviderUpdateOne {
 	if v != nil {
 		_u.SetAuthType(*v)
 	}
@@ -433,7 +433,7 @@ func (_u *AuthProviderUpdateOne) sqlSave(ctx context.Context) (_node *AuthProvid
 		_spec.SetField(authprovider.FieldName, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.AuthType(); ok {
-		_spec.SetField(authprovider.FieldAuthType, field.TypeEnum, value)
+		_spec.SetField(authprovider.FieldAuthType, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Config(); ok {
 		_spec.SetField(authprovider.FieldConfig, field.TypeJSON, value)

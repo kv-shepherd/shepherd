@@ -17,12 +17,18 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
-	// FieldSyncedGroupID holds the string denoting the synced_group_id field in the database.
-	FieldSyncedGroupID = "synced_group_id"
+	// FieldProviderID holds the string denoting the provider_id field in the database.
+	FieldProviderID = "provider_id"
+	// FieldExternalGroupID holds the string denoting the external_group_id field in the database.
+	FieldExternalGroupID = "external_group_id"
 	// FieldRoleID holds the string denoting the role_id field in the database.
 	FieldRoleID = "role_id"
-	// FieldScope holds the string denoting the scope field in the database.
-	FieldScope = "scope"
+	// FieldScopeType holds the string denoting the scope_type field in the database.
+	FieldScopeType = "scope_type"
+	// FieldScopeID holds the string denoting the scope_id field in the database.
+	FieldScopeID = "scope_id"
+	// FieldAllowedEnvironments holds the string denoting the allowed_environments field in the database.
+	FieldAllowedEnvironments = "allowed_environments"
 	// FieldCreatedBy holds the string denoting the created_by field in the database.
 	FieldCreatedBy = "created_by"
 	// Table holds the table name of the idpgroupmapping in the database.
@@ -34,9 +40,12 @@ var Columns = []string{
 	FieldID,
 	FieldCreatedAt,
 	FieldUpdatedAt,
-	FieldSyncedGroupID,
+	FieldProviderID,
+	FieldExternalGroupID,
 	FieldRoleID,
-	FieldScope,
+	FieldScopeType,
+	FieldScopeID,
+	FieldAllowedEnvironments,
 	FieldCreatedBy,
 }
 
@@ -57,8 +66,10 @@ var (
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
-	// SyncedGroupIDValidator is a validator for the "synced_group_id" field. It is called by the builders before save.
-	SyncedGroupIDValidator func(string) error
+	// ProviderIDValidator is a validator for the "provider_id" field. It is called by the builders before save.
+	ProviderIDValidator func(string) error
+	// ExternalGroupIDValidator is a validator for the "external_group_id" field. It is called by the builders before save.
+	ExternalGroupIDValidator func(string) error
 	// RoleIDValidator is a validator for the "role_id" field. It is called by the builders before save.
 	RoleIDValidator func(string) error
 	// CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
@@ -83,9 +94,14 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedAt, opts...).ToFunc()
 }
 
-// BySyncedGroupID orders the results by the synced_group_id field.
-func BySyncedGroupID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSyncedGroupID, opts...).ToFunc()
+// ByProviderID orders the results by the provider_id field.
+func ByProviderID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderID, opts...).ToFunc()
+}
+
+// ByExternalGroupID orders the results by the external_group_id field.
+func ByExternalGroupID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldExternalGroupID, opts...).ToFunc()
 }
 
 // ByRoleID orders the results by the role_id field.
@@ -93,9 +109,14 @@ func ByRoleID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRoleID, opts...).ToFunc()
 }
 
-// ByScope orders the results by the scope field.
-func ByScope(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldScope, opts...).ToFunc()
+// ByScopeType orders the results by the scope_type field.
+func ByScopeType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldScopeType, opts...).ToFunc()
+}
+
+// ByScopeID orders the results by the scope_id field.
+func ByScopeID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldScopeID, opts...).ToFunc()
 }
 
 // ByCreatedBy orders the results by the created_by field.

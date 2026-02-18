@@ -3,7 +3,6 @@
 package authprovider
 
 import (
-	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -66,6 +65,8 @@ var (
 	UpdateDefaultUpdatedAt func() time.Time
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
+	// AuthTypeValidator is a validator for the "auth_type" field. It is called by the builders before save.
+	AuthTypeValidator func(string) error
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
 	// DefaultSortOrder holds the default value on creation for the "sort_order" field.
@@ -73,33 +74,6 @@ var (
 	// CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	CreatedByValidator func(string) error
 )
-
-// AuthType defines the type for the "auth_type" enum field.
-type AuthType string
-
-// AuthType values.
-const (
-	AuthTypeOidc     AuthType = "oidc"
-	AuthTypeLdap     AuthType = "ldap"
-	AuthTypeSSO      AuthType = "sso"
-	AuthTypeWecom    AuthType = "wecom"
-	AuthTypeFeishu   AuthType = "feishu"
-	AuthTypeDingtalk AuthType = "dingtalk"
-)
-
-func (at AuthType) String() string {
-	return string(at)
-}
-
-// AuthTypeValidator is a validator for the "auth_type" field enum values. It is called by the builders before save.
-func AuthTypeValidator(at AuthType) error {
-	switch at {
-	case AuthTypeOidc, AuthTypeLdap, AuthTypeSSO, AuthTypeWecom, AuthTypeFeishu, AuthTypeDingtalk:
-		return nil
-	default:
-		return fmt.Errorf("authprovider: invalid enum value for auth_type field: %q", at)
-	}
-}
 
 // OrderOption defines the ordering options for the AuthProvider queries.
 type OrderOption func(*sql.Selector)

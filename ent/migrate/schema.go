@@ -39,7 +39,7 @@ var (
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "event_id", Type: field.TypeString},
-		{Name: "operation_type", Type: field.TypeEnum, Enums: []string{"CREATE", "DELETE"}, Default: "CREATE"},
+		{Name: "operation_type", Type: field.TypeEnum, Enums: []string{"CREATE", "DELETE", "VNC_ACCESS"}, Default: "CREATE"},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXECUTING", "SUCCESS", "FAILED"}, Default: "PENDING"},
 		{Name: "requester", Type: field.TypeString},
 		{Name: "approver", Type: field.TypeString, Nullable: true},
@@ -121,7 +121,7 @@ var (
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "name", Type: field.TypeString},
-		{Name: "auth_type", Type: field.TypeEnum, Enums: []string{"oidc", "ldap", "sso", "wecom", "feishu", "dingtalk"}},
+		{Name: "auth_type", Type: field.TypeString},
 		{Name: "config", Type: field.TypeJSON},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "sort_order", Type: field.TypeInt, Default: 0},
@@ -142,6 +142,49 @@ var (
 				Name:    "authprovider_auth_type",
 				Unique:  false,
 				Columns: []*schema.Column{AuthProvidersColumns[4]},
+			},
+		},
+	}
+	// BatchApprovalTicketsColumns holds the columns for the "batch_approval_tickets" table.
+	BatchApprovalTicketsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "batch_type", Type: field.TypeEnum, Enums: []string{"BATCH_CREATE", "BATCH_DELETE", "BATCH_APPROVE", "BATCH_POWER"}, Default: "BATCH_CREATE"},
+		{Name: "child_count", Type: field.TypeInt, Default: 0},
+		{Name: "success_count", Type: field.TypeInt, Default: 0},
+		{Name: "failed_count", Type: field.TypeInt, Default: 0},
+		{Name: "pending_count", Type: field.TypeInt, Default: 0},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"PENDING_APPROVAL", "IN_PROGRESS", "COMPLETED", "PARTIAL_SUCCESS", "FAILED", "CANCELLED"}, Default: "PENDING_APPROVAL"},
+		{Name: "request_id", Type: field.TypeString, Nullable: true},
+		{Name: "created_by", Type: field.TypeString},
+		{Name: "reason", Type: field.TypeString, Nullable: true},
+	}
+	// BatchApprovalTicketsTable holds the schema information for the "batch_approval_tickets" table.
+	BatchApprovalTicketsTable = &schema.Table{
+		Name:       "batch_approval_tickets",
+		Columns:    BatchApprovalTicketsColumns,
+		PrimaryKey: []*schema.Column{BatchApprovalTicketsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "batchapprovalticket_status",
+				Unique:  false,
+				Columns: []*schema.Column{BatchApprovalTicketsColumns[8]},
+			},
+			{
+				Name:    "batchapprovalticket_created_by",
+				Unique:  false,
+				Columns: []*schema.Column{BatchApprovalTicketsColumns[10]},
+			},
+			{
+				Name:    "batchapprovalticket_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{BatchApprovalTicketsColumns[1]},
+			},
+			{
+				Name:    "batchapprovalticket_batch_type_created_by",
+				Unique:  false,
+				Columns: []*schema.Column{BatchApprovalTicketsColumns[3], BatchApprovalTicketsColumns[10]},
 			},
 		},
 	}
@@ -252,9 +295,12 @@ var (
 		{Name: "id", Type: field.TypeString, Unique: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
-		{Name: "synced_group_id", Type: field.TypeString},
+		{Name: "provider_id", Type: field.TypeString},
+		{Name: "external_group_id", Type: field.TypeString},
 		{Name: "role_id", Type: field.TypeString},
-		{Name: "scope", Type: field.TypeString, Nullable: true},
+		{Name: "scope_type", Type: field.TypeString, Nullable: true},
+		{Name: "scope_id", Type: field.TypeString, Nullable: true},
+		{Name: "allowed_environments", Type: field.TypeJSON, Nullable: true},
 		{Name: "created_by", Type: field.TypeString},
 	}
 	// IDPgroupMappingsTable holds the schema information for the "id_pgroup_mappings" table.
@@ -264,9 +310,14 @@ var (
 		PrimaryKey: []*schema.Column{IDPgroupMappingsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "idpgroupmapping_synced_group_id_role_id",
+				Name:    "idpgroupmapping_provider_id_external_group_id",
 				Unique:  true,
 				Columns: []*schema.Column{IDPgroupMappingsColumns[3], IDPgroupMappingsColumns[4]},
+			},
+			{
+				Name:    "idpgroupmapping_provider_id_role_id",
+				Unique:  false,
+				Columns: []*schema.Column{IDPgroupMappingsColumns[3], IDPgroupMappingsColumns[5]},
 			},
 		},
 	}
@@ -278,6 +329,7 @@ var (
 		{Name: "provider_id", Type: field.TypeString},
 		{Name: "external_group_id", Type: field.TypeString},
 		{Name: "group_name", Type: field.TypeString},
+		{Name: "source_field", Type: field.TypeString, Nullable: true},
 		{Name: "description", Type: field.TypeString, Nullable: true},
 		{Name: "last_synced_at", Type: field.TypeTime, Nullable: true},
 	}
@@ -456,6 +508,62 @@ var (
 				Name:    "pendingadoption_status",
 				Unique:  false,
 				Columns: []*schema.Column{PendingAdoptionsColumns[7]},
+			},
+		},
+	}
+	// RateLimitExemptionsColumns holds the columns for the "rate_limit_exemptions" table.
+	RateLimitExemptionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "exempted_by", Type: field.TypeString},
+		{Name: "reason", Type: field.TypeString, Nullable: true},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
+	}
+	// RateLimitExemptionsTable holds the schema information for the "rate_limit_exemptions" table.
+	RateLimitExemptionsTable = &schema.Table{
+		Name:       "rate_limit_exemptions",
+		Columns:    RateLimitExemptionsColumns,
+		PrimaryKey: []*schema.Column{RateLimitExemptionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "ratelimitexemption_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{RateLimitExemptionsColumns[5]},
+			},
+			{
+				Name:    "ratelimitexemption_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{RateLimitExemptionsColumns[1]},
+			},
+		},
+	}
+	// RateLimitUserOverridesColumns holds the columns for the "rate_limit_user_overrides" table.
+	RateLimitUserOverridesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "max_pending_parents", Type: field.TypeInt, Nullable: true},
+		{Name: "max_pending_children", Type: field.TypeInt, Nullable: true},
+		{Name: "cooldown_seconds", Type: field.TypeInt, Nullable: true},
+		{Name: "reason", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString},
+	}
+	// RateLimitUserOverridesTable holds the schema information for the "rate_limit_user_overrides" table.
+	RateLimitUserOverridesTable = &schema.Table{
+		Name:       "rate_limit_user_overrides",
+		Columns:    RateLimitUserOverridesColumns,
+		PrimaryKey: []*schema.Column{RateLimitUserOverridesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "ratelimituseroverride_updated_by",
+				Unique:  false,
+				Columns: []*schema.Column{RateLimitUserOverridesColumns[7]},
+			},
+			{
+				Name:    "ratelimituseroverride_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{RateLimitUserOverridesColumns[2]},
 			},
 		},
 	}
@@ -782,6 +890,7 @@ var (
 		ApprovalTicketsTable,
 		AuditLogsTable,
 		AuthProvidersTable,
+		BatchApprovalTicketsTable,
 		ClustersTable,
 		DomainEventsTable,
 		ExternalApprovalSystemsTable,
@@ -791,6 +900,8 @@ var (
 		NamespaceRegistriesTable,
 		NotificationsTable,
 		PendingAdoptionsTable,
+		RateLimitExemptionsTable,
+		RateLimitUserOverridesTable,
 		ResourceRoleBindingsTable,
 		RolesTable,
 		RoleBindingsTable,

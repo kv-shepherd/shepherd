@@ -31,6 +31,8 @@ func (IdPSyncedGroup) Fields() []ent.Field {
 			NotEmpty(), // Group ID from IdP
 		field.String("group_name").
 			NotEmpty(),
+		field.String("source_field").
+			Optional(), // Claim/attribute field used for syncing (e.g. groups, department)
 		field.String("description").
 			Optional(),
 		field.Time("last_synced_at").

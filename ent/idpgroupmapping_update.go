@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"kv-shepherd.io/shepherd/ent/idpgroupmapping"
 	"kv-shepherd.io/shepherd/ent/predicate"
@@ -34,16 +35,30 @@ func (_u *IdPGroupMappingUpdate) SetUpdatedAt(v time.Time) *IdPGroupMappingUpdat
 	return _u
 }
 
-// SetSyncedGroupID sets the "synced_group_id" field.
-func (_u *IdPGroupMappingUpdate) SetSyncedGroupID(v string) *IdPGroupMappingUpdate {
-	_u.mutation.SetSyncedGroupID(v)
+// SetProviderID sets the "provider_id" field.
+func (_u *IdPGroupMappingUpdate) SetProviderID(v string) *IdPGroupMappingUpdate {
+	_u.mutation.SetProviderID(v)
 	return _u
 }
 
-// SetNillableSyncedGroupID sets the "synced_group_id" field if the given value is not nil.
-func (_u *IdPGroupMappingUpdate) SetNillableSyncedGroupID(v *string) *IdPGroupMappingUpdate {
+// SetNillableProviderID sets the "provider_id" field if the given value is not nil.
+func (_u *IdPGroupMappingUpdate) SetNillableProviderID(v *string) *IdPGroupMappingUpdate {
 	if v != nil {
-		_u.SetSyncedGroupID(*v)
+		_u.SetProviderID(*v)
+	}
+	return _u
+}
+
+// SetExternalGroupID sets the "external_group_id" field.
+func (_u *IdPGroupMappingUpdate) SetExternalGroupID(v string) *IdPGroupMappingUpdate {
+	_u.mutation.SetExternalGroupID(v)
+	return _u
+}
+
+// SetNillableExternalGroupID sets the "external_group_id" field if the given value is not nil.
+func (_u *IdPGroupMappingUpdate) SetNillableExternalGroupID(v *string) *IdPGroupMappingUpdate {
+	if v != nil {
+		_u.SetExternalGroupID(*v)
 	}
 	return _u
 }
@@ -62,23 +77,61 @@ func (_u *IdPGroupMappingUpdate) SetNillableRoleID(v *string) *IdPGroupMappingUp
 	return _u
 }
 
-// SetScope sets the "scope" field.
-func (_u *IdPGroupMappingUpdate) SetScope(v string) *IdPGroupMappingUpdate {
-	_u.mutation.SetScope(v)
+// SetScopeType sets the "scope_type" field.
+func (_u *IdPGroupMappingUpdate) SetScopeType(v string) *IdPGroupMappingUpdate {
+	_u.mutation.SetScopeType(v)
 	return _u
 }
 
-// SetNillableScope sets the "scope" field if the given value is not nil.
-func (_u *IdPGroupMappingUpdate) SetNillableScope(v *string) *IdPGroupMappingUpdate {
+// SetNillableScopeType sets the "scope_type" field if the given value is not nil.
+func (_u *IdPGroupMappingUpdate) SetNillableScopeType(v *string) *IdPGroupMappingUpdate {
 	if v != nil {
-		_u.SetScope(*v)
+		_u.SetScopeType(*v)
 	}
 	return _u
 }
 
-// ClearScope clears the value of the "scope" field.
-func (_u *IdPGroupMappingUpdate) ClearScope() *IdPGroupMappingUpdate {
-	_u.mutation.ClearScope()
+// ClearScopeType clears the value of the "scope_type" field.
+func (_u *IdPGroupMappingUpdate) ClearScopeType() *IdPGroupMappingUpdate {
+	_u.mutation.ClearScopeType()
+	return _u
+}
+
+// SetScopeID sets the "scope_id" field.
+func (_u *IdPGroupMappingUpdate) SetScopeID(v string) *IdPGroupMappingUpdate {
+	_u.mutation.SetScopeID(v)
+	return _u
+}
+
+// SetNillableScopeID sets the "scope_id" field if the given value is not nil.
+func (_u *IdPGroupMappingUpdate) SetNillableScopeID(v *string) *IdPGroupMappingUpdate {
+	if v != nil {
+		_u.SetScopeID(*v)
+	}
+	return _u
+}
+
+// ClearScopeID clears the value of the "scope_id" field.
+func (_u *IdPGroupMappingUpdate) ClearScopeID() *IdPGroupMappingUpdate {
+	_u.mutation.ClearScopeID()
+	return _u
+}
+
+// SetAllowedEnvironments sets the "allowed_environments" field.
+func (_u *IdPGroupMappingUpdate) SetAllowedEnvironments(v []string) *IdPGroupMappingUpdate {
+	_u.mutation.SetAllowedEnvironments(v)
+	return _u
+}
+
+// AppendAllowedEnvironments appends value to the "allowed_environments" field.
+func (_u *IdPGroupMappingUpdate) AppendAllowedEnvironments(v []string) *IdPGroupMappingUpdate {
+	_u.mutation.AppendAllowedEnvironments(v)
+	return _u
+}
+
+// ClearAllowedEnvironments clears the value of the "allowed_environments" field.
+func (_u *IdPGroupMappingUpdate) ClearAllowedEnvironments() *IdPGroupMappingUpdate {
+	_u.mutation.ClearAllowedEnvironments()
 	return _u
 }
 
@@ -139,9 +192,14 @@ func (_u *IdPGroupMappingUpdate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *IdPGroupMappingUpdate) check() error {
-	if v, ok := _u.mutation.SyncedGroupID(); ok {
-		if err := idpgroupmapping.SyncedGroupIDValidator(v); err != nil {
-			return &ValidationError{Name: "synced_group_id", err: fmt.Errorf(`ent: validator failed for field "IdPGroupMapping.synced_group_id": %w`, err)}
+	if v, ok := _u.mutation.ProviderID(); ok {
+		if err := idpgroupmapping.ProviderIDValidator(v); err != nil {
+			return &ValidationError{Name: "provider_id", err: fmt.Errorf(`ent: validator failed for field "IdPGroupMapping.provider_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ExternalGroupID(); ok {
+		if err := idpgroupmapping.ExternalGroupIDValidator(v); err != nil {
+			return &ValidationError{Name: "external_group_id", err: fmt.Errorf(`ent: validator failed for field "IdPGroupMapping.external_group_id": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.RoleID(); ok {
@@ -172,17 +230,37 @@ func (_u *IdPGroupMappingUpdate) sqlSave(ctx context.Context) (_node int, err er
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(idpgroupmapping.FieldUpdatedAt, field.TypeTime, value)
 	}
-	if value, ok := _u.mutation.SyncedGroupID(); ok {
-		_spec.SetField(idpgroupmapping.FieldSyncedGroupID, field.TypeString, value)
+	if value, ok := _u.mutation.ProviderID(); ok {
+		_spec.SetField(idpgroupmapping.FieldProviderID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ExternalGroupID(); ok {
+		_spec.SetField(idpgroupmapping.FieldExternalGroupID, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.RoleID(); ok {
 		_spec.SetField(idpgroupmapping.FieldRoleID, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.Scope(); ok {
-		_spec.SetField(idpgroupmapping.FieldScope, field.TypeString, value)
+	if value, ok := _u.mutation.ScopeType(); ok {
+		_spec.SetField(idpgroupmapping.FieldScopeType, field.TypeString, value)
 	}
-	if _u.mutation.ScopeCleared() {
-		_spec.ClearField(idpgroupmapping.FieldScope, field.TypeString)
+	if _u.mutation.ScopeTypeCleared() {
+		_spec.ClearField(idpgroupmapping.FieldScopeType, field.TypeString)
+	}
+	if value, ok := _u.mutation.ScopeID(); ok {
+		_spec.SetField(idpgroupmapping.FieldScopeID, field.TypeString, value)
+	}
+	if _u.mutation.ScopeIDCleared() {
+		_spec.ClearField(idpgroupmapping.FieldScopeID, field.TypeString)
+	}
+	if value, ok := _u.mutation.AllowedEnvironments(); ok {
+		_spec.SetField(idpgroupmapping.FieldAllowedEnvironments, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedAllowedEnvironments(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, idpgroupmapping.FieldAllowedEnvironments, value)
+		})
+	}
+	if _u.mutation.AllowedEnvironmentsCleared() {
+		_spec.ClearField(idpgroupmapping.FieldAllowedEnvironments, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.CreatedBy(); ok {
 		_spec.SetField(idpgroupmapping.FieldCreatedBy, field.TypeString, value)
@@ -213,16 +291,30 @@ func (_u *IdPGroupMappingUpdateOne) SetUpdatedAt(v time.Time) *IdPGroupMappingUp
 	return _u
 }
 
-// SetSyncedGroupID sets the "synced_group_id" field.
-func (_u *IdPGroupMappingUpdateOne) SetSyncedGroupID(v string) *IdPGroupMappingUpdateOne {
-	_u.mutation.SetSyncedGroupID(v)
+// SetProviderID sets the "provider_id" field.
+func (_u *IdPGroupMappingUpdateOne) SetProviderID(v string) *IdPGroupMappingUpdateOne {
+	_u.mutation.SetProviderID(v)
 	return _u
 }
 
-// SetNillableSyncedGroupID sets the "synced_group_id" field if the given value is not nil.
-func (_u *IdPGroupMappingUpdateOne) SetNillableSyncedGroupID(v *string) *IdPGroupMappingUpdateOne {
+// SetNillableProviderID sets the "provider_id" field if the given value is not nil.
+func (_u *IdPGroupMappingUpdateOne) SetNillableProviderID(v *string) *IdPGroupMappingUpdateOne {
 	if v != nil {
-		_u.SetSyncedGroupID(*v)
+		_u.SetProviderID(*v)
+	}
+	return _u
+}
+
+// SetExternalGroupID sets the "external_group_id" field.
+func (_u *IdPGroupMappingUpdateOne) SetExternalGroupID(v string) *IdPGroupMappingUpdateOne {
+	_u.mutation.SetExternalGroupID(v)
+	return _u
+}
+
+// SetNillableExternalGroupID sets the "external_group_id" field if the given value is not nil.
+func (_u *IdPGroupMappingUpdateOne) SetNillableExternalGroupID(v *string) *IdPGroupMappingUpdateOne {
+	if v != nil {
+		_u.SetExternalGroupID(*v)
 	}
 	return _u
 }
@@ -241,23 +333,61 @@ func (_u *IdPGroupMappingUpdateOne) SetNillableRoleID(v *string) *IdPGroupMappin
 	return _u
 }
 
-// SetScope sets the "scope" field.
-func (_u *IdPGroupMappingUpdateOne) SetScope(v string) *IdPGroupMappingUpdateOne {
-	_u.mutation.SetScope(v)
+// SetScopeType sets the "scope_type" field.
+func (_u *IdPGroupMappingUpdateOne) SetScopeType(v string) *IdPGroupMappingUpdateOne {
+	_u.mutation.SetScopeType(v)
 	return _u
 }
 
-// SetNillableScope sets the "scope" field if the given value is not nil.
-func (_u *IdPGroupMappingUpdateOne) SetNillableScope(v *string) *IdPGroupMappingUpdateOne {
+// SetNillableScopeType sets the "scope_type" field if the given value is not nil.
+func (_u *IdPGroupMappingUpdateOne) SetNillableScopeType(v *string) *IdPGroupMappingUpdateOne {
 	if v != nil {
-		_u.SetScope(*v)
+		_u.SetScopeType(*v)
 	}
 	return _u
 }
 
-// ClearScope clears the value of the "scope" field.
-func (_u *IdPGroupMappingUpdateOne) ClearScope() *IdPGroupMappingUpdateOne {
-	_u.mutation.ClearScope()
+// ClearScopeType clears the value of the "scope_type" field.
+func (_u *IdPGroupMappingUpdateOne) ClearScopeType() *IdPGroupMappingUpdateOne {
+	_u.mutation.ClearScopeType()
+	return _u
+}
+
+// SetScopeID sets the "scope_id" field.
+func (_u *IdPGroupMappingUpdateOne) SetScopeID(v string) *IdPGroupMappingUpdateOne {
+	_u.mutation.SetScopeID(v)
+	return _u
+}
+
+// SetNillableScopeID sets the "scope_id" field if the given value is not nil.
+func (_u *IdPGroupMappingUpdateOne) SetNillableScopeID(v *string) *IdPGroupMappingUpdateOne {
+	if v != nil {
+		_u.SetScopeID(*v)
+	}
+	return _u
+}
+
+// ClearScopeID clears the value of the "scope_id" field.
+func (_u *IdPGroupMappingUpdateOne) ClearScopeID() *IdPGroupMappingUpdateOne {
+	_u.mutation.ClearScopeID()
+	return _u
+}
+
+// SetAllowedEnvironments sets the "allowed_environments" field.
+func (_u *IdPGroupMappingUpdateOne) SetAllowedEnvironments(v []string) *IdPGroupMappingUpdateOne {
+	_u.mutation.SetAllowedEnvironments(v)
+	return _u
+}
+
+// AppendAllowedEnvironments appends value to the "allowed_environments" field.
+func (_u *IdPGroupMappingUpdateOne) AppendAllowedEnvironments(v []string) *IdPGroupMappingUpdateOne {
+	_u.mutation.AppendAllowedEnvironments(v)
+	return _u
+}
+
+// ClearAllowedEnvironments clears the value of the "allowed_environments" field.
+func (_u *IdPGroupMappingUpdateOne) ClearAllowedEnvironments() *IdPGroupMappingUpdateOne {
+	_u.mutation.ClearAllowedEnvironments()
 	return _u
 }
 
@@ -331,9 +461,14 @@ func (_u *IdPGroupMappingUpdateOne) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *IdPGroupMappingUpdateOne) check() error {
-	if v, ok := _u.mutation.SyncedGroupID(); ok {
-		if err := idpgroupmapping.SyncedGroupIDValidator(v); err != nil {
-			return &ValidationError{Name: "synced_group_id", err: fmt.Errorf(`ent: validator failed for field "IdPGroupMapping.synced_group_id": %w`, err)}
+	if v, ok := _u.mutation.ProviderID(); ok {
+		if err := idpgroupmapping.ProviderIDValidator(v); err != nil {
+			return &ValidationError{Name: "provider_id", err: fmt.Errorf(`ent: validator failed for field "IdPGroupMapping.provider_id": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ExternalGroupID(); ok {
+		if err := idpgroupmapping.ExternalGroupIDValidator(v); err != nil {
+			return &ValidationError{Name: "external_group_id", err: fmt.Errorf(`ent: validator failed for field "IdPGroupMapping.external_group_id": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.RoleID(); ok {
@@ -381,17 +516,37 @@ func (_u *IdPGroupMappingUpdateOne) sqlSave(ctx context.Context) (_node *IdPGrou
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(idpgroupmapping.FieldUpdatedAt, field.TypeTime, value)
 	}
-	if value, ok := _u.mutation.SyncedGroupID(); ok {
-		_spec.SetField(idpgroupmapping.FieldSyncedGroupID, field.TypeString, value)
+	if value, ok := _u.mutation.ProviderID(); ok {
+		_spec.SetField(idpgroupmapping.FieldProviderID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ExternalGroupID(); ok {
+		_spec.SetField(idpgroupmapping.FieldExternalGroupID, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.RoleID(); ok {
 		_spec.SetField(idpgroupmapping.FieldRoleID, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.Scope(); ok {
-		_spec.SetField(idpgroupmapping.FieldScope, field.TypeString, value)
+	if value, ok := _u.mutation.ScopeType(); ok {
+		_spec.SetField(idpgroupmapping.FieldScopeType, field.TypeString, value)
 	}
-	if _u.mutation.ScopeCleared() {
-		_spec.ClearField(idpgroupmapping.FieldScope, field.TypeString)
+	if _u.mutation.ScopeTypeCleared() {
+		_spec.ClearField(idpgroupmapping.FieldScopeType, field.TypeString)
+	}
+	if value, ok := _u.mutation.ScopeID(); ok {
+		_spec.SetField(idpgroupmapping.FieldScopeID, field.TypeString, value)
+	}
+	if _u.mutation.ScopeIDCleared() {
+		_spec.ClearField(idpgroupmapping.FieldScopeID, field.TypeString)
+	}
+	if value, ok := _u.mutation.AllowedEnvironments(); ok {
+		_spec.SetField(idpgroupmapping.FieldAllowedEnvironments, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedAllowedEnvironments(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, idpgroupmapping.FieldAllowedEnvironments, value)
+		})
+	}
+	if _u.mutation.AllowedEnvironmentsCleared() {
+		_spec.ClearField(idpgroupmapping.FieldAllowedEnvironments, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.CreatedBy(); ok {
 		_spec.SetField(idpgroupmapping.FieldCreatedBy, field.TypeString, value)
