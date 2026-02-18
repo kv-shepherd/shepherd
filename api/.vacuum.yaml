@@ -7,29 +7,22 @@ extends:
 
 rules:
   # Require operation IDs on all endpoints
-  operation-operationId:
-    severity: error
+  operation-operationId: true
 
   # Require descriptions on operations
-  operation-description:
-    severity: warn
+  operation-description: true
 
   # Require tags on operations
-  operation-tags:
-    severity: warn
+  operation-tags: true
 
   # Require info contact
-  info-contact:
-    severity: warn
+  info-contact: true
 
   # Require info license
-  info-license:
-    severity: warn
+  info-license: true
 
   # No eval in markdown
-  no-eval-in-markdown:
-    severity: error
+  no-eval-in-markdown: true
 
   # No script tags in markdown
-  no-script-tags-in-markdown:
-    severity: error
+  no-script-tags-in-markdown: true

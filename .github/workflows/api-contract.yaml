@@ -126,10 +126,6 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      # Pin oapi-codegen to exact version for reproducibility
-      - name: Install oapi-codegen
-        run: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.4.1
-
       - name: Setup Node.js (for TypeScript generation)
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238  # v6.2.0
         with:
@@ -141,6 +137,15 @@ jobs:
         run: |
           go mod download
           cd web && npm ci
+
+      - name: Verify oapi-codegen version (ADR-0028 omitzero)
+        run: |
+          VERSION="$(go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.0 -version | tail -n 1)"
+          echo "Detected oapi-codegen: ${VERSION}"
+          if [ "${VERSION}" != "v2.5.0" ]; then
+            echo "::error::oapi-codegen must be v2.5.0, got ${VERSION}"
+            exit 1
+          fi
 
       - name: Regenerate API code
         run: make api-generate

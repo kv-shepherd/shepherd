@@ -3,10 +3,9 @@
 #   include build/api.mk
 #
 # Prerequisites:
-#   - Go 1.24+ (for oapi-codegen, vacuum)
+#   - Go 1.25+ (for oapi-codegen, vacuum)
 #   - Node.js 20+ (for openapi-typescript only)
-#   - Go tools: vacuum (linting), oapi-codegen (code generation)
-#   - npm packages: openapi-typescript, @stoplight/prism-cli
+#   - Optional local binaries: vacuum, oasdiff
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
@@ -20,9 +19,15 @@ TS_GENERATED_FILE := web/src/types/api.gen.ts
 OAPI_CODEGEN_CONFIG := api/oapi-codegen.yaml
 OAPI_CODEGEN_INPUT := $(OPENAPI_SPEC)
 
-# Tool versions (pin in docs/design/DEPENDENCIES.md; pass via env when running)
-OAPI_CODEGEN_VERSION ?=
-OPENAPI_TS_VERSION ?=
+# Tool versions (pin in docs/design/DEPENDENCIES.md; override via env if needed)
+OAPI_CODEGEN_VERSION ?= v2.5.0
+OPENAPI_TS_VERSION ?= 7.12.0
+VACUUM_VERSION ?= v0.23.8
+OASDIFF_VERSION ?= v1.11.10
+
+VACUUM_CMD := go run github.com/daveshanley/vacuum@$(VACUUM_VERSION)
+OASDIFF_CMD := go run github.com/oasdiff/oasdiff@$(OASDIFF_VERSION)
+OAPI_CODEGEN_CMD := go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main Targets
@@ -31,7 +36,7 @@ OPENAPI_TS_VERSION ?=
 .PHONY: api-lint
 api-lint: ## Validate OpenAPI spec with Vacuum (ADR-0029)
 	@echo "🔍 Linting OpenAPI specification..."
-	@vacuum lint $(OPENAPI_SPEC) --ruleset $(VACUUM_CONFIG)
+	@$(VACUUM_CMD) lint $(OPENAPI_SPEC) --ruleset $(VACUUM_CONFIG)
 	@echo "✅ OpenAPI spec is valid"
 
 .PHONY: api-generate
@@ -45,35 +50,35 @@ api-generate-go: ## Generate Go server code
 	@if [ -f $(COMPAT_SPEC) ]; then \
 		OAPI_CODEGEN_INPUT=$(COMPAT_SPEC); \
 	fi; \
-	go tool oapi-codegen -config $(OAPI_CODEGEN_CONFIG) $${OAPI_CODEGEN_INPUT:-$(OPENAPI_SPEC)}
+	$(OAPI_CODEGEN_CMD) -config $(OAPI_CODEGEN_CONFIG) $${OAPI_CODEGEN_INPUT:-$(OPENAPI_SPEC)}
 	@echo "✅ Go server code generated: $(GO_GENERATED_DIR)/"
 
 .PHONY: api-generate-ts
 api-generate-ts: ## Generate TypeScript types
 	@echo "🔄 Generating TypeScript types..."
 	@mkdir -p $(dir $(TS_GENERATED_FILE))
-	@cd web && npx openapi-typescript@$(OPENAPI_TS_VERSION) ../$(OPENAPI_SPEC) -o src/types/api.gen.ts
+	@cd web && npm exec --yes --package=openapi-typescript@$(OPENAPI_TS_VERSION) -- openapi-typescript ../$(OPENAPI_SPEC) -o src/types/api.gen.ts
 	@echo "✅ TypeScript types generated: $(TS_GENERATED_FILE)"
 
 .PHONY: api-check
 api-check: ## Verify generated code is in sync with spec (CI target)
 	@echo "🔍 Checking generated code sync..."
-	@./docs/design/ci/scripts/api-check.sh
+	@bash ./docs/design/ci/scripts/api-check.sh
 
 .PHONY: api-compat
 api-compat: ## Verify compat spec exists and is fresh (set REQUIRE_OPENAPI_COMPAT=1 to enforce)
-	@./docs/design/ci/scripts/openapi-compat.sh
+	@bash ./docs/design/ci/scripts/openapi-compat.sh
 
 .PHONY: api-compat-generate
 api-compat-generate: ## Generate OpenAPI 3.0-compatible spec (placeholder)
-	@./docs/design/ci/scripts/openapi-compat-generate.sh
+	@bash ./docs/design/ci/scripts/openapi-compat-generate.sh
 
 .PHONY: api-breaking
 api-breaking: ## Detect breaking changes vs main branch
 	@echo "🔍 Checking for breaking changes..."
 	@git fetch origin main --quiet 2>/dev/null || true
 	@if git show origin/main:$(OPENAPI_SPEC) > /tmp/openapi-base.yaml 2>/dev/null; then \
-		npx oasdiff breaking /tmp/openapi-base.yaml $(OPENAPI_SPEC) --fail-on ERR; \
+		$(OASDIFF_CMD) breaking /tmp/openapi-base.yaml $(OPENAPI_SPEC) --fail-on ERR; \
 	else \
 		echo "⚠️  No base spec found on main branch (new API?)"; \
 	fi
@@ -83,7 +88,7 @@ api-changelog: ## Generate changelog vs main branch
 	@echo "📝 Generating API changelog..."
 	@git fetch origin main --quiet 2>/dev/null || true
 	@if git show origin/main:$(OPENAPI_SPEC) > /tmp/openapi-base.yaml 2>/dev/null; then \
-		npx oasdiff changelog /tmp/openapi-base.yaml $(OPENAPI_SPEC) --format markdown; \
+		$(OASDIFF_CMD) changelog /tmp/openapi-base.yaml $(OPENAPI_SPEC) --format markdown; \
 	else \
 		echo "⚠️  No base spec found on main branch"; \
 	fi
@@ -107,18 +112,15 @@ api-docs: ## Serve interactive API documentation
 .PHONY: api-tools
 api-tools: ## Install required API tooling
 	@echo "📦 Installing API development tools..."
-	@if [ -z "$(OAPI_CODEGEN_VERSION)" ] || [ -z "$(OPENAPI_TS_VERSION)" ] || [ -z "$(VACUUM_VERSION)" ]; then \
-		echo "❌ Tool versions must be set from docs/design/DEPENDENCIES.md"; \
-		echo "   Example: make api-tools OAPI_CODEGEN_VERSION=... OPENAPI_TS_VERSION=... VACUUM_VERSION=..."; \
-		exit 1; \
-	fi
-	# Go tools (requires Go 1.24+)
-	go get -tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
+	# Go tools
+	go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
+	# Optional local binaries for faster/lower-network local runs
 	go install github.com/daveshanley/vacuum@$(VACUUM_VERSION)
+	go install github.com/oasdiff/oasdiff@$(OASDIFF_VERSION)
 	# Node.js tools (TypeScript generation only - ADR-0029)
-	npm install -g @stoplight/prism-cli @scalar/cli
-	# For oasdiff (breaking change detection)
-	go install github.com/tufin/oasdiff@latest
+	cd web && npm ci
+	@npm install -g @stoplight/prism-cli @scalar/cli || \
+		echo "⚠️  Global npm install skipped; use 'npx @stoplight/prism-cli' and 'npx @scalar/cli' if needed."
 	@echo "✅ API tools installed"
 
 .PHONY: api-init

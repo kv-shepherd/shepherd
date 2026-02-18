@@ -75,9 +75,12 @@ export default function SystemsPage() {
     );
 
     // Delete system action
-    const deleteMutation = useApiAction<string>(
-        (systemId) => api.DELETE('/systems/{system_id}', {
-            params: { path: { system_id: systemId } },
+    const deleteMutation = useApiAction<{ systemId: string; confirmName: string }>(
+        ({ systemId, confirmName }) => api.DELETE('/systems/{system_id}', {
+            params: {
+                path: { system_id: systemId },
+                query: { confirm_name: confirmName },
+            },
         }),
         {
             invalidateKeys: [['systems']],
@@ -127,7 +130,7 @@ export default function SystemsPage() {
             render: (_, record) => (
                 <Popconfirm
                     title={t('message.confirm_delete')}
-                    onConfirm={() => deleteMutation.mutate(record.id)}
+                    onConfirm={() => deleteMutation.mutate({ systemId: record.id, confirmName: record.name })}
                     okText={t('button.confirm')}
                     cancelText={t('button.cancel')}
                 >

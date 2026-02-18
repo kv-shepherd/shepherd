@@ -75,7 +75,48 @@ export interface paths {
         delete: operations["deleteSystem"];
         options?: never;
         head?: never;
+        /**
+         * Update system description
+         * @description Stage 4.C: only `description` is mutable.
+         *     System name is immutable after creation.
+         */
+        patch: operations["updateSystem"];
+        trace?: never;
+    };
+    "/systems/{system_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List system members */
+        get: operations["listSystemMembers"];
+        put?: never;
+        /** Add system member */
+        post: operations["addSystemMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/systems/{system_id}/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove system member */
+        delete: operations["deleteSystemMember"];
+        options?: never;
+        head?: never;
+        /** Update system member role */
+        patch: operations["updateSystemMemberRole"];
         trace?: never;
     };
     "/systems/{system_id}/services": {
@@ -115,7 +156,12 @@ export interface paths {
         delete: operations["deleteService"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update service description
+         * @description Stage 4.C: only `description` is mutable.
+         *     Service name is immutable after creation.
+         */
+        patch: operations["updateService"];
         trace?: never;
     };
     "/vms": {
@@ -135,6 +181,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vms/request-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get VM request context for current user
+         * @description Returns user-visible context required by VM request wizard.
+         *     Context is computed using current RBAC/environment visibility rules.
+         */
+        get: operations["getVMRequestContext"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vms/request": {
         parameters: {
             query?: never;
@@ -146,6 +213,99 @@ export interface paths {
         put?: never;
         /** Submit VM creation request (requires approval) */
         post: operations["createVMRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vms/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit VM batch request
+         * @description Stage 5.E batch submit entrypoint (ADR-0015 §19).
+         *     Uses parent-child ticket model with idempotency key support.
+         */
+        post: operations["submitVMBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vms/batch/power": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit VM batch power request (compatibility endpoint)
+         * @description Compatibility endpoint normalized into Stage 5.E parent-child pipeline.
+         *     Executes child power operations independently with best-effort semantics.
+         */
+        post: operations["submitVMBatchPower"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vms/batch/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get VM batch status */
+        get: operations["getVMBatch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vms/batch/{batch_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry failed children in a VM batch */
+        post: operations["retryVMBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vms/batch/{batch_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel pending children in a VM batch */
+        post: operations["cancelVMBatch"];
         delete?: never;
         options?: never;
         head?: never;
@@ -227,6 +387,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vms/{vm_id}/console/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request VM console access
+         * @description Stage 6 VNC access entrypoint.
+         *     test env: direct token issuance.
+         *     prod env: create approval ticket and return pending status.
+         */
+        post: operations["requestVMConsoleAccess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vms/{vm_id}/console/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get VM console access status
+         * @description Polling endpoint for Stage 6 approval/access status.
+         */
+        get: operations["getVMConsoleStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vms/{vm_id}/vnc": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open VM VNC session
+         * @description Validates one-time VNC bootstrap credential from secure cookie and establishes an access session.
+         *     Clients MUST NOT pass bearer credentials via URI query.
+         *     V1 returns session bootstrap metadata; proxy internals are implementation-defined.
+         */
+        get: operations["openVMVNC"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/approvals": {
         parameters: {
             query?: never;
@@ -238,6 +462,26 @@ export interface paths {
         get: operations["listApprovals"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/approvals/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit batch approval request (compatibility endpoint)
+         * @description Compatibility endpoint normalized into Stage 5.E VM batch pipeline.
+         */
+        post: operations["submitApprovalBatch"];
         delete?: never;
         options?: never;
         head?: never;
@@ -278,6 +522,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/approvals/{ticket_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel own pending request */
+        post: operations["cancelTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/clusters": {
         parameters: {
             query?: never;
@@ -296,6 +557,374 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List users */
+        get: operations["listUsers"];
+        put?: never;
+        /** Create a local JWT user */
+        post: operations["createUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a local JWT user */
+        delete: operations["deleteUser"];
+        options?: never;
+        head?: never;
+        /** Update a local JWT user */
+        patch: operations["updateUser"];
+        trace?: never;
+    };
+    "/admin/users/{user_id}/role-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List global role bindings for a user */
+        get: operations["listUserRoleBindings"];
+        put?: never;
+        /** Create global role binding for a user */
+        post: operations["createUserRoleBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/role-bindings/{binding_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a user's global role binding */
+        delete: operations["deleteUserRoleBinding"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List RBAC roles */
+        get: operations["listRoles"];
+        put?: never;
+        /** Create custom RBAC role */
+        post: operations["createRole"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/roles/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete RBAC role */
+        delete: operations["deleteRole"];
+        options?: never;
+        head?: never;
+        /** Update RBAC role */
+        patch: operations["updateRole"];
+        trace?: never;
+    };
+    "/admin/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List supported permission keys */
+        get: operations["listPermissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-provider-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List registered authentication provider plugin types */
+        get: operations["listAuthProviderTypes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List authentication providers */
+        get: operations["listAuthProviders"];
+        put?: never;
+        /** Create authentication provider from registered plugin type */
+        post: operations["createAuthProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete authentication provider */
+        delete: operations["deleteAuthProvider"];
+        options?: never;
+        head?: never;
+        /** Update authentication provider */
+        patch: operations["updateAuthProvider"];
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/test-connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test authentication provider connectivity */
+        post: operations["testAuthProviderConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fetch sample identity data fields for mapping */
+        get: operations["getAuthProviderSample"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync external groups for an auth provider */
+        post: operations["syncAuthProviderGroups"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/group-mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List IdP group mappings for an auth provider */
+        get: operations["listAuthProviderGroupMappings"];
+        put?: never;
+        /** Create IdP group mapping */
+        post: operations["createAuthProviderGroupMapping"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/group-mappings/{mapping_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete IdP group mapping */
+        delete: operations["deleteAuthProviderGroupMapping"];
+        options?: never;
+        head?: never;
+        /** Update IdP group mapping */
+        patch: operations["updateAuthProviderGroupMapping"];
+        trace?: never;
+    };
+    "/admin/rate-limits/exemptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create or update a user rate-limit exemption */
+        post: operations["createRateLimitExemption"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/rate-limits/exemptions/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a user rate-limit exemption */
+        delete: operations["deleteRateLimitExemption"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/rate-limits/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upsert per-user rate-limit overrides */
+        put: operations["updateRateLimitUserOverrides"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/rate-limits/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List current user rate-limit statuses */
+        get: operations["listRateLimitStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List templates for admin management */
+        get: operations["listAdminTemplates"];
+        put?: never;
+        /** Create template */
+        post: operations["createAdminTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete template */
+        delete: operations["deleteAdminTemplate"];
+        options?: never;
+        head?: never;
+        /** Update template */
+        patch: operations["updateAdminTemplate"];
+        trace?: never;
+    };
     "/templates": {
         parameters: {
             query?: never;
@@ -311,6 +940,42 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/admin/instance-sizes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List instance sizes for admin management */
+        get: operations["listAdminInstanceSizes"];
+        put?: never;
+        /** Create instance size */
+        post: operations["createAdminInstanceSize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/instance-sizes/{instance_size_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete instance size */
+        delete: operations["deleteAdminInstanceSize"];
+        options?: never;
+        head?: never;
+        /** Update instance size */
+        patch: operations["updateAdminInstanceSize"];
         trace?: never;
     };
     "/instance-sizes": {
@@ -544,6 +1209,12 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             };
+            field_errors?: components["schemas"]["FieldError"][];
+        };
+        FieldError: {
+            field: string;
+            code: string;
+            message?: string;
         };
         Pagination: {
             page?: number;
@@ -567,6 +1238,9 @@ export interface components {
             name: string;
             description?: string;
         };
+        SystemUpdateRequest: {
+            description: string;
+        };
         SystemList: {
             items?: components["schemas"]["System"][];
             pagination?: components["schemas"]["Pagination"];
@@ -583,6 +1257,9 @@ export interface components {
         ServiceCreateRequest: {
             name: string;
             description?: string;
+        };
+        ServiceUpdateRequest: {
+            description: string;
         };
         ServiceList: {
             items?: components["schemas"]["Service"][];
@@ -614,9 +1291,119 @@ export interface components {
             namespace: string;
             reason: string;
         };
+        VMRequestContext: {
+            templates: components["schemas"]["Template"][];
+            instance_sizes: components["schemas"]["InstanceSize"][];
+            namespaces: string[];
+        };
         VMList: {
             items?: components["schemas"]["VM"][];
             pagination?: components["schemas"]["Pagination"];
+        };
+        /** @enum {string} */
+        VMBatchOperation: "CREATE" | "DELETE" | "POWER";
+        /** @enum {string} */
+        VMBatchPowerAction: "START" | "STOP" | "RESTART";
+        /** @enum {string} */
+        VMBatchParentStatus: "PENDING_APPROVAL" | "IN_PROGRESS" | "COMPLETED" | "PARTIAL_SUCCESS" | "FAILED" | "CANCELLED";
+        VMBatchChildItem: {
+            /** @description Required for DELETE operation */
+            vm_id?: string;
+            /**
+             * Format: uuid
+             * @description Required for CREATE operation
+             */
+            service_id?: string;
+            /**
+             * Format: uuid
+             * @description Required for CREATE operation
+             */
+            template_id?: string;
+            /**
+             * Format: uuid
+             * @description Required for CREATE operation
+             */
+            instance_size_id?: string;
+            /** @description Required for CREATE operation */
+            namespace?: string;
+            reason?: string;
+        };
+        VMBatchPowerItem: {
+            vm_id: string;
+            reason?: string;
+        };
+        VMBatchSubmitRequest: {
+            operation: components["schemas"]["VMBatchOperation"];
+            /** @description Client idempotency key */
+            request_id?: string;
+            reason?: string;
+            items: components["schemas"]["VMBatchChildItem"][];
+        };
+        VMBatchPowerRequest: {
+            operation: components["schemas"]["VMBatchPowerAction"];
+            /** @description Client idempotency key */
+            request_id?: string;
+            reason?: string;
+            items: components["schemas"]["VMBatchPowerItem"][];
+        };
+        VMBatchSubmitResponse: {
+            batch_id: string;
+            status: components["schemas"]["VMBatchParentStatus"];
+            status_url: string;
+            retry_after_seconds: number;
+        };
+        VMBatchChildStatus: {
+            ticket_id: string;
+            event_id: string;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
+            resource_id?: string;
+            resource_name?: string;
+            last_error?: string;
+            attempt_count?: number;
+        };
+        VMBatchStatusResponse: {
+            batch_id: string;
+            operation: components["schemas"]["VMBatchOperation"];
+            status: components["schemas"]["VMBatchParentStatus"];
+            child_count: number;
+            success_count: number;
+            failed_count: number;
+            pending_count: number;
+            children: components["schemas"]["VMBatchChildStatus"][];
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        VMBatchActionResponse: {
+            batch_id: string;
+            status: components["schemas"]["VMBatchParentStatus"];
+            affected_count: number;
+            /** @description Child ticket IDs that were actually affected by retry/cancel action. */
+            affected_ticket_ids?: string[];
+        };
+        /** @enum {string} */
+        VMConsoleRequestStatus: "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+        /** @enum {string} */
+        VMConsoleStatus: "NOT_REQUESTED" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+        VMConsoleRequestResponse: {
+            status: components["schemas"]["VMConsoleRequestStatus"];
+            ticket_id?: string | null;
+            vnc_url?: string | null;
+        };
+        VMConsoleStatusResponse: {
+            status: components["schemas"]["VMConsoleStatus"];
+            ticket_id?: string | null;
+            vnc_url?: string | null;
+        };
+        VMVNCSessionResponse: {
+            /** @enum {string} */
+            status: "SESSION_READY";
+            vm_id: string;
+            /** @description Relative websocket/proxy path for noVNC bootstrap. */
+            websocket_path?: string;
         };
         ApprovalTicketResponse: {
             ticket_id: string;
@@ -632,7 +1419,7 @@ export interface components {
              * @description Type of operation this ticket represents (ADR-0015)
              * @enum {string}
              */
-            operation_type?: "CREATE" | "DELETE";
+            operation_type?: "CREATE" | "DELETE" | "VNC_ACCESS";
             requester: string;
             approver?: string;
             reason?: string;
@@ -715,6 +1502,28 @@ export interface components {
             os_version?: string;
             enabled?: boolean;
         };
+        TemplateCreateRequest: {
+            name: string;
+            display_name?: string;
+            description?: string;
+            version?: number;
+            os_family?: string;
+            os_version?: string;
+            spec?: {
+                [key: string]: unknown;
+            };
+            enabled?: boolean;
+        };
+        TemplateUpdateRequest: {
+            display_name?: string;
+            description?: string;
+            os_family?: string;
+            os_version?: string;
+            spec?: {
+                [key: string]: unknown;
+            };
+            enabled?: boolean;
+        };
         TemplateList: {
             items?: components["schemas"]["Template"][];
             pagination?: components["schemas"]["Pagination"];
@@ -737,6 +1546,46 @@ export interface components {
             };
             enabled?: boolean;
         };
+        InstanceSizeCreateRequest: {
+            name: string;
+            display_name?: string;
+            description?: string;
+            cpu_cores: number;
+            memory_mb: number;
+            disk_gb?: number;
+            cpu_request?: number;
+            memory_request_mb?: number;
+            dedicated_cpu?: boolean;
+            requires_gpu?: boolean;
+            requires_sriov?: boolean;
+            requires_hugepages?: boolean;
+            hugepages_size?: string;
+            spec_overrides?: {
+                [key: string]: unknown;
+            };
+            sort_order?: number;
+            enabled?: boolean;
+        };
+        InstanceSizeUpdateRequest: {
+            name?: string;
+            display_name?: string;
+            description?: string;
+            cpu_cores?: number;
+            memory_mb?: number;
+            disk_gb?: number;
+            cpu_request?: number;
+            memory_request_mb?: number;
+            dedicated_cpu?: boolean;
+            requires_gpu?: boolean;
+            requires_sriov?: boolean;
+            requires_hugepages?: boolean;
+            hugepages_size?: string;
+            spec_overrides?: {
+                [key: string]: unknown;
+            };
+            sort_order?: number;
+            enabled?: boolean;
+        };
         InstanceSizeList: {
             items?: components["schemas"]["InstanceSize"][];
         };
@@ -748,7 +1597,7 @@ export interface components {
         LoginResponse: {
             token: string;
             /** Format: date-time */
-            expires_at?: string;
+            expires_at?: string | null;
             force_password_change?: boolean;
         };
         UserInfo: {
@@ -757,6 +1606,280 @@ export interface components {
             email?: string;
             display_name?: string;
             roles?: string[];
+            permissions?: string[];
+        };
+        User: {
+            id: string;
+            username: string;
+            email?: string;
+            display_name?: string;
+            enabled: boolean;
+            roles?: string[];
+            /** Format: date-time */
+            created_at: string;
+        };
+        UserList: {
+            items?: components["schemas"]["User"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        UserCreateRequest: {
+            username: string;
+            /** Format: password */
+            password: string;
+            email?: string;
+            display_name?: string;
+            enabled?: boolean;
+            force_password_change?: boolean;
+        };
+        UserUpdateRequest: {
+            email?: string;
+            display_name?: string;
+            enabled?: boolean;
+            /** Format: password */
+            password?: string;
+            force_password_change?: boolean;
+        };
+        Role: {
+            id: string;
+            name: string;
+            display_name?: string;
+            description?: string;
+            permissions: string[];
+            built_in: boolean;
+            enabled: boolean;
+            /** Format: date-time */
+            created_at?: string;
+        };
+        RoleList: {
+            items?: components["schemas"]["Role"][];
+        };
+        RoleCreateRequest: {
+            name: string;
+            display_name?: string;
+            description?: string;
+            permissions: string[];
+            enabled?: boolean;
+        };
+        RoleUpdateRequest: {
+            display_name?: string;
+            description?: string;
+            permissions?: string[];
+            enabled?: boolean;
+        };
+        Permission: {
+            key: string;
+            description?: string;
+        };
+        PermissionList: {
+            items?: components["schemas"]["Permission"][];
+        };
+        GlobalRoleBinding: {
+            id: string;
+            user_id: string;
+            role_id: string;
+            role_name: string;
+            scope_type: string;
+            scope_id?: string;
+            allowed_environments?: ("test" | "prod")[];
+            created_by?: string;
+            /** Format: date-time */
+            created_at?: string;
+        };
+        GlobalRoleBindingList: {
+            items?: components["schemas"]["GlobalRoleBinding"][];
+        };
+        GlobalRoleBindingCreateRequest: {
+            role_id: string;
+            /** @default global */
+            scope_type: string;
+            scope_id?: string;
+            allowed_environments?: ("test" | "prod")[];
+        };
+        AuthProvider: {
+            id: string;
+            name: string;
+            /** @description Registered auth provider plugin type key */
+            auth_type: string;
+            config?: {
+                [key: string]: unknown;
+            };
+            enabled: boolean;
+            sort_order?: number;
+            created_by?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        AuthProviderList: {
+            items?: components["schemas"]["AuthProvider"][];
+        };
+        AuthProviderCreateRequest: {
+            name: string;
+            /** @description Registered auth provider plugin type key */
+            auth_type: string;
+            config?: {
+                [key: string]: unknown;
+            };
+            enabled?: boolean;
+            sort_order?: number;
+        };
+        AuthProviderUpdateRequest: {
+            name?: string;
+            config?: {
+                [key: string]: unknown;
+            };
+            enabled?: boolean;
+            sort_order?: number;
+        };
+        AuthProviderType: {
+            type: string;
+            display_name: string;
+            description?: string;
+            built_in: boolean;
+            config_schema?: {
+                [key: string]: unknown;
+            };
+        };
+        AuthProviderTypeList: {
+            items: components["schemas"]["AuthProviderType"][];
+        };
+        AuthProviderConnectionTestResult: {
+            success: boolean;
+            message?: string;
+        };
+        AuthProviderSampleField: {
+            field: string;
+            /** @enum {string} */
+            value_type: "string" | "array" | "object" | "number" | "boolean" | "unknown";
+            unique_count: number;
+            sample?: string[];
+        };
+        AuthProviderSampleResponse: {
+            provider_id: string;
+            fields: components["schemas"]["AuthProviderSampleField"][];
+        };
+        AuthProviderGroupSyncRequest: {
+            source_field: string;
+            groups: string[];
+        };
+        IdPSyncedGroup: {
+            id: string;
+            provider_id: string;
+            external_group_id: string;
+            group_name: string;
+            source_field?: string;
+            /** Format: date-time */
+            last_synced_at?: string;
+        };
+        AuthProviderGroupSyncResponse: {
+            items?: components["schemas"]["IdPSyncedGroup"][];
+        };
+        IdPGroupMapping: {
+            id: string;
+            provider_id: string;
+            external_group_id: string;
+            group_name?: string;
+            role_id: string;
+            role_name?: string;
+            scope_type?: string;
+            scope_id?: string;
+            allowed_environments?: ("test" | "prod")[];
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        IdPGroupMappingList: {
+            items?: components["schemas"]["IdPGroupMapping"][];
+        };
+        IdPGroupMappingCreateRequest: {
+            external_group_id: string;
+            group_name?: string;
+            role_id: string;
+            scope_type?: string;
+            scope_id?: string;
+            allowed_environments?: ("test" | "prod")[];
+        };
+        IdPGroupMappingUpdateRequest: {
+            role_id?: string;
+            scope_type?: string;
+            scope_id?: string;
+            allowed_environments?: ("test" | "prod")[];
+        };
+        RateLimitExemptionCreateRequest: {
+            user_id: string;
+            reason?: string;
+            /** Format: date-time */
+            expires_at?: string | null;
+        };
+        RateLimitExemption: {
+            user_id: string;
+            exempted_by: string;
+            reason?: string;
+            /** Format: date-time */
+            expires_at?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        RateLimitUserOverrideRequest: {
+            max_pending_parents?: number | null;
+            max_pending_children?: number | null;
+            cooldown_seconds?: number | null;
+            reason?: string;
+        };
+        RateLimitUserOverride: {
+            user_id: string;
+            max_pending_parents?: number | null;
+            max_pending_children?: number | null;
+            cooldown_seconds?: number | null;
+            reason?: string;
+            updated_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        RateLimitUserStatus: {
+            user_id: string;
+            exempted: boolean;
+            /** Format: date-time */
+            exemption_expires_at?: string | null;
+            effective_max_pending_parents: number;
+            effective_max_pending_children: number;
+            effective_cooldown_seconds: number;
+            current_pending_parents: number;
+            current_pending_children: number;
+            cooldown_remaining_seconds: number;
+        };
+        RateLimitStatusList: {
+            items: components["schemas"]["RateLimitUserStatus"][];
+            /** Format: date-time */
+            generated_at: string;
+        };
+        SystemMember: {
+            user_id: string;
+            username: string;
+            email?: string;
+            display_name?: string;
+            /** @enum {string} */
+            role: "owner" | "admin" | "member" | "viewer";
+            /** Format: date-time */
+            created_at?: string;
+        };
+        SystemMemberList: {
+            items?: components["schemas"]["SystemMember"][];
+        };
+        SystemMemberCreateRequest: {
+            user_id: string;
+            /** @enum {string} */
+            role: "owner" | "admin" | "member" | "viewer";
+        };
+        SystemMemberRoleUpdateRequest: {
+            /** @enum {string} */
+            role: "owner" | "admin" | "member" | "viewer";
         };
         ChangePasswordRequest: {
             /** Format: password */
@@ -850,6 +1973,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description Forbidden */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Resource not found */
         NotFound: {
             headers: {
@@ -881,7 +2013,15 @@ export interface components {
         SystemID: string;
         VMID: string;
         TicketID: string;
+        BatchID: string;
         ServiceID: string;
+        UserID: string;
+        TemplateID: string;
+        InstanceSizeID: string;
+        RoleID: string;
+        RoleBindingID: string;
+        ProviderID: string;
+        MappingID: string;
         /** @description Simple deletion confirmation flag (ADR-0015 §13) */
         Confirm: boolean;
         /**
@@ -1028,12 +2168,12 @@ export interface operations {
     };
     deleteSystem: {
         parameters: {
-            query?: {
+            query: {
                 /**
-                 * @description Type resource name to confirm deletion (ADR-0015 §13 addendum).
-                 *     Must match the resource name exactly.
+                 * @description Type system name to confirm deletion (ADR-0015 §13 addendum).
+                 *     Must match the system name exactly.
                  */
-                confirm_name?: components["parameters"]["ConfirmName"];
+                confirm_name: string;
             };
             header?: never;
             path: {
@@ -1052,6 +2192,142 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    updateSystem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                system_id: components["parameters"]["SystemID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description System updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["System"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listSystemMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                system_id: components["parameters"]["SystemID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description System member list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemMemberList"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addSystemMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                system_id: components["parameters"]["SystemID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemMemberCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description System member created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemMember"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteSystemMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                system_id: components["parameters"]["SystemID"];
+                user_id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description System member removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateSystemMemberRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                system_id: components["parameters"]["SystemID"];
+                user_id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemMemberRoleUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description System member updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemMember"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     listServices: {
@@ -1159,6 +2435,36 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    updateService: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                system_id: components["parameters"]["SystemID"];
+                service_id: components["parameters"]["ServiceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Service updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Service"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listVMs: {
         parameters: {
             query?: {
@@ -1190,6 +2496,26 @@ export interface operations {
             };
         };
     };
+    getVMRequestContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description VM request context */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMRequestContext"];
+                };
+            };
+        };
+    };
     createVMRequest: {
         parameters: {
             query?: never;
@@ -1213,6 +2539,143 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+        };
+    };
+    submitVMBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VMBatchSubmitRequest"];
+            };
+        };
+        responses: {
+            /** @description Batch request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMBatchSubmitResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    submitVMBatchPower: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VMBatchPowerRequest"];
+            };
+        };
+        responses: {
+            /** @description Batch power request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMBatchSubmitResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getVMBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: components["parameters"]["BatchID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Batch status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMBatchStatusResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    retryVMBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: components["parameters"]["BatchID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Retry action accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMBatchActionResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    cancelVMBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: components["parameters"]["BatchID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancel action accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMBatchActionResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     getVM: {
@@ -1333,6 +2796,90 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    requestVMConsoleAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vm_id: components["parameters"]["VMID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Console access approved immediately (test env) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMConsoleRequestResponse"];
+                };
+            };
+            /** @description Console access request accepted and pending approval (prod env) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMConsoleRequestResponse"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getVMConsoleStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vm_id: components["parameters"]["VMID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Console access status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMConsoleStatusResponse"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    openVMVNC: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vm_id: components["parameters"]["VMID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description VNC session ready */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMVNCSessionResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     listApprovals: {
         parameters: {
             query?: {
@@ -1355,6 +2902,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApprovalTicketList"];
+                };
+            };
+        };
+    };
+    submitApprovalBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VMBatchSubmitRequest"];
+            };
+        };
+        responses: {
+            /** @description Batch request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMBatchSubmitResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -1409,6 +2990,29 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    cancelTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: components["parameters"]["TicketID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Request cancelled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     listClusters: {
         parameters: {
             query?: {
@@ -1458,6 +3062,789 @@ export interface operations {
             };
         };
     };
+    listUsers: {
+        parameters: {
+            query?: {
+                /** @description Page number (1-indexed) */
+                page?: components["parameters"]["Page"];
+                /** @description Items per page */
+                per_page?: components["parameters"]["PerPage"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserList"];
+                };
+            };
+        };
+    };
+    createUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description User created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description User updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listUserRoleBindings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Role binding list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlobalRoleBindingList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createUserRoleBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GlobalRoleBindingCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Role binding created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlobalRoleBinding"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteUserRoleBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: components["parameters"]["UserID"];
+                binding_id: components["parameters"]["RoleBindingID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Role binding deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRoles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Role list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleList"];
+                };
+            };
+        };
+    };
+    createRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Role created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Role"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Role deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: components["parameters"]["RoleID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Role updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Role"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listPermissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Permission list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionList"];
+                };
+            };
+        };
+    };
+    listAuthProviderTypes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registered authentication provider plugin types */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviderTypeList"];
+                };
+            };
+        };
+    };
+    listAuthProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authentication provider list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviderList"];
+                };
+            };
+        };
+    };
+    createAuthProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthProviderCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Authentication provider created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProvider"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteAuthProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authentication provider deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAuthProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthProviderUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Authentication provider updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProvider"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    testAuthProviderConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connectivity test result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviderConnectionTestResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAuthProviderSample: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sample field summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviderSampleResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    syncAuthProviderGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthProviderGroupSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Synced group list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviderGroupSyncResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listAuthProviderGroupMappings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Group mapping list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdPGroupMappingList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createAuthProviderGroupMapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdPGroupMappingCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Group mapping created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdPGroupMapping"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteAuthProviderGroupMapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+                mapping_id: components["parameters"]["MappingID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Group mapping deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAuthProviderGroupMapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+                mapping_id: components["parameters"]["MappingID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdPGroupMappingUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Group mapping updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdPGroupMapping"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createRateLimitExemption: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RateLimitExemptionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Exemption saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExemption"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteRateLimitExemption: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Exemption removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateRateLimitUserOverrides: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: components["parameters"]["UserID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RateLimitUserOverrideRequest"];
+            };
+        };
+        responses: {
+            /** @description Override saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitUserOverride"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRateLimitStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rate-limit status list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitStatusList"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listAdminTemplates: {
+        parameters: {
+            query?: {
+                /** @description Page number (1-indexed) */
+                page?: components["parameters"]["Page"];
+                /** @description Items per page */
+                per_page?: components["parameters"]["PerPage"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Template list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateList"];
+                };
+            };
+        };
+    };
+    createAdminTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Template created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Template"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteAdminTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: components["parameters"]["TemplateID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Template deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAdminTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: components["parameters"]["TemplateID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Template updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Template"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listTemplates: {
         parameters: {
             query?: {
@@ -1481,6 +3868,101 @@ export interface operations {
                     "application/json": components["schemas"]["TemplateList"];
                 };
             };
+        };
+    };
+    listAdminInstanceSizes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Instance size list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceSizeList"];
+                };
+            };
+        };
+    };
+    createAdminInstanceSize: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstanceSizeCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Instance size created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceSize"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteAdminInstanceSize: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instance_size_id: components["parameters"]["InstanceSizeID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Instance size deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAdminInstanceSize: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instance_size_id: components["parameters"]["InstanceSizeID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstanceSizeUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Instance size updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceSize"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
         };
     };
     listInstanceSizes: {
@@ -1679,12 +4161,12 @@ export interface operations {
     };
     deleteNamespace: {
         parameters: {
-            query?: {
+            query: {
                 /**
-                 * @description Type resource name to confirm deletion (ADR-0015 §13 addendum).
-                 *     Must match the resource name exactly.
+                 * @description Type namespace name to confirm deletion (ADR-0015 §13 addendum).
+                 *     Must match the namespace name exactly.
                  */
-                confirm_name?: components["parameters"]["ConfirmName"];
+                confirm_name: string;
             };
             header?: never;
             path: {

@@ -43,6 +43,10 @@ tags:
     description: Namespace registry management (ADR-0017)
   - name: notifications
     description: Platform inbox notifications (ADR-0015 §20)
+  - name: rbac
+    description: RBAC role and global binding management
+  - name: auth-providers
+    description: Pluggable authentication provider management
 
 paths:
   # ── Health ──────────────────────────────────────────
@@ -138,6 +142,34 @@ paths:
                 $ref: '#/components/schemas/System'
         '404':
           $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [systems]
+      summary: Update system description
+      description: |
+        Stage 4.C: only `description` is mutable.
+        System name is immutable after creation.
+      operationId: updateSystem
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUpdateRequest'
+      responses:
+        '200':
+          description: System updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/System'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     delete:
       tags: [systems]
       summary: Delete system
@@ -147,7 +179,14 @@ paths:
       operationId: deleteSystem
       parameters:
         - $ref: '#/components/parameters/SystemID'
-        - $ref: '#/components/parameters/ConfirmName'
+        - name: confirm_name
+          in: query
+          description: |
+            Type system name to confirm deletion (ADR-0015 §13 addendum).
+            Must match the system name exactly.
+          required: true
+          schema:
+            type: string
       responses:
         '204':
           description: System deleted
@@ -155,6 +194,94 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+
+  /systems/{system_id}/members:
+    get:
+      tags: [systems]
+      summary: List system members
+      operationId: listSystemMembers
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+      responses:
+        '200':
+          description: System member list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemMemberList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [systems]
+      summary: Add system member
+      operationId: addSystemMember
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemMemberCreateRequest'
+      responses:
+        '201':
+          description: System member created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /systems/{system_id}/members/{user_id}:
+    patch:
+      tags: [systems]
+      summary: Update system member role
+      operationId: updateSystemMemberRole
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/UserID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemMemberRoleUpdateRequest'
+      responses:
+        '200':
+          description: System member updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [systems]
+      summary: Remove system member
+      operationId: deleteSystemMember
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '204':
+          description: System member removed
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   # ── Services ────────────────────────────────────────
   /systems/{system_id}/services:
@@ -214,6 +341,35 @@ paths:
                 $ref: '#/components/schemas/Service'
         '404':
           $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [services]
+      summary: Update service description
+      description: |
+        Stage 4.C: only `description` is mutable.
+        Service name is immutable after creation.
+      operationId: updateService
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/ServiceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceUpdateRequest'
+      responses:
+        '200':
+          description: Service updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     delete:
       tags: [services]
       summary: Delete service
@@ -260,6 +416,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/VMList'
 
+  /vms/request-context:
+    get:
+      tags: [vms]
+      summary: Get VM request context for current user
+      description: |
+        Returns user-visible context required by VM request wizard.
+        Context is computed using current RBAC/environment visibility rules.
+      operationId: getVMRequestContext
+      responses:
+        '200':
+          description: VM request context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMRequestContext'
+
   /vms/request:
     post:
       tags: [vms]
@@ -280,6 +452,117 @@ paths:
                 $ref: '#/components/schemas/ApprovalTicketResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+
+  /vms/batch:
+    post:
+      tags: [vms]
+      summary: Submit VM batch request
+      description: |
+        Stage 5.E batch submit entrypoint (ADR-0015 §19).
+        Uses parent-child ticket model with idempotency key support.
+      operationId: submitVMBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMBatchSubmitRequest'
+      responses:
+        '202':
+          description: Batch request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchSubmitResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vms/batch/power:
+    post:
+      tags: [vms]
+      summary: Submit VM batch power request (compatibility endpoint)
+      description: |
+        Compatibility endpoint normalized into Stage 5.E parent-child pipeline.
+        Executes child power operations independently with best-effort semantics.
+      operationId: submitVMBatchPower
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMBatchPowerRequest'
+      responses:
+        '202':
+          description: Batch power request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchSubmitResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vms/batch/{batch_id}:
+    get:
+      tags: [vms]
+      summary: Get VM batch status
+      operationId: getVMBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchID'
+      responses:
+        '200':
+          description: Batch status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vms/batch/{batch_id}/retry:
+    post:
+      tags: [vms]
+      summary: Retry failed children in a VM batch
+      operationId: retryVMBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchID'
+      responses:
+        '200':
+          description: Retry action accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchActionResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vms/batch/{batch_id}/cancel:
+    post:
+      tags: [vms]
+      summary: Cancel pending children in a VM batch
+      operationId: cancelVMBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchID'
+      responses:
+        '200':
+          description: Cancel action accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchActionResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /vms/{vm_id}:
     get:
@@ -361,6 +644,84 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /vms/{vm_id}/console/request:
+    post:
+      tags: [vms]
+      summary: Request VM console access
+      description: |
+        Stage 6 VNC access entrypoint.
+        test env: direct token issuance.
+        prod env: create approval ticket and return pending status.
+      operationId: requestVMConsoleAccess
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '200':
+          description: Console access approved immediately (test env)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMConsoleRequestResponse'
+        '202':
+          description: Console access request accepted and pending approval (prod env)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMConsoleRequestResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vm_id}/console/status:
+    get:
+      tags: [vms]
+      summary: Get VM console access status
+      description: Polling endpoint for Stage 6 approval/access status.
+      operationId: getVMConsoleStatus
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '200':
+          description: Console access status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMConsoleStatusResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vm_id}/vnc:
+    get:
+      tags: [vms]
+      summary: Open VM VNC session
+      description: |
+        Validates one-time VNC bootstrap credential from secure cookie and establishes an access session.
+        Clients MUST NOT pass bearer credentials via URI query.
+        V1 returns session bootstrap metadata; proxy internals are implementation-defined.
+      operationId: openVMVNC
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '200':
+          description: VNC session ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMVNCSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   # ── Approval ────────────────────────────────────────
   /approvals:
     get:
@@ -382,6 +743,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApprovalTicketList'
+
+  /approvals/batch:
+    post:
+      tags: [approval]
+      summary: Submit batch approval request (compatibility endpoint)
+      description: |
+        Compatibility endpoint normalized into Stage 5.E VM batch pipeline.
+      operationId: submitApprovalBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMBatchSubmitRequest'
+      responses:
+        '202':
+          description: Batch request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchSubmitResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /approvals/{ticket_id}/approve:
     post:
@@ -421,6 +811,23 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /approvals/{ticket_id}/cancel:
+    post:
+      tags: [approval]
+      summary: Cancel own pending request
+      operationId: cancelTicket
+      parameters:
+        - $ref: '#/components/parameters/TicketID'
+      responses:
+        '204':
+          description: Request cancelled
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   # ── Clusters ────────────────────────────────────────
   /admin/clusters:
     get:
@@ -455,7 +862,602 @@ paths:
               schema:
                 $ref: '#/components/schemas/Cluster'
 
+  /admin/users:
+    get:
+      tags: [admin]
+      summary: List users
+      operationId: listUsers
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: User list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserList'
+    post:
+      tags: [admin]
+      summary: Create a local JWT user
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/users/{user_id}:
+    patch:
+      tags: [admin]
+      summary: Update a local JWT user
+      operationId: updateUser
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [admin]
+      summary: Delete a local JWT user
+      operationId: deleteUser
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '204':
+          description: User deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/users/{user_id}/role-bindings:
+    get:
+      tags: [rbac, admin]
+      summary: List global role bindings for a user
+      operationId: listUserRoleBindings
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '200':
+          description: Role binding list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalRoleBindingList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [rbac, admin]
+      summary: Create global role binding for a user
+      operationId: createUserRoleBinding
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GlobalRoleBindingCreateRequest'
+      responses:
+        '201':
+          description: Role binding created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalRoleBinding'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/users/{user_id}/role-bindings/{binding_id}:
+    delete:
+      tags: [rbac, admin]
+      summary: Delete a user's global role binding
+      operationId: deleteUserRoleBinding
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+        - $ref: '#/components/parameters/RoleBindingID'
+      responses:
+        '204':
+          description: Role binding deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/roles:
+    get:
+      tags: [rbac, admin]
+      summary: List RBAC roles
+      operationId: listRoles
+      responses:
+        '200':
+          description: Role list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleList'
+    post:
+      tags: [rbac, admin]
+      summary: Create custom RBAC role
+      operationId: createRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleCreateRequest'
+      responses:
+        '201':
+          description: Role created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/roles/{role_id}:
+    patch:
+      tags: [rbac, admin]
+      summary: Update RBAC role
+      operationId: updateRole
+      parameters:
+        - $ref: '#/components/parameters/RoleID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleUpdateRequest'
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [rbac, admin]
+      summary: Delete RBAC role
+      operationId: deleteRole
+      parameters:
+        - $ref: '#/components/parameters/RoleID'
+      responses:
+        '204':
+          description: Role deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/permissions:
+    get:
+      tags: [rbac, admin]
+      summary: List supported permission keys
+      operationId: listPermissions
+      responses:
+        '200':
+          description: Permission list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionList'
+
+  /admin/auth-provider-types:
+    get:
+      tags: [auth-providers, admin]
+      summary: List registered authentication provider plugin types
+      operationId: listAuthProviderTypes
+      responses:
+        '200':
+          description: Registered authentication provider plugin types
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProviderTypeList'
+
+  /admin/auth-providers:
+    get:
+      tags: [auth-providers, admin]
+      summary: List authentication providers
+      operationId: listAuthProviders
+      responses:
+        '200':
+          description: Authentication provider list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProviderList'
+    post:
+      tags: [auth-providers, admin]
+      summary: Create authentication provider from registered plugin type
+      operationId: createAuthProvider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthProviderCreateRequest'
+      responses:
+        '201':
+          description: Authentication provider created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProvider'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/auth-providers/{provider_id}:
+    patch:
+      tags: [auth-providers, admin]
+      summary: Update authentication provider
+      operationId: updateAuthProvider
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthProviderUpdateRequest'
+      responses:
+        '200':
+          description: Authentication provider updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProvider'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [auth-providers, admin]
+      summary: Delete authentication provider
+      operationId: deleteAuthProvider
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '204':
+          description: Authentication provider deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/auth-providers/{provider_id}/test-connection:
+    post:
+      tags: [auth-providers, admin]
+      summary: Test authentication provider connectivity
+      operationId: testAuthProviderConnection
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: Connectivity test result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProviderConnectionTestResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/auth-providers/{provider_id}/sample:
+    get:
+      tags: [auth-providers, admin]
+      summary: Fetch sample identity data fields for mapping
+      operationId: getAuthProviderSample
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: Sample field summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProviderSampleResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/auth-providers/{provider_id}/sync:
+    post:
+      tags: [auth-providers, admin]
+      summary: Sync external groups for an auth provider
+      operationId: syncAuthProviderGroups
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthProviderGroupSyncRequest'
+      responses:
+        '200':
+          description: Synced group list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProviderGroupSyncResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/auth-providers/{provider_id}/group-mappings:
+    get:
+      tags: [auth-providers, admin]
+      summary: List IdP group mappings for an auth provider
+      operationId: listAuthProviderGroupMappings
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: Group mapping list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdPGroupMappingList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [auth-providers, admin]
+      summary: Create IdP group mapping
+      operationId: createAuthProviderGroupMapping
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdPGroupMappingCreateRequest'
+      responses:
+        '201':
+          description: Group mapping created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdPGroupMapping'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/auth-providers/{provider_id}/group-mappings/{mapping_id}:
+    patch:
+      tags: [auth-providers, admin]
+      summary: Update IdP group mapping
+      operationId: updateAuthProviderGroupMapping
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+        - $ref: '#/components/parameters/MappingID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdPGroupMappingUpdateRequest'
+      responses:
+        '200':
+          description: Group mapping updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdPGroupMapping'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [auth-providers, admin]
+      summary: Delete IdP group mapping
+      operationId: deleteAuthProviderGroupMapping
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+        - $ref: '#/components/parameters/MappingID'
+      responses:
+        '204':
+          description: Group mapping deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/rate-limits/exemptions:
+    post:
+      tags: [admin]
+      summary: Create or update a user rate-limit exemption
+      operationId: createRateLimitExemption
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateLimitExemptionCreateRequest'
+      responses:
+        '200':
+          description: Exemption saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitExemption'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/rate-limits/exemptions/{user_id}:
+    delete:
+      tags: [admin]
+      summary: Remove a user rate-limit exemption
+      operationId: deleteRateLimitExemption
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '204':
+          description: Exemption removed
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/rate-limits/users/{user_id}:
+    put:
+      tags: [admin]
+      summary: Upsert per-user rate-limit overrides
+      operationId: updateRateLimitUserOverrides
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateLimitUserOverrideRequest'
+      responses:
+        '200':
+          description: Override saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitUserOverride'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/rate-limits/status:
+    get:
+      tags: [admin]
+      summary: List current user rate-limit statuses
+      operationId: listRateLimitStatus
+      responses:
+        '200':
+          description: Rate-limit status list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitStatusList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   # ── Templates ───────────────────────────────────────
+  /admin/templates:
+    get:
+      tags: [templates, admin]
+      summary: List templates for admin management
+      operationId: listAdminTemplates
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Template list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateList'
+    post:
+      tags: [templates, admin]
+      summary: Create template
+      operationId: createAdminTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateCreateRequest'
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/templates/{template_id}:
+    patch:
+      tags: [templates, admin]
+      summary: Update template
+      operationId: updateAdminTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateUpdateRequest'
+      responses:
+        '200':
+          description: Template updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [templates, admin]
+      summary: Delete template
+      operationId: deleteAdminTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateID'
+      responses:
+        '204':
+          description: Template deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /templates:
     get:
       tags: [templates]
@@ -473,6 +1475,76 @@ paths:
                 $ref: '#/components/schemas/TemplateList'
 
   # ── Instance Sizes ──────────────────────────────────
+  /admin/instance-sizes:
+    get:
+      tags: [instance-sizes, admin]
+      summary: List instance sizes for admin management
+      operationId: listAdminInstanceSizes
+      responses:
+        '200':
+          description: Instance size list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceSizeList'
+    post:
+      tags: [instance-sizes, admin]
+      summary: Create instance size
+      operationId: createAdminInstanceSize
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstanceSizeCreateRequest'
+      responses:
+        '201':
+          description: Instance size created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceSize'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/instance-sizes/{instance_size_id}:
+    patch:
+      tags: [instance-sizes, admin]
+      summary: Update instance size
+      operationId: updateAdminInstanceSize
+      parameters:
+        - $ref: '#/components/parameters/InstanceSizeID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstanceSizeUpdateRequest'
+      responses:
+        '200':
+          description: Instance size updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceSize'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [instance-sizes, admin]
+      summary: Delete instance size
+      operationId: deleteAdminInstanceSize
+      parameters:
+        - $ref: '#/components/parameters/InstanceSizeID'
+      responses:
+        '204':
+          description: Instance size deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /instance-sizes:
     get:
       tags: [instance-sizes]
@@ -639,7 +1711,14 @@ paths:
       operationId: deleteNamespace
       parameters:
         - $ref: '#/components/parameters/NamespaceID'
-        - $ref: '#/components/parameters/ConfirmName'
+        - name: confirm_name
+          in: query
+          description: |
+            Type namespace name to confirm deletion (ADR-0015 §13 addendum).
+            Must match the namespace name exactly.
+          required: true
+          schema:
+            type: string
       responses:
         '204':
           description: Namespace deleted
@@ -834,8 +1913,56 @@ components:
       required: true
       schema:
         type: string
+    BatchID:
+      name: batch_id
+      in: path
+      required: true
+      schema:
+        type: string
     ServiceID:
       name: service_id
+      in: path
+      required: true
+      schema:
+        type: string
+    UserID:
+      name: user_id
+      in: path
+      required: true
+      schema:
+        type: string
+    TemplateID:
+      name: template_id
+      in: path
+      required: true
+      schema:
+        type: string
+    InstanceSizeID:
+      name: instance_size_id
+      in: path
+      required: true
+      schema:
+        type: string
+    RoleID:
+      name: role_id
+      in: path
+      required: true
+      schema:
+        type: string
+    RoleBindingID:
+      name: binding_id
+      in: path
+      required: true
+      schema:
+        type: string
+    ProviderID:
+      name: provider_id
+      in: path
+      required: true
+      schema:
+        type: string
+    MappingID:
+      name: mapping_id
       in: path
       required: true
       schema:
@@ -866,7 +1993,6 @@ components:
       required: true
       schema:
         type: string
-
   # ── Reusable Responses ──────────────────────────────
   responses:
     BadRequest:
@@ -877,6 +2003,12 @@ components:
             $ref: '#/components/schemas/Error'
     Unauthorized:
       description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Forbidden
       content:
         application/json:
           schema:
@@ -924,6 +2056,21 @@ components:
         params:
           type: object
           additionalProperties: true
+        field_errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+
+    FieldError:
+      type: object
+      required: [field, code]
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
 
     Pagination:
       type: object
@@ -972,6 +2119,13 @@ components:
         description:
           type: string
 
+    SystemUpdateRequest:
+      type: object
+      required: [description]
+      properties:
+        description:
+          type: string
+
     SystemList:
       type: object
       properties:
@@ -1009,6 +2163,13 @@ components:
           type: string
           maxLength: 15
           pattern: '^[a-z]([a-z0-9-]*[a-z0-9])?$'
+        description:
+          type: string
+
+    ServiceUpdateRequest:
+      type: object
+      required: [description]
+      properties:
         description:
           type: string
 
@@ -1072,6 +2233,23 @@ components:
           type: string
         # ⚠️ cluster_id is intentionally ABSENT — see ADR-0017
 
+    VMRequestContext:
+      type: object
+      required: [templates, instance_sizes, namespaces]
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/Template'
+        instance_sizes:
+          type: array
+          items:
+            $ref: '#/components/schemas/InstanceSize'
+        namespaces:
+          type: array
+          items:
+            type: string
+
     VMList:
       type: object
       properties:
@@ -1081,6 +2259,215 @@ components:
             $ref: '#/components/schemas/VM'
         pagination:
           $ref: '#/components/schemas/Pagination'
+
+    VMBatchOperation:
+      type: string
+      enum: [CREATE, DELETE, POWER]
+
+    VMBatchPowerAction:
+      type: string
+      enum: [START, STOP, RESTART]
+
+    VMBatchParentStatus:
+      type: string
+      enum: [PENDING_APPROVAL, IN_PROGRESS, COMPLETED, PARTIAL_SUCCESS, FAILED, CANCELLED]
+
+    VMBatchChildItem:
+      type: object
+      properties:
+        vm_id:
+          type: string
+          description: Required for DELETE operation
+        service_id:
+          type: string
+          format: uuid
+          description: Required for CREATE operation
+        template_id:
+          type: string
+          format: uuid
+          description: Required for CREATE operation
+        instance_size_id:
+          type: string
+          format: uuid
+          description: Required for CREATE operation
+        namespace:
+          type: string
+          description: Required for CREATE operation
+        reason:
+          type: string
+
+    VMBatchPowerItem:
+      type: object
+      required: [vm_id]
+      properties:
+        vm_id:
+          type: string
+        reason:
+          type: string
+
+    VMBatchSubmitRequest:
+      type: object
+      required: [operation, items]
+      properties:
+        operation:
+          $ref: '#/components/schemas/VMBatchOperation'
+        request_id:
+          type: string
+          description: Client idempotency key
+        reason:
+          type: string
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/VMBatchChildItem'
+
+    VMBatchPowerRequest:
+      type: object
+      required: [operation, items]
+      properties:
+        operation:
+          $ref: '#/components/schemas/VMBatchPowerAction'
+        request_id:
+          type: string
+          description: Client idempotency key
+        reason:
+          type: string
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/VMBatchPowerItem'
+
+    VMBatchSubmitResponse:
+      type: object
+      required: [batch_id, status, status_url, retry_after_seconds]
+      properties:
+        batch_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/VMBatchParentStatus'
+        status_url:
+          type: string
+        retry_after_seconds:
+          type: integer
+
+    VMBatchChildStatus:
+      type: object
+      required: [ticket_id, event_id, status]
+      properties:
+        ticket_id:
+          type: string
+        event_id:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
+        resource_id:
+          type: string
+        resource_name:
+          type: string
+        last_error:
+          type: string
+        attempt_count:
+          type: integer
+          minimum: 0
+
+    VMBatchStatusResponse:
+      type: object
+      required: [batch_id, operation, status, child_count, success_count, failed_count, pending_count, children, created_by, created_at, updated_at]
+      properties:
+        batch_id:
+          type: string
+        operation:
+          $ref: '#/components/schemas/VMBatchOperation'
+        status:
+          $ref: '#/components/schemas/VMBatchParentStatus'
+        child_count:
+          type: integer
+        success_count:
+          type: integer
+        failed_count:
+          type: integer
+        pending_count:
+          type: integer
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/VMBatchChildStatus'
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    VMBatchActionResponse:
+      type: object
+      required: [batch_id, status, affected_count]
+      properties:
+        batch_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/VMBatchParentStatus'
+        affected_count:
+          type: integer
+        affected_ticket_ids:
+          type: array
+          description: Child ticket IDs that were actually affected by retry/cancel action.
+          items:
+            type: string
+
+    VMConsoleRequestStatus:
+      type: string
+      enum: [PENDING_APPROVAL, APPROVED, REJECTED]
+
+    VMConsoleStatus:
+      type: string
+      enum: [NOT_REQUESTED, PENDING_APPROVAL, APPROVED, REJECTED]
+
+    VMConsoleRequestResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/VMConsoleRequestStatus'
+        ticket_id:
+          type: string
+          nullable: true
+        vnc_url:
+          type: string
+          nullable: true
+
+    VMConsoleStatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/VMConsoleStatus'
+        ticket_id:
+          type: string
+          nullable: true
+        vnc_url:
+          type: string
+          nullable: true
+
+    VMVNCSessionResponse:
+      type: object
+      required: [status, vm_id]
+      properties:
+        status:
+          type: string
+          enum: [SESSION_READY]
+        vm_id:
+          type: string
+        websocket_path:
+          type: string
+          description: Relative websocket/proxy path for noVNC bootstrap.
 
     # ── Approval ────────────────────────────────────
     ApprovalTicketResponse:
@@ -1106,7 +2493,7 @@ components:
           enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
         operation_type:
           type: string
-          enum: [CREATE, DELETE]
+          enum: [CREATE, DELETE, VNC_ACCESS]
           description: Type of operation this ticket represents (ADR-0015)
         requester:
           type: string
@@ -1258,6 +2645,46 @@ components:
         enabled:
           type: boolean
 
+    TemplateCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        os_family:
+          type: string
+        os_version:
+          type: string
+        spec:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+
+    TemplateUpdateRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        description:
+          type: string
+        os_family:
+          type: string
+        os_version:
+          type: string
+        spec:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+
     TemplateList:
       type: object
       properties:
@@ -1303,6 +2730,91 @@ components:
         enabled:
           type: boolean
 
+    InstanceSizeCreateRequest:
+      type: object
+      required: [name, cpu_cores, memory_mb]
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        cpu_cores:
+          type: integer
+          minimum: 1
+        memory_mb:
+          type: integer
+          minimum: 1
+        disk_gb:
+          type: integer
+          minimum: 1
+        cpu_request:
+          type: integer
+          minimum: 1
+        memory_request_mb:
+          type: integer
+          minimum: 1
+        dedicated_cpu:
+          type: boolean
+        requires_gpu:
+          type: boolean
+        requires_sriov:
+          type: boolean
+        requires_hugepages:
+          type: boolean
+        hugepages_size:
+          type: string
+        spec_overrides:
+          type: object
+          additionalProperties: true
+        sort_order:
+          type: integer
+        enabled:
+          type: boolean
+
+    InstanceSizeUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        cpu_cores:
+          type: integer
+          minimum: 1
+        memory_mb:
+          type: integer
+          minimum: 1
+        disk_gb:
+          type: integer
+          minimum: 1
+        cpu_request:
+          type: integer
+          minimum: 1
+        memory_request_mb:
+          type: integer
+          minimum: 1
+        dedicated_cpu:
+          type: boolean
+        requires_gpu:
+          type: boolean
+        requires_sriov:
+          type: boolean
+        requires_hugepages:
+          type: boolean
+        hugepages_size:
+          type: string
+        spec_overrides:
+          type: object
+          additionalProperties: true
+        sort_order:
+          type: integer
+        enabled:
+          type: boolean
+
     InstanceSizeList:
       type: object
       properties:
@@ -1331,6 +2843,7 @@ components:
         expires_at:
           type: string
           format: date-time
+          nullable: true
         force_password_change:
           type: boolean
 
@@ -1350,6 +2863,605 @@ components:
           type: array
           items:
             type: string
+        permissions:
+          type: array
+          items:
+            type: string
+
+    User:
+      type: object
+      required: [id, username, enabled, created_at]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        enabled:
+          type: boolean
+        roles:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    UserList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    UserCreateRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+        email:
+          type: string
+        display_name:
+          type: string
+        enabled:
+          type: boolean
+        force_password_change:
+          type: boolean
+
+    UserUpdateRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        display_name:
+          type: string
+        enabled:
+          type: boolean
+        password:
+          type: string
+          format: password
+        force_password_change:
+          type: boolean
+
+    Role:
+      type: object
+      required: [id, name, permissions, built_in, enabled]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        built_in:
+          type: boolean
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    RoleList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+
+    RoleCreateRequest:
+      type: object
+      required: [name, permissions]
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+
+    RoleUpdateRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+
+    Permission:
+      type: object
+      required: [key]
+      properties:
+        key:
+          type: string
+        description:
+          type: string
+
+    PermissionList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+
+    GlobalRoleBinding:
+      type: object
+      required: [id, user_id, role_id, role_name, scope_type]
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        role_id:
+          type: string
+        role_name:
+          type: string
+        scope_type:
+          type: string
+        scope_id:
+          type: string
+        allowed_environments:
+          type: array
+          items:
+            type: string
+            enum: [test, prod]
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    GlobalRoleBindingList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GlobalRoleBinding'
+
+    GlobalRoleBindingCreateRequest:
+      type: object
+      required: [role_id]
+      properties:
+        role_id:
+          type: string
+        scope_type:
+          type: string
+          default: global
+        scope_id:
+          type: string
+        allowed_environments:
+          type: array
+          items:
+            type: string
+            enum: [test, prod]
+
+    AuthProvider:
+      type: object
+      required: [id, name, auth_type, enabled]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        auth_type:
+          type: string
+          description: Registered auth provider plugin type key
+        config:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+        sort_order:
+          type: integer
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AuthProviderList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthProvider'
+
+    AuthProviderCreateRequest:
+      type: object
+      required: [name, auth_type]
+      properties:
+        name:
+          type: string
+        auth_type:
+          type: string
+          description: Registered auth provider plugin type key
+        config:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+        sort_order:
+          type: integer
+
+    AuthProviderUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+        sort_order:
+          type: integer
+
+    AuthProviderType:
+      type: object
+      required: [type, display_name, built_in]
+      properties:
+        type:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        built_in:
+          type: boolean
+        config_schema:
+          type: object
+          additionalProperties: true
+
+    AuthProviderTypeList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthProviderType'
+
+    AuthProviderConnectionTestResult:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+
+    AuthProviderSampleField:
+      type: object
+      required: [field, value_type, unique_count]
+      properties:
+        field:
+          type: string
+        value_type:
+          type: string
+          enum: [string, array, object, number, boolean, unknown]
+        unique_count:
+          type: integer
+        sample:
+          type: array
+          items:
+            type: string
+
+    AuthProviderSampleResponse:
+      type: object
+      required: [provider_id, fields]
+      properties:
+        provider_id:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthProviderSampleField'
+
+    AuthProviderGroupSyncRequest:
+      type: object
+      required: [source_field, groups]
+      properties:
+        source_field:
+          type: string
+        groups:
+          type: array
+          minItems: 1
+          items:
+            type: string
+
+    IdPSyncedGroup:
+      type: object
+      required: [id, provider_id, external_group_id, group_name]
+      properties:
+        id:
+          type: string
+        provider_id:
+          type: string
+        external_group_id:
+          type: string
+        group_name:
+          type: string
+        source_field:
+          type: string
+        last_synced_at:
+          type: string
+          format: date-time
+
+    AuthProviderGroupSyncResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdPSyncedGroup'
+
+    IdPGroupMapping:
+      type: object
+      required: [id, provider_id, external_group_id, role_id]
+      properties:
+        id:
+          type: string
+        provider_id:
+          type: string
+        external_group_id:
+          type: string
+        group_name:
+          type: string
+        role_id:
+          type: string
+        role_name:
+          type: string
+        scope_type:
+          type: string
+        scope_id:
+          type: string
+        allowed_environments:
+          type: array
+          items:
+            type: string
+            enum: [test, prod]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    IdPGroupMappingList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdPGroupMapping'
+
+    IdPGroupMappingCreateRequest:
+      type: object
+      required: [external_group_id, role_id]
+      properties:
+        external_group_id:
+          type: string
+        group_name:
+          type: string
+        role_id:
+          type: string
+        scope_type:
+          type: string
+        scope_id:
+          type: string
+        allowed_environments:
+          type: array
+          items:
+            type: string
+            enum: [test, prod]
+
+    IdPGroupMappingUpdateRequest:
+      type: object
+      properties:
+        role_id:
+          type: string
+        scope_type:
+          type: string
+        scope_id:
+          type: string
+        allowed_environments:
+          type: array
+          items:
+            type: string
+            enum: [test, prod]
+
+    RateLimitExemptionCreateRequest:
+      type: object
+      required: [user_id]
+      properties:
+        user_id:
+          type: string
+        reason:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    RateLimitExemption:
+      type: object
+      required: [user_id, exempted_by, created_at, updated_at]
+      properties:
+        user_id:
+          type: string
+        exempted_by:
+          type: string
+        reason:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    RateLimitUserOverrideRequest:
+      type: object
+      properties:
+        max_pending_parents:
+          type: integer
+          minimum: 1
+          nullable: true
+        max_pending_children:
+          type: integer
+          minimum: 1
+          nullable: true
+        cooldown_seconds:
+          type: integer
+          minimum: 0
+          nullable: true
+        reason:
+          type: string
+
+    RateLimitUserOverride:
+      type: object
+      required: [user_id, updated_by, created_at, updated_at]
+      properties:
+        user_id:
+          type: string
+        max_pending_parents:
+          type: integer
+          nullable: true
+        max_pending_children:
+          type: integer
+          nullable: true
+        cooldown_seconds:
+          type: integer
+          nullable: true
+        reason:
+          type: string
+        updated_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    RateLimitUserStatus:
+      type: object
+      required: [user_id, exempted, effective_max_pending_parents, effective_max_pending_children, effective_cooldown_seconds, current_pending_parents, current_pending_children, cooldown_remaining_seconds]
+      properties:
+        user_id:
+          type: string
+        exempted:
+          type: boolean
+        exemption_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        effective_max_pending_parents:
+          type: integer
+        effective_max_pending_children:
+          type: integer
+        effective_cooldown_seconds:
+          type: integer
+        current_pending_parents:
+          type: integer
+        current_pending_children:
+          type: integer
+        cooldown_remaining_seconds:
+          type: integer
+
+    RateLimitStatusList:
+      type: object
+      required: [items, generated_at]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RateLimitUserStatus'
+        generated_at:
+          type: string
+          format: date-time
+
+    SystemMember:
+      type: object
+      required: [user_id, username, role]
+      properties:
+        user_id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [owner, admin, member, viewer]
+        created_at:
+          type: string
+          format: date-time
+
+    SystemMemberList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemMember'
+
+    SystemMemberCreateRequest:
+      type: object
+      required: [user_id, role]
+      properties:
+        user_id:
+          type: string
+        role:
+          type: string
+          enum: [owner, admin, member, viewer]
+
+    SystemMemberRoleUpdateRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [owner, admin, member, viewer]
 
     ChangePasswordRequest:
       type: object
