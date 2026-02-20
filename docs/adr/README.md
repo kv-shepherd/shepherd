@@ -45,6 +45,7 @@
 | [ADR-0033](./ADR-0033-realtime-notification-acceleration.md) | Realtime Notification Acceleration with PostgreSQL LISTEN/NOTIFY | **Proposed** | - |
 | [ADR-0034](./ADR-0034-master-flow-spec-driven-test-first.md) | Master-Flow Spec-Driven Test-First Execution Standard | **Accepted** | - |
 | [ADR-0035](./ADR-0035-auth-provider-plugin-boundary.md) | Auth Provider Plugin Boundary and Type Discovery | **Accepted** | - |
+| [ADR-0036](./ADR-0036-template-instancesize-boundary-enforcement.md) | Template / InstanceSize Boundary Enforcement | **Proposed** | - |
 
 > ⚠️ **¹ ADR-0009 Partial Supersession Notice**:
 >
