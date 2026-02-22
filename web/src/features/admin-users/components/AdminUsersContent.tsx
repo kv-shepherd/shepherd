@@ -4,6 +4,7 @@ import {
     Button,
     Card,
     DatePicker,
+    Drawer,
     Form,
     Input,
     InputNumber,
@@ -25,6 +26,7 @@ import { useTranslation } from 'react-i18next';
 import { useAdminUsersController } from '../hooks/useAdminUsersController';
 import {
     MEMBER_ROLE_VALUES,
+    type GlobalRoleBinding,
     type RateLimitUserStatus,
     type SystemMember,
     type SystemMemberRoleUpdateRequest,
@@ -112,6 +114,14 @@ export function AdminUsersContent() {
                         onClick={() => users.openEditUserModal(record)}
                     >
                         {t('common:button.edit')}
+                    </Button>
+                    <Button
+                        size="small"
+                        icon={<TeamOutlined />}
+                        data-testid={`user-action-role-bindings-${record.id}`}
+                        onClick={() => users.openRoleBindingsModal(record.id)}
+                    >
+                        {t('users.directory.role_bindings')}
                     </Button>
                     <Popconfirm
                         title={t('users.directory.delete_confirm', { username: record.username })}
@@ -250,7 +260,7 @@ export function AdminUsersContent() {
                     </Button>
                     <Button
                         size="small"
-                        data-testid={`ratelimit-action-override-${record.user_id}`}
+                        data-testid={`rate-limit-user-action-edit-${record.user_id}`}
                         onClick={() => {
                             setSelectedRateLimitUserID(record.user_id);
                             overrideForm.setFieldsValue({
@@ -269,7 +279,7 @@ export function AdminUsersContent() {
                         okText={t('common:button.confirm')}
                         cancelText={t('common:button.cancel')}
                     >
-                        <Button size="small" danger data-testid={`ratelimit-action-remove-exempt-${record.user_id}`} disabled={!record.exempted} loading={users.rateLimitMutationPending}>
+                        <Button size="small" danger data-testid={`rate-limit-exemption-action-delete-${record.user_id}`} disabled={!record.exempted} loading={users.rateLimitMutationPending}>
                             {t('users.rate_limit.remove_exemption')}
                         </Button>
                     </Popconfirm>
@@ -348,47 +358,48 @@ export function AdminUsersContent() {
                 onCancel={users.closeCreateUserModal}
                 confirmLoading={users.createUserPending}
                 destroyOnHidden={true}
-                data-testid="user-create-modal"
             >
-                <Form form={users.createUserForm} layout="vertical" preserve={false}>
-                    <Form.Item
-                        name="username"
-                        label={t('common:auth.username')}
-                        rules={[
-                            { required: true, message: t('common:validation.username_required') },
-                            { min: 2, message: t('common:validation.username_min') },
-                        ]}
-                    >
-                        <Input autoComplete="off" />
-                    </Form.Item>
-                    <Form.Item
-                        name="password"
-                        label={t('common:auth.password')}
-                        rules={[
-                            { required: true, message: t('common:validation.password_required') },
-                            { min: 8, message: t('common:validation.password_min') },
-                        ]}
-                    >
-                        <Input.Password autoComplete="new-password" />
-                    </Form.Item>
-                    <Form.Item name="display_name" label={t('common:table.display_name')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="email" label={t('users.table.email')}>
-                        <Input type="email" />
-                    </Form.Item>
-                    <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked" initialValue={true}>
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item
-                        name="force_password_change"
-                        label={t('users.directory.force_password_change')}
-                        valuePropName="checked"
-                        initialValue={true}
-                    >
-                        <Switch />
-                    </Form.Item>
-                </Form>
+                <div data-testid="user-create-modal">
+                    <Form form={users.createUserForm} layout="vertical" preserve={false}>
+                        <Form.Item
+                            name="username"
+                            label={t('common:auth.username')}
+                            rules={[
+                                { required: true, message: t('common:validation.username_required') },
+                                { min: 2, message: t('common:validation.username_min') },
+                            ]}
+                        >
+                            <Input autoComplete="off" />
+                        </Form.Item>
+                        <Form.Item
+                            name="password"
+                            label={t('common:auth.password')}
+                            rules={[
+                                { required: true, message: t('common:validation.password_required') },
+                                { min: 8, message: t('common:validation.password_min') },
+                            ]}
+                        >
+                            <Input.Password autoComplete="new-password" />
+                        </Form.Item>
+                        <Form.Item name="display_name" label={t('common:table.display_name')}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="email" label={t('users.table.email')}>
+                            <Input type="email" />
+                        </Form.Item>
+                        <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked" initialValue={true}>
+                            <Switch />
+                        </Form.Item>
+                        <Form.Item
+                            name="force_password_change"
+                            label={t('users.directory.force_password_change')}
+                            valuePropName="checked"
+                            initialValue={true}
+                        >
+                            <Switch />
+                        </Form.Item>
+                    </Form>
+                </div>
             </Modal>
 
             <Modal
@@ -402,35 +413,36 @@ export function AdminUsersContent() {
                 onCancel={users.closeEditUserModal}
                 confirmLoading={users.updateUserPending}
                 destroyOnHidden={true}
-                data-testid="user-edit-modal"
             >
-                <Form form={users.editUserForm} layout="vertical" preserve={false}>
-                    <Form.Item name="display_name" label={t('common:table.display_name')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="email" label={t('users.table.email')}>
-                        <Input type="email" />
-                    </Form.Item>
-                    <Form.Item
-                        name="password"
-                        label={t('users.directory.password')}
-                        rules={[
-                            { min: 8, message: t('common:validation.password_min') },
-                        ]}
-                    >
-                        <Input.Password autoComplete="new-password" allowClear={true} />
-                    </Form.Item>
-                    <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item
-                        name="force_password_change"
-                        label={t('users.directory.force_password_change')}
-                        valuePropName="checked"
-                    >
-                        <Switch />
-                    </Form.Item>
-                </Form>
+                <div data-testid="user-edit-modal">
+                    <Form form={users.editUserForm} layout="vertical" preserve={false}>
+                        <Form.Item name="display_name" label={t('common:table.display_name')}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="email" label={t('users.table.email')}>
+                            <Input type="email" />
+                        </Form.Item>
+                        <Form.Item
+                            name="password"
+                            label={t('users.directory.password')}
+                            rules={[
+                                { min: 8, message: t('common:validation.password_min') },
+                            ]}
+                        >
+                            <Input.Password autoComplete="new-password" allowClear={true} />
+                        </Form.Item>
+                        <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked">
+                            <Switch />
+                        </Form.Item>
+                        <Form.Item
+                            name="force_password_change"
+                            label={t('users.directory.force_password_change')}
+                            valuePropName="checked"
+                        >
+                            <Switch />
+                        </Form.Item>
+                    </Form>
+                </div>
             </Modal>
 
             <Card style={{ borderRadius: 12 }}>
@@ -489,9 +501,22 @@ export function AdminUsersContent() {
                         <Text strong>{t('users.rate_limit.title')}</Text>
                         <Text type="secondary">{t('users.rate_limit.subtitle')}</Text>
                     </Space>
-                    <Button icon={<ReloadOutlined />} onClick={() => users.refetchRateLimitStatus()}>
-                        {t('common:button.refresh')}
-                    </Button>
+                    <Space>
+                        <Button icon={<ReloadOutlined />} onClick={() => users.refetchRateLimitStatus()}>
+                            {t('common:button.refresh')}
+                        </Button>
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            data-testid="rate-limit-exemption-create-button"
+                            onClick={() => {
+                                exemptionForm.resetFields();
+                                setExemptionOpen(true);
+                            }}
+                        >
+                            {t('users.rate_limit.add_exemption')}
+                        </Button>
+                    </Space>
                 </Space>
                 <Table<RateLimitUserStatus>
                     style={{ marginTop: 16 }}
@@ -512,37 +537,38 @@ export function AdminUsersContent() {
                 onCancel={users.closeAddModal}
                 confirmLoading={users.addPending}
                 destroyOnHidden={true}
-                data-testid="member-add-modal"
             >
-                <Form form={users.addForm} layout="vertical" preserve={false}>
-                    <Form.Item
-                        name="user_id"
-                        label={t('users.members.select_user')}
-                        rules={[{ required: true, message: t('users.members.validation.user_required') }]}
-                    >
-                        <Select
-                            showSearch
-                            optionFilterProp="label"
-                            placeholder={t('users.members.select_user_placeholder')}
-                            options={addableUsers.map((u) => ({
-                                value: u.id,
-                                label: `${u.username}${u.display_name ? ` (${u.display_name})` : ''}`,
-                            }))}
-                            notFoundContent={t('users.members.no_addable_users')}
-                        />
-                    </Form.Item>
-                    <Form.Item
-                        name="role"
-                        label={t('users.members.select_role')}
-                        rules={[{ required: true, message: t('users.members.validation.role_required') }]}
-                        initialValue="viewer"
-                    >
-                        <Select options={memberRoleOptions} />
-                    </Form.Item>
-                    <Form.Item label={t('users.members.note_label')}>
-                        <Input.TextArea rows={3} value={t('users.members.note')} readOnly />
-                    </Form.Item>
-                </Form>
+                <div data-testid="member-add-modal">
+                    <Form form={users.addForm} layout="vertical" preserve={false}>
+                        <Form.Item
+                            name="user_id"
+                            label={t('users.members.select_user')}
+                            rules={[{ required: true, message: t('users.members.validation.user_required') }]}
+                        >
+                            <Select
+                                showSearch
+                                optionFilterProp="label"
+                                placeholder={t('users.members.select_user_placeholder')}
+                                options={addableUsers.map((u) => ({
+                                    value: u.id,
+                                    label: `${u.username}${u.display_name ? ` (${u.display_name})` : ''}`,
+                                }))}
+                                notFoundContent={t('users.members.no_addable_users')}
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="role"
+                            label={t('users.members.select_role')}
+                            rules={[{ required: true, message: t('users.members.validation.role_required') }]}
+                            initialValue="viewer"
+                        >
+                            <Select options={memberRoleOptions} />
+                        </Form.Item>
+                        <Form.Item label={t('users.members.note_label')}>
+                            <Input.TextArea rows={3} value={t('users.members.note')} readOnly />
+                        </Form.Item>
+                    </Form>
+                </div>
             </Modal>
 
             <Modal
@@ -567,19 +593,20 @@ export function AdminUsersContent() {
                 }}
                 confirmLoading={users.rateLimitMutationPending}
                 destroyOnHidden={true}
-                data-testid="ratelimit-exemption-modal"
             >
-                <Form form={exemptionForm} layout="vertical" preserve={false}>
-                    <Form.Item label={t('users.rate_limit.user_id')}>
-                        <Input value={selectedRateLimitUserID} readOnly />
-                    </Form.Item>
-                    <Form.Item name="reason" label={t('users.rate_limit.reason')}>
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                    <Form.Item name="expires_at" label={t('users.rate_limit.expires_at')}>
-                        <DatePicker showTime style={{ width: '100%' }} />
-                    </Form.Item>
-                </Form>
+                <div data-testid="rate-limit-exemption-create-modal">
+                    <Form form={exemptionForm} layout="vertical" preserve={false}>
+                        <Form.Item label={t('users.rate_limit.user_id')}>
+                            <Input value={selectedRateLimitUserID} readOnly />
+                        </Form.Item>
+                        <Form.Item name="reason" label={t('users.rate_limit.reason')}>
+                            <Input.TextArea rows={3} />
+                        </Form.Item>
+                        <Form.Item name="expires_at" label={t('users.rate_limit.expires_at')}>
+                            <DatePicker showTime style={{ width: '100%' }} />
+                        </Form.Item>
+                    </Form>
+                </div>
             </Modal>
 
             <Modal
@@ -605,25 +632,112 @@ export function AdminUsersContent() {
                 }}
                 confirmLoading={users.rateLimitMutationPending}
                 destroyOnHidden={true}
-                data-testid="ratelimit-override-modal"
             >
-                <Form form={overrideForm} layout="vertical" preserve={false}>
-                    <Form.Item label={t('users.rate_limit.user_id')}>
-                        <Input value={selectedRateLimitUserID} readOnly />
-                    </Form.Item>
-                    <Form.Item name="max_pending_parents" label={t('users.rate_limit.max_parents')}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="max_pending_children" label={t('users.rate_limit.max_children')}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="cooldown_seconds" label={t('users.rate_limit.cooldown')}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="reason" label={t('users.rate_limit.reason')}>
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                </Form>
+                <div data-testid="rate-limit-user-edit-modal">
+                    <Form form={overrideForm} layout="vertical" preserve={false}>
+                        <Form.Item label={t('users.rate_limit.user_id')}>
+                            <Input value={selectedRateLimitUserID} readOnly />
+                        </Form.Item>
+                        <Form.Item name="max_pending_parents" label={t('users.rate_limit.max_parents')}>
+                            <InputNumber min={0} style={{ width: '100%' }} />
+                        </Form.Item>
+                        <Form.Item name="max_pending_children" label={t('users.rate_limit.max_children')}>
+                            <InputNumber min={0} style={{ width: '100%' }} />
+                        </Form.Item>
+                        <Form.Item name="cooldown_seconds" label={t('users.rate_limit.cooldown')}>
+                            <InputNumber min={0} style={{ width: '100%' }} />
+                        </Form.Item>
+                        <Form.Item name="reason" label={t('users.rate_limit.reason')}>
+                            <Input.TextArea rows={3} />
+                        </Form.Item>
+                    </Form>
+                </div>
+            </Modal>
+            {/* ── User Role Bindings Drawer ─────────────────────────────── */}
+            <Drawer
+                title={t('users.role_bindings.drawer_title')}
+                open={Boolean(users.roleBindingsUserId)}
+                onClose={users.closeRoleBindingsModal}
+                width={700}
+                destroyOnClose
+            >
+                <div data-testid="user-role-bindings-page">
+                    <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'flex-end' }}>
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            data-testid="role-binding-create-button"
+                            onClick={users.openRoleBindingCreateModal}
+                        >
+                            {t('users.role_bindings.create')}
+                        </Button>
+                    </Space>
+                    <Table<GlobalRoleBinding>
+                        rowKey="id"
+                        loading={users.roleBindingsLoading}
+                        dataSource={users.roleBindings?.items ?? []}
+                        pagination={false}
+                        columns={[
+                            {
+                                title: t('users.role_bindings.role_name'),
+                                dataIndex: 'role_name',
+                                key: 'role_name',
+                            },
+                            {
+                                title: t('users.role_bindings.created_at'),
+                                dataIndex: 'created_at',
+                                key: 'created_at',
+                                render: (val: string) => val ? new Date(val).toLocaleString() : '-',
+                            },
+                            {
+                                title: t('common:table.actions'),
+                                key: 'actions',
+                                render: (_: unknown, record: GlobalRoleBinding) => (
+                                    <Popconfirm
+                                        title={t('users.role_bindings.delete_confirm')}
+                                        onConfirm={() => users.deleteRoleBinding(record.id)}
+                                        okText={t('common:button.confirm')}
+                                        cancelText={t('common:button.cancel')}
+                                    >
+                                        <Button
+                                            type="text"
+                                            size="small"
+                                            danger
+                                            icon={<DeleteOutlined />}
+                                            loading={users.deletingBindingId === record.id && users.deleteRoleBindingPending}
+                                            data-testid={`role-binding-action-delete-${record.id}`}
+                                        />
+                                    </Popconfirm>
+                                ),
+                            },
+                        ]}
+                    />
+                </div>
+            </Drawer>
+
+            {/* ── Create Role Binding Modal ─────────────────────────────── */}
+            <Modal
+                title={t('users.role_bindings.create_modal_title')}
+                open={users.roleBindingCreateOpen}
+                onOk={() => { void users.submitCreateRoleBinding(); }}
+                onCancel={users.closeRoleBindingCreateModal}
+                confirmLoading={users.createRoleBindingPending}
+                destroyOnHidden={true}
+            >
+                <div data-testid="role-binding-create-modal">
+                    <Form form={users.roleBindingCreateForm} layout="vertical" preserve={false}>
+                        <Form.Item
+                            name="role_id"
+                            label={t('users.role_bindings.role')}
+                            rules={[{ required: true }]}
+                        >
+                            <Select
+                                placeholder={t('users.role_bindings.select_role')}
+                                options={[]} // populated by role list query in a separate step
+                            />
+                        </Form.Item>
+                    </Form>
+                </div>
             </Modal>
         </div>
     );

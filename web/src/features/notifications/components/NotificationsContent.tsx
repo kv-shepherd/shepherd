@@ -106,6 +106,7 @@ export function NotificationsContent() {
             render: (_, record) => (
                 <Button
                     size="small"
+                    data-testid={`notification-action-read-${record.id}`}
                     disabled={record.read}
                     loading={notifications.markReadPending}
                     onClick={() => notifications.markRead(record.id)}
@@ -147,6 +148,7 @@ export function NotificationsContent() {
                     </Button>
                     <Button
                         type="primary"
+                        data-testid="notifications-mark-all-read-button"
                         onClick={notifications.markAllRead}
                         loading={notifications.markAllReadPending}
                     >

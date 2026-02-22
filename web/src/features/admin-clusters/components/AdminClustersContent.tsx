@@ -66,19 +66,15 @@ export function AdminClustersContent() {
             title: t('clusters.environment'),
             dataIndex: 'environment',
             key: 'environment',
-            width: 150,
+            width: 160,
             render: (env: 'test' | 'prod' | undefined, record: Cluster) => (
-                <Select
-                    value={env ?? 'test'}
-                    style={{ width: 120 }}
-                    data-testid={`cluster-env-select-${record.id}`}
-                    options={[
-                        { value: 'test', label: t('clusters.env_test') },
-                        { value: 'prod', label: t('clusters.env_prod') },
-                    ]}
-                    onChange={(nextEnv) => clusters.updateEnvironment(record.id, nextEnv as 'test' | 'prod')}
-                    loading={clusters.updateEnvironmentPending}
-                />
+                <Button
+                    size="small"
+                    data-testid={`cluster-action-set-environment-${record.id}`}
+                    onClick={() => clusters.openEnvModal(record.id, env ?? 'test')}
+                >
+                    {env === 'prod' ? t('clusters.env_prod') : t('clusters.env_test')}
+                </Button>
             ),
         },
         {
@@ -157,44 +153,70 @@ export function AdminClustersContent() {
                 onCancel={clusters.closeCreateModal}
                 confirmLoading={clusters.createPending}
                 forceRender
-                data-testid="cluster-create-modal"
             >
-                <Form form={clusters.form} layout="vertical" name="create-cluster">
-                    <Form.Item
-                        name="name"
-                        label={t('common:table.name')}
-                        rules={[{ required: true, message: 'Cluster name is required' }]}
-                    >
-                        <Input placeholder="e.g. cluster-prod-01" />
-                    </Form.Item>
-                    <Form.Item name="display_name" label="Display Name">
-                        <Input placeholder="e.g. Production Cluster" />
-                    </Form.Item>
-                    <Form.Item
-                        name="environment"
-                        label={t('clusters.environment')}
-                        initialValue="test"
-                        rules={[{ required: true, message: t('clusters.environment_required') }]}
-                    >
-                        <Select
-                            options={[
-                                { value: 'test', label: t('clusters.env_test') },
-                                { value: 'prod', label: t('clusters.env_prod') },
-                            ]}
-                        />
-                    </Form.Item>
-                    <Form.Item
-                        name="kubeconfig"
-                        label="Kubeconfig (Base64)"
-                        rules={[{ required: true, message: 'Kubeconfig is required' }]}
-                        extra="Base64-encoded kubeconfig (stored encrypted, ADR-0012)"
-                    >
-                        <Input.TextArea
-                            rows={6}
-                            placeholder="Paste base64-encoded kubeconfig content..."
-                        />
-                    </Form.Item>
-                </Form>
+                <div data-testid="cluster-create-modal">
+                    <Form form={clusters.form} layout="vertical" name="create-cluster">
+                        <Form.Item
+                            name="name"
+                            label={t('common:table.name')}
+                            rules={[{ required: true, message: 'Cluster name is required' }]}
+                        >
+                            <Input placeholder="e.g. cluster-prod-01" />
+                        </Form.Item>
+                        <Form.Item name="display_name" label="Display Name">
+                            <Input placeholder="e.g. Production Cluster" />
+                        </Form.Item>
+                        <Form.Item
+                            name="environment"
+                            label={t('clusters.environment')}
+                            initialValue="test"
+                            rules={[{ required: true, message: t('clusters.environment_required') }]}
+                        >
+                            <Select
+                                options={[
+                                    { value: 'test', label: t('clusters.env_test') },
+                                    { value: 'prod', label: t('clusters.env_prod') },
+                                ]}
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="kubeconfig"
+                            label="Kubeconfig (Base64)"
+                            rules={[{ required: true, message: 'Kubeconfig is required' }]}
+                            extra="Base64-encoded kubeconfig (stored encrypted, ADR-0012)"
+                        >
+                            <Input.TextArea
+                                rows={6}
+                                placeholder="Paste base64-encoded kubeconfig content..."
+                            />
+                        </Form.Item>
+                    </Form>
+                </div>
+            </Modal>
+            <Modal
+                title={t('clusters.set_environment')}
+                open={clusters.envModalOpen}
+                onOk={() => { void clusters.submitEnvUpdate(); }}
+                onCancel={clusters.closeEnvModal}
+                confirmLoading={clusters.updateEnvironmentPending}
+                destroyOnHidden={true}
+            >
+                <div data-testid="cluster-environment-modal">
+                    <Form form={clusters.envForm} layout="vertical" preserve={false}>
+                        <Form.Item
+                            name="environment"
+                            label={t('clusters.environment')}
+                            rules={[{ required: true }]}
+                        >
+                            <Select
+                                options={[
+                                    { value: 'test', label: t('clusters.env_test') },
+                                    { value: 'prod', label: t('clusters.env_prod') },
+                                ]}
+                            />
+                        </Form.Item>
+                    </Form>
+                </div>
             </Modal>
         </div>
     );

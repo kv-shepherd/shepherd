@@ -19,12 +19,29 @@ interface UseAdminInstanceSizesControllerArgs {
     t: TFunction;
 }
 
-interface InstanceSizeCreateFormValues extends InstanceSizeCreateRequest {
-    spec_overrides_text?: string;
+interface GpuDevice {
+    name: string;
+    deviceName: string;
 }
 
-interface InstanceSizeEditFormValues extends InstanceSizeUpdateRequest {
+interface InstanceSizeFormValues {
+    name: string;
+    display_name?: string;
+    description?: string;
+    cpu_cores: number;
+    memory_mb: number;
+    disk_gb?: number;
+    cpu_request?: number;
+    memory_request_mb?: number;
+    cpu_overcommit_enabled?: boolean;
+    memory_overcommit_enabled?: boolean;
+    hugepages_setting?: string;
+    dedicated_cpu?: boolean;
+    requires_sriov?: boolean;
+    gpu_devices?: GpuDevice[];
     spec_overrides_text?: string;
+    sort_order?: number;
+    enabled?: boolean;
 }
 
 function parseJSONMap(raw: string, onError: () => void): Record<string, unknown> | undefined {
@@ -45,6 +62,53 @@ function parseJSONMap(raw: string, onError: () => void): Record<string, unknown>
     }
 }
 
+/**
+ * Maps UI form values to API request payload.
+ * Handles: hugepages_setting → requires_hugepages + hugepages_size,
+ *          gpu_devices → requires_gpu + merged into spec_overrides,
+ *          overcommit checkboxes → cpu_request / memory_request_mb.
+ */
+function formToPayload(
+    values: InstanceSizeFormValues,
+    specOverrides: Record<string, unknown> | undefined,
+): Omit<InstanceSizeCreateRequest, 'name'> & { name?: string } {
+    const {
+        hugepages_setting,
+        gpu_devices,
+        ...rest
+    } = values;
+
+    // Hugepages mapping
+    const requires_hugepages = !!hugepages_setting && hugepages_setting !== 'none';
+    const hugepages_size = requires_hugepages ? hugepages_setting : undefined;
+
+    // GPU devices mapping
+    const requires_gpu = (gpu_devices?.length ?? 0) > 0;
+    let mergedOverrides = specOverrides;
+    if (requires_gpu && gpu_devices && gpu_devices.length > 0) {
+        mergedOverrides = {
+            ...(mergedOverrides ?? {}),
+            gpus: gpu_devices,
+        };
+    }
+
+    // If overcommit not enabled, clear the request fields
+    if (!values.cpu_overcommit_enabled) {
+        rest.cpu_request = undefined;
+    }
+    if (!values.memory_overcommit_enabled) {
+        rest.memory_request_mb = undefined;
+    }
+
+    return {
+        ...rest,
+        requires_hugepages,
+        hugepages_size,
+        requires_gpu,
+        spec_overrides: mergedOverrides,
+    };
+}
+
 export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesControllerArgs) {
     const [messageApi, messageContextHolder] = message.useMessage();
     const [globalSearch, setGlobalSearch] = useState('');
@@ -60,8 +124,8 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
     const [editingItem, setEditingItem] = useState<InstanceSize | null>(null);
     const [deletingItem, setDeletingItem] = useState<InstanceSize | null>(null);
 
-    const [createForm] = Form.useForm<InstanceSizeCreateFormValues>();
-    const [editForm] = Form.useForm<InstanceSizeEditFormValues>();
+    const [createForm] = Form.useForm<InstanceSizeFormValues>();
+    const [editForm] = Form.useForm<InstanceSizeFormValues>();
 
     const instanceSizesQuery = useApiGet<InstanceSizeList>(
         ['admin-instance-sizes'],
@@ -130,6 +194,7 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
         createForm.setFieldsValue({
             enabled: true,
             sort_order: 0,
+            hugepages_setting: 'none',
             spec_overrides_text: '{}',
         });
         setCreateOpen(true);
@@ -141,6 +206,19 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
             memory_request_mb?: number;
             sort_order?: number;
         };
+
+        // Derive hugepages_setting from API fields
+        let hugepages_setting = 'none';
+        if (item.requires_hugepages && item.hugepages_size) {
+            hugepages_setting = item.hugepages_size;
+        }
+
+        // Extract gpu_devices from spec_overrides if present
+        const specOverrides = item.spec_overrides ?? {};
+        const gpuDevices = (specOverrides.gpus as GpuDevice[] | undefined) ?? [];
+        const cleanOverrides = { ...specOverrides };
+        delete cleanOverrides.gpus;
+
         setEditingItem(item);
         editForm.setFieldsValue({
             name: item.name,
@@ -152,12 +230,13 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
             dedicated_cpu: item.dedicated_cpu,
             cpu_request: hydrated.cpu_request,
             memory_request_mb: hydrated.memory_request_mb,
-            requires_gpu: item.requires_gpu,
+            cpu_overcommit_enabled: !!hydrated.cpu_request,
+            memory_overcommit_enabled: !!hydrated.memory_request_mb,
+            hugepages_setting,
             requires_sriov: item.requires_sriov,
-            requires_hugepages: item.requires_hugepages,
-            hugepages_size: item.hugepages_size,
+            gpu_devices: gpuDevices,
             sort_order: hydrated.sort_order,
-            spec_overrides_text: JSON.stringify(item.spec_overrides ?? {}, null, 2),
+            spec_overrides_text: JSON.stringify(cleanOverrides, null, 2),
             enabled: item.enabled,
         });
         setEditOpen(true);
@@ -173,14 +252,11 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
         const specOverrides = parseJSONMap(values.spec_overrides_text ?? '', () => {
             messageApi.error(t('instanceSizes.spec_overrides_invalid'));
         });
-        if (values.spec_overrides_text && !specOverrides) {
+        if (values.spec_overrides_text && values.spec_overrides_text.trim() && !specOverrides) {
             return;
         }
-        const { spec_overrides_text: _specText, ...payload } = values;
-        createMutation.mutate({
-            ...payload,
-            spec_overrides: specOverrides,
-        });
+        const payload = formToPayload(values, specOverrides);
+        createMutation.mutate(payload as InstanceSizeCreateRequest);
     };
 
     const submitEdit = async () => {
@@ -191,16 +267,13 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
         const specOverrides = parseJSONMap(values.spec_overrides_text ?? '', () => {
             messageApi.error(t('instanceSizes.spec_overrides_invalid'));
         });
-        if (values.spec_overrides_text && !specOverrides) {
+        if (values.spec_overrides_text && values.spec_overrides_text.trim() && !specOverrides) {
             return;
         }
-        const { spec_overrides_text: _specText, ...payload } = values;
+        const payload = formToPayload(values, specOverrides);
         updateMutation.mutate({
             id: editingItem.id,
-            body: {
-                ...payload,
-                spec_overrides: specOverrides,
-            },
+            body: payload as InstanceSizeUpdateRequest,
         });
     };
 

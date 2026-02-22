@@ -16,7 +16,11 @@ interface UseAdminClustersControllerArgs {
 export function useAdminClustersController({ t }: UseAdminClustersControllerArgs) {
     const [messageApi, messageContextHolder] = message.useMessage();
     const [createOpen, setCreateOpen] = useState(false);
+    const [envModalOpen, setEnvModalOpen] = useState(false);
+    const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+    const [selectedClusterEnv, setSelectedClusterEnv] = useState<'test' | 'prod'>('test');
     const [form] = Form.useForm<ClusterCreateRequest>();
+    const [envForm] = Form.useForm<{ environment: 'test' | 'prod' }>();
 
     const clusterListQuery = useApiGet<ClusterList>(
         ['admin-clusters'],
@@ -68,6 +72,25 @@ export function useAdminClustersController({ t }: UseAdminClustersControllerArgs
         updateEnvironmentMutation.mutate({ clusterId, environment });
     };
 
+    const openEnvModal = (clusterId: string, currentEnv: 'test' | 'prod') => {
+        setSelectedClusterId(clusterId);
+        setSelectedClusterEnv(currentEnv);
+        envForm.setFieldsValue({ environment: currentEnv });
+        setEnvModalOpen(true);
+    };
+
+    const closeEnvModal = () => {
+        setEnvModalOpen(false);
+        setSelectedClusterId('');
+        envForm.resetFields();
+    };
+
+    const submitEnvUpdate = async () => {
+        const values = await envForm.validateFields();
+        await updateEnvironmentMutation.mutateAsync({ clusterId: selectedClusterId, environment: values.environment });
+        closeEnvModal();
+    };
+
     return {
         messageContextHolder,
         createOpen,
@@ -81,5 +104,12 @@ export function useAdminClustersController({ t }: UseAdminClustersControllerArgs
         updateEnvironment,
         createPending: createMutation.isPending,
         updateEnvironmentPending: updateEnvironmentMutation.isPending,
+        envModalOpen,
+        selectedClusterId,
+        selectedClusterEnv,
+        envForm,
+        openEnvModal,
+        closeEnvModal,
+        submitEnvUpdate,
     };
 }

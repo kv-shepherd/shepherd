@@ -16,6 +16,9 @@ export type RateLimitUserOverride = components['schemas']['RateLimitUserOverride
 export type RateLimitUserOverrideRequest = components['schemas']['RateLimitUserOverrideRequest'];
 export type RateLimitStatusList = components['schemas']['RateLimitStatusList'];
 export type RateLimitUserStatus = components['schemas']['RateLimitUserStatus'];
+export type GlobalRoleBinding = components['schemas']['GlobalRoleBinding'];
+export type GlobalRoleBindingList = components['schemas']['GlobalRoleBindingList'];
+export type GlobalRoleBindingCreateRequest = components['schemas']['GlobalRoleBindingCreateRequest'];
 
 export const MEMBER_ROLE_VALUES: Array<NonNullable<SystemMember['role']>> = [
     'owner',
