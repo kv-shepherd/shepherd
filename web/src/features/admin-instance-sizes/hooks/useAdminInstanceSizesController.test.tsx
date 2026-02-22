@@ -97,11 +97,14 @@ describe('useAdminInstanceSizesController', () => {
       await result.current.submitCreate();
     });
 
-    expect(createMutate).toHaveBeenCalledWith({
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    expect(createMutate).toHaveBeenCalledWith(expect.objectContaining({
       name: 'm4.large',
       cpu_cores: 4,
       memory_mb: 8192,
       enabled: true,
+      requires_gpu: false,
+      requires_hugepages: false,
       spec_overrides: {
         spec: {
           template: {
@@ -117,7 +120,7 @@ describe('useAdminInstanceSizesController', () => {
           },
         },
       },
-    });
+    }));
   });
 
   it('rejects invalid spec_overrides JSON and does not mutate', async () => {

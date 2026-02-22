@@ -16,12 +16,14 @@ import {
     EditOutlined,
     DeleteOutlined,
     ExclamationCircleOutlined,
+    EyeOutlined,
     PlusOutlined,
     ReloadOutlined,
     TeamOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
+import { useRouter } from 'next/navigation';
 
 import { PermissionGuard } from '@/components/auth/PermissionGuard';
 import { useSystemsManagementController } from '../hooks/useSystemsManagementController';
@@ -33,6 +35,7 @@ const { Title, Text, Paragraph } = Typography;
 export function SystemsManagementContent() {
     const { t } = useTranslation('common');
     const systems = useSystemsManagementController({ t });
+    const router = useRouter();
 
     const columns: ColumnsType<System> = [
         {
@@ -71,9 +74,16 @@ export function SystemsManagementContent() {
         {
             title: t('table.actions'),
             key: 'actions',
-            width: 160,
+            width: 200,
             render: (_, record) => (
                 <Space>
+                    <Button
+                        type="text"
+                        data-testid={`system-action-detail-${record.id}`}
+                        icon={<EyeOutlined />}
+                        onClick={() => router.push(`/systems/${record.id}`)}
+                        title={t('button.detail')}
+                    />
                     <PermissionGuard permission="rbac:manage">
                         <Button
                             type="text"

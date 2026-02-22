@@ -8,6 +8,9 @@ import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
 
 import type {
+    GlobalRoleBinding,
+    GlobalRoleBindingCreateRequest,
+    GlobalRoleBindingList,
     RateLimitExemption,
     RateLimitExemptionCreateRequest,
     RateLimitStatusList,
@@ -39,10 +42,15 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
     const [editUserOpen, setEditUserOpen] = useState(false);
     const [deletingUserId, setDeletingUserId] = useState<string>('');
     const [editingUserId, setEditingUserId] = useState<string>('');
+    // Role bindings drawer
+    const [roleBindingsUserId, setRoleBindingsUserId] = useState<string>('');
+    const [roleBindingCreateOpen, setRoleBindingCreateOpen] = useState(false);
+    const [deletingBindingId, setDeletingBindingId] = useState<string>('');
 
     const [addForm] = Form.useForm<SystemMemberCreateRequest>();
     const [createUserForm] = Form.useForm<UserCreateRequest>();
     const [editUserForm] = Form.useForm<UserUpdateRequest>();
+    const [roleBindingCreateForm] = Form.useForm<GlobalRoleBindingCreateRequest>();
 
     const usersQuery = useApiGet<UserList>(
         ['admin-users', page, perPage],
@@ -63,6 +71,12 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
     const rateLimitStatusQuery = useApiGet<RateLimitStatusList>(
         ['admin-rate-limit-status'],
         () => api.GET('/admin/rate-limits/status')
+    );
+
+    const roleBindingsQuery = useApiGet<GlobalRoleBindingList>(
+        ['user-role-bindings', roleBindingsUserId],
+        () => api.GET('/admin/users/{user_id}/role-bindings', { params: { path: { user_id: roleBindingsUserId } } }),
+        { enabled: Boolean(roleBindingsUserId) }
     );
 
     const createUserMutation = useApiMutation<UserCreateRequest, User>(
@@ -183,6 +197,39 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         }
     );
 
+    const createRoleBindingMutation = useApiMutation<GlobalRoleBindingCreateRequest, GlobalRoleBinding>(
+        (req) => api.POST('/admin/users/{user_id}/role-bindings', {
+            params: { path: { user_id: roleBindingsUserId } },
+            body: req,
+        }),
+        {
+            invalidateKeys: [['user-role-bindings', roleBindingsUserId]],
+            onSuccess: () => {
+                messageApi.success(t('common:message.success'));
+                setRoleBindingCreateOpen(false);
+                roleBindingCreateForm.resetFields();
+            },
+            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+        }
+    );
+
+    const deleteRoleBindingMutation = useApiAction<{ bindingId: string }>(
+        ({ bindingId }) => api.DELETE('/admin/users/{user_id}/role-bindings/{binding_id}', {
+            params: { path: { user_id: roleBindingsUserId, binding_id: bindingId } },
+        }),
+        {
+            invalidateKeys: [['user-role-bindings', roleBindingsUserId]],
+            onSuccess: () => {
+                messageApi.success(t('common:message.success'));
+                setDeletingBindingId('');
+            },
+            onError: (err) => {
+                setDeletingBindingId('');
+                messageApi.error(err.message || t('common:message.error'));
+            },
+        }
+    );
+
     const openAddModal = () => {
         if (!selectedSystemId) {
             messageApi.warning(t('users.members.select_system_first'));
@@ -280,6 +327,36 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         updateUserOverrideMutation.mutate({ userId: userID, body });
     };
 
+    const openRoleBindingsModal = (userId: string) => {
+        setRoleBindingsUserId(userId);
+    };
+
+    const closeRoleBindingsModal = () => {
+        setRoleBindingsUserId('');
+        setRoleBindingCreateOpen(false);
+        roleBindingCreateForm.resetFields();
+    };
+
+    const openRoleBindingCreateModal = () => {
+        roleBindingCreateForm.resetFields();
+        setRoleBindingCreateOpen(true);
+    };
+
+    const closeRoleBindingCreateModal = () => {
+        setRoleBindingCreateOpen(false);
+        roleBindingCreateForm.resetFields();
+    };
+
+    const submitCreateRoleBinding = async () => {
+        const values = await roleBindingCreateForm.validateFields();
+        createRoleBindingMutation.mutate(values);
+    };
+
+    const deleteRoleBinding = (bindingId: string) => {
+        setDeletingBindingId(bindingId);
+        deleteRoleBindingMutation.mutate({ bindingId });
+    };
+
     return {
         messageContextHolder,
         users: usersQuery.data,
@@ -329,5 +406,20 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         createUserPending: createUserMutation.isPending,
         updateUserPending: updateUserMutation.isPending,
         deleteUserPending: deleteUserMutation.isPending,
+        // Role bindings
+        roleBindingsUserId,
+        roleBindings: roleBindingsQuery.data,
+        roleBindingsLoading: roleBindingsQuery.isLoading,
+        roleBindingCreateOpen,
+        roleBindingCreateForm,
+        deletingBindingId,
+        openRoleBindingsModal,
+        closeRoleBindingsModal,
+        openRoleBindingCreateModal,
+        closeRoleBindingCreateModal,
+        submitCreateRoleBinding,
+        deleteRoleBinding,
+        createRoleBindingPending: createRoleBindingMutation.isPending,
+        deleteRoleBindingPending: deleteRoleBindingMutation.isPending,
     };
 }

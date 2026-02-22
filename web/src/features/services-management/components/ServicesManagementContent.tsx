@@ -14,9 +14,10 @@ import {
     Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { CloudOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CloudOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
+import { useRouter } from 'next/navigation';
 
 import { PermissionGuard } from '@/components/auth/PermissionGuard';
 import { useServicesManagementController } from '../hooks/useServicesManagementController';
@@ -27,6 +28,7 @@ const { Title, Text } = Typography;
 export function ServicesManagementContent() {
     const { t } = useTranslation('common');
     const services = useServicesManagementController({ t });
+    const router = useRouter();
 
     const columns: ColumnsType<Service> = [
         {
@@ -66,9 +68,16 @@ export function ServicesManagementContent() {
         {
             title: t('table.actions'),
             key: 'actions',
-            width: 140,
+            width: 160,
             render: (_, record) => (
                 <Space>
+                    <Button
+                        type="text"
+                        size="small"
+                        data-testid={`service-action-detail-${record.id}`}
+                        icon={<EyeOutlined />}
+                        onClick={() => router.push(`/systems/${record.system_id}/services/${record.id}`)}
+                    />
                     <PermissionGuard permission="service:create">
                         <Button
                             type="text"

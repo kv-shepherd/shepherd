@@ -4,11 +4,14 @@ import { useRef } from 'react';
 import {
     Button,
     Card,
+    Checkbox,
+    Divider,
     Empty,
     Form,
     Input,
     InputNumber,
     Modal,
+    Select,
     Space,
     Switch,
     Table,
@@ -22,6 +25,7 @@ import {
     DeleteOutlined,
     EditOutlined,
     HddOutlined,
+    MinusCircleOutlined,
     PlusOutlined,
     ReloadOutlined,
     SearchOutlined,
@@ -52,6 +56,172 @@ function highlightText(text: string, highlight: string): React.ReactNode {
                 {match}
             </span>
             {after}
+        </>
+    );
+}
+
+/**
+ * Shared form fields for InstanceSize create/edit modals.
+ * Uses Ant Design shouldUpdate pattern for conditional overcommit sections
+ * and Form.List for GPU devices (per master-flow Stage 3 Step 4 design).
+ */
+function InstanceSizeFormFields({ isCreate }: { isCreate: boolean }) {
+    const { t } = useTranslation(['admin', 'common']);
+
+    return (
+        <>
+            {/* ── Basic Info ── */}
+            <Divider orientation="left" plain style={{ marginTop: 0 }}>
+                {t('instanceSizes.section_basic')}
+            </Divider>
+
+            <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
+                <Input placeholder="gpu-workstation" disabled={!isCreate} />
+            </Form.Item>
+            <Form.Item name="display_name" label={t('common:table.display_name')}>
+                <Input placeholder="GPU Workstation (8 cores 32GB)" />
+            </Form.Item>
+            <Form.Item name="description" label={t('common:table.description')}>
+                <Input.TextArea rows={2} />
+            </Form.Item>
+            <Form.Item name="sort_order" label={t('instanceSizes.sort_order')}>
+                <InputNumber style={{ width: '100%' }} />
+            </Form.Item>
+
+            {/* ── Resource Configuration ── */}
+            <Divider orientation="left" plain>
+                {t('instanceSizes.section_resources')}
+            </Divider>
+
+            <Form.Item name="cpu_cores" label={t('instanceSizes.cpu')} rules={[{ required: true }]}>
+                <InputNumber min={1} style={{ width: '100%' }} addonAfter={t('instanceSizes.cores')} />
+            </Form.Item>
+
+            {/* CPU Overcommit: conditional reveal */}
+            <Form.Item name="cpu_overcommit_enabled" valuePropName="checked">
+                <Checkbox>{t('instanceSizes.enable_cpu_overcommit')}</Checkbox>
+            </Form.Item>
+            <Form.Item
+                noStyle
+                shouldUpdate={(prev, cur) => prev.cpu_overcommit_enabled !== cur.cpu_overcommit_enabled}
+            >
+                {({ getFieldValue }) =>
+                    getFieldValue('cpu_overcommit_enabled') ? (
+                        <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+                            <Space style={{ width: '100%' }} direction="vertical">
+                                <Form.Item name="cpu_request" label={t('instanceSizes.cpu_request')} style={{ margin: 0 }}>
+                                    <InputNumber min={1} style={{ width: '100%' }} addonAfter={t('instanceSizes.cores')} />
+                                </Form.Item>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {t('instanceSizes.overcommit_ratio_hint')}
+                                </Text>
+                            </Space>
+                        </Card>
+                    ) : null
+                }
+            </Form.Item>
+
+            <Form.Item name="memory_mb" label={t('instanceSizes.memory')} rules={[{ required: true }]}>
+                <InputNumber min={1} style={{ width: '100%' }} addonAfter="MB" />
+            </Form.Item>
+
+            {/* Memory Overcommit: conditional reveal */}
+            <Form.Item name="memory_overcommit_enabled" valuePropName="checked">
+                <Checkbox>{t('instanceSizes.enable_memory_overcommit')}</Checkbox>
+            </Form.Item>
+            <Form.Item
+                noStyle
+                shouldUpdate={(prev, cur) => prev.memory_overcommit_enabled !== cur.memory_overcommit_enabled}
+            >
+                {({ getFieldValue }) =>
+                    getFieldValue('memory_overcommit_enabled') ? (
+                        <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+                            <Form.Item name="memory_request_mb" label={t('instanceSizes.memory_request')} style={{ margin: 0 }}>
+                                <InputNumber min={1} style={{ width: '100%' }} addonAfter="MB" />
+                            </Form.Item>
+                        </Card>
+                    ) : null
+                }
+            </Form.Item>
+
+            <Form.Item name="disk_gb" label={t('instanceSizes.disk')}>
+                <InputNumber min={1} style={{ width: '100%' }} addonAfter="GB" />
+            </Form.Item>
+
+            {/* ── Advanced Settings ── */}
+            <Divider orientation="left" plain>
+                {t('instanceSizes.section_advanced')}
+            </Divider>
+
+            {/* Hugepages: Single Select replacing Switch + text input */}
+            <Form.Item name="hugepages_setting" label={t('instanceSizes.hugepages')}>
+                <Select
+                    options={[
+                        { value: 'none', label: 'None' },
+                        { value: '2Mi', label: '2Mi' },
+                        { value: '1Gi', label: '1Gi' },
+                    ]}
+                    placeholder={t('instanceSizes.hugepages_placeholder')}
+                />
+            </Form.Item>
+
+            <Form.Item name="dedicated_cpu" label={t('instanceSizes.dedicated')} valuePropName="checked">
+                <Switch />
+            </Form.Item>
+
+            <Form.Item name="requires_sriov" label={t('instanceSizes.sriov')} valuePropName="checked">
+                <Switch />
+            </Form.Item>
+
+            {/* GPU devices: dynamic Form.List */}
+            <Form.Item label={t('instanceSizes.gpu_devices')}>
+                <Form.List name="gpu_devices">
+                    {(fields, { add, remove }) => (
+                        <>
+                            {fields.map((field) => (
+                                <Space key={field.key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                                    <Form.Item
+                                        {...field}
+                                        name={[field.name, 'name']}
+                                        rules={[{ required: true, message: t('instanceSizes.gpu_name_required') }]}
+                                        style={{ margin: 0 }}
+                                    >
+                                        <Input placeholder="gpu1" style={{ width: 120 }} />
+                                    </Form.Item>
+                                    <Form.Item
+                                        {...field}
+                                        name={[field.name, 'deviceName']}
+                                        rules={[{ required: true, message: t('instanceSizes.gpu_device_required') }]}
+                                        style={{ margin: 0 }}
+                                    >
+                                        <Input placeholder="nvidia.com/GA102GL_A10" style={{ width: 280 }} />
+                                    </Form.Item>
+                                    <MinusCircleOutlined
+                                        onClick={() => remove(field.name)}
+                                        style={{ color: '#ff4d4f' }}
+                                    />
+                                </Space>
+                            ))}
+                            <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
+                                {t('instanceSizes.add_gpu')}
+                            </Button>
+                        </>
+                    )}
+                </Form.List>
+            </Form.Item>
+
+            {/* spec_overrides JSON (for advanced/escape-hatch usage) */}
+            <Form.Item
+                name="spec_overrides_text"
+                label={t('instanceSizes.spec_overrides')}
+                extra={t('instanceSizes.spec_overrides_help')}
+            >
+                <Input.TextArea rows={6} style={{ fontFamily: 'monospace', fontSize: 13 }} />
+            </Form.Item>
+
+            <Form.Item name="enabled" label={t('instanceSizes.enabled')} valuePropName="checked" initialValue={true}>
+                <Switch />
+            </Form.Item>
         </>
     );
 }
@@ -180,6 +350,27 @@ export function AdminInstanceSizesContent() {
             render: (gb: number | undefined) => gb ? <Text>{gb} GB</Text> : <Text type="secondary">—</Text>,
         },
         {
+            title: t('instanceSizes.capabilities'),
+            key: 'capabilities',
+            width: 200,
+            render: (_: unknown, record: InstanceSize) => {
+                const tags: { label: string; color: string }[] = [];
+                if (record.requires_gpu) tags.push({ label: 'GPU', color: 'volcano' });
+                if (record.requires_sriov) tags.push({ label: 'SR-IOV', color: 'purple' });
+                if (record.requires_hugepages) {
+                    tags.push({ label: `Hugepages ${record.hugepages_size ?? ''}`.trim(), color: 'geekblue' });
+                }
+                if (tags.length === 0) return <Text type="secondary">—</Text>;
+                return (
+                    <Space size={[0, 4]} wrap>
+                        {tags.map((tag) => (
+                            <Tag key={tag.label} color={tag.color}>{tag.label}</Tag>
+                        ))}
+                    </Space>
+                );
+            },
+        },
+        {
             title: t('instanceSizes.enabled'),
             dataIndex: 'enabled',
             key: 'enabled',
@@ -200,7 +391,7 @@ export function AdminInstanceSizesContent() {
                         <Button
                             type="text"
                             size="small"
-                            data-testid={`admin-instance-size-action-edit-${record.id}`}
+                            data-testid={`instance-size-action-edit-${record.id}`}
                             icon={<EditOutlined />}
                             onClick={() => sizes.openEditModal(record)}
                         />
@@ -210,7 +401,7 @@ export function AdminInstanceSizesContent() {
                             type="text"
                             size="small"
                             danger
-                            data-testid={`admin-instance-size-action-delete-${record.id}`}
+                            data-testid={`instance-size-action-delete-${record.id}`}
                             icon={<DeleteOutlined />}
                             onClick={() => sizes.openDeleteModal(record)}
                         />
@@ -248,7 +439,7 @@ export function AdminInstanceSizesContent() {
                     <Button
                         type="primary"
                         icon={<PlusOutlined />}
-                        data-testid="admin-instance-size-create-button"
+                        data-testid="instance-size-create-button"
                         onClick={sizes.openCreateModal}
                     >
                         {t('common:button.add')}
@@ -289,134 +480,41 @@ export function AdminInstanceSizesContent() {
                 </div>
             </Card>
 
+            {/* Create Modal */}
             <Modal
-                title={t('common:button.add')}
+                title={t('instanceSizes.create_title')}
                 open={sizes.createOpen}
                 onOk={() => { void sizes.submitCreate(); }}
                 onCancel={sizes.closeCreateModal}
                 confirmLoading={sizes.createPending}
                 destroyOnHidden={true}
+                width={680}
             >
-                <Form form={sizes.createForm} layout="vertical" preserve={false}>
-                    <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="display_name" label={t('common:table.display_name')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="cpu_cores" label={t('instanceSizes.cpu')} rules={[{ required: true }]}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="memory_mb" label={t('instanceSizes.memory')} rules={[{ required: true }]}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="disk_gb" label={t('instanceSizes.disk')}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="cpu_request" label={t('instanceSizes.cpu_request')}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="memory_request_mb" label={t('instanceSizes.memory_request')}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="sort_order" label={t('instanceSizes.sort_order')}>
-                        <InputNumber style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="description" label={t('common:table.description')}>
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                    <Form.Item name="requires_gpu" label={t('instanceSizes.gpu')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item name="requires_sriov" label={t('instanceSizes.sriov')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item name="requires_hugepages" label={t('instanceSizes.hugepages')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item name="hugepages_size" label={t('instanceSizes.hugepages_size')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="dedicated_cpu" label={t('instanceSizes.dedicated')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item
-                        name="spec_overrides_text"
-                        label={t('instanceSizes.spec_overrides')}
-                        extra={t('instanceSizes.spec_overrides_help')}
-                    >
-                        <Input.TextArea rows={8} style={{ fontFamily: 'monospace' }} />
-                    </Form.Item>
-                    <Form.Item name="enabled" label={t('instanceSizes.enabled')} valuePropName="checked" initialValue={true}>
-                        <Switch />
-                    </Form.Item>
-                </Form>
+                <div data-testid="instance-size-create-modal">
+                    <Form form={sizes.createForm} layout="vertical" preserve={false}>
+                        <InstanceSizeFormFields isCreate={true} />
+                    </Form>
+                </div>
             </Modal>
 
+            {/* Edit Modal */}
             <Modal
-                title={t('common:button.edit')}
+                title={t('instanceSizes.edit_title')}
                 open={sizes.editOpen}
                 onOk={() => { void sizes.submitEdit(); }}
                 onCancel={sizes.closeEditModal}
                 confirmLoading={sizes.updatePending}
                 destroyOnHidden={true}
+                width={680}
             >
-                <Form form={sizes.editForm} layout="vertical" preserve={false}>
-                    <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="display_name" label={t('common:table.display_name')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="cpu_cores" label={t('instanceSizes.cpu')}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="memory_mb" label={t('instanceSizes.memory')}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="disk_gb" label={t('instanceSizes.disk')}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="cpu_request" label={t('instanceSizes.cpu_request')}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="memory_request_mb" label={t('instanceSizes.memory_request')}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="sort_order" label={t('instanceSizes.sort_order')}>
-                        <InputNumber style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="description" label={t('common:table.description')}>
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                    <Form.Item name="requires_gpu" label={t('instanceSizes.gpu')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item name="requires_sriov" label={t('instanceSizes.sriov')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item name="requires_hugepages" label={t('instanceSizes.hugepages')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item name="hugepages_size" label={t('instanceSizes.hugepages_size')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="dedicated_cpu" label={t('instanceSizes.dedicated')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item
-                        name="spec_overrides_text"
-                        label={t('instanceSizes.spec_overrides')}
-                        extra={t('instanceSizes.spec_overrides_help')}
-                    >
-                        <Input.TextArea rows={8} style={{ fontFamily: 'monospace' }} />
-                    </Form.Item>
-                    <Form.Item name="enabled" label={t('instanceSizes.enabled')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                </Form>
+                <div data-testid="instance-size-edit-modal">
+                    <Form form={sizes.editForm} layout="vertical" preserve={false}>
+                        <InstanceSizeFormFields isCreate={false} />
+                    </Form>
+                </div>
             </Modal>
 
+            {/* Delete Modal */}
             <Modal
                 title={t('common:button.delete')}
                 open={sizes.deleteOpen}

@@ -101,6 +101,7 @@ export function useAdminAuthProvidersController({ t }: UseAdminAuthProvidersCont
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [mappingOpen, setMappingOpen] = useState(false);
     const [editMappingOpen, setEditMappingOpen] = useState(false);
+    const [createMappingModalOpen, setCreateMappingModalOpen] = useState(false);
 
     const [editingProvider, setEditingProvider] = useState<AuthProvider | null>(null);
     const [deletingProvider, setDeletingProvider] = useState<AuthProvider | null>(null);
@@ -234,6 +235,7 @@ export function useAdminAuthProvidersController({ t }: UseAdminAuthProvidersCont
             invalidateKeys: [['admin-auth-provider-mappings', mappingProvider?.id ?? '']],
             onSuccess: () => {
                 messageApi.success(t('common:message.success'));
+                setCreateMappingModalOpen(false);
                 mappingForm.resetFields();
                 mappingForm.setFieldsValue({ scope_type: 'global' });
             },
@@ -414,9 +416,21 @@ export function useAdminAuthProvidersController({ t }: UseAdminAuthProvidersCont
         setMappingProvider(null);
         setEditMappingOpen(false);
         setEditingMapping(null);
+        setCreateMappingModalOpen(false);
         mappingForm.resetFields();
         mappingEditForm.resetFields();
         syncForm.resetFields();
+    };
+
+    const openCreateMappingModal = () => {
+        mappingForm.resetFields();
+        mappingForm.setFieldsValue({ scope_type: 'global' });
+        setCreateMappingModalOpen(true);
+    };
+
+    const closeCreateMappingModal = () => {
+        setCreateMappingModalOpen(false);
+        mappingForm.resetFields();
     };
 
     const submitSyncGroups = async () => {
@@ -516,6 +530,7 @@ export function useAdminAuthProvidersController({ t }: UseAdminAuthProvidersCont
         deleteOpen,
         mappingOpen,
         editMappingOpen,
+        createMappingModalOpen,
         editingProvider,
         deletingProvider,
         mappingProvider,
@@ -543,6 +558,8 @@ export function useAdminAuthProvidersController({ t }: UseAdminAuthProvidersCont
         closeMappingModal,
         submitSyncGroups,
         submitCreateMapping,
+        openCreateMappingModal,
+        closeCreateMappingModal,
         openEditMappingModal,
         closeEditMappingModal,
         submitEditMapping,

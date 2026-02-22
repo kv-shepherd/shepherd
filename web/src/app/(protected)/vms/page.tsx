@@ -2,6 +2,7 @@
 
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Card, Descriptions, Divider, Space, Table, Tag, Typography } from 'antd';
+import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
 import { PermissionGuard } from '@/components/auth/PermissionGuard';
@@ -14,6 +15,7 @@ const { Title, Text } = Typography;
 export default function VMsPage() {
     const { t } = useTranslation(['vm', 'common']);
     const vm = useVMManagementController({ t });
+    const router = useRouter();
     const batchStatus = vm.batchStatus?.status;
     const batchCanRetry = batchStatus === 'FAILED' || batchStatus === 'PARTIAL_SUCCESS';
     const batchCanCancel = batchStatus === 'PENDING_APPROVAL' || batchStatus === 'IN_PROGRESS';
@@ -109,6 +111,7 @@ export default function VMsPage() {
                 onRestart={vm.restartVM}
                 onConsole={vm.requestConsole}
                 onDelete={vm.deleteVM}
+                onDetail={(vmId) => router.push(`/vms/${vmId}`)}
                 selectedRowKeys={vm.selectedVMIDs}
                 onSelectionChange={vm.setSelectedVMIDs}
             />

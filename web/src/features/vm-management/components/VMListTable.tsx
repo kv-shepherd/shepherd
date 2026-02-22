@@ -14,6 +14,7 @@ import {
 import {
     DeleteOutlined,
     DesktopOutlined,
+    EyeOutlined,
     PauseCircleOutlined,
     PlayCircleOutlined,
     RedoOutlined,
@@ -39,6 +40,7 @@ interface VMListTableProps {
     onRestart: (vmId: string) => void;
     onConsole: (vmId: string) => void;
     onDelete: (vmId: string, vmName: string) => void;
+    onDetail: (vmId: string) => void;
     selectedRowKeys: string[];
     onSelectionChange: (selectedKeys: string[]) => void;
 }
@@ -55,6 +57,7 @@ export function VMListTable({
     onRestart,
     onConsole,
     onDelete,
+    onDetail,
     selectedRowKeys,
     onSelectionChange,
 }: VMListTableProps) {
@@ -65,10 +68,17 @@ export function VMListTable({
             title: t('field.name'),
             dataIndex: 'name',
             key: 'name',
-            render: (name: string) => (
+            render: (name: string, record) => (
                 <Space>
                     <DesktopOutlined style={{ color: '#531dab' }} />
-                    <TypographyText strong>{name}</TypographyText>
+                    <TypographyText
+                        strong
+                        style={{ cursor: 'pointer', color: '#1677ff' }}
+                        data-testid={`vm-action-detail-${record.id}`}
+                        onClick={() => onDetail(record.id)}
+                    >
+                        {name}
+                    </TypographyText>
                 </Space>
             ),
         },
@@ -162,6 +172,16 @@ export function VMListTable({
                                 icon={<DesktopOutlined />}
                                 disabled={!isRunning}
                                 onClick={() => onConsole(record.id)}
+                            />
+                        </Tooltip>
+                        <Tooltip title={t('action.console_status')}>
+                            <Button
+                                type="text"
+                                size="small"
+                                aria-label={`console status ${record.name}`}
+                                data-testid={`vm-console-status-${record.id}`}
+                                icon={<EyeOutlined />}
+                                onClick={() => onDetail(record.id)}
                             />
                         </Tooltip>
                         <Popconfirm

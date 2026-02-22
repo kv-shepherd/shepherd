@@ -86,6 +86,7 @@
     "table.created_by": "Created By",
     "status.active": "Active",
     "status.disabled": "Disabled",
+    "status.configured": "Configured",
     "systems.modal.create_title": "Create System",
     "systems.modal.edit_title": "Edit System",
     "systems.validation.name_required": "System name is required",

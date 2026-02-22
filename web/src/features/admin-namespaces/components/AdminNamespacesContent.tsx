@@ -19,12 +19,14 @@ import {
     DeleteOutlined,
     EditOutlined,
     ExclamationCircleOutlined,
+    EyeOutlined,
     GlobalOutlined,
     PlusOutlined,
     ReloadOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
+import { useRouter } from 'next/navigation';
 
 import { useAdminNamespacesController } from '../hooks/useAdminNamespacesController';
 import { ENV_MAP, ENV_OPTIONS, type NamespaceRegistry } from '../types';
@@ -34,6 +36,7 @@ const { Title, Text, Paragraph } = Typography;
 export function AdminNamespacesContent() {
     const { t } = useTranslation(['admin', 'common']);
     const namespaces = useAdminNamespacesController({ t });
+    const router = useRouter();
 
     const columns: ColumnsType<NamespaceRegistry> = [
         {
@@ -97,9 +100,18 @@ export function AdminNamespacesContent() {
         {
             title: t('common:table.actions'),
             key: 'actions',
-            width: 120,
+            width: 160,
             render: (_: unknown, record: NamespaceRegistry) => (
                 <Space size="small">
+                    <Tooltip title={t('common:button.detail')}>
+                        <Button
+                            type="text"
+                            size="small"
+                            icon={<EyeOutlined />}
+                            data-testid={`namespace-action-detail-${record.id}`}
+                            onClick={() => router.push(`/admin/namespaces/${record.id}`)}
+                        />
+                    </Tooltip>
                     <Tooltip title={t('common:button.edit')}>
                         <Button
                             type="text"
@@ -193,39 +205,40 @@ export function AdminNamespacesContent() {
                 onCancel={namespaces.closeCreateModal}
                 confirmLoading={namespaces.createPending}
                 forceRender
-                data-testid="namespace-create-modal"
             >
-                <Form form={namespaces.createForm} layout="vertical" name="create-namespace">
-                    <Form.Item
-                        name="name"
-                        label={t('common:table.name')}
-                        rules={[
-                            { required: true, message: t('namespaces.validation.name_required') },
-                            { max: 63, message: t('namespaces.validation.name_max') },
-                            {
-                                pattern: /^[a-z][a-z0-9-]*$/,
-                                message: t('namespaces.validation.name_format'),
-                            },
-                        ]}
-                        extra={t('namespaces.name_hint')}
-                    >
-                        <Input placeholder="e.g. prod-shop, dev-analytics" />
-                    </Form.Item>
-                    <Form.Item
-                        name="environment"
-                        label={t('namespaces.environment')}
-                        rules={[{ required: true, message: t('namespaces.validation.env_required') }]}
-                        extra={t('namespaces.env_hint')}
-                    >
-                        <Select options={ENV_OPTIONS.map((item) => ({ ...item }))} />
-                    </Form.Item>
-                    <Form.Item
-                        name="description"
-                        label={t('common:table.description')}
-                    >
-                        <Input.TextArea rows={3} placeholder={t('namespaces.desc_placeholder')} />
-                    </Form.Item>
-                </Form>
+                <div data-testid="namespace-create-modal">
+                    <Form form={namespaces.createForm} layout="vertical" name="create-namespace">
+                        <Form.Item
+                            name="name"
+                            label={t('common:table.name')}
+                            rules={[
+                                { required: true, message: t('namespaces.validation.name_required') },
+                                { max: 63, message: t('namespaces.validation.name_max') },
+                                {
+                                    pattern: /^[a-z][a-z0-9-]*$/,
+                                    message: t('namespaces.validation.name_format'),
+                                },
+                            ]}
+                            extra={t('namespaces.name_hint')}
+                        >
+                            <Input placeholder="e.g. prod-shop, dev-analytics" />
+                        </Form.Item>
+                        <Form.Item
+                            name="environment"
+                            label={t('namespaces.environment')}
+                            rules={[{ required: true, message: t('namespaces.validation.env_required') }]}
+                            extra={t('namespaces.env_hint')}
+                        >
+                            <Select options={ENV_OPTIONS.map((item) => ({ ...item }))} />
+                        </Form.Item>
+                        <Form.Item
+                            name="description"
+                            label={t('common:table.description')}
+                        >
+                            <Input.TextArea rows={3} placeholder={t('namespaces.desc_placeholder')} />
+                        </Form.Item>
+                    </Form>
+                </div>
             </Modal>
 
             <Modal
@@ -235,26 +248,27 @@ export function AdminNamespacesContent() {
                 onCancel={namespaces.closeEditModal}
                 confirmLoading={namespaces.updatePending}
                 forceRender
-                data-testid="namespace-edit-modal"
             >
-                <Form form={namespaces.editForm} layout="vertical" name="edit-namespace">
-                    <Paragraph type="secondary" style={{ marginBottom: 16 }}>
-                        {t('namespaces.edit_note')}
-                    </Paragraph>
-                    <Form.Item
-                        name="description"
-                        label={t('common:table.description')}
-                    >
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                    <Form.Item
-                        name="enabled"
-                        label={t('namespaces.enabled')}
-                        valuePropName="checked"
-                    >
-                        <Switch />
-                    </Form.Item>
-                </Form>
+                <div data-testid="namespace-edit-modal">
+                    <Form form={namespaces.editForm} layout="vertical" name="edit-namespace">
+                        <Paragraph type="secondary" style={{ marginBottom: 16 }}>
+                            {t('namespaces.edit_note')}
+                        </Paragraph>
+                        <Form.Item
+                            name="description"
+                            label={t('common:table.description')}
+                        >
+                            <Input.TextArea rows={3} />
+                        </Form.Item>
+                        <Form.Item
+                            name="enabled"
+                            label={t('namespaces.enabled')}
+                            valuePropName="checked"
+                        >
+                            <Switch />
+                        </Form.Item>
+                    </Form>
+                </div>
             </Modal>
 
             <Modal
@@ -273,25 +287,26 @@ export function AdminNamespacesContent() {
                     disabled: namespaces.deleteConfirmName !== namespaces.deletingNs?.name,
                 }}
                 okText={t('common:button.delete')}
-                data-testid="namespace-delete-modal"
             >
-                <Paragraph>
-                    {t('namespaces.delete_confirm', { name: namespaces.deletingNs?.name })}
-                </Paragraph>
-                <Paragraph type="secondary">
-                    {t('namespaces.delete_type_name')}
-                </Paragraph>
-                <Input
-                    value={namespaces.deleteConfirmName}
-                    onChange={(e) => namespaces.setDeleteConfirmName(e.target.value)}
-                    placeholder={namespaces.deletingNs?.name}
-                    data-testid="namespace-delete-confirm-input"
-                    status={
-                        namespaces.deleteConfirmName && namespaces.deleteConfirmName !== namespaces.deletingNs?.name
-                            ? 'error'
-                            : undefined
-                    }
-                />
+                <div data-testid="namespace-delete-modal">
+                    <Paragraph>
+                        {t('namespaces.delete_confirm', { name: namespaces.deletingNs?.name })}
+                    </Paragraph>
+                    <Paragraph type="secondary">
+                        {t('namespaces.delete_type_name')}
+                    </Paragraph>
+                    <Input
+                        value={namespaces.deleteConfirmName}
+                        onChange={(e) => namespaces.setDeleteConfirmName(e.target.value)}
+                        placeholder={namespaces.deletingNs?.name}
+                        data-testid="namespace-delete-confirm-input"
+                        status={
+                            namespaces.deleteConfirmName && namespaces.deleteConfirmName !== namespaces.deletingNs?.name
+                                ? 'error'
+                                : undefined
+                        }
+                    />
+                </div>
             </Modal>
         </div>
     );
