@@ -88,36 +88,83 @@ func (_u *TemplateUpdate) ClearDescription() *TemplateUpdate {
 	return _u
 }
 
-// SetVersion sets the "version" field.
-func (_u *TemplateUpdate) SetVersion(v int) *TemplateUpdate {
-	_u.mutation.ResetVersion()
-	_u.mutation.SetVersion(v)
+// SetSourceType sets the "source_type" field.
+func (_u *TemplateUpdate) SetSourceType(v string) *TemplateUpdate {
+	_u.mutation.SetSourceType(v)
 	return _u
 }
 
-// SetNillableVersion sets the "version" field if the given value is not nil.
-func (_u *TemplateUpdate) SetNillableVersion(v *int) *TemplateUpdate {
+// SetNillableSourceType sets the "source_type" field if the given value is not nil.
+func (_u *TemplateUpdate) SetNillableSourceType(v *string) *TemplateUpdate {
 	if v != nil {
-		_u.SetVersion(*v)
+		_u.SetSourceType(*v)
 	}
 	return _u
 }
 
-// AddVersion adds value to the "version" field.
-func (_u *TemplateUpdate) AddVersion(v int) *TemplateUpdate {
-	_u.mutation.AddVersion(v)
+// ClearSourceType clears the value of the "source_type" field.
+func (_u *TemplateUpdate) ClearSourceType() *TemplateUpdate {
+	_u.mutation.ClearSourceType()
 	return _u
 }
 
-// SetSpec sets the "spec" field.
-func (_u *TemplateUpdate) SetSpec(v map[string]interface{}) *TemplateUpdate {
-	_u.mutation.SetSpec(v)
+// SetImageURL sets the "image_url" field.
+func (_u *TemplateUpdate) SetImageURL(v string) *TemplateUpdate {
+	_u.mutation.SetImageURL(v)
 	return _u
 }
 
-// ClearSpec clears the value of the "spec" field.
-func (_u *TemplateUpdate) ClearSpec() *TemplateUpdate {
-	_u.mutation.ClearSpec()
+// SetNillableImageURL sets the "image_url" field if the given value is not nil.
+func (_u *TemplateUpdate) SetNillableImageURL(v *string) *TemplateUpdate {
+	if v != nil {
+		_u.SetImageURL(*v)
+	}
+	return _u
+}
+
+// ClearImageURL clears the value of the "image_url" field.
+func (_u *TemplateUpdate) ClearImageURL() *TemplateUpdate {
+	_u.mutation.ClearImageURL()
+	return _u
+}
+
+// SetPvcName sets the "pvc_name" field.
+func (_u *TemplateUpdate) SetPvcName(v string) *TemplateUpdate {
+	_u.mutation.SetPvcName(v)
+	return _u
+}
+
+// SetNillablePvcName sets the "pvc_name" field if the given value is not nil.
+func (_u *TemplateUpdate) SetNillablePvcName(v *string) *TemplateUpdate {
+	if v != nil {
+		_u.SetPvcName(*v)
+	}
+	return _u
+}
+
+// ClearPvcName clears the value of the "pvc_name" field.
+func (_u *TemplateUpdate) ClearPvcName() *TemplateUpdate {
+	_u.mutation.ClearPvcName()
+	return _u
+}
+
+// SetCloudInit sets the "cloud_init" field.
+func (_u *TemplateUpdate) SetCloudInit(v string) *TemplateUpdate {
+	_u.mutation.SetCloudInit(v)
+	return _u
+}
+
+// SetNillableCloudInit sets the "cloud_init" field if the given value is not nil.
+func (_u *TemplateUpdate) SetNillableCloudInit(v *string) *TemplateUpdate {
+	if v != nil {
+		_u.SetCloudInit(*v)
+	}
+	return _u
+}
+
+// ClearCloudInit clears the value of the "cloud_init" field.
+func (_u *TemplateUpdate) ClearCloudInit() *TemplateUpdate {
+	_u.mutation.ClearCloudInit()
 	return _u
 }
 
@@ -237,11 +284,6 @@ func (_u *TemplateUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Template.name": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.Version(); ok {
-		if err := template.VersionValidator(v); err != nil {
-			return &ValidationError{Name: "version", err: fmt.Errorf(`ent: validator failed for field "Template.version": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.CreatedBy(); ok {
 		if err := template.CreatedByValidator(v); err != nil {
 			return &ValidationError{Name: "created_by", err: fmt.Errorf(`ent: validator failed for field "Template.created_by": %w`, err)}
@@ -280,17 +322,29 @@ func (_u *TemplateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.DescriptionCleared() {
 		_spec.ClearField(template.FieldDescription, field.TypeString)
 	}
-	if value, ok := _u.mutation.Version(); ok {
-		_spec.SetField(template.FieldVersion, field.TypeInt, value)
+	if value, ok := _u.mutation.SourceType(); ok {
+		_spec.SetField(template.FieldSourceType, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.AddedVersion(); ok {
-		_spec.AddField(template.FieldVersion, field.TypeInt, value)
+	if _u.mutation.SourceTypeCleared() {
+		_spec.ClearField(template.FieldSourceType, field.TypeString)
 	}
-	if value, ok := _u.mutation.Spec(); ok {
-		_spec.SetField(template.FieldSpec, field.TypeJSON, value)
+	if value, ok := _u.mutation.ImageURL(); ok {
+		_spec.SetField(template.FieldImageURL, field.TypeString, value)
 	}
-	if _u.mutation.SpecCleared() {
-		_spec.ClearField(template.FieldSpec, field.TypeJSON)
+	if _u.mutation.ImageURLCleared() {
+		_spec.ClearField(template.FieldImageURL, field.TypeString)
+	}
+	if value, ok := _u.mutation.PvcName(); ok {
+		_spec.SetField(template.FieldPvcName, field.TypeString, value)
+	}
+	if _u.mutation.PvcNameCleared() {
+		_spec.ClearField(template.FieldPvcName, field.TypeString)
+	}
+	if value, ok := _u.mutation.CloudInit(); ok {
+		_spec.SetField(template.FieldCloudInit, field.TypeString, value)
+	}
+	if _u.mutation.CloudInitCleared() {
+		_spec.ClearField(template.FieldCloudInit, field.TypeString)
 	}
 	if value, ok := _u.mutation.OsFamily(); ok {
 		_spec.SetField(template.FieldOsFamily, field.TypeString, value)
@@ -390,36 +444,83 @@ func (_u *TemplateUpdateOne) ClearDescription() *TemplateUpdateOne {
 	return _u
 }
 
-// SetVersion sets the "version" field.
-func (_u *TemplateUpdateOne) SetVersion(v int) *TemplateUpdateOne {
-	_u.mutation.ResetVersion()
-	_u.mutation.SetVersion(v)
+// SetSourceType sets the "source_type" field.
+func (_u *TemplateUpdateOne) SetSourceType(v string) *TemplateUpdateOne {
+	_u.mutation.SetSourceType(v)
 	return _u
 }
 
-// SetNillableVersion sets the "version" field if the given value is not nil.
-func (_u *TemplateUpdateOne) SetNillableVersion(v *int) *TemplateUpdateOne {
+// SetNillableSourceType sets the "source_type" field if the given value is not nil.
+func (_u *TemplateUpdateOne) SetNillableSourceType(v *string) *TemplateUpdateOne {
 	if v != nil {
-		_u.SetVersion(*v)
+		_u.SetSourceType(*v)
 	}
 	return _u
 }
 
-// AddVersion adds value to the "version" field.
-func (_u *TemplateUpdateOne) AddVersion(v int) *TemplateUpdateOne {
-	_u.mutation.AddVersion(v)
+// ClearSourceType clears the value of the "source_type" field.
+func (_u *TemplateUpdateOne) ClearSourceType() *TemplateUpdateOne {
+	_u.mutation.ClearSourceType()
 	return _u
 }
 
-// SetSpec sets the "spec" field.
-func (_u *TemplateUpdateOne) SetSpec(v map[string]interface{}) *TemplateUpdateOne {
-	_u.mutation.SetSpec(v)
+// SetImageURL sets the "image_url" field.
+func (_u *TemplateUpdateOne) SetImageURL(v string) *TemplateUpdateOne {
+	_u.mutation.SetImageURL(v)
 	return _u
 }
 
-// ClearSpec clears the value of the "spec" field.
-func (_u *TemplateUpdateOne) ClearSpec() *TemplateUpdateOne {
-	_u.mutation.ClearSpec()
+// SetNillableImageURL sets the "image_url" field if the given value is not nil.
+func (_u *TemplateUpdateOne) SetNillableImageURL(v *string) *TemplateUpdateOne {
+	if v != nil {
+		_u.SetImageURL(*v)
+	}
+	return _u
+}
+
+// ClearImageURL clears the value of the "image_url" field.
+func (_u *TemplateUpdateOne) ClearImageURL() *TemplateUpdateOne {
+	_u.mutation.ClearImageURL()
+	return _u
+}
+
+// SetPvcName sets the "pvc_name" field.
+func (_u *TemplateUpdateOne) SetPvcName(v string) *TemplateUpdateOne {
+	_u.mutation.SetPvcName(v)
+	return _u
+}
+
+// SetNillablePvcName sets the "pvc_name" field if the given value is not nil.
+func (_u *TemplateUpdateOne) SetNillablePvcName(v *string) *TemplateUpdateOne {
+	if v != nil {
+		_u.SetPvcName(*v)
+	}
+	return _u
+}
+
+// ClearPvcName clears the value of the "pvc_name" field.
+func (_u *TemplateUpdateOne) ClearPvcName() *TemplateUpdateOne {
+	_u.mutation.ClearPvcName()
+	return _u
+}
+
+// SetCloudInit sets the "cloud_init" field.
+func (_u *TemplateUpdateOne) SetCloudInit(v string) *TemplateUpdateOne {
+	_u.mutation.SetCloudInit(v)
+	return _u
+}
+
+// SetNillableCloudInit sets the "cloud_init" field if the given value is not nil.
+func (_u *TemplateUpdateOne) SetNillableCloudInit(v *string) *TemplateUpdateOne {
+	if v != nil {
+		_u.SetCloudInit(*v)
+	}
+	return _u
+}
+
+// ClearCloudInit clears the value of the "cloud_init" field.
+func (_u *TemplateUpdateOne) ClearCloudInit() *TemplateUpdateOne {
+	_u.mutation.ClearCloudInit()
 	return _u
 }
 
@@ -552,11 +653,6 @@ func (_u *TemplateUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Template.name": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.Version(); ok {
-		if err := template.VersionValidator(v); err != nil {
-			return &ValidationError{Name: "version", err: fmt.Errorf(`ent: validator failed for field "Template.version": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.CreatedBy(); ok {
 		if err := template.CreatedByValidator(v); err != nil {
 			return &ValidationError{Name: "created_by", err: fmt.Errorf(`ent: validator failed for field "Template.created_by": %w`, err)}
@@ -612,17 +708,29 @@ func (_u *TemplateUpdateOne) sqlSave(ctx context.Context) (_node *Template, err 
 	if _u.mutation.DescriptionCleared() {
 		_spec.ClearField(template.FieldDescription, field.TypeString)
 	}
-	if value, ok := _u.mutation.Version(); ok {
-		_spec.SetField(template.FieldVersion, field.TypeInt, value)
+	if value, ok := _u.mutation.SourceType(); ok {
+		_spec.SetField(template.FieldSourceType, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.AddedVersion(); ok {
-		_spec.AddField(template.FieldVersion, field.TypeInt, value)
+	if _u.mutation.SourceTypeCleared() {
+		_spec.ClearField(template.FieldSourceType, field.TypeString)
 	}
-	if value, ok := _u.mutation.Spec(); ok {
-		_spec.SetField(template.FieldSpec, field.TypeJSON, value)
+	if value, ok := _u.mutation.ImageURL(); ok {
+		_spec.SetField(template.FieldImageURL, field.TypeString, value)
 	}
-	if _u.mutation.SpecCleared() {
-		_spec.ClearField(template.FieldSpec, field.TypeJSON)
+	if _u.mutation.ImageURLCleared() {
+		_spec.ClearField(template.FieldImageURL, field.TypeString)
+	}
+	if value, ok := _u.mutation.PvcName(); ok {
+		_spec.SetField(template.FieldPvcName, field.TypeString, value)
+	}
+	if _u.mutation.PvcNameCleared() {
+		_spec.ClearField(template.FieldPvcName, field.TypeString)
+	}
+	if value, ok := _u.mutation.CloudInit(); ok {
+		_spec.SetField(template.FieldCloudInit, field.TypeString, value)
+	}
+	if _u.mutation.CloudInitCleared() {
+		_spec.ClearField(template.FieldCloudInit, field.TypeString)
 	}
 	if value, ok := _u.mutation.OsFamily(); ok {
 		_spec.SetField(template.FieldOsFamily, field.TypeString, value)

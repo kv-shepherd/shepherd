@@ -104,11 +104,6 @@ func SelectedClusterID(v string) predicate.ApprovalTicket {
 	return predicate.ApprovalTicket(sql.FieldEQ(FieldSelectedClusterID, v))
 }
 
-// SelectedTemplateVersion applies equality check predicate on the "selected_template_version" field. It's identical to SelectedTemplateVersionEQ.
-func SelectedTemplateVersion(v int) predicate.ApprovalTicket {
-	return predicate.ApprovalTicket(sql.FieldEQ(FieldSelectedTemplateVersion, v))
-}
-
 // SelectedStorageClass applies equality check predicate on the "selected_storage_class" field. It's identical to SelectedStorageClassEQ.
 func SelectedStorageClass(v string) predicate.ApprovalTicket {
 	return predicate.ApprovalTicket(sql.FieldEQ(FieldSelectedStorageClass, v))
@@ -667,56 +662,6 @@ func SelectedClusterIDEqualFold(v string) predicate.ApprovalTicket {
 // SelectedClusterIDContainsFold applies the ContainsFold predicate on the "selected_cluster_id" field.
 func SelectedClusterIDContainsFold(v string) predicate.ApprovalTicket {
 	return predicate.ApprovalTicket(sql.FieldContainsFold(FieldSelectedClusterID, v))
-}
-
-// SelectedTemplateVersionEQ applies the EQ predicate on the "selected_template_version" field.
-func SelectedTemplateVersionEQ(v int) predicate.ApprovalTicket {
-	return predicate.ApprovalTicket(sql.FieldEQ(FieldSelectedTemplateVersion, v))
-}
-
-// SelectedTemplateVersionNEQ applies the NEQ predicate on the "selected_template_version" field.
-func SelectedTemplateVersionNEQ(v int) predicate.ApprovalTicket {
-	return predicate.ApprovalTicket(sql.FieldNEQ(FieldSelectedTemplateVersion, v))
-}
-
-// SelectedTemplateVersionIn applies the In predicate on the "selected_template_version" field.
-func SelectedTemplateVersionIn(vs ...int) predicate.ApprovalTicket {
-	return predicate.ApprovalTicket(sql.FieldIn(FieldSelectedTemplateVersion, vs...))
-}
-
-// SelectedTemplateVersionNotIn applies the NotIn predicate on the "selected_template_version" field.
-func SelectedTemplateVersionNotIn(vs ...int) predicate.ApprovalTicket {
-	return predicate.ApprovalTicket(sql.FieldNotIn(FieldSelectedTemplateVersion, vs...))
-}
-
-// SelectedTemplateVersionGT applies the GT predicate on the "selected_template_version" field.
-func SelectedTemplateVersionGT(v int) predicate.ApprovalTicket {
-	return predicate.ApprovalTicket(sql.FieldGT(FieldSelectedTemplateVersion, v))
-}
-
-// SelectedTemplateVersionGTE applies the GTE predicate on the "selected_template_version" field.
-func SelectedTemplateVersionGTE(v int) predicate.ApprovalTicket {
-	return predicate.ApprovalTicket(sql.FieldGTE(FieldSelectedTemplateVersion, v))
-}
-
-// SelectedTemplateVersionLT applies the LT predicate on the "selected_template_version" field.
-func SelectedTemplateVersionLT(v int) predicate.ApprovalTicket {
-	return predicate.ApprovalTicket(sql.FieldLT(FieldSelectedTemplateVersion, v))
-}
-
-// SelectedTemplateVersionLTE applies the LTE predicate on the "selected_template_version" field.
-func SelectedTemplateVersionLTE(v int) predicate.ApprovalTicket {
-	return predicate.ApprovalTicket(sql.FieldLTE(FieldSelectedTemplateVersion, v))
-}
-
-// SelectedTemplateVersionIsNil applies the IsNil predicate on the "selected_template_version" field.
-func SelectedTemplateVersionIsNil() predicate.ApprovalTicket {
-	return predicate.ApprovalTicket(sql.FieldIsNull(FieldSelectedTemplateVersion))
-}
-
-// SelectedTemplateVersionNotNil applies the NotNil predicate on the "selected_template_version" field.
-func SelectedTemplateVersionNotNil() predicate.ApprovalTicket {
-	return predicate.ApprovalTicket(sql.FieldNotNull(FieldSelectedTemplateVersion))
 }
 
 // SelectedStorageClassEQ applies the EQ predicate on the "selected_storage_class" field.

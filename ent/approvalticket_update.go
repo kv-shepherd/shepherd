@@ -142,33 +142,6 @@ func (_u *ApprovalTicketUpdate) ClearSelectedClusterID() *ApprovalTicketUpdate {
 	return _u
 }
 
-// SetSelectedTemplateVersion sets the "selected_template_version" field.
-func (_u *ApprovalTicketUpdate) SetSelectedTemplateVersion(v int) *ApprovalTicketUpdate {
-	_u.mutation.ResetSelectedTemplateVersion()
-	_u.mutation.SetSelectedTemplateVersion(v)
-	return _u
-}
-
-// SetNillableSelectedTemplateVersion sets the "selected_template_version" field if the given value is not nil.
-func (_u *ApprovalTicketUpdate) SetNillableSelectedTemplateVersion(v *int) *ApprovalTicketUpdate {
-	if v != nil {
-		_u.SetSelectedTemplateVersion(*v)
-	}
-	return _u
-}
-
-// AddSelectedTemplateVersion adds value to the "selected_template_version" field.
-func (_u *ApprovalTicketUpdate) AddSelectedTemplateVersion(v int) *ApprovalTicketUpdate {
-	_u.mutation.AddSelectedTemplateVersion(v)
-	return _u
-}
-
-// ClearSelectedTemplateVersion clears the value of the "selected_template_version" field.
-func (_u *ApprovalTicketUpdate) ClearSelectedTemplateVersion() *ApprovalTicketUpdate {
-	_u.mutation.ClearSelectedTemplateVersion()
-	return _u
-}
-
 // SetSelectedStorageClass sets the "selected_storage_class" field.
 func (_u *ApprovalTicketUpdate) SetSelectedStorageClass(v string) *ApprovalTicketUpdate {
 	_u.mutation.SetSelectedStorageClass(v)
@@ -346,15 +319,6 @@ func (_u *ApprovalTicketUpdate) sqlSave(ctx context.Context) (_node int, err err
 	if _u.mutation.SelectedClusterIDCleared() {
 		_spec.ClearField(approvalticket.FieldSelectedClusterID, field.TypeString)
 	}
-	if value, ok := _u.mutation.SelectedTemplateVersion(); ok {
-		_spec.SetField(approvalticket.FieldSelectedTemplateVersion, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedSelectedTemplateVersion(); ok {
-		_spec.AddField(approvalticket.FieldSelectedTemplateVersion, field.TypeInt, value)
-	}
-	if _u.mutation.SelectedTemplateVersionCleared() {
-		_spec.ClearField(approvalticket.FieldSelectedTemplateVersion, field.TypeInt)
-	}
 	if value, ok := _u.mutation.SelectedStorageClass(); ok {
 		_spec.SetField(approvalticket.FieldSelectedStorageClass, field.TypeString, value)
 	}
@@ -516,33 +480,6 @@ func (_u *ApprovalTicketUpdateOne) SetNillableSelectedClusterID(v *string) *Appr
 // ClearSelectedClusterID clears the value of the "selected_cluster_id" field.
 func (_u *ApprovalTicketUpdateOne) ClearSelectedClusterID() *ApprovalTicketUpdateOne {
 	_u.mutation.ClearSelectedClusterID()
-	return _u
-}
-
-// SetSelectedTemplateVersion sets the "selected_template_version" field.
-func (_u *ApprovalTicketUpdateOne) SetSelectedTemplateVersion(v int) *ApprovalTicketUpdateOne {
-	_u.mutation.ResetSelectedTemplateVersion()
-	_u.mutation.SetSelectedTemplateVersion(v)
-	return _u
-}
-
-// SetNillableSelectedTemplateVersion sets the "selected_template_version" field if the given value is not nil.
-func (_u *ApprovalTicketUpdateOne) SetNillableSelectedTemplateVersion(v *int) *ApprovalTicketUpdateOne {
-	if v != nil {
-		_u.SetSelectedTemplateVersion(*v)
-	}
-	return _u
-}
-
-// AddSelectedTemplateVersion adds value to the "selected_template_version" field.
-func (_u *ApprovalTicketUpdateOne) AddSelectedTemplateVersion(v int) *ApprovalTicketUpdateOne {
-	_u.mutation.AddSelectedTemplateVersion(v)
-	return _u
-}
-
-// ClearSelectedTemplateVersion clears the value of the "selected_template_version" field.
-func (_u *ApprovalTicketUpdateOne) ClearSelectedTemplateVersion() *ApprovalTicketUpdateOne {
-	_u.mutation.ClearSelectedTemplateVersion()
 	return _u
 }
 
@@ -752,15 +689,6 @@ func (_u *ApprovalTicketUpdateOne) sqlSave(ctx context.Context) (_node *Approval
 	}
 	if _u.mutation.SelectedClusterIDCleared() {
 		_spec.ClearField(approvalticket.FieldSelectedClusterID, field.TypeString)
-	}
-	if value, ok := _u.mutation.SelectedTemplateVersion(); ok {
-		_spec.SetField(approvalticket.FieldSelectedTemplateVersion, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedSelectedTemplateVersion(); ok {
-		_spec.AddField(approvalticket.FieldSelectedTemplateVersion, field.TypeInt, value)
-	}
-	if _u.mutation.SelectedTemplateVersionCleared() {
-		_spec.ClearField(approvalticket.FieldSelectedTemplateVersion, field.TypeInt)
 	}
 	if value, ok := _u.mutation.SelectedStorageClass(); ok {
 		_spec.SetField(approvalticket.FieldSelectedStorageClass, field.TypeString, value)

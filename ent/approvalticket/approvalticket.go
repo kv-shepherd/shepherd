@@ -34,8 +34,6 @@ const (
 	FieldRejectReason = "reject_reason"
 	// FieldSelectedClusterID holds the string denoting the selected_cluster_id field in the database.
 	FieldSelectedClusterID = "selected_cluster_id"
-	// FieldSelectedTemplateVersion holds the string denoting the selected_template_version field in the database.
-	FieldSelectedTemplateVersion = "selected_template_version"
 	// FieldSelectedStorageClass holds the string denoting the selected_storage_class field in the database.
 	FieldSelectedStorageClass = "selected_storage_class"
 	// FieldTemplateSnapshot holds the string denoting the template_snapshot field in the database.
@@ -63,7 +61,6 @@ var Columns = []string{
 	FieldReason,
 	FieldRejectReason,
 	FieldSelectedClusterID,
-	FieldSelectedTemplateVersion,
 	FieldSelectedStorageClass,
 	FieldTemplateSnapshot,
 	FieldInstanceSizeSnapshot,
@@ -208,11 +205,6 @@ func ByRejectReason(opts ...sql.OrderTermOption) OrderOption {
 // BySelectedClusterID orders the results by the selected_cluster_id field.
 func BySelectedClusterID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSelectedClusterID, opts...).ToFunc()
-}
-
-// BySelectedTemplateVersion orders the results by the selected_template_version field.
-func BySelectedTemplateVersion(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSelectedTemplateVersion, opts...).ToFunc()
 }
 
 // BySelectedStorageClass orders the results by the selected_storage_class field.

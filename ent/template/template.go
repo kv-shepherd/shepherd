@@ -23,10 +23,14 @@ const (
 	FieldDisplayName = "display_name"
 	// FieldDescription holds the string denoting the description field in the database.
 	FieldDescription = "description"
-	// FieldVersion holds the string denoting the version field in the database.
-	FieldVersion = "version"
-	// FieldSpec holds the string denoting the spec field in the database.
-	FieldSpec = "spec"
+	// FieldSourceType holds the string denoting the source_type field in the database.
+	FieldSourceType = "source_type"
+	// FieldImageURL holds the string denoting the image_url field in the database.
+	FieldImageURL = "image_url"
+	// FieldPvcName holds the string denoting the pvc_name field in the database.
+	FieldPvcName = "pvc_name"
+	// FieldCloudInit holds the string denoting the cloud_init field in the database.
+	FieldCloudInit = "cloud_init"
 	// FieldOsFamily holds the string denoting the os_family field in the database.
 	FieldOsFamily = "os_family"
 	// FieldOsVersion holds the string denoting the os_version field in the database.
@@ -47,8 +51,10 @@ var Columns = []string{
 	FieldName,
 	FieldDisplayName,
 	FieldDescription,
-	FieldVersion,
-	FieldSpec,
+	FieldSourceType,
+	FieldImageURL,
+	FieldPvcName,
+	FieldCloudInit,
 	FieldOsFamily,
 	FieldOsVersion,
 	FieldEnabled,
@@ -74,10 +80,8 @@ var (
 	UpdateDefaultUpdatedAt func() time.Time
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
-	// DefaultVersion holds the default value on creation for the "version" field.
-	DefaultVersion int
-	// VersionValidator is a validator for the "version" field. It is called by the builders before save.
-	VersionValidator func(int) error
+	// DefaultSourceType holds the default value on creation for the "source_type" field.
+	DefaultSourceType string
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
 	// CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
@@ -117,9 +121,24 @@ func ByDescription(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDescription, opts...).ToFunc()
 }
 
-// ByVersion orders the results by the version field.
-func ByVersion(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldVersion, opts...).ToFunc()
+// BySourceType orders the results by the source_type field.
+func BySourceType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceType, opts...).ToFunc()
+}
+
+// ByImageURL orders the results by the image_url field.
+func ByImageURL(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldImageURL, opts...).ToFunc()
+}
+
+// ByPvcName orders the results by the pvc_name field.
+func ByPvcName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPvcName, opts...).ToFunc()
+}
+
+// ByCloudInit orders the results by the cloud_init field.
+func ByCloudInit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCloudInit, opts...).ToFunc()
 }
 
 // ByOsFamily orders the results by the os_family field.

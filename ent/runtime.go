@@ -783,18 +783,16 @@ func init() {
 	templateDescName := templateFields[1].Descriptor()
 	// template.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	template.NameValidator = templateDescName.Validators[0].(func(string) error)
-	// templateDescVersion is the schema descriptor for version field.
-	templateDescVersion := templateFields[4].Descriptor()
-	// template.DefaultVersion holds the default value on creation for the version field.
-	template.DefaultVersion = templateDescVersion.Default.(int)
-	// template.VersionValidator is a validator for the "version" field. It is called by the builders before save.
-	template.VersionValidator = templateDescVersion.Validators[0].(func(int) error)
+	// templateDescSourceType is the schema descriptor for source_type field.
+	templateDescSourceType := templateFields[4].Descriptor()
+	// template.DefaultSourceType holds the default value on creation for the source_type field.
+	template.DefaultSourceType = templateDescSourceType.Default.(string)
 	// templateDescEnabled is the schema descriptor for enabled field.
-	templateDescEnabled := templateFields[8].Descriptor()
+	templateDescEnabled := templateFields[10].Descriptor()
 	// template.DefaultEnabled holds the default value on creation for the enabled field.
 	template.DefaultEnabled = templateDescEnabled.Default.(bool)
 	// templateDescCreatedBy is the schema descriptor for created_by field.
-	templateDescCreatedBy := templateFields[9].Descriptor()
+	templateDescCreatedBy := templateFields[11].Descriptor()
 	// template.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	template.CreatedByValidator = templateDescCreatedBy.Validators[0].(func(string) error)
 	userMixin := schema.User{}.Mixin()

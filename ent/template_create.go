@@ -82,23 +82,59 @@ func (_c *TemplateCreate) SetNillableDescription(v *string) *TemplateCreate {
 	return _c
 }
 
-// SetVersion sets the "version" field.
-func (_c *TemplateCreate) SetVersion(v int) *TemplateCreate {
-	_c.mutation.SetVersion(v)
+// SetSourceType sets the "source_type" field.
+func (_c *TemplateCreate) SetSourceType(v string) *TemplateCreate {
+	_c.mutation.SetSourceType(v)
 	return _c
 }
 
-// SetNillableVersion sets the "version" field if the given value is not nil.
-func (_c *TemplateCreate) SetNillableVersion(v *int) *TemplateCreate {
+// SetNillableSourceType sets the "source_type" field if the given value is not nil.
+func (_c *TemplateCreate) SetNillableSourceType(v *string) *TemplateCreate {
 	if v != nil {
-		_c.SetVersion(*v)
+		_c.SetSourceType(*v)
 	}
 	return _c
 }
 
-// SetSpec sets the "spec" field.
-func (_c *TemplateCreate) SetSpec(v map[string]interface{}) *TemplateCreate {
-	_c.mutation.SetSpec(v)
+// SetImageURL sets the "image_url" field.
+func (_c *TemplateCreate) SetImageURL(v string) *TemplateCreate {
+	_c.mutation.SetImageURL(v)
+	return _c
+}
+
+// SetNillableImageURL sets the "image_url" field if the given value is not nil.
+func (_c *TemplateCreate) SetNillableImageURL(v *string) *TemplateCreate {
+	if v != nil {
+		_c.SetImageURL(*v)
+	}
+	return _c
+}
+
+// SetPvcName sets the "pvc_name" field.
+func (_c *TemplateCreate) SetPvcName(v string) *TemplateCreate {
+	_c.mutation.SetPvcName(v)
+	return _c
+}
+
+// SetNillablePvcName sets the "pvc_name" field if the given value is not nil.
+func (_c *TemplateCreate) SetNillablePvcName(v *string) *TemplateCreate {
+	if v != nil {
+		_c.SetPvcName(*v)
+	}
+	return _c
+}
+
+// SetCloudInit sets the "cloud_init" field.
+func (_c *TemplateCreate) SetCloudInit(v string) *TemplateCreate {
+	_c.mutation.SetCloudInit(v)
+	return _c
+}
+
+// SetNillableCloudInit sets the "cloud_init" field if the given value is not nil.
+func (_c *TemplateCreate) SetNillableCloudInit(v *string) *TemplateCreate {
+	if v != nil {
+		_c.SetCloudInit(*v)
+	}
 	return _c
 }
 
@@ -199,9 +235,9 @@ func (_c *TemplateCreate) defaults() {
 		v := template.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
-	if _, ok := _c.mutation.Version(); !ok {
-		v := template.DefaultVersion
-		_c.mutation.SetVersion(v)
+	if _, ok := _c.mutation.SourceType(); !ok {
+		v := template.DefaultSourceType
+		_c.mutation.SetSourceType(v)
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		v := template.DefaultEnabled
@@ -223,14 +259,6 @@ func (_c *TemplateCreate) check() error {
 	if v, ok := _c.mutation.Name(); ok {
 		if err := template.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Template.name": %w`, err)}
-		}
-	}
-	if _, ok := _c.mutation.Version(); !ok {
-		return &ValidationError{Name: "version", err: errors.New(`ent: missing required field "Template.version"`)}
-	}
-	if v, ok := _c.mutation.Version(); ok {
-		if err := template.VersionValidator(v); err != nil {
-			return &ValidationError{Name: "version", err: fmt.Errorf(`ent: validator failed for field "Template.version": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
@@ -299,13 +327,21 @@ func (_c *TemplateCreate) createSpec() (*Template, *sqlgraph.CreateSpec) {
 		_spec.SetField(template.FieldDescription, field.TypeString, value)
 		_node.Description = value
 	}
-	if value, ok := _c.mutation.Version(); ok {
-		_spec.SetField(template.FieldVersion, field.TypeInt, value)
-		_node.Version = value
+	if value, ok := _c.mutation.SourceType(); ok {
+		_spec.SetField(template.FieldSourceType, field.TypeString, value)
+		_node.SourceType = value
 	}
-	if value, ok := _c.mutation.Spec(); ok {
-		_spec.SetField(template.FieldSpec, field.TypeJSON, value)
-		_node.Spec = value
+	if value, ok := _c.mutation.ImageURL(); ok {
+		_spec.SetField(template.FieldImageURL, field.TypeString, value)
+		_node.ImageURL = value
+	}
+	if value, ok := _c.mutation.PvcName(); ok {
+		_spec.SetField(template.FieldPvcName, field.TypeString, value)
+		_node.PvcName = value
+	}
+	if value, ok := _c.mutation.CloudInit(); ok {
+		_spec.SetField(template.FieldCloudInit, field.TypeString, value)
+		_node.CloudInit = value
 	}
 	if value, ok := _c.mutation.OsFamily(); ok {
 		_spec.SetField(template.FieldOsFamily, field.TypeString, value)

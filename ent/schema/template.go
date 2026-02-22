@@ -8,6 +8,7 @@ import (
 
 // Template holds the schema definition for the Template entity.
 // ADR-0018: Templates stored in PostgreSQL, not as YAML files.
+// ADR-0036: Template contains software-baseline only (source + cloud-init).
 type Template struct {
 	ent.Schema
 }
@@ -31,11 +32,23 @@ func (Template) Fields() []ent.Field {
 			Optional(),
 		field.String("description").
 			Optional(),
-		field.Int("version").
-			Default(1).
-			Positive(),
-		field.JSON("spec", map[string]interface{}{}).
-			Optional(), // Full VM template specification
+		// source_type distinguishes ContainerDisk (image) from DataVolume (pvc) boot sources.
+		// ADR-0036: Two boot source modes; mutually exclusive.
+		field.String("source_type").
+			Optional(). // "image" | "pvc"; empty means not yet configured
+			Default(""),
+		// image_url is the container registry URL for ContainerDisk-based templates.
+		// Used when source_type == "image". Example: "quay.io/containerdisks/ubuntu:22.04"
+		field.String("image_url").
+			Optional(),
+		// pvc_name is the DataVolume / PersistentVolumeClaim name for PVC-based templates.
+		// Used when source_type == "pvc". Example: "ubuntu-22.04-base"
+		field.String("pvc_name").
+			Optional(),
+		// cloud_init stores raw cloud-init YAML configuration (userdata).
+		// Applied to VMs at boot time via cloud-init datasource.
+		field.Text("cloud_init").
+			Optional(),
 		field.String("os_family").
 			Optional(), // e.g. "linux", "windows"
 		field.String("os_version").
@@ -50,7 +63,8 @@ func (Template) Fields() []ent.Field {
 // Indexes of the Template.
 func (Template) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("name", "version").Unique(),
+		index.Fields("name").Unique(),
 		index.Fields("enabled"),
+		index.Fields("source_type"),
 	}
 }
