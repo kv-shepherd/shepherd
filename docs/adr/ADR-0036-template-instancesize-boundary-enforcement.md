@@ -1,7 +1,7 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-02-20
-deciders: []
+deciders: ["@jindyzhao"]
 consulted: []
 informed: []
 ---
@@ -137,3 +137,4 @@ Replace the Template `spec_text` TextArea with semantic form fields, preventing 
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-02-20 | jindyzhao | Initial draft |
+| 2026-02-22 | jindyzhao | Status changed from proposed to accepted after review period |
