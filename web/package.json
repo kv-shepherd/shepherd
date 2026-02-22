@@ -12,6 +12,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --project=smoke-chromium",
+    "test:e2e:mock": "playwright test --project=smoke-chromium",
     "test:e2e:smoke": "playwright test --project=smoke-chromium",
     "test:e2e:live": "LIVE_E2E=true playwright test --project=live-chromium",
     "test:e2e:all": "LIVE_E2E=true playwright test",
