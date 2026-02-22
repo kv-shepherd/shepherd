@@ -38,8 +38,6 @@ type ApprovalTicket struct {
 	RejectReason string `json:"reject_reason,omitempty"`
 	// SelectedClusterID holds the value of the "selected_cluster_id" field.
 	SelectedClusterID string `json:"selected_cluster_id,omitempty"`
-	// SelectedTemplateVersion holds the value of the "selected_template_version" field.
-	SelectedTemplateVersion int `json:"selected_template_version,omitempty"`
 	// SelectedStorageClass holds the value of the "selected_storage_class" field.
 	SelectedStorageClass string `json:"selected_storage_class,omitempty"`
 	// TemplateSnapshot holds the value of the "template_snapshot" field.
@@ -60,8 +58,6 @@ func (*ApprovalTicket) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case approvalticket.FieldTemplateSnapshot, approvalticket.FieldInstanceSizeSnapshot, approvalticket.FieldModifiedSpec:
 			values[i] = new([]byte)
-		case approvalticket.FieldSelectedTemplateVersion:
-			values[i] = new(sql.NullInt64)
 		case approvalticket.FieldID, approvalticket.FieldEventID, approvalticket.FieldOperationType, approvalticket.FieldStatus, approvalticket.FieldRequester, approvalticket.FieldApprover, approvalticket.FieldReason, approvalticket.FieldRejectReason, approvalticket.FieldSelectedClusterID, approvalticket.FieldSelectedStorageClass, approvalticket.FieldParentTicketID:
 			values[i] = new(sql.NullString)
 		case approvalticket.FieldCreatedAt, approvalticket.FieldUpdatedAt:
@@ -146,12 +142,6 @@ func (_m *ApprovalTicket) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field selected_cluster_id", values[i])
 			} else if value.Valid {
 				_m.SelectedClusterID = value.String
-			}
-		case approvalticket.FieldSelectedTemplateVersion:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field selected_template_version", values[i])
-			} else if value.Valid {
-				_m.SelectedTemplateVersion = int(value.Int64)
 			}
 		case approvalticket.FieldSelectedStorageClass:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -254,9 +244,6 @@ func (_m *ApprovalTicket) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("selected_cluster_id=")
 	builder.WriteString(_m.SelectedClusterID)
-	builder.WriteString(", ")
-	builder.WriteString("selected_template_version=")
-	builder.WriteString(fmt.Sprintf("%v", _m.SelectedTemplateVersion))
 	builder.WriteString(", ")
 	builder.WriteString("selected_storage_class=")
 	builder.WriteString(_m.SelectedStorageClass)

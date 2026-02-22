@@ -89,9 +89,24 @@ func Description(v string) predicate.Template {
 	return predicate.Template(sql.FieldEQ(FieldDescription, v))
 }
 
-// Version applies equality check predicate on the "version" field. It's identical to VersionEQ.
-func Version(v int) predicate.Template {
-	return predicate.Template(sql.FieldEQ(FieldVersion, v))
+// SourceType applies equality check predicate on the "source_type" field. It's identical to SourceTypeEQ.
+func SourceType(v string) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldSourceType, v))
+}
+
+// ImageURL applies equality check predicate on the "image_url" field. It's identical to ImageURLEQ.
+func ImageURL(v string) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldImageURL, v))
+}
+
+// PvcName applies equality check predicate on the "pvc_name" field. It's identical to PvcNameEQ.
+func PvcName(v string) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldPvcName, v))
+}
+
+// CloudInit applies equality check predicate on the "cloud_init" field. It's identical to CloudInitEQ.
+func CloudInit(v string) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldCloudInit, v))
 }
 
 // OsFamily applies equality check predicate on the "os_family" field. It's identical to OsFamilyEQ.
@@ -409,54 +424,304 @@ func DescriptionContainsFold(v string) predicate.Template {
 	return predicate.Template(sql.FieldContainsFold(FieldDescription, v))
 }
 
-// VersionEQ applies the EQ predicate on the "version" field.
-func VersionEQ(v int) predicate.Template {
-	return predicate.Template(sql.FieldEQ(FieldVersion, v))
+// SourceTypeEQ applies the EQ predicate on the "source_type" field.
+func SourceTypeEQ(v string) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldSourceType, v))
 }
 
-// VersionNEQ applies the NEQ predicate on the "version" field.
-func VersionNEQ(v int) predicate.Template {
-	return predicate.Template(sql.FieldNEQ(FieldVersion, v))
+// SourceTypeNEQ applies the NEQ predicate on the "source_type" field.
+func SourceTypeNEQ(v string) predicate.Template {
+	return predicate.Template(sql.FieldNEQ(FieldSourceType, v))
 }
 
-// VersionIn applies the In predicate on the "version" field.
-func VersionIn(vs ...int) predicate.Template {
-	return predicate.Template(sql.FieldIn(FieldVersion, vs...))
+// SourceTypeIn applies the In predicate on the "source_type" field.
+func SourceTypeIn(vs ...string) predicate.Template {
+	return predicate.Template(sql.FieldIn(FieldSourceType, vs...))
 }
 
-// VersionNotIn applies the NotIn predicate on the "version" field.
-func VersionNotIn(vs ...int) predicate.Template {
-	return predicate.Template(sql.FieldNotIn(FieldVersion, vs...))
+// SourceTypeNotIn applies the NotIn predicate on the "source_type" field.
+func SourceTypeNotIn(vs ...string) predicate.Template {
+	return predicate.Template(sql.FieldNotIn(FieldSourceType, vs...))
 }
 
-// VersionGT applies the GT predicate on the "version" field.
-func VersionGT(v int) predicate.Template {
-	return predicate.Template(sql.FieldGT(FieldVersion, v))
+// SourceTypeGT applies the GT predicate on the "source_type" field.
+func SourceTypeGT(v string) predicate.Template {
+	return predicate.Template(sql.FieldGT(FieldSourceType, v))
 }
 
-// VersionGTE applies the GTE predicate on the "version" field.
-func VersionGTE(v int) predicate.Template {
-	return predicate.Template(sql.FieldGTE(FieldVersion, v))
+// SourceTypeGTE applies the GTE predicate on the "source_type" field.
+func SourceTypeGTE(v string) predicate.Template {
+	return predicate.Template(sql.FieldGTE(FieldSourceType, v))
 }
 
-// VersionLT applies the LT predicate on the "version" field.
-func VersionLT(v int) predicate.Template {
-	return predicate.Template(sql.FieldLT(FieldVersion, v))
+// SourceTypeLT applies the LT predicate on the "source_type" field.
+func SourceTypeLT(v string) predicate.Template {
+	return predicate.Template(sql.FieldLT(FieldSourceType, v))
 }
 
-// VersionLTE applies the LTE predicate on the "version" field.
-func VersionLTE(v int) predicate.Template {
-	return predicate.Template(sql.FieldLTE(FieldVersion, v))
+// SourceTypeLTE applies the LTE predicate on the "source_type" field.
+func SourceTypeLTE(v string) predicate.Template {
+	return predicate.Template(sql.FieldLTE(FieldSourceType, v))
 }
 
-// SpecIsNil applies the IsNil predicate on the "spec" field.
-func SpecIsNil() predicate.Template {
-	return predicate.Template(sql.FieldIsNull(FieldSpec))
+// SourceTypeContains applies the Contains predicate on the "source_type" field.
+func SourceTypeContains(v string) predicate.Template {
+	return predicate.Template(sql.FieldContains(FieldSourceType, v))
 }
 
-// SpecNotNil applies the NotNil predicate on the "spec" field.
-func SpecNotNil() predicate.Template {
-	return predicate.Template(sql.FieldNotNull(FieldSpec))
+// SourceTypeHasPrefix applies the HasPrefix predicate on the "source_type" field.
+func SourceTypeHasPrefix(v string) predicate.Template {
+	return predicate.Template(sql.FieldHasPrefix(FieldSourceType, v))
+}
+
+// SourceTypeHasSuffix applies the HasSuffix predicate on the "source_type" field.
+func SourceTypeHasSuffix(v string) predicate.Template {
+	return predicate.Template(sql.FieldHasSuffix(FieldSourceType, v))
+}
+
+// SourceTypeIsNil applies the IsNil predicate on the "source_type" field.
+func SourceTypeIsNil() predicate.Template {
+	return predicate.Template(sql.FieldIsNull(FieldSourceType))
+}
+
+// SourceTypeNotNil applies the NotNil predicate on the "source_type" field.
+func SourceTypeNotNil() predicate.Template {
+	return predicate.Template(sql.FieldNotNull(FieldSourceType))
+}
+
+// SourceTypeEqualFold applies the EqualFold predicate on the "source_type" field.
+func SourceTypeEqualFold(v string) predicate.Template {
+	return predicate.Template(sql.FieldEqualFold(FieldSourceType, v))
+}
+
+// SourceTypeContainsFold applies the ContainsFold predicate on the "source_type" field.
+func SourceTypeContainsFold(v string) predicate.Template {
+	return predicate.Template(sql.FieldContainsFold(FieldSourceType, v))
+}
+
+// ImageURLEQ applies the EQ predicate on the "image_url" field.
+func ImageURLEQ(v string) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldImageURL, v))
+}
+
+// ImageURLNEQ applies the NEQ predicate on the "image_url" field.
+func ImageURLNEQ(v string) predicate.Template {
+	return predicate.Template(sql.FieldNEQ(FieldImageURL, v))
+}
+
+// ImageURLIn applies the In predicate on the "image_url" field.
+func ImageURLIn(vs ...string) predicate.Template {
+	return predicate.Template(sql.FieldIn(FieldImageURL, vs...))
+}
+
+// ImageURLNotIn applies the NotIn predicate on the "image_url" field.
+func ImageURLNotIn(vs ...string) predicate.Template {
+	return predicate.Template(sql.FieldNotIn(FieldImageURL, vs...))
+}
+
+// ImageURLGT applies the GT predicate on the "image_url" field.
+func ImageURLGT(v string) predicate.Template {
+	return predicate.Template(sql.FieldGT(FieldImageURL, v))
+}
+
+// ImageURLGTE applies the GTE predicate on the "image_url" field.
+func ImageURLGTE(v string) predicate.Template {
+	return predicate.Template(sql.FieldGTE(FieldImageURL, v))
+}
+
+// ImageURLLT applies the LT predicate on the "image_url" field.
+func ImageURLLT(v string) predicate.Template {
+	return predicate.Template(sql.FieldLT(FieldImageURL, v))
+}
+
+// ImageURLLTE applies the LTE predicate on the "image_url" field.
+func ImageURLLTE(v string) predicate.Template {
+	return predicate.Template(sql.FieldLTE(FieldImageURL, v))
+}
+
+// ImageURLContains applies the Contains predicate on the "image_url" field.
+func ImageURLContains(v string) predicate.Template {
+	return predicate.Template(sql.FieldContains(FieldImageURL, v))
+}
+
+// ImageURLHasPrefix applies the HasPrefix predicate on the "image_url" field.
+func ImageURLHasPrefix(v string) predicate.Template {
+	return predicate.Template(sql.FieldHasPrefix(FieldImageURL, v))
+}
+
+// ImageURLHasSuffix applies the HasSuffix predicate on the "image_url" field.
+func ImageURLHasSuffix(v string) predicate.Template {
+	return predicate.Template(sql.FieldHasSuffix(FieldImageURL, v))
+}
+
+// ImageURLIsNil applies the IsNil predicate on the "image_url" field.
+func ImageURLIsNil() predicate.Template {
+	return predicate.Template(sql.FieldIsNull(FieldImageURL))
+}
+
+// ImageURLNotNil applies the NotNil predicate on the "image_url" field.
+func ImageURLNotNil() predicate.Template {
+	return predicate.Template(sql.FieldNotNull(FieldImageURL))
+}
+
+// ImageURLEqualFold applies the EqualFold predicate on the "image_url" field.
+func ImageURLEqualFold(v string) predicate.Template {
+	return predicate.Template(sql.FieldEqualFold(FieldImageURL, v))
+}
+
+// ImageURLContainsFold applies the ContainsFold predicate on the "image_url" field.
+func ImageURLContainsFold(v string) predicate.Template {
+	return predicate.Template(sql.FieldContainsFold(FieldImageURL, v))
+}
+
+// PvcNameEQ applies the EQ predicate on the "pvc_name" field.
+func PvcNameEQ(v string) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldPvcName, v))
+}
+
+// PvcNameNEQ applies the NEQ predicate on the "pvc_name" field.
+func PvcNameNEQ(v string) predicate.Template {
+	return predicate.Template(sql.FieldNEQ(FieldPvcName, v))
+}
+
+// PvcNameIn applies the In predicate on the "pvc_name" field.
+func PvcNameIn(vs ...string) predicate.Template {
+	return predicate.Template(sql.FieldIn(FieldPvcName, vs...))
+}
+
+// PvcNameNotIn applies the NotIn predicate on the "pvc_name" field.
+func PvcNameNotIn(vs ...string) predicate.Template {
+	return predicate.Template(sql.FieldNotIn(FieldPvcName, vs...))
+}
+
+// PvcNameGT applies the GT predicate on the "pvc_name" field.
+func PvcNameGT(v string) predicate.Template {
+	return predicate.Template(sql.FieldGT(FieldPvcName, v))
+}
+
+// PvcNameGTE applies the GTE predicate on the "pvc_name" field.
+func PvcNameGTE(v string) predicate.Template {
+	return predicate.Template(sql.FieldGTE(FieldPvcName, v))
+}
+
+// PvcNameLT applies the LT predicate on the "pvc_name" field.
+func PvcNameLT(v string) predicate.Template {
+	return predicate.Template(sql.FieldLT(FieldPvcName, v))
+}
+
+// PvcNameLTE applies the LTE predicate on the "pvc_name" field.
+func PvcNameLTE(v string) predicate.Template {
+	return predicate.Template(sql.FieldLTE(FieldPvcName, v))
+}
+
+// PvcNameContains applies the Contains predicate on the "pvc_name" field.
+func PvcNameContains(v string) predicate.Template {
+	return predicate.Template(sql.FieldContains(FieldPvcName, v))
+}
+
+// PvcNameHasPrefix applies the HasPrefix predicate on the "pvc_name" field.
+func PvcNameHasPrefix(v string) predicate.Template {
+	return predicate.Template(sql.FieldHasPrefix(FieldPvcName, v))
+}
+
+// PvcNameHasSuffix applies the HasSuffix predicate on the "pvc_name" field.
+func PvcNameHasSuffix(v string) predicate.Template {
+	return predicate.Template(sql.FieldHasSuffix(FieldPvcName, v))
+}
+
+// PvcNameIsNil applies the IsNil predicate on the "pvc_name" field.
+func PvcNameIsNil() predicate.Template {
+	return predicate.Template(sql.FieldIsNull(FieldPvcName))
+}
+
+// PvcNameNotNil applies the NotNil predicate on the "pvc_name" field.
+func PvcNameNotNil() predicate.Template {
+	return predicate.Template(sql.FieldNotNull(FieldPvcName))
+}
+
+// PvcNameEqualFold applies the EqualFold predicate on the "pvc_name" field.
+func PvcNameEqualFold(v string) predicate.Template {
+	return predicate.Template(sql.FieldEqualFold(FieldPvcName, v))
+}
+
+// PvcNameContainsFold applies the ContainsFold predicate on the "pvc_name" field.
+func PvcNameContainsFold(v string) predicate.Template {
+	return predicate.Template(sql.FieldContainsFold(FieldPvcName, v))
+}
+
+// CloudInitEQ applies the EQ predicate on the "cloud_init" field.
+func CloudInitEQ(v string) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldCloudInit, v))
+}
+
+// CloudInitNEQ applies the NEQ predicate on the "cloud_init" field.
+func CloudInitNEQ(v string) predicate.Template {
+	return predicate.Template(sql.FieldNEQ(FieldCloudInit, v))
+}
+
+// CloudInitIn applies the In predicate on the "cloud_init" field.
+func CloudInitIn(vs ...string) predicate.Template {
+	return predicate.Template(sql.FieldIn(FieldCloudInit, vs...))
+}
+
+// CloudInitNotIn applies the NotIn predicate on the "cloud_init" field.
+func CloudInitNotIn(vs ...string) predicate.Template {
+	return predicate.Template(sql.FieldNotIn(FieldCloudInit, vs...))
+}
+
+// CloudInitGT applies the GT predicate on the "cloud_init" field.
+func CloudInitGT(v string) predicate.Template {
+	return predicate.Template(sql.FieldGT(FieldCloudInit, v))
+}
+
+// CloudInitGTE applies the GTE predicate on the "cloud_init" field.
+func CloudInitGTE(v string) predicate.Template {
+	return predicate.Template(sql.FieldGTE(FieldCloudInit, v))
+}
+
+// CloudInitLT applies the LT predicate on the "cloud_init" field.
+func CloudInitLT(v string) predicate.Template {
+	return predicate.Template(sql.FieldLT(FieldCloudInit, v))
+}
+
+// CloudInitLTE applies the LTE predicate on the "cloud_init" field.
+func CloudInitLTE(v string) predicate.Template {
+	return predicate.Template(sql.FieldLTE(FieldCloudInit, v))
+}
+
+// CloudInitContains applies the Contains predicate on the "cloud_init" field.
+func CloudInitContains(v string) predicate.Template {
+	return predicate.Template(sql.FieldContains(FieldCloudInit, v))
+}
+
+// CloudInitHasPrefix applies the HasPrefix predicate on the "cloud_init" field.
+func CloudInitHasPrefix(v string) predicate.Template {
+	return predicate.Template(sql.FieldHasPrefix(FieldCloudInit, v))
+}
+
+// CloudInitHasSuffix applies the HasSuffix predicate on the "cloud_init" field.
+func CloudInitHasSuffix(v string) predicate.Template {
+	return predicate.Template(sql.FieldHasSuffix(FieldCloudInit, v))
+}
+
+// CloudInitIsNil applies the IsNil predicate on the "cloud_init" field.
+func CloudInitIsNil() predicate.Template {
+	return predicate.Template(sql.FieldIsNull(FieldCloudInit))
+}
+
+// CloudInitNotNil applies the NotNil predicate on the "cloud_init" field.
+func CloudInitNotNil() predicate.Template {
+	return predicate.Template(sql.FieldNotNull(FieldCloudInit))
+}
+
+// CloudInitEqualFold applies the EqualFold predicate on the "cloud_init" field.
+func CloudInitEqualFold(v string) predicate.Template {
+	return predicate.Template(sql.FieldEqualFold(FieldCloudInit, v))
+}
+
+// CloudInitContainsFold applies the ContainsFold predicate on the "cloud_init" field.
+func CloudInitContainsFold(v string) predicate.Template {
+	return predicate.Template(sql.FieldContainsFold(FieldCloudInit, v))
 }
 
 // OsFamilyEQ applies the EQ predicate on the "os_family" field.

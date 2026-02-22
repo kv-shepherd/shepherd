@@ -48,8 +48,6 @@ func (ApprovalTicket) Fields() []ent.Field {
 		// Admin-determined fields (ADR-0017)
 		field.String("selected_cluster_id").
 			Optional(),
-		field.Int("selected_template_version").
-			Optional(),
 		field.String("selected_storage_class").
 			Optional(),
 		field.JSON("template_snapshot", map[string]interface{}{}).

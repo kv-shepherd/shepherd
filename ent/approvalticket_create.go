@@ -144,20 +144,6 @@ func (_c *ApprovalTicketCreate) SetNillableSelectedClusterID(v *string) *Approva
 	return _c
 }
 
-// SetSelectedTemplateVersion sets the "selected_template_version" field.
-func (_c *ApprovalTicketCreate) SetSelectedTemplateVersion(v int) *ApprovalTicketCreate {
-	_c.mutation.SetSelectedTemplateVersion(v)
-	return _c
-}
-
-// SetNillableSelectedTemplateVersion sets the "selected_template_version" field if the given value is not nil.
-func (_c *ApprovalTicketCreate) SetNillableSelectedTemplateVersion(v *int) *ApprovalTicketCreate {
-	if v != nil {
-		_c.SetSelectedTemplateVersion(*v)
-	}
-	return _c
-}
-
 // SetSelectedStorageClass sets the "selected_storage_class" field.
 func (_c *ApprovalTicketCreate) SetSelectedStorageClass(v string) *ApprovalTicketCreate {
 	_c.mutation.SetSelectedStorageClass(v)
@@ -377,10 +363,6 @@ func (_c *ApprovalTicketCreate) createSpec() (*ApprovalTicket, *sqlgraph.CreateS
 	if value, ok := _c.mutation.SelectedClusterID(); ok {
 		_spec.SetField(approvalticket.FieldSelectedClusterID, field.TypeString, value)
 		_node.SelectedClusterID = value
-	}
-	if value, ok := _c.mutation.SelectedTemplateVersion(); ok {
-		_spec.SetField(approvalticket.FieldSelectedTemplateVersion, field.TypeInt, value)
-		_node.SelectedTemplateVersion = value
 	}
 	if value, ok := _c.mutation.SelectedStorageClass(); ok {
 		_spec.SetField(approvalticket.FieldSelectedStorageClass, field.TypeString, value)
