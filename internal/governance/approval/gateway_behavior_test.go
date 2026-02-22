@@ -33,7 +33,6 @@ func init() {
 func (f *fakeAtomicWriter) ApproveCreateAndEnqueue(
 	_ context.Context,
 	ticketID, eventID, approver, clusterID, storageClass, serviceID, namespace, requesterID string,
-	_ int,
 	_ map[string]interface{},
 	_ map[string]interface{},
 	_ map[string]interface{},
@@ -89,7 +88,8 @@ func TestGatewayApproveCreate_CallsAtomicWriterWithResolvedIDs(t *testing.T) {
 	_, err = client.Template.Create().
 		SetID("tpl-override").
 		SetName("tpl").
-		SetVersion(3).
+		SetSourceType("image").
+		SetImageURL("quay.io/containerdisks/ubuntu:22.04").
 		SetCreatedBy("seed").
 		Save(context.Background())
 	if err != nil {

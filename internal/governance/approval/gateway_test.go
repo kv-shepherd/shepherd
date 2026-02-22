@@ -61,27 +61,22 @@ func TestBuildTemplateSnapshot(t *testing.T) {
 		Name:        "ubuntu",
 		DisplayName: "Ubuntu",
 		Description: "Ubuntu template",
-		Version:     3,
+		SourceType:  "image",
+		ImageURL:    "docker.io/ubuntu:22.04",
 		OsFamily:    "linux",
 		OsVersion:   "22.04",
 		Enabled:     true,
 		CreatedBy:   "admin",
-		Spec: map[string]interface{}{
-			"image_source": map[string]interface{}{
-				"image": "docker.io/ubuntu:22.04",
-			},
-		},
 	}
 
 	snapshot := buildTemplateSnapshot(tpl)
 	if snapshot["id"] != "tpl-1" {
 		t.Fatalf("snapshot id mismatch: got %v", snapshot["id"])
 	}
-	if snapshot["version"] != 3 {
-		t.Fatalf("snapshot version mismatch: got %v", snapshot["version"])
+	if snapshot["source_type"] != "image" {
+		t.Fatalf("snapshot source type mismatch: got %v", snapshot["source_type"])
 	}
-	spec, ok := snapshot["spec"].(map[string]interface{})
-	if !ok || len(spec) == 0 {
-		t.Fatalf("snapshot spec missing")
+	if snapshot["image_url"] != "docker.io/ubuntu:22.04" {
+		t.Fatalf("snapshot image url mismatch: got %v", snapshot["image_url"])
 	}
 }

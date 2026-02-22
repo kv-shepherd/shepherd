@@ -226,7 +226,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List VM batch jobs
+         * @description Returns a paginated list of batch job summaries for the current user.
+         *     Admins see all batches; regular users see only their own.
+         */
+        get: operations["listVMBatches"];
         put?: never;
         /**
          * Submit VM batch request
@@ -381,6 +386,29 @@ export interface paths {
         put?: never;
         /** Restart VM */
         post: operations["restartVM"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vms/{vm_id}/power": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unified VM power action (start / stop / restart)
+         * @description Convenience endpoint that consolidates start, stop, and restart into one
+         *     call.  Delegates internally to the same handlers as the individual
+         *     /start, /stop, /restart endpoints.
+         *     Accepted by the frontend VM-detail page for power-state management.
+         */
+        post: operations["powerVM"];
         delete?: never;
         options?: never;
         head?: never;
@@ -828,7 +856,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List rate-limit exemptions */
+        get: operations["listRateLimitExemptions"];
         put?: never;
         /** Create or update a user rate-limit exemption */
         post: operations["createRateLimitExemption"];
@@ -1409,6 +1438,11 @@ export interface components {
             ticket_id: string;
             /** @enum {string} */
             status: "PENDING";
+            /**
+             * @description Type of operation this ticket represents (ADR-0015)
+             * @enum {string}
+             */
+            operation_type?: "CREATE" | "DELETE" | "VNC_ACCESS";
         };
         ApprovalTicket: {
             id: string;
@@ -1497,31 +1531,52 @@ export interface components {
             name: string;
             display_name?: string;
             description?: string;
-            version: number;
+            /**
+             * @description Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+             * @enum {string}
+             */
+            source_type?: "image" | "pvc";
+            /** @description Container registry URL for ContainerDisk mode, e.g. quay.io/containerdisks/ubuntu:22.04 */
+            image_url?: string;
+            /** @description PVC/DataVolume name for PVC mode */
+            pvc_name?: string;
+            /** @description Cloud-init userdata YAML (applied at VM boot) */
+            cloud_init?: string;
             os_family?: string;
             os_version?: string;
             enabled?: boolean;
+            /** Format: date-time */
+            created_at?: string;
         };
         TemplateCreateRequest: {
             name: string;
             display_name?: string;
             description?: string;
-            version?: number;
+            /**
+             * @description Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+             * @enum {string}
+             */
+            source_type?: "image" | "pvc";
+            /** @description Required when source_type is 'image' */
+            image_url?: string;
+            /** @description Required when source_type is 'pvc' */
+            pvc_name?: string;
+            /** @description Cloud-init userdata YAML */
+            cloud_init?: string;
             os_family?: string;
             os_version?: string;
-            spec?: {
-                [key: string]: unknown;
-            };
             enabled?: boolean;
         };
         TemplateUpdateRequest: {
             display_name?: string;
             description?: string;
+            /** @enum {string} */
+            source_type?: "image" | "pvc";
+            image_url?: string;
+            pvc_name?: string;
+            cloud_init?: string;
             os_family?: string;
             os_version?: string;
-            spec?: {
-                [key: string]: unknown;
-            };
             enabled?: boolean;
         };
         TemplateList: {
@@ -1545,6 +1600,8 @@ export interface components {
                 [key: string]: unknown;
             };
             enabled?: boolean;
+            /** Format: date-time */
+            created_at?: string;
         };
         InstanceSizeCreateRequest: {
             name: string;
@@ -1588,6 +1645,7 @@ export interface components {
         };
         InstanceSizeList: {
             items?: components["schemas"]["InstanceSize"][];
+            pagination?: components["schemas"]["Pagination"];
         };
         LoginRequest: {
             username: string;
@@ -1607,6 +1665,8 @@ export interface components {
             display_name?: string;
             roles?: string[];
             permissions?: string[];
+            /** Format: date-time */
+            created_at?: string;
         };
         User: {
             id: string;
@@ -1652,6 +1712,7 @@ export interface components {
         };
         RoleList: {
             items?: components["schemas"]["Role"][];
+            pagination?: components["schemas"]["Pagination"];
         };
         RoleCreateRequest: {
             name: string;
@@ -1672,6 +1733,7 @@ export interface components {
         };
         PermissionList: {
             items?: components["schemas"]["Permission"][];
+            pagination?: components["schemas"]["Pagination"];
         };
         GlobalRoleBinding: {
             id: string;
@@ -1687,6 +1749,7 @@ export interface components {
         };
         GlobalRoleBindingList: {
             items?: components["schemas"]["GlobalRoleBinding"][];
+            pagination?: components["schemas"]["Pagination"];
         };
         GlobalRoleBindingCreateRequest: {
             role_id: string;
@@ -1713,6 +1776,7 @@ export interface components {
         };
         AuthProviderList: {
             items?: components["schemas"]["AuthProvider"][];
+            pagination?: components["schemas"]["Pagination"];
         };
         AuthProviderCreateRequest: {
             name: string;
@@ -1743,6 +1807,7 @@ export interface components {
         };
         AuthProviderTypeList: {
             items: components["schemas"]["AuthProviderType"][];
+            pagination?: components["schemas"]["Pagination"];
         };
         AuthProviderConnectionTestResult: {
             success: boolean;
@@ -1771,6 +1836,8 @@ export interface components {
             source_field?: string;
             /** Format: date-time */
             last_synced_at?: string;
+            /** Format: date-time */
+            created_at?: string;
         };
         AuthProviderGroupSyncResponse: {
             items?: components["schemas"]["IdPSyncedGroup"][];
@@ -1792,6 +1859,7 @@ export interface components {
         };
         IdPGroupMappingList: {
             items?: components["schemas"]["IdPGroupMapping"][];
+            pagination?: components["schemas"]["Pagination"];
         };
         IdPGroupMappingCreateRequest: {
             external_group_id: string;
@@ -1858,6 +1926,7 @@ export interface components {
             items: components["schemas"]["RateLimitUserStatus"][];
             /** Format: date-time */
             generated_at: string;
+            pagination?: components["schemas"]["Pagination"];
         };
         SystemMember: {
             user_id: string;
@@ -1871,6 +1940,7 @@ export interface components {
         };
         SystemMemberList: {
             items?: components["schemas"]["SystemMember"][];
+            pagination?: components["schemas"]["Pagination"];
         };
         SystemMemberCreateRequest: {
             user_id: string;
@@ -1952,6 +2022,34 @@ export interface components {
         };
         UnreadCount: {
             count: number;
+        };
+        VMBatchJobSummary: {
+            id: string;
+            /** @description Batch operation type (e.g. CREATE, POWER, DELETE) */
+            operation: string;
+            /** @enum {string} */
+            status: "PENDING_APPROVAL" | "IN_PROGRESS" | "COMPLETED" | "PARTIAL_SUCCESS" | "FAILED" | "CANCELLED";
+            child_count: number;
+            success_count: number;
+            failed_count: number;
+            pending_count: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        VMBatchList: {
+            items?: components["schemas"]["VMBatchJobSummary"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        VMPowerRequest: {
+            /**
+             * @description Power action to execute on the VM
+             * @enum {string}
+             */
+            action: "start" | "stop" | "restart";
+        };
+        RateLimitExemptionList: {
+            items?: components["schemas"]["RateLimitExemption"][];
+            pagination?: components["schemas"]["Pagination"];
         };
     };
     responses: {
@@ -2541,6 +2639,36 @@ export interface operations {
             400: components["responses"]["BadRequest"];
         };
     };
+    listVMBatches: {
+        parameters: {
+            query?: {
+                /** @description Page number (1-indexed) */
+                page?: components["parameters"]["Page"];
+                /** @description Items per page */
+                per_page?: components["parameters"]["PerPage"];
+                /** @description Field to sort by */
+                sort_by?: components["parameters"]["SortBy"];
+                /** @description Sort direction */
+                sort_order?: components["parameters"]["SortOrder"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Batch job list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMBatchList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     submitVMBatch: {
         parameters: {
             query?: never;
@@ -2794,6 +2922,35 @@ export interface operations {
                 content?: never;
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    powerVM: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vm_id: components["parameters"]["VMID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VMPowerRequest"];
+            };
+        };
+        responses: {
+            /** @description Power action accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VM"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     requestVMConsoleAccess: {
@@ -3644,6 +3801,32 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listRateLimitExemptions: {
+        parameters: {
+            query?: {
+                /** @description Page number (1-indexed) */
+                page?: components["parameters"]["Page"];
+                /** @description Items per page */
+                per_page?: components["parameters"]["PerPage"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Exemption list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExemptionList"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
         };
     };
     createRateLimitExemption: {

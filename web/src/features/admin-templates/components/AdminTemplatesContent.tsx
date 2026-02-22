@@ -164,17 +164,6 @@ export function AdminTemplatesContent() {
             render: (version: string | undefined) => version ? <Tag>{version}</Tag> : '—',
         },
         {
-            title: t('templates.version'),
-            dataIndex: 'version',
-            key: 'version',
-            width: 90,
-            align: 'center' as const,
-            sorter: (a, b) => a.version - b.version,
-            render: (version: number) => (
-                <Tag color="processing">v{version}</Tag>
-            ),
-        },
-        {
             title: t('templates.enabled'),
             dataIndex: 'enabled',
             key: 'enabled',

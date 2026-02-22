@@ -25,26 +25,36 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	providerregistry "kv-shepherd.io/shepherd/internal/provider"
+	"kv-shepherd.io/shepherd/internal/service"
 )
 
 type templateCreateRequest struct {
-	Name        string                 `json:"name" binding:"required"`
-	DisplayName *string                `json:"display_name"`
-	Description *string                `json:"description"`
-	Version     *int                   `json:"version"`
-	OsFamily    *string                `json:"os_family"`
-	OsVersion   *string                `json:"os_version"`
-	Spec        map[string]interface{} `json:"spec"`
-	Enabled     *bool                  `json:"enabled"`
+	Name        string  `json:"name" binding:"required"`
+	DisplayName *string `json:"display_name"`
+	Description *string `json:"description"`
+	// SourceType selects boot mode: "image" (ContainerDisk) or "pvc" (DataVolume).
+	SourceType *string `json:"source_type"`
+	// ImageURL is the container image URI, required when source_type == "image".
+	ImageURL *string `json:"image_url"`
+	// PVCName is the PersistentVolumeClaim name, required when source_type == "pvc".
+	PVCName *string `json:"pvc_name"`
+	// CloudInit is optional cloud-init userdata YAML.
+	CloudInit *string `json:"cloud_init"`
+	OsFamily  *string `json:"os_family"`
+	OsVersion *string `json:"os_version"`
+	Enabled   *bool   `json:"enabled"`
 }
 
 type templateUpdateRequest struct {
-	DisplayName *string                 `json:"display_name"`
-	Description *string                 `json:"description"`
-	OsFamily    *string                 `json:"os_family"`
-	OsVersion   *string                 `json:"os_version"`
-	Spec        *map[string]interface{} `json:"spec"`
-	Enabled     *bool                   `json:"enabled"`
+	DisplayName *string `json:"display_name"`
+	Description *string `json:"description"`
+	SourceType  *string `json:"source_type"`
+	ImageURL    *string `json:"image_url"`
+	PVCName     *string `json:"pvc_name"`
+	CloudInit   *string `json:"cloud_init"`
+	OsFamily    *string `json:"os_family"`
+	OsVersion   *string `json:"os_version"`
+	Enabled     *bool   `json:"enabled"`
 }
 
 type instanceSizeCreateRequest struct {
@@ -219,32 +229,16 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 		return
 	}
 
-	version := 1
-	if req.Version != nil {
-		if *req.Version < 1 {
-			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "version must be >= 1"})
-			return
-		}
-		version = *req.Version
-	} else {
-		latest, err := s.client.Template.Query().
-			Where(enttemplate.NameEQ(name)).
-			Order(ent.Desc(enttemplate.FieldVersion)).
-			First(ctx)
-		if err == nil {
-			version = latest.Version + 1
-		} else if err != nil && !ent.IsNotFound(err) {
-			logger.Error("failed to resolve latest template version", zap.Error(err), zap.String("name", name))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		}
+	// ADR-0036: Validate source_type and its dependent fields.
+	if err := validateTemplateSource(req.SourceType, req.ImageURL, req.PVCName); err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_TEMPLATE_SOURCE", Message: err.Error()})
+		return
 	}
 
 	id, _ := uuid.NewV7()
 	create := s.client.Template.Create().
 		SetID(id.String()).
 		SetName(name).
-		SetVersion(version).
 		SetCreatedBy(actor)
 	if req.DisplayName != nil {
 		if v := strings.TrimSpace(*req.DisplayName); v != "" {
@@ -256,6 +250,23 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 			create = create.SetDescription(v)
 		}
 	}
+	if req.SourceType != nil {
+		create = create.SetSourceType(*req.SourceType)
+	}
+	if req.ImageURL != nil {
+		if v := strings.TrimSpace(*req.ImageURL); v != "" {
+			create = create.SetImageURL(v)
+		}
+	}
+	if req.PVCName != nil {
+		if v := strings.TrimSpace(*req.PVCName); v != "" {
+			create = create.SetPvcName(v)
+		}
+	}
+	if req.CloudInit != nil {
+		// Store as-is; cloud-init YAML is user's responsibility
+		create = create.SetCloudInit(*req.CloudInit)
+	}
 	if req.OsFamily != nil {
 		if v := strings.TrimSpace(*req.OsFamily); v != "" {
 			create = create.SetOsFamily(v)
@@ -266,9 +277,6 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 			create = create.SetOsVersion(v)
 		}
 	}
-	if req.Spec != nil {
-		create = create.SetSpec(req.Spec)
-	}
 	if req.Enabled != nil {
 		create = create.SetEnabled(*req.Enabled)
 	}
@@ -276,7 +284,7 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 	tpl, err := create.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			c.JSON(http.StatusConflict, generated.Error{Code: "TEMPLATE_NAME_VERSION_EXISTS"})
+			c.JSON(http.StatusConflict, generated.Error{Code: "TEMPLATE_NAME_EXISTS"})
 			return
 		}
 		logger.Error("failed to create admin template", zap.Error(err), zap.String("name", name))
@@ -286,8 +294,8 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 
 	if s.audit != nil {
 		_ = s.audit.LogAction(ctx, "template.create", "template", tpl.ID, actor, map[string]interface{}{
-			"name":    tpl.Name,
-			"version": tpl.Version,
+			"name":        tpl.Name,
+			"source_type": tpl.SourceType,
 		})
 	}
 
@@ -307,6 +315,12 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateId generated.Templa
 		return
 	}
 
+	// ADR-0036: Validate source_type consistency if any source field is being updated.
+	if err := validateTemplateSource(req.SourceType, req.ImageURL, req.PVCName); err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_TEMPLATE_SOURCE", Message: err.Error()})
+		return
+	}
+
 	update := s.client.Template.UpdateOneID(templateId)
 	if req.DisplayName != nil {
 		if v := strings.TrimSpace(*req.DisplayName); v == "" {
@@ -322,6 +336,30 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateId generated.Templa
 			update = update.SetDescription(v)
 		}
 	}
+	if req.SourceType != nil {
+		update = update.SetSourceType(*req.SourceType)
+	}
+	if req.ImageURL != nil {
+		if v := strings.TrimSpace(*req.ImageURL); v == "" {
+			update = update.ClearImageURL()
+		} else {
+			update = update.SetImageURL(v)
+		}
+	}
+	if req.PVCName != nil {
+		if v := strings.TrimSpace(*req.PVCName); v == "" {
+			update = update.ClearPvcName()
+		} else {
+			update = update.SetPvcName(v)
+		}
+	}
+	if req.CloudInit != nil {
+		if *req.CloudInit == "" {
+			update = update.ClearCloudInit()
+		} else {
+			update = update.SetCloudInit(*req.CloudInit)
+		}
+	}
 	if req.OsFamily != nil {
 		if v := strings.TrimSpace(*req.OsFamily); v == "" {
 			update = update.ClearOsFamily()
@@ -335,9 +373,6 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateId generated.Templa
 		} else {
 			update = update.SetOsVersion(v)
 		}
-	}
-	if req.Spec != nil {
-		update = update.SetSpec(*req.Spec)
 	}
 	if req.Enabled != nil {
 		update = update.SetEnabled(*req.Enabled)
@@ -471,6 +506,25 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 		}
 	}
 	if req.SpecOverrides != nil {
+		// ADR-0036: Validate spec_overrides paths use spec.* prefix.
+		if err := service.ValidateSpecOverrides(req.SpecOverrides); err != nil {
+			c.JSON(http.StatusBadRequest, generated.Error{
+				Code:    "INVALID_SPEC_OVERRIDES",
+				Message: err.Error(),
+			})
+			return
+		}
+		// Detect conflicts between spec_overrides and indexed columns (advisory).
+		if warnings := service.DetectSpecOverridesConflicts(
+			req.CpuCores, req.MemoryMb,
+			req.DedicatedCpu != nil && *req.DedicatedCpu,
+			req.CpuRequest, req.SpecOverrides,
+		); len(warnings) > 0 {
+			for _, w := range warnings {
+				logger.Warn("instance size spec_overrides conflict",
+					zap.String("name", req.Name), zap.String("warning", w))
+			}
+		}
 		create = create.SetSpecOverrides(req.SpecOverrides)
 	}
 	if req.SortOrder != nil {
@@ -588,6 +642,14 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generate
 		}
 	}
 	if req.SpecOverrides != nil {
+		// ADR-0036: Validate spec_overrides paths use spec.* prefix.
+		if err := service.ValidateSpecOverrides(*req.SpecOverrides); err != nil {
+			c.JSON(http.StatusBadRequest, generated.Error{
+				Code:    "INVALID_SPEC_OVERRIDES",
+				Message: err.Error(),
+			})
+			return
+		}
 		update = update.SetSpecOverrides(*req.SpecOverrides)
 	}
 	if req.SortOrder != nil {
@@ -1964,4 +2026,35 @@ func authProviderToAPI(p *ent.AuthProvider) generated.AuthProvider {
 		CreatedAt: p.CreatedAt,
 		UpdatedAt: p.UpdatedAt,
 	}
+}
+
+// validateTemplateSource enforces the ADR-0036 rule that source_type must be
+// either "image" or "pvc" (when provided), and that the corresponding required
+// field (image_url or pvc_name) is present. The two modes are mutually exclusive.
+func validateTemplateSource(sourceType, imageURL, pvcName *string) error {
+	if sourceType == nil {
+		// No source configured yet — allowed (draft template).
+		return nil
+	}
+	switch *sourceType {
+	case "image":
+		if imageURL == nil || strings.TrimSpace(*imageURL) == "" {
+			return fmt.Errorf("image_url is required when source_type is 'image'")
+		}
+	case "pvc":
+		if pvcName == nil || strings.TrimSpace(*pvcName) == "" {
+			return fmt.Errorf("pvc_name is required when source_type is 'pvc'")
+		}
+	default:
+		return fmt.Errorf("source_type must be 'image' or 'pvc', got %q", *sourceType)
+	}
+
+	// Detect accidental dual-mode configuration.
+	hasImage := imageURL != nil && strings.TrimSpace(*imageURL) != ""
+	hasPVC := pvcName != nil && strings.TrimSpace(*pvcName) != ""
+	if hasImage && hasPVC {
+		return fmt.Errorf("image_url and pvc_name are mutually exclusive; set only one")
+	}
+
+	return nil
 }

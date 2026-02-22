@@ -32,7 +32,6 @@ type AtomicApprovalWriter interface {
 	ApproveCreateAndEnqueue(
 		ctx context.Context,
 		ticketID, eventID, approver, clusterID, storageClass, serviceID, namespace, requesterID string,
-		selectedTemplateVersion int,
 		templateSnapshot map[string]interface{},
 		instanceSizeSnapshot map[string]interface{},
 		modifiedSpec map[string]interface{},
@@ -165,7 +164,6 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 		payload.ServiceID,
 		payload.Namespace,
 		payload.RequesterID,
-		templateEntity.Version,
 		templateSnapshot,
 		instanceSizeSnapshot,
 		modifiedSpec,
@@ -781,12 +779,14 @@ func buildTemplateSnapshot(tpl *ent.Template) map[string]interface{} {
 		"name":         tpl.Name,
 		"display_name": tpl.DisplayName,
 		"description":  tpl.Description,
-		"version":      tpl.Version,
+		"source_type":  tpl.SourceType,
+		"image_url":    tpl.ImageURL,
+		"pvc_name":     tpl.PvcName,
+		"cloud_init":   tpl.CloudInit,
 		"os_family":    tpl.OsFamily,
 		"os_version":   tpl.OsVersion,
 		"enabled":      tpl.Enabled,
 		"created_by":   tpl.CreatedBy,
-		"spec":         cloneMap(tpl.Spec),
 	}
 }
 

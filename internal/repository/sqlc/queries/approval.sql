@@ -4,10 +4,6 @@ SET
     status = 'APPROVED',
     approver = sqlc.arg(approver),
     selected_cluster_id = sqlc.arg(selected_cluster_id),
-    selected_template_version = CASE
-        WHEN sqlc.narg(selected_template_version)::int IS NULL THEN selected_template_version
-        ELSE sqlc.narg(selected_template_version)::int
-    END,
     selected_storage_class = CASE
         WHEN sqlc.arg(selected_storage_class)::text = '' THEN selected_storage_class
         ELSE sqlc.arg(selected_storage_class)::text

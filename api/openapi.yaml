@@ -454,6 +454,27 @@ paths:
           $ref: '#/components/responses/BadRequest'
 
   /vms/batch:
+    get:
+      tags: [vms]
+      summary: List VM batch jobs
+      description: |
+        Returns a paginated list of batch job summaries for the current user.
+        Admins see all batches; regular users see only their own.
+      operationId: listVMBatches
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/SortBy'
+        - $ref: '#/components/parameters/SortOrder'
+      responses:
+        '200':
+          description: Batch job list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     post:
       tags: [vms]
       summary: Submit VM batch request
@@ -643,6 +664,38 @@ paths:
           description: Restart accepted
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /vms/{vm_id}/power:
+    post:
+      tags: [vms]
+      summary: Unified VM power action (start / stop / restart)
+      description: |
+        Convenience endpoint that consolidates start, stop, and restart into one
+        call.  Delegates internally to the same handlers as the individual
+        /start, /stop, /restart endpoints.
+        Accepted by the frontend VM-detail page for power-state management.
+      operationId: powerVM
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMPowerRequest'
+      responses:
+        '202':
+          description: Power action accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VM'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /vms/{vm_id}/console/request:
     post:
@@ -1303,6 +1356,22 @@ paths:
           $ref: '#/components/responses/NotFound'
 
   /admin/rate-limits/exemptions:
+    get:
+      tags: [admin]
+      summary: List rate-limit exemptions
+      operationId: listRateLimitExemptions
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Exemption list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitExemptionList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [admin]
       summary: Create or update a user rate-limit exemption
@@ -2479,6 +2548,10 @@ components:
         status:
           type: string
           enum: [PENDING]
+        operation_type:
+          type: string
+          enum: [CREATE, DELETE, VNC_ACCESS]
+          description: Type of operation this ticket represents (ADR-0015)
 
     ApprovalTicket:
       type: object
@@ -2626,7 +2699,7 @@ components:
     # ── Template ────────────────────────────────────
     Template:
       type: object
-      required: [id, name, version]
+      required: [id, name]
       properties:
         id:
           type: string
@@ -2636,14 +2709,28 @@ components:
           type: string
         description:
           type: string
-        version:
-          type: integer
+        source_type:
+          type: string
+          enum: [image, pvc]
+          description: Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+        image_url:
+          type: string
+          description: Container registry URL for ContainerDisk mode, e.g. quay.io/containerdisks/ubuntu:22.04
+        pvc_name:
+          type: string
+          description: PVC/DataVolume name for PVC mode
+        cloud_init:
+          type: string
+          description: Cloud-init userdata YAML (applied at VM boot)
         os_family:
           type: string
         os_version:
           type: string
         enabled:
           type: boolean
+        created_at:
+          type: string
+          format: date-time
 
     TemplateCreateRequest:
       type: object
@@ -2655,16 +2742,23 @@ components:
           type: string
         description:
           type: string
-        version:
-          type: integer
-          minimum: 1
+        source_type:
+          type: string
+          enum: [image, pvc]
+          description: Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+        image_url:
+          type: string
+          description: Required when source_type is 'image'
+        pvc_name:
+          type: string
+          description: Required when source_type is 'pvc'
+        cloud_init:
+          type: string
+          description: Cloud-init userdata YAML
         os_family:
           type: string
         os_version:
           type: string
-        spec:
-          type: object
-          additionalProperties: true
         enabled:
           type: boolean
 
@@ -2675,13 +2769,19 @@ components:
           type: string
         description:
           type: string
+        source_type:
+          type: string
+          enum: [image, pvc]
+        image_url:
+          type: string
+        pvc_name:
+          type: string
+        cloud_init:
+          type: string
         os_family:
           type: string
         os_version:
           type: string
-        spec:
-          type: object
-          additionalProperties: true
         enabled:
           type: boolean
 
@@ -2729,6 +2829,9 @@ components:
           additionalProperties: true
         enabled:
           type: boolean
+        created_at:
+          type: string
+          format: date-time
 
     InstanceSizeCreateRequest:
       type: object
@@ -2822,6 +2925,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/InstanceSize'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
 
     # ── Auth ────────────────────────────────────────
     LoginRequest:
@@ -2867,6 +2972,9 @@ components:
           type: array
           items:
             type: string
+        created_at:
+          type: string
+          format: date-time
 
     User:
       type: object
@@ -2964,6 +3072,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Role'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
 
     RoleCreateRequest:
       type: object
@@ -3012,6 +3122,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Permission'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
 
     GlobalRoleBinding:
       type: object
@@ -3047,6 +3159,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GlobalRoleBinding'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
 
     GlobalRoleBindingCreateRequest:
       type: object
@@ -3099,6 +3213,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AuthProvider'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
 
     AuthProviderCreateRequest:
       type: object
@@ -3154,6 +3270,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AuthProviderType'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
 
     AuthProviderConnectionTestResult:
       type: object
@@ -3220,6 +3338,9 @@ components:
         last_synced_at:
           type: string
           format: date-time
+        created_at:
+          type: string
+          format: date-time
 
     AuthProviderGroupSyncResponse:
       type: object
@@ -3268,6 +3389,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/IdPGroupMapping'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
 
     IdPGroupMappingCreateRequest:
       type: object
@@ -3417,6 +3540,8 @@ components:
         generated_at:
           type: string
           format: date-time
+        pagination:
+          $ref: '#/components/schemas/Pagination'
 
     SystemMember:
       type: object
@@ -3444,6 +3569,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SystemMember'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
 
     SystemMemberCreateRequest:
       type: object
@@ -3608,6 +3735,62 @@ components:
       properties:
         count:
           type: integer
+
+    # ── Batch List ───────────────────────────────────
+    VMBatchJobSummary:
+      type: object
+      required: [id, operation, status, child_count, success_count, failed_count, pending_count, created_at]
+      properties:
+        id:
+          type: string
+        operation:
+          type: string
+          description: Batch operation type (e.g. CREATE, POWER, DELETE)
+        status:
+          type: string
+          enum: [PENDING_APPROVAL, IN_PROGRESS, COMPLETED, PARTIAL_SUCCESS, FAILED, CANCELLED]
+        child_count:
+          type: integer
+        success_count:
+          type: integer
+        failed_count:
+          type: integer
+        pending_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    VMBatchList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VMBatchJobSummary'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── VM Power Request ──────────────────────────────
+    VMPowerRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [start, stop, restart]
+          description: Power action to execute on the VM
+
+    # ── Rate Limit Exemption List ─────────────────────
+    RateLimitExemptionList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RateLimitExemption'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
 
 security:
   - BearerAuth: []

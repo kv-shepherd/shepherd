@@ -100,7 +100,7 @@ func (s *Server) submitBatch(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_BATCH_OPERATION", Message: err.Error()})
 		return
 	}
-	if op == string(generated.VMBatchOperationDELETE) {
+	if op == string(generated.VMBatchOperation("DELETE")) {
 		if !requireGlobalPermission(c, "vm:delete") {
 			return
 		}
@@ -254,7 +254,7 @@ func (s *Server) submitBatch(c *gin.Context) {
 		SetEventID(parentEventID).
 		SetRequester(actor).
 		SetStatus(approvalticket.StatusPENDING)
-	if op == string(generated.VMBatchOperationDELETE) {
+	if op == string(generated.VMBatchOperation("DELETE")) {
 		parentBuilder = parentBuilder.SetOperationType(approvalticket.OperationTypeDELETE)
 	} else {
 		parentBuilder = parentBuilder.SetOperationType(approvalticket.OperationTypeCREATE)
@@ -908,7 +908,7 @@ func (s *Server) prepareBatchChildren(
 		}
 
 		switch op {
-		case string(generated.VMBatchOperationCREATE):
+		case string(generated.VMBatchOperation("CREATE")):
 			serviceID := strings.TrimSpace(item.ServiceId.String())
 			templateID := strings.TrimSpace(item.TemplateId.String())
 			instanceSizeID := strings.TrimSpace(item.InstanceSizeId.String())
@@ -955,7 +955,7 @@ func (s *Server) prepareBatchChildren(
 				reason:        itemReason,
 			})
 
-		case string(generated.VMBatchOperationDELETE):
+		case string(generated.VMBatchOperation("DELETE")):
 			vmID := strings.TrimSpace(item.VmId)
 			if vmID == "" {
 				return nil, &batchValidationError{
@@ -1018,9 +1018,9 @@ func (s *Server) prepareBatchChildren(
 
 func normalizeBatchOperation(op generated.VMBatchOperation) (string, domain.EventType, error) {
 	switch op {
-	case generated.VMBatchOperationCREATE:
+	case generated.VMBatchOperation("CREATE"):
 		return string(op), domain.EventBatchCreateRequested, nil
-	case generated.VMBatchOperationDELETE:
+	case generated.VMBatchOperation("DELETE"):
 		return string(op), domain.EventBatchDeleteRequested, nil
 	default:
 		return "", "", fmt.Errorf("unsupported operation %q", op)
@@ -1375,14 +1375,14 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 		return generated.VMBatchStatusResponse{}, nil, err
 	}
 
-	operation := generated.VMBatchOperationCREATE
+	operation := generated.VMBatchOperation("CREATE")
 	switch domain.EventType(parentEvent.EventType) {
 	case domain.EventBatchDeleteRequested:
-		operation = generated.VMBatchOperationDELETE
+		operation = generated.VMBatchOperation("DELETE")
 	case domain.EventBatchCreateRequested:
-		operation = generated.VMBatchOperationCREATE
+		operation = generated.VMBatchOperation("CREATE")
 	case domain.EventBatchPowerRequested:
-		operation = generated.VMBatchOperationPOWER
+		operation = generated.VMBatchOperation("POWER")
 	default:
 		return generated.VMBatchStatusResponse{}, nil, errBatchNotFound
 	}
@@ -1571,9 +1571,9 @@ func mapProjectionStatus(status generated.VMBatchParentStatus) batchapprovaltick
 
 func toBatchProjectionType(op string) batchapprovalticket.BatchType {
 	switch strings.TrimSpace(strings.ToUpper(op)) {
-	case string(generated.VMBatchOperationDELETE):
+	case string(generated.VMBatchOperation("DELETE")):
 		return batchapprovalticket.BatchTypeBATCH_DELETE
-	case string(generated.VMBatchOperationPOWER), "POWER_START", "POWER_STOP", "POWER_RESTART":
+	case string(generated.VMBatchOperation("POWER")), "POWER_START", "POWER_STOP", "POWER_RESTART":
 		return batchapprovalticket.BatchTypeBATCH_POWER
 	default:
 		return batchapprovalticket.BatchTypeBATCH_CREATE
@@ -1599,7 +1599,7 @@ func buildBatchPayloadItems(op string, items []generated.VMBatchChildItem) []dom
 			Namespace:      strings.TrimSpace(item.Namespace),
 			Reason:         strings.TrimSpace(item.Reason),
 		}
-		if op == string(generated.VMBatchOperationDELETE) {
+		if op == string(generated.VMBatchOperation("DELETE")) {
 			payloadItem.ServiceID = ""
 			payloadItem.TemplateID = ""
 			payloadItem.InstanceSizeID = ""
@@ -1634,4 +1634,80 @@ func generateIDV7() string {
 		return uuid.New().String()
 	}
 	return id.String()
+}
+
+// ListVMBatches handles GET /vms/batch.
+// Queries the BatchApprovalTicket projection table for efficient pagination.
+// Follows oapi-codegen ServerInterface contract (ADR-0021).
+func (s *Server) ListVMBatches(c *gin.Context, params generated.ListVMBatchesParams) {
+	ctx := c.Request.Context()
+	if !requireAnyGlobalPermission(c, "vm:read", "vm:create", "vm:delete", "vm:operate") {
+		return
+	}
+	actor := middleware.GetUserID(ctx)
+	if strings.TrimSpace(actor) == "" {
+		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+		return
+	}
+
+	page, perPage := defaultPagination(params.Page, params.PerPage)
+	offset := (page - 1) * perPage
+
+	// Build ordering: default newest-first per ADR-0015 list semantics.
+	desc := true
+	if params.SortOrder == generated.ListVMBatchesParamsSortOrderAsc {
+		desc = false
+	}
+
+	// Count total (without pagination).
+	query := s.client.BatchApprovalTicket.Query()
+	// Non-admin users see only their own batches.
+	if !hasPlatformAdmin(c) {
+		query = query.Where(batchapprovalticket.CreatedByEQ(actor))
+	}
+
+	total, err := query.Clone().Count(ctx)
+	if err != nil {
+		logger.Error("failed to count vm batches", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	// Apply ordering.
+	orderFn := ent.Desc(batchapprovalticket.FieldCreatedAt)
+	if !desc {
+		orderFn = ent.Asc(batchapprovalticket.FieldCreatedAt)
+	}
+
+	rows, err := query.Order(orderFn).Offset(offset).Limit(perPage).All(ctx)
+	if err != nil {
+		logger.Error("failed to list vm batches", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	items := make([]generated.VMBatchJobSummary, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, generated.VMBatchJobSummary{
+			Id:           row.ID,
+			Operation:    string(row.BatchType),
+			Status:       generated.VMBatchJobSummaryStatus(row.Status),
+			ChildCount:   row.ChildCount,
+			SuccessCount: row.SuccessCount,
+			FailedCount:  row.FailedCount,
+			PendingCount: row.PendingCount,
+			CreatedAt:    row.CreatedAt,
+		})
+	}
+
+	totalPages := (total + perPage - 1) / perPage
+	c.JSON(http.StatusOK, generated.VMBatchList{
+		Items: items,
+		Pagination: generated.Pagination{
+			Page:       page,
+			PerPage:    perPage,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	})
 }
