@@ -168,11 +168,15 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
         if (values.spec_text && !spec) {
             return;
         }
-        const { spec_text: _specText, ...payload } = values;
-        createMutation.mutate({
-            ...payload,
-            spec,
-        });
+        const { spec_text, ...payloadWithoutSpecText } = values;
+        void spec_text;
+        const payload: TemplateCreateRequest = { ...payloadWithoutSpecText };
+        if (payload.source_type === 'image') {
+            payload.pvc_name = undefined;
+        } else if (payload.source_type === 'pvc') {
+            payload.image_url = undefined;
+        }
+        createMutation.mutate(payload);
     };
 
     const submitEdit = async () => {
@@ -186,13 +190,17 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
         if (values.spec_text && !spec) {
             return;
         }
-        const { spec_text: _specText, ...payload } = values;
+        const { spec_text, ...payloadWithoutSpecText } = values;
+        void spec_text;
+        const payload: TemplateUpdateRequest = { ...payloadWithoutSpecText };
+        if (payload.source_type === 'image') {
+            payload.pvc_name = undefined;
+        } else if (payload.source_type === 'pvc') {
+            payload.image_url = undefined;
+        }
         updateMutation.mutate({
             id: editingTemplate.id,
-            body: {
-                ...payload,
-                spec,
-            },
+            body: payload,
         });
     };
 
