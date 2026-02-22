@@ -46,7 +46,6 @@ var (
 		{Name: "reason", Type: field.TypeString, Nullable: true},
 		{Name: "reject_reason", Type: field.TypeString, Nullable: true},
 		{Name: "selected_cluster_id", Type: field.TypeString, Nullable: true},
-		{Name: "selected_template_version", Type: field.TypeInt, Nullable: true},
 		{Name: "selected_storage_class", Type: field.TypeString, Nullable: true},
 		{Name: "template_snapshot", Type: field.TypeJSON, Nullable: true},
 		{Name: "instance_size_snapshot", Type: field.TypeJSON, Nullable: true},
@@ -77,7 +76,7 @@ var (
 			{
 				Name:    "approvalticket_parent_ticket_id",
 				Unique:  false,
-				Columns: []*schema.Column{ApprovalTicketsColumns[16]},
+				Columns: []*schema.Column{ApprovalTicketsColumns[15]},
 			},
 		},
 	}
@@ -744,8 +743,10 @@ var (
 		{Name: "name", Type: field.TypeString},
 		{Name: "display_name", Type: field.TypeString, Nullable: true},
 		{Name: "description", Type: field.TypeString, Nullable: true},
-		{Name: "version", Type: field.TypeInt, Default: 1},
-		{Name: "spec", Type: field.TypeJSON, Nullable: true},
+		{Name: "source_type", Type: field.TypeString, Nullable: true, Default: ""},
+		{Name: "image_url", Type: field.TypeString, Nullable: true},
+		{Name: "pvc_name", Type: field.TypeString, Nullable: true},
+		{Name: "cloud_init", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "os_family", Type: field.TypeString, Nullable: true},
 		{Name: "os_version", Type: field.TypeString, Nullable: true},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
@@ -758,14 +759,19 @@ var (
 		PrimaryKey: []*schema.Column{TemplatesColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "template_name_version",
+				Name:    "template_name",
 				Unique:  true,
-				Columns: []*schema.Column{TemplatesColumns[3], TemplatesColumns[6]},
+				Columns: []*schema.Column{TemplatesColumns[3]},
 			},
 			{
 				Name:    "template_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{TemplatesColumns[10]},
+				Columns: []*schema.Column{TemplatesColumns[12]},
+			},
+			{
+				Name:    "template_source_type",
+				Unique:  false,
+				Columns: []*schema.Column{TemplatesColumns[6]},
 			},
 		},
 	}

@@ -3,7 +3,6 @@
 package ent
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -28,10 +27,14 @@ type Template struct {
 	DisplayName string `json:"display_name,omitempty"`
 	// Description holds the value of the "description" field.
 	Description string `json:"description,omitempty"`
-	// Version holds the value of the "version" field.
-	Version int `json:"version,omitempty"`
-	// Spec holds the value of the "spec" field.
-	Spec map[string]interface{} `json:"spec,omitempty"`
+	// SourceType holds the value of the "source_type" field.
+	SourceType string `json:"source_type,omitempty"`
+	// ImageURL holds the value of the "image_url" field.
+	ImageURL string `json:"image_url,omitempty"`
+	// PvcName holds the value of the "pvc_name" field.
+	PvcName string `json:"pvc_name,omitempty"`
+	// CloudInit holds the value of the "cloud_init" field.
+	CloudInit string `json:"cloud_init,omitempty"`
 	// OsFamily holds the value of the "os_family" field.
 	OsFamily string `json:"os_family,omitempty"`
 	// OsVersion holds the value of the "os_version" field.
@@ -48,13 +51,9 @@ func (*Template) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case template.FieldSpec:
-			values[i] = new([]byte)
 		case template.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case template.FieldVersion:
-			values[i] = new(sql.NullInt64)
-		case template.FieldID, template.FieldName, template.FieldDisplayName, template.FieldDescription, template.FieldOsFamily, template.FieldOsVersion, template.FieldCreatedBy:
+		case template.FieldID, template.FieldName, template.FieldDisplayName, template.FieldDescription, template.FieldSourceType, template.FieldImageURL, template.FieldPvcName, template.FieldCloudInit, template.FieldOsFamily, template.FieldOsVersion, template.FieldCreatedBy:
 			values[i] = new(sql.NullString)
 		case template.FieldCreatedAt, template.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -109,19 +108,29 @@ func (_m *Template) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Description = value.String
 			}
-		case template.FieldVersion:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field version", values[i])
+		case template.FieldSourceType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_type", values[i])
 			} else if value.Valid {
-				_m.Version = int(value.Int64)
+				_m.SourceType = value.String
 			}
-		case template.FieldSpec:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field spec", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.Spec); err != nil {
-					return fmt.Errorf("unmarshal field spec: %w", err)
-				}
+		case template.FieldImageURL:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field image_url", values[i])
+			} else if value.Valid {
+				_m.ImageURL = value.String
+			}
+		case template.FieldPvcName:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field pvc_name", values[i])
+			} else if value.Valid {
+				_m.PvcName = value.String
+			}
+		case template.FieldCloudInit:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field cloud_init", values[i])
+			} else if value.Valid {
+				_m.CloudInit = value.String
 			}
 		case template.FieldOsFamily:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -198,11 +207,17 @@ func (_m *Template) String() string {
 	builder.WriteString("description=")
 	builder.WriteString(_m.Description)
 	builder.WriteString(", ")
-	builder.WriteString("version=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Version))
+	builder.WriteString("source_type=")
+	builder.WriteString(_m.SourceType)
 	builder.WriteString(", ")
-	builder.WriteString("spec=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Spec))
+	builder.WriteString("image_url=")
+	builder.WriteString(_m.ImageURL)
+	builder.WriteString(", ")
+	builder.WriteString("pvc_name=")
+	builder.WriteString(_m.PvcName)
+	builder.WriteString(", ")
+	builder.WriteString("cloud_init=")
+	builder.WriteString(_m.CloudInit)
 	builder.WriteString(", ")
 	builder.WriteString("os_family=")
 	builder.WriteString(_m.OsFamily)

@@ -831,30 +831,28 @@ func (m *ApprovalPolicyMutation) ResetEdge(name string) error {
 // ApprovalTicketMutation represents an operation that mutates the ApprovalTicket nodes in the graph.
 type ApprovalTicketMutation struct {
 	config
-	op                           Op
-	typ                          string
-	id                           *string
-	created_at                   *time.Time
-	updated_at                   *time.Time
-	event_id                     *string
-	operation_type               *approvalticket.OperationType
-	status                       *approvalticket.Status
-	requester                    *string
-	approver                     *string
-	reason                       *string
-	reject_reason                *string
-	selected_cluster_id          *string
-	selected_template_version    *int
-	addselected_template_version *int
-	selected_storage_class       *string
-	template_snapshot            *map[string]interface{}
-	instance_size_snapshot       *map[string]interface{}
-	modified_spec                *map[string]interface{}
-	parent_ticket_id             *string
-	clearedFields                map[string]struct{}
-	done                         bool
-	oldValue                     func(context.Context) (*ApprovalTicket, error)
-	predicates                   []predicate.ApprovalTicket
+	op                     Op
+	typ                    string
+	id                     *string
+	created_at             *time.Time
+	updated_at             *time.Time
+	event_id               *string
+	operation_type         *approvalticket.OperationType
+	status                 *approvalticket.Status
+	requester              *string
+	approver               *string
+	reason                 *string
+	reject_reason          *string
+	selected_cluster_id    *string
+	selected_storage_class *string
+	template_snapshot      *map[string]interface{}
+	instance_size_snapshot *map[string]interface{}
+	modified_spec          *map[string]interface{}
+	parent_ticket_id       *string
+	clearedFields          map[string]struct{}
+	done                   bool
+	oldValue               func(context.Context) (*ApprovalTicket, error)
+	predicates             []predicate.ApprovalTicket
 }
 
 var _ ent.Mutation = (*ApprovalTicketMutation)(nil)
@@ -1373,76 +1371,6 @@ func (m *ApprovalTicketMutation) ResetSelectedClusterID() {
 	delete(m.clearedFields, approvalticket.FieldSelectedClusterID)
 }
 
-// SetSelectedTemplateVersion sets the "selected_template_version" field.
-func (m *ApprovalTicketMutation) SetSelectedTemplateVersion(i int) {
-	m.selected_template_version = &i
-	m.addselected_template_version = nil
-}
-
-// SelectedTemplateVersion returns the value of the "selected_template_version" field in the mutation.
-func (m *ApprovalTicketMutation) SelectedTemplateVersion() (r int, exists bool) {
-	v := m.selected_template_version
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldSelectedTemplateVersion returns the old "selected_template_version" field's value of the ApprovalTicket entity.
-// If the ApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ApprovalTicketMutation) OldSelectedTemplateVersion(ctx context.Context) (v int, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldSelectedTemplateVersion is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldSelectedTemplateVersion requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldSelectedTemplateVersion: %w", err)
-	}
-	return oldValue.SelectedTemplateVersion, nil
-}
-
-// AddSelectedTemplateVersion adds i to the "selected_template_version" field.
-func (m *ApprovalTicketMutation) AddSelectedTemplateVersion(i int) {
-	if m.addselected_template_version != nil {
-		*m.addselected_template_version += i
-	} else {
-		m.addselected_template_version = &i
-	}
-}
-
-// AddedSelectedTemplateVersion returns the value that was added to the "selected_template_version" field in this mutation.
-func (m *ApprovalTicketMutation) AddedSelectedTemplateVersion() (r int, exists bool) {
-	v := m.addselected_template_version
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ClearSelectedTemplateVersion clears the value of the "selected_template_version" field.
-func (m *ApprovalTicketMutation) ClearSelectedTemplateVersion() {
-	m.selected_template_version = nil
-	m.addselected_template_version = nil
-	m.clearedFields[approvalticket.FieldSelectedTemplateVersion] = struct{}{}
-}
-
-// SelectedTemplateVersionCleared returns if the "selected_template_version" field was cleared in this mutation.
-func (m *ApprovalTicketMutation) SelectedTemplateVersionCleared() bool {
-	_, ok := m.clearedFields[approvalticket.FieldSelectedTemplateVersion]
-	return ok
-}
-
-// ResetSelectedTemplateVersion resets all changes to the "selected_template_version" field.
-func (m *ApprovalTicketMutation) ResetSelectedTemplateVersion() {
-	m.selected_template_version = nil
-	m.addselected_template_version = nil
-	delete(m.clearedFields, approvalticket.FieldSelectedTemplateVersion)
-}
-
 // SetSelectedStorageClass sets the "selected_storage_class" field.
 func (m *ApprovalTicketMutation) SetSelectedStorageClass(s string) {
 	m.selected_storage_class = &s
@@ -1722,7 +1650,7 @@ func (m *ApprovalTicketMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ApprovalTicketMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 15)
 	if m.created_at != nil {
 		fields = append(fields, approvalticket.FieldCreatedAt)
 	}
@@ -1752,9 +1680,6 @@ func (m *ApprovalTicketMutation) Fields() []string {
 	}
 	if m.selected_cluster_id != nil {
 		fields = append(fields, approvalticket.FieldSelectedClusterID)
-	}
-	if m.selected_template_version != nil {
-		fields = append(fields, approvalticket.FieldSelectedTemplateVersion)
 	}
 	if m.selected_storage_class != nil {
 		fields = append(fields, approvalticket.FieldSelectedStorageClass)
@@ -1799,8 +1724,6 @@ func (m *ApprovalTicketMutation) Field(name string) (ent.Value, bool) {
 		return m.RejectReason()
 	case approvalticket.FieldSelectedClusterID:
 		return m.SelectedClusterID()
-	case approvalticket.FieldSelectedTemplateVersion:
-		return m.SelectedTemplateVersion()
 	case approvalticket.FieldSelectedStorageClass:
 		return m.SelectedStorageClass()
 	case approvalticket.FieldTemplateSnapshot:
@@ -1840,8 +1763,6 @@ func (m *ApprovalTicketMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldRejectReason(ctx)
 	case approvalticket.FieldSelectedClusterID:
 		return m.OldSelectedClusterID(ctx)
-	case approvalticket.FieldSelectedTemplateVersion:
-		return m.OldSelectedTemplateVersion(ctx)
 	case approvalticket.FieldSelectedStorageClass:
 		return m.OldSelectedStorageClass(ctx)
 	case approvalticket.FieldTemplateSnapshot:
@@ -1931,13 +1852,6 @@ func (m *ApprovalTicketMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetSelectedClusterID(v)
 		return nil
-	case approvalticket.FieldSelectedTemplateVersion:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetSelectedTemplateVersion(v)
-		return nil
 	case approvalticket.FieldSelectedStorageClass:
 		v, ok := value.(string)
 		if !ok {
@@ -1980,21 +1894,13 @@ func (m *ApprovalTicketMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *ApprovalTicketMutation) AddedFields() []string {
-	var fields []string
-	if m.addselected_template_version != nil {
-		fields = append(fields, approvalticket.FieldSelectedTemplateVersion)
-	}
-	return fields
+	return nil
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *ApprovalTicketMutation) AddedField(name string) (ent.Value, bool) {
-	switch name {
-	case approvalticket.FieldSelectedTemplateVersion:
-		return m.AddedSelectedTemplateVersion()
-	}
 	return nil, false
 }
 
@@ -2003,13 +1909,6 @@ func (m *ApprovalTicketMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *ApprovalTicketMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case approvalticket.FieldSelectedTemplateVersion:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddSelectedTemplateVersion(v)
-		return nil
 	}
 	return fmt.Errorf("unknown ApprovalTicket numeric field %s", name)
 }
@@ -2029,9 +1928,6 @@ func (m *ApprovalTicketMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(approvalticket.FieldSelectedClusterID) {
 		fields = append(fields, approvalticket.FieldSelectedClusterID)
-	}
-	if m.FieldCleared(approvalticket.FieldSelectedTemplateVersion) {
-		fields = append(fields, approvalticket.FieldSelectedTemplateVersion)
 	}
 	if m.FieldCleared(approvalticket.FieldSelectedStorageClass) {
 		fields = append(fields, approvalticket.FieldSelectedStorageClass)
@@ -2073,9 +1969,6 @@ func (m *ApprovalTicketMutation) ClearField(name string) error {
 		return nil
 	case approvalticket.FieldSelectedClusterID:
 		m.ClearSelectedClusterID()
-		return nil
-	case approvalticket.FieldSelectedTemplateVersion:
-		m.ClearSelectedTemplateVersion()
 		return nil
 	case approvalticket.FieldSelectedStorageClass:
 		m.ClearSelectedStorageClass()
@@ -2129,9 +2022,6 @@ func (m *ApprovalTicketMutation) ResetField(name string) error {
 		return nil
 	case approvalticket.FieldSelectedClusterID:
 		m.ResetSelectedClusterID()
-		return nil
-	case approvalticket.FieldSelectedTemplateVersion:
-		m.ResetSelectedTemplateVersion()
 		return nil
 	case approvalticket.FieldSelectedStorageClass:
 		m.ResetSelectedStorageClass()
@@ -18770,9 +18660,10 @@ type TemplateMutation struct {
 	name          *string
 	display_name  *string
 	description   *string
-	version       *int
-	addversion    *int
-	spec          *map[string]interface{}
+	source_type   *string
+	image_url     *string
+	pvc_name      *string
+	cloud_init    *string
 	os_family     *string
 	os_version    *string
 	enabled       *bool
@@ -19093,109 +18984,200 @@ func (m *TemplateMutation) ResetDescription() {
 	delete(m.clearedFields, template.FieldDescription)
 }
 
-// SetVersion sets the "version" field.
-func (m *TemplateMutation) SetVersion(i int) {
-	m.version = &i
-	m.addversion = nil
+// SetSourceType sets the "source_type" field.
+func (m *TemplateMutation) SetSourceType(s string) {
+	m.source_type = &s
 }
 
-// Version returns the value of the "version" field in the mutation.
-func (m *TemplateMutation) Version() (r int, exists bool) {
-	v := m.version
+// SourceType returns the value of the "source_type" field in the mutation.
+func (m *TemplateMutation) SourceType() (r string, exists bool) {
+	v := m.source_type
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldVersion returns the old "version" field's value of the Template entity.
+// OldSourceType returns the old "source_type" field's value of the Template entity.
 // If the Template object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *TemplateMutation) OldVersion(ctx context.Context) (v int, err error) {
+func (m *TemplateMutation) OldSourceType(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldVersion is only allowed on UpdateOne operations")
+		return v, errors.New("OldSourceType is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldVersion requires an ID field in the mutation")
+		return v, errors.New("OldSourceType requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldVersion: %w", err)
+		return v, fmt.Errorf("querying old value for OldSourceType: %w", err)
 	}
-	return oldValue.Version, nil
+	return oldValue.SourceType, nil
 }
 
-// AddVersion adds i to the "version" field.
-func (m *TemplateMutation) AddVersion(i int) {
-	if m.addversion != nil {
-		*m.addversion += i
-	} else {
-		m.addversion = &i
-	}
+// ClearSourceType clears the value of the "source_type" field.
+func (m *TemplateMutation) ClearSourceType() {
+	m.source_type = nil
+	m.clearedFields[template.FieldSourceType] = struct{}{}
 }
 
-// AddedVersion returns the value that was added to the "version" field in this mutation.
-func (m *TemplateMutation) AddedVersion() (r int, exists bool) {
-	v := m.addversion
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ResetVersion resets all changes to the "version" field.
-func (m *TemplateMutation) ResetVersion() {
-	m.version = nil
-	m.addversion = nil
-}
-
-// SetSpec sets the "spec" field.
-func (m *TemplateMutation) SetSpec(value map[string]interface{}) {
-	m.spec = &value
-}
-
-// Spec returns the value of the "spec" field in the mutation.
-func (m *TemplateMutation) Spec() (r map[string]interface{}, exists bool) {
-	v := m.spec
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldSpec returns the old "spec" field's value of the Template entity.
-// If the Template object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *TemplateMutation) OldSpec(ctx context.Context) (v map[string]interface{}, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldSpec is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldSpec requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldSpec: %w", err)
-	}
-	return oldValue.Spec, nil
-}
-
-// ClearSpec clears the value of the "spec" field.
-func (m *TemplateMutation) ClearSpec() {
-	m.spec = nil
-	m.clearedFields[template.FieldSpec] = struct{}{}
-}
-
-// SpecCleared returns if the "spec" field was cleared in this mutation.
-func (m *TemplateMutation) SpecCleared() bool {
-	_, ok := m.clearedFields[template.FieldSpec]
+// SourceTypeCleared returns if the "source_type" field was cleared in this mutation.
+func (m *TemplateMutation) SourceTypeCleared() bool {
+	_, ok := m.clearedFields[template.FieldSourceType]
 	return ok
 }
 
-// ResetSpec resets all changes to the "spec" field.
-func (m *TemplateMutation) ResetSpec() {
-	m.spec = nil
-	delete(m.clearedFields, template.FieldSpec)
+// ResetSourceType resets all changes to the "source_type" field.
+func (m *TemplateMutation) ResetSourceType() {
+	m.source_type = nil
+	delete(m.clearedFields, template.FieldSourceType)
+}
+
+// SetImageURL sets the "image_url" field.
+func (m *TemplateMutation) SetImageURL(s string) {
+	m.image_url = &s
+}
+
+// ImageURL returns the value of the "image_url" field in the mutation.
+func (m *TemplateMutation) ImageURL() (r string, exists bool) {
+	v := m.image_url
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImageURL returns the old "image_url" field's value of the Template entity.
+// If the Template object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TemplateMutation) OldImageURL(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImageURL is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImageURL requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImageURL: %w", err)
+	}
+	return oldValue.ImageURL, nil
+}
+
+// ClearImageURL clears the value of the "image_url" field.
+func (m *TemplateMutation) ClearImageURL() {
+	m.image_url = nil
+	m.clearedFields[template.FieldImageURL] = struct{}{}
+}
+
+// ImageURLCleared returns if the "image_url" field was cleared in this mutation.
+func (m *TemplateMutation) ImageURLCleared() bool {
+	_, ok := m.clearedFields[template.FieldImageURL]
+	return ok
+}
+
+// ResetImageURL resets all changes to the "image_url" field.
+func (m *TemplateMutation) ResetImageURL() {
+	m.image_url = nil
+	delete(m.clearedFields, template.FieldImageURL)
+}
+
+// SetPvcName sets the "pvc_name" field.
+func (m *TemplateMutation) SetPvcName(s string) {
+	m.pvc_name = &s
+}
+
+// PvcName returns the value of the "pvc_name" field in the mutation.
+func (m *TemplateMutation) PvcName() (r string, exists bool) {
+	v := m.pvc_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPvcName returns the old "pvc_name" field's value of the Template entity.
+// If the Template object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TemplateMutation) OldPvcName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPvcName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPvcName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPvcName: %w", err)
+	}
+	return oldValue.PvcName, nil
+}
+
+// ClearPvcName clears the value of the "pvc_name" field.
+func (m *TemplateMutation) ClearPvcName() {
+	m.pvc_name = nil
+	m.clearedFields[template.FieldPvcName] = struct{}{}
+}
+
+// PvcNameCleared returns if the "pvc_name" field was cleared in this mutation.
+func (m *TemplateMutation) PvcNameCleared() bool {
+	_, ok := m.clearedFields[template.FieldPvcName]
+	return ok
+}
+
+// ResetPvcName resets all changes to the "pvc_name" field.
+func (m *TemplateMutation) ResetPvcName() {
+	m.pvc_name = nil
+	delete(m.clearedFields, template.FieldPvcName)
+}
+
+// SetCloudInit sets the "cloud_init" field.
+func (m *TemplateMutation) SetCloudInit(s string) {
+	m.cloud_init = &s
+}
+
+// CloudInit returns the value of the "cloud_init" field in the mutation.
+func (m *TemplateMutation) CloudInit() (r string, exists bool) {
+	v := m.cloud_init
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCloudInit returns the old "cloud_init" field's value of the Template entity.
+// If the Template object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TemplateMutation) OldCloudInit(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCloudInit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCloudInit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCloudInit: %w", err)
+	}
+	return oldValue.CloudInit, nil
+}
+
+// ClearCloudInit clears the value of the "cloud_init" field.
+func (m *TemplateMutation) ClearCloudInit() {
+	m.cloud_init = nil
+	m.clearedFields[template.FieldCloudInit] = struct{}{}
+}
+
+// CloudInitCleared returns if the "cloud_init" field was cleared in this mutation.
+func (m *TemplateMutation) CloudInitCleared() bool {
+	_, ok := m.clearedFields[template.FieldCloudInit]
+	return ok
+}
+
+// ResetCloudInit resets all changes to the "cloud_init" field.
+func (m *TemplateMutation) ResetCloudInit() {
+	m.cloud_init = nil
+	delete(m.clearedFields, template.FieldCloudInit)
 }
 
 // SetOsFamily sets the "os_family" field.
@@ -19402,7 +19384,7 @@ func (m *TemplateMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TemplateMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 13)
 	if m.created_at != nil {
 		fields = append(fields, template.FieldCreatedAt)
 	}
@@ -19418,11 +19400,17 @@ func (m *TemplateMutation) Fields() []string {
 	if m.description != nil {
 		fields = append(fields, template.FieldDescription)
 	}
-	if m.version != nil {
-		fields = append(fields, template.FieldVersion)
+	if m.source_type != nil {
+		fields = append(fields, template.FieldSourceType)
 	}
-	if m.spec != nil {
-		fields = append(fields, template.FieldSpec)
+	if m.image_url != nil {
+		fields = append(fields, template.FieldImageURL)
+	}
+	if m.pvc_name != nil {
+		fields = append(fields, template.FieldPvcName)
+	}
+	if m.cloud_init != nil {
+		fields = append(fields, template.FieldCloudInit)
 	}
 	if m.os_family != nil {
 		fields = append(fields, template.FieldOsFamily)
@@ -19454,10 +19442,14 @@ func (m *TemplateMutation) Field(name string) (ent.Value, bool) {
 		return m.DisplayName()
 	case template.FieldDescription:
 		return m.Description()
-	case template.FieldVersion:
-		return m.Version()
-	case template.FieldSpec:
-		return m.Spec()
+	case template.FieldSourceType:
+		return m.SourceType()
+	case template.FieldImageURL:
+		return m.ImageURL()
+	case template.FieldPvcName:
+		return m.PvcName()
+	case template.FieldCloudInit:
+		return m.CloudInit()
 	case template.FieldOsFamily:
 		return m.OsFamily()
 	case template.FieldOsVersion:
@@ -19485,10 +19477,14 @@ func (m *TemplateMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldDisplayName(ctx)
 	case template.FieldDescription:
 		return m.OldDescription(ctx)
-	case template.FieldVersion:
-		return m.OldVersion(ctx)
-	case template.FieldSpec:
-		return m.OldSpec(ctx)
+	case template.FieldSourceType:
+		return m.OldSourceType(ctx)
+	case template.FieldImageURL:
+		return m.OldImageURL(ctx)
+	case template.FieldPvcName:
+		return m.OldPvcName(ctx)
+	case template.FieldCloudInit:
+		return m.OldCloudInit(ctx)
 	case template.FieldOsFamily:
 		return m.OldOsFamily(ctx)
 	case template.FieldOsVersion:
@@ -19541,19 +19537,33 @@ func (m *TemplateMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetDescription(v)
 		return nil
-	case template.FieldVersion:
-		v, ok := value.(int)
+	case template.FieldSourceType:
+		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetVersion(v)
+		m.SetSourceType(v)
 		return nil
-	case template.FieldSpec:
-		v, ok := value.(map[string]interface{})
+	case template.FieldImageURL:
+		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetSpec(v)
+		m.SetImageURL(v)
+		return nil
+	case template.FieldPvcName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPvcName(v)
+		return nil
+	case template.FieldCloudInit:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCloudInit(v)
 		return nil
 	case template.FieldOsFamily:
 		v, ok := value.(string)
@@ -19590,21 +19600,13 @@ func (m *TemplateMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *TemplateMutation) AddedFields() []string {
-	var fields []string
-	if m.addversion != nil {
-		fields = append(fields, template.FieldVersion)
-	}
-	return fields
+	return nil
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *TemplateMutation) AddedField(name string) (ent.Value, bool) {
-	switch name {
-	case template.FieldVersion:
-		return m.AddedVersion()
-	}
 	return nil, false
 }
 
@@ -19613,13 +19615,6 @@ func (m *TemplateMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *TemplateMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case template.FieldVersion:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddVersion(v)
-		return nil
 	}
 	return fmt.Errorf("unknown Template numeric field %s", name)
 }
@@ -19634,8 +19629,17 @@ func (m *TemplateMutation) ClearedFields() []string {
 	if m.FieldCleared(template.FieldDescription) {
 		fields = append(fields, template.FieldDescription)
 	}
-	if m.FieldCleared(template.FieldSpec) {
-		fields = append(fields, template.FieldSpec)
+	if m.FieldCleared(template.FieldSourceType) {
+		fields = append(fields, template.FieldSourceType)
+	}
+	if m.FieldCleared(template.FieldImageURL) {
+		fields = append(fields, template.FieldImageURL)
+	}
+	if m.FieldCleared(template.FieldPvcName) {
+		fields = append(fields, template.FieldPvcName)
+	}
+	if m.FieldCleared(template.FieldCloudInit) {
+		fields = append(fields, template.FieldCloudInit)
 	}
 	if m.FieldCleared(template.FieldOsFamily) {
 		fields = append(fields, template.FieldOsFamily)
@@ -19663,8 +19667,17 @@ func (m *TemplateMutation) ClearField(name string) error {
 	case template.FieldDescription:
 		m.ClearDescription()
 		return nil
-	case template.FieldSpec:
-		m.ClearSpec()
+	case template.FieldSourceType:
+		m.ClearSourceType()
+		return nil
+	case template.FieldImageURL:
+		m.ClearImageURL()
+		return nil
+	case template.FieldPvcName:
+		m.ClearPvcName()
+		return nil
+	case template.FieldCloudInit:
+		m.ClearCloudInit()
 		return nil
 	case template.FieldOsFamily:
 		m.ClearOsFamily()
@@ -19695,11 +19708,17 @@ func (m *TemplateMutation) ResetField(name string) error {
 	case template.FieldDescription:
 		m.ResetDescription()
 		return nil
-	case template.FieldVersion:
-		m.ResetVersion()
+	case template.FieldSourceType:
+		m.ResetSourceType()
 		return nil
-	case template.FieldSpec:
-		m.ResetSpec()
+	case template.FieldImageURL:
+		m.ResetImageURL()
+		return nil
+	case template.FieldPvcName:
+		m.ResetPvcName()
+		return nil
+	case template.FieldCloudInit:
+		m.ResetCloudInit()
 		return nil
 	case template.FieldOsFamily:
 		m.ResetOsFamily()
