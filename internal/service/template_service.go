@@ -8,9 +8,9 @@ import (
 	"kv-shepherd.io/shepherd/ent/template"
 )
 
-// TemplateService handles template business logic (ADR-0007, ADR-0018).
-// Templates define OS image source and cloud-init only.
-// No Go Template variables (removed per ADR-0018).
+// TemplateService handles template business logic (ADR-0007, ADR-0018, ADR-0036).
+// Templates define OS image source (ContainerDisk or PVC) and cloud-init only.
+// Hardware configuration belongs exclusively to InstanceSize.
 type TemplateService struct {
 	client *ent.Client
 }
@@ -20,14 +20,13 @@ func NewTemplateService(client *ent.Client) *TemplateService {
 	return &TemplateService{client: client}
 }
 
-// GetActiveTemplate returns the latest active version of a template by name.
+// GetActiveTemplate returns the enabled template with the given name.
 func (s *TemplateService) GetActiveTemplate(ctx context.Context, name string) (*ent.Template, error) {
 	t, err := s.client.Template.Query().
 		Where(
 			template.NameEQ(name),
 			template.EnabledEQ(true),
 		).
-		Order(ent.Desc(template.FieldVersion)).
 		First(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get active template %s: %w", name, err)
@@ -35,11 +34,10 @@ func (s *TemplateService) GetActiveTemplate(ctx context.Context, name string) (*
 	return t, nil
 }
 
-// GetLatestTemplate returns the latest version of a template (active or not).
+// GetLatestTemplate returns the template with the given name regardless of enabled status.
 func (s *TemplateService) GetLatestTemplate(ctx context.Context, name string) (*ent.Template, error) {
 	t, err := s.client.Template.Query().
 		Where(template.NameEQ(name)).
-		Order(ent.Desc(template.FieldVersion)).
 		First(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get latest template %s: %w", name, err)
@@ -51,7 +49,7 @@ func (s *TemplateService) GetLatestTemplate(ctx context.Context, name string) (*
 func (s *TemplateService) ListTemplates(ctx context.Context) ([]*ent.Template, error) {
 	return s.client.Template.Query().
 		Where(template.EnabledEQ(true)).
-		Order(ent.Asc(template.FieldName), ent.Desc(template.FieldVersion)).
+		Order(ent.Asc(template.FieldName)).
 		All(ctx)
 }
 
@@ -64,17 +62,31 @@ func (s *TemplateService) GetByID(ctx context.Context, id string) (*ent.Template
 	return t, nil
 }
 
-// CreateTemplate creates a new template version.
-func (s *TemplateService) CreateTemplate(ctx context.Context, id, name, createdBy string, version int, spec map[string]interface{}) (*ent.Template, error) {
-	t, err := s.client.Template.Create().
+// CreateTemplate creates a new template. source_type must be "image" or "pvc".
+func (s *TemplateService) CreateTemplate(
+	ctx context.Context,
+	id, name, createdBy string,
+	sourceType, imageURL, pvcName, cloudInit string,
+) (*ent.Template, error) {
+	create := s.client.Template.Create().
 		SetID(id).
 		SetName(name).
-		SetVersion(version).
-		SetSpec(spec).
-		SetCreatedBy(createdBy).
-		Save(ctx)
+		SetCreatedBy(createdBy)
+	if sourceType != "" {
+		create = create.SetSourceType(sourceType)
+	}
+	if imageURL != "" {
+		create = create.SetImageURL(imageURL)
+	}
+	if pvcName != "" {
+		create = create.SetPvcName(pvcName)
+	}
+	if cloudInit != "" {
+		create = create.SetCloudInit(cloudInit)
+	}
+	t, err := create.Save(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("create template %s v%d: %w", name, version, err)
+		return nil, fmt.Errorf("create template %s: %w", name, err)
 	}
 	return t, nil
 }
