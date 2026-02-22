@@ -100,7 +100,6 @@ describe('useAdminTemplatesController', () => {
       name: 'ubuntu-base',
       display_name: 'Ubuntu Base',
       enabled: true,
-      spec: { domain: { cpu: { cores: 4 } } },
     });
   });
 

@@ -42,6 +42,13 @@ const (
 	ApprovalTicketStatusSUCCESS   ApprovalTicketStatus = "SUCCESS"
 )
 
+// Defines values for ApprovalTicketResponseOperationType.
+const (
+	ApprovalTicketResponseOperationTypeCREATE    ApprovalTicketResponseOperationType = "CREATE"
+	ApprovalTicketResponseOperationTypeDELETE    ApprovalTicketResponseOperationType = "DELETE"
+	ApprovalTicketResponseOperationTypeVNCACCESS ApprovalTicketResponseOperationType = "VNC_ACCESS"
+)
+
 // Defines values for ApprovalTicketResponseStatus.
 const (
 	ApprovalTicketResponseStatusPENDING ApprovalTicketResponseStatus = "PENDING"
@@ -169,6 +176,24 @@ const (
 	Viewer SystemMemberRoleUpdateRequestRole = "viewer"
 )
 
+// Defines values for TemplateSourceType.
+const (
+	TemplateSourceTypeImage TemplateSourceType = "image"
+	TemplateSourceTypePvc   TemplateSourceType = "pvc"
+)
+
+// Defines values for TemplateCreateRequestSourceType.
+const (
+	TemplateCreateRequestSourceTypeImage TemplateCreateRequestSourceType = "image"
+	TemplateCreateRequestSourceTypePvc   TemplateCreateRequestSourceType = "pvc"
+)
+
+// Defines values for TemplateUpdateRequestSourceType.
+const (
+	Image TemplateUpdateRequestSourceType = "image"
+	Pvc   TemplateUpdateRequestSourceType = "pvc"
+)
+
 // Defines values for VMStatus.
 const (
 	VMStatusCREATING  VMStatus = "CREATING"
@@ -194,11 +219,21 @@ const (
 	VMBatchChildStatusStatusSUCCESS   VMBatchChildStatusStatus = "SUCCESS"
 )
 
+// Defines values for VMBatchJobSummaryStatus.
+const (
+	VMBatchJobSummaryStatusCANCELLED       VMBatchJobSummaryStatus = "CANCELLED"
+	VMBatchJobSummaryStatusCOMPLETED       VMBatchJobSummaryStatus = "COMPLETED"
+	VMBatchJobSummaryStatusFAILED          VMBatchJobSummaryStatus = "FAILED"
+	VMBatchJobSummaryStatusINPROGRESS      VMBatchJobSummaryStatus = "IN_PROGRESS"
+	VMBatchJobSummaryStatusPARTIALSUCCESS  VMBatchJobSummaryStatus = "PARTIAL_SUCCESS"
+	VMBatchJobSummaryStatusPENDINGAPPROVAL VMBatchJobSummaryStatus = "PENDING_APPROVAL"
+)
+
 // Defines values for VMBatchOperation.
 const (
-	VMBatchOperationCREATE VMBatchOperation = "CREATE"
-	VMBatchOperationDELETE VMBatchOperation = "DELETE"
-	VMBatchOperationPOWER  VMBatchOperation = "POWER"
+	CREATE VMBatchOperation = "CREATE"
+	DELETE VMBatchOperation = "DELETE"
+	POWER  VMBatchOperation = "POWER"
 )
 
 // Defines values for VMBatchParentStatus.
@@ -233,6 +268,13 @@ const (
 	VMConsoleStatusREJECTED        VMConsoleStatus = "REJECTED"
 )
 
+// Defines values for VMPowerRequestAction.
+const (
+	Restart VMPowerRequestAction = "restart"
+	Start   VMPowerRequestAction = "start"
+	Stop    VMPowerRequestAction = "stop"
+)
+
 // Defines values for VMVNCSessionResponseStatus.
 const (
 	SESSIONREADY VMVNCSessionResponseStatus = "SESSION_READY"
@@ -252,13 +294,13 @@ const (
 
 // Defines values for ListApprovalsParamsStatus.
 const (
-	ListApprovalsParamsStatusAPPROVED  ListApprovalsParamsStatus = "APPROVED"
-	ListApprovalsParamsStatusCANCELLED ListApprovalsParamsStatus = "CANCELLED"
-	ListApprovalsParamsStatusEXECUTING ListApprovalsParamsStatus = "EXECUTING"
-	ListApprovalsParamsStatusFAILED    ListApprovalsParamsStatus = "FAILED"
-	ListApprovalsParamsStatusPENDING   ListApprovalsParamsStatus = "PENDING"
-	ListApprovalsParamsStatusREJECTED  ListApprovalsParamsStatus = "REJECTED"
-	ListApprovalsParamsStatusSUCCESS   ListApprovalsParamsStatus = "SUCCESS"
+	APPROVED  ListApprovalsParamsStatus = "APPROVED"
+	CANCELLED ListApprovalsParamsStatus = "CANCELLED"
+	EXECUTING ListApprovalsParamsStatus = "EXECUTING"
+	FAILED    ListApprovalsParamsStatus = "FAILED"
+	PENDING   ListApprovalsParamsStatus = "PENDING"
+	REJECTED  ListApprovalsParamsStatus = "REJECTED"
+	SUCCESS   ListApprovalsParamsStatus = "SUCCESS"
 )
 
 // Defines values for ListSystemsParamsSortOrder.
@@ -269,8 +311,14 @@ const (
 
 // Defines values for ListVMsParamsSortOrder.
 const (
-	Asc  ListVMsParamsSortOrder = "asc"
-	Desc ListVMsParamsSortOrder = "desc"
+	ListVMsParamsSortOrderAsc  ListVMsParamsSortOrder = "asc"
+	ListVMsParamsSortOrderDesc ListVMsParamsSortOrder = "desc"
+)
+
+// Defines values for ListVMBatchesParamsSortOrder.
+const (
+	ListVMBatchesParamsSortOrderAsc  ListVMBatchesParamsSortOrder = "asc"
+	ListVMBatchesParamsSortOrderDesc ListVMBatchesParamsSortOrder = "desc"
 )
 
 // ApprovalDecisionRequest defines model for ApprovalDecisionRequest.
@@ -317,9 +365,14 @@ type ApprovalTicketList struct {
 
 // ApprovalTicketResponse defines model for ApprovalTicketResponse.
 type ApprovalTicketResponse struct {
-	Status   ApprovalTicketResponseStatus `json:"status"`
-	TicketId string                       `json:"ticket_id"`
+	// OperationType Type of operation this ticket represents (ADR-0015)
+	OperationType ApprovalTicketResponseOperationType `json:"operation_type,omitempty,omitzero"`
+	Status        ApprovalTicketResponseStatus        `json:"status"`
+	TicketId      string                              `json:"ticket_id"`
 }
+
+// ApprovalTicketResponseOperationType Type of operation this ticket represents (ADR-0015)
+type ApprovalTicketResponseOperationType string
 
 // ApprovalTicketResponseStatus defines model for ApprovalTicketResponse.Status.
 type ApprovalTicketResponseStatus string
@@ -384,7 +437,8 @@ type AuthProviderGroupSyncResponse struct {
 
 // AuthProviderList defines model for AuthProviderList.
 type AuthProviderList struct {
-	Items []AuthProvider `json:"items,omitempty,omitzero"`
+	Items      []AuthProvider `json:"items,omitempty,omitzero"`
+	Pagination Pagination     `json:"pagination,omitempty,omitzero"`
 }
 
 // AuthProviderSampleField defines model for AuthProviderSampleField.
@@ -415,7 +469,8 @@ type AuthProviderType struct {
 
 // AuthProviderTypeList defines model for AuthProviderTypeList.
 type AuthProviderTypeList struct {
-	Items []AuthProviderType `json:"items"`
+	Items      []AuthProviderType `json:"items"`
+	Pagination Pagination         `json:"pagination,omitempty,omitzero"`
 }
 
 // AuthProviderUpdateRequest defines model for AuthProviderUpdateRequest.
@@ -541,7 +596,8 @@ type GlobalRoleBindingCreateRequestAllowedEnvironments string
 
 // GlobalRoleBindingList defines model for GlobalRoleBindingList.
 type GlobalRoleBindingList struct {
-	Items []GlobalRoleBinding `json:"items,omitempty,omitzero"`
+	Items      []GlobalRoleBinding `json:"items,omitempty,omitzero"`
+	Pagination Pagination          `json:"pagination,omitempty,omitzero"`
 }
 
 // Health defines model for Health.
@@ -587,7 +643,8 @@ type IdPGroupMappingCreateRequestAllowedEnvironments string
 
 // IdPGroupMappingList defines model for IdPGroupMappingList.
 type IdPGroupMappingList struct {
-	Items []IdPGroupMapping `json:"items,omitempty,omitzero"`
+	Items      []IdPGroupMapping `json:"items,omitempty,omitzero"`
+	Pagination Pagination        `json:"pagination,omitempty,omitzero"`
 }
 
 // IdPGroupMappingUpdateRequest defines model for IdPGroupMappingUpdateRequest.
@@ -603,6 +660,7 @@ type IdPGroupMappingUpdateRequestAllowedEnvironments string
 
 // IdPSyncedGroup defines model for IdPSyncedGroup.
 type IdPSyncedGroup struct {
+	CreatedAt       time.Time `json:"created_at,omitempty,omitzero"`
 	ExternalGroupId string    `json:"external_group_id"`
 	GroupName       string    `json:"group_name"`
 	Id              string    `json:"id"`
@@ -614,6 +672,7 @@ type IdPSyncedGroup struct {
 // InstanceSize defines model for InstanceSize.
 type InstanceSize struct {
 	CpuCores          int                    `json:"cpu_cores"`
+	CreatedAt         time.Time              `json:"created_at,omitempty,omitzero"`
 	DedicatedCpu      bool                   `json:"dedicated_cpu,omitempty,omitzero"`
 	Description       string                 `json:"description,omitempty,omitzero"`
 	DiskGb            int                    `json:"disk_gb,omitempty,omitzero"`
@@ -651,7 +710,8 @@ type InstanceSizeCreateRequest struct {
 
 // InstanceSizeList defines model for InstanceSizeList.
 type InstanceSizeList struct {
-	Items []InstanceSize `json:"items,omitempty,omitzero"`
+	Items      []InstanceSize `json:"items,omitempty,omitzero"`
+	Pagination Pagination     `json:"pagination,omitempty,omitzero"`
 }
 
 // InstanceSizeUpdateRequest defines model for InstanceSizeUpdateRequest.
@@ -766,7 +826,8 @@ type Permission struct {
 
 // PermissionList defines model for PermissionList.
 type PermissionList struct {
-	Items []Permission `json:"items,omitempty,omitzero"`
+	Items      []Permission `json:"items,omitempty,omitzero"`
+	Pagination Pagination   `json:"pagination,omitempty,omitzero"`
 }
 
 // RateLimitExemption defines model for RateLimitExemption.
@@ -786,10 +847,17 @@ type RateLimitExemptionCreateRequest struct {
 	UserId    string    `json:"user_id"`
 }
 
+// RateLimitExemptionList defines model for RateLimitExemptionList.
+type RateLimitExemptionList struct {
+	Items      []RateLimitExemption `json:"items,omitempty,omitzero"`
+	Pagination Pagination           `json:"pagination,omitempty,omitzero"`
+}
+
 // RateLimitStatusList defines model for RateLimitStatusList.
 type RateLimitStatusList struct {
 	GeneratedAt time.Time             `json:"generated_at"`
 	Items       []RateLimitUserStatus `json:"items"`
+	Pagination  Pagination            `json:"pagination,omitempty,omitzero"`
 }
 
 // RateLimitUserOverride defines model for RateLimitUserOverride.
@@ -853,7 +921,8 @@ type RoleCreateRequest struct {
 
 // RoleList defines model for RoleList.
 type RoleList struct {
-	Items []Role `json:"items,omitempty,omitzero"`
+	Items      []Role     `json:"items,omitempty,omitzero"`
+	Pagination Pagination `json:"pagination,omitempty,omitzero"`
 }
 
 // RoleUpdateRequest defines model for RoleUpdateRequest.
@@ -940,7 +1009,8 @@ type SystemMemberCreateRequestRole string
 
 // SystemMemberList defines model for SystemMemberList.
 type SystemMemberList struct {
-	Items []SystemMember `json:"items,omitempty,omitzero"`
+	Items      []SystemMember `json:"items,omitempty,omitzero"`
+	Pagination Pagination     `json:"pagination,omitempty,omitzero"`
 }
 
 // SystemMemberRoleUpdateRequest defines model for SystemMemberRoleUpdateRequest.
@@ -958,27 +1028,53 @@ type SystemUpdateRequest struct {
 
 // Template defines model for Template.
 type Template struct {
-	Description string `json:"description,omitempty,omitzero"`
-	DisplayName string `json:"display_name,omitempty,omitzero"`
-	Enabled     bool   `json:"enabled,omitempty,omitzero"`
-	Id          string `json:"id"`
-	Name        string `json:"name"`
-	OsFamily    string `json:"os_family,omitempty,omitzero"`
-	OsVersion   string `json:"os_version,omitempty,omitzero"`
-	Version     int    `json:"version"`
+	// CloudInit Cloud-init userdata YAML (applied at VM boot)
+	CloudInit   string    `json:"cloud_init,omitempty,omitzero"`
+	CreatedAt   time.Time `json:"created_at,omitempty,omitzero"`
+	Description string    `json:"description,omitempty,omitzero"`
+	DisplayName string    `json:"display_name,omitempty,omitzero"`
+	Enabled     bool      `json:"enabled,omitempty,omitzero"`
+	Id          string    `json:"id"`
+
+	// ImageUrl Container registry URL for ContainerDisk mode, e.g. quay.io/containerdisks/ubuntu:22.04
+	ImageUrl  string `json:"image_url,omitempty,omitzero"`
+	Name      string `json:"name"`
+	OsFamily  string `json:"os_family,omitempty,omitzero"`
+	OsVersion string `json:"os_version,omitempty,omitzero"`
+
+	// PvcName PVC/DataVolume name for PVC mode
+	PvcName string `json:"pvc_name,omitempty,omitzero"`
+
+	// SourceType Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+	SourceType TemplateSourceType `json:"source_type,omitempty,omitzero"`
 }
+
+// TemplateSourceType Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+type TemplateSourceType string
 
 // TemplateCreateRequest defines model for TemplateCreateRequest.
 type TemplateCreateRequest struct {
-	Description string                 `json:"description,omitempty,omitzero"`
-	DisplayName string                 `json:"display_name,omitempty,omitzero"`
-	Enabled     bool                   `json:"enabled,omitempty,omitzero"`
-	Name        string                 `json:"name"`
-	OsFamily    string                 `json:"os_family,omitempty,omitzero"`
-	OsVersion   string                 `json:"os_version,omitempty,omitzero"`
-	Spec        map[string]interface{} `json:"spec,omitempty,omitzero"`
-	Version     int                    `json:"version,omitempty,omitzero"`
+	// CloudInit Cloud-init userdata YAML
+	CloudInit   string `json:"cloud_init,omitempty,omitzero"`
+	Description string `json:"description,omitempty,omitzero"`
+	DisplayName string `json:"display_name,omitempty,omitzero"`
+	Enabled     bool   `json:"enabled,omitempty,omitzero"`
+
+	// ImageUrl Required when source_type is 'image'
+	ImageUrl  string `json:"image_url,omitempty,omitzero"`
+	Name      string `json:"name"`
+	OsFamily  string `json:"os_family,omitempty,omitzero"`
+	OsVersion string `json:"os_version,omitempty,omitzero"`
+
+	// PvcName Required when source_type is 'pvc'
+	PvcName string `json:"pvc_name,omitempty,omitzero"`
+
+	// SourceType Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+	SourceType TemplateCreateRequestSourceType `json:"source_type,omitempty,omitzero"`
 }
+
+// TemplateCreateRequestSourceType Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+type TemplateCreateRequestSourceType string
 
 // TemplateList defines model for TemplateList.
 type TemplateList struct {
@@ -988,13 +1084,19 @@ type TemplateList struct {
 
 // TemplateUpdateRequest defines model for TemplateUpdateRequest.
 type TemplateUpdateRequest struct {
-	Description string                 `json:"description,omitempty,omitzero"`
-	DisplayName string                 `json:"display_name,omitempty,omitzero"`
-	Enabled     bool                   `json:"enabled,omitempty,omitzero"`
-	OsFamily    string                 `json:"os_family,omitempty,omitzero"`
-	OsVersion   string                 `json:"os_version,omitempty,omitzero"`
-	Spec        map[string]interface{} `json:"spec,omitempty,omitzero"`
+	CloudInit   string                          `json:"cloud_init,omitempty,omitzero"`
+	Description string                          `json:"description,omitempty,omitzero"`
+	DisplayName string                          `json:"display_name,omitempty,omitzero"`
+	Enabled     bool                            `json:"enabled,omitempty,omitzero"`
+	ImageUrl    string                          `json:"image_url,omitempty,omitzero"`
+	OsFamily    string                          `json:"os_family,omitempty,omitzero"`
+	OsVersion   string                          `json:"os_version,omitempty,omitzero"`
+	PvcName     string                          `json:"pvc_name,omitempty,omitzero"`
+	SourceType  TemplateUpdateRequestSourceType `json:"source_type,omitempty,omitzero"`
 }
+
+// TemplateUpdateRequestSourceType defines model for TemplateUpdateRequest.SourceType.
+type TemplateUpdateRequestSourceType string
 
 // UnreadCount defines model for UnreadCount.
 type UnreadCount struct {
@@ -1024,12 +1126,13 @@ type UserCreateRequest struct {
 
 // UserInfo defines model for UserInfo.
 type UserInfo struct {
-	DisplayName string   `json:"display_name,omitempty,omitzero"`
-	Email       string   `json:"email,omitempty,omitzero"`
-	Id          string   `json:"id"`
-	Permissions []string `json:"permissions,omitempty,omitzero"`
-	Roles       []string `json:"roles,omitempty,omitzero"`
-	Username    string   `json:"username"`
+	CreatedAt   time.Time `json:"created_at,omitempty,omitzero"`
+	DisplayName string    `json:"display_name,omitempty,omitzero"`
+	Email       string    `json:"email,omitempty,omitzero"`
+	Id          string    `json:"id"`
+	Permissions []string  `json:"permissions,omitempty,omitzero"`
+	Roles       []string  `json:"roles,omitempty,omitzero"`
+	Username    string    `json:"username"`
 }
 
 // UserList defines model for UserList.
@@ -1107,6 +1210,29 @@ type VMBatchChildStatus struct {
 
 // VMBatchChildStatusStatus defines model for VMBatchChildStatus.Status.
 type VMBatchChildStatusStatus string
+
+// VMBatchJobSummary defines model for VMBatchJobSummary.
+type VMBatchJobSummary struct {
+	ChildCount  int       `json:"child_count"`
+	CreatedAt   time.Time `json:"created_at"`
+	FailedCount int       `json:"failed_count"`
+	Id          string    `json:"id"`
+
+	// Operation Batch operation type (e.g. CREATE, POWER, DELETE)
+	Operation    string                  `json:"operation"`
+	PendingCount int                     `json:"pending_count"`
+	Status       VMBatchJobSummaryStatus `json:"status"`
+	SuccessCount int                     `json:"success_count"`
+}
+
+// VMBatchJobSummaryStatus defines model for VMBatchJobSummary.Status.
+type VMBatchJobSummaryStatus string
+
+// VMBatchList defines model for VMBatchList.
+type VMBatchList struct {
+	Items      []VMBatchJobSummary `json:"items,omitempty,omitzero"`
+	Pagination Pagination          `json:"pagination,omitempty,omitzero"`
+}
 
 // VMBatchOperation defines model for VMBatchOperation.
 type VMBatchOperation string
@@ -1202,6 +1328,15 @@ type VMList struct {
 	Items      []VM       `json:"items,omitempty,omitzero"`
 	Pagination Pagination `json:"pagination,omitempty,omitzero"`
 }
+
+// VMPowerRequest defines model for VMPowerRequest.
+type VMPowerRequest struct {
+	// Action Power action to execute on the VM
+	Action VMPowerRequestAction `json:"action"`
+}
+
+// VMPowerRequestAction Power action to execute on the VM
+type VMPowerRequestAction string
 
 // VMRequestContext defines model for VMRequestContext.
 type VMRequestContext struct {
@@ -1326,6 +1461,15 @@ type DeleteNamespaceParams struct {
 	// ConfirmName Type namespace name to confirm deletion (ADR-0015 §13 addendum).
 	// Must match the namespace name exactly.
 	ConfirmName string `form:"confirm_name" json:"confirm_name"`
+}
+
+// ListRateLimitExemptionsParams defines parameters for ListRateLimitExemptions.
+type ListRateLimitExemptionsParams struct {
+	// Page Page number (1-indexed)
+	Page Page `form:"page,omitempty" json:"page,omitempty,omitzero"`
+
+	// PerPage Items per page
+	PerPage PerPage `form:"per_page,omitempty" json:"per_page,omitempty,omitzero"`
 }
 
 // ListAdminTemplatesParams defines parameters for ListAdminTemplates.
@@ -1453,6 +1597,24 @@ type ListVMsParams struct {
 // ListVMsParamsSortOrder defines parameters for ListVMs.
 type ListVMsParamsSortOrder string
 
+// ListVMBatchesParams defines parameters for ListVMBatches.
+type ListVMBatchesParams struct {
+	// Page Page number (1-indexed)
+	Page Page `form:"page,omitempty" json:"page,omitempty,omitzero"`
+
+	// PerPage Items per page
+	PerPage PerPage `form:"per_page,omitempty" json:"per_page,omitempty,omitzero"`
+
+	// SortBy Field to sort by
+	SortBy SortBy `form:"sort_by,omitempty" json:"sort_by,omitempty,omitzero"`
+
+	// SortOrder Sort direction
+	SortOrder ListVMBatchesParamsSortOrder `form:"sort_order,omitempty" json:"sort_order,omitempty,omitzero"`
+}
+
+// ListVMBatchesParamsSortOrder defines parameters for ListVMBatches.
+type ListVMBatchesParamsSortOrder string
+
 // DeleteVMParams defines parameters for DeleteVM.
 type DeleteVMParams struct {
 	// Confirm Simple deletion confirmation flag (ADR-0015 §13)
@@ -1565,6 +1727,9 @@ type SubmitVMBatchPowerJSONRequestBody = VMBatchPowerRequest
 // CreateVMRequestJSONRequestBody defines body for CreateVMRequest for application/json ContentType.
 type CreateVMRequestJSONRequestBody = VMCreateRequest
 
+// PowerVMJSONRequestBody defines body for PowerVM for application/json ContentType.
+type PowerVMJSONRequestBody = VMPowerRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// List registered authentication provider plugin types
@@ -1642,6 +1807,9 @@ type ServerInterface interface {
 	// List supported permission keys
 	// (GET /admin/permissions)
 	ListPermissions(c *gin.Context)
+	// List rate-limit exemptions
+	// (GET /admin/rate-limits/exemptions)
+	ListRateLimitExemptions(c *gin.Context, params ListRateLimitExemptionsParams)
 	// Create or update a user rate-limit exemption
 	// (POST /admin/rate-limits/exemptions)
 	CreateRateLimitExemption(c *gin.Context)
@@ -1795,6 +1963,9 @@ type ServerInterface interface {
 	// List VMs
 	// (GET /vms)
 	ListVMs(c *gin.Context, params ListVMsParams)
+	// List VM batch jobs
+	// (GET /vms/batch)
+	ListVMBatches(c *gin.Context, params ListVMBatchesParams)
 	// Submit VM batch request
 	// (POST /vms/batch)
 	SubmitVMBatch(c *gin.Context)
@@ -1828,6 +1999,9 @@ type ServerInterface interface {
 	// Get VM console access status
 	// (GET /vms/{vm_id}/console/status)
 	GetVMConsoleStatus(c *gin.Context, vmId VMID)
+	// Unified VM power action (start / stop / restart)
+	// (POST /vms/{vm_id}/power)
+	PowerVM(c *gin.Context, vmId VMID)
 	// Restart VM
 	// (POST /vms/{vm_id}/restart)
 	RestartVM(c *gin.Context, vmId VMID)
@@ -2475,6 +2649,42 @@ func (siw *ServerInterfaceWrapper) ListPermissions(c *gin.Context) {
 	}
 
 	siw.Handler.ListPermissions(c)
+}
+
+// ListRateLimitExemptions operation middleware
+func (siw *ServerInterfaceWrapper) ListRateLimitExemptions(c *gin.Context) {
+
+	var err error
+
+	c.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListRateLimitExemptionsParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", c.Request.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "per_page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "per_page", c.Request.URL.Query(), &params.PerPage)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter per_page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListRateLimitExemptions(c, params)
 }
 
 // CreateRateLimitExemption operation middleware
@@ -3899,6 +4109,58 @@ func (siw *ServerInterfaceWrapper) ListVMs(c *gin.Context) {
 	siw.Handler.ListVMs(c, params)
 }
 
+// ListVMBatches operation middleware
+func (siw *ServerInterfaceWrapper) ListVMBatches(c *gin.Context) {
+
+	var err error
+
+	c.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListVMBatchesParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", c.Request.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "per_page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "per_page", c.Request.URL.Query(), &params.PerPage)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter per_page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "sort_by" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort_by", c.Request.URL.Query(), &params.SortBy)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sort_by: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "sort_order" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort_order", c.Request.URL.Query(), &params.SortOrder)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sort_order: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListVMBatches(c, params)
+}
+
 // SubmitVMBatch operation middleware
 func (siw *ServerInterfaceWrapper) SubmitVMBatch(c *gin.Context) {
 
@@ -4160,6 +4422,32 @@ func (siw *ServerInterfaceWrapper) GetVMConsoleStatus(c *gin.Context) {
 	siw.Handler.GetVMConsoleStatus(c, vmId)
 }
 
+// PowerVM operation middleware
+func (siw *ServerInterfaceWrapper) PowerVM(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "vm_id" -------------
+	var vmId VMID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "vm_id", c.Param("vm_id"), &vmId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter vm_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PowerVM(c, vmId)
+}
+
 // RestartVM operation middleware
 func (siw *ServerInterfaceWrapper) RestartVM(c *gin.Context) {
 
@@ -4316,6 +4604,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/admin/namespaces/:namespace_id", wrapper.GetNamespace)
 	router.PUT(options.BaseURL+"/admin/namespaces/:namespace_id", wrapper.UpdateNamespace)
 	router.GET(options.BaseURL+"/admin/permissions", wrapper.ListPermissions)
+	router.GET(options.BaseURL+"/admin/rate-limits/exemptions", wrapper.ListRateLimitExemptions)
 	router.POST(options.BaseURL+"/admin/rate-limits/exemptions", wrapper.CreateRateLimitExemption)
 	router.DELETE(options.BaseURL+"/admin/rate-limits/exemptions/:user_id", wrapper.DeleteRateLimitExemption)
 	router.GET(options.BaseURL+"/admin/rate-limits/status", wrapper.ListRateLimitStatus)
@@ -4367,6 +4656,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PATCH(options.BaseURL+"/systems/:system_id/services/:service_id", wrapper.UpdateService)
 	router.GET(options.BaseURL+"/templates", wrapper.ListTemplates)
 	router.GET(options.BaseURL+"/vms", wrapper.ListVMs)
+	router.GET(options.BaseURL+"/vms/batch", wrapper.ListVMBatches)
 	router.POST(options.BaseURL+"/vms/batch", wrapper.SubmitVMBatch)
 	router.POST(options.BaseURL+"/vms/batch/power", wrapper.SubmitVMBatchPower)
 	router.GET(options.BaseURL+"/vms/batch/:batch_id", wrapper.GetVMBatch)
@@ -4378,6 +4668,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/vms/:vm_id", wrapper.GetVM)
 	router.POST(options.BaseURL+"/vms/:vm_id/console/request", wrapper.RequestVMConsoleAccess)
 	router.GET(options.BaseURL+"/vms/:vm_id/console/status", wrapper.GetVMConsoleStatus)
+	router.POST(options.BaseURL+"/vms/:vm_id/power", wrapper.PowerVM)
 	router.POST(options.BaseURL+"/vms/:vm_id/restart", wrapper.RestartVM)
 	router.POST(options.BaseURL+"/vms/:vm_id/start", wrapper.StartVM)
 	router.POST(options.BaseURL+"/vms/:vm_id/stop", wrapper.StopVM)
@@ -4387,160 +4678,171 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
+	"AgAA///ok9/2mzUBAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

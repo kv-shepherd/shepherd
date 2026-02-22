@@ -474,3 +474,57 @@ func effectiveExemptionExpiry(v *time.Time) time.Time {
 	}
 	return *v
 }
+
+// ListRateLimitExemptions handles GET /admin/rate-limits/exemptions.
+func (s *Server) ListRateLimitExemptions(c *gin.Context, params generated.ListRateLimitExemptionsParams) {
+	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "rate_limit:manage")
+	if !ok {
+		return
+	}
+
+	page, perPage := defaultPagination(params.Page, params.PerPage)
+	offset := (page - 1) * perPage
+
+	query := s.client.RateLimitExemption.Query()
+
+	total, err := query.Clone().Count(ctx)
+	if err != nil {
+		logger.Error("failed to count rate-limit exemptions", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	items, err := query.Offset(offset).Limit(perPage).All(ctx)
+	if err != nil {
+		logger.Error("failed to list rate-limit exemptions", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	resp := make([]generated.RateLimitExemption, 0, len(items))
+	for _, ex := range items {
+		expiresAt := time.Time{}
+		if ex.ExpiresAt != nil {
+			expiresAt = *ex.ExpiresAt
+		}
+		resp = append(resp, generated.RateLimitExemption{
+			UserId:     ex.ID,
+			ExemptedBy: ex.ExemptedBy,
+			Reason:     ex.Reason,
+			ExpiresAt:  expiresAt,
+			CreatedAt:  ex.CreatedAt,
+			UpdatedAt:  ex.UpdatedAt,
+		})
+	}
+
+	totalPages := (total + perPage - 1) / perPage
+	c.JSON(http.StatusOK, generated.RateLimitExemptionList{
+		Items: resp,
+		Pagination: generated.Pagination{
+			Page:       page,
+			PerPage:    perPage,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	})
+}

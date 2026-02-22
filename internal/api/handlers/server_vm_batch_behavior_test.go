@@ -26,7 +26,7 @@ func TestBatchHandler_SubmitVMBatch_Unauthorized(t *testing.T) {
 
 	srv, _ := newBatchBehaviorTestServer(t)
 	body := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperationDELETE,
+		Operation: generated.VMBatchOperation("DELETE"),
 		Items: []generated.VMBatchChildItem{
 			{VmId: "vm-1"},
 		},
@@ -47,7 +47,7 @@ func TestBatchHandler_SubmitApprovalBatch_AliasPath(t *testing.T) {
 	srv, client := newBatchBehaviorTestServer(t)
 	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
 	body := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperationDELETE,
+		Operation: generated.VMBatchOperation("DELETE"),
 		Items: []generated.VMBatchChildItem{
 			{VmId: vmID},
 		},
@@ -72,7 +72,7 @@ func TestBatchHandler_SubmitVMBatch_InvalidBatchSize(t *testing.T) {
 
 	srv, _ := newBatchBehaviorTestServer(t)
 	body := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperationDELETE,
+		Operation: generated.VMBatchOperation("DELETE"),
 		Items:     []generated.VMBatchChildItem{},
 	})
 
@@ -92,7 +92,7 @@ func TestBatchHandler_SubmitDelete_GetAndCancel(t *testing.T) {
 	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
 
 	submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperationDELETE,
+		Operation: generated.VMBatchOperation("DELETE"),
 		Reason:    "bulk cleanup",
 		Items: []generated.VMBatchChildItem{
 			{VmId: vmID, Reason: "delete one"},
@@ -184,7 +184,7 @@ func TestBatchHandler_GetVMBatch_HidesOtherUsersBatch(t *testing.T) {
 	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
 
 	submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperationDELETE,
+		Operation: generated.VMBatchOperation("DELETE"),
 		Items: []generated.VMBatchChildItem{
 			{VmId: vmID},
 		},
@@ -221,7 +221,7 @@ func TestBatchHandler_SubmitCreate_ForbiddenWhenNamespaceInvisible(t *testing.T)
 	serviceID, templateID, sizeID := mustCreateBatchCreatePrerequisites(t, client, "requester-1", "team-prod")
 
 	submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperationCREATE,
+		Operation: generated.VMBatchOperation("CREATE"),
 		Items: []generated.VMBatchChildItem{
 			{
 				ServiceId:      serviceID,
@@ -280,7 +280,7 @@ func TestBatchHandler_SubmitVMBatch_IdempotentByRequestID(t *testing.T) {
 	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
 
 	body := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperationDELETE,
+		Operation: generated.VMBatchOperation("DELETE"),
 		RequestId: "req-123",
 		Items: []generated.VMBatchChildItem{
 			{VmId: vmID},
@@ -342,7 +342,7 @@ func TestBatchHandler_SubmitVMBatch_RateLimitedByPendingParentCount(t *testing.T
 	}
 
 	body := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperationDELETE,
+		Operation: generated.VMBatchOperation("DELETE"),
 		Items: []generated.VMBatchChildItem{
 			{VmId: vmID},
 		},
@@ -377,7 +377,7 @@ func TestBatchHandler_SubmitVMBatch_RateLimitedByGlobalRecentSubmitCount(t *test
 	}
 
 	body := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperationDELETE,
+		Operation: generated.VMBatchOperation("DELETE"),
 		Items: []generated.VMBatchChildItem{
 			{VmId: vmID},
 		},
@@ -428,7 +428,7 @@ func TestBatchHandler_SubmitVMBatch_RateLimitedByPendingChildCount(t *testing.T)
 	}
 
 	body := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperationDELETE,
+		Operation: generated.VMBatchOperation("DELETE"),
 		Items: []generated.VMBatchChildItem{
 			{VmId: vmID},
 		},
@@ -461,7 +461,7 @@ func TestBatchHandler_SubmitVMBatch_RateLimitedByCooldown(t *testing.T) {
 	}
 
 	body := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperationDELETE,
+		Operation: generated.VMBatchOperation("DELETE"),
 		Items: []generated.VMBatchChildItem{
 			{VmId: vmID},
 		},
@@ -482,7 +482,7 @@ func TestBatchHandler_RetryVMBatch_RetriesFailedDeleteChild(t *testing.T) {
 	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
 
 	submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperationDELETE,
+		Operation: generated.VMBatchOperation("DELETE"),
 		Items: []generated.VMBatchChildItem{
 			{VmId: vmID},
 		},
@@ -791,7 +791,8 @@ func mustCreateBatchCreatePrerequisites(
 	_, err := client.Template.Create().
 		SetID(templateRawID).
 		SetName("tpl-" + templateRawID[len(templateRawID)-4:]).
-		SetVersion(1).
+		SetSourceType("image").
+		SetImageURL("quay.io/containerdisks/ubuntu:22.04").
 		SetCreatedBy(actor).
 		Save(t.Context())
 	if err != nil {
@@ -847,7 +848,6 @@ type fakeDeleteAtomicWriter struct {
 func (f *fakeDeleteAtomicWriter) ApproveCreateAndEnqueue(
 	_ context.Context,
 	_, _, _, _, _, _, _, _ string,
-	_ int,
 	_ map[string]interface{},
 	_ map[string]interface{},
 	_ map[string]interface{},

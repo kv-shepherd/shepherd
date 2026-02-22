@@ -100,3 +100,23 @@ func TestMarshalJSONOrNull(t *testing.T) {
 		t.Fatalf("marshalJSONOrNull(non-empty) unexpected: (%s, %v)", string(b), err)
 	}
 }
+
+func TestMarshalJSONOrNull_NestedSnapshot(t *testing.T) {
+	t.Parallel()
+
+	payload := map[string]interface{}{
+		"source_type": "image",
+		"image_url":   "quay.io/containerdisks/ubuntu:22.04",
+		"spec_overrides": map[string]interface{}{
+			"spec.template.spec.domain.cpu.cores": float64(4),
+		},
+	}
+
+	b, err := marshalJSONOrNull(payload)
+	if err != nil {
+		t.Fatalf("marshalJSONOrNull(nested) unexpected error: %v", err)
+	}
+	if len(b) == 0 {
+		t.Fatal("marshalJSONOrNull(nested) should return non-empty json bytes")
+	}
+}
