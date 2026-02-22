@@ -3,6 +3,7 @@ package jobs
 import (
 	"testing"
 
+	"kv-shepherd.io/shepherd/ent"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
 )
@@ -75,6 +76,118 @@ func TestExtractTemplateImage(t *testing.T) {
 			}
 			if image != tc.expectImage {
 				t.Fatalf("image mismatch: got %q want %q", image, tc.expectImage)
+			}
+		})
+	}
+}
+
+func TestExtractTemplateImageFromEnt(t *testing.T) {
+	tests := []struct {
+		name      string
+		tpl       *ent.Template
+		wantImage string
+		wantErr   bool
+	}{
+		{
+			name: "image url preferred",
+			tpl: &ent.Template{
+				ID:       "tpl-1",
+				ImageURL: "quay.io/containerdisks/ubuntu:22.04",
+			},
+			wantImage: "quay.io/containerdisks/ubuntu:22.04",
+		},
+		{
+			name: "pvc fallback",
+			tpl: &ent.Template{
+				ID:      "tpl-2",
+				PvcName: "golden-pvc",
+			},
+			wantImage: "pvc:golden-pvc",
+		},
+		{
+			name: "missing source rejected",
+			tpl: &ent.Template{
+				ID: "tpl-3",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := extractTemplateImageFromEnt(tc.tpl)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.wantImage {
+				t.Fatalf("image mismatch: got %q want %q", got, tc.wantImage)
+			}
+		})
+	}
+}
+
+func TestExtractTemplateImageFromSnapshot(t *testing.T) {
+	tests := []struct {
+		name      string
+		snapshot  map[string]interface{}
+		wantImage string
+		wantErr   bool
+	}{
+		{
+			name: "adr0036 image source",
+			snapshot: map[string]interface{}{
+				"source_type": "image",
+				"image_url":   "quay.io/containerdisks/fedora:40",
+			},
+			wantImage: "quay.io/containerdisks/fedora:40",
+		},
+		{
+			name: "adr0036 pvc source",
+			snapshot: map[string]interface{}{
+				"source_type": "pvc",
+				"pvc_name":    "fedora-golden",
+			},
+			wantImage: "pvc:fedora-golden",
+		},
+		{
+			name: "legacy spec fallback",
+			snapshot: map[string]interface{}{
+				"image_source": map[string]interface{}{
+					"type":  "containerdisk",
+					"image": "docker.io/kubevirt/centos:7",
+				},
+			},
+			wantImage: "docker.io/kubevirt/centos:7",
+		},
+		{
+			name: "invalid snapshot rejected",
+			snapshot: map[string]interface{}{
+				"source_type": "image",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := extractTemplateImageFromSnapshot(tc.snapshot)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.wantImage {
+				t.Fatalf("image mismatch: got %q want %q", got, tc.wantImage)
 			}
 		})
 	}

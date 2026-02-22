@@ -53,39 +53,36 @@ func TestQueries_ApproveCreateTicket(t *testing.T) {
 	modifiedSpec := []byte(`{"cpu":4}`)
 
 	rows, err := q.ApproveCreateTicket(ctx, ApproveCreateTicketParams{
-		Approver:                pgtype.Text{String: "admin-1", Valid: true},
-		SelectedClusterID:       pgtype.Text{String: "cluster-a", Valid: true},
-		SelectedTemplateVersion: pgtype.Int4{Int32: 3, Valid: true},
-		SelectedStorageClass:    "fast",
-		TemplateSnapshot:        templateSnapshot,
-		InstanceSizeSnapshot:    instanceSizeSnapshot,
-		ModifiedSpec:            modifiedSpec,
-		ID:                      ticketID,
-		EventID:                 eventID,
+		Approver:             pgtype.Text{String: "admin-1", Valid: true},
+		SelectedClusterID:    pgtype.Text{String: "cluster-a", Valid: true},
+		SelectedStorageClass: "fast",
+		TemplateSnapshot:     templateSnapshot,
+		InstanceSizeSnapshot: instanceSizeSnapshot,
+		ModifiedSpec:         modifiedSpec,
+		ID:                   ticketID,
+		EventID:              eventID,
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, rows)
 
 	var (
-		status          string
-		approver        pgtype.Text
-		clusterID       pgtype.Text
-		templateVersion pgtype.Int4
-		storageClass    pgtype.Text
-		gotTemplate     []byte
-		gotSize         []byte
-		gotModified     []byte
+		status       string
+		approver     pgtype.Text
+		clusterID    pgtype.Text
+		storageClass pgtype.Text
+		gotTemplate  []byte
+		gotSize      []byte
+		gotModified  []byte
 	)
 	require.NoError(t, pool.QueryRow(
 		ctx,
-		`SELECT status, approver, selected_cluster_id, selected_template_version, selected_storage_class, template_snapshot, instance_size_snapshot, modified_spec
+		`SELECT status, approver, selected_cluster_id, selected_storage_class, template_snapshot, instance_size_snapshot, modified_spec
          FROM approval_tickets WHERE id=$1`,
 		ticketID,
 	).Scan(
 		&status,
 		&approver,
 		&clusterID,
-		&templateVersion,
 		&storageClass,
 		&gotTemplate,
 		&gotSize,
@@ -97,8 +94,6 @@ func TestQueries_ApproveCreateTicket(t *testing.T) {
 	require.Equal(t, "admin-1", approver.String)
 	require.True(t, clusterID.Valid)
 	require.Equal(t, "cluster-a", clusterID.String)
-	require.True(t, templateVersion.Valid)
-	require.EqualValues(t, 3, templateVersion.Int32)
 	require.True(t, storageClass.Valid)
 	require.Equal(t, "fast", storageClass.String)
 	assertJSONEqual(t, templateSnapshot, gotTemplate)
@@ -322,11 +317,11 @@ func seedApprovalTicket(t *testing.T, ctx context.Context, pool *pgxpool.Pool, t
 		ctx,
 		`INSERT INTO approval_tickets (
              id, created_at, updated_at, event_id, operation_type, status, requester,
-             approver, reason, reject_reason, selected_cluster_id, selected_template_version,
+             approver, reason, reject_reason, selected_cluster_id,
              selected_storage_class, template_snapshot, instance_size_snapshot, modified_spec, parent_ticket_id
          ) VALUES (
              $1, NOW(), NOW(), $2, $3, $4, 'requester-1',
-             NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+             NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
          )`,
 		ticketID,
 		eventID,

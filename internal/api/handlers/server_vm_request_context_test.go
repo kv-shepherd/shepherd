@@ -51,7 +51,8 @@ func TestVMHandler_GetVMRequestContext_CatalogAndVisibility(t *testing.T) {
 		SetName("ubuntu-22-04").
 		SetCreatedBy("seed").
 		SetEnabled(true).
-		SetSpec(map[string]interface{}{"image": "quay.io/kubevirt/fedora-cloud-container-disk-demo"}).
+		SetSourceType("image").
+		SetImageURL("quay.io/kubevirt/fedora-cloud-container-disk-demo").
 		Save(t.Context())
 	if err != nil {
 		t.Fatalf("seed enabled template: %v", err)

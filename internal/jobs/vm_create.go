@@ -210,11 +210,14 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		}
 		return fmt.Errorf("query template %s: %w", effectiveTemplateID, err)
 	}
-	templateSpec := tpl.Spec
+	// ADR-0036: Template.spec replaced by semantic fields (source_type, image_url, pvc_name).
+	// Use snapshot override if available (populated at approval time), otherwise live values.
+	var image string
 	if len(ticket.TemplateSnapshot) > 0 {
-		templateSpec = ticket.TemplateSnapshot
+		image, err = extractTemplateImageFromSnapshot(ticket.TemplateSnapshot)
+	} else {
+		image, err = extractTemplateImageFromEnt(tpl)
 	}
-	image, err := extractTemplateImage(templateSpec)
 	if err != nil {
 		return markFailed(fmt.Errorf("resolve image from template %s: %w", effectiveTemplateID, err), true)
 	}
@@ -569,6 +572,39 @@ func extractTemplateImage(templateSpec map[string]interface{}) (string, error) {
 	}
 
 	return "", fmt.Errorf("no supported image source found in template spec")
+}
+
+// extractTemplateImageFromEnt resolves the boot image from an Ent Template object.
+// ADR-0036: Template no longer stores spec JSONB; image_url and pvc_name are explicit fields.
+func extractTemplateImageFromEnt(tpl *ent.Template) (string, error) {
+	if tpl.ImageURL != "" {
+		return tpl.ImageURL, nil
+	}
+	if tpl.PvcName != "" {
+		return "pvc:" + tpl.PvcName, nil
+	}
+	return "", fmt.Errorf("template %s has no image_url or pvc_name configured", tpl.ID)
+}
+
+// extractTemplateImageFromSnapshot resolves the boot image from a template snapshot map
+// stored at approval time. Snapshot keys use the ADR-0036 semantic format:
+// source_type, image_url, pvc_name. Falls back to legacy spec-map lookup.
+func extractTemplateImageFromSnapshot(snapshot map[string]interface{}) (string, error) {
+	// ADR-0036 format (new snapshots)
+	sourceType := lookupStringValue(snapshot, "source_type")
+	switch sourceType {
+	case "image":
+		if url := lookupStringValue(snapshot, "image_url"); url != "" {
+			return url, nil
+		}
+	case "pvc":
+		if pvc := lookupStringValue(snapshot, "pvc_name"); pvc != "" {
+			return "pvc:" + pvc, nil
+		}
+	}
+
+	// Legacy format fallback (old snapshots stored via spec JSONB before ADR-0036)
+	return extractTemplateImage(snapshot)
 }
 
 func extractImageFromVolumes(raw interface{}) string {

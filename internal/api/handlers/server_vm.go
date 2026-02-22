@@ -507,3 +507,65 @@ func vmToAPI(vm *ent.VM) generated.VM {
 		CreatedAt: vm.CreatedAt,
 	}
 }
+
+// PowerVM handles POST /vms/{vm_id}/power.
+// Unified power-action endpoint — routes to start/stop/restart via the `action` field.
+// Follows oapi-codegen ServerInterface contract (ADR-0021).
+func (s *Server) PowerVM(c *gin.Context, vmId generated.VMID) {
+	if !requireGlobalPermission(c, "vm:operate") {
+		return
+	}
+
+	var req generated.VMPowerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "valid action field required"})
+		return
+	}
+
+	vm, err := s.client.VM.Get(c.Request.Context(), vmId)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to get VM for power action", zap.Error(err), zap.String("vm_id", vmId))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	// Route by action, applying the same state-machine guards as the dedicated endpoints.
+	switch req.Action {
+	case generated.Start:
+		if vm.Status != entvm.StatusSTOPPED && vm.Status != entvm.StatusPAUSED {
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "INVALID_STATE_TRANSITION",
+				Message: fmt.Sprintf("cannot start VM in %s state, must be STOPPED or PAUSED", vm.Status),
+			})
+			return
+		}
+		s.enqueueVMPowerOp(c, vm, "start", domain.EventVMStartRequested)
+	case generated.Stop:
+		if vm.Status != entvm.StatusRUNNING {
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "INVALID_STATE_TRANSITION",
+				Message: fmt.Sprintf("cannot stop VM in %s state, must be RUNNING", vm.Status),
+			})
+			return
+		}
+		s.enqueueVMPowerOp(c, vm, "stop", domain.EventVMStopRequested)
+	case generated.Restart:
+		if vm.Status != entvm.StatusRUNNING {
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "INVALID_STATE_TRANSITION",
+				Message: fmt.Sprintf("cannot restart VM in %s state, must be RUNNING", vm.Status),
+			})
+			return
+		}
+		s.enqueueVMPowerOp(c, vm, "restart", domain.EventVMRestartRequested)
+	default:
+		c.JSON(http.StatusBadRequest, generated.Error{
+			Code:    "INVALID_POWER_ACTION",
+			Message: fmt.Sprintf("unknown power action %q, must be start, stop, or restart", req.Action),
+		})
+	}
+}

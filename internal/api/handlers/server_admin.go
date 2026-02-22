@@ -350,9 +350,12 @@ func templateToAPI(t *ent.Template) generated.Template {
 		Name:        t.Name,
 		DisplayName: t.DisplayName,
 		Description: t.Description,
+		SourceType:  generated.TemplateSourceType(t.SourceType),
+		ImageUrl:    t.ImageURL,
+		PvcName:     t.PvcName,
+		CloudInit:   t.CloudInit,
 		OsFamily:    t.OsFamily,
 		OsVersion:   t.OsVersion,
-		Version:     t.Version,
 		Enabled:     t.Enabled,
 	}
 }

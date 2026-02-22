@@ -45,7 +45,6 @@ func NewApprovalAtomicWriter(pool *pgxpool.Pool, riverClient *river.Client[pgx.T
 func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	ctx context.Context,
 	ticketID, eventID, approver, clusterID, storageClass, serviceID, namespace, requesterID string,
-	selectedTemplateVersion int,
 	templateSnapshot map[string]interface{},
 	instanceSizeSnapshot map[string]interface{},
 	modifiedSpec map[string]interface{},
@@ -76,21 +75,15 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	if err != nil {
 		return "", "", fmt.Errorf("marshal modified spec: %w", err)
 	}
-	templateVersion := pgtype.Int4{}
-	if selectedTemplateVersion > 0 {
-		templateVersion = pgtype.Int4{Int32: int32(selectedTemplateVersion), Valid: true}
-	}
-
 	affected, err := qtx.ApproveCreateTicket(ctx, sqlcrepo.ApproveCreateTicketParams{
-		Approver:                pgtype.Text{String: approver, Valid: true},
-		SelectedClusterID:       pgtype.Text{String: clusterID, Valid: true},
-		SelectedTemplateVersion: templateVersion,
-		SelectedStorageClass:    strings.TrimSpace(storageClass),
-		TemplateSnapshot:        templateSnapshotBytes,
-		InstanceSizeSnapshot:    instanceSizeSnapshotBytes,
-		ModifiedSpec:            modifiedSpecBytes,
-		ID:                      ticketID,
-		EventID:                 eventID,
+		Approver:             pgtype.Text{String: approver, Valid: true},
+		SelectedClusterID:    pgtype.Text{String: clusterID, Valid: true},
+		SelectedStorageClass: strings.TrimSpace(storageClass),
+		TemplateSnapshot:     templateSnapshotBytes,
+		InstanceSizeSnapshot: instanceSizeSnapshotBytes,
+		ModifiedSpec:         modifiedSpecBytes,
+		ID:                   ticketID,
+		EventID:              eventID,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("approve create ticket %s: %w", ticketID, err)
