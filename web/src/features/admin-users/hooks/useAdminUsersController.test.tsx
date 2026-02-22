@@ -12,6 +12,7 @@ const {
   addFormState,
   createUserFormState,
   editUserFormState,
+  roleBindingCreateFormState,
 } = vi.hoisted(() => ({
   useApiGetMock: vi.fn(),
   useApiMutationMock: vi.fn(),
@@ -30,6 +31,11 @@ const {
     setFieldsValue: vi.fn(),
   },
   editUserFormState: {
+    validateFields: vi.fn(),
+    resetFields: vi.fn(),
+    setFieldsValue: vi.fn(),
+  },
+  roleBindingCreateFormState: {
     validateFields: vi.fn(),
     resetFields: vi.fn(),
     setFieldsValue: vi.fn(),
@@ -68,10 +74,12 @@ describe('useAdminUsersController', () => {
 
     let formCall = 0;
     useFormMock.mockImplementation(() => {
+      const slot = formCall % 4;
       formCall += 1;
-      if (formCall === 1) return [addFormState];
-      if (formCall === 2) return [createUserFormState];
-      return [editUserFormState];
+      if (slot === 0) return [addFormState];
+      if (slot === 1) return [createUserFormState];
+      if (slot === 2) return [editUserFormState];
+      return [roleBindingCreateFormState];
     });
 
     createUserFormState.validateFields.mockResolvedValue({
@@ -142,10 +150,11 @@ describe('useAdminUsersController', () => {
       { mutate: vi.fn(), isPending: false },
       { mutate: vi.fn(), isPending: false },
       { mutate: vi.fn(), isPending: false },
+      { mutate: vi.fn(), isPending: false },
     ];
     let mutationCall = 0;
     useApiMutationMock.mockImplementation(() => {
-      const result = mutationResults[mutationCall % mutationResults.length];
+      const result = mutationResults[mutationCall % 7];
       mutationCall += 1;
       return result;
     });
@@ -154,10 +163,11 @@ describe('useAdminUsersController', () => {
       { mutate: deleteUserMutate, isPending: false },
       { mutate: vi.fn(), isPending: false },
       { mutate: vi.fn(), isPending: false },
+      { mutate: vi.fn(), isPending: false },
     ];
     let actionCall = 0;
     useApiActionMock.mockImplementation(() => {
-      const result = actionResults[actionCall % actionResults.length];
+      const result = actionResults[actionCall % 4];
       actionCall += 1;
       return result;
     });

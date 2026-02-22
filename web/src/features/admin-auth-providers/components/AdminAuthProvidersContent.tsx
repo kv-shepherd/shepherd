@@ -123,7 +123,7 @@ export function AdminAuthProvidersContent() {
                         <Button
                             type="text"
                             size="small"
-                            data-testid={`auth-provider-action-mapping-${record.id}`}
+                            data-testid={`auth-provider-action-mappings-${record.id}`}
                             icon={<SafetyOutlined />}
                             onClick={() => providers.openMappingModal(record)}
                         />
@@ -190,6 +190,7 @@ export function AdminAuthProvidersContent() {
                     <Button
                         type="text"
                         size="small"
+                        data-testid={`group-mapping-action-edit-${record.id}`}
                         icon={<EditOutlined />}
                         onClick={() => providers.openEditMappingModal(record)}
                     />
@@ -197,7 +198,13 @@ export function AdminAuthProvidersContent() {
                         title={t('authProviders.mapping.delete_confirm')}
                         onConfirm={() => providers.deleteMapping(record)}
                     >
-                        <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                        <Button
+                            type="text"
+                            size="small"
+                            danger
+                            data-testid={`group-mapping-action-delete-${record.id}`}
+                            icon={<DeleteOutlined />}
+                        />
                     </Popconfirm>
                 </Space>
             ),
@@ -319,128 +326,89 @@ export function AdminAuthProvidersContent() {
                 width={980}
                 destroyOnHidden={true}
             >
-                <Space direction="vertical" size={20} style={{ width: '100%' }}>
-                    <Card size="small" title={t('authProviders.sample.title')} extra={
-                        <Button
-                            icon={<SyncOutlined />}
-                            onClick={() => providers.testConnection(providers.mappingProvider as AuthProvider)}
-                            loading={providers.testConnectionPending}
-                            disabled={!providers.mappingProvider}
-                        >
-                            {t('authProviders.test_connection')}
-                        </Button>
-                    }>
-                        <Table
-                            rowKey="field"
-                            size="small"
-                            pagination={false}
-                            loading={providers.sampleLoading}
-                            dataSource={providers.sampleFields}
-                            columns={[
-                                { title: t('authProviders.sample.field'), dataIndex: 'field', key: 'field' },
-                                { title: t('authProviders.sample.value_type'), dataIndex: 'value_type', key: 'value_type', width: 120 },
-                                { title: t('authProviders.sample.unique_count'), dataIndex: 'unique_count', key: 'unique_count', width: 120 },
-                                {
-                                    title: t('authProviders.sample.sample'),
-                                    key: 'sample',
-                                    render: (_, record) => (record.sample ?? []).join(', '),
-                                },
-                            ]}
-                        />
-                    </Card>
-
-                    <Card size="small" title={t('authProviders.sync.title')}>
-                        <Form form={providers.syncForm} layout="vertical">
-                            <Form.Item
-                                name="source_field"
-                                label={t('authProviders.sync.source_field')}
-                                rules={[{ required: true }]}
-                            >
-                                <Input />
-                            </Form.Item>
-                            <Form.Item
-                                name="groups_text"
-                                label={t('authProviders.sync.groups')}
-                                rules={[{ required: true }]}
-                            >
-                                <Input.TextArea rows={4} />
-                            </Form.Item>
+                <div data-testid="auth-provider-mappings-page">
+                    <Space direction="vertical" size={20} style={{ width: '100%' }}>
+                        <Card size="small" title={t('authProviders.sample.title')} extra={
                             <Button
-                                type="primary"
+                                data-testid={providers.mappingProvider ? `auth-provider-action-sample-${providers.mappingProvider.id}` : undefined}
                                 icon={<SyncOutlined />}
-                                loading={providers.syncGroupsPending}
-                                onClick={() => {
-                                    void providers.submitSyncGroups();
-                                }}
+                                onClick={() => providers.testConnection(providers.mappingProvider as AuthProvider)}
+                                loading={providers.testConnectionPending}
+                                disabled={!providers.mappingProvider}
                             >
-                                {t('authProviders.sync.submit')}
+                                {t('authProviders.test_connection')}
                             </Button>
-                        </Form>
-                    </Card>
+                        }>
+                            <Table
+                                rowKey="field"
+                                size="small"
+                                pagination={false}
+                                loading={providers.sampleLoading}
+                                dataSource={providers.sampleFields}
+                                columns={[
+                                    { title: t('authProviders.sample.field'), dataIndex: 'field', key: 'field' },
+                                    { title: t('authProviders.sample.value_type'), dataIndex: 'value_type', key: 'value_type', width: 120 },
+                                    { title: t('authProviders.sample.unique_count'), dataIndex: 'unique_count', key: 'unique_count', width: 120 },
+                                    {
+                                        title: t('authProviders.sample.sample'),
+                                        key: 'sample',
+                                        render: (_, record) => (record.sample ?? []).join(', '),
+                                    },
+                                ]}
+                            />
+                        </Card>
 
-                    <Card size="small" title={t('authProviders.mapping.title')}>
-                        <Form form={providers.mappingForm} layout="vertical">
-                            <Space style={{ width: '100%' }} align="start" wrap>
+                        <Card size="small" title={t('authProviders.sync.title')}>
+                            <Form form={providers.syncForm} layout="vertical">
                                 <Form.Item
-                                    name="external_group_id"
-                                    label={t('authProviders.mapping.group')}
+                                    name="source_field"
+                                    label={t('authProviders.sync.source_field')}
                                     rules={[{ required: true }]}
-                                    style={{ minWidth: 240 }}
                                 >
                                     <Input />
                                 </Form.Item>
                                 <Form.Item
-                                    name="group_name"
-                                    label={t('authProviders.mapping.group_name')}
-                                    style={{ minWidth: 240 }}
-                                >
-                                    <Input />
-                                </Form.Item>
-                                <Form.Item
-                                    name="role_id"
-                                    label={t('authProviders.mapping.role')}
+                                    name="groups_text"
+                                    label={t('authProviders.sync.groups')}
                                     rules={[{ required: true }]}
-                                    style={{ minWidth: 220 }}
                                 >
-                                    <Select options={providers.roleOptions} />
+                                    <Input.TextArea rows={4} />
                                 </Form.Item>
-                                <Form.Item name="scope_type" label={t('authProviders.mapping.scope_type')} style={{ minWidth: 150 }}>
-                                    <Select options={scopeOptions} />
-                                </Form.Item>
-                                <Form.Item name="scope_id" label={t('authProviders.mapping.scope_id')} style={{ minWidth: 180 }}>
-                                    <Input />
-                                </Form.Item>
-                                <Form.Item
-                                    name="allowed_environments"
-                                    label={t('authProviders.mapping.envs')}
-                                    style={{ minWidth: 220 }}
+                                <Button
+                                    type="primary"
+                                    icon={<SyncOutlined />}
+                                    loading={providers.syncGroupsPending}
+                                    data-testid={providers.mappingProvider ? `auth-provider-action-sync-${providers.mappingProvider.id}` : undefined}
+                                    onClick={() => {
+                                        void providers.submitSyncGroups();
+                                    }}
                                 >
-                                    <Select mode="multiple" options={environmentOptions} />
-                                </Form.Item>
-                            </Space>
+                                    {t('authProviders.sync.submit')}
+                                </Button>
+                            </Form>
+                        </Card>
+
+                        <Card size="small" title={t('authProviders.mapping.title')} extra={
                             <Button
                                 type="primary"
                                 icon={<PlusOutlined />}
-                                loading={providers.createMappingPending}
-                                onClick={() => {
-                                    void providers.submitCreateMapping();
-                                }}
+                                data-testid="group-mapping-create-button"
+                                onClick={providers.openCreateMappingModal}
                             >
                                 {t('authProviders.mapping.add')}
                             </Button>
-                        </Form>
-
-                        <Table<IdPGroupMapping>
-                            style={{ marginTop: 16 }}
-                            rowKey="id"
-                            size="small"
-                            columns={mappingColumns}
-                            dataSource={providers.mappings}
-                            loading={providers.mappingsLoading}
-                            pagination={false}
-                        />
-                    </Card>
-                </Space>
+                        }>
+                            <Table<IdPGroupMapping>
+                                rowKey="id"
+                                size="small"
+                                columns={mappingColumns}
+                                dataSource={providers.mappings}
+                                loading={providers.mappingsLoading}
+                                pagination={false}
+                            />
+                        </Card>
+                    </Space>
+                </div>
             </Modal>
 
             <Modal
@@ -453,20 +421,67 @@ export function AdminAuthProvidersContent() {
                 confirmLoading={providers.updateMappingPending}
                 destroyOnHidden={true}
             >
-                <Form form={providers.mappingEditForm} layout="vertical">
-                    <Form.Item name="role_id" label={t('authProviders.mapping.role')} rules={[{ required: true }]}>
-                        <Select options={providers.roleOptions} />
-                    </Form.Item>
-                    <Form.Item name="scope_type" label={t('authProviders.mapping.scope_type')}>
-                        <Select options={scopeOptions} />
-                    </Form.Item>
-                    <Form.Item name="scope_id" label={t('authProviders.mapping.scope_id')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="allowed_environments" label={t('authProviders.mapping.envs')}>
-                        <Select mode="multiple" options={environmentOptions} />
-                    </Form.Item>
-                </Form>
+                <div data-testid="group-mapping-edit-modal">
+                    <Form form={providers.mappingEditForm} layout="vertical">
+                        <Form.Item name="role_id" label={t('authProviders.mapping.role')} rules={[{ required: true }]}>
+                            <Select options={providers.roleOptions} />
+                        </Form.Item>
+                        <Form.Item name="scope_type" label={t('authProviders.mapping.scope_type')}>
+                            <Select options={scopeOptions} />
+                        </Form.Item>
+                        <Form.Item name="scope_id" label={t('authProviders.mapping.scope_id')}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="allowed_environments" label={t('authProviders.mapping.envs')}>
+                            <Select mode="multiple" options={environmentOptions} />
+                        </Form.Item>
+                    </Form>
+                </div>
+            </Modal>
+
+            {/* ── Group Mapping Create Modal ──────────────────────────────── */}
+            <Modal
+                title={t('authProviders.mapping.add')}
+                open={providers.createMappingModalOpen}
+                onOk={() => { void providers.submitCreateMapping(); }}
+                onCancel={providers.closeCreateMappingModal}
+                confirmLoading={providers.createMappingPending}
+                destroyOnHidden={true}
+                width={720}
+            >
+                <div data-testid="group-mapping-create-modal">
+                    <Form form={providers.mappingForm} layout="vertical" preserve={false}>
+                        <Form.Item
+                            name="external_group_id"
+                            label={t('authProviders.mapping.group')}
+                            rules={[{ required: true }]}
+                        >
+                            <Input />
+                        </Form.Item>
+                        <Form.Item
+                            name="group_name"
+                            label={t('authProviders.mapping.group_name')}
+                        >
+                            <Input />
+                        </Form.Item>
+                        <Form.Item
+                            name="role_id"
+                            label={t('authProviders.mapping.role')}
+                            rules={[{ required: true }]}
+                        >
+                            <Select options={providers.roleOptions} />
+                        </Form.Item>
+                        <Form.Item name="scope_type" label={t('authProviders.mapping.scope_type')}>
+                            <Select options={scopeOptions} />
+                        </Form.Item>
+                        <Form.Item name="scope_id" label={t('authProviders.mapping.scope_id')}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="allowed_environments" label={t('authProviders.mapping.envs')}>
+                            <Select mode="multiple" options={environmentOptions} />
+                        </Form.Item>
+                    </Form>
+                </div>
             </Modal>
         </div>
     );

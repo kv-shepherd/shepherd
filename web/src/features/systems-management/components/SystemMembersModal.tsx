@@ -46,7 +46,7 @@ export function SystemMembersModal({
     const columns: ColumnsType<SystemMember> = [
         {
             title: t('table.user'),
-            dataIndex: 'user_id', // In a real app, we might want to resolve this to a name
+            dataIndex: 'user_id',
             key: 'user_id',
             render: (userId: string) => (
                 <Space>
@@ -61,11 +61,10 @@ export function SystemMembersModal({
             key: 'role',
             render: (role: string, record) => (
                 <Select
+                    data-testid={`member-action-edit-${record.user_id}`}
                     defaultValue={role}
                     style={{ width: 120 }}
                     onChange={(newRole) => {
-                        // Optimistic update or waiting for backend?
-                        // Controller handles mutation
                         void members.updateRole(
                             record.user_id,
                             newRole as SystemMemberRoleUpdateRequest['role']
@@ -92,6 +91,7 @@ export function SystemMembersModal({
                         type="text"
                         danger
                         icon={<DeleteOutlined />}
+                        data-testid={`member-action-remove-${record.user_id}`}
                         loading={members.removeMemberPending}
                     />
                 </Popconfirm>
@@ -109,7 +109,12 @@ export function SystemMembersModal({
             forceRender
         >
             <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-                <Button type="primary" icon={<PlusOutlined />} onClick={members.openAddMemberModal}>
+                <Button
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    data-testid="member-add-button"
+                    onClick={members.openAddMemberModal}
+                >
                     {t('button.add_member')}
                 </Button>
             </div>
@@ -133,23 +138,25 @@ export function SystemMembersModal({
                 confirmLoading={members.addMemberPending}
                 forceRender
             >
-                <Form form={members.addMemberForm} layout="vertical" name="add-system-member">
-                    <Form.Item
-                        name="user_id"
-                        label={t('table.user_id')}
-                        rules={[{ required: true, message: t('validation.required') }]}
-                    >
-                        <Input placeholder="e.g. user-123" />
-                    </Form.Item>
-                    <Form.Item
-                        name="role"
-                        label={t('table.role')}
-                        rules={[{ required: true, message: t('validation.required') }]}
-                        initialValue="member"
-                    >
-                        <Select options={roleOptions} />
-                    </Form.Item>
-                </Form>
+                <div data-testid="member-add-modal">
+                    <Form form={members.addMemberForm} layout="vertical" name="add-system-member">
+                        <Form.Item
+                            name="user_id"
+                            label={t('table.user_id')}
+                            rules={[{ required: true, message: t('validation.required') }]}
+                        >
+                            <Input placeholder="e.g. user-123" />
+                        </Form.Item>
+                        <Form.Item
+                            name="role"
+                            label={t('table.role')}
+                            rules={[{ required: true, message: t('validation.required') }]}
+                            initialValue="member"
+                        >
+                            <Select options={roleOptions} />
+                        </Form.Item>
+                    </Form>
+                </div>
             </Modal>
         </Modal>
     );

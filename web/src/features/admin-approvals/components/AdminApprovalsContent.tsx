@@ -255,76 +255,77 @@ export function AdminApprovalsContent() {
                 onCancel={approvals.closeApproveModal}
                 confirmLoading={approvals.approvePending}
                 forceRender
-                data-testid="approve-modal"
             >
-                <Form form={approvals.approveForm} layout="vertical" name="approve-form">
-                    {approvals.approveModal?.operation_type !== 'DELETE' && (
-                        <>
-                            <Form.Item
-                                name="selected_cluster_id"
-                                label={t('approve_modal.cluster')}
-                                extra={t('approve_modal.cluster_hint')}
-                            >
-                                <Select
-                                    placeholder={t('approve_modal.cluster')}
-                                    options={approvals.clustersData?.items
-                                        ?.filter((cluster: Cluster) => cluster.status === 'HEALTHY' && cluster.enabled !== false)
-                                        .map((cluster: Cluster) => ({
-                                            label: (
-                                                <Space>
-                                                    <Text strong>{cluster.display_name || cluster.name}</Text>
-                                                    {cluster.kubevirt_version && <Tag color="blue">KV {cluster.kubevirt_version}</Tag>}
-                                                </Space>
-                                            ),
-                                            value: cluster.id,
-                                        }))}
-                                />
-                            </Form.Item>
-                            <Form.Item name="selected_storage_class" label={t('approve_modal.storage_class')}>
-                                <Input placeholder="e.g. rook-ceph-block" />
-                            </Form.Item>
-                        </>
-                    )}
-                    {approvals.approveModal?.operation_type === 'DELETE' && (
-                        <div style={{ marginBottom: 16 }}>
-                            <Descriptions
-                                bordered
-                                size="small"
-                                column={1}
-                                style={{ marginBottom: 12 }}
-                            >
-                                <Descriptions.Item label={t('approve_modal.delete_target_vm')}>
-                                    <Text strong style={{ color: '#cf1322' }}>
-                                        {approvals.approveModal.target_vm_name || '—'}
-                                    </Text>
-                                </Descriptions.Item>
-                                <Descriptions.Item label={t('requester')}>
-                                    {approvals.approveModal.requester}
-                                </Descriptions.Item>
-                                {approvals.approveModal.reason && (
-                                    <Descriptions.Item label={t('reason')}>
-                                        {approvals.approveModal.reason}
+                <div data-testid="approve-modal">
+                    <Form form={approvals.approveForm} layout="vertical" name="approve-form">
+                        {approvals.approveModal?.operation_type !== 'DELETE' && (
+                            <>
+                                <Form.Item
+                                    name="selected_cluster_id"
+                                    label={t('approve_modal.cluster')}
+                                    extra={t('approve_modal.cluster_hint')}
+                                >
+                                    <Select
+                                        placeholder={t('approve_modal.cluster')}
+                                        options={approvals.clustersData?.items
+                                            ?.filter((cluster: Cluster) => cluster.status === 'HEALTHY' && cluster.enabled !== false)
+                                            .map((cluster: Cluster) => ({
+                                                label: (
+                                                    <Space>
+                                                        <Text strong>{cluster.display_name || cluster.name}</Text>
+                                                        {cluster.kubevirt_version && <Tag color="blue">KV {cluster.kubevirt_version}</Tag>}
+                                                    </Space>
+                                                ),
+                                                value: cluster.id,
+                                            }))}
+                                    />
+                                </Form.Item>
+                                <Form.Item name="selected_storage_class" label={t('approve_modal.storage_class')}>
+                                    <Input placeholder="e.g. rook-ceph-block" />
+                                </Form.Item>
+                            </>
+                        )}
+                        {approvals.approveModal?.operation_type === 'DELETE' && (
+                            <div style={{ marginBottom: 16 }}>
+                                <Descriptions
+                                    bordered
+                                    size="small"
+                                    column={1}
+                                    style={{ marginBottom: 12 }}
+                                >
+                                    <Descriptions.Item label={t('approve_modal.delete_target_vm')}>
+                                        <Text strong style={{ color: '#cf1322' }}>
+                                            {approvals.approveModal.target_vm_name || '—'}
+                                        </Text>
                                     </Descriptions.Item>
-                                )}
-                            </Descriptions>
-                            <div style={{
-                                padding: '12px 16px',
-                                background: '#fff2e8',
-                                border: '1px solid #ffbb96',
-                                borderRadius: 8,
-                                display: 'flex',
-                                alignItems: 'flex-start',
-                                gap: 8,
-                            }}>
-                                <ExclamationCircleOutlined style={{ color: '#d4380d', marginTop: 2 }} />
-                                <Text type="warning">{t('approve_modal.delete_warning')}</Text>
+                                    <Descriptions.Item label={t('requester')}>
+                                        {approvals.approveModal.requester}
+                                    </Descriptions.Item>
+                                    {approvals.approveModal.reason && (
+                                        <Descriptions.Item label={t('reason')}>
+                                            {approvals.approveModal.reason}
+                                        </Descriptions.Item>
+                                    )}
+                                </Descriptions>
+                                <div style={{
+                                    padding: '12px 16px',
+                                    background: '#fff2e8',
+                                    border: '1px solid #ffbb96',
+                                    borderRadius: 8,
+                                    display: 'flex',
+                                    alignItems: 'flex-start',
+                                    gap: 8,
+                                }}>
+                                    <ExclamationCircleOutlined style={{ color: '#d4380d', marginTop: 2 }} />
+                                    <Text type="warning">{t('approve_modal.delete_warning')}</Text>
+                                </div>
                             </div>
-                        </div>
-                    )}
-                    <Form.Item name="comment" label={t('approve_modal.comment')}>
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                </Form>
+                        )}
+                        <Form.Item name="comment" label={t('approve_modal.comment')}>
+                            <Input.TextArea rows={3} />
+                        </Form.Item>
+                    </Form>
+                </div>
             </Modal>
 
             <Modal
@@ -336,20 +337,21 @@ export function AdminApprovalsContent() {
                 onCancel={approvals.closeRejectModal}
                 confirmLoading={approvals.rejectPending}
                 forceRender
-                data-testid="reject-modal"
             >
-                <Form form={approvals.rejectForm} layout="vertical" name="reject-form">
-                    <Form.Item
-                        name="reason"
-                        label={t('reject_modal.reason')}
-                        rules={[{ required: true, message: 'Rejection reason is required' }]}
-                    >
-                        <Input.TextArea
-                            rows={4}
-                            placeholder={t('reject_modal.reason_placeholder')}
-                        />
-                    </Form.Item>
-                </Form>
+                <div data-testid="reject-modal">
+                    <Form form={approvals.rejectForm} layout="vertical" name="reject-form">
+                        <Form.Item
+                            name="reason"
+                            label={t('reject_modal.reason')}
+                            rules={[{ required: true, message: 'Rejection reason is required' }]}
+                        >
+                            <Input.TextArea
+                                rows={4}
+                                placeholder={t('reject_modal.reason_placeholder')}
+                            />
+                        </Form.Item>
+                    </Form>
+                </div>
             </Modal>
         </div>
     );
