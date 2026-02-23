@@ -60,3 +60,4 @@ kubeconfig.*
 # OS files
 Thumbs.db
 k8s-admin.yaml
+e2e-seed
