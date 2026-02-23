@@ -334,26 +334,25 @@ export function AdminRbacContent() {
                 onCancel={rbac.closeCreateRoleModal}
                 confirmLoading={rbac.createRolePending}
                 destroyOnHidden={true}
+                data-testid="rbac-role-create-modal"
             >
-                <div data-testid="rbac-role-create-modal">
-                    <Form form={rbac.roleCreateForm} layout="vertical" preserve={false}>
-                        <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
-                            <Input />
-                        </Form.Item>
-                        <Form.Item name="display_name" label={t('common:table.display_name')}>
-                            <Input />
-                        </Form.Item>
-                        <Form.Item name="description" label={t('common:table.description')}>
-                            <Input.TextArea rows={3} />
-                        </Form.Item>
-                        <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}>
-                            <Select mode="multiple" options={rbac.permissionOptions} optionFilterProp="label" />
-                        </Form.Item>
-                        <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked" initialValue={true}>
-                            <Switch />
-                        </Form.Item>
-                    </Form>
-                </div>
+                <Form form={rbac.roleCreateForm} layout="vertical" preserve={false}>
+                    <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="display_name" label={t('common:table.display_name')}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="description" label={t('common:table.description')}>
+                        <Input.TextArea rows={3} />
+                    </Form.Item>
+                    <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}>
+                        <Select mode="multiple" options={rbac.permissionOptions} optionFilterProp="label" />
+                    </Form.Item>
+                    <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked" initialValue={true}>
+                        <Switch />
+                    </Form.Item>
+                </Form>
             </Modal>
 
             <Modal
@@ -365,23 +364,22 @@ export function AdminRbacContent() {
                 onCancel={rbac.closeEditRoleModal}
                 confirmLoading={rbac.updateRolePending}
                 destroyOnHidden={true}
+                data-testid="rbac-role-edit-modal"
             >
-                <div data-testid="rbac-role-edit-modal">
-                    <Form form={rbac.roleEditForm} layout="vertical" preserve={false}>
-                        <Form.Item name="display_name" label={t('common:table.display_name')}>
-                            <Input />
-                        </Form.Item>
-                        <Form.Item name="description" label={t('common:table.description')}>
-                            <Input.TextArea rows={3} />
-                        </Form.Item>
-                        <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}>
-                            <Select mode="multiple" options={rbac.permissionOptions} optionFilterProp="label" />
-                        </Form.Item>
-                        <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked">
-                            <Switch />
-                        </Form.Item>
-                    </Form>
-                </div>
+                <Form form={rbac.roleEditForm} layout="vertical" preserve={false}>
+                    <Form.Item name="display_name" label={t('common:table.display_name')}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="description" label={t('common:table.description')}>
+                        <Input.TextArea rows={3} />
+                    </Form.Item>
+                    <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}>
+                        <Select mode="multiple" options={rbac.permissionOptions} optionFilterProp="label" />
+                    </Form.Item>
+                    <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                </Form>
             </Modal>
 
             <Modal
@@ -404,26 +402,25 @@ export function AdminRbacContent() {
                 onCancel={rbac.closeAddBindingModal}
                 confirmLoading={rbac.createBindingPending}
                 destroyOnHidden={true}
+                data-testid="rbac-binding-add-modal"
             >
-                <div data-testid="rbac-binding-add-modal">
-                    <Form form={rbac.bindingForm} layout="vertical" preserve={false}>
-                        <Form.Item label={t('rbac.bindings.select_user')}>
-                            <Input value={rbac.selectedUser?.display_name || rbac.selectedUser?.username || ''} readOnly />
-                        </Form.Item>
-                        <Form.Item name="role_id" label={t('rbac.bindings.role')} rules={[{ required: true }]}>
-                            <Select options={roleOptions} optionFilterProp="label" showSearch />
-                        </Form.Item>
-                        <Form.Item name="scope_type" label={t('rbac.bindings.scope_type')} rules={[{ required: true }]} initialValue="global">
-                            <Select options={scopeOptions} />
-                        </Form.Item>
-                        <Form.Item name="scope_id" label={t('rbac.bindings.scope_id')}>
-                            <Input />
-                        </Form.Item>
-                        <Form.Item name="allowed_environments" label={t('rbac.bindings.allowed_envs')}>
-                            <Select mode="multiple" options={environmentOptions} />
-                        </Form.Item>
-                    </Form>
-                </div>
+                <Form form={rbac.bindingForm} layout="vertical" preserve={false}>
+                    <Form.Item label={t('rbac.bindings.select_user')}>
+                        <Input value={rbac.selectedUser?.display_name || rbac.selectedUser?.username || ''} readOnly />
+                    </Form.Item>
+                    <Form.Item name="role_id" label={t('rbac.bindings.role')} rules={[{ required: true }]}>
+                        <Select options={roleOptions} optionFilterProp="label" showSearch />
+                    </Form.Item>
+                    <Form.Item name="scope_type" label={t('rbac.bindings.scope_type')} rules={[{ required: true }]} initialValue="global">
+                        <Select options={scopeOptions} />
+                    </Form.Item>
+                    <Form.Item name="scope_id" label={t('rbac.bindings.scope_id')}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="allowed_environments" label={t('rbac.bindings.allowed_envs')}>
+                        <Select mode="multiple" options={environmentOptions} />
+                    </Form.Item>
+                </Form>
             </Modal>
         </div>
     );

@@ -255,8 +255,8 @@ export function AdminApprovalsContent() {
                 onCancel={approvals.closeApproveModal}
                 confirmLoading={approvals.approvePending}
                 forceRender
+                data-testid="approve-modal"
             >
-                <div data-testid="approve-modal">
                     <Form form={approvals.approveForm} layout="vertical" name="approve-form">
                         {approvals.approveModal?.operation_type !== 'DELETE' && (
                             <>
@@ -325,7 +325,6 @@ export function AdminApprovalsContent() {
                             <Input.TextArea rows={3} />
                         </Form.Item>
                     </Form>
-                </div>
             </Modal>
 
             <Modal
@@ -337,8 +336,8 @@ export function AdminApprovalsContent() {
                 onCancel={approvals.closeRejectModal}
                 confirmLoading={approvals.rejectPending}
                 forceRender
+                data-testid="reject-modal"
             >
-                <div data-testid="reject-modal">
                     <Form form={approvals.rejectForm} layout="vertical" name="reject-form">
                         <Form.Item
                             name="reason"
@@ -351,7 +350,6 @@ export function AdminApprovalsContent() {
                             />
                         </Form.Item>
                     </Form>
-                </div>
             </Modal>
         </div>
     );

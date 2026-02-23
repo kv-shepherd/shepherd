@@ -489,12 +489,11 @@ export function AdminInstanceSizesContent() {
                 confirmLoading={sizes.createPending}
                 destroyOnHidden={true}
                 width={680}
+                data-testid="instance-size-create-modal"
             >
-                <div data-testid="instance-size-create-modal">
                     <Form form={sizes.createForm} layout="vertical" preserve={false}>
                         <InstanceSizeFormFields isCreate={true} />
                     </Form>
-                </div>
             </Modal>
 
             {/* Edit Modal */}
@@ -506,12 +505,11 @@ export function AdminInstanceSizesContent() {
                 confirmLoading={sizes.updatePending}
                 destroyOnHidden={true}
                 width={680}
+                data-testid="instance-size-edit-modal"
             >
-                <div data-testid="instance-size-edit-modal">
                     <Form form={sizes.editForm} layout="vertical" preserve={false}>
                         <InstanceSizeFormFields isCreate={false} />
                     </Form>
-                </div>
             </Modal>
 
             {/* Delete Modal */}

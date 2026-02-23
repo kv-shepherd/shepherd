@@ -256,29 +256,30 @@ export function AdminAuthProvidersContent() {
                 onCancel={providers.closeCreateModal}
                 confirmLoading={providers.createPending}
                 destroyOnHidden={true}
+                data-testid="auth-provider-create-modal"
             >
-                <Form form={providers.createForm} layout="vertical" preserve={false}>
-                    <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="auth_type" label={t('authProviders.type')} rules={[{ required: true }]}>
-                        <Select
-                            options={providers.providerTypeOptions}
-                            loading={providers.providerTypesLoading}
-                            showSearch={true}
-                            optionFilterProp="label"
-                        />
-                    </Form.Item>
-                    <Form.Item name="sort_order" label={t('authProviders.sort_order')}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked" initialValue={true}>
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item name="config_text" label={t('authProviders.config')}>
-                        <Input.TextArea rows={12} style={{ fontFamily: 'monospace' }} />
-                    </Form.Item>
-                </Form>
+                    <Form form={providers.createForm} layout="vertical" preserve={false}>
+                        <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="auth_type" label={t('authProviders.type')} rules={[{ required: true }]}>
+                            <Select
+                                options={providers.providerTypeOptions}
+                                loading={providers.providerTypesLoading}
+                                showSearch={true}
+                                optionFilterProp="label"
+                            />
+                        </Form.Item>
+                        <Form.Item name="sort_order" label={t('authProviders.sort_order')}>
+                            <InputNumber min={0} style={{ width: '100%' }} />
+                        </Form.Item>
+                        <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked" initialValue={true}>
+                            <Switch />
+                        </Form.Item>
+                        <Form.Item name="config_text" label={t('authProviders.config')}>
+                            <Input.TextArea rows={12} style={{ fontFamily: 'monospace' }} />
+                        </Form.Item>
+                    </Form>
             </Modal>
 
             <Modal
@@ -290,21 +291,22 @@ export function AdminAuthProvidersContent() {
                 onCancel={providers.closeEditModal}
                 confirmLoading={providers.updatePending}
                 destroyOnHidden={true}
+                data-testid="auth-provider-edit-modal"
             >
-                <Form form={providers.editForm} layout="vertical" preserve={false}>
-                    <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="sort_order" label={t('authProviders.sort_order')}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item name="config_text" label={t('authProviders.config')}>
-                        <Input.TextArea rows={12} style={{ fontFamily: 'monospace' }} />
-                    </Form.Item>
-                </Form>
+                    <Form form={providers.editForm} layout="vertical" preserve={false}>
+                        <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="sort_order" label={t('authProviders.sort_order')}>
+                            <InputNumber min={0} style={{ width: '100%' }} />
+                        </Form.Item>
+                        <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked">
+                            <Switch />
+                        </Form.Item>
+                        <Form.Item name="config_text" label={t('authProviders.config')}>
+                            <Input.TextArea rows={12} style={{ fontFamily: 'monospace' }} />
+                        </Form.Item>
+                    </Form>
             </Modal>
 
             <Modal
@@ -314,8 +316,9 @@ export function AdminAuthProvidersContent() {
                 onCancel={providers.closeDeleteModal}
                 confirmLoading={providers.deletePending}
                 okButtonProps={{ danger: true }}
+                data-testid="auth-provider-delete-modal"
             >
-                <Text>{t('authProviders.delete_confirm', { name: providers.deletingProvider?.name || '' })}</Text>
+                    <Text>{t('authProviders.delete_confirm', { name: providers.deletingProvider?.name || '' })}</Text>
             </Modal>
 
             <Modal
@@ -325,8 +328,8 @@ export function AdminAuthProvidersContent() {
                 footer={null}
                 width={980}
                 destroyOnHidden={true}
+                data-testid="auth-provider-mappings-page"
             >
-                <div data-testid="auth-provider-mappings-page">
                     <Space direction="vertical" size={20} style={{ width: '100%' }}>
                         <Card size="small" title={t('authProviders.sample.title')} extra={
                             <Button
@@ -408,7 +411,6 @@ export function AdminAuthProvidersContent() {
                             />
                         </Card>
                     </Space>
-                </div>
             </Modal>
 
             <Modal
@@ -420,8 +422,8 @@ export function AdminAuthProvidersContent() {
                 }}
                 confirmLoading={providers.updateMappingPending}
                 destroyOnHidden={true}
+                data-testid="group-mapping-edit-modal"
             >
-                <div data-testid="group-mapping-edit-modal">
                     <Form form={providers.mappingEditForm} layout="vertical">
                         <Form.Item name="role_id" label={t('authProviders.mapping.role')} rules={[{ required: true }]}>
                             <Select options={providers.roleOptions} />
@@ -436,7 +438,6 @@ export function AdminAuthProvidersContent() {
                             <Select mode="multiple" options={environmentOptions} />
                         </Form.Item>
                     </Form>
-                </div>
             </Modal>
 
             {/* ── Group Mapping Create Modal ──────────────────────────────── */}
@@ -448,8 +449,8 @@ export function AdminAuthProvidersContent() {
                 confirmLoading={providers.createMappingPending}
                 destroyOnHidden={true}
                 width={720}
+                data-testid="group-mapping-create-modal"
             >
-                <div data-testid="group-mapping-create-modal">
                     <Form form={providers.mappingForm} layout="vertical" preserve={false}>
                         <Form.Item
                             name="external_group_id"
@@ -481,7 +482,6 @@ export function AdminAuthProvidersContent() {
                             <Select mode="multiple" options={environmentOptions} />
                         </Form.Item>
                     </Form>
-                </div>
             </Modal>
         </div>
     );

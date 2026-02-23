@@ -170,7 +170,8 @@ export function SystemsManagementContent() {
                 }}
                 onCancel={systems.closeCreateModal}
                 confirmLoading={systems.createPending}
-                forceRender
+                destroyOnHidden={true}
+                data-testid="system-create-modal"
             >
                 <Form form={systems.form} layout="vertical" name="create-system">
                     <Form.Item
@@ -201,7 +202,8 @@ export function SystemsManagementContent() {
                 }}
                 onCancel={systems.closeEditModal}
                 confirmLoading={systems.updatePending}
-                forceRender
+                destroyOnHidden={true}
+                data-testid="system-edit-modal"
             >
                 <Form form={systems.editForm} layout="vertical" name="edit-system">
                     <Form.Item name="description" label={t('table.description')}>
@@ -226,6 +228,8 @@ export function SystemsManagementContent() {
                     disabled: systems.deleteConfirmName !== systems.deletingSystem?.name,
                 }}
                 okText={t('button.delete')}
+                destroyOnHidden={true}
+                data-testid="system-delete-modal"
             >
                 <Paragraph>
                     {t('systems.delete_confirm', { name: systems.deletingSystem?.name })}
