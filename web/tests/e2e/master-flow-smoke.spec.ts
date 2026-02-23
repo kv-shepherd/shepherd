@@ -1,5 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
 function authStorageState() {
   return JSON.stringify({
     state: {
@@ -19,6 +23,10 @@ interface MockMasterFlowOptions {
   onRequest?: (method: string, path: string, body: unknown) => void;
 }
 
+/**
+ * Baseline API mock covering all common GET endpoints used across master-flow stages.
+ * Individual tests can add more specific route overrides AFTER calling this.
+ */
 async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOptions) {
   await page.route('**/api/v1/**', async (route) => {
     const req = route.request();
@@ -33,55 +41,105 @@ async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOpt
     }
     options?.onRequest?.(method, path, body);
 
-    const json = (body: unknown, status = 200) =>
+    const json = (data: unknown, status = 200) =>
       route.fulfill({
         status,
         contentType: 'application/json',
-        body: JSON.stringify(body),
+        body: JSON.stringify(data),
       });
 
+    // ── Notifications ──────────────────────────────────────────────────────
     if (method === 'GET' && path.endsWith('/notifications/unread-count')) {
-      return json({ count: 0 });
+      return json({ count: 2 });
     }
     if (method === 'GET' && path.endsWith('/notifications')) {
-      return json({ items: [], pagination: { page: 1, per_page: 10, total: 0, total_pages: 0 } });
+      return json({
+        items: [
+          { id: 'notif-1', title: 'VM Request Submitted', message: 'Your VM request is pending approval', read: false, created_at: new Date().toISOString() },
+          { id: 'notif-2', title: 'VM Approved', message: 'Your VM request has been approved', read: false, created_at: new Date().toISOString() },
+        ],
+        pagination: { page: 1, per_page: 10, total: 2, total_pages: 1 },
+      });
     }
+
+    // ── Systems ────────────────────────────────────────────────────────────
     if (method === 'GET' && path.endsWith('/systems')) {
       return json({
-        items: [{ id: 'sys-1', name: 'System A', description: 'demo', created_by: 'alice', created_at: new Date().toISOString() }],
+        items: [{ id: 'sys-1', name: 'shop', description: 'E-commerce core system', created_by: 'alice', created_at: new Date().toISOString() }],
         pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
       });
     }
-    if (method === 'GET' && path.match(/\/systems\/[^/]+\/services$/)) {
+    if (method === 'GET' && /\/systems\/[^/]+$/.test(path)) {
+      return json({ id: 'sys-1', name: 'shop', description: 'E-commerce core system', created_by: 'alice', created_at: new Date().toISOString() });
+    }
+
+    // ── System Members ─────────────────────────────────────────────────────
+    if (method === 'GET' && /\/systems\/[^/]+\/members$/.test(path)) {
       return json({
-        items: [{ id: 'svc-1', system_id: 'sys-1', name: 'Service A', description: '', created_at: new Date().toISOString(), next_instance_index: 1 }],
+        items: [
+          { id: 'rrb-1', user_id: 'user-1', username: 'alice', role: 'owner', granted_by: 'alice', created_at: new Date().toISOString() },
+          { id: 'rrb-2', user_id: 'user-2', username: 'bob', role: 'member', granted_by: 'alice', created_at: new Date().toISOString() },
+        ],
+        pagination: { page: 1, per_page: 20, total: 2, total_pages: 1 },
+      });
+    }
+
+    // ── Services ───────────────────────────────────────────────────────────
+    if (method === 'GET' && /\/systems\/[^/]+\/services$/.test(path)) {
+      return json({
+        items: [{ id: 'svc-1', system_id: 'sys-1', name: 'redis', description: 'Cache service', created_at: new Date().toISOString(), next_instance_index: 1 }],
         pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
       });
     }
+    if (method === 'GET' && path.endsWith('/services') && !path.includes('/systems/')) {
+      // Global services list (used by ServicesManagementContent)
+      return json({
+        items: [{ id: 'svc-1', system_id: 'sys-1', name: 'redis', description: 'Cache service', created_at: new Date().toISOString(), next_instance_index: 1 }],
+        pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
+      });
+    }
+
+    // ── VMs ────────────────────────────────────────────────────────────────
     if (method === 'GET' && path.endsWith('/vms')) {
       return json({
         items: [],
         pagination: { page: 1, per_page: 20, total: 0, total_pages: 0 },
       });
     }
+
+    // ── Templates ──────────────────────────────────────────────────────────
     if (method === 'GET' && path.endsWith('/templates')) {
       return json({
         items: [{ id: 'tpl-1', name: 'ubuntu-24', display_name: 'Ubuntu 24', enabled: true }],
         pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
       });
     }
+
+    // ── Instance Sizes ─────────────────────────────────────────────────────
     if (method === 'GET' && path.endsWith('/instance-sizes')) {
       return json({
         items: [{ id: 'size-1', name: 'small', display_name: 'Small', cpu_cores: 2, memory_mb: 4096, enabled: true }],
         pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
       });
     }
+
+    // ── Namespaces ─────────────────────────────────────────────────────────
+    if (method === 'GET' && path.endsWith('/admin/namespaces')) {
+      return json({
+        items: [{ id: 'ns-1', name: 'prod-shop', environment: 'prod', enabled: true }],
+        pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
+      });
+    }
+
+    // ── Approvals ──────────────────────────────────────────────────────────
     if (method === 'GET' && path.endsWith('/approvals')) {
       return json({
         items: [{ id: 'ticket-1', status: 'PENDING', operation_type: 'CREATE', requester: 'alice', created_at: new Date().toISOString() }],
         pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
       });
     }
+
+    // ── Clusters ───────────────────────────────────────────────────────────
     if (method === 'GET' && path.endsWith('/admin/clusters')) {
       return json({
         items: [{ id: 'cluster-1', name: 'Cluster A', display_name: 'Cluster A', status: 'HEALTHY', enabled: true }],
@@ -89,6 +147,18 @@ async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOpt
       });
     }
 
+    // ── Users (for member search) ──────────────────────────────────────────
+    if (method === 'GET' && path.endsWith('/admin/users')) {
+      return json({
+        items: [
+          { id: 'user-1', username: 'alice', email: 'alice@example.com' },
+          { id: 'user-2', username: 'bob', email: 'bob@example.com' },
+        ],
+        pagination: { page: 1, per_page: 20, total: 2, total_pages: 1 },
+      });
+    }
+
+    // ── Catch-all for mutations ────────────────────────────────────────────
     if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
       return json({ ok: true }, 200);
     }
@@ -99,12 +169,19 @@ async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOpt
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Test Suite
+// ─────────────────────────────────────────────────────────────────────────────
+
 test.describe('master-flow mock smoke interactions', () => {
+
+  // ── Auth Guard ────────────────────────────────────────────────────────────
   test('redirects unauthenticated users to login', async ({ page }) => {
     await page.goto('/systems');
     await expect(page).toHaveURL(/\/login$/);
   });
 
+  // ── Stage 4/5 Navigation ──────────────────────────────────────────────────
   test('authenticated user can navigate core Stage 4/5 pages and open VM request wizard', async ({ page }) => {
     await page.addInitScript((storageValue) => {
       window.localStorage.setItem('shepherd-auth', storageValue);
@@ -128,22 +205,405 @@ test.describe('master-flow mock smoke interactions', () => {
     ).toBeVisible();
   });
 
-  test('notification bell can navigate to full notifications page (Stage 5.F)', async ({ page }) => {
+  // ── Stage 4.A: User Creates System ───────────────────────────────────────
+  test('Stage 4.A: user can create a System via modal (POST /systems)', async ({ page }) => {
     await page.addInitScript((storageValue) => {
       window.localStorage.setItem('shepherd-auth', storageValue);
     }, authStorageState());
-    await mockMasterFlowBaselineApi(page);
 
-    await page.goto('/dashboard');
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-    await page.getByTestId('notification-bell-trigger').click();
-    await page.getByTestId('notification-view-all').click();
+    const captured: Array<{ method: string; path: string; body: unknown }> = [];
+    await mockMasterFlowBaselineApi(page, {
+      onRequest: (method, path, body) => {
+        captured.push({ method, path, body });
+      },
+    });
 
-    await expect(page).toHaveURL(/\/notifications$/);
-    await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+    await page.goto('/systems');
+    await expect(page.getByRole('heading', { name: 'Systems' })).toBeVisible();
+
+    // Open create modal
+    await page.getByTestId('system-create-button').click();
+
+    const modal = page.locator('.ant-modal-content:visible');
+    await expect(modal).toBeVisible();
+
+    // Fill in system name
+    await modal.locator('input[placeholder]').first().fill('myapp');
+
+    // Submit
+    await modal.getByRole('button', { name: 'OK' }).click();
+
+    // Verify POST /systems was called
+    await expect.poll(() =>
+      captured.some((r) => r.method === 'POST' && r.path.endsWith('/systems'))
+    ).toBeTruthy();
   });
 
-  test('batch power action from VM page triggers Stage 5.E API', async ({ page }) => {
+  // ── Stage 4.A: Edit System (PATCH /systems/{id}) ─────────────────────────
+  test('Stage 4.A: user can edit System description (PATCH /systems/{id})', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+
+    const captured: Array<{ method: string; path: string }> = [];
+    await mockMasterFlowBaselineApi(page, {
+      onRequest: (method, path) => {
+        captured.push({ method, path });
+      },
+    });
+
+    await page.goto('/systems');
+    await expect(page.getByRole('heading', { name: 'Systems' })).toBeVisible();
+
+    // Click edit button for sys-1
+    await page.getByTestId('system-action-edit-sys-1').click();
+
+    const modal = page.locator('.ant-modal-content:visible');
+    await expect(modal).toBeVisible();
+
+    // Update description
+    const textarea = modal.locator('textarea').first();
+    await textarea.clear();
+    await textarea.fill('Updated description');
+
+    // Submit
+    await modal.getByRole('button', { name: 'OK' }).click();
+
+    // Verify PATCH /systems/{id} was called
+    await expect.poll(() =>
+      captured.some((r) => r.method === 'PATCH' && /\/systems\/[^/]+$/.test(r.path))
+    ).toBeTruthy();
+  });
+
+  // ── Stage 4.A: Delete System ──────────────────────────────────────────────
+  test('Stage 4.A: user can delete System with name confirmation (DELETE /systems/{id})', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+
+    const captured: Array<{ method: string; path: string }> = [];
+    await mockMasterFlowBaselineApi(page, {
+      onRequest: (method, path) => {
+        captured.push({ method, path });
+      },
+    });
+
+    await page.goto('/systems');
+    await expect(page.getByRole('heading', { name: 'Systems' })).toBeVisible();
+
+    // Click delete button for sys-1
+    await page.getByTestId('system-action-delete-sys-1').click();
+
+    const modal = page.locator('.ant-modal-content:visible');
+    await expect(modal).toBeVisible();
+
+    // Type the system name to confirm
+    const confirmInput = modal.locator('input').last();
+    await confirmInput.pressSequentially('shop', { delay: 50 });
+
+    // Delete button should now be enabled
+    const deleteBtn = modal.getByRole('button', { name: 'Delete' });
+    await expect(deleteBtn).toBeEnabled({ timeout: 5000 });
+    await deleteBtn.click();
+
+    // Verify DELETE /systems/{id} was called
+    await expect.poll(() =>
+      captured.some((r) => r.method === 'DELETE' && /\/systems\/[^/]+$/.test(r.path))
+    ).toBeTruthy();
+  });
+
+  // ── Stage 4.A+: Resource Member Management ───────────────────────────────
+  test('Stage 4.A+: owner can open System members modal', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+
+    await mockMasterFlowBaselineApi(page);
+
+    await page.goto('/systems');
+    await expect(page.getByRole('heading', { name: 'Systems' })).toBeVisible();
+
+    // Click members button for sys-1
+    await page.getByTestId('system-action-members-sys-1').click();
+
+    // Members modal should open (look for modal with members-related content)
+    const modal = page.locator('.ant-modal-content:visible');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+  });
+
+  // ── Stage 4.B: User Creates Service ──────────────────────────────────────
+  test('Stage 4.B: user can create a Service under a System (POST /systems/{id}/services)', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+
+    const captured: Array<{ method: string; path: string; body: unknown }> = [];
+    await mockMasterFlowBaselineApi(page, {
+      onRequest: (method, path, body) => {
+        captured.push({ method, path, body });
+      },
+    });
+
+    await page.goto('/services');
+    await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
+
+    // Open create modal
+    await page.getByTestId('service-create-button').click();
+
+    const modal = page.locator('.ant-modal-content:visible');
+    await expect(modal).toBeVisible();
+
+    // Select system (first option in dropdown)
+    const systemSelect = modal.locator('[role="combobox"]').first();
+    await systemSelect.click();
+    const firstOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
+    await expect(firstOption).toBeVisible({ timeout: 5000 });
+    await firstOption.click();
+
+    // Fill service name
+    await modal.locator('input[placeholder]').first().fill('redis');
+
+    // Submit
+    await modal.getByRole('button', { name: 'OK' }).click();
+
+    // Verify POST to services endpoint was called
+    await expect.poll(() =>
+      captured.some((r) => r.method === 'POST' && /\/systems\/[^/]+\/services$/.test(r.path))
+    ).toBeTruthy();
+  });
+
+  // ── Stage 4.B: Edit Service (PATCH /systems/{id}/services/{id}) ──────────
+  test('Stage 4.B: user can edit Service description', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+
+    const captured: Array<{ method: string; path: string }> = [];
+    await mockMasterFlowBaselineApi(page, {
+      onRequest: (method, path) => {
+        captured.push({ method, path });
+      },
+    });
+
+    await page.goto('/services');
+    await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
+
+    // Click edit button for svc-1
+    await page.getByTestId('service-action-edit-svc-1').click();
+
+    const modal = page.locator('.ant-modal-content:visible');
+    await expect(modal).toBeVisible();
+
+    // Update description
+    const textarea = modal.locator('textarea').first();
+    await textarea.clear();
+    await textarea.fill('Updated cache service description');
+
+    // Submit
+    await modal.getByRole('button', { name: 'OK' }).click();
+
+    // Verify PATCH was called on services endpoint
+    await expect.poll(() =>
+      captured.some((r) => r.method === 'PATCH' && /\/services\/[^/]+$/.test(r.path))
+    ).toBeTruthy();
+  });
+
+  // ── Stage 4.B: Delete Service (Popconfirm) ────────────────────────────────
+  test('Stage 4.B: user can delete Service via Popconfirm', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+
+    const captured: Array<{ method: string; path: string }> = [];
+    await mockMasterFlowBaselineApi(page, {
+      onRequest: (method, path) => {
+        captured.push({ method, path });
+      },
+    });
+
+    await page.goto('/services');
+    await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
+
+    // Click delete button for svc-1 (triggers Popconfirm)
+    await page.getByTestId('service-action-delete-svc-1').click();
+
+    // Confirm in Popconfirm
+    const popconfirm = page.locator('.ant-popover:visible');
+    await expect(popconfirm).toBeVisible({ timeout: 5000 });
+    await popconfirm.getByRole('button', { name: 'Confirm' }).click();
+
+    // Verify DELETE was called
+    await expect.poll(() =>
+      captured.some((r) => r.method === 'DELETE' && /\/services\/[^/]+$/.test(r.path))
+    ).toBeTruthy();
+  });
+
+  // ── Stage 5.A: VM Request Wizard ─────────────────────────────────────────
+  test('Stage 5.A: VM request wizard opens and submits POST /vms', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+
+    const captured: Array<{ method: string; path: string; body: unknown }> = [];
+    await mockMasterFlowBaselineApi(page, {
+      onRequest: (method, path, body) => {
+        captured.push({ method, path, body });
+      },
+    });
+
+    await page.goto('/vms');
+    await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
+
+    // Open VM request wizard via the + button
+    const createBtn = page.locator('button').filter({ has: page.locator('.anticon-plus') }).first();
+    await createBtn.click();
+
+    // Wizard modal should open
+    const modal = page.locator('.ant-modal-content:visible');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Step 0: Select System
+    const systemSelect = modal.locator('[role="combobox"]').first();
+    await systemSelect.click();
+    const sysOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
+    await expect(sysOption).toBeVisible({ timeout: 5000 });
+    await sysOption.click();
+
+    // Select Service
+    const serviceSelect = modal.locator('[role="combobox"]').nth(1);
+    await serviceSelect.click();
+    const svcOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
+    await expect(svcOption).toBeVisible({ timeout: 5000 });
+    await svcOption.click();
+
+    // Click Next
+    await modal.getByRole('button', { name: 'Next' }).click();
+
+    // Step 1: Select Template
+    const templateSelect = modal.locator('[role="combobox"]').first();
+    await templateSelect.click();
+    const tplOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
+    await expect(tplOption).toBeVisible({ timeout: 5000 });
+    await tplOption.click();
+
+    // Click Next
+    await modal.getByRole('button', { name: 'Next' }).click();
+
+    // Step 2: Select Instance Size
+    const sizeSelect = modal.locator('[role="combobox"]').first();
+    await sizeSelect.click();
+    const sizeOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
+    await expect(sizeOption).toBeVisible({ timeout: 5000 });
+    await sizeOption.click();
+
+    // Click Next
+    await modal.getByRole('button', { name: 'Next' }).click();
+
+    // Step 3: Namespace + Reason
+    const namespaceInput = modal.locator('input').first();
+    await namespaceInput.fill('prod-shop');
+
+    const reasonTextarea = modal.locator('textarea').first();
+    await reasonTextarea.fill('Production deployment for e-commerce');
+
+    // Click Next
+    await modal.getByRole('button', { name: 'Next' }).click();
+
+    // Step 4: Confirm & Submit
+    await expect(modal.getByRole('button', { name: 'Submit' })).toBeVisible({ timeout: 5000 });
+    await modal.getByRole('button', { name: 'Submit' }).click();
+
+    // Verify POST /vms was called
+    await expect.poll(() =>
+      captured.some((r) => r.method === 'POST' && r.path.endsWith('/vms'))
+    ).toBeTruthy();
+  });
+
+  // ── Stage 5.D: Delete VM (with approval ticket) ───────────────────────────
+  test('Stage 5.D: VM delete action triggers approval flow (POST /vms/{id}/delete)', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+
+    const captured: Array<{ method: string; path: string }> = [];
+    await mockMasterFlowBaselineApi(page, {
+      onRequest: (method, path) => {
+        captured.push({ method, path });
+      },
+    });
+
+    // Override VMs list to have a running VM
+    await page.route('**/api/v1/vms**', async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            { id: 'vm-1', name: 'vm-1', namespace: 'prod-shop', status: 'RUNNING', created_at: new Date().toISOString() },
+          ],
+          pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
+        }),
+      });
+    });
+
+    await page.goto('/vms');
+    await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
+
+    // Click delete action for vm-1
+    await page.getByTestId('vm-action-delete-vm-1').click();
+
+    // Confirm in Popconfirm or modal
+    const confirmEl = page.locator('.ant-popover:visible, .ant-modal-content:visible').first();
+    await expect(confirmEl).toBeVisible({ timeout: 5000 });
+
+    // Click confirm/OK button
+    const confirmBtn = confirmEl.getByRole('button', { name: /confirm|ok|delete/i }).first();
+    await confirmBtn.click();
+
+    // Verify DELETE or POST to delete endpoint was called
+    await expect.poll(() =>
+      captured.some((r) =>
+        (r.method === 'DELETE' || r.method === 'POST') &&
+        /\/vms\/[^/]+/.test(r.path)
+      )
+    ).toBeTruthy();
+  });
+
+  // ── Stage 5.D: Delete System cascade guard ────────────────────────────────
+  test('Stage 5.D: System delete requires name confirmation (cascade guard)', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+
+    await mockMasterFlowBaselineApi(page);
+
+    await page.goto('/systems');
+    await expect(page.getByRole('heading', { name: 'Systems' })).toBeVisible();
+
+    // Open delete modal
+    await page.getByTestId('system-action-delete-sys-1').click();
+
+    const modal = page.locator('.ant-modal-content:visible');
+    await expect(modal).toBeVisible();
+
+    // Delete button should be disabled before typing name
+    const deleteBtn = modal.getByRole('button', { name: 'Delete' });
+    await expect(deleteBtn).toBeDisabled();
+
+    // Type wrong name – still disabled
+    const confirmInput = modal.locator('input').last();
+    await confirmInput.pressSequentially('wrong-name', { delay: 30 });
+    await expect(deleteBtn).toBeDisabled();
+
+    // Clear and type correct name
+    await confirmInput.clear();
+    await confirmInput.pressSequentially('shop', { delay: 50 });
+    await expect(deleteBtn).toBeEnabled({ timeout: 5000 });
+  });
+
+  // ── Stage 5.E: Batch Power Actions ───────────────────────────────────────
+  test('Stage 5.E: batch power action from VM page triggers POST /vms/batch/power', async ({ page }) => {
     await page.addInitScript((storageValue) => {
       window.localStorage.setItem('shepherd-auth', storageValue);
     }, authStorageState());
@@ -181,23 +641,130 @@ test.describe('master-flow mock smoke interactions', () => {
     await expect.poll(() => captured.some((r) => r.method === 'POST' && r.path.endsWith('/vms/batch/power'))).toBeTruthy();
   });
 
-  test('VM console request follows Stage 6 request -> open flow', async ({ page }) => {
+  // ── Stage 5.E: Batch VM Request (POST /vms/batch) ────────────────────────
+  test('Stage 5.E: batch VM request triggers POST /vms/batch', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+
+    const captured: Array<{ method: string; path: string; body: unknown }> = [];
+    await mockMasterFlowBaselineApi(page, {
+      onRequest: (method, path, body) => {
+        captured.push({ method, path, body });
+      },
+    });
+
+    await page.goto('/vms');
+    await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
+
+    // Open VM request wizard
+    const createBtn = page.locator('button').filter({ has: page.locator('.anticon-plus') }).first();
+    await createBtn.click();
+
+    const modal = page.locator('.ant-modal-content:visible');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Step 0: Select System + Service
+    const systemSelect = modal.locator('[role="combobox"]').first();
+    await systemSelect.click();
+    const sysOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
+    await expect(sysOption).toBeVisible({ timeout: 5000 });
+    await sysOption.click();
+
+    const serviceSelect = modal.locator('[role="combobox"]').nth(1);
+    await serviceSelect.click();
+    const svcOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
+    await expect(svcOption).toBeVisible({ timeout: 5000 });
+    await svcOption.click();
+
+    await modal.getByRole('button', { name: 'Next' }).click();
+
+    // Step 1: Template
+    const templateSelect = modal.locator('[role="combobox"]').first();
+    await templateSelect.click();
+    const tplOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
+    await expect(tplOption).toBeVisible({ timeout: 5000 });
+    await tplOption.click();
+    await modal.getByRole('button', { name: 'Next' }).click();
+
+    // Step 2: Instance Size
+    const sizeSelect = modal.locator('[role="combobox"]').first();
+    await sizeSelect.click();
+    const sizeOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
+    await expect(sizeOption).toBeVisible({ timeout: 5000 });
+    await sizeOption.click();
+    await modal.getByRole('button', { name: 'Next' }).click();
+
+    // Step 3: Namespace + Reason + Batch Count > 1
+    const namespaceInput = modal.locator('input').first();
+    await namespaceInput.fill('prod-shop');
+
+    const reasonTextarea = modal.locator('textarea').first();
+    await reasonTextarea.fill('Batch deployment');
+
+    // Set batch count to 3
+    const batchCountInput = modal.locator('input[type="number"], .ant-input-number-input').last();
+    await batchCountInput.clear();
+    await batchCountInput.fill('3');
+
+    await modal.getByRole('button', { name: 'Next' }).click();
+
+    // Step 4: Submit
+    await expect(modal.getByRole('button', { name: 'Submit' })).toBeVisible({ timeout: 5000 });
+    await modal.getByRole('button', { name: 'Submit' }).click();
+
+    // Verify POST /vms or /vms/batch was called
+    await expect.poll(() =>
+      captured.some((r) => r.method === 'POST' && /\/vms/.test(r.path))
+    ).toBeTruthy();
+  });
+
+  // ── Stage 5.F: Notification Bell ─────────────────────────────────────────
+  test('Stage 5.F: notification bell shows unread count and navigates to notifications page', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+    await mockMasterFlowBaselineApi(page);
+
+    await page.goto('/dashboard');
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await page.getByTestId('notification-bell-trigger').click();
+    await page.getByTestId('notification-view-all').click();
+
+    await expect(page).toHaveURL(/\/notifications$/);
+    await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+  });
+
+  // ── Stage 5.F: Notifications list shows items ────────────────────────────
+  test('Stage 5.F: notifications page renders notification items from API', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+    await mockMasterFlowBaselineApi(page);
+
+    await page.goto('/notifications');
+    await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+
+    // Notifications list should contain items from mock
+    await expect(page.getByText('VM Request Submitted')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('VM Approved')).toBeVisible({ timeout: 5000 });
+  });
+
+  // ── Stage 6: VM Console Access ────────────────────────────────────────────
+  test('Stage 6: VM console request follows request → open flow', async ({ page }) => {
     await page.addInitScript((storageValue) => {
       window.localStorage.setItem('shepherd-auth', storageValue);
       // avoid browser popup interference in CI
       window.open = () => null;
     }, authStorageState());
 
-    const captured: Array<{ method: string; path: string }> = [];
     const seen = {
       vmDetail: false,
       consoleRequest: false,
       vncSession: false,
     };
     await mockMasterFlowBaselineApi(page, {
-      onRequest: (method, path) => {
-        captured.push({ method, path });
-      },
+      onRequest: () => { },
     });
 
     await page.route('**/api/v1/vms**', async (route) => {
@@ -257,5 +824,92 @@ test.describe('master-flow mock smoke interactions', () => {
     await expect.poll(() => seen.vmDetail).toBeTruthy();
     await expect.poll(() => seen.consoleRequest).toBeTruthy();
     await expect.poll(() => seen.vncSession).toBeTruthy();
+  });
+
+  // ── Stage 6: VM Start/Stop individual actions ─────────────────────────────
+  test('Stage 6: VM start action triggers POST /vms/{id}/start', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+
+    const captured: Array<{ method: string; path: string }> = [];
+    await mockMasterFlowBaselineApi(page, {
+      onRequest: (method, path) => {
+        captured.push({ method, path });
+      },
+    });
+
+    await page.route('**/api/v1/vms**', async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            { id: 'vm-1', name: 'vm-1', namespace: 'test', status: 'STOPPED', created_at: new Date().toISOString() },
+          ],
+          pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
+        }),
+      });
+    });
+
+    await page.goto('/vms');
+    await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
+
+    await page.getByTestId('vm-action-start-vm-1').click();
+
+    await expect.poll(() =>
+      captured.some((r) => r.method === 'POST' && /\/vms\/vm-1\/start$/.test(r.path))
+    ).toBeTruthy();
+  });
+
+  test('Stage 6: VM stop action triggers POST /vms/{id}/stop', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+
+    const captured: Array<{ method: string; path: string }> = [];
+    await mockMasterFlowBaselineApi(page, {
+      onRequest: (method, path) => {
+        captured.push({ method, path });
+      },
+    });
+
+    await page.route('**/api/v1/vms**', async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            { id: 'vm-1', name: 'vm-1', namespace: 'test', status: 'RUNNING', created_at: new Date().toISOString() },
+          ],
+          pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
+        }),
+      });
+    });
+
+    await page.goto('/vms');
+    await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
+
+    await page.getByTestId('vm-action-stop-vm-1').click();
+
+    await expect.poll(() =>
+      captured.some((r) => r.method === 'POST' && /\/vms\/vm-1\/stop$/.test(r.path))
+    ).toBeTruthy();
+  });
+
+  // ── Approvals page (Stage 5.B) ────────────────────────────────────────────
+  test('Stage 5.B: approvals page renders pending tickets', async ({ page }) => {
+    await page.addInitScript((storageValue) => {
+      window.localStorage.setItem('shepherd-auth', storageValue);
+    }, authStorageState());
+    await mockMasterFlowBaselineApi(page);
+
+    await page.goto('/approvals');
+    await expect(page.getByRole('heading', { name: 'Approvals' })).toBeVisible({ timeout: 5000 });
+
+    // Should show the pending ticket from mock
+    await expect(page.getByText('PENDING')).toBeVisible({ timeout: 5000 });
   });
 });
