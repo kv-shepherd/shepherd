@@ -37,6 +37,7 @@ coverage.html
 *.log
 tmp/
 server
+.run/
 
 # Configuration (only commit .example)
 config/config.yaml
