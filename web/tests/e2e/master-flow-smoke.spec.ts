@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -21,6 +21,22 @@ function authStorageState() {
 
 interface MockMasterFlowOptions {
   onRequest?: (method: string, path: string, body: unknown) => void;
+}
+
+function visibleModal(page: Page) {
+  return page.locator('.ant-modal-content:visible');
+}
+
+async function selectFromVisibleAntdDropdown(page: Page, container: Locator, selectIndex: number) {
+  const select = container.locator('.ant-select').nth(selectIndex);
+  await expect(select).toBeVisible();
+  await expect(select.locator('[role="combobox"]').first()).toBeEnabled({ timeout: 5000 });
+  await select.locator('.ant-select-selector').click();
+
+  const dropdown = page.locator('.ant-select-dropdown:visible').last();
+  await expect(dropdown).toBeVisible({ timeout: 5000 });
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
 }
 
 /**
@@ -55,8 +71,26 @@ async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOpt
     if (method === 'GET' && path.endsWith('/notifications')) {
       return json({
         items: [
-          { id: 'notif-1', title: 'VM Request Submitted', message: 'Your VM request is pending approval', read: false, created_at: new Date().toISOString() },
-          { id: 'notif-2', title: 'VM Approved', message: 'Your VM request has been approved', read: false, created_at: new Date().toISOString() },
+          {
+            id: 'notif-1',
+            type: 'APPROVAL_PENDING',
+            title: 'VM Request Submitted',
+            message: 'Your VM request is pending approval',
+            resource_type: 'approval_ticket',
+            resource_id: 'ticket-1',
+            read: false,
+            created_at: new Date().toISOString(),
+          },
+          {
+            id: 'notif-2',
+            type: 'APPROVAL_COMPLETED',
+            title: 'VM Approved',
+            message: 'Your VM request has been approved',
+            resource_type: 'approval_ticket',
+            resource_id: 'ticket-1',
+            read: false,
+            created_at: new Date().toISOString(),
+          },
         ],
         pagination: { page: 1, per_page: 10, total: 2, total_pages: 1 },
       });
@@ -96,6 +130,15 @@ async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOpt
       return json({
         items: [{ id: 'svc-1', system_id: 'sys-1', name: 'redis', description: 'Cache service', created_at: new Date().toISOString(), next_instance_index: 1 }],
         pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
+      });
+    }
+
+    // ── VM Request Context ────────────────────────────────────────────────
+    if (method === 'GET' && path.endsWith('/vms/request-context')) {
+      return json({
+        templates: [{ id: 'tpl-1', name: 'ubuntu-24', display_name: 'Ubuntu 24', enabled: true }],
+        instance_sizes: [{ id: 'size-1', name: 'small', display_name: 'Small', cpu_cores: 2, memory_mb: 4096, enabled: true }],
+        namespaces: ['prod-shop'],
       });
     }
 
@@ -156,6 +199,38 @@ async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOpt
         ],
         pagination: { page: 1, per_page: 20, total: 2, total_pages: 1 },
       });
+    }
+
+    // ── VM / Batch mutations with typed responses ─────────────────────────
+    if (method === 'POST' && path.endsWith('/vms/request')) {
+      return json({ ticket_id: 'ticket-vm-create-1', status: 'PENDING', operation_type: 'CREATE' }, 202);
+    }
+    if (method === 'POST' && path.endsWith('/approvals/batch')) {
+      return json({
+        batch_id: 'batch-create-1',
+        status: 'PENDING_APPROVAL',
+        status_url: '/api/v1/vms/batch/batch-create-1',
+        retry_after_seconds: 2,
+      }, 202);
+    }
+    if (method === 'POST' && path.endsWith('/vms/batch/power')) {
+      return json({
+        batch_id: 'batch-power-1',
+        status: 'PENDING_APPROVAL',
+        status_url: '/api/v1/vms/batch/batch-power-1',
+        retry_after_seconds: 2,
+      }, 202);
+    }
+    if (method === 'POST' && path.endsWith('/vms/batch')) {
+      return json({
+        batch_id: 'batch-vm-1',
+        status: 'PENDING_APPROVAL',
+        status_url: '/api/v1/vms/batch/batch-vm-1',
+        retry_after_seconds: 2,
+      }, 202);
+    }
+    if (method === 'DELETE' && /\/vms\/[^/]+$/.test(path)) {
+      return json({ ticket_id: 'ticket-delete-1', event_id: 'event-1', status: 'PENDING' }, 202);
     }
 
     // ── Catch-all for mutations ────────────────────────────────────────────
@@ -350,18 +425,11 @@ test.describe('master-flow mock smoke interactions', () => {
     // Open create modal
     await page.getByTestId('service-create-button').click();
 
-    const modal = page.locator('.ant-modal-content:visible');
+    const modal = visibleModal(page);
     await expect(modal).toBeVisible();
 
-    // Select system (first option in dropdown)
-    const systemSelect = modal.locator('[role="combobox"]').first();
-    await systemSelect.click();
-    const firstOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(firstOption).toBeVisible({ timeout: 5000 });
-    await firstOption.click();
-
     // Fill service name
-    await modal.locator('input[placeholder]').first().fill('redis');
+    await modal.locator('input#create-service_name').fill('redis');
 
     // Submit
     await modal.getByRole('button', { name: 'OK' }).click();
@@ -439,7 +507,7 @@ test.describe('master-flow mock smoke interactions', () => {
   });
 
   // ── Stage 5.A: VM Request Wizard ─────────────────────────────────────────
-  test('Stage 5.A: VM request wizard opens and submits POST /vms', async ({ page }) => {
+  test('Stage 5.A: VM request wizard opens and submits POST /vms/request', async ({ page }) => {
     await page.addInitScript((storageValue) => {
       window.localStorage.setItem('shepherd-auth', storageValue);
     }, authStorageState());
@@ -459,51 +527,35 @@ test.describe('master-flow mock smoke interactions', () => {
     await createBtn.click();
 
     // Wizard modal should open
-    const modal = page.locator('.ant-modal-content:visible');
+    const modal = visibleModal(page);
     await expect(modal).toBeVisible({ timeout: 5000 });
 
     // Step 0: Select System
-    const systemSelect = modal.locator('[role="combobox"]').first();
-    await systemSelect.click();
-    const sysOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(sysOption).toBeVisible({ timeout: 5000 });
-    await sysOption.click();
+    await selectFromVisibleAntdDropdown(page, modal, 0);
 
     // Select Service
-    const serviceSelect = modal.locator('[role="combobox"]').nth(1);
-    await serviceSelect.click();
-    const svcOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(svcOption).toBeVisible({ timeout: 5000 });
-    await svcOption.click();
+    await selectFromVisibleAntdDropdown(page, modal, 1);
 
     // Click Next
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 1: Select Template
-    const templateSelect = modal.locator('[role="combobox"]').first();
-    await templateSelect.click();
-    const tplOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(tplOption).toBeVisible({ timeout: 5000 });
-    await tplOption.click();
+    await selectFromVisibleAntdDropdown(page, modal, 0);
 
     // Click Next
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 2: Select Instance Size
-    const sizeSelect = modal.locator('[role="combobox"]').first();
-    await sizeSelect.click();
-    const sizeOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(sizeOption).toBeVisible({ timeout: 5000 });
-    await sizeOption.click();
+    await selectFromVisibleAntdDropdown(page, modal, 0);
 
     // Click Next
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 3: Namespace + Reason
-    const namespaceInput = modal.locator('input').first();
+    const namespaceInput = modal.locator('input#vm-request-wizard_namespace');
     await namespaceInput.fill('prod-shop');
 
-    const reasonTextarea = modal.locator('textarea').first();
+    const reasonTextarea = modal.locator('textarea#vm-request-wizard_reason');
     await reasonTextarea.fill('Production deployment for e-commerce');
 
     // Click Next
@@ -513,9 +565,9 @@ test.describe('master-flow mock smoke interactions', () => {
     await expect(modal.getByRole('button', { name: 'Submit' })).toBeVisible({ timeout: 5000 });
     await modal.getByRole('button', { name: 'Submit' }).click();
 
-    // Verify POST /vms was called
+    // Verify POST /vms/request was called
     await expect.poll(() =>
-      captured.some((r) => r.method === 'POST' && r.path.endsWith('/vms'))
+      captured.some((r) => r.method === 'POST' && r.path.endsWith('/vms/request'))
     ).toBeTruthy();
   });
 
@@ -540,7 +592,7 @@ test.describe('master-flow mock smoke interactions', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           items: [
-            { id: 'vm-1', name: 'vm-1', namespace: 'prod-shop', status: 'RUNNING', created_at: new Date().toISOString() },
+            { id: 'vm-1', name: 'vm-1', namespace: 'prod-shop', status: 'STOPPED', created_at: new Date().toISOString() },
           ],
           pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
         }),
@@ -642,7 +694,7 @@ test.describe('master-flow mock smoke interactions', () => {
   });
 
   // ── Stage 5.E: Batch VM Request (POST /vms/batch) ────────────────────────
-  test('Stage 5.E: batch VM request triggers POST /vms/batch', async ({ page }) => {
+  test('Stage 5.E: batch VM request triggers POST /approvals/batch', async ({ page }) => {
     await page.addInitScript((storageValue) => {
       window.localStorage.setItem('shepherd-auth', storageValue);
     }, authStorageState());
@@ -661,51 +713,37 @@ test.describe('master-flow mock smoke interactions', () => {
     const createBtn = page.locator('button').filter({ has: page.locator('.anticon-plus') }).first();
     await createBtn.click();
 
-    const modal = page.locator('.ant-modal-content:visible');
+    const modal = visibleModal(page);
     await expect(modal).toBeVisible({ timeout: 5000 });
 
     // Step 0: Select System + Service
-    const systemSelect = modal.locator('[role="combobox"]').first();
-    await systemSelect.click();
-    const sysOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(sysOption).toBeVisible({ timeout: 5000 });
-    await sysOption.click();
-
-    const serviceSelect = modal.locator('[role="combobox"]').nth(1);
-    await serviceSelect.click();
-    const svcOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(svcOption).toBeVisible({ timeout: 5000 });
-    await svcOption.click();
+    await selectFromVisibleAntdDropdown(page, modal, 0);
+    await selectFromVisibleAntdDropdown(page, modal, 1);
 
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 1: Template
-    const templateSelect = modal.locator('[role="combobox"]').first();
-    await templateSelect.click();
-    const tplOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(tplOption).toBeVisible({ timeout: 5000 });
-    await tplOption.click();
+    await selectFromVisibleAntdDropdown(page, modal, 0);
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 2: Instance Size
-    const sizeSelect = modal.locator('[role="combobox"]').first();
-    await sizeSelect.click();
-    const sizeOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(sizeOption).toBeVisible({ timeout: 5000 });
-    await sizeOption.click();
+    await selectFromVisibleAntdDropdown(page, modal, 0);
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 3: Namespace + Reason + Batch Count > 1
-    const namespaceInput = modal.locator('input').first();
+    const namespaceInput = modal.locator('input#vm-request-wizard_namespace');
     await namespaceInput.fill('prod-shop');
 
-    const reasonTextarea = modal.locator('textarea').first();
+    const reasonTextarea = modal.locator('textarea#vm-request-wizard_reason');
     await reasonTextarea.fill('Batch deployment');
 
     // Set batch count to 3
-    const batchCountInput = modal.locator('input[type="number"], .ant-input-number-input').last();
-    await batchCountInput.clear();
+    const batchCountInput = modal.locator('input#vm-request-wizard_batch_count');
+    await batchCountInput.click();
+    await batchCountInput.press('Control+A');
     await batchCountInput.fill('3');
+    await batchCountInput.press('Enter');
+    await expect(batchCountInput).toHaveValue('3');
 
     await modal.getByRole('button', { name: 'Next' }).click();
 
@@ -713,9 +751,9 @@ test.describe('master-flow mock smoke interactions', () => {
     await expect(modal.getByRole('button', { name: 'Submit' })).toBeVisible({ timeout: 5000 });
     await modal.getByRole('button', { name: 'Submit' }).click();
 
-    // Verify POST /vms or /vms/batch was called
+    // Verify POST /approvals/batch was called
     await expect.poll(() =>
-      captured.some((r) => r.method === 'POST' && /\/vms/.test(r.path))
+      captured.some((r) => r.method === 'POST' && r.path.endsWith('/approvals/batch'))
     ).toBeTruthy();
   });
 
@@ -729,9 +767,13 @@ test.describe('master-flow mock smoke interactions', () => {
     await page.goto('/dashboard');
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
     await page.getByTestId('notification-bell-trigger').click();
-    await page.getByTestId('notification-view-all').click();
+    const popover = page.locator('.ant-popover:visible').last();
+    await expect(popover.getByTestId('notification-view-all')).toBeVisible({ timeout: 5000 });
+    await Promise.all([
+      page.waitForURL(/\/notifications$/),
+      popover.getByTestId('notification-view-all').click(),
+    ]);
 
-    await expect(page).toHaveURL(/\/notifications$/);
     await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
   });
 
@@ -907,9 +949,9 @@ test.describe('master-flow mock smoke interactions', () => {
     await mockMasterFlowBaselineApi(page);
 
     await page.goto('/approvals');
-    await expect(page.getByRole('heading', { name: 'Approvals' })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('approvals-page')).toBeVisible({ timeout: 5000 });
 
     // Should show the pending ticket from mock
-    await expect(page.getByText('PENDING')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('ticket-1')).toBeVisible({ timeout: 5000 });
   });
 });

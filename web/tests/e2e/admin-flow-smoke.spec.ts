@@ -86,9 +86,10 @@ async function mountBaselineMock(page: Page) {
         if (method === 'GET' && path.endsWith('/admin/permissions')) {
             return json({
                 items: [
-                    { id: 'system:read', resource: 'system', action: 'read', name: 'View system' },
-                    { id: 'vm:create', resource: 'vm', action: 'create', name: 'Create VM request' },
+                    { key: 'system:read', description: 'View system' },
+                    { key: 'vm:create', description: 'Create VM request' },
                 ],
+                pagination: { page: 1, per_page: 20, total: 2, total_pages: 1 },
             });
         }
         if (method === 'GET' && path.endsWith('/admin/role-bindings')) {
@@ -206,12 +207,14 @@ test.describe('admin-flow mock smoke interactions', () => {
     });
 
     test('Stage 2.A – custom role create modal opens and submits', async ({ page }) => {
-        const captured: Array<{ method: string }> = [];
-        await page.route('**/api/v1/admin/roles', async (route) => {
+        await page.route('**/api/v1/admin/roles**', async (route) => {
             if (route.request().method() !== 'POST') return route.fallback();
-            captured.push({ method: route.request().method() });
             await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'role-new', name: 'TestRole', built_in: false }) });
         });
+        const createRequestPromise = page.waitForRequest((request) =>
+            request.method() === 'POST' &&
+            new URL(request.url()).pathname.endsWith('/api/v1/admin/roles')
+        );
 
         await page.goto('/admin/rbac');
         await page.getByTestId('rbac-role-create-button').click();
@@ -220,20 +223,18 @@ test.describe('admin-flow mock smoke interactions', () => {
         await expect(modal).toBeVisible();
         await modal.getByRole('textbox').first().fill('TestRole');
 
-        // Permissions is a required multi-select.
-        // Locate it via its combobox (Ant Design renders a hidden <input role="combobox">)
-        // inside the form item labelled "Permissions".
-        const permissionsCombobox = modal.locator('combobox, [role="combobox"]').filter({ hasText: '' }).last();
-        await permissionsCombobox.click({ force: true });
-        // Wait for the dropdown to appear and select the first option
+        // Permissions is required; choose one option from the visible dropdown.
+        const permissionsSelect = modal.locator('.ant-select').first();
+        await permissionsSelect.click();
         const firstOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
         await expect(firstOption).toBeVisible({ timeout: 5000 });
         await firstOption.click();
-        // Close the dropdown by clicking the modal body (not the modal title which may not exist)
-        await modal.locator('.ant-modal-body').click({ position: { x: 10, y: 10 } });
         await modal.getByRole('button', { name: 'OK' }).click();
 
-        await expect.poll(() => captured.some((r) => r.method === 'POST'), { timeout: 5000 }).toBeTruthy();
+        const createRequest = await createRequestPromise;
+        const requestBody = createRequest.postDataJSON() as { permissions?: string[] };
+        expect(Array.isArray(requestBody.permissions)).toBeTruthy();
+        expect(requestBody.permissions?.length ?? 0).toBeGreaterThan(0);
     });
 
     test('Stage 2.A – custom role delete modal opens and submits', async ({ page }) => {
@@ -400,9 +401,12 @@ test.describe('admin-flow mock smoke interactions', () => {
     });
 
     test('Stage 3 – namespace delete requires confirm_name and calls API', async ({ page }) => {
-        const captured: string[] = [];
+        const deleteRequestPromise = page.waitForRequest((request) =>
+            request.method() === 'DELETE' &&
+            new URL(request.url()).pathname.endsWith('/api/v1/admin/namespaces/ns-1')
+        );
         // openDeleteModal first calls GET /admin/namespaces/{id} to fetch details
-        await page.route('**/api/v1/admin/namespaces/ns-1', async (route) => {
+        await page.route('**/api/v1/admin/namespaces/ns-1**', async (route) => {
             const method = route.request().method();
             if (method === 'GET') {
                 await route.fulfill({
@@ -411,7 +415,6 @@ test.describe('admin-flow mock smoke interactions', () => {
                     body: JSON.stringify({ id: 'ns-1', name: 'prod-shop', environment: 'prod', description: 'Production shop namespace', enabled: true, created_at: new Date().toISOString() }),
                 });
             } else if (method === 'DELETE') {
-                captured.push(new URL(route.request().url()).pathname);
                 await route.fulfill({ status: 204, body: '' });
             } else {
                 await route.fallback();
@@ -438,7 +441,8 @@ test.describe('admin-flow mock smoke interactions', () => {
         await expect(deleteBtn).toBeEnabled({ timeout: 5000 });
 
         await deleteBtn.click();
-        await expect.poll(() => captured.some((p) => p.includes('ns-1')), { timeout: 5000 }).toBeTruthy();
+        const deleteRequest = await deleteRequestPromise;
+        expect(new URL(deleteRequest.url()).searchParams.get('confirm_name')).toBe('prod-shop');
     });
 
     // ── Stage 5.B: Approval / Rejection workflow ──────────────────────────────
