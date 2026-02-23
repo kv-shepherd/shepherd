@@ -264,7 +264,8 @@
       "adrs": [
         "docs/adr/ADR-0005-workflow-extensibility.md",
         "docs/adr/ADR-0006-unified-async-model.md",
-        "docs/adr/ADR-0009-domain-event-pattern.md"
+        "docs/adr/ADR-0009-domain-event-pattern.md",
+        "docs/adr/ADR-0017-vm-request-flow-clarification.md"
       ],
       "examples": [
         "docs/design/examples/worker/pool.go"

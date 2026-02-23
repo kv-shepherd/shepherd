@@ -842,7 +842,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │  V1 上线路径（必需）：                                                                          │
-│    1) 用户提交请求 -> approval_tickets=PENDING_APPROVAL                                       │
+│    1) 用户提交请求 -> approval_tickets=PENDING                                                │
 │    2) 路由层选择内置 Provider（`builtin-default`，V1 唯一实现）                                │
 │    3) 内置审批人做 APPROVED / REJECTED 决策                                                    │
 │    4) Shepherd 执行后续路径并记录审计                                                          │
@@ -1634,9 +1634,9 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 
 | 阶段 | 工单 | 领域事件 | VM | Worker Job |
 |------|------|----------|----|------------|
-| 5.A 提交 | 创建为 `PENDING_APPROVAL` | 创建为 `PENDING` | 无 | 无 |
-| 5.B 批准 | `PENDING_APPROVAL -> APPROVED` | `PENDING -> PROCESSING` | 创建为 `CREATING` | 插入 |
-| 5.B 拒绝 | `PENDING_APPROVAL -> REJECTED` | `PENDING -> CANCELLED` | 无 | 无 |
+| 5.A 提交 | 创建为 `PENDING` | 创建为 `PENDING` | 无 | 无 |
+| 5.B 批准 | `PENDING -> APPROVED` | `PENDING -> PROCESSING` | 创建为 `CREATING` | 插入 |
+| 5.B 拒绝 | `PENDING -> REJECTED` | `PENDING -> CANCELLED` | 无 | 无 |
 | 5.C 执行 | 不变 | 随执行推进 | `CREATING -> RUNNING|FAILED` | 消费并完成 |
 
 ### Failure & Edge Cases (阶段 5.A-5.C)
@@ -1683,7 +1683,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │        │                                                                                     │
 │        ▼                                                                                     │
 │  单事务写入：                                                                                │
-│    1) approval_tickets: 创建 `PENDING_APPROVAL`                                              │
+│    1) approval_tickets: 创建 `PENDING`                                                       │
 │    2) domain_events: 创建 `PENDING`                                                          │
 │    3) audit_logs: 追加规范提交动作                                                           │
 │        │                                                                                     │
@@ -1697,7 +1697,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 
 | 实体 | 之前 | 之后 |
 |------|------|------|
-| `approval_tickets` | 无 | `PENDING_APPROVAL` |
+| `approval_tickets` | 无 | `PENDING` |
 | `domain_events` | 无 | `PENDING` |
 | `vms` | 无 | 无 |
 | `river_job` | 无 | 无 |
@@ -1738,14 +1738,14 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  审批人打开待审批工单                                                                          │
 │        │                                                                                     │
 │        ├── 批准路径                                                                            │
-│        │      1) 工单：`PENDING_APPROVAL -> APPROVED`                                        │
+│        │      1) 工单：`PENDING -> APPROVED`                                                 │
 │        │      2) 事件：`PENDING -> PROCESSING`                                               │
 │        │      3) VM：插入并置为 `CREATING`                                                   │
 │        │      4) River：入队执行任务                                                         │
 │        │      5) 审计：记录批准动作                                                          │
 │        │                                                                                     │
 │        └── 拒绝路径                                                                            │
-│               1) 工单：`PENDING_APPROVAL -> REJECTED`                                        │
+│               1) 工单：`PENDING -> REJECTED`                                                 │
 │               2) 事件：`PENDING -> CANCELLED`                                                │
 │               3) 不创建 VM / 不入队 River                                                    │
 │               4) 审计：记录拒绝动作                                                          │
@@ -1757,8 +1757,8 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 
 | 路径 | 工单 | 领域事件 | VM | River Job |
 |------|------|----------|----|-----------|
-| 批准 | `PENDING_APPROVAL -> APPROVED` | `PENDING -> PROCESSING` | 创建并置为 `CREATING` | 插入（`available`） |
-| 拒绝 | `PENDING_APPROVAL -> REJECTED` | `PENDING -> CANCELLED` | 不创建 | 不插入 |
+| 批准 | `PENDING -> APPROVED` | `PENDING -> PROCESSING` | 创建并置为 `CREATING` | 插入（`available`） |
+| 拒绝 | `PENDING -> REJECTED` | `PENDING -> CANCELLED` | 不创建 | 不插入 |
 
 #### Failure & Edge Cases
 
@@ -1826,7 +1826,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 
 | 流程 | 工单 | 资源 | 最终持久化结果 |
 |------|------|------|----------------|
-| VM 删除（审批通过） | `PENDING_APPROVAL -> APPROVED` | `RUNNING/STOPPED -> DELETING -> (主表删除)` | VM 主记录硬删除，审计/工单/事件独立保留 |
+| VM 删除（审批通过） | `PENDING -> APPROVED` | `RUNNING/STOPPED -> DELETING -> (主表删除)` | VM 主记录硬删除，审计/工单/事件独立保留 |
 | Service 删除 | 无工单 | `ACTIVE -> DELETING -> (主表删除)` | 清理完成后硬删除 Service 主记录 |
 | System 删除 | 无工单 | `ACTIVE -> (主表删除)` | 校验通过后事务内硬删除 |
 
@@ -1930,8 +1930,8 @@ UI 故事板（父子队列）：
 │     • PARTIAL_SUCCESS: 部分成功                                                                    │
 │     • CANCELLED: 未开始子任务被终止                                                                │
 │  4. 前端可操作:                                                                                   │
-│     • POST /api/v1/vms/batch/{id}/retry  （仅重试失败子项）                                      │
-│     • POST /api/v1/vms/batch/{id}/cancel （终止待执行子项）                                       │
+│     • POST /api/v1/vms/batch/{batch_id}/retry  （仅重试失败子项）                                │
+│     • POST /api/v1/vms/batch/{batch_id}/cancel （终止待执行子项）                                 │
 │                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1954,8 +1954,8 @@ UI 故事板（父子队列）：
 
 | 范围 | 状态变化模式 |
 |------|-------------|
-| 父工单 | `PENDING_APPROVAL -> APPROVED/IN_PROGRESS -> COMPLETED|PARTIAL_SUCCESS|FAILED|CANCELLED` |
-| 子工单 | `PENDING -> RUNNING -> SUCCESS|FAILED|CANCELLED` |
+| 父工单 | `PENDING_APPROVAL -> IN_PROGRESS -> COMPLETED|PARTIAL_SUCCESS|FAILED|CANCELLED` |
+| 子工单 | `PENDING -> APPROVED/REJECTED/CANCELLED -> EXECUTING -> SUCCESS|FAILED` |
 
 #### Failure & Edge Cases
 
@@ -2046,7 +2046,7 @@ UI 故事板（父子队列）：
 │  │  [全部标为已读]  [查看全部 →]                                         │                        │
 │  └─────────────────────────────────────────────────────────────────────┘                        │
 │                                                                                                  │
-│  标记已读: PATCH /api/v1/notifications/{id}/read                                                │
+│  标记已读: PATCH /api/v1/notifications/{notification_id}/read                                   │
 │  全部已读: POST /api/v1/notifications/mark-all-read                                             │
 │                                                                                                  │
 │  ⚠️ V1 限制: 仅支持轮询，不支持 WebSocket 推送                                                     │
@@ -2108,7 +2108,7 @@ Part 4 属于参考视图，不是用户操作流程。
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │                        ┌───────────────────┐                                                 │
-│                        │  PENDING_APPROVAL │                                                 │
+│                        │      PENDING      │                                                 │
 │                        │     (待审批)       │                                                 │
 │                        └─────────┬─────────┘                                                 │
 │                                  │                                                           │
@@ -2167,6 +2167,10 @@ Part 4 属于参考视图，不是用户操作流程。
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+兼容性说明：
+- API 响应中可能出现额外运行态：`PENDING`、`MIGRATING`、`PAUSED`、`UNKNOWN`。
+  这些用于兼容运行时/Provider 状态，不改变本节的规范主流程语义，前端需安全渲染。
 
 ---
 
@@ -2434,8 +2438,8 @@ Part 4 属于参考视图，不是用户操作流程。
 
 | 领域 | 规范状态集合 |
 |------|-------------|
-| 审批工单 | `PENDING_APPROVAL`, `APPROVED`, `REJECTED`, `CANCELLED`, `EXECUTING`, `SUCCESS`, `FAILED` |
-| VM 运行态 | `CREATING`, `RUNNING`, `STOPPING`, `STOPPED`, `FAILED`, `DELETING` |
+| 审批工单 | `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`, `EXECUTING`, `SUCCESS`, `FAILED` |
+| VM 运行态 | `CREATING`, `RUNNING`, `STOPPING`, `STOPPED`, `FAILED`, `DELETING`, `PENDING`, `MIGRATING`, `PAUSED`, `UNKNOWN` |
 | 审计记录生命周期 | 仅追加写入，按策略保留/归档 |
 
 ### Failure & Edge Cases (Part 4 参考)
