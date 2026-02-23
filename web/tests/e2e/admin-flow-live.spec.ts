@@ -46,6 +46,7 @@
 
 import { expect, test, type Page, type Response } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
+import {urlPathEndsWith, urlPathIncludes, selectAntOption, getAntModal} from './lib/helpers';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -62,7 +63,7 @@ async function login(page: Page): Promise<void> {
     await page.getByPlaceholder('Password').fill(e2ePassword);
 
     const loginRespPromise = page.waitForResponse(
-        (r) => r.url().endsWith('/api/v1/auth/login') && r.request().method() === 'POST'
+        (r) => urlPathEndsWith(r.url(), '/api/v1/auth/login') && r.request().method() === 'POST'
     );
     await page.getByRole('button', { name: 'Login' }).click();
 
@@ -101,7 +102,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // operationId: listRoles, createRole, deleteRole
         // ── CONTRACT CHECK: listRoles → RoleList ──────────────────────────────────
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/roles') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/roles') && r.request().method() === 'GET'
         );
         await page.goto('/admin/rbac');
         await expect(page.getByTestId('admin-rbac-page')).toBeVisible();
@@ -110,11 +111,11 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // ── CONTRACT CHECK: createRole → Role ─────────────────────────────────────
         const roleName = `e2e-role-${Date.now().toString(36).slice(-6)}`;
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/roles') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/roles') && r.request().method() === 'POST'
         );
 
         await page.getByTestId('rbac-role-create-button').click();
-        const createModal = page.locator('.ant-modal-content').filter({ hasText: /role/i }).last();
+        const createModal = getAntModal(page, 'rbac-role-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(roleName);
         await createModal.getByRole('button', { name: 'OK' }).click();
@@ -127,7 +128,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         // ── CONTRACT CHECK: deleteRole → 204 ──────────────────────────────────────
         const deleteRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/roles/${roleID}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/roles/${roleID}`) && r.request().method() === 'DELETE'
         );
         await page.getByTestId(`rbac-role-action-delete-${roleID}`).click();
         const confirmBtn = page.getByRole('button', { name: /ok|confirm|delete/i }).last();
@@ -145,7 +146,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // operationId: listUsers, createUser, deleteUser
         // ── CONTRACT CHECK: listUsers → UserList ──────────────────────────────────
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/users') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'GET'
         );
         await page.goto('/admin/users');
         await expect(page.getByTestId('admin-users-page')).toBeVisible();
@@ -154,11 +155,11 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // ── CONTRACT CHECK: createUser → User ─────────────────────────────────────
         const username = `e2eu${Date.now().toString(36).slice(-6)}`;
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/users') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'POST'
         );
 
         await page.getByTestId('user-create-button').click();
-        const createModal = page.getByTestId('user-create-modal');
+        const createModal = getAntModal(page, 'user-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').nth(0).fill(username);
         await createModal.locator('input[type="password"]').fill('Secure@Pass123');
@@ -172,7 +173,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         // ── CONTRACT CHECK: deleteUser → 204 ──────────────────────────────────────
         const deleteRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/users/${userID}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/users/${userID}`) && r.request().method() === 'DELETE'
         );
         await page.getByTestId(`user-action-delete-${userID}`).click();
         const confirmBtn = page.getByRole('button', { name: /confirm/i }).last();
@@ -190,7 +191,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // operationId: listAuthProviderTypes, listAuthProviders, createAuthProvider, deleteAuthProvider
         // ── CONTRACT CHECK: listAuthProviderTypes → AuthProviderTypeList ──────────
         const typesRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/auth-provider-types') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-provider-types') && r.request().method() === 'GET'
         );
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
@@ -208,7 +209,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         // ── CONTRACT CHECK: listAuthProviders → AuthProviderList ──────────────────
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/auth-providers') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'GET'
         );
         await page.reload();
         await expectSchema(listRespPromise, 'AuthProviderList', 200);
@@ -216,15 +217,14 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // ── CONTRACT CHECK: createAuthProvider → AuthProvider ─────────────────────
         const providerName = `e2e-auth-${Date.now().toString(36).slice(-6)}`;
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/auth-providers') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'POST'
         );
 
         await page.getByTestId('auth-provider-create-button').click();
-        const createModal = page.locator('.ant-modal-content').filter({ hasText: 'Create Authentication Provider' });
+        const createModal = getAntModal(page, 'auth-provider-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(providerName);
-        await createModal.locator('.ant-select-selector').first().click();
-        await page.locator('.ant-select-item-option').filter({ hasText: providerTypeLabel }).first().click();
+        await selectAntOption(page, createModal.locator('.ant-select-selector').first(), providerTypeLabel);
         await createModal.getByRole('textbox').nth(1).fill('{"issuer":"https://idp.example.com"}');
         await createModal.getByRole('button', { name: 'OK' }).click();
 
@@ -238,10 +238,10 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         await page.getByTestId(`auth-provider-action-delete-${providerID}`).click();
         const deleteRespPromise = page.waitForResponse(
             (r) =>
-                r.url().includes(`/api/v1/admin/auth-providers/${providerID}`) &&
+                urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}`) &&
                 r.request().method() === 'DELETE'
         );
-        const deleteModal = page.locator('.ant-modal-content').filter({ hasText: providerName });
+        const deleteModal = getAntModal(page, 'auth-provider-delete-modal');
         await expect(deleteModal).toBeVisible();
         await deleteModal.getByRole('button', { name: 'OK' }).click();
 
@@ -270,7 +270,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         const mappingsRespPromise = page.waitForResponse(
             (r) =>
-                r.url().includes(`/api/v1/admin/auth-providers/${providerID}/group-mappings`) &&
+                urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/group-mappings`) &&
                 r.request().method() === 'GET'
         );
         await mappingLink.click();
@@ -287,7 +287,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // operationId: listNamespaces, createNamespace, updateNamespace, deleteNamespace
         // ── CONTRACT CHECK: listNamespaces → NamespaceRegistryList ───────────────
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/namespaces') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/namespaces') && r.request().method() === 'GET'
         );
         await page.goto('/admin/namespaces');
         await expect(page.getByTestId('admin-namespaces-page')).toBeVisible();
@@ -296,15 +296,14 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // ── CONTRACT CHECK: createNamespace → NamespaceRegistry ──────────────────
         const nsName = `e2e-ns-${Date.now().toString(36).slice(-6)}`;
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/namespaces') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/namespaces') && r.request().method() === 'POST'
         );
 
         await page.getByTestId('namespace-create-button').click();
-        const createModal = page.getByTestId('namespace-create-modal');
+        const createModal = getAntModal(page, 'namespace-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(nsName);
-        await createModal.locator('.ant-select-selector').first().click();
-        await page.locator('.ant-select-item-option').filter({ hasText: /test/i }).first().click();
+        await selectAntOption(page, createModal.locator('.ant-select-selector').first(), /test/i);
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'NamespaceRegistry', 201);
@@ -317,11 +316,11 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // Note: OpenAPI spec uses PUT for updateNamespace
         const updateRespPromise = page.waitForResponse(
             (r) =>
-                r.url().includes(`/api/v1/admin/namespaces/${nsID}`) &&
+                urlPathIncludes(r.url(), `/api/v1/admin/namespaces/${nsID}`) &&
                 (r.request().method() === 'PUT' || r.request().method() === 'PATCH')
         );
         await page.getByTestId(`namespace-action-edit-${nsID}`).click();
-        const editModal = page.getByTestId('namespace-edit-modal');
+        const editModal = getAntModal(page, 'namespace-edit-modal');
         await expect(editModal).toBeVisible();
         await editModal.locator('textarea').first().fill('Updated by live e2e test');
         await editModal.getByRole('button', { name: 'OK' }).click();
@@ -330,7 +329,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         // ── CONTRACT CHECK: deleteNamespace with confirm_name guard ───────────────
         await page.getByTestId(`namespace-action-delete-${nsID}`).click();
-        const deleteModal = page.getByTestId('namespace-delete-modal');
+        const deleteModal = getAntModal(page, 'namespace-delete-modal');
         await expect(deleteModal).toBeVisible();
 
         const deleteBtn = deleteModal.getByRole('button', { name: /delete/i });
@@ -341,7 +340,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         const deleteRespPromise = page.waitForResponse(
             (r) =>
-                r.url().includes(`/api/v1/admin/namespaces/${nsID}`) &&
+                urlPathIncludes(r.url(), `/api/v1/admin/namespaces/${nsID}`) &&
                 r.request().method() === 'DELETE'
         );
         await deleteBtn.click();
@@ -356,7 +355,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
     test('Stage 3 – listClusters: cluster list conforms to ClusterList schema', async ({ page }) => {
         // operationId: listClusters
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/clusters') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/clusters') && r.request().method() === 'GET'
         );
         await page.goto('/admin/clusters');
         await expect(page.getByTestId('admin-clusters-page')).toBeVisible();
@@ -371,11 +370,11 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         const clusterName = `e2e-cluster-${Date.now().toString(36).slice(-6)}`;
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/clusters') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/clusters') && r.request().method() === 'POST'
         );
 
         await page.getByTestId('cluster-create-button').click();
-        const createModal = page.getByTestId('cluster-create-modal');
+        const createModal = getAntModal(page, 'cluster-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(clusterName);
         await createModal.locator('textarea').last().fill(e2eKubeconfigB64);
@@ -396,7 +395,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // operationId: listAdminTemplates, createAdminTemplate
         // ── CONTRACT CHECK: listAdminTemplates → TemplateList ────────────────────
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/templates') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/templates') && r.request().method() === 'GET'
         );
         await page.goto('/admin/templates');
         await expect(page.getByRole('heading', { name: 'Templates' })).toBeVisible();
@@ -405,11 +404,11 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // ── CONTRACT CHECK: createAdminTemplate → Template ───────────────────────
         const templateName = `e2e-tpl-${Date.now().toString(36).slice(-6)}`;
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/templates') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/templates') && r.request().method() === 'POST'
         );
 
         await page.getByTestId('template-create-button').click();
-        const createModal = page.locator('.ant-modal-content').filter({ hasText: /create template/i });
+        const createModal = getAntModal(page, 'template-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(templateName);
         // Fill required fields (image, etc.) with test values
@@ -434,7 +433,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // operationId: listAdminInstanceSizes, createAdminInstanceSize
         // ── CONTRACT CHECK: listAdminInstanceSizes → InstanceSizeList ────────────
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/instance-sizes') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/instance-sizes') && r.request().method() === 'GET'
         );
         await page.goto('/admin/instance-sizes');
         await expect(page.getByRole('heading', { name: 'Instance Sizes' })).toBeVisible();
@@ -443,19 +442,21 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         // ── CONTRACT CHECK: createAdminInstanceSize → InstanceSize ───────────────
         const sizeName = `e2e-size-${Date.now().toString(36).slice(-6)}`;
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/instance-sizes') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/instance-sizes') && r.request().method() === 'POST'
         );
 
         await page.getByTestId('instance-size-create-button').click();
-        const createModal = page.locator('.ant-modal-content').filter({ hasText: /create instance size/i });
+        const createModal = getAntModal(page, 'instance-size-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(sizeName);
-        // Fill CPU and memory fields
-        const numberInputs = createModal.locator('input[type="number"]');
+        // Fill CPU and memory fields (Ant Design InputNumber uses role="spinbutton")
+        const numberInputs = createModal.getByRole('spinbutton');
         const inputCount = await numberInputs.count();
         if (inputCount >= 2) {
-            await numberInputs.nth(0).fill('2');
-            await numberInputs.nth(1).fill('4');
+            // First spinbutton after name is sort_order, then cpu_cores, then memory_mb
+            // Find cpu_cores and memory_mb by targeting the required InputNumber fields
+            await numberInputs.nth(1).fill('2');  // cpu_cores
+            await numberInputs.nth(2).fill('4096');  // memory_mb (in MB)
         }
         await createModal.getByRole('button', { name: 'OK' }).click();
 
@@ -472,7 +473,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
     test('Stage 5.B – listApprovals: approval list conforms to ApprovalTicketList schema', async ({ page }) => {
         // operationId: listApprovals
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().includes('/api/v1/approvals') && r.request().method() === 'GET'
+            (r) => urlPathIncludes(r.url(), '/api/v1/approvals') && r.request().method() === 'GET'
         );
         await page.goto('/approvals');
         await expect(page.getByRole('heading', { name: /approval/i })).toBeVisible();
@@ -528,12 +529,12 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         const approveRespPromise = page.waitForResponse(
             (r) =>
-                r.url().includes(`/api/v1/approvals/${ticketID}`) &&
+                urlPathIncludes(r.url(), `/api/v1/approvals/${ticketID}`) &&
                 (r.request().method() === 'PATCH' || r.request().method() === 'POST')
         );
 
         await approveBtn.click();
-        const modal = page.locator('.ant-modal-content').filter({ hasText: /approv/i }).last();
+        const modal = getAntModal(page, 'approve-modal');
         await expect(modal).toBeVisible();
         await modal.getByRole('button', { name: 'OK' }).click();
 
@@ -590,12 +591,12 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         const rejectRespPromise = page.waitForResponse(
             (r) =>
-                r.url().includes(`/api/v1/approvals/${ticketID}`) &&
+                urlPathIncludes(r.url(), `/api/v1/approvals/${ticketID}`) &&
                 (r.request().method() === 'PATCH' || r.request().method() === 'POST')
         );
 
         await rejectBtn.click();
-        const modal = page.locator('.ant-modal-content').filter({ hasText: /reject/i }).last();
+        const modal = getAntModal(page, 'reject-modal');
         await expect(modal).toBeVisible();
         await modal.locator('textarea').first().fill('Rejected by live e2e test');
         await modal.getByRole('button', { name: 'OK' }).click();
@@ -610,7 +611,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
     test('listAuditLogs: audit log list conforms to AuditLogList schema', async ({ page }) => {
         // operationId: listAuditLogs
         const auditRespPromise = page.waitForResponse(
-            (r) => (r.url().includes('/api/v1/audit-logs') || r.url().includes('/api/v1/admin/audit-logs')) && r.request().method() === 'GET'
+            (r) => (urlPathIncludes(r.url(), '/api/v1/audit-logs') || urlPathIncludes(r.url(), '/api/v1/admin/audit-logs')) && r.request().method() === 'GET'
         );
 
         await page.goto('/admin/audit-logs');

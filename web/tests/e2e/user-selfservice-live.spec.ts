@@ -33,6 +33,7 @@
 
 import { expect, test, type Page, type Response } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
+import {urlPathEndsWith, urlPathIncludes, selectAntOption, getAntModal} from './lib/helpers';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ async function login(page: Page, username = e2eUsername, password = e2ePassword)
     await page.getByPlaceholder('Password').fill(password);
     // operationId: login
     const loginRespPromise = page.waitForResponse(
-        (r) => r.url().endsWith('/api/v1/auth/login') && r.request().method() === 'POST'
+        (r) => urlPathEndsWith(r.url(), '/api/v1/auth/login') && r.request().method() === 'POST'
     );
     await page.getByRole('button', { name: 'Login' }).click();
     const loginResp = await loginRespPromise;
@@ -106,7 +107,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         // operationId: listTemplates
         // User-facing template list (not admin) is loaded in VM request wizard
         const respPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/templates') && !r.url().includes('/admin/') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/templates') && !urlPathIncludes(r.url(), '/admin/') && r.request().method() === 'GET'
         );
         await page.goto('/vms');
         await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
@@ -114,13 +115,11 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         await page.getByRole('button', { name: 'Request VM' }).click();
         await expect(page.getByText('Create VM Request')).toBeVisible();
         // Navigate to template step
-        const systemSelect = page.locator('.ant-modal-content:visible [role="combobox"]').first();
-        await systemSelect.click();
-        await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
-        const serviceSelect = page.locator('.ant-modal-content:visible [role="combobox"]').nth(1);
-        await serviceSelect.click();
-        await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
-        await page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Next' }).click();
+        const systemSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
+        await selectAntOption(page, systemSelect);
+        const serviceSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').nth(1);
+        await selectAntOption(page, serviceSelect);
+        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
 
         // ── CONTRACT CHECK: TemplateList schema ───────────────────────────────────
         await expectSchema(respPromise, 'TemplateList', 200);
@@ -131,25 +130,22 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
     test('listInstanceSizes – GET /instance-sizes conforms to InstanceSizeList schema', async ({ page }) => {
         // operationId: listInstanceSizes
         const respPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/instance-sizes') && !r.url().includes('/admin/') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/instance-sizes') && !urlPathIncludes(r.url(), '/admin/') && r.request().method() === 'GET'
         );
         await page.goto('/vms');
         await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
         await page.getByRole('button', { name: 'Request VM' }).click();
         await expect(page.getByText('Create VM Request')).toBeVisible();
         // Navigate to instance size step (step 2)
-        const systemSelect = page.locator('.ant-modal-content:visible [role="combobox"]').first();
-        await systemSelect.click();
-        await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
-        const serviceSelect = page.locator('.ant-modal-content:visible [role="combobox"]').nth(1);
-        await serviceSelect.click();
-        await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
-        await page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Next' }).click();
+        const systemSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
+        await selectAntOption(page, systemSelect);
+        const serviceSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').nth(1);
+        await selectAntOption(page, serviceSelect);
+        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
         // Select template
-        const templateSelect = page.locator('.ant-modal-content:visible [role="combobox"]').first();
-        await templateSelect.click();
-        await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
-        await page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Next' }).click();
+        const templateSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
+        await selectAntOption(page, templateSelect);
+        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
 
         // ── CONTRACT CHECK: InstanceSizeList schema ───────────────────────────────
         await expectSchema(respPromise, 'InstanceSizeList', 200);
@@ -161,8 +157,8 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         // operationId: markNotificationRead
         // Get first notification
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().includes('/api/v1/notifications') && r.request().method() === 'GET'
-                && !r.url().includes('unread-count')
+            (r) => urlPathIncludes(r.url(), '/api/v1/notifications') && r.request().method() === 'GET'
+                && !urlPathIncludes(r.url(), 'unread-count')
         );
         await page.goto('/notifications');
         await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
@@ -175,7 +171,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         // ── PATCH /notifications/{id}/read → 204 ─────────────────────────────────
         const readRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/notifications/${notifID}/read`) && r.request().method() === 'PATCH'
+            (r) => urlPathIncludes(r.url(), `/api/v1/notifications/${notifID}/read`) && r.request().method() === 'PATCH'
         );
         await page.getByTestId(`notification-action-read-${notifID}`).click();
         const readResp = await readRespPromise;
@@ -189,7 +185,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         // ── POST /notifications/mark-all-read → 204 ───────────────────────────────
         const markAllRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/notifications/mark-all-read') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/notifications/mark-all-read') && r.request().method() === 'POST'
         );
         await page.getByTestId('notifications-mark-all-read-button').click();
         const confirmBtn = page.locator('.ant-popover:visible, .ant-modal-content:visible')
@@ -210,32 +206,28 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         await page.getByRole('button', { name: 'Request VM' }).click();
         await expect(page.getByText('Create VM Request')).toBeVisible();
 
-        const systemSelect = page.locator('.ant-modal-content:visible [role="combobox"]').first();
-        await systemSelect.click();
-        await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
-        const serviceSelect = page.locator('.ant-modal-content:visible [role="combobox"]').nth(1);
-        await serviceSelect.click();
-        await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
-        await page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Next' }).click();
+        const systemSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
+        await selectAntOption(page, systemSelect);
+        const serviceSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').nth(1);
+        await selectAntOption(page, serviceSelect);
+        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
 
-        const templateSelect = page.locator('.ant-modal-content:visible [role="combobox"]').first();
-        await templateSelect.click();
-        await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
-        await page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Next' }).click();
+        const templateSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
+        await selectAntOption(page, templateSelect);
+        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
 
-        const sizeSelect = page.locator('.ant-modal-content:visible [role="combobox"]').first();
-        await sizeSelect.click();
-        await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
-        await page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Next' }).click();
+        const sizeSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
+        await selectAntOption(page, sizeSelect);
+        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
 
-        await page.locator('.ant-modal-content:visible input').first().fill('test-ns-cancel');
-        await page.locator('.ant-modal-content:visible textarea').first().fill('cancel test request');
-        await page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Next' }).click();
+        await getAntModal(page, 'vm-request-wizard-modal').locator('input').first().fill('test-ns-cancel');
+        await getAntModal(page, 'vm-request-wizard-modal').locator('textarea').first().fill('cancel test request');
+        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
 
         const submitRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/vms/request') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/vms/request') && r.request().method() === 'POST'
         );
-        await page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Submit' }).click();
+        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Submit' }).click();
         const submitResp = await submitRespPromise;
         expect([202, 400, 409]).toContain(submitResp.status());
 
@@ -252,7 +244,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         // ── POST /approvals/{id}/cancel → 204 ────────────────────────────────────
         const cancelRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/approvals/${ticketID}/cancel`) && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/approvals/${ticketID}/cancel`) && r.request().method() === 'POST'
         );
         await page.goto('/approvals');
         await expect(page.getByRole('heading', { name: /approval/i })).toBeVisible();
@@ -278,13 +270,13 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         await headerCheckbox.check();
 
         const batchRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/approvals/batch') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/approvals/batch') && r.request().method() === 'POST'
         );
         // Click batch approve button
         const batchApproveBtn = page.getByRole('button', { name: /batch approve|approve all/i }).first();
         await expect(batchApproveBtn, 'Batch approve button not found in approvals page').toBeVisible();
         await batchApproveBtn.click();
-        const confirmBtn = page.locator('.ant-modal-content:visible')
+        const confirmBtn = page.locator('.ant-popover:visible, .ant-modal-content:visible')
             .getByRole('button', { name: /confirm|ok/i }).first();
         if (await confirmBtn.count() > 0) await confirmBtn.click();
 
@@ -298,7 +290,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         // operationId: getSystem
         // Get first system from list
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/systems') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/systems') && r.request().method() === 'GET'
         );
         await page.goto('/systems');
         await expect(page.getByRole('heading', { name: 'Systems' })).toBeVisible();
@@ -311,7 +303,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         // ── GET /systems/{id} → System ────────────────────────────────────────────
         const getRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/systems/${systemID}`) && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/systems/${systemID}`) && r.request().method() === 'GET'
         );
         await page.getByTestId(`system-action-detail-${systemID}`).click();
         await expectSchema(getRespPromise, 'System', 200);
@@ -323,7 +315,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         // operationId: listServices
         // Get first system
         const sysListRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/systems') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/systems') && r.request().method() === 'GET'
         );
         await page.goto('/systems');
         await expect(page.getByRole('heading', { name: 'Systems' })).toBeVisible();
@@ -333,13 +325,12 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         // Navigate to services for this system
         const svcListRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/systems/${systemID}/services`) && r.request().method() === 'GET'
-                && !r.url().includes('/services/')
+            (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}/services`) && r.request().method() === 'GET'
+                && !urlPathIncludes(r.url(), '/services/')
         );
         await page.goto('/services');
         await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
-        await page.getByTestId('services-system-selector').click();
-        await page.locator('.ant-select-item-option').first().click();
+        await selectAntOption(page, page.getByTestId('services-system-selector'));
 
         // ── CONTRACT CHECK: ServiceList schema ────────────────────────────────────
         await expectSchema(svcListRespPromise, 'ServiceList', 200);
@@ -349,7 +340,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         // operationId: getService
         // Get first system and first service
         const sysListRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/systems') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/systems') && r.request().method() === 'GET'
         );
         await page.goto('/systems');
         await expect(page.getByRole('heading', { name: 'Systems' })).toBeVisible();
@@ -359,12 +350,11 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         await page.goto('/services');
         await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
-        await page.getByTestId('services-system-selector').click();
-        await page.locator('.ant-select-item-option').first().click();
+        await selectAntOption(page, page.getByTestId('services-system-selector'));
 
         const svcListRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/systems/${systemID}/services`) && r.request().method() === 'GET'
-                && !r.url().includes('/services/')
+            (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}/services`) && r.request().method() === 'GET'
+                && !urlPathIncludes(r.url(), '/services/')
         );
         const svcListBody = await validateApiResponse('ServiceList', await svcListRespPromise) as { items?: Array<{ id?: string }> };
         const serviceID = svcListBody.items?.[0]?.id ?? '';
@@ -372,7 +362,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         // ── GET /systems/{id}/services/{id} → Service ─────────────────────────────
         const getRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/systems/${systemID}/services/${serviceID}`) && r.request().method() === 'GET'
+            (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}/services/${serviceID}`) && r.request().method() === 'GET'
         );
         await page.getByTestId(`service-action-detail-${serviceID}`).click();
         await expectSchema(getRespPromise, 'Service', 200);
@@ -387,10 +377,10 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         await expect(page.getByRole('heading', { name: 'Systems' })).toBeVisible();
         const systemName = `e2emem${Date.now().toString(36).slice(-5)}`;
         const createSysRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/systems') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/systems') && r.request().method() === 'POST'
         );
         await page.getByTestId('system-create-button').click();
-        const createModal = page.locator('.ant-modal-content').filter({ hasText: /create system/i });
+        const createModal = getAntModal(page, 'system-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.locator('input[maxlength="15"]').first().fill(systemName);
         await createModal.getByRole('button', { name: 'OK' }).click();
@@ -400,12 +390,12 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         // Get a user to add as member
         const usersRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/users') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'GET'
         );
         await page.goto('/admin/users');
         await expect(page.getByTestId('admin-users-page')).toBeVisible();
         const usersResp = await usersRespPromise;
-        const usersBody = await usersResp.json() as { items?: Array<{ id?: string; username?: string }> };
+        const usersBody = await validateApiResponse('UserList', usersResp) as { items?: Array<{ id?: string; username?: string }> };
         const targetUser = usersBody.items?.find((u) => u.username !== e2eUsername);
         expect(targetUser, 'Need at least 2 users for member management test').toBeTruthy();
         const targetUserID = targetUser?.id ?? '';
@@ -413,18 +403,17 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         // Navigate to system members
         await page.goto('/systems');
         await page.getByTestId(`system-action-members-${systemID}`).click();
-        const membersModal = page.locator('.ant-modal-content:visible');
+        const membersModal = getAntModal(page, 'system-members-modal');
         await expect(membersModal).toBeVisible();
 
         // ── POST /systems/{id}/members → SystemMember ─────────────────────────────
         const addRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/systems/${systemID}/members`) && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/systems/${systemID}/members`) && r.request().method() === 'POST'
         );
         await membersModal.getByTestId('member-add-button').click();
-        const addModal = page.getByTestId('member-add-modal');
+        const addModal = getAntModal(page, 'member-add-modal');
         await expect(addModal).toBeVisible();
-        await addModal.locator('.ant-select-selector').first().click();
-        await page.locator('.ant-select-item-option').filter({ hasText: targetUser?.username ?? '' }).first().click();
+        await selectAntOption(page, addModal.locator('.ant-select-selector').first(), targetUser?.username ?? '');
         await addModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: addedMember } = await expectSchema(addRespPromise, 'SystemMember', 201);
@@ -432,20 +421,19 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         // ── PATCH /systems/{id}/members/{user_id} → SystemMember ─────────────────
         const updateRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/systems/${systemID}/members/${targetUserID}`) && r.request().method() === 'PATCH'
+            (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}/members/${targetUserID}`) && r.request().method() === 'PATCH'
         );
         await page.getByTestId(`member-action-edit-${targetUserID}`).click();
-        const editModal = page.getByTestId('member-edit-modal');
+        const editModal = getAntModal(page, 'member-edit-modal');
         await expect(editModal).toBeVisible();
-        await editModal.locator('.ant-select-selector').first().click();
-        await page.locator('.ant-select-item-option').last().click();
+        await selectAntOption(page, editModal.locator('.ant-select-selector').first());
         await editModal.getByRole('button', { name: 'OK' }).click();
 
         await expectSchema(updateRespPromise, 'SystemMember', 200);
 
         // ── DELETE /systems/{id}/members/{user_id} → 204 ──────────────────────────
         const deleteRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/systems/${systemID}/members/${targetUserID}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}/members/${targetUserID}`) && r.request().method() === 'DELETE'
         );
         await page.getByTestId(`member-action-remove-${targetUserID}`).click();
         const confirmBtn = page.getByRole('button', { name: /confirm|ok/i }).last();
@@ -456,11 +444,11 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         await page.keyboard.press('Escape');
         await page.goto('/systems');
         await page.getByTestId(`system-action-delete-${systemID}`).click();
-        const deleteModal = page.locator('.ant-modal-content').filter({ hasText: /delete system/i });
+        const deleteModal = getAntModal(page, 'system-delete-modal');
         await expect(deleteModal).toBeVisible();
         await deleteModal.getByRole('textbox').first().fill(systemName);
         const deleteSysRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/systems/${systemID}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}`) && r.request().method() === 'DELETE'
         );
         await deleteModal.getByRole('button', { name: /delete/i }).click();
         expect((await deleteSysRespPromise).status()).toBe(204);
@@ -471,7 +459,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
     test('getNamespace – GET /admin/namespaces/{id} conforms to NamespaceRegistry schema', async ({ page }) => {
         // operationId: getNamespace
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/namespaces') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/namespaces') && r.request().method() === 'GET'
         );
         await page.goto('/admin/namespaces');
         await expect(page.getByTestId('admin-namespaces-page')).toBeVisible();
@@ -484,7 +472,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         // ── GET /admin/namespaces/{id} → NamespaceRegistry ───────────────────────
         const getRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/admin/namespaces/${nsID}`) && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/admin/namespaces/${nsID}`) && r.request().method() === 'GET'
         );
         await page.getByTestId(`namespace-action-detail-${nsID}`).click();
         await expectSchema(getRespPromise, 'NamespaceRegistry', 200);
@@ -501,10 +489,10 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         // ── POST /auth/change-password → 204 (change to new password) ────────────
         const changeRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/auth/change-password') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/auth/change-password') && r.request().method() === 'POST'
         );
         await page.getByTestId('change-password-button').click();
-        const changeModal = page.getByTestId('change-password-modal');
+        const changeModal = getAntModal(page, 'change-password-modal');
         await expect(changeModal).toBeVisible();
         await changeModal.locator('input[type="password"]').nth(0).fill(e2ePassword);
         await changeModal.locator('input[type="password"]').nth(1).fill(e2eNewPassword);
@@ -516,10 +504,10 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         // ── Restore original password ─────────────────────────────────────────────
         const restoreRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/auth/change-password') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/auth/change-password') && r.request().method() === 'POST'
         );
         await page.getByTestId('change-password-button').click();
-        const restoreModal = page.getByTestId('change-password-modal');
+        const restoreModal = getAntModal(page, 'change-password-modal');
         await expect(restoreModal).toBeVisible();
         await restoreModal.locator('input[type="password"]').nth(0).fill(e2eNewPassword);
         await restoreModal.locator('input[type="password"]').nth(1).fill(e2ePassword);
