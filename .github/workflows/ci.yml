@@ -178,10 +178,17 @@ jobs:
       - name: Frontend unit tests
         run: npm run test:run --prefix web
 
-      - name: Frontend e2e tests
+      - name: Frontend e2e tests (live)
+        if: ${{ vars.ENABLE_LIVE_E2E == 'true' }}
         env:
           DATABASE_URL: postgres://shepherd:shepherd@localhost:5432/shepherd_test?sslmode=disable
         run: bash scripts/run_e2e_live.sh --no-db-wrapper
+
+      - name: Frontend e2e tests (live) disabled
+        if: ${{ vars.ENABLE_LIVE_E2E != 'true' }}
+        run: |
+          echo "Live E2E gate is disabled (vars.ENABLE_LIVE_E2E != 'true')."
+          echo "Set repository variable ENABLE_LIVE_E2E=true to enable this step."
 
   ci-checks:
     name: CI Checks
