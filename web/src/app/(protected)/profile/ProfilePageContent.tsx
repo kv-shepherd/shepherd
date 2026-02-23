@@ -158,8 +158,8 @@ export default function ProfilePage() {
                 }}
                 confirmLoading={changePasswordMutation.isPending}
                 destroyOnHidden
+                data-testid="change-password-modal"
             >
-                <div data-testid="change-password-modal">
                     {error && (
                         <Alert
                             message={error}
@@ -221,7 +221,6 @@ export default function ProfilePage() {
                             />
                         </Form.Item>
                     </Form>
-                </div>
             </Modal>
         </div>
     );

@@ -198,7 +198,7 @@ export function AdminTemplatesContent() {
                         <Button
                             type="text"
                             size="small"
-                            data-testid={`admin-template-action-edit-${record.id}`}
+                            data-testid={`template-action-edit-${record.id}`}
                             icon={<EditOutlined />}
                             onClick={() => templates.openEditModal(record)}
                         />
@@ -208,7 +208,7 @@ export function AdminTemplatesContent() {
                             type="text"
                             size="small"
                             danger
-                            data-testid={`admin-template-action-delete-${record.id}`}
+                            data-testid={`template-action-delete-${record.id}`}
                             icon={<DeleteOutlined />}
                             onClick={() => templates.openDeleteModal(record)}
                         />
@@ -246,7 +246,7 @@ export function AdminTemplatesContent() {
                     <Button
                         type="primary"
                         icon={<PlusOutlined />}
-                        data-testid="admin-template-create-button"
+                        data-testid="template-create-button"
                         onClick={templates.openCreateModal}
                     >
                         {t('common:button.add')}
@@ -296,34 +296,35 @@ export function AdminTemplatesContent() {
                 onCancel={templates.closeCreateModal}
                 confirmLoading={templates.createPending}
                 destroyOnHidden={true}
+                data-testid="template-create-modal"
             >
-                <Form form={templates.createForm} layout="vertical" preserve={false}>
-                    <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}> 
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="display_name" label={t('common:table.display_name')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="os_family" label={t('templates.os_family')}>
-                        <Input placeholder={t('templates.os_family_placeholder')} />
-                    </Form.Item>
-                    <Form.Item name="os_version" label={t('templates.os_version')}>
-                        <Input placeholder={t('templates.os_version_placeholder')} />
-                    </Form.Item>
-                    <Form.Item name="description" label={t('common:table.description')}>
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                    <Form.Item
-                        name="spec_text"
-                        label={t('templates.spec')}
-                        extra={t('templates.spec_help')}
-                    >
-                        <Input.TextArea rows={10} style={{ fontFamily: 'monospace' }} />
-                    </Form.Item>
-                    <Form.Item name="enabled" label={t('templates.enabled')} valuePropName="checked" initialValue={true}>
-                        <Switch />
-                    </Form.Item>
-                </Form>
+                    <Form form={templates.createForm} layout="vertical" preserve={false}>
+                        <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="display_name" label={t('common:table.display_name')}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="os_family" label={t('templates.os_family')}>
+                            <Input placeholder={t('templates.os_family_placeholder')} />
+                        </Form.Item>
+                        <Form.Item name="os_version" label={t('templates.os_version')}>
+                            <Input placeholder={t('templates.os_version_placeholder')} />
+                        </Form.Item>
+                        <Form.Item name="description" label={t('common:table.description')}>
+                            <Input.TextArea rows={3} />
+                        </Form.Item>
+                        <Form.Item
+                            name="spec_text"
+                            label={t('templates.spec')}
+                            extra={t('templates.spec_help')}
+                        >
+                            <Input.TextArea rows={10} style={{ fontFamily: 'monospace' }} />
+                        </Form.Item>
+                        <Form.Item name="enabled" label={t('templates.enabled')} valuePropName="checked" initialValue={true}>
+                            <Switch />
+                        </Form.Item>
+                    </Form>
             </Modal>
 
             <Modal
@@ -333,31 +334,32 @@ export function AdminTemplatesContent() {
                 onCancel={templates.closeEditModal}
                 confirmLoading={templates.updatePending}
                 destroyOnHidden={true}
+                data-testid="template-edit-modal"
             >
-                <Form form={templates.editForm} layout="vertical" preserve={false}>
-                    <Form.Item name="display_name" label={t('common:table.display_name')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="os_family" label={t('templates.os_family')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="os_version" label={t('templates.os_version')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="description" label={t('common:table.description')}>
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                    <Form.Item
-                        name="spec_text"
-                        label={t('templates.spec')}
-                        extra={t('templates.spec_help')}
-                    >
-                        <Input.TextArea rows={10} style={{ fontFamily: 'monospace' }} />
-                    </Form.Item>
-                    <Form.Item name="enabled" label={t('templates.enabled')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                </Form>
+                    <Form form={templates.editForm} layout="vertical" preserve={false}>
+                        <Form.Item name="display_name" label={t('common:table.display_name')}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="os_family" label={t('templates.os_family')}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="os_version" label={t('templates.os_version')}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="description" label={t('common:table.description')}>
+                            <Input.TextArea rows={3} />
+                        </Form.Item>
+                        <Form.Item
+                            name="spec_text"
+                            label={t('templates.spec')}
+                            extra={t('templates.spec_help')}
+                        >
+                            <Input.TextArea rows={10} style={{ fontFamily: 'monospace' }} />
+                        </Form.Item>
+                        <Form.Item name="enabled" label={t('templates.enabled')} valuePropName="checked">
+                            <Switch />
+                        </Form.Item>
+                    </Form>
             </Modal>
 
             <Modal

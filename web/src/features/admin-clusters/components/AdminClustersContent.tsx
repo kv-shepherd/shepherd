@@ -153,8 +153,8 @@ export function AdminClustersContent() {
                 onCancel={clusters.closeCreateModal}
                 confirmLoading={clusters.createPending}
                 forceRender
+                data-testid="cluster-create-modal"
             >
-                <div data-testid="cluster-create-modal">
                     <Form form={clusters.form} layout="vertical" name="create-cluster">
                         <Form.Item
                             name="name"
@@ -191,7 +191,6 @@ export function AdminClustersContent() {
                             />
                         </Form.Item>
                     </Form>
-                </div>
             </Modal>
             <Modal
                 title={t('clusters.set_environment')}
@@ -200,8 +199,8 @@ export function AdminClustersContent() {
                 onCancel={clusters.closeEnvModal}
                 confirmLoading={clusters.updateEnvironmentPending}
                 destroyOnHidden={true}
+                data-testid="cluster-environment-modal"
             >
-                <div data-testid="cluster-environment-modal">
                     <Form form={clusters.envForm} layout="vertical" preserve={false}>
                         <Form.Item
                             name="environment"
@@ -216,7 +215,6 @@ export function AdminClustersContent() {
                             />
                         </Form.Item>
                     </Form>
-                </div>
             </Modal>
         </div>
     );

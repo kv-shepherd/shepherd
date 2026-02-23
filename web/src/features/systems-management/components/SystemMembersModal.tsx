@@ -106,7 +106,8 @@ export function SystemMembersModal({
             onCancel={onCancel}
             footer={null}
             width={700}
-            forceRender
+            destroyOnHidden={true}
+            data-testid="system-members-modal"
         >
             <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
                 <Button
@@ -136,27 +137,26 @@ export function SystemMembersModal({
                 }}
                 onCancel={members.closeAddMemberModal}
                 confirmLoading={members.addMemberPending}
-                forceRender
+                destroyOnHidden={true}
+                data-testid="member-add-modal"
             >
-                <div data-testid="member-add-modal">
-                    <Form form={members.addMemberForm} layout="vertical" name="add-system-member">
-                        <Form.Item
-                            name="user_id"
-                            label={t('table.user_id')}
-                            rules={[{ required: true, message: t('validation.required') }]}
-                        >
-                            <Input placeholder="e.g. user-123" />
-                        </Form.Item>
-                        <Form.Item
-                            name="role"
-                            label={t('table.role')}
-                            rules={[{ required: true, message: t('validation.required') }]}
-                            initialValue="member"
-                        >
-                            <Select options={roleOptions} />
-                        </Form.Item>
-                    </Form>
-                </div>
+                <Form form={members.addMemberForm} layout="vertical" name="add-system-member">
+                    <Form.Item
+                        name="user_id"
+                        label={t('table.user_id')}
+                        rules={[{ required: true, message: t('validation.required') }]}
+                    >
+                        <Input placeholder="e.g. user-123" />
+                    </Form.Item>
+                    <Form.Item
+                        name="role"
+                        label={t('table.role')}
+                        rules={[{ required: true, message: t('validation.required') }]}
+                        initialValue="member"
+                    >
+                        <Select options={roleOptions} />
+                    </Form.Item>
+                </Form>
             </Modal>
         </Modal>
     );
