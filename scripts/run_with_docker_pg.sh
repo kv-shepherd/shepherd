@@ -5,11 +5,12 @@ set -euo pipefail
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 cd "$ROOT_DIR"
 
-PG_IMAGE="${PG_IMAGE:-postgres:16}"
+PG_IMAGE="${PG_IMAGE:-postgres:18}"
 PG_USER="${PG_USER:-shepherd}"
 PG_PASSWORD="${PG_PASSWORD:-shepherd}"
 PG_DB="${PG_DB:-shepherd_test}"
 PG_HOST="${PG_HOST:-127.0.0.1}"
+PG_PORT="${PG_PORT:-}"
 PG_WAIT_TIMEOUT_SEC="${PG_WAIT_TIMEOUT_SEC:-90}"
 KEEP_CONTAINER=0
 
@@ -20,12 +21,13 @@ Usage:
 
 Options:
   --keep                Keep container after command exits (for debugging)
-  --image <image>       PostgreSQL image (default: postgres:16)
+  --image <image>       PostgreSQL image (default: postgres:18)
+  --port <port>         Fixed host port mapping (default: random host port)
   --timeout <seconds>   Health wait timeout (default: 90)
   -h, --help            Show this help
 
 Environment overrides:
-  PG_IMAGE, PG_USER, PG_PASSWORD, PG_DB, PG_HOST, PG_WAIT_TIMEOUT_SEC
+  PG_IMAGE, PG_USER, PG_PASSWORD, PG_DB, PG_HOST, PG_PORT, PG_WAIT_TIMEOUT_SEC
 
 Default command (when no command is provided):
   go test -count=1 ./internal/api/handlers ./internal/governance/approval ./internal/usecase ./internal/jobs ./internal/repository/sqlc ./internal/service
@@ -56,6 +58,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --image)
       PG_IMAGE="$2"
+      shift 2
+      ;;
+    --port)
+      PG_PORT="$2"
       shift 2
       ;;
     --timeout)
@@ -102,32 +108,69 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "INFO: starting PostgreSQL test container ${CONTAINER_NAME} (${PG_IMAGE})"
-docker run -d \
+
+DOCKER_PORT_ARGS=()
+if [[ -n "${PG_PORT}" ]]; then
+  DOCKER_PORT_ARGS=(-p "${PG_HOST}:${PG_PORT}:5432")
+else
+  DOCKER_PORT_ARGS=(-p "${PG_HOST}::5432")
+fi
+
+RUN_ERR_LOG="$(mktemp)"
+HOST_NETWORK_MODE=0
+if ! docker run -d \
   --name "${CONTAINER_NAME}" \
   -e POSTGRES_USER="${PG_USER}" \
   -e POSTGRES_PASSWORD="${PG_PASSWORD}" \
   -e POSTGRES_DB="${PG_DB}" \
-  -p "${PG_HOST}::5432" \
+  "${DOCKER_PORT_ARGS[@]}" \
   --health-cmd "pg_isready -U ${PG_USER} -d ${PG_DB}" \
   --health-interval 1s \
   --health-timeout 3s \
   --health-retries 60 \
-  "${PG_IMAGE}" >/dev/null
-
-PG_PORT=""
-for _ in $(seq 1 30); do
-  RAW_PORT="$(docker port "${CONTAINER_NAME}" 5432/tcp 2>/dev/null | tail -n 1 || true)"
-  if [[ -n "${RAW_PORT}" ]]; then
-    PG_PORT="${RAW_PORT##*:}"
-    break
+  "${PG_IMAGE}" >/dev/null 2>"${RUN_ERR_LOG}"; then
+  if [[ -n "${PG_PORT}" ]] && rg -q "Unable to enable OPEN PORT rule|failed to set up container networking" "${RUN_ERR_LOG}"; then
+    echo "WARN: bridge networking failed; retrying PostgreSQL container in host mode on port ${PG_PORT}"
+    docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+    if ! docker run -d \
+      --name "${CONTAINER_NAME}" \
+      --network host \
+      -e POSTGRES_USER="${PG_USER}" \
+      -e POSTGRES_PASSWORD="${PG_PASSWORD}" \
+      -e POSTGRES_DB="${PG_DB}" \
+      --health-cmd "pg_isready -U ${PG_USER} -d ${PG_DB} -p ${PG_PORT}" \
+      --health-interval 1s \
+      --health-timeout 3s \
+      --health-retries 60 \
+      "${PG_IMAGE}" -p "${PG_PORT}" >/dev/null 2>"${RUN_ERR_LOG}"; then
+      cat "${RUN_ERR_LOG}" >&2
+      rm -f "${RUN_ERR_LOG}"
+      exit 1
+    fi
+    HOST_NETWORK_MODE=1
+  else
+    cat "${RUN_ERR_LOG}" >&2
+    rm -f "${RUN_ERR_LOG}"
+    exit 1
   fi
-  sleep 1
-done
+fi
+rm -f "${RUN_ERR_LOG}"
 
 if [[ -z "${PG_PORT}" ]]; then
-  echo "ERROR: unable to determine mapped PostgreSQL port"
-  docker logs "${CONTAINER_NAME}" || true
-  exit 1
+  for _ in $(seq 1 30); do
+    RAW_PORT="$(docker port "${CONTAINER_NAME}" 5432/tcp 2>/dev/null | tail -n 1 || true)"
+    if [[ -n "${RAW_PORT}" ]]; then
+      PG_PORT="${RAW_PORT##*:}"
+      break
+    fi
+    sleep 1
+  done
+
+  if [[ -z "${PG_PORT}" ]]; then
+    echo "ERROR: unable to determine mapped PostgreSQL port"
+    docker logs "${CONTAINER_NAME}" || true
+    exit 1
+  fi
 fi
 
 DEADLINE=$((SECONDS + PG_WAIT_TIMEOUT_SEC))
@@ -150,7 +193,11 @@ while true; do
 done
 
 TEST_DSN="postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}?sslmode=disable"
-echo "INFO: PostgreSQL is healthy on ${PG_HOST}:${PG_PORT}"
+if [[ "${HOST_NETWORK_MODE}" -eq 1 ]]; then
+  echo "INFO: PostgreSQL is healthy on ${PG_HOST}:${PG_PORT} (host network mode)"
+else
+  echo "INFO: PostgreSQL is healthy on ${PG_HOST}:${PG_PORT}"
+fi
 echo "INFO: running command: ${COMMAND[*]}"
 
 TEST_DATABASE_URL="${TEST_DSN}" DATABASE_URL="${TEST_DSN}" "${COMMAND[@]}"
