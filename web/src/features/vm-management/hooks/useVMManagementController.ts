@@ -514,7 +514,9 @@ export function useVMManagementController({ t }: UseVMManagementControllerArgs) 
     };
 
     const submitWizard = () => {
-        const values = form.getFieldsValue();
+        // Include unmounted previous-step fields; default getFieldsValue() only
+        // returns currently mounted fields and would drop wizard data on step 5.
+        const values = form.getFieldsValue(true);
         const singlePayload: VMCreateRequest = {
             service_id: values.service_id,
             template_id: values.template_id,
