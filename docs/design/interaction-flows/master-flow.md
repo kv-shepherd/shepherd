@@ -847,7 +847,7 @@ external systems are integrated as provider plugins without changing approval st
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │  V1 go-live path (required):                                                                 │
-│    1) User submits request -> approval_tickets=PENDING_APPROVAL                              │
+│    1) User submits request -> approval_tickets=PENDING                                       │
 │    2) Router selects built-in provider (`builtin-default`, only provider in V1)             │
 │    3) Built-in approver decides APPROVED / REJECTED                                          │
 │    4) Shepherd executes decision path and appends audit logs                                 │
@@ -1701,9 +1701,9 @@ execution, and runtime outcomes.
 
 | Stage | Ticket | Domain Event | VM | Worker Job |
 |------|--------|--------------|----|------------|
-| 5.A Submit | created as `PENDING_APPROVAL` | created as `PENDING` | none | none |
-| 5.B Approve | `PENDING_APPROVAL -> APPROVED` | `PENDING -> PROCESSING` | created as `CREATING` | inserted |
-| 5.B Reject | `PENDING_APPROVAL -> REJECTED` | `PENDING -> CANCELLED` | none | none |
+| 5.A Submit | created as `PENDING` | created as `PENDING` | none | none |
+| 5.B Approve | `PENDING -> APPROVED` | `PENDING -> PROCESSING` | created as `CREATING` | inserted |
+| 5.B Reject | `PENDING -> REJECTED` | `PENDING -> CANCELLED` | none | none |
 | 5.C Execute | unchanged | progresses per execution | `CREATING -> RUNNING|FAILED` | consumed/completed |
 
 ### Failure & Edge Cases (Stage 5.A-5.C)
@@ -1751,7 +1751,7 @@ Summarize persistence intent after VM request submission while keeping implement
 │        │                                                                                     │
 │        ▼                                                                                     │
 │  Single transaction writes:                                                                  │
-│    1) approval_tickets: create `PENDING_APPROVAL`                                            │
+│    1) approval_tickets: create `PENDING`                                                     │
 │    2) domain_events: create `PENDING`                                                        │
 │    3) audit_logs: append canonical submission action                                         │
 │        │                                                                                     │
@@ -1765,7 +1765,7 @@ Summarize persistence intent after VM request submission while keeping implement
 
 | Entity | Before | After |
 |------|------|------|
-| `approval_tickets` | none | `PENDING_APPROVAL` |
+| `approval_tickets` | none | `PENDING` |
 | `domain_events` | none | `PENDING` |
 | `vms` | none | none |
 | `river_job` | none | none |
@@ -1806,14 +1806,14 @@ Summarize approval/rejection write outcomes and guarantees for VM creation workf
 │  Approver opens pending ticket                                                               │
 │        │                                                                                     │
 │        ├── Approve path                                                                      │
-│        │      1) ticket: `PENDING_APPROVAL -> APPROVED`                                     │
+│        │      1) ticket: `PENDING -> APPROVED`                                              │
 │        │      2) domain_event: `PENDING -> PROCESSING`                                      │
 │        │      3) vms: insert with `CREATING`                                                │
 │        │      4) river job: enqueue execution task                                           │
 │        │      5) audit_logs: append approval action                                          │
 │        │                                                                                     │
 │        └── Reject path                                                                       │
-│               1) ticket: `PENDING_APPROVAL -> REJECTED`                                     │
+│               1) ticket: `PENDING -> REJECTED`                                              │
 │               2) domain_event: `PENDING -> CANCELLED`                                       │
 │               3) no VM row / no River job                                                   │
 │               4) audit_logs: append rejection action                                         │
@@ -1825,8 +1825,8 @@ Summarize approval/rejection write outcomes and guarantees for VM creation workf
 
 | Path | Ticket | Domain Event | VM | River Job |
 |------|--------|--------------|----|-----------|
-| Approve | `PENDING_APPROVAL -> APPROVED` | `PENDING -> PROCESSING` | created with `CREATING` | inserted (`available`) |
-| Reject | `PENDING_APPROVAL -> REJECTED` | `PENDING -> CANCELLED` | not created | not inserted |
+| Approve | `PENDING -> APPROVED` | `PENDING -> PROCESSING` | created with `CREATING` | inserted (`available`) |
+| Reject | `PENDING -> REJECTED` | `PENDING -> CANCELLED` | not created | not inserted |
 
 #### Failure & Edge Cases
 
@@ -1895,7 +1895,7 @@ Entity rule matrix:
 
 | Flow | Ticket | Resource | Final Persistence Outcome |
 |------|--------|----------|---------------------------|
-| VM delete approved | `PENDING_APPROVAL -> APPROVED` | `RUNNING/STOPPED -> DELETING -> (row removed)` | VM row hard-deleted, records retained separately |
+| VM delete approved | `PENDING -> APPROVED` | `RUNNING/STOPPED -> DELETING -> (row removed)` | VM row hard-deleted, records retained separately |
 | Service delete | no ticket | `ACTIVE -> DELETING -> (row removed)` | Service row hard-deleted after worker cleanup |
 | System delete | no ticket | `ACTIVE -> (row removed)` | System row hard-deleted in validated transaction |
 
@@ -2013,8 +2013,8 @@ UI storyboard (parent-child queue):
 │     • CANCELLED: pending children terminated by user/admin                                       │
 │                                                                                                  │
 │  4. Frontend actions during/after execution:                                                     │
-│     • Retry failed children: POST /api/v1/vms/batch/{id}/retry                                   │
-│     • Terminate pending children: POST /api/v1/vms/batch/{id}/cancel                             │
+│     • Retry failed children: POST /api/v1/vms/batch/{batch_id}/retry                             │
+│     • Terminate pending children: POST /api/v1/vms/batch/{batch_id}/cancel                       │
 │                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -2037,8 +2037,8 @@ UI storyboard (parent-child queue):
 
 | Scope | Transition Pattern |
 |------|---------------------|
-| Parent ticket | `PENDING_APPROVAL -> APPROVED/IN_PROGRESS -> COMPLETED|PARTIAL_SUCCESS|FAILED|CANCELLED` |
-| Child ticket | `PENDING -> RUNNING -> SUCCESS|FAILED|CANCELLED` |
+| Parent ticket | `PENDING_APPROVAL -> IN_PROGRESS -> COMPLETED|PARTIAL_SUCCESS|FAILED|CANCELLED` |
+| Child ticket | `PENDING -> APPROVED/REJECTED/CANCELLED -> EXECUTING -> SUCCESS|FAILED` |
 
 #### Failure & Edge Cases
 
@@ -2130,7 +2130,7 @@ Define notification behavior visible to users/admins for request, approval, and 
 │  │  [Mark all as read]  [View all →]                                  │                        │
 │  └─────────────────────────────────────────────────────────────────────┘                        │
 │                                                                                                  │
-│  Mark as read: PATCH /api/v1/notifications/{id}/read                                           │
+│  Mark as read: PATCH /api/v1/notifications/{notification_id}/read                               │
 │  Mark all read: POST /api/v1/notifications/mark-all-read                                       │
 │                                                                                                  │
 │  ⚠️ V1 Constraint: Poll-based only, no WebSocket push                                           │
@@ -2194,7 +2194,7 @@ It consolidates entity states, relationship intent, and audit semantics consumed
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │                        ┌───────────────────┐                                                 │
-│                        │  PENDING_APPROVAL │                                                 │
+│                        │      PENDING      │                                                 │
 │                        │     (pending)     │                                                 │
 │                        └─────────┬─────────┘                                                 │
 │                                  │                                                           │
@@ -2253,6 +2253,11 @@ It consolidates entity states, relationship intent, and audit semantics consumed
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+Compatibility note:
+- Runtime/provider compatibility statuses may also appear in API responses:
+  `PENDING`, `MIGRATING`, `PAUSED`, `UNKNOWN`.
+  These are non-canonical transition helpers and must be rendered safely by frontend views.
 
 ---
 
@@ -2520,8 +2525,8 @@ Key persisted data (schema authority remains in phase/database docs):
 
 | Domain | Canonical States |
 |--------|------------------|
-| Approval ticket | `PENDING_APPROVAL`, `APPROVED`, `REJECTED`, `CANCELLED`, `EXECUTING`, `SUCCESS`, `FAILED` |
-| VM runtime | `CREATING`, `RUNNING`, `STOPPING`, `STOPPED`, `FAILED`, `DELETING` |
+| Approval ticket | `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`, `EXECUTING`, `SUCCESS`, `FAILED` |
+| VM runtime | `CREATING`, `RUNNING`, `STOPPING`, `STOPPED`, `FAILED`, `DELETING`, `PENDING`, `MIGRATING`, `PAUSED`, `UNKNOWN` |
 | Audit record lifecycle | append-only write, retained/archived per policy |
 
 ### Failure & Edge Cases (Part 4 Reference)
