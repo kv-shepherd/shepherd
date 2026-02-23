@@ -48,6 +48,7 @@
 
 import { expect, test, type Page, type Response } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
+import {urlPathEndsWith, urlPathIncludes, selectAntOption, getAntModal} from './lib/helpers';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -67,7 +68,7 @@ async function login(page: Page): Promise<void> {
   await page.getByPlaceholder('Password').fill(e2ePassword);
 
   const loginRespPromise = page.waitForResponse(
-    (r) => r.url().endsWith('/api/v1/auth/login') && r.request().method() === 'POST'
+    (r) => urlPathEndsWith(r.url(), '/api/v1/auth/login') && r.request().method() === 'POST'
   );
   await page.getByRole('button', { name: 'Login' }).click();
 
@@ -112,7 +113,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     // login() in beforeEach already validates LoginResponse schema.
     // This test additionally verifies /auth/me returns UserInfo schema.
     const meRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/auth/me') && r.request().method() === 'GET'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/auth/me') && r.request().method() === 'GET'
     );
     await page.goto('/dashboard');
 
@@ -129,7 +130,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
       console.warn('[getCurrentUser] /auth/me not called on dashboard load – trigger manually');
       // Trigger explicitly via navigation to profile page
       const explicitRespPromise = page.waitForResponse(
-        (r) => r.url().endsWith('/api/v1/auth/me') && r.request().method() === 'GET'
+        (r) => urlPathEndsWith(r.url(), '/api/v1/auth/me') && r.request().method() === 'GET'
       );
       await page.goto('/profile');
       const explicitResp = await Promise.race([
@@ -154,7 +155,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     // Per Playwright best practice: register Promise BEFORE the action that
     // triggers the network request, to avoid missing a fast response.
     const listRespPromise = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/systems') && r.request().method() === 'GET' && !r.url().includes('/members')
+      (r) => urlPathIncludes(r.url(), '/api/v1/systems') && r.request().method() === 'GET' && !urlPathIncludes(r.url(), '/members')
     );
     await page.goto('/systems');
     await expect(page.getByRole('heading', { name: 'Systems' })).toBeVisible();
@@ -166,11 +167,11 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     // ── CONTRACT CHECK: createSystem → System ────────────────────────────────
     const systemName = `e2es${Date.now().toString(36).slice(-6)}`;
     const createRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/systems') && r.request().method() === 'POST'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/systems') && r.request().method() === 'POST'
     );
 
     await page.getByTestId('system-create-button').click();
-    const createModal = page.locator('.ant-modal-content').filter({ hasText: /create system/i });
+    const createModal = getAntModal(page, 'system-create-modal');
     await expect(createModal).toBeVisible();
     await createModal.locator('input[maxlength="15"]').first().fill(systemName);
     await createModal.locator('textarea').first().fill('created by live e2e');
@@ -184,10 +185,10 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
 
     // ── CONTRACT CHECK: updateSystem → System ────────────────────────────────
     const updateRespPromise = page.waitForResponse(
-      (r) => r.url().includes(`/api/v1/systems/${systemID}`) && r.request().method() === 'PATCH'
+      (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}`) && r.request().method() === 'PATCH'
     );
     await page.getByTestId(`system-action-edit-${systemID}`).click();
-    const editModal = page.locator('.ant-modal-content').filter({ hasText: /edit system/i });
+    const editModal = getAntModal(page, 'system-edit-modal');
     await expect(editModal).toBeVisible();
     await editModal.locator('textarea').first().fill('updated by live e2e');
     await editModal.getByRole('button', { name: 'OK' }).click();
@@ -196,7 +197,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
 
     // ── CONTRACT CHECK: deleteSystem with confirm_name guard ──────────────────
     await page.getByTestId(`system-action-delete-${systemID}`).click();
-    const deleteModal = page.locator('.ant-modal-content').filter({ hasText: /delete system/i });
+    const deleteModal = getAntModal(page, 'system-delete-modal');
     await expect(deleteModal).toBeVisible();
 
     const deleteBtn = deleteModal.getByRole('button', { name: /delete/i });
@@ -211,7 +212,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     await expect(deleteBtn).toBeEnabled();
 
     const deleteRespPromise = page.waitForResponse(
-      (r) => r.url().includes(`/api/v1/systems/${systemID}`) && r.request().method() === 'DELETE'
+      (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}`) && r.request().method() === 'DELETE'
     );
     await deleteBtn.click();
 
@@ -233,10 +234,10 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
 
     const systemName = `e2em${Date.now().toString(36).slice(-6)}`;
     const createRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/systems') && r.request().method() === 'POST'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/systems') && r.request().method() === 'POST'
     );
     await page.getByTestId('system-create-button').click();
-    const createModal = page.locator('.ant-modal-content').filter({ hasText: /create system/i });
+    const createModal = getAntModal(page, 'system-create-modal');
     await expect(createModal).toBeVisible();
     await createModal.locator('input[maxlength="15"]').first().fill(systemName);
     await createModal.getByRole('button', { name: 'OK' }).click();
@@ -247,10 +248,10 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
 
     // ── CONTRACT CHECK: listSystemMembers → SystemMemberList ──────────────────
     const membersRespPromise = page.waitForResponse(
-      (r) => r.url().includes(`/api/v1/systems/${systemID}/members`) && r.request().method() === 'GET'
+      (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}/members`) && r.request().method() === 'GET'
     );
     await page.getByTestId(`system-action-members-${systemID}`).click();
-    const membersModal = page.locator('.ant-modal-content:visible');
+    const membersModal = getAntModal(page, 'system-members-modal');
     await expect(membersModal).toBeVisible();
 
     const membersResp = await membersRespPromise;
@@ -263,11 +264,11 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
 
     // Delete the temp system
     await page.getByTestId(`system-action-delete-${systemID}`).click();
-    const deleteModal = page.locator('.ant-modal-content').filter({ hasText: /delete system/i });
+    const deleteModal = getAntModal(page, 'system-delete-modal');
     await expect(deleteModal).toBeVisible();
     await deleteModal.getByRole('textbox').first().fill(systemName);
     const deleteRespPromise = page.waitForResponse(
-      (r) => r.url().includes(`/api/v1/systems/${systemID}`) && r.request().method() === 'DELETE'
+      (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}`) && r.request().method() === 'DELETE'
     );
     await deleteModal.getByRole('button', { name: /delete/i }).click();
     const deleteResp = await deleteRespPromise;
@@ -282,10 +283,10 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     await page.goto('/systems');
     const systemName = `e2esvc${Date.now().toString(36).slice(-5)}`;
     const createSysRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/systems') && r.request().method() === 'POST'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/systems') && r.request().method() === 'POST'
     );
     await page.getByTestId('system-create-button').click();
-    const createSysModal = page.locator('.ant-modal-content').filter({ hasText: /create system/i });
+    const createSysModal = getAntModal(page, 'system-create-modal');
     await expect(createSysModal).toBeVisible();
     await createSysModal.locator('input[maxlength="15"]').first().fill(systemName);
     await createSysModal.getByRole('button', { name: 'OK' }).click();
@@ -297,18 +298,17 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     // Navigate to services and select the new system
     await page.goto('/services');
     await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
-    await page.getByTestId('services-system-selector').click();
-    await page.locator('.ant-select-item-option').filter({ hasText: systemName }).first().click();
+    await selectAntOption(page, page.getByTestId('services-system-selector'), systemName);
 
     // ── CONTRACT CHECK: createService → Service ───────────────────────────────
     const serviceName = `e2e-svc-${Date.now().toString(36).slice(-5)}`;
     const createSvcRespPromise = page.waitForResponse(
       (r) =>
-        r.url().includes(`/api/v1/systems/${systemID}/services`) &&
+        urlPathIncludes(r.url(), `/api/v1/systems/${systemID}/services`) &&
         r.request().method() === 'POST'
     );
     await page.getByTestId('service-create-button').click();
-    const createSvcModal = page.locator('.ant-modal-content').filter({ hasText: /create service/i });
+    const createSvcModal = getAntModal(page, 'service-create-modal');
     await expect(createSvcModal).toBeVisible();
     await createSvcModal.getByPlaceholder('e.g. web, api-gateway').fill(serviceName);
     await createSvcModal.locator('textarea').first().fill('service created by live e2e');
@@ -323,11 +323,11 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     // ── CONTRACT CHECK: updateService → Service ───────────────────────────────
     const updateSvcRespPromise = page.waitForResponse(
       (r) =>
-        r.url().includes(`/api/v1/systems/${systemID}/services/${serviceID}`) &&
+        urlPathIncludes(r.url(), `/api/v1/systems/${systemID}/services/${serviceID}`) &&
         r.request().method() === 'PATCH'
     );
     await page.getByTestId(`service-action-edit-${serviceID}`).click();
-    const editSvcModal = page.locator('.ant-modal-content').filter({ hasText: /edit service/i });
+    const editSvcModal = getAntModal(page, 'service-edit-modal');
     await expect(editSvcModal).toBeVisible();
     await editSvcModal.locator('textarea').first().fill('updated by live e2e');
     await editSvcModal.getByRole('button', { name: 'OK' }).click();
@@ -337,7 +337,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     // ── CONTRACT CHECK: deleteService with confirm=true ───────────────────────
     const deleteSvcRespPromise = page.waitForResponse(
       (r) =>
-        r.url().includes(`/api/v1/systems/${systemID}/services/${serviceID}`) &&
+        urlPathIncludes(r.url(), `/api/v1/systems/${systemID}/services/${serviceID}`) &&
         r.request().method() === 'DELETE'
     );
     await page.getByTestId(`service-action-delete-${serviceID}`).click();
@@ -355,11 +355,11 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     // Clean up: delete the system
     await page.goto('/systems');
     await page.getByTestId(`system-action-delete-${systemID}`).click();
-    const deleteModal = page.locator('.ant-modal-content').filter({ hasText: /delete system/i });
+    const deleteModal = getAntModal(page, 'system-delete-modal');
     await expect(deleteModal).toBeVisible();
     await deleteModal.getByRole('textbox').first().fill(systemName);
     const deleteSysRespPromise = page.waitForResponse(
-      (r) => r.url().includes(`/api/v1/systems/${systemID}`) && r.request().method() === 'DELETE'
+      (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}`) && r.request().method() === 'DELETE'
     );
     await deleteModal.getByRole('button', { name: /delete/i }).click();
     expect((await deleteSysRespPromise).status()).toBe(204);
@@ -372,16 +372,15 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     await page.goto('/services');
     await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
 
-    await page.getByTestId('services-system-selector').click();
-    await page.locator('.ant-select-item-option').filter({ hasText: e2eSystemName }).first().click();
+    await selectAntOption(page, page.getByTestId('services-system-selector'), e2eSystemName);
 
     const serviceRow = page.locator('tr').filter({ hasText: e2eServiceName }).first();
     await expect(serviceRow).toBeVisible();
 
     const deleteRespPromise = page.waitForResponse(
       (r) =>
-        r.url().includes('/api/v1/systems/') &&
-        r.url().includes('/services/') &&
+        urlPathIncludes(r.url(), '/api/v1/systems/') &&
+        urlPathIncludes(r.url(), '/services/') &&
         r.request().method() === 'DELETE'
     );
     await serviceRow.locator('[data-testid^="service-action-delete-"]').first().click();
@@ -403,7 +402,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     // operationId: getVMRequestContext, createVMRequest
     // First get the VM request context to validate schema
     const contextRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/vms/request-context') && r.request().method() === 'GET'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/vms/request-context') && r.request().method() === 'GET'
     );
 
     await page.goto('/vms');
@@ -420,48 +419,36 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     }
 
     // Step 0: Select System
-    const systemSelect = page.locator('.ant-modal-content:visible [role="combobox"]').first();
-    await systemSelect.click();
-    const sysOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(sysOption).toBeVisible({ timeout: 5000 });
-    await sysOption.click();
+    const systemSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
+    await selectAntOption(page, systemSelect);
 
     // Select Service
-    const serviceSelect = page.locator('.ant-modal-content:visible [role="combobox"]').nth(1);
-    await serviceSelect.click();
-    const svcOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(svcOption).toBeVisible({ timeout: 5000 });
-    await svcOption.click();
+    const serviceSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').nth(1);
+    await selectAntOption(page, serviceSelect);
 
-    await page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Next' }).click();
+    await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
 
     // Step 1: Template
-    const templateSelect = page.locator('.ant-modal-content:visible [role="combobox"]').first();
-    await templateSelect.click();
-    const tplOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(tplOption).toBeVisible({ timeout: 5000 });
-    await tplOption.click();
-    await page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Next' }).click();
+    const templateSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
+    await selectAntOption(page, templateSelect);
+    await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
 
     // Step 2: Instance Size
-    const sizeSelect = page.locator('.ant-modal-content:visible [role="combobox"]').first();
-    await sizeSelect.click();
-    const sizeOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-    await expect(sizeOption).toBeVisible({ timeout: 5000 });
-    await sizeOption.click();
-    await page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Next' }).click();
+    const sizeSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
+    await selectAntOption(page, sizeSelect);
+    await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
 
     // Step 3: Namespace + Reason
-    await page.locator('.ant-modal-content:visible input').first().fill('test-ns');
-    await page.locator('.ant-modal-content:visible textarea').first().fill('live e2e test request');
-    await page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Next' }).click();
+    await getAntModal(page, 'vm-request-wizard-modal').locator('input').first().fill('test-ns');
+    await getAntModal(page, 'vm-request-wizard-modal').locator('textarea').first().fill('live e2e test request');
+    await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
 
     // Step 4: Submit
-    const submitBtn = page.locator('.ant-modal-content:visible').getByRole('button', { name: 'Submit' });
+    const submitBtn = getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Submit' });
     await expect(submitBtn).toBeVisible({ timeout: 5000 });
 
     const submitRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/vms/request') && r.request().method() === 'POST'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/vms/request') && r.request().method() === 'POST'
     );
     await submitBtn.click();
 
@@ -478,7 +465,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
   test('Stage 5 – listVMs: VM list conforms to VMList schema', async ({ page }) => {
     // operationId: listVMs
     const vmListRespPromise = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/vms') && r.request().method() === 'GET' && !r.url().includes('/batch') && !r.url().includes('/request') && !r.url().includes('/console')
+      (r) => urlPathIncludes(r.url(), '/api/v1/vms') && r.request().method() === 'GET' && !urlPathIncludes(r.url(), '/batch') && !urlPathIncludes(r.url(), '/request') && !urlPathIncludes(r.url(), '/console')
     );
     await page.goto('/vms');
     await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
@@ -495,7 +482,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
   test('Stage 5.B – listApprovals: approval list conforms to ApprovalTicketList schema', async ({ page }) => {
     // operationId: listApprovals
     const listRespPromise = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/approvals') && r.request().method() === 'GET'
+      (r) => urlPathIncludes(r.url(), '/api/v1/approvals') && r.request().method() === 'GET'
     );
 
     await page.goto('/approvals');
@@ -553,12 +540,12 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
 
     const approveRespPromise = page.waitForResponse(
       (r) =>
-        r.url().includes(`/api/v1/approvals/${ticketID}`) &&
+        urlPathIncludes(r.url(), `/api/v1/approvals/${ticketID}`) &&
         (r.request().method() === 'PATCH' || r.request().method() === 'POST')
     );
 
     await approveBtn.click();
-    const modal = page.locator('.ant-modal-content').filter({ hasText: /approv/i }).last();
+    const modal = getAntModal(page, 'approve-modal');
     await expect(modal).toBeVisible();
     await modal.getByRole('button', { name: 'OK' }).click();
 
@@ -613,12 +600,12 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
 
     const rejectRespPromise = page.waitForResponse(
       (r) =>
-        r.url().includes(`/api/v1/approvals/${ticketID}`) &&
+        urlPathIncludes(r.url(), `/api/v1/approvals/${ticketID}`) &&
         (r.request().method() === 'PATCH' || r.request().method() === 'POST')
     );
 
     await rejectBtn.click();
-    const modal = page.locator('.ant-modal-content').filter({ hasText: /reject/i }).last();
+    const modal = getAntModal(page, 'reject-modal');
     await expect(modal).toBeVisible();
     await modal.locator('textarea').first().fill('Rejected by live e2e test');
     await modal.getByRole('button', { name: 'OK' }).click();
@@ -647,7 +634,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     await stoppedRow.getByRole('checkbox').check();
 
     const batchRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/vms/batch/power') && r.request().method() === 'POST'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/vms/batch/power') && r.request().method() === 'POST'
     );
     await page.getByRole('button', { name: 'Start Selected', exact: true }).click();
 
@@ -662,7 +649,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
   test('Stage 5.F – listNotifications: notification list conforms to NotificationList schema', async ({ page }) => {
     // operationId: listNotifications
     const notifRespPromise = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/notifications') && r.request().method() === 'GET' && !r.url().includes('unread')
+      (r) => urlPathIncludes(r.url(), '/api/v1/notifications') && r.request().method() === 'GET' && !urlPathIncludes(r.url(), 'unread')
     );
 
     await page.goto('/notifications');
@@ -677,7 +664,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
   test('Stage 5.F – getUnreadCount: unread count endpoint returns valid integer', async ({ page }) => {
     // operationId: getUnreadCount
     const countRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/notifications/unread-count') && r.request().method() === 'GET'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/notifications/unread-count') && r.request().method() === 'GET'
     );
 
     await page.goto('/dashboard');
@@ -702,7 +689,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
       console.warn('[requestVMConsoleAccess/openVMVNC] E2E_VM_RUNNING_ID not set – console flow not exercised');
       // Verify the VM list loads correctly at minimum
       const vmListRespPromise = page.waitForResponse(
-        (r) => r.url().includes('/api/v1/vms') && r.request().method() === 'GET' && !r.url().includes('/batch')
+        (r) => urlPathIncludes(r.url(), '/api/v1/vms') && r.request().method() === 'GET' && !urlPathIncludes(r.url(), '/batch')
       );
       await page.goto('/vms');
       await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
@@ -718,12 +705,12 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
 
     const consoleRespPromise = page.waitForResponse(
       (r) =>
-        r.url().endsWith(`/api/v1/vms/${runningVMID}/console/request`) &&
+        urlPathEndsWith(r.url(), `/api/v1/vms/${runningVMID}/console/request`) &&
         r.request().method() === 'POST'
     );
     const vncRespPromise = page.waitForResponse(
       (r) =>
-        r.url().endsWith(`/api/v1/vms/${runningVMID}/vnc`) &&
+        urlPathEndsWith(r.url(), `/api/v1/vms/${runningVMID}/vnc`) &&
         r.request().method() === 'GET'
     );
 
@@ -745,7 +732,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
   test('Stage 3 – listAdminTemplates: admin template list conforms to TemplateList schema', async ({ page }) => {
     // operationId: listAdminTemplates
     const tplRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/admin/templates') && r.request().method() === 'GET'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/admin/templates') && r.request().method() === 'GET'
     );
 
     await page.goto('/admin/templates');
@@ -760,7 +747,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
   test('Stage 3 – listAdminInstanceSizes: instance-size list conforms to InstanceSizeList schema', async ({ page }) => {
     // operationId: listAdminInstanceSizes
     const sizeRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/admin/instance-sizes') && r.request().method() === 'GET'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/admin/instance-sizes') && r.request().method() === 'GET'
     );
 
     await page.goto('/admin/instance-sizes');
@@ -775,7 +762,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
   test('Stage 3 – listNamespaces: admin namespace list conforms to NamespaceRegistryList schema', async ({ page }) => {
     // operationId: listNamespaces
     const nsRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/admin/namespaces') && r.request().method() === 'GET'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/admin/namespaces') && r.request().method() === 'GET'
     );
 
     await page.goto('/admin/namespaces');
@@ -792,7 +779,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
   test('Stage 2.A – listRoles: role list conforms to RoleList schema', async ({ page }) => {
     // operationId: listRoles
     const rolesRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/admin/roles') && r.request().method() === 'GET'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/admin/roles') && r.request().method() === 'GET'
     );
 
     await page.goto('/admin/rbac');
@@ -809,7 +796,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
   test('Stage 2.B – listAuthProviderTypes: auth provider type list conforms to AuthProviderTypeList schema', async ({ page }) => {
     // operationId: listAuthProviderTypes
     const typesRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/admin/auth-provider-types') && r.request().method() === 'GET'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-provider-types') && r.request().method() === 'GET'
     );
 
     await page.goto('/admin/auth-providers');
@@ -824,7 +811,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
   test('Stage 2.B – listAuthProviders: auth provider list conforms to AuthProviderList schema', async ({ page }) => {
     // operationId: listAuthProviders
     const listRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/admin/auth-providers') && r.request().method() === 'GET'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'GET'
     );
 
     await page.goto('/admin/auth-providers');
@@ -841,7 +828,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
   test('Stage 2.A+ – listUsers: user list conforms to UserList schema', async ({ page }) => {
     // operationId: listUsers
     const usersRespPromise = page.waitForResponse(
-      (r) => r.url().endsWith('/api/v1/admin/users') && r.request().method() === 'GET'
+      (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'GET'
     );
 
     await page.goto('/admin/users');

@@ -39,6 +39,7 @@
 
 import { expect, test, type Page, type Response } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
+import {urlPathEndsWith, urlPathIncludes, selectAntOption, getAntModal} from './lib/helpers';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ async function login(page: Page): Promise<void> {
     await page.getByPlaceholder('Password').fill(e2ePassword);
     // operationId: login
     const loginRespPromise = page.waitForResponse(
-        (r) => r.url().endsWith('/api/v1/auth/login') && r.request().method() === 'POST'
+        (r) => urlPathEndsWith(r.url(), '/api/v1/auth/login') && r.request().method() === 'POST'
     );
     await page.getByRole('button', { name: 'Login' }).click();
     const loginResp = await loginRespPromise;
@@ -83,15 +84,27 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     });
 
     // ── listPermissions: GET /admin/permissions → PermissionList ──────────────
+    //
+    // NOTE: The /admin/permissions page uses STATIC_PERMISSIONS (hardcoded data)
+    // and does NOT call the API. We test the API directly using request context.
 
-    test('listPermissions – GET /admin/permissions conforms to PermissionList schema', async ({ page }) => {
+    test('listPermissions – GET /admin/permissions conforms to PermissionList schema', async ({ request }) => {
         // operationId: listPermissions
-        const respPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/permissions') && r.request().method() === 'GET'
-        );
-        await page.goto('/admin/permissions');
-        await expect(page.locator('body')).toBeVisible();
-        await expectSchema(respPromise, 'PermissionList', 200);
+        // The frontend page is static — test the API endpoint directly.
+        const loginResp = await request.post('/api/v1/auth/login', {
+            data: { username: e2eUsername, password: e2ePassword },
+        });
+        expect(loginResp.ok(), 'API login failed').toBeTruthy();
+        const { token } = await loginResp.json() as { token: string };
+
+        const resp = await request.get('/api/v1/admin/permissions', {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(resp.status(), `GET /admin/permissions returned ${resp.status()}`).toBe(200);
+        const body = await resp.json();
+        // Validate against PermissionList schema using validateResponse (non-Playwright)
+        const { validateResponse } = await import('./lib/schema-validator');
+        validateResponse('PermissionList', body);
     });
 
     // ── updateRole: PATCH /admin/roles/{id} → Role ───────────────────────────
@@ -104,10 +117,10 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         const roleName = `e2e-upd-role-${Date.now().toString(36).slice(-5)}`;
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/roles') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/roles') && r.request().method() === 'POST'
         );
         await page.getByTestId('rbac-role-create-button').click();
-        const createModal = page.locator('.ant-modal-content').filter({ hasText: /role/i }).last();
+        const createModal = getAntModal(page, 'rbac-role-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(roleName);
         await createModal.getByRole('button', { name: 'OK' }).click();
@@ -118,10 +131,10 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── PATCH /admin/roles/{id} → Role ────────────────────────────────────────
         const updateRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/roles/${roleID}`) && r.request().method() === 'PATCH'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/roles/${roleID}`) && r.request().method() === 'PATCH'
         );
         await page.getByTestId(`rbac-role-action-edit-${roleID}`).click();
-        const editModal = page.locator('.ant-modal-content').filter({ hasText: /edit.*role/i }).last();
+        const editModal = getAntModal(page, 'rbac-role-edit-modal');
         await expect(editModal).toBeVisible();
         await editModal.locator('textarea').first().fill('Updated by live e2e test');
         await editModal.getByRole('button', { name: 'OK' }).click();
@@ -130,7 +143,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // Cleanup
         const deleteRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/roles/${roleID}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/roles/${roleID}`) && r.request().method() === 'DELETE'
         );
         await page.getByTestId(`rbac-role-action-delete-${roleID}`).click();
         const confirmBtn = page.getByRole('button', { name: /ok|confirm|delete/i }).last();
@@ -148,10 +161,10 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         const username = `e2eupd${Date.now().toString(36).slice(-5)}`;
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/users') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'POST'
         );
         await page.getByTestId('user-create-button').click();
-        const createModal = page.getByTestId('user-create-modal');
+        const createModal = getAntModal(page, 'user-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').nth(0).fill(username);
         await createModal.locator('input[type="password"]').fill('Secure@Pass123');
@@ -163,10 +176,10 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── PATCH /admin/users/{id} → User ───────────────────────────────────────
         const updateRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/users/${userID}`) && r.request().method() === 'PATCH'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/users/${userID}`) && r.request().method() === 'PATCH'
         );
         await page.getByTestId(`user-action-edit-${userID}`).click();
-        const editModal = page.getByTestId('user-edit-modal');
+        const editModal = getAntModal(page, 'user-edit-modal');
         await expect(editModal).toBeVisible();
         // Update display name or email
         const displayNameInput = editModal.getByRole('textbox').first();
@@ -177,7 +190,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // Cleanup
         const deleteRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/users/${userID}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/users/${userID}`) && r.request().method() === 'DELETE'
         );
         await page.getByTestId(`user-action-delete-${userID}`).click();
         const confirmBtn = page.getByRole('button', { name: /confirm/i }).last();
@@ -189,7 +202,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         // operationId: listUserRoleBindings
         // Get first user from list
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/users') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'GET'
         );
         await page.goto('/admin/users');
         await expect(page.getByTestId('admin-users-page')).toBeVisible();
@@ -202,7 +215,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── GET /admin/users/{id}/role-bindings → GlobalRoleBindingList ───────────
         const bindingsRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/users/${userID}/role-bindings`) && r.request().method() === 'GET'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/users/${userID}/role-bindings`) && r.request().method() === 'GET'
         );
         await page.getByTestId(`user-action-role-bindings-${userID}`).click();
         await expectSchema(bindingsRespPromise, 'GlobalRoleBindingList', 200);
@@ -212,7 +225,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         // operationId: createUserRoleBinding, deleteUserRoleBinding
         // Get first user (use validateApiResponse for single-read safety)
         const usersRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/users') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'GET'
         );
         await page.goto('/admin/users');
         await expect(page.getByTestId('admin-users-page')).toBeVisible();
@@ -227,14 +240,13 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── POST /admin/users/{id}/role-bindings → GlobalRoleBinding ─────────────
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/users/${userID}/role-bindings`) && r.request().method() === 'POST'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/users/${userID}/role-bindings`) && r.request().method() === 'POST'
         );
         await page.getByTestId('role-binding-create-button').click();
-        const createModal = page.getByTestId('role-binding-create-modal');
+        const createModal = getAntModal(page, 'role-binding-create-modal');
         await expect(createModal).toBeVisible();
         // Select a role from dropdown
-        await createModal.locator('.ant-select-selector').first().click();
-        await page.locator('.ant-select-item-option').first().click();
+        await selectAntOption(page, createModal.locator('.ant-select-selector').first());
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'GlobalRoleBinding', 201);
@@ -243,7 +255,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── DELETE /admin/users/{id}/role-bindings/{id} → 204 ────────────────────
         const deleteRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/users/${userID}/role-bindings/${bindingID}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/users/${userID}/role-bindings/${bindingID}`) && r.request().method() === 'DELETE'
         );
         await page.getByTestId(`role-binding-action-delete-${bindingID}`).click();
         const confirmBtn = page.getByRole('button', { name: /confirm|ok/i }).last();
@@ -261,10 +273,10 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         const tplName = `e2e-tpl-${Date.now().toString(36).slice(-5)}`;
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/templates') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/templates') && r.request().method() === 'POST'
         );
         await page.getByTestId('template-create-button').click();
-        const createModal = page.getByTestId('template-create-modal');
+        const createModal = getAntModal(page, 'template-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(tplName);
         // Fill minimal required YAML
@@ -278,10 +290,10 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── PATCH /admin/templates/{id} → Template ────────────────────────────────
         const updateRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/templates/${tplID}`) && r.request().method() === 'PATCH'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/templates/${tplID}`) && r.request().method() === 'PATCH'
         );
         await page.getByTestId(`template-action-edit-${tplID}`).click();
-        const editModal = page.getByTestId('template-edit-modal');
+        const editModal = getAntModal(page, 'template-edit-modal');
         await expect(editModal).toBeVisible();
         await editModal.locator('textarea').first().fill('Updated by live e2e test');
         await editModal.getByRole('button', { name: 'OK' }).click();
@@ -290,7 +302,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── DELETE /admin/templates/{id} → 204 ───────────────────────────────────
         const deleteRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/templates/${tplID}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/templates/${tplID}`) && r.request().method() === 'DELETE'
         );
         await page.getByTestId(`template-action-delete-${tplID}`).click();
         const confirmBtn = page.getByRole('button', { name: /confirm|ok|delete/i }).last();
@@ -307,15 +319,15 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         const sizeName = `e2e-size-${Date.now().toString(36).slice(-5)}`;
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/instance-sizes') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/instance-sizes') && r.request().method() === 'POST'
         );
         await page.getByTestId('instance-size-create-button').click();
-        const createModal = page.getByTestId('instance-size-create-modal');
+        const createModal = getAntModal(page, 'instance-size-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(sizeName);
-        // Fill CPU and memory fields
-        await createModal.locator('input[type="number"]').nth(0).fill('2');
-        await createModal.locator('input[type="number"]').nth(1).fill('4');
+        // Fill CPU and memory fields (Ant Design InputNumber uses role="spinbutton")
+        await createModal.getByRole('spinbutton').nth(1).fill('2');  // cpu_cores
+        await createModal.getByRole('spinbutton').nth(2).fill('4096');  // memory_mb
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'InstanceSize', 201);
@@ -324,19 +336,19 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── PATCH /admin/instance-sizes/{id} → InstanceSize ──────────────────────
         const updateRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/instance-sizes/${sizeID}`) && r.request().method() === 'PATCH'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/instance-sizes/${sizeID}`) && r.request().method() === 'PATCH'
         );
         await page.getByTestId(`instance-size-action-edit-${sizeID}`).click();
-        const editModal = page.getByTestId('instance-size-edit-modal');
+        const editModal = getAntModal(page, 'instance-size-edit-modal');
         await expect(editModal).toBeVisible();
-        await editModal.locator('input[type="number"]').nth(0).fill('4');
+        await editModal.getByRole('spinbutton').nth(1).fill('4');  // cpu_cores
         await editModal.getByRole('button', { name: 'OK' }).click();
 
         await expectSchema(updateRespPromise, 'InstanceSize', 200);
 
         // ── DELETE /admin/instance-sizes/{id} → 204 ──────────────────────────────
         const deleteRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/instance-sizes/${sizeID}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/instance-sizes/${sizeID}`) && r.request().method() === 'DELETE'
         );
         await page.getByTestId(`instance-size-action-delete-${sizeID}`).click();
         const confirmBtn = page.getByRole('button', { name: /confirm|ok|delete/i }).last();
@@ -350,7 +362,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         // operationId: updateAuthProvider
         // Get first provider (use validateApiResponse for single-read safety)
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/auth-providers') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'GET'
         );
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
@@ -362,10 +374,10 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── PATCH /admin/auth-providers/{id} → AuthProvider ──────────────────────
         const updateRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/auth-providers/${providerID}`) && r.request().method() === 'PATCH'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}`) && r.request().method() === 'PATCH'
         );
         await page.getByTestId(`auth-provider-action-edit-${providerID}`).click();
-        const editModal = page.locator('.ant-modal-content').filter({ hasText: /edit.*provider|update.*provider/i }).last();
+        const editModal = getAntModal(page, 'auth-provider-edit-modal');
         await expect(editModal).toBeVisible();
         await editModal.locator('textarea').first().fill('{"issuer":"https://updated-idp.example.com"}');
         await editModal.getByRole('button', { name: 'OK' }).click();
@@ -376,7 +388,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('testAuthProviderConnection – POST /admin/auth-providers/{id}/test-connection conforms to AuthProviderConnectionTestResult schema', async ({ page }) => {
         // operationId: testAuthProviderConnection
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/auth-providers') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'GET'
         );
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
@@ -386,7 +398,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── POST /admin/auth-providers/{id}/test-connection ───────────────────────
         const testRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/admin/auth-providers/${providerID}/test-connection`) && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/admin/auth-providers/${providerID}/test-connection`) && r.request().method() === 'POST'
         );
         await page.getByTestId(`auth-provider-action-test-${providerID}`).click();
         await expectSchema(testRespPromise, 'AuthProviderConnectionTestResult', 200);
@@ -395,7 +407,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('syncAuthProviderGroups – POST /admin/auth-providers/{id}/sync conforms to AuthProviderGroupSyncResponse schema', async ({ page }) => {
         // operationId: syncAuthProviderGroups
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/auth-providers') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'GET'
         );
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
@@ -405,7 +417,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── POST /admin/auth-providers/{id}/sync ──────────────────────────────────
         const syncRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/admin/auth-providers/${providerID}/sync`) && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/admin/auth-providers/${providerID}/sync`) && r.request().method() === 'POST'
         );
         await page.getByTestId(`auth-provider-action-sync-${providerID}`).click();
         const confirmBtn = page.locator('.ant-popover:visible, .ant-modal-content:visible')
@@ -417,7 +429,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('getAuthProviderSample – GET /admin/auth-providers/{id}/sample returns 200', async ({ page }) => {
         // operationId: getAuthProviderSample
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/auth-providers') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'GET'
         );
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
@@ -427,7 +439,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── GET /admin/auth-providers/{id}/sample ─────────────────────────────────
         const sampleRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/admin/auth-providers/${providerID}/sample`) && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/admin/auth-providers/${providerID}/sample`) && r.request().method() === 'GET'
         );
         await page.getByTestId(`auth-provider-action-sample-${providerID}`).click();
         const sampleResp = await sampleRespPromise;
@@ -439,7 +451,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('createAuthProviderGroupMapping + updateAuthProviderGroupMapping + deleteAuthProviderGroupMapping', async ({ page }) => {
         // operationId: createAuthProviderGroupMapping, updateAuthProviderGroupMapping, deleteAuthProviderGroupMapping
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/auth-providers') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'GET'
         );
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
@@ -449,19 +461,18 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // Navigate to group mappings
         await page.getByTestId(`auth-provider-action-mappings-${providerID}`).click();
-        const mappingsPage = page.getByTestId('auth-provider-mappings-page');
+        const mappingsPage = getAntModal(page, 'auth-provider-mappings-page');
         await expect(mappingsPage).toBeVisible();
 
         // ── POST /admin/auth-providers/{id}/group-mappings → IdPGroupMapping ──────
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/auth-providers/${providerID}/group-mappings`) && r.request().method() === 'POST'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/group-mappings`) && r.request().method() === 'POST'
         );
         await page.getByTestId('group-mapping-create-button').click();
-        const createModal = page.getByTestId('group-mapping-create-modal');
+        const createModal = getAntModal(page, 'group-mapping-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(`e2e-group-${Date.now().toString(36).slice(-5)}`);
-        await createModal.locator('.ant-select-selector').first().click();
-        await page.locator('.ant-select-item-option').first().click();
+        await selectAntOption(page, createModal.locator('.ant-select-selector').first());
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'IdPGroupMapping', 201);
@@ -470,20 +481,19 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── PATCH /admin/auth-providers/{id}/group-mappings/{id} → IdPGroupMapping
         const updateRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/auth-providers/${providerID}/group-mappings/${mappingID}`) && r.request().method() === 'PATCH'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/group-mappings/${mappingID}`) && r.request().method() === 'PATCH'
         );
         await page.getByTestId(`group-mapping-action-edit-${mappingID}`).click();
-        const editModal = page.getByTestId('group-mapping-edit-modal');
+        const editModal = getAntModal(page, 'group-mapping-edit-modal');
         await expect(editModal).toBeVisible();
-        await editModal.locator('.ant-select-selector').first().click();
-        await page.locator('.ant-select-item-option').last().click();
+        await selectAntOption(page, editModal.locator('.ant-select-selector').first());
         await editModal.getByRole('button', { name: 'OK' }).click();
 
         await expectSchema(updateRespPromise, 'IdPGroupMapping', 200);
 
         // ── DELETE /admin/auth-providers/{id}/group-mappings/{id} → 204 ──────────
         const deleteRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/auth-providers/${providerID}/group-mappings/${mappingID}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/group-mappings/${mappingID}`) && r.request().method() === 'DELETE'
         );
         await page.getByTestId(`group-mapping-action-delete-${mappingID}`).click();
         const confirmBtn = page.getByRole('button', { name: /confirm|ok/i }).last();
@@ -496,8 +506,8 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('listRateLimitExemptions – GET /admin/rate-limits/exemptions conforms to RateLimitExemptionList schema', async ({ page }) => {
         // operationId: listRateLimitExemptions
         const respPromise = page.waitForResponse(
-            (r) => r.url().includes('/api/v1/admin/rate-limits/exemptions') && r.request().method() === 'GET'
-                && !r.url().includes('/status') && !r.url().includes('/users/')
+            (r) => urlPathIncludes(r.url(), '/api/v1/admin/rate-limits/exemptions') && r.request().method() === 'GET'
+                && !urlPathIncludes(r.url(), '/status') && !urlPathIncludes(r.url(), '/users/')
         );
         await page.goto('/admin/rate-limits');
         await expect(page.locator('body')).toBeVisible();
@@ -508,7 +518,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('listRateLimitStatus – GET /admin/rate-limits/status conforms to RateLimitStatusList schema', async ({ page }) => {
         // operationId: listRateLimitStatus
         const respPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/rate-limits/status') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/rate-limits/status') && r.request().method() === 'GET'
         );
         await page.goto('/admin/rate-limits');
         await expect(page.locator('body')).toBeVisible();
@@ -519,7 +529,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         // operationId: createRateLimitExemption, deleteRateLimitExemption
         // Get first user to exempt (use validateApiResponse for single-read safety)
         const usersRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/users') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'GET'
         );
         await page.goto('/admin/users');
         await expect(page.getByTestId('admin-users-page')).toBeVisible();
@@ -533,14 +543,13 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── POST /admin/rate-limits/exemptions ────────────────────────────────────
         const createRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/rate-limits/exemptions') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/rate-limits/exemptions') && r.request().method() === 'POST'
         );
         await page.getByTestId('rate-limit-exemption-create-button').click();
-        const createModal = page.getByTestId('rate-limit-exemption-create-modal');
+        const createModal = getAntModal(page, 'rate-limit-exemption-create-modal');
         await expect(createModal).toBeVisible();
         // Select user
-        await createModal.locator('.ant-select-selector').first().click();
-        await page.locator('.ant-select-item-option').first().click();
+        await selectAntOption(page, createModal.locator('.ant-select-selector').first());
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const createResp = await createRespPromise;
@@ -550,7 +559,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── DELETE /admin/rate-limits/exemptions/{user_id} → 204 ─────────────────
         const deleteRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/rate-limits/exemptions/${userID}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/rate-limits/exemptions/${userID}`) && r.request().method() === 'DELETE'
         );
         await page.getByTestId(`rate-limit-exemption-action-delete-${userID}`).click();
         const confirmBtn = page.getByRole('button', { name: /confirm|ok/i }).last();
@@ -562,7 +571,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         // operationId: updateRateLimitUserOverrides
         // Get first user (use validateApiResponse for single-read safety)
         const usersRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/users') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'GET'
         );
         await page.goto('/admin/users');
         await expect(page.getByTestId('admin-users-page')).toBeVisible();
@@ -575,10 +584,10 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         await expect(page.locator('body')).toBeVisible();
 
         const updateRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/rate-limits/users/${userID}`) && r.request().method() === 'PUT'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/rate-limits/users/${userID}`) && r.request().method() === 'PUT'
         );
         await page.getByTestId(`rate-limit-user-action-edit-${userID}`).click();
-        const editModal = page.getByTestId('rate-limit-user-edit-modal');
+        const editModal = getAntModal(page, 'rate-limit-user-edit-modal');
         await expect(editModal).toBeVisible();
         await editModal.locator('input[type="number"]').first().fill('100');
         await editModal.getByRole('button', { name: 'OK' }).click();
@@ -591,7 +600,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('updateClusterEnvironment – PUT /admin/clusters/{id}/environment conforms to Cluster schema', async ({ page }) => {
         // operationId: updateClusterEnvironment
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/admin/clusters') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/clusters') && r.request().method() === 'GET'
         );
         await page.goto('/admin/clusters');
         await expect(page.getByTestId('admin-clusters-page')).toBeVisible();
@@ -603,14 +612,13 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
         // ── PUT /admin/clusters/{id}/environment → Cluster ────────────────────────
         const updateRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/admin/clusters/${clusterID}/environment`) && r.request().method() === 'PUT'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/clusters/${clusterID}/environment`) && r.request().method() === 'PUT'
         );
         await page.getByTestId(`cluster-action-set-environment-${clusterID}`).click();
-        const editModal = page.getByTestId('cluster-environment-modal');
+        const editModal = getAntModal(page, 'cluster-environment-modal');
         await expect(editModal).toBeVisible();
         // Select environment type
-        await editModal.locator('.ant-select-selector').first().click();
-        await page.locator('.ant-select-item-option').filter({ hasText: /test|staging/i }).first().click();
+        await selectAntOption(page, editModal.locator('.ant-select-selector').first(), /test|staging/i);
         await editModal.getByRole('button', { name: 'OK' }).click();
 
         await expectSchema(updateRespPromise, 'Cluster', 200);

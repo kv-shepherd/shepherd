@@ -35,6 +35,7 @@
 
 import { expect, test, type Page, type Response } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
+import {urlPathEndsWith, urlPathIncludes} from './lib/helpers';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ async function login(page: Page): Promise<void> {
 
     // operationId: login
     const loginRespPromise = page.waitForResponse(
-        (r) => r.url().endsWith('/api/v1/auth/login') && r.request().method() === 'POST'
+        (r) => urlPathEndsWith(r.url(), '/api/v1/auth/login') && r.request().method() === 'POST'
     );
     await page.getByRole('button', { name: 'Login' }).click();
     const loginResp = await loginRespPromise;
@@ -76,7 +77,7 @@ async function expectSchema(
 
 async function getFirstVMId(page: Page): Promise<string> {
     const listRespPromise = page.waitForResponse(
-        (r) => r.url().includes('/api/v1/vms') && r.request().method() === 'GET' && !r.url().includes('/vms/')
+        (r) => urlPathIncludes(r.url(), '/api/v1/vms') && r.request().method() === 'GET' && !urlPathIncludes(r.url(), '/vms/')
     );
     await page.goto('/vms');
     await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
@@ -108,8 +109,8 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         const vmId = await getFirstVMId(page);
 
         const getRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/vms/${vmId}`) && r.request().method() === 'GET'
-                && !r.url().includes('/console') && !r.url().includes('/vnc')
+            (r) => urlPathIncludes(r.url(), `/api/v1/vms/${vmId}`) && r.request().method() === 'GET'
+                && !urlPathIncludes(r.url(), '/console') && !urlPathIncludes(r.url(), '/vnc')
         );
         // Navigate to VM detail page (triggers GET /vms/{id})
         await page.getByTestId(`vm-action-detail-${vmId}`).click();
@@ -132,7 +133,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         expect(vmId, 'Could not extract VM id from start button').toBeTruthy();
 
         const startRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/vms/${vmId}/start`) && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/vms/${vmId}/start`) && r.request().method() === 'POST'
         );
         await stoppedRow.locator(`[data-testid="vm-action-start-${vmId}"]`).click();
         // Confirm dialog if present
@@ -161,7 +162,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         expect(vmId, 'Could not extract VM id from stop button').toBeTruthy();
 
         const stopRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/vms/${vmId}/stop`) && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/vms/${vmId}/stop`) && r.request().method() === 'POST'
         );
         await runningRow.locator(`[data-testid="vm-action-stop-${vmId}"]`).click();
         const confirmBtn = page.locator('.ant-popover:visible, .ant-modal-content:visible')
@@ -187,7 +188,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         expect(vmId, 'Could not extract VM id from restart button').toBeTruthy();
 
         const restartRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/vms/${vmId}/restart`) && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/vms/${vmId}/restart`) && r.request().method() === 'POST'
         );
         await runningRow.locator(`[data-testid="vm-action-restart-${vmId}"]`).click();
         const confirmBtn = page.locator('.ant-popover:visible, .ant-modal-content:visible')
@@ -210,7 +211,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
 
         // The detail page power buttons call POST /vms/{vm_id}/power with action body
         const powerRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/vms/${vmId}/power`) && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/vms/${vmId}/power`) && r.request().method() === 'POST'
         );
 
         // Click any available power button on the detail page (start, stop, or restart)
@@ -261,7 +262,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         expect(vmName, 'Could not read VM name from table row').toBeTruthy();
 
         const deleteRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/vms/${vmId}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/vms/${vmId}`) && r.request().method() === 'DELETE'
         );
         await stoppedRow.locator(`[data-testid="vm-action-delete-${vmId}"]`).click();
 
@@ -290,8 +291,8 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
     test('listVMBatches – GET /vms/batch conforms to VMBatchList schema', async ({ page }) => {
         // operationId: listVMBatches
         const listRespPromise = page.waitForResponse(
-            (r) => r.url().includes('/api/v1/vms/batch') && r.request().method() === 'GET'
-                && !r.url().includes('/vms/batch/') // Exclude batch/{id} detail
+            (r) => urlPathIncludes(r.url(), '/api/v1/vms/batch') && r.request().method() === 'GET'
+                && !urlPathIncludes(r.url(), '/vms/batch/') // Exclude batch/{id} detail
         );
         await page.goto('/vms/batch');
         await expect(page.locator('body')).toBeVisible();
@@ -317,7 +318,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         await headerCheckbox.check();
 
         const batchRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith('/api/v1/vms/batch') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/vms/batch') && r.request().method() === 'POST'
         );
 
         // Click generic batch submit (not power-specific)
@@ -342,7 +343,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         await headerCheckbox.check();
 
         const submitRespPromise = page.waitForResponse(
-            (r) => r.url().includes('/api/v1/vms/batch') && r.request().method() === 'POST'
+            (r) => urlPathIncludes(r.url(), '/api/v1/vms/batch') && r.request().method() === 'POST'
         );
         const batchBtn = page.getByRole('button', { name: /batch|submit batch/i }).first();
         await expect(batchBtn).toBeVisible();
@@ -364,7 +365,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
 
         // ── CONTRACT CHECK: VMBatchStatusResponse schema ──────────────────────────
         const statusRespPromise = page.waitForResponse(
-            (r) => r.url().includes(`/api/v1/vms/batch/${batchId}`) && r.request().method() === 'GET'
+            (r) => urlPathIncludes(r.url(), `/api/v1/vms/batch/${batchId}`) && r.request().method() === 'GET'
         );
         // Navigate to batch detail page
         await page.goto(`/vms/batch/${batchId}`);
@@ -387,7 +388,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         expect(batchId, 'Could not extract batch_id from retry button').toBeTruthy();
 
         const retryRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/vms/batch/${batchId}/retry`) && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/vms/batch/${batchId}/retry`) && r.request().method() === 'POST'
         );
         await failedBatchRow.locator(`[data-testid="batch-action-retry-${batchId}"]`).click();
         const confirmBtn = page.locator('.ant-popover:visible, .ant-modal-content:visible')
@@ -413,7 +414,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         expect(batchId, 'Could not extract batch_id from cancel button').toBeTruthy();
 
         const cancelRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/vms/batch/${batchId}/cancel`) && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/vms/batch/${batchId}/cancel`) && r.request().method() === 'POST'
         );
         await pendingBatchRow.locator(`[data-testid="batch-action-cancel-${batchId}"]`).click();
         const confirmBtn = page.locator('.ant-popover:visible, .ant-modal-content:visible')
@@ -432,7 +433,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
 
         // Navigate to VM detail which should show console status
         const statusRespPromise = page.waitForResponse(
-            (r) => r.url().endsWith(`/api/v1/vms/${vmId}/console/status`) && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/vms/${vmId}/console/status`) && r.request().method() === 'GET'
         );
         await page.goto(`/vms/${vmId}`);
         await expect(page.locator('body')).toBeVisible();
