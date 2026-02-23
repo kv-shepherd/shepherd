@@ -310,7 +310,8 @@ export function VMRequestWizard({
                     )}
                 </Space>
             )}
-            forceRender
+            destroyOnHidden={true}
+            data-testid="vm-request-wizard-modal"
         >
             <Steps current={step} items={wizardSteps} size="small" style={{ marginBottom: 24 }} />
             <Divider />

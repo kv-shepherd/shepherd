@@ -174,7 +174,8 @@ export function ServicesManagementContent() {
                 }}
                 onCancel={services.closeCreateModal}
                 confirmLoading={services.createPending}
-                forceRender
+                destroyOnHidden={true}
+                data-testid="service-create-modal"
             >
                 <Form form={services.form} layout="vertical" name="create-service">
                     <Form.Item
@@ -215,7 +216,8 @@ export function ServicesManagementContent() {
                 }}
                 onCancel={services.closeEditModal}
                 confirmLoading={services.updatePending}
-                forceRender
+                destroyOnHidden={true}
+                data-testid="service-edit-modal"
             >
                 <Form form={services.editForm} layout="vertical" name="edit-service">
                     <Form.Item name="description" label={t('table.description')}>

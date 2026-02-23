@@ -205,8 +205,8 @@ export function AdminNamespacesContent() {
                 onCancel={namespaces.closeCreateModal}
                 confirmLoading={namespaces.createPending}
                 forceRender
+                data-testid="namespace-create-modal"
             >
-                <div data-testid="namespace-create-modal">
                     <Form form={namespaces.createForm} layout="vertical" name="create-namespace">
                         <Form.Item
                             name="name"
@@ -238,7 +238,6 @@ export function AdminNamespacesContent() {
                             <Input.TextArea rows={3} placeholder={t('namespaces.desc_placeholder')} />
                         </Form.Item>
                     </Form>
-                </div>
             </Modal>
 
             <Modal
@@ -248,8 +247,8 @@ export function AdminNamespacesContent() {
                 onCancel={namespaces.closeEditModal}
                 confirmLoading={namespaces.updatePending}
                 forceRender
+                data-testid="namespace-edit-modal"
             >
-                <div data-testid="namespace-edit-modal">
                     <Form form={namespaces.editForm} layout="vertical" name="edit-namespace">
                         <Paragraph type="secondary" style={{ marginBottom: 16 }}>
                             {t('namespaces.edit_note')}
@@ -268,7 +267,6 @@ export function AdminNamespacesContent() {
                             <Switch />
                         </Form.Item>
                     </Form>
-                </div>
             </Modal>
 
             <Modal
@@ -287,8 +285,8 @@ export function AdminNamespacesContent() {
                     disabled: namespaces.deleteConfirmName !== namespaces.deletingNs?.name,
                 }}
                 okText={t('common:button.delete')}
+                data-testid="namespace-delete-modal"
             >
-                <div data-testid="namespace-delete-modal">
                     <Paragraph>
                         {t('namespaces.delete_confirm', { name: namespaces.deletingNs?.name })}
                     </Paragraph>
@@ -306,7 +304,6 @@ export function AdminNamespacesContent() {
                                 : undefined
                         }
                     />
-                </div>
             </Modal>
         </div>
     );
