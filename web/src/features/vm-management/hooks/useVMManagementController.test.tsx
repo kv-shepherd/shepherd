@@ -233,13 +233,22 @@ describe('useVMManagementController', () => {
       result.current.stopVM('vm-1');
       result.current.restartVM('vm-1');
       await result.current.requestConsole('vm-1');
-      await result.current.deleteVM('vm-2', 'vm-two');
+      result.current.deleteVM('vm-2', 'vm-two');
     });
 
     expect(postStartMutate).toHaveBeenCalledWith('vm-1');
     expect(postStopMutate).toHaveBeenCalledWith('vm-1');
     expect(postRestartMutate).toHaveBeenCalledWith('vm-1');
     expect(requestConsoleMutate).toHaveBeenCalledWith('vm-1', expect.any(Object));
+    expect(result.current.deleteOpen).toBe(true);
+    expect(result.current.deletingVM).toEqual({ id: 'vm-2', name: 'vm-two' });
+    expect(result.current.deleteConfirmName).toBe('');
+    expect(deleteMutate).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.submitDelete();
+    });
+
     expect(deleteMutate).toHaveBeenCalledWith({ vmId: 'vm-2', vmName: 'vm-two' });
   });
 
