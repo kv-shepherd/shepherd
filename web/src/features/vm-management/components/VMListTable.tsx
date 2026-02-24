@@ -4,7 +4,6 @@ import {
     Badge,
     Button,
     Card,
-    Popconfirm,
     Space,
     Table,
     Tag,
@@ -184,13 +183,7 @@ export function VMListTable({
                                 onClick={() => onDetail(record.id)}
                             />
                         </Tooltip>
-                        <Popconfirm
-                            title={t('action.delete_confirm')}
-                            description={t('action.delete_confirm_name', { name: record.name })}
-                            onConfirm={() => onDelete(record.id, record.name)}
-                            okText={t('common:button.confirm')}
-                            cancelText={t('common:button.cancel')}
-                        >
+                        <Tooltip title={t('action.delete')}>
                             <Button
                                 type="text"
                                 size="small"
@@ -199,8 +192,9 @@ export function VMListTable({
                                 data-testid={`vm-action-delete-${record.id}`}
                                 icon={<DeleteOutlined />}
                                 disabled={!canDelete}
+                                onClick={() => onDelete(record.id, record.name)}
                             />
-                        </Popconfirm>
+                        </Tooltip>
                     </Space>
                 );
             },

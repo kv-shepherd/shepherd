@@ -60,6 +60,7 @@
     "action.restart_confirm": "Are you sure you want to restart this VM?",
     "action.delete_confirm": "Are you sure you want to delete this VM? This action requires admin approval.",
     "action.delete_confirm_name": "Confirmation name: {{name}}",
+    "action.delete_type_name_hint": "Please type the VM name to confirm.",
     "delete_request_submitted": "Delete request submitted (ticket: {{ticket_id}}), pending admin approval",
     "console.opened": "Console session opened",
     "console.pending_approval": "Console access request submitted, pending approval",

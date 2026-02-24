@@ -60,6 +60,7 @@
     "action.restart_confirm": "确定要重启此虚拟机吗？",
     "action.delete_confirm": "确定要删除此虚拟机吗？此操作需要管理员审批。",
     "action.delete_confirm_name": "确认名称：{{name}}",
+    "action.delete_type_name_hint": "请输入虚拟机名称以确认删除。",
     "delete_request_submitted": "删除请求已提交（工单：{{ticket_id}}），等待管理员审批",
     "console.opened": "控制台会话已打开",
     "console.pending_approval": "控制台访问申请已提交，等待审批",

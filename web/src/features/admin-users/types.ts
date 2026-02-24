@@ -19,6 +19,7 @@ export type RateLimitUserStatus = components['schemas']['RateLimitUserStatus'];
 export type GlobalRoleBinding = components['schemas']['GlobalRoleBinding'];
 export type GlobalRoleBindingList = components['schemas']['GlobalRoleBindingList'];
 export type GlobalRoleBindingCreateRequest = components['schemas']['GlobalRoleBindingCreateRequest'];
+export type RoleList = components['schemas']['RoleList'];
 
 export const MEMBER_ROLE_VALUES: Array<NonNullable<SystemMember['role']>> = [
     'owner',
