@@ -58,33 +58,43 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 		return
 	}
 
-	// Collect event IDs for DELETE tickets to batch-fetch target VM info.
-	deleteEventIDs := make([]string, 0)
+	// Collect all event IDs to batch-fetch domain events.
+	// DELETE tickets: extract target VM info; all tickets: include raw payload.
+	allEventIDs := make([]string, 0, len(tickets))
+	deleteEventIDSet := make(map[string]struct{})
 	for _, t := range tickets {
+		allEventIDs = append(allEventIDs, t.EventID)
 		if t.OperationType == approvalticket.OperationTypeDELETE {
-			deleteEventIDs = append(deleteEventIDs, t.EventID)
+			deleteEventIDSet[t.EventID] = struct{}{}
 		}
 	}
 
-	// Batch-fetch domain events for DELETE tickets and extract VM info from payload.
+	// Batch-fetch domain events for all tickets.
 	vmInfoMap := make(map[string]vmTargetInfo) // key = event_id
-	if len(deleteEventIDs) > 0 {
+	eventPayloadMap := make(map[string][]byte) // key = event_id → raw JSON payload
+	if len(allEventIDs) > 0 {
 		events, err := s.client.DomainEvent.Query().
-			Where(domainevent.IDIn(deleteEventIDs...)).
+			Where(domainevent.IDIn(allEventIDs...)).
 			All(ctx)
 		if err != nil {
-			// Non-fatal: log and continue without VM info.
-			logger.Warn("failed to fetch domain events for delete tickets", zap.Error(err))
+			// Non-fatal: log and continue without event info.
+			logger.Warn("failed to fetch domain events for approval tickets", zap.Error(err))
 		} else {
 			for _, ev := range events {
-				var payload struct {
+				// Store raw payload for all tickets.
+				eventPayloadMap[ev.ID] = ev.Payload
+				// Extract VM target info only for DELETE tickets.
+				if _, isDelete := deleteEventIDSet[ev.ID]; !isDelete {
+					continue
+				}
+				var vmPayload struct {
 					VMID   string `json:"vm_id"`
 					VMName string `json:"vm_name"`
 				}
-				if err := json.Unmarshal(ev.Payload, &payload); err == nil {
+				if err := json.Unmarshal(ev.Payload, &vmPayload); err == nil && vmPayload.VMID != "" {
 					vmInfoMap[ev.ID] = vmTargetInfo{
-						VMID:   payload.VMID,
-						VMName: payload.VMName,
+						VMID:   vmPayload.VMID,
+						VMName: vmPayload.VMName,
 					}
 				}
 			}
@@ -93,11 +103,23 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 
 	items := make([]generated.ApprovalTicket, 0, len(tickets))
 	for _, t := range tickets {
-		item := ticketToAPI(t)
+		// Deserialize raw event payload into map for ticket_payload field.
+		var payloadMap map[string]interface{}
+		if raw, ok := eventPayloadMap[t.EventID]; ok && len(raw) > 0 {
+			if err := json.Unmarshal(raw, &payloadMap); err != nil {
+				logger.Warn("failed to deserialize ticket payload",
+					zap.Error(err),
+					zap.String("event_id", t.EventID),
+				)
+			}
+		}
+		item := ticketToAPI(t, payloadMap)
 		// Enrich DELETE tickets with target VM info.
-		if info, ok := vmInfoMap[t.EventID]; ok {
-			item.TargetVmId = info.VMID
-			item.TargetVmName = info.VMName
+		if t.OperationType == approvalticket.OperationTypeDELETE {
+			if info, ok := vmInfoMap[t.EventID]; ok {
+				item.TargetVmId = info.VMID
+				item.TargetVmName = info.VMName
+			}
 		}
 		items = append(items, item)
 	}
@@ -235,7 +257,9 @@ func (s *Server) CancelTicket(c *gin.Context, ticketId generated.TicketID) {
 
 // ---- Converter ----
 
-func ticketToAPI(t *ent.ApprovalTicket) generated.ApprovalTicket {
+// ticketToAPI converts an Ent ApprovalTicket to the generated API type.
+// ticketPayload is the deserialized DomainEvent payload (may be nil for older/missing events).
+func ticketToAPI(t *ent.ApprovalTicket, ticketPayload map[string]interface{}) generated.ApprovalTicket {
 	return generated.ApprovalTicket{
 		Id:            t.ID,
 		EventId:       t.EventID,
@@ -245,6 +269,7 @@ func ticketToAPI(t *ent.ApprovalTicket) generated.ApprovalTicket {
 		Approver:      t.Approver,
 		Reason:        t.Reason,
 		RejectReason:  t.RejectReason,
+		TicketPayload: ticketPayload,
 		CreatedAt:     t.CreatedAt,
 	}
 }

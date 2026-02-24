@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
+	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
@@ -91,9 +92,38 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 		return
 	}
 
+	// Batch-fetch cluster environments to fill VM.environment (ADR-0015 §15).
+	// Collect unique non-empty cluster IDs from this page.
+	clusterIDs := make([]string, 0)
+	clusterIDSet := make(map[string]struct{})
+	for _, vm := range vms {
+		if vm.ClusterID != "" {
+			if _, seen := clusterIDSet[vm.ClusterID]; !seen {
+				clusterIDSet[vm.ClusterID] = struct{}{}
+				clusterIDs = append(clusterIDs, vm.ClusterID)
+			}
+		}
+	}
+	clusterEnvMap := make(map[string]string) // cluster_id → environment string
+	if len(clusterIDs) > 0 {
+		clusters, clusterErr := s.client.Cluster.Query().
+			Where(entcluster.IDIn(clusterIDs...)).
+			Select(entcluster.FieldID, entcluster.FieldEnvironment).
+			All(ctx)
+		if clusterErr != nil {
+			// Non-fatal: log and continue without environment info.
+			logger.Warn("failed to fetch cluster environments for VM list", zap.Error(clusterErr))
+		} else {
+			for _, cl := range clusters {
+				clusterEnvMap[cl.ID] = string(cl.Environment)
+			}
+		}
+	}
+
 	items := make([]generated.VM, 0, len(vms))
 	for _, vm := range vms {
-		items = append(items, vmToAPI(vm))
+		env := clusterEnvMap[vm.ClusterID]
+		items = append(items, vmToAPI(vm, env))
 	}
 
 	totalPages := (total + perPage - 1) / perPage
@@ -293,7 +323,22 @@ func (s *Server) GetVM(c *gin.Context, vmId generated.VMID) {
 		return
 	}
 
-	c.JSON(http.StatusOK, vmToAPI(vm))
+	// Fetch cluster environment for this VM (ADR-0015 §15).
+	var clusterEnv string
+	if vm.ClusterID != "" {
+		cl, clErr := s.client.Cluster.Get(ctx, vm.ClusterID)
+		if clErr != nil {
+			// Non-fatal: log and continue without environment info.
+			logger.Warn("failed to fetch cluster environment for VM",
+				zap.Error(clErr),
+				zap.String("cluster_id", vm.ClusterID),
+			)
+		} else {
+			clusterEnv = string(cl.Environment)
+		}
+	}
+
+	c.JSON(http.StatusOK, vmToAPI(vm, clusterEnv))
 }
 
 // DeleteVM handles DELETE /vms/{vm_id}.
@@ -492,8 +537,11 @@ func (s *Server) enqueueVMPowerOp(c *gin.Context, vm *ent.VM, operation string, 
 
 // ---- Converter ----
 
-func vmToAPI(vm *ent.VM) generated.VM {
-	return generated.VM{
+// vmToAPI converts an Ent VM entity to the generated API VM type.
+// clusterEnv is the environment string ("test" or "prod") from the associated Cluster;
+// pass an empty string when the cluster is not yet assigned.
+func vmToAPI(vm *ent.VM, clusterEnv string) generated.VM {
+	apiVM := generated.VM{
 		Id:        vm.ID,
 		Name:      vm.Name,
 		Namespace: vm.Namespace,
@@ -506,6 +554,11 @@ func vmToAPI(vm *ent.VM) generated.VM {
 		CreatedBy: vm.CreatedBy,
 		CreatedAt: vm.CreatedAt,
 	}
+	// Populate environment from cluster (ADR-0015 §15).
+	if clusterEnv != "" {
+		apiVM.Environment = generated.VMEnvironment(clusterEnv)
+	}
+	return apiVM
 }
 
 // PowerVM handles POST /vms/{vm_id}/power.
