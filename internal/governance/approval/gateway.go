@@ -27,6 +27,20 @@ import (
 	"kv-shepherd.io/shepherd/internal/service"
 )
 
+// ApproveOpts carries all admin-determined fields for an approval decision (ADR-0017 + Stage 5.B).
+type ApproveOpts struct {
+	ClusterID    string
+	StorageClass string
+
+	// Resource override fields (master-flow Stage 5.B).
+	EnableOverride  bool
+	CPURequest      int
+	CPULimit        int
+	MemoryRequestMB int
+	MemoryLimitMB   int
+	DiskGB          int
+}
+
 // AtomicApprovalWriter defines ADR-0012 atomic write operations for approval decisions.
 type AtomicApprovalWriter interface {
 	ApproveCreateAndEnqueue(
@@ -70,7 +84,7 @@ func (g *Gateway) SetNotifier(notifier *notification.Triggers) {
 // Branching logic by operation_type:
 //   - CREATE: ticket APPROVED + VM record CREATING → enqueue VMCreateArgs
 //   - DELETE: ticket APPROVED + VM status DELETING → enqueue VMDeleteArgs
-func (g *Gateway) Approve(ctx context.Context, ticketID, approver string, clusterID, storageClass string) error {
+func (g *Gateway) Approve(ctx context.Context, ticketID, approver string, opts ApproveOpts) error {
 	ticket, err := g.client.ApprovalTicket.Get(ctx, ticketID)
 	if err != nil {
 		return fmt.Errorf("get ticket %s: %w", ticketID, err)
@@ -89,7 +103,7 @@ func (g *Gateway) Approve(ctx context.Context, ticketID, approver string, cluste
 		return fmt.Errorf("resolve batch parent ticket %s: %w", ticketID, err)
 	}
 	if isBatchParent {
-		return g.approveBatchParent(ctx, ticket, event, approver, clusterID, storageClass)
+		return g.approveBatchParent(ctx, ticket, event, approver, opts)
 	}
 
 	// Branch by operation_type (ADR-0015 §5.D).
@@ -100,13 +114,13 @@ func (g *Gateway) Approve(ctx context.Context, ticketID, approver string, cluste
 		return g.approveVNC(ctx, ticket, event, ticketID, approver)
 	default:
 		// CREATE is the default operation type.
-		return g.approveCreate(ctx, ticket, ticketID, approver, clusterID, storageClass)
+		return g.approveCreate(ctx, ticket, ticketID, approver, opts)
 	}
 }
 
 // approveCreate handles approval of CREATE tickets (original flow).
-func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket, ticketID, approver, clusterID, storageClass string) error {
-	if clusterID == "" {
+func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket, ticketID, approver string, opts ApproveOpts) error {
+	if opts.ClusterID == "" {
 		return fmt.Errorf("selected cluster is required for create approval")
 	}
 
@@ -132,8 +146,30 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 	}
 
 	if g.validator != nil {
-		if err := g.validator.ValidateApproval(ctx, clusterID, effectiveInstanceSizeID, payload.Namespace); err != nil {
+		if err := g.validator.ValidateApproval(ctx, opts.ClusterID, effectiveInstanceSizeID, payload.Namespace); err != nil {
 			return fmt.Errorf("approval validation failed for ticket %s: %w", ticketID, err)
+		}
+	}
+
+	// Stage 5.B: If admin enabled resource override, validate overcommit constraints.
+	if opts.EnableOverride {
+		// Guard: at least one override field must be non-zero to avoid a no-op override.
+		if opts.CPULimit == 0 && opts.CPURequest == 0 && opts.MemoryLimitMB == 0 && opts.MemoryRequestMB == 0 && opts.DiskGB == 0 {
+			return fmt.Errorf("enable_override is true but all resource override values are zero for ticket %s", ticketID)
+		}
+
+		cpuCores := opts.CPULimit
+		cpuRequest := opts.CPURequest
+		memoryMB := opts.MemoryLimitMB
+		memoryRequestMB := opts.MemoryRequestMB
+
+		// Fetch the InstanceSize to determine dedicatedCPU.
+		instanceSizeEntity, err := g.client.InstanceSize.Get(ctx, effectiveInstanceSizeID)
+		if err != nil {
+			return fmt.Errorf("get instance size %s for override validation: %w", effectiveInstanceSizeID, err)
+		}
+		if err := service.ValidateOvercommit(cpuCores, cpuRequest, memoryMB, memoryRequestMB, instanceSizeEntity.DedicatedCPU); err != nil {
+			return fmt.Errorf("resource override validation for ticket %s: %w", ticketID, err)
 		}
 	}
 
@@ -141,14 +177,37 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 	if err != nil {
 		return fmt.Errorf("get template %s for ticket %s: %w", effectiveTemplateID, ticketID, err)
 	}
-	instanceSizeEntity, err := g.client.InstanceSize.Get(ctx, effectiveInstanceSizeID)
+	instanceSizeEntityForSnapshot, err := g.client.InstanceSize.Get(ctx, effectiveInstanceSizeID)
 	if err != nil {
 		return fmt.Errorf("get instance size %s for ticket %s: %w", effectiveInstanceSizeID, ticketID, err)
 	}
 
 	templateSnapshot := buildTemplateSnapshot(templateEntity)
-	instanceSizeSnapshot := buildInstanceSizeSnapshot(instanceSizeEntity)
+	instanceSizeSnapshot := buildInstanceSizeSnapshot(instanceSizeEntityForSnapshot)
 	modifiedSpec := cloneMap(ticket.ModifiedSpec)
+
+	// Merge admin resource overrides into modifiedSpec (Stage 5.B).
+	if opts.EnableOverride {
+		modifiedSpec["enable_override"] = true
+		if opts.CPURequest > 0 {
+			modifiedSpec["cpu_request"] = opts.CPURequest
+		}
+		if opts.CPULimit > 0 {
+			modifiedSpec["cpu_limit"] = opts.CPULimit
+		}
+		if opts.MemoryRequestMB > 0 {
+			modifiedSpec["memory_request_mb"] = opts.MemoryRequestMB
+		}
+		if opts.MemoryLimitMB > 0 {
+			modifiedSpec["memory_limit_mb"] = opts.MemoryLimitMB
+		}
+		if opts.DiskGB > 0 {
+			modifiedSpec["disk_gb"] = opts.DiskGB
+		}
+	} else if opts.DiskGB > 0 {
+		// Disk size can be adjusted even without full override.
+		modifiedSpec["disk_gb"] = opts.DiskGB
+	}
 
 	if g.atomicWriter == nil {
 		return fmt.Errorf("atomic approval writer is not configured")
@@ -159,8 +218,8 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 		ticketID,
 		ticket.EventID,
 		approver,
-		clusterID,
-		storageClass,
+		opts.ClusterID,
+		opts.StorageClass,
 		payload.ServiceID,
 		payload.Namespace,
 		payload.RequesterID,
@@ -188,6 +247,7 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 		zap.String("vm_id", vmID),
 		zap.String("vm_name", vmName),
 		zap.String("event_id", ticket.EventID),
+		zap.Bool("resource_override", opts.EnableOverride),
 	)
 
 	return nil
@@ -390,7 +450,7 @@ func (g *Gateway) approveBatchParent(
 	ctx context.Context,
 	parent *ent.ApprovalTicket,
 	parentEvent *ent.DomainEvent,
-	approver, clusterID, storageClass string,
+	approver string, opts ApproveOpts,
 ) error {
 	children, err := g.client.ApprovalTicket.Query().
 		Where(approvalticket.ParentTicketIDEQ(parent.ID)).
@@ -414,7 +474,7 @@ func (g *Gateway) approveBatchParent(
 		case approvalticket.OperationTypeDELETE:
 			approveErr = g.approveDelete(ctx, child, child.ID, approver)
 		default:
-			approveErr = g.approveCreate(ctx, child, child.ID, approver, clusterID, storageClass)
+			approveErr = g.approveCreate(ctx, child, child.ID, approver, opts)
 		}
 		if approveErr != nil {
 			failedCount++
@@ -434,11 +494,11 @@ func (g *Gateway) approveBatchParent(
 	parentUpdater := g.client.ApprovalTicket.UpdateOneID(parent.ID).
 		SetStatus(parentStatus).
 		SetApprover(approver)
-	if parent.OperationType == approvalticket.OperationTypeCREATE && strings.TrimSpace(clusterID) != "" {
-		parentUpdater = parentUpdater.SetSelectedClusterID(clusterID)
+	if parent.OperationType == approvalticket.OperationTypeCREATE && strings.TrimSpace(opts.ClusterID) != "" {
+		parentUpdater = parentUpdater.SetSelectedClusterID(opts.ClusterID)
 	}
-	if parent.OperationType == approvalticket.OperationTypeCREATE && strings.TrimSpace(storageClass) != "" {
-		parentUpdater = parentUpdater.SetSelectedStorageClass(storageClass)
+	if parent.OperationType == approvalticket.OperationTypeCREATE && strings.TrimSpace(opts.StorageClass) != "" {
+		parentUpdater = parentUpdater.SetSelectedStorageClass(opts.StorageClass)
 	}
 	if failedCount > 0 {
 		parentUpdater = parentUpdater.SetRejectReason(fmt.Sprintf("%d child approvals failed during dispatch", failedCount))

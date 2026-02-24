@@ -27,6 +27,14 @@ type VMSpec struct {
 	DiskGB   int               `json:"disk_gb,omitempty"`
 	Image    string            `json:"image,omitempty"`
 	Labels   map[string]string `json:"labels,omitempty"`
+
+	// CPURequest is the K8s CPU request (overcommit: request ≤ limit/CPU).
+	// Zero means "use CPU" (no overcommit). Set via admin resource override (Stage 5.B).
+	CPURequest int `json:"cpu_request,omitempty"`
+	// MemoryRequestMB is the K8s memory request in MB (overcommit: request ≤ limit/MemoryMB).
+	// Zero means "use MemoryMB" (no overcommit). Set via admin resource override (Stage 5.B).
+	MemoryRequestMB int `json:"memory_request_mb,omitempty"`
+
 	// SpecOverrides carries advanced KubeVirt spec path/value overrides (ADR-0018 Hybrid Model).
 	SpecOverrides map[string]interface{} `json:"spec_overrides,omitempty"`
 }

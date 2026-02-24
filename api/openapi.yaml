@@ -2616,6 +2616,31 @@ components:
           description: Admin selects target cluster (ADR-0017)
         selected_storage_class:
           type: string
+        enable_override:
+          type: boolean
+          description: >
+            When true, admin overrides default resource requests/limits
+            from InstanceSize (master-flow Stage 5.B).
+        cpu_request:
+          type: integer
+          minimum: 1
+          description: CPU request in cores (overcommit scenario, Stage 5.B)
+        cpu_limit:
+          type: integer
+          minimum: 1
+          description: CPU limit in cores (Stage 5.B)
+        memory_request_mb:
+          type: integer
+          minimum: 1
+          description: Memory request in MB (Stage 5.B)
+        memory_limit_mb:
+          type: integer
+          minimum: 1
+          description: Memory limit in MB (Stage 5.B)
+        disk_gb:
+          type: integer
+          minimum: 1
+          description: Disk size in GB, admin can adjust (Stage 5.B)
         comment:
           type: string
 

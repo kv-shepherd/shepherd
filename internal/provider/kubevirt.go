@@ -270,8 +270,19 @@ func buildVMFromSpec(namespace string, spec *domain.VMSpec) (*kubevirtv1.Virtual
 	}
 
 	running := true
-	cpuQty := resource.MustParse(fmt.Sprintf("%d", spec.CPU))
-	memQty := resource.MustParse(fmt.Sprintf("%dMi", spec.MemoryMB))
+	cpuLimitQty := resource.MustParse(fmt.Sprintf("%d", spec.CPU))
+	memLimitQty := resource.MustParse(fmt.Sprintf("%dMi", spec.MemoryMB))
+
+	// Overcommit: if CPURequest/MemoryRequestMB are set, use them for requests.
+	// Otherwise, default to limits (Guaranteed QoS).
+	cpuRequestQty := cpuLimitQty
+	if spec.CPURequest > 0 {
+		cpuRequestQty = resource.MustParse(fmt.Sprintf("%d", spec.CPURequest))
+	}
+	memRequestQty := memLimitQty
+	if spec.MemoryRequestMB > 0 {
+		memRequestQty = resource.MustParse(fmt.Sprintf("%dMi", spec.MemoryRequestMB))
+	}
 
 	volumes, disks, err := buildDisksAndVolumes(image, spec.DiskGB)
 	if err != nil {
@@ -297,12 +308,12 @@ func buildVMFromSpec(namespace string, spec *domain.VMSpec) (*kubevirtv1.Virtual
 						},
 						Resources: kubevirtv1.ResourceRequirements{
 							Requests: k8sv1.ResourceList{
-								k8sv1.ResourceCPU:    cpuQty,
-								k8sv1.ResourceMemory: memQty,
+								k8sv1.ResourceCPU:    cpuRequestQty,
+								k8sv1.ResourceMemory: memRequestQty,
 							},
 							Limits: k8sv1.ResourceList{
-								k8sv1.ResourceCPU:    cpuQty,
-								k8sv1.ResourceMemory: memQty,
+								k8sv1.ResourceCPU:    cpuLimitQty,
+								k8sv1.ResourceMemory: memLimitQty,
 							},
 						},
 						Devices: kubevirtv1.Devices{
@@ -354,14 +365,22 @@ func applySpecToVM(vm *kubevirtv1.VirtualMachine, spec *domain.VMSpec) error {
 		}
 	}
 	if spec.CPU > 0 {
-		cpuQty := resource.MustParse(fmt.Sprintf("%d", spec.CPU))
-		vm.Spec.Template.Spec.Domain.Resources.Requests[k8sv1.ResourceCPU] = cpuQty
-		vm.Spec.Template.Spec.Domain.Resources.Limits[k8sv1.ResourceCPU] = cpuQty
+		cpuLimitQty := resource.MustParse(fmt.Sprintf("%d", spec.CPU))
+		cpuRequestQty := cpuLimitQty
+		if spec.CPURequest > 0 {
+			cpuRequestQty = resource.MustParse(fmt.Sprintf("%d", spec.CPURequest))
+		}
+		vm.Spec.Template.Spec.Domain.Resources.Requests[k8sv1.ResourceCPU] = cpuRequestQty
+		vm.Spec.Template.Spec.Domain.Resources.Limits[k8sv1.ResourceCPU] = cpuLimitQty
 	}
 	if spec.MemoryMB > 0 {
-		memQty := resource.MustParse(fmt.Sprintf("%dMi", spec.MemoryMB))
-		vm.Spec.Template.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = memQty
-		vm.Spec.Template.Spec.Domain.Resources.Limits[k8sv1.ResourceMemory] = memQty
+		memLimitQty := resource.MustParse(fmt.Sprintf("%dMi", spec.MemoryMB))
+		memRequestQty := memLimitQty
+		if spec.MemoryRequestMB > 0 {
+			memRequestQty = resource.MustParse(fmt.Sprintf("%dMi", spec.MemoryRequestMB))
+		}
+		vm.Spec.Template.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = memRequestQty
+		vm.Spec.Template.Spec.Domain.Resources.Limits[k8sv1.ResourceMemory] = memLimitQty
 	}
 	if image := strings.TrimSpace(spec.Image); image != "" {
 		volumes, disks, err := buildDisksAndVolumes(image, spec.DiskGB)
