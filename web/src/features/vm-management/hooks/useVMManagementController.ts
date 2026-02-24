@@ -113,7 +113,7 @@ export function useVMManagementController({ t }: UseVMManagementControllerArgs) 
     const batchActionTargetIDsRef = useRef<string[]>([]);
     const [form] = Form.useForm<VMCreateFormValues>();
     const [deleteOpen, setDeleteOpen] = useState(false);
-    const [deletingVM, setDeletingVM] = useState<{ id: string; name: string } | null>(null);
+    const [deletingVM, setDeletingVM] = useState<{ id: string; name: string; environment?: string } | null>(null);
     const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
     const selectedTemplateId = Form.useWatch('template_id', form);
@@ -469,8 +469,8 @@ export function useVMManagementController({ t }: UseVMManagementControllerArgs) 
         }
     );
 
-    const openDeleteModal = (vmId: string, vmName: string) => {
-        setDeletingVM({ id: vmId, name: vmName });
+    const openDeleteModal = (vmId: string, vmName: string, environment?: string) => {
+        setDeletingVM({ id: vmId, name: vmName, environment });
         setDeleteConfirmName('');
         setDeleteOpen(true);
     };
@@ -482,6 +482,10 @@ export function useVMManagementController({ t }: UseVMManagementControllerArgs) 
 
     const submitDelete = () => {
         if (!deletingVM) return;
+        if (deletingVM.environment !== 'test' && deleteConfirmName !== deletingVM.name) {
+            messageApi.warning(t('action.delete_type_name_hint'));
+            return;
+        }
         deleteVM.mutate({ vmId: deletingVM.id, vmName: deletingVM.name });
     };
 

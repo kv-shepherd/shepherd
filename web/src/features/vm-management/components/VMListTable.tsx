@@ -38,7 +38,7 @@ interface VMListTableProps {
     onStop: (vmId: string) => void;
     onRestart: (vmId: string) => void;
     onConsole: (vmId: string) => void;
-    onDelete: (vmId: string, vmName: string) => void;
+    onDelete: (vmId: string, vmName: string, environment?: string) => void;
     onDetail: (vmId: string) => void;
     selectedRowKeys: string[];
     onSelectionChange: (selectedKeys: string[]) => void;
@@ -192,7 +192,7 @@ export function VMListTable({
                                 data-testid={`vm-action-delete-${record.id}`}
                                 icon={<DeleteOutlined />}
                                 disabled={!canDelete}
-                                onClick={() => onDelete(record.id, record.name)}
+                                onClick={() => onDelete(record.id, record.name, record.environment)}
                             />
                         </Tooltip>
                     </Space>

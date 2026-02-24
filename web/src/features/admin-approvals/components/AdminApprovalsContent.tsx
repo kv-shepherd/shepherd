@@ -44,6 +44,13 @@ import {
 
 const { Title, Text } = Typography;
 
+/** Safely convert an unknown ticket_payload field to a displayable string. */
+function toStr(value: unknown): string {
+    if (value === null || value === undefined) return '—';
+    if (typeof value === 'string') return value || '—';
+    return String(value);
+}
+
 export function AdminApprovalsContent() {
     const { t } = useTranslation(['approval', 'common']);
     const approvals = useAdminApprovalsController({ t });
@@ -260,93 +267,144 @@ export function AdminApprovalsContent() {
                 data-testid="approve-modal"
             >
                 <Form form={approvals.approveForm} layout="vertical" name="approve-form">
-                    {approvals.approveModal?.operation_type !== 'DELETE' && (
-                        <>
-                            <Form.Item
-                                name="selected_cluster_id"
-                                label={t('approve_modal.cluster')}
-                                extra={t('approve_modal.cluster_hint')}
-                            >
-                                <Select
-                                    placeholder={t('approve_modal.cluster')}
-                                    options={approvals.clustersData?.items
-                                        ?.filter((cluster: Cluster) => cluster.status === 'HEALTHY' && cluster.enabled !== false)
-                                        .map((cluster: Cluster) => ({
-                                            label: (
-                                                <Space>
-                                                    <Text strong>{cluster.display_name || cluster.name}</Text>
-                                                    {cluster.kubevirt_version && <Tag color="blue">KV {cluster.kubevirt_version}</Tag>}
+                    {approvals.approveModal?.operation_type !== 'DELETE' ? (() => {
+                        const payload = approvals.approveModal?.ticket_payload as Record<string, unknown> | undefined;
+                        return (
+                            <>
+                                {payload && (
+                                    <Descriptions
+                                        bordered
+                                        size="small"
+                                        column={1}
+                                        style={{ marginBottom: 16 }}
+                                        title={t('approve_modal.request_details', 'Request Details')}
+                                    >
+                                        <Descriptions.Item label={t('approve_modal.namespace', 'Namespace')}>{toStr(payload.namespace)}</Descriptions.Item>
+                                        <Descriptions.Item label={t('approve_modal.template', 'Template ID')}>{toStr(payload.template_id)}</Descriptions.Item>
+                                        <Descriptions.Item label={t('approve_modal.instance_size', 'Instance Size ID')}>{toStr(payload.instance_size_id)}</Descriptions.Item>
+                                        <Descriptions.Item label={t('approve_modal.dedicated_cpu', 'Dedicated CPU')}>
+                                            {payload.dedicated_cpu ? <Tag color="blue">{t('common:yes', 'Yes')}</Tag> : <Text type="secondary">{t('common:no', 'No')}</Text>}
+                                        </Descriptions.Item>
+                                    </Descriptions>
+                                )}
+                                <Form.Item
+                                    name="selected_cluster_id"
+                                    label={t('approve_modal.cluster')}
+                                    extra={t('approve_modal.cluster_hint')}
+                                >
+                                    <Select
+                                        placeholder={t('approve_modal.cluster')}
+                                        options={approvals.clustersData?.items
+                                            ?.filter((cluster: Cluster) => cluster.status === 'HEALTHY' && cluster.enabled !== false)
+                                            .map((cluster: Cluster) => ({
+                                                label: (
+                                                    <Space>
+                                                        <Text strong>{cluster.display_name || cluster.name}</Text>
+                                                        {cluster.kubevirt_version && <Tag color="blue">KV {cluster.kubevirt_version}</Tag>}
+                                                    </Space>
+                                                ),
+                                                value: cluster.id,
+                                            }))}
+                                    />
+                                </Form.Item>
+                                <Form.Item name="selected_storage_class" label={t('approve_modal.storage_class')}>
+                                    <Input placeholder="e.g. rook-ceph-block" />
+                                </Form.Item>
+                                <Form.Item name="disk_gb" label={t('approve_modal.disk_gb')}>
+                                    <InputNumber min={1} max={500} addonAfter="GB" style={{ width: '100%' }} />
+                                </Form.Item>
+                                <Form.Item name="enable_override" valuePropName="checked" label={t('approve_modal.enable_override')}>
+                                    <Switch />
+                                </Form.Item>
+                                <Form.Item noStyle shouldUpdate={(prev, cur) => prev.enable_override !== cur.enable_override}>
+                                    {({ getFieldValue }) =>
+                                        getFieldValue('enable_override') ? (
+                                            <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+                                                <Space direction="vertical" style={{ width: '100%' }}>
+                                                    <Space style={{ width: '100%' }}>
+                                                        <Form.Item
+                                                            name="cpu_request"
+                                                            label={t('approve_modal.cpu_request')}
+                                                            style={{ marginBottom: 0, flex: 1 }}
+                                                            dependencies={['cpu_limit']}
+                                                            rules={[
+                                                                ({ getFieldValue }) => ({
+                                                                    validator(_, value) {
+                                                                        const lim = getFieldValue('cpu_limit');
+                                                                        if (payload?.dedicated_cpu && value && lim && value !== lim) {
+                                                                            return Promise.reject(new Error(t('approve_modal.dedicated_cpu_no_overcommit', 'Dedicated CPU requires request == limit')));
+                                                                        }
+                                                                        return Promise.resolve();
+                                                                    }
+                                                                })
+                                                            ]}
+                                                        >
+                                                            <InputNumber min={1} addonAfter={t('approve_modal.cores')} style={{ width: '100%' }} />
+                                                        </Form.Item>
+                                                        <Form.Item
+                                                            name="cpu_limit"
+                                                            label={t('approve_modal.cpu_limit')}
+                                                            style={{ marginBottom: 0, flex: 1 }}
+                                                            dependencies={['cpu_request']}
+                                                            rules={[
+                                                                ({ getFieldValue }) => ({
+                                                                    validator(_, value) {
+                                                                        const req = getFieldValue('cpu_request');
+                                                                        if (payload?.dedicated_cpu && req && value && req !== value) {
+                                                                            return Promise.reject(new Error(t('approve_modal.dedicated_cpu_no_overcommit', 'Dedicated CPU requires request == limit')));
+                                                                        }
+                                                                        return Promise.resolve();
+                                                                    }
+                                                                })
+                                                            ]}
+                                                        >
+                                                            <InputNumber min={1} addonAfter={t('approve_modal.cores')} style={{ width: '100%' }} />
+                                                        </Form.Item>
+                                                    </Space>
+                                                    <Space style={{ width: '100%' }}>
+                                                        <Form.Item name="memory_request_mb" label={t('approve_modal.memory_request')} style={{ marginBottom: 0, flex: 1 }}>
+                                                            <InputNumber min={1} addonAfter="MB" style={{ width: '100%' }} />
+                                                        </Form.Item>
+                                                        <Form.Item name="memory_limit_mb" label={t('approve_modal.memory_limit')} style={{ marginBottom: 0, flex: 1 }}>
+                                                            <InputNumber min={1} addonAfter="MB" style={{ width: '100%' }} />
+                                                        </Form.Item>
+                                                    </Space>
                                                 </Space>
-                                            ),
-                                            value: cluster.id,
-                                        }))}
-                                />
-                            </Form.Item>
-                            <Form.Item name="selected_storage_class" label={t('approve_modal.storage_class')}>
-                                <Input placeholder="e.g. rook-ceph-block" />
-                            </Form.Item>
-                            <Form.Item name="disk_gb" label={t('approve_modal.disk_gb')}>
-                                <InputNumber min={1} max={500} addonAfter="GB" style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item name="enable_override" valuePropName="checked" label={t('approve_modal.enable_override')}>
-                                <Switch />
-                            </Form.Item>
-                            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.enable_override !== cur.enable_override}>
-                                {({ getFieldValue }) =>
-                                    getFieldValue('enable_override') ? (
-                                        <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
-                                            <Space direction="vertical" style={{ width: '100%' }}>
-                                                <Space style={{ width: '100%' }}>
-                                                    <Form.Item name="cpu_request" label={t('approve_modal.cpu_request')} style={{ marginBottom: 0, flex: 1 }}>
-                                                        <InputNumber min={1} addonAfter={t('approve_modal.cores')} style={{ width: '100%' }} />
-                                                    </Form.Item>
-                                                    <Form.Item name="cpu_limit" label={t('approve_modal.cpu_limit')} style={{ marginBottom: 0, flex: 1 }}>
-                                                        <InputNumber min={1} addonAfter={t('approve_modal.cores')} style={{ width: '100%' }} />
-                                                    </Form.Item>
-                                                </Space>
-                                                <Space style={{ width: '100%' }}>
-                                                    <Form.Item name="memory_request_mb" label={t('approve_modal.memory_request')} style={{ marginBottom: 0, flex: 1 }}>
-                                                        <InputNumber min={1} addonAfter="MB" style={{ width: '100%' }} />
-                                                    </Form.Item>
-                                                    <Form.Item name="memory_limit_mb" label={t('approve_modal.memory_limit')} style={{ marginBottom: 0, flex: 1 }}>
-                                                        <InputNumber min={1} addonAfter="MB" style={{ width: '100%' }} />
-                                                    </Form.Item>
-                                                </Space>
-                                            </Space>
-                                            <Form.Item noStyle shouldUpdate={(prev, cur) =>
-                                                prev.cpu_request !== cur.cpu_request || prev.cpu_limit !== cur.cpu_limit ||
-                                                prev.memory_request_mb !== cur.memory_request_mb || prev.memory_limit_mb !== cur.memory_limit_mb
-                                            }>
-                                                {({ getFieldValue: gfv }) => {
-                                                    const cpuReq = gfv('cpu_request');
-                                                    const cpuLim = gfv('cpu_limit');
-                                                    const memReq = gfv('memory_request_mb');
-                                                    const memLim = gfv('memory_limit_mb');
-                                                    const isOvercommit = (cpuReq && cpuLim && cpuReq !== cpuLim) ||
-                                                        (memReq && memLim && memReq !== memLim);
-                                                    if (!isOvercommit) return null;
-                                                    return (
-                                                        <div style={{
-                                                            padding: '8px 12px',
-                                                            marginTop: 8,
-                                                            background: '#fffbe6',
-                                                            border: '1px solid #ffe58f',
-                                                            borderRadius: 6,
-                                                        }}>
-                                                            <Space>
-                                                                <ExclamationCircleOutlined style={{ color: '#faad14' }} />
-                                                                <Text type="warning">{t('approve_modal.overcommit_warning')}</Text>
-                                                            </Space>
-                                                        </div>
-                                                    );
-                                                }}
-                                            </Form.Item>
-                                        </Card>
-                                    ) : null
-                                }
-                            </Form.Item>
-                        </>
-                    )}
+                                                <Form.Item noStyle shouldUpdate={(prev, cur) =>
+                                                    prev.cpu_request !== cur.cpu_request || prev.cpu_limit !== cur.cpu_limit ||
+                                                    prev.memory_request_mb !== cur.memory_request_mb || prev.memory_limit_mb !== cur.memory_limit_mb
+                                                }>
+                                                    {({ getFieldValue: gfv }) => {
+                                                        const cpuReq = gfv('cpu_request');
+                                                        const cpuLim = gfv('cpu_limit');
+                                                        const memReq = gfv('memory_request_mb');
+                                                        const memLim = gfv('memory_limit_mb');
+                                                        const isOvercommit = (cpuReq && cpuLim && cpuReq !== cpuLim) ||
+                                                            (memReq && memLim && memReq !== memLim);
+                                                        if (!isOvercommit) return null;
+                                                        return (
+                                                            <div style={{
+                                                                padding: '8px 12px',
+                                                                marginTop: 8,
+                                                                background: '#fffbe6',
+                                                                border: '1px solid #ffe58f',
+                                                                borderRadius: 6,
+                                                            }}>
+                                                                <Space>
+                                                                    <ExclamationCircleOutlined style={{ color: '#faad14' }} />
+                                                                    <Text type="warning">{t('approve_modal.overcommit_warning')}</Text>
+                                                                </Space>
+                                                            </div>
+                                                        );
+                                                    }}
+                                                </Form.Item>
+                                            </Card>
+                                        ) : null
+                                    }
+                                </Form.Item>
+                            </>
+                        );
+                    })() : null}
                     {approvals.approveModal?.operation_type === 'DELETE' && (
                         <div style={{ marginBottom: 16 }}>
                             <Descriptions

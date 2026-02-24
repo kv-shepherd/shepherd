@@ -12,12 +12,16 @@ import {
     Table,
     Tag,
     Typography,
+    Upload,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { CloudOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import React, { useState } from 'react';
+import { CloudOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, UploadOutlined, FileTextOutlined } from '@ant-design/icons';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeSanitize from 'rehype-sanitize';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
-import { useRouter } from 'next/navigation';
 
 import { PermissionGuard } from '@/components/auth/PermissionGuard';
 import { useServicesManagementController } from '../hooks/useServicesManagementController';
@@ -28,7 +32,11 @@ const { Title, Text } = Typography;
 export function ServicesManagementContent() {
     const { t } = useTranslation('common');
     const services = useServicesManagementController({ t });
-    const router = useRouter();
+
+    const [createPreviewMode, setCreatePreviewMode] = useState(false);
+    const [editPreviewMode, setEditPreviewMode] = useState(false);
+    const [detailOpen, setDetailOpen] = useState(false);
+    const [detailService, setDetailService] = useState<Service | null>(null);
 
     const columns: ColumnsType<Service> = [
         {
@@ -76,7 +84,10 @@ export function ServicesManagementContent() {
                         size="small"
                         data-testid={`service-action-detail-${record.id}`}
                         icon={<EyeOutlined />}
-                        onClick={() => router.push(`/systems/${record.system_id}/services/${record.id}`)}
+                        onClick={() => {
+                            setDetailService(record);
+                            setDetailOpen(true);
+                        }}
                     />
                     <PermissionGuard permission="service:create">
                         <Button
@@ -202,8 +213,50 @@ export function ServicesManagementContent() {
                     >
                         <Input placeholder={t('services.name_placeholder')} maxLength={15} />
                     </Form.Item>
-                    <Form.Item name="description" label={t('table.description')}>
-                        <Input.TextArea rows={3} placeholder={t('services.description_placeholder')} />
+                    <Form.Item
+                        label={t('table.description')}
+                        extra={
+                            <Space size="small" style={{ marginTop: 8 }}>
+                                <Button
+                                    type="link"
+                                    size="small"
+                                    icon={createPreviewMode ? <EditOutlined /> : <FileTextOutlined />}
+                                    onClick={() => setCreatePreviewMode(!createPreviewMode)}
+                                >
+                                    {createPreviewMode ? '[Edit]' : '[Preview]'}
+                                </Button>
+                                <Upload
+                                    accept=".md"
+                                    showUploadList={false}
+                                    beforeUpload={(file) => {
+                                        const reader = new FileReader();
+                                        reader.onload = (e) => {
+                                            const text = e.target?.result as string;
+                                            services.form.setFieldValue('description', text);
+                                        };
+                                        reader.readAsText(file);
+                                        return false;
+                                    }}
+                                >
+                                    <Button type="link" size="small" icon={<UploadOutlined />}>
+                                        [Upload .md file]
+                                    </Button>
+                                </Upload>
+                            </Space>
+                        }
+                    >
+                        <Form.Item noStyle shouldUpdate>
+                            {(form) => (
+                                <div className="markdown-preview" style={{ display: createPreviewMode ? 'block' : 'none', padding: '4px 11px', border: '1px solid #d9d9d9', borderRadius: 6, minHeight: 76, maxHeight: 152, overflowY: 'auto' }}>
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+                                        {form.getFieldValue('description') || '*No content provided*'}
+                                    </ReactMarkdown>
+                                </div>
+                            )}
+                        </Form.Item>
+                        <Form.Item name="description" noStyle hidden={createPreviewMode}>
+                            <Input.TextArea rows={3} placeholder={t('services.description_placeholder')} />
+                        </Form.Item>
                     </Form.Item>
                 </Form>
             </Modal>
@@ -220,10 +273,76 @@ export function ServicesManagementContent() {
                 data-testid="service-edit-modal"
             >
                 <Form form={services.editForm} layout="vertical" name="edit-service">
-                    <Form.Item name="description" label={t('table.description')}>
-                        <Input.TextArea rows={3} placeholder={t('services.description_placeholder')} />
+                    <Form.Item
+                        label={t('table.description')}
+                        extra={
+                            <Space size="small" style={{ marginTop: 8 }}>
+                                <Button
+                                    type="link"
+                                    size="small"
+                                    icon={editPreviewMode ? <EditOutlined /> : <FileTextOutlined />}
+                                    onClick={() => setEditPreviewMode(!editPreviewMode)}
+                                >
+                                    {editPreviewMode ? '[Edit]' : '[Preview]'}
+                                </Button>
+                                <Upload
+                                    accept=".md"
+                                    showUploadList={false}
+                                    beforeUpload={(file) => {
+                                        const reader = new FileReader();
+                                        reader.onload = (e) => {
+                                            const text = e.target?.result as string;
+                                            services.editForm.setFieldValue('description', text);
+                                        };
+                                        reader.readAsText(file);
+                                        return false;
+                                    }}
+                                >
+                                    <Button type="link" size="small" icon={<UploadOutlined />}>
+                                        [Upload .md file]
+                                    </Button>
+                                </Upload>
+                            </Space>
+                        }
+                    >
+                        <Form.Item noStyle shouldUpdate>
+                            {(form) => (
+                                <div className="markdown-preview" style={{ display: editPreviewMode ? 'block' : 'none', padding: '4px 11px', border: '1px solid #d9d9d9', borderRadius: 6, minHeight: 76, maxHeight: 152, overflowY: 'auto' }}>
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+                                        {form.getFieldValue('description') || '*No content provided*'}
+                                    </ReactMarkdown>
+                                </div>
+                            )}
+                        </Form.Item>
+                        <Form.Item name="description" noStyle hidden={editPreviewMode}>
+                            <Input.TextArea rows={3} placeholder={t('services.description_placeholder')} />
+                        </Form.Item>
                     </Form.Item>
                 </Form>
+            </Modal>
+            <Modal
+                title={detailService?.name}
+                open={detailOpen}
+                onCancel={() => setDetailOpen(false)}
+                footer={[
+                    <Button key="close" onClick={() => setDetailOpen(false)}>
+                        {t('button.close', 'Close')}
+                    </Button>
+                ]}
+                destroyOnHidden
+                width={800}
+            >
+                {detailService?.description ? (
+                    <div className="markdown-preview" style={{ padding: '16px', background: '#fafafa', borderRadius: 8, marginTop: 16 }}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+                            {detailService.description}
+                        </ReactMarkdown>
+                    </div>
+                ) : (
+                    <div style={{ padding: '24px', textAlign: 'center', color: '#999' }}>
+                        *No description provided*
+                    </div>
+                )}
             </Modal>
         </div>
     );
