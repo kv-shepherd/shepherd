@@ -112,6 +112,9 @@ export function useVMManagementController({ t }: UseVMManagementControllerArgs) 
     const [lastBatchActionFeedback, setLastBatchActionFeedback] = useState<BatchActionFeedback | null>(null);
     const batchActionTargetIDsRef = useRef<string[]>([]);
     const [form] = Form.useForm<VMCreateFormValues>();
+    const [deleteOpen, setDeleteOpen] = useState(false);
+    const [deletingVM, setDeletingVM] = useState<{ id: string; name: string } | null>(null);
+    const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
     const selectedTemplateId = Form.useWatch('template_id', form);
     const selectedSizeId = Form.useWatch('instance_size_id', form);
@@ -457,10 +460,30 @@ export function useVMManagementController({ t }: UseVMManagementControllerArgs) 
         }),
         {
             invalidateKeys: [['vms'], ['approvals']],
-            onSuccess: (resp) => messageApi.success(t('delete_request_submitted', { ticket_id: resp.ticket_id })),
+            onSuccess: (resp) => {
+                messageApi.success(t('delete_request_submitted', { ticket_id: resp.ticket_id }));
+                setDeleteOpen(false);
+                setTimeout(() => setDeletingVM(null), 300);
+            },
             onError: (err) => messageApi.error(err.message || t('common:message.error')),
         }
     );
+
+    const openDeleteModal = (vmId: string, vmName: string) => {
+        setDeletingVM({ id: vmId, name: vmName });
+        setDeleteConfirmName('');
+        setDeleteOpen(true);
+    };
+
+    const closeDeleteModal = () => {
+        setDeleteOpen(false);
+        setTimeout(() => setDeletingVM(null), 300);
+    };
+
+    const submitDelete = () => {
+        if (!deletingVM) return;
+        deleteVM.mutate({ vmId: deletingVM.id, vmName: deletingVM.name });
+    };
 
     const wizardSteps = [
         { title: t('wizard.step.service') },
@@ -723,9 +746,14 @@ export function useVMManagementController({ t }: UseVMManagementControllerArgs) 
                 },
             });
         },
-        deleteVM: async (vmId: string, vmName: string) => {
-            const vm = await fetchVMDetail(vmId);
-            deleteVM.mutate({ vmId, vmName: vm?.name || vmName });
-        },
+        deleteVM: openDeleteModal,
+        openDeleteModal,
+        deleteOpen,
+        deletingVM,
+        deleteConfirmName,
+        setDeleteConfirmName,
+        closeDeleteModal,
+        submitDelete,
+        deletePending: deleteVM.isPending,
     };
 }

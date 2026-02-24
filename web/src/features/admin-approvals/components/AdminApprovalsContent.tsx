@@ -7,11 +7,13 @@ import {
     Descriptions,
     Form,
     Input,
+    InputNumber,
     Modal,
     Popconfirm,
     Select,
     Segmented,
     Space,
+    Switch,
     Table,
     Tag,
     Typography,
@@ -257,74 +259,134 @@ export function AdminApprovalsContent() {
                 forceRender
                 data-testid="approve-modal"
             >
-                    <Form form={approvals.approveForm} layout="vertical" name="approve-form">
-                        {approvals.approveModal?.operation_type !== 'DELETE' && (
-                            <>
-                                <Form.Item
-                                    name="selected_cluster_id"
-                                    label={t('approve_modal.cluster')}
-                                    extra={t('approve_modal.cluster_hint')}
-                                >
-                                    <Select
-                                        placeholder={t('approve_modal.cluster')}
-                                        options={approvals.clustersData?.items
-                                            ?.filter((cluster: Cluster) => cluster.status === 'HEALTHY' && cluster.enabled !== false)
-                                            .map((cluster: Cluster) => ({
-                                                label: (
-                                                    <Space>
-                                                        <Text strong>{cluster.display_name || cluster.name}</Text>
-                                                        {cluster.kubevirt_version && <Tag color="blue">KV {cluster.kubevirt_version}</Tag>}
-                                                    </Space>
-                                                ),
-                                                value: cluster.id,
-                                            }))}
-                                    />
-                                </Form.Item>
-                                <Form.Item name="selected_storage_class" label={t('approve_modal.storage_class')}>
-                                    <Input placeholder="e.g. rook-ceph-block" />
-                                </Form.Item>
-                            </>
-                        )}
-                        {approvals.approveModal?.operation_type === 'DELETE' && (
-                            <div style={{ marginBottom: 16 }}>
-                                <Descriptions
-                                    bordered
-                                    size="small"
-                                    column={1}
-                                    style={{ marginBottom: 12 }}
-                                >
-                                    <Descriptions.Item label={t('approve_modal.delete_target_vm')}>
-                                        <Text strong style={{ color: '#cf1322' }}>
-                                            {approvals.approveModal.target_vm_name || '—'}
-                                        </Text>
+                <Form form={approvals.approveForm} layout="vertical" name="approve-form">
+                    {approvals.approveModal?.operation_type !== 'DELETE' && (
+                        <>
+                            <Form.Item
+                                name="selected_cluster_id"
+                                label={t('approve_modal.cluster')}
+                                extra={t('approve_modal.cluster_hint')}
+                            >
+                                <Select
+                                    placeholder={t('approve_modal.cluster')}
+                                    options={approvals.clustersData?.items
+                                        ?.filter((cluster: Cluster) => cluster.status === 'HEALTHY' && cluster.enabled !== false)
+                                        .map((cluster: Cluster) => ({
+                                            label: (
+                                                <Space>
+                                                    <Text strong>{cluster.display_name || cluster.name}</Text>
+                                                    {cluster.kubevirt_version && <Tag color="blue">KV {cluster.kubevirt_version}</Tag>}
+                                                </Space>
+                                            ),
+                                            value: cluster.id,
+                                        }))}
+                                />
+                            </Form.Item>
+                            <Form.Item name="selected_storage_class" label={t('approve_modal.storage_class')}>
+                                <Input placeholder="e.g. rook-ceph-block" />
+                            </Form.Item>
+                            <Form.Item name="disk_gb" label={t('approve_modal.disk_gb')}>
+                                <InputNumber min={1} max={500} addonAfter="GB" style={{ width: '100%' }} />
+                            </Form.Item>
+                            <Form.Item name="enable_override" valuePropName="checked" label={t('approve_modal.enable_override')}>
+                                <Switch />
+                            </Form.Item>
+                            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.enable_override !== cur.enable_override}>
+                                {({ getFieldValue }) =>
+                                    getFieldValue('enable_override') ? (
+                                        <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+                                            <Space direction="vertical" style={{ width: '100%' }}>
+                                                <Space style={{ width: '100%' }}>
+                                                    <Form.Item name="cpu_request" label={t('approve_modal.cpu_request')} style={{ marginBottom: 0, flex: 1 }}>
+                                                        <InputNumber min={1} addonAfter={t('approve_modal.cores')} style={{ width: '100%' }} />
+                                                    </Form.Item>
+                                                    <Form.Item name="cpu_limit" label={t('approve_modal.cpu_limit')} style={{ marginBottom: 0, flex: 1 }}>
+                                                        <InputNumber min={1} addonAfter={t('approve_modal.cores')} style={{ width: '100%' }} />
+                                                    </Form.Item>
+                                                </Space>
+                                                <Space style={{ width: '100%' }}>
+                                                    <Form.Item name="memory_request_mb" label={t('approve_modal.memory_request')} style={{ marginBottom: 0, flex: 1 }}>
+                                                        <InputNumber min={1} addonAfter="MB" style={{ width: '100%' }} />
+                                                    </Form.Item>
+                                                    <Form.Item name="memory_limit_mb" label={t('approve_modal.memory_limit')} style={{ marginBottom: 0, flex: 1 }}>
+                                                        <InputNumber min={1} addonAfter="MB" style={{ width: '100%' }} />
+                                                    </Form.Item>
+                                                </Space>
+                                            </Space>
+                                            <Form.Item noStyle shouldUpdate={(prev, cur) =>
+                                                prev.cpu_request !== cur.cpu_request || prev.cpu_limit !== cur.cpu_limit ||
+                                                prev.memory_request_mb !== cur.memory_request_mb || prev.memory_limit_mb !== cur.memory_limit_mb
+                                            }>
+                                                {({ getFieldValue: gfv }) => {
+                                                    const cpuReq = gfv('cpu_request');
+                                                    const cpuLim = gfv('cpu_limit');
+                                                    const memReq = gfv('memory_request_mb');
+                                                    const memLim = gfv('memory_limit_mb');
+                                                    const isOvercommit = (cpuReq && cpuLim && cpuReq !== cpuLim) ||
+                                                        (memReq && memLim && memReq !== memLim);
+                                                    if (!isOvercommit) return null;
+                                                    return (
+                                                        <div style={{
+                                                            padding: '8px 12px',
+                                                            marginTop: 8,
+                                                            background: '#fffbe6',
+                                                            border: '1px solid #ffe58f',
+                                                            borderRadius: 6,
+                                                        }}>
+                                                            <Space>
+                                                                <ExclamationCircleOutlined style={{ color: '#faad14' }} />
+                                                                <Text type="warning">{t('approve_modal.overcommit_warning')}</Text>
+                                                            </Space>
+                                                        </div>
+                                                    );
+                                                }}
+                                            </Form.Item>
+                                        </Card>
+                                    ) : null
+                                }
+                            </Form.Item>
+                        </>
+                    )}
+                    {approvals.approveModal?.operation_type === 'DELETE' && (
+                        <div style={{ marginBottom: 16 }}>
+                            <Descriptions
+                                bordered
+                                size="small"
+                                column={1}
+                                style={{ marginBottom: 12 }}
+                            >
+                                <Descriptions.Item label={t('approve_modal.delete_target_vm')}>
+                                    <Text strong style={{ color: '#cf1322' }}>
+                                        {approvals.approveModal.target_vm_name || '—'}
+                                    </Text>
+                                </Descriptions.Item>
+                                <Descriptions.Item label={t('requester')}>
+                                    {approvals.approveModal.requester}
+                                </Descriptions.Item>
+                                {approvals.approveModal.reason && (
+                                    <Descriptions.Item label={t('reason')}>
+                                        {approvals.approveModal.reason}
                                     </Descriptions.Item>
-                                    <Descriptions.Item label={t('requester')}>
-                                        {approvals.approveModal.requester}
-                                    </Descriptions.Item>
-                                    {approvals.approveModal.reason && (
-                                        <Descriptions.Item label={t('reason')}>
-                                            {approvals.approveModal.reason}
-                                        </Descriptions.Item>
-                                    )}
-                                </Descriptions>
-                                <div style={{
-                                    padding: '12px 16px',
-                                    background: '#fff2e8',
-                                    border: '1px solid #ffbb96',
-                                    borderRadius: 8,
-                                    display: 'flex',
-                                    alignItems: 'flex-start',
-                                    gap: 8,
-                                }}>
-                                    <ExclamationCircleOutlined style={{ color: '#d4380d', marginTop: 2 }} />
-                                    <Text type="warning">{t('approve_modal.delete_warning')}</Text>
-                                </div>
+                                )}
+                            </Descriptions>
+                            <div style={{
+                                padding: '12px 16px',
+                                background: '#fff2e8',
+                                border: '1px solid #ffbb96',
+                                borderRadius: 8,
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: 8,
+                            }}>
+                                <ExclamationCircleOutlined style={{ color: '#d4380d', marginTop: 2 }} />
+                                <Text type="warning">{t('approve_modal.delete_warning')}</Text>
                             </div>
-                        )}
-                        <Form.Item name="comment" label={t('approve_modal.comment')}>
-                            <Input.TextArea rows={3} />
-                        </Form.Item>
-                    </Form>
+                        </div>
+                    )}
+                    <Form.Item name="comment" label={t('approve_modal.comment')}>
+                        <Input.TextArea rows={3} />
+                    </Form.Item>
+                </Form>
             </Modal>
 
             <Modal
@@ -338,18 +400,18 @@ export function AdminApprovalsContent() {
                 forceRender
                 data-testid="reject-modal"
             >
-                    <Form form={approvals.rejectForm} layout="vertical" name="reject-form">
-                        <Form.Item
-                            name="reason"
-                            label={t('reject_modal.reason')}
-                            rules={[{ required: true, message: 'Rejection reason is required' }]}
-                        >
-                            <Input.TextArea
-                                rows={4}
-                                placeholder={t('reject_modal.reason_placeholder')}
-                            />
-                        </Form.Item>
-                    </Form>
+                <Form form={approvals.rejectForm} layout="vertical" name="reject-form">
+                    <Form.Item
+                        name="reason"
+                        label={t('reject_modal.reason')}
+                        rules={[{ required: true, message: 'Rejection reason is required' }]}
+                    >
+                        <Input.TextArea
+                            rows={4}
+                            placeholder={t('reject_modal.reason_placeholder')}
+                        />
+                    </Form.Item>
+                </Form>
             </Modal>
         </div>
     );

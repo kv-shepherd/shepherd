@@ -727,7 +727,8 @@ export function AdminUsersContent() {
                     >
                         <Select
                             placeholder={t('users.role_bindings.select_role')}
-                            options={[]} // populated by role list query in a separate step
+                            loading={users.rolesLoading}
+                            options={(users.roles?.items ?? []).map((r) => ({ value: r.id, label: r.name }))}
                         />
                     </Form.Item>
                 </Form>

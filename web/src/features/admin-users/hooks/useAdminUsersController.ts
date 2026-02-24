@@ -26,6 +26,7 @@ import type {
     UserCreateRequest,
     UserList,
     UserUpdateRequest,
+    RoleList,
 } from '../types';
 
 interface UseAdminUsersControllerArgs {
@@ -77,6 +78,12 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         ['user-role-bindings', roleBindingsUserId],
         () => api.GET('/admin/users/{user_id}/role-bindings', { params: { path: { user_id: roleBindingsUserId } } }),
         { enabled: Boolean(roleBindingsUserId) }
+    );
+
+    const rolesQuery = useApiGet<RoleList>(
+        ['admin-roles-dropdown'],
+        () => api.GET('/admin/roles'),
+        { enabled: roleBindingCreateOpen }
     );
 
     const createUserMutation = useApiMutation<UserCreateRequest, User>(
@@ -410,6 +417,8 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         roleBindingsUserId,
         roleBindings: roleBindingsQuery.data,
         roleBindingsLoading: roleBindingsQuery.isLoading,
+        roles: rolesQuery.data,
+        rolesLoading: rolesQuery.isLoading,
         roleBindingCreateOpen,
         roleBindingCreateForm,
         deletingBindingId,
