@@ -1308,6 +1308,11 @@ export interface components {
             created_by?: string;
             /** Format: date-time */
             created_at?: string;
+            /**
+             * @description Inherited from cluster environment (ADR-0015 §15)
+             * @enum {string}
+             */
+            environment?: "test" | "prod";
         };
         VMCreateRequest: {
             /** Format: uuid */
@@ -1462,6 +1467,10 @@ export interface components {
             target_vm_id?: string;
             /** @description For DELETE tickets, the VM name (for display) */
             target_vm_name?: string;
+            /** @description Contextual payload of the original request depending on operation_type */
+            ticket_payload?: {
+                [key: string]: unknown;
+            } | null;
             /** Format: date-time */
             created_at?: string;
         };
