@@ -2187,6 +2187,7 @@ components:
           description: RFC 1035 compliant name (ADR-0019)
         description:
           type: string
+          description: Markdown supported
 
     SystemUpdateRequest:
       type: object
@@ -2194,6 +2195,7 @@ components:
       properties:
         description:
           type: string
+          description: Markdown supported
 
     SystemList:
       type: object
@@ -2234,6 +2236,7 @@ components:
           pattern: '^[a-z]([a-z0-9-]*[a-z0-9])?$'
         description:
           type: string
+          description: Markdown supported
 
     ServiceUpdateRequest:
       type: object
@@ -2241,6 +2244,7 @@ components:
       properties:
         description:
           type: string
+          description: Markdown supported
 
     ServiceList:
       type: object
@@ -2281,6 +2285,10 @@ components:
         created_at:
           type: string
           format: date-time
+        environment:
+          type: string
+          enum: [test, prod]
+          description: Inherited from cluster environment (ADR-0015 §15)
 
     VMCreateRequest:
       type: object
@@ -2582,6 +2590,11 @@ components:
         target_vm_name:
           type: string
           description: For DELETE tickets, the VM name (for display)
+        ticket_payload:
+          type: object
+          nullable: true
+          description: Contextual payload of the original request depending on operation_type
+          additionalProperties: true
         created_at:
           type: string
           format: date-time

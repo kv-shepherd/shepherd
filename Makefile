@@ -50,13 +50,14 @@ run:
 seed:
 	$(GOCMD) run ./cmd/seed/...
 
-## test: Run unit tests
+## test: Run all tests (PostgreSQL packages auto-start a temporary Docker postgres:18 container)
+##       Set TEST_DATABASE_URL to reuse an existing PostgreSQL instance instead.
 test:
-	$(GOTEST) -race -count=1 ./...
+	$(GOTEST) -race -count=1 -timeout=300s ./...
 
 ## test-cover: Run tests with coverage
 test-cover:
-	$(GOTEST) -race -coverprofile=coverage.out -covermode=atomic ./...
+	$(GOTEST) -race -coverprofile=coverage.out -covermode=atomic -timeout=300s ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 
 ## lint: Run golangci-lint
