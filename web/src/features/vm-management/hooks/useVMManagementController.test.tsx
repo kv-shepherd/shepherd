@@ -225,7 +225,7 @@ describe('useVMManagementController', () => {
     });
   });
 
-  it('dispatches vm power, console, and delete actions with vm identity', async () => {
+  it('dispatches vm power, console, and delete actions with vm identity in test env', async () => {
     const { result } = renderHook(() => useVMManagementController({ t }));
 
     await act(async () => {
@@ -233,7 +233,7 @@ describe('useVMManagementController', () => {
       result.current.stopVM('vm-1');
       result.current.restartVM('vm-1');
       await result.current.requestConsole('vm-1');
-      result.current.deleteVM('vm-2', 'vm-two');
+      result.current.deleteVM('vm-2', 'vm-two', 'test');
     });
 
     expect(postStartMutate).toHaveBeenCalledWith('vm-1');
@@ -241,10 +241,38 @@ describe('useVMManagementController', () => {
     expect(postRestartMutate).toHaveBeenCalledWith('vm-1');
     expect(requestConsoleMutate).toHaveBeenCalledWith('vm-1', expect.any(Object));
     expect(result.current.deleteOpen).toBe(true);
-    expect(result.current.deletingVM).toEqual({ id: 'vm-2', name: 'vm-two' });
+    expect(result.current.deletingVM).toEqual({ id: 'vm-2', name: 'vm-two', environment: 'test' });
     expect(result.current.deleteConfirmName).toBe('');
     expect(deleteMutate).not.toHaveBeenCalled();
 
+    act(() => {
+      result.current.submitDelete();
+    });
+
+    expect(deleteMutate).toHaveBeenCalledWith({ vmId: 'vm-2', vmName: 'vm-two' });
+  });
+
+  it('requires confirm name before deleting in non-test env', () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => {
+      result.current.deleteVM('vm-2', 'vm-two', 'prod');
+    });
+
+    expect(result.current.deleteOpen).toBe(true);
+    expect(result.current.deletingVM).toEqual({ id: 'vm-2', name: 'vm-two', environment: 'prod' });
+    expect(deleteMutate).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.submitDelete();
+    });
+
+    expect(messageWarningMock).toHaveBeenCalledWith('action.delete_type_name_hint');
+    expect(deleteMutate).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.setDeleteConfirmName('vm-two');
+    });
     act(() => {
       result.current.submitDelete();
     });
