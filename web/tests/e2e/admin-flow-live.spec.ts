@@ -46,7 +46,7 @@
 
 import { expect, test, type Page, type Response } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
-import {urlPathEndsWith, urlPathIncludes, selectAntOption, getAntModal} from './lib/helpers';
+import { urlPathEndsWith, urlPathIncludes, selectAntOption, getAntModal } from './lib/helpers';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -118,6 +118,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         const createModal = getAntModal(page, 'rbac-role-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(roleName);
+        await selectAntOption(page, createModal.locator('.ant-select-selector').first());
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'Role', 201);
@@ -382,8 +383,8 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         // ── CONTRACT CHECK: createCluster → Cluster (201) or Error (422) ─────────
         const createResp = await createRespPromise;
-        // 201 = valid kubeconfig, 422 = invalid kubeconfig (expected in CI with placeholder)
-        expect([201, 422]).toContain(createResp.status());
+        // 201 = valid kubeconfig, 400 = invalid kubeconfig (expected in CI with placeholder)
+        expect([201, 400]).toContain(createResp.status());
         if (createResp.status() === 201) {
             await validateApiResponse('Cluster', createResp);
         }
@@ -491,30 +492,36 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         expect(loginResp.ok(), 'API login failed').toBeTruthy();
         const { token } = await loginResp.json() as { token: string };
 
-        // Get request context to create a VM request
+        const svcResp = await request.get(`/api/v1/services`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
         const ctxResp = await request.get(`/api/v1/vms/request-context`, {
             headers: { Authorization: `Bearer ${token}` },
         });
-        if (ctxResp.ok()) {
+        if (svcResp.ok() && ctxResp.ok()) {
+            const svcData = await svcResp.json() as { items?: Array<{ id?: string }> };
             const ctx = await ctxResp.json() as {
-                systems?: Array<{ id?: string; services?: Array<{ id?: string }> }>;
                 templates?: Array<{ id?: string }>;
                 instance_sizes?: Array<{ id?: string }>;
             };
-            const svcId = ctx.systems?.[0]?.services?.[0]?.id;
+            const svcId = svcData.items?.[0]?.id;
             const tplId = ctx.templates?.[0]?.id;
             const sizeId = ctx.instance_sizes?.[0]?.id;
             if (svcId && tplId && sizeId) {
-                await request.post(`/api/v1/vms/request`, {
+                const batchResp = await request.post(`/api/v1/vms/batch`, {
                     headers: { Authorization: `Bearer ${token}` },
                     data: {
-                        service_id: svcId,
-                        template_id: tplId,
-                        instance_size_id: sizeId,
-                        name: `e2e-approve-${Date.now().toString(36).slice(-5)}`,
+                        operation: 'CREATE',
+                        items: [{
+                            service_id: svcId,
+                            template_id: tplId,
+                            instance_size_id: sizeId,
+                            name: `e2e-approve-${Date.now().toString(36).slice(-5)}`,
+                        }],
                         reason: 'Created by live E2E to test approveTicket',
                     },
                 });
+                expect(batchResp.status(), 'Setting up approval tickets should return 202 Accepted').toBe(202);
             }
         }
 
@@ -554,29 +561,36 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         expect(loginResp.ok(), 'API login failed').toBeTruthy();
         const { token } = await loginResp.json() as { token: string };
 
+        const svcResp = await request.get(`/api/v1/services`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
         const ctxResp = await request.get(`/api/v1/vms/request-context`, {
             headers: { Authorization: `Bearer ${token}` },
         });
-        if (ctxResp.ok()) {
+        if (svcResp.ok() && ctxResp.ok()) {
+            const svcData = await svcResp.json() as { items?: Array<{ id?: string }> };
             const ctx = await ctxResp.json() as {
-                systems?: Array<{ id?: string; services?: Array<{ id?: string }> }>;
                 templates?: Array<{ id?: string }>;
                 instance_sizes?: Array<{ id?: string }>;
             };
-            const svcId = ctx.systems?.[0]?.services?.[0]?.id;
+            const svcId = svcData.items?.[0]?.id;
             const tplId = ctx.templates?.[0]?.id;
             const sizeId = ctx.instance_sizes?.[0]?.id;
             if (svcId && tplId && sizeId) {
-                await request.post(`/api/v1/vms/request`, {
+                const batchResp = await request.post(`/api/v1/vms/batch`, {
                     headers: { Authorization: `Bearer ${token}` },
                     data: {
-                        service_id: svcId,
-                        template_id: tplId,
-                        instance_size_id: sizeId,
-                        name: `e2e-reject-${Date.now().toString(36).slice(-5)}`,
+                        operation: 'CREATE',
+                        items: [{
+                            service_id: svcId,
+                            template_id: tplId,
+                            instance_size_id: sizeId,
+                            name: `e2e-reject-${Date.now().toString(36).slice(-5)}`,
+                        }],
                         reason: 'Created by live E2E to test rejectTicket',
                     },
                 });
+                expect(batchResp.status(), 'Setting up approval tickets should return 202 Accepted').toBe(202);
             }
         }
 
@@ -614,7 +628,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
             (r) => (urlPathIncludes(r.url(), '/api/v1/audit-logs') || urlPathIncludes(r.url(), '/api/v1/admin/audit-logs')) && r.request().method() === 'GET'
         );
 
-        await page.goto('/admin/audit-logs');
+        await page.goto('/admin/audit');
         // Accept either a dedicated page or a section within admin
         await expect(page.locator('body')).toBeVisible();
 

@@ -39,7 +39,7 @@
 
 import { expect, test, type Page, type Response } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
-import {urlPathEndsWith, urlPathIncludes, selectAntOption, getAntModal} from './lib/helpers';
+import { urlPathEndsWith, urlPathIncludes, selectAntOption, getAntModal } from './lib/helpers';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -123,6 +123,8 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         const createModal = getAntModal(page, 'rbac-role-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(roleName);
+        // Select a role from dropdown
+        await selectAntOption(page, createModal.locator('.ant-select-selector').first());
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'Role', 201);
@@ -279,9 +281,9 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         const createModal = getAntModal(page, 'template-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(tplName);
-        // Fill minimal required YAML
-        const yamlEditor = createModal.locator('textarea').last();
-        await yamlEditor.fill('apiVersion: kubevirt.io/v1\nkind: VirtualMachineInstance\nmetadata:\n  name: test\nspec: {}');
+        // Fill minimal JSON since frontend enforces JSON parsing for spec_text
+        const specEditor = createModal.locator('textarea').last();
+        await specEditor.fill('{}');
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'Template', 201);
@@ -416,6 +418,13 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         expect(providerID, 'No auth providers found').toBeTruthy();
 
         // ── POST /admin/auth-providers/{id}/sync ──────────────────────────────────
+        // The sync button is inside the mappings modal, so open it first.
+        await page.getByTestId(`auth-provider-action-mappings-${providerID}`).click();
+        const mappingsPage = getAntModal(page, 'auth-provider-mappings-page');
+        await expect(mappingsPage).toBeVisible();
+
+        await mappingsPage.locator('textarea').first().fill('group1\ngroup2');
+
         const syncRespPromise = page.waitForResponse(
             (r) => urlPathEndsWith(r.url(), `/api/v1/admin/auth-providers/${providerID}/sync`) && r.request().method() === 'POST'
         );
@@ -438,10 +447,15 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         expect(providerID, 'No auth providers found').toBeTruthy();
 
         // ── GET /admin/auth-providers/{id}/sample ─────────────────────────────────
+        // The sample is fetched automatically when the mappings modal is opened.
         const sampleRespPromise = page.waitForResponse(
             (r) => urlPathEndsWith(r.url(), `/api/v1/admin/auth-providers/${providerID}/sample`) && r.request().method() === 'GET'
         );
-        await page.getByTestId(`auth-provider-action-sample-${providerID}`).click();
+        await page.getByTestId(`auth-provider-action-mappings-${providerID}`).click();
+        const mappingsPage = getAntModal(page, 'auth-provider-mappings-page');
+        await expect(mappingsPage).toBeVisible();
+
+
         const sampleResp = await sampleRespPromise;
         expect(sampleResp.status(), `GET /admin/auth-providers/${providerID}/sample returned ${sampleResp.status()}`).toBe(200);
         // ── CONTRACT CHECK: AuthProviderSampleResponse schema ─────────────────────
@@ -536,20 +550,18 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         const usersBody = await validateApiResponse('UserList', await usersRespPromise) as { items?: Array<{ id?: string }> };
         const userID = usersBody.items?.[0]?.id ?? '';
         expect(userID, 'No users found for rate limit exemption test').toBeTruthy();
-
-        // Navigate to rate limits page
-        await page.goto('/admin/rate-limits');
-        await expect(page.locator('body')).toBeVisible();
+        // Rate limit exemptions are managed at the bottom of the /admin/users page in the current UI
 
         // ── POST /admin/rate-limits/exemptions ────────────────────────────────────
         const createRespPromise = page.waitForResponse(
             (r) => urlPathEndsWith(r.url(), '/api/v1/admin/rate-limits/exemptions') && r.request().method() === 'POST'
         );
-        await page.getByTestId('rate-limit-exemption-create-button').click();
+
+        // Ensure we bypass the generic `rate-limit-exemption-create-button` which sets '' and instead select a specific table row
+        await page.getByTestId(`ratelimit-action-exempt-${userID}`).click();
+
         const createModal = getAntModal(page, 'rate-limit-exemption-create-modal');
         await expect(createModal).toBeVisible();
-        // Select user
-        await selectAntOption(page, createModal.locator('.ant-select-selector').first());
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const createResp = await createRespPromise;
@@ -580,8 +592,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         expect(userID, 'No users found for rate limit override test').toBeTruthy();
 
         // Navigate to rate limit override for this user
-        await page.goto('/admin/rate-limits');
-        await expect(page.locator('body')).toBeVisible();
+        // Rate limit overrides are managed at the bottom of the /admin/users page in the current UI
 
         const updateRespPromise = page.waitForResponse(
             (r) => urlPathIncludes(r.url(), `/api/v1/admin/rate-limits/users/${userID}`) && r.request().method() === 'PUT'
