@@ -33,7 +33,7 @@
 
 import { expect, test, type Page, type Response } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
-import {urlPathEndsWith, urlPathIncludes, selectAntOption, getAntModal} from './lib/helpers';
+import { urlPathEndsWith, urlPathIncludes, selectAntOption, getAntModal } from './lib/helpers';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -105,21 +105,21 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
     test('listTemplates – GET /templates conforms to TemplateList schema', async ({ page }) => {
         // operationId: listTemplates
-        // User-facing template list (not admin) is loaded in VM request wizard
+        // User-facing template list (not admin) is fetched explicitly to guarantee contract coverage,
+        // as the UI primarily uses /request-context bulk endpoint instead.
+        await page.goto('/vms');
+        await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
+
         const respPromise = page.waitForResponse(
             (r) => urlPathEndsWith(r.url(), '/api/v1/templates') && !urlPathIncludes(r.url(), '/admin/') && r.request().method() === 'GET'
         );
-        await page.goto('/vms');
-        await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
-        // Open VM request wizard to trigger template list load
-        await page.getByRole('button', { name: 'Request VM' }).click();
-        await expect(page.getByText('Create VM Request')).toBeVisible();
-        // Navigate to template step
-        const systemSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
-        await selectAntOption(page, systemSelect);
-        const serviceSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').nth(1);
-        await selectAntOption(page, serviceSelect);
-        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
+
+        // Fetch explicitly in page context (shares auth/cookies), returning status to avoid Playwright serialization warnings
+        const status = await page.evaluate(async () => {
+            const res = await fetch('/api/v1/templates');
+            return res.status;
+        });
+        expect(status).toBe(200);
 
         // ── CONTRACT CHECK: TemplateList schema ───────────────────────────────────
         await expectSchema(respPromise, 'TemplateList', 200);
@@ -129,23 +129,20 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
     test('listInstanceSizes – GET /instance-sizes conforms to InstanceSizeList schema', async ({ page }) => {
         // operationId: listInstanceSizes
+        // Fetched explicitly to guarantee contract coverage, as the UI primarily uses /request-context
+        await page.goto('/vms');
+        await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
+
         const respPromise = page.waitForResponse(
             (r) => urlPathEndsWith(r.url(), '/api/v1/instance-sizes') && !urlPathIncludes(r.url(), '/admin/') && r.request().method() === 'GET'
         );
-        await page.goto('/vms');
-        await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
-        await page.getByRole('button', { name: 'Request VM' }).click();
-        await expect(page.getByText('Create VM Request')).toBeVisible();
-        // Navigate to instance size step (step 2)
-        const systemSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
-        await selectAntOption(page, systemSelect);
-        const serviceSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').nth(1);
-        await selectAntOption(page, serviceSelect);
-        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
-        // Select template
-        const templateSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
-        await selectAntOption(page, templateSelect);
-        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
+
+        // Fetch explicitly in page context (shares auth/cookies), returning status to avoid Playwright serialization warnings
+        const status = await page.evaluate(async () => {
+            const res = await fetch('/api/v1/instance-sizes');
+            return res.status;
+        });
+        expect(status).toBe(200);
 
         // ── CONTRACT CHECK: InstanceSizeList schema ───────────────────────────────
         await expectSchema(respPromise, 'InstanceSizeList', 200);
@@ -261,24 +258,43 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
     test('submitApprovalBatch – POST /approvals/batch conforms to VMBatchSubmitResponse schema', async ({ page }) => {
         // operationId: submitApprovalBatch
-        await page.goto('/approvals');
-        await expect(page.getByRole('heading', { name: /approval/i })).toBeVisible();
-
-        // Select all pending tickets
-        const headerCheckbox = page.locator('thead input[type="checkbox"]').first();
-        await expect(headerCheckbox, 'Approvals table header checkbox not found').toBeVisible();
-        await headerCheckbox.check();
+        // In the UI, /approvals/batch is triggered when submitting a VM request via wizard with batch_count > 1
+        await page.goto('/vms');
+        await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
 
         const batchRespPromise = page.waitForResponse(
             (r) => urlPathEndsWith(r.url(), '/api/v1/approvals/batch') && r.request().method() === 'POST'
         );
-        // Click batch approve button
-        const batchApproveBtn = page.getByRole('button', { name: /batch approve|approve all/i }).first();
-        await expect(batchApproveBtn, 'Batch approve button not found in approvals page').toBeVisible();
-        await batchApproveBtn.click();
-        const confirmBtn = page.locator('.ant-popover:visible, .ant-modal-content:visible')
-            .getByRole('button', { name: /confirm|ok/i }).first();
-        if (await confirmBtn.count() > 0) await confirmBtn.click();
+
+        // Open Wizard
+        await page.getByRole('button', { name: 'Request VM' }).click();
+        const wizardModal = getAntModal(page, 'vm-request-wizard-modal');
+        await expect(wizardModal).toBeVisible();
+
+        // Step 1: Service
+        await selectAntOption(page, wizardModal.locator('.ant-select-selector').first());
+        await selectAntOption(page, wizardModal.locator('.ant-select-selector').nth(1));
+        await wizardModal.getByRole('button', { name: 'Next' }).click();
+
+        // Step 2: Template
+        await selectAntOption(page, wizardModal.locator('.ant-select-selector').first());
+        await wizardModal.getByRole('button', { name: 'Next' }).click();
+
+        // Step 3: Size
+        await selectAntOption(page, wizardModal.locator('.ant-select-selector').first());
+        await wizardModal.getByRole('button', { name: 'Next' }).click();
+
+        // Step 4: Config
+        const namespaceSelect = wizardModal.locator('.ant-select-selector').first();
+        if (await namespaceSelect.isVisible()) {
+            await selectAntOption(page, namespaceSelect);
+        }
+        await wizardModal.getByRole('textbox').first().fill('Test batch submit');
+        await wizardModal.locator('input[type="number"]').first().fill('2'); // Set batch_count to 2
+        await wizardModal.getByRole('button', { name: 'Next' }).click();
+
+        // Step 5: Confirm
+        await wizardModal.getByRole('button', { name: 'Submit' }).click();
 
         // ── CONTRACT CHECK: VMBatchSubmitResponse schema ──────────────────────────
         await expectSchema(batchRespPromise, 'VMBatchSubmitResponse', [202, 400, 429]);

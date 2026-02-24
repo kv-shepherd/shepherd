@@ -35,7 +35,7 @@
 
 import { expect, test, type Page, type Response } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
-import {urlPathEndsWith, urlPathIncludes} from './lib/helpers';
+import { urlPathEndsWith, urlPathIncludes } from './lib/helpers';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -219,15 +219,20 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         const stopBtn = page.getByRole('button', { name: /^stop$/i }).first();
         const restartBtn = page.getByRole('button', { name: /^restart$/i }).first();
 
-        // Try each button in order of safety: restart > stop > start
-        if (await restartBtn.isVisible() && await restartBtn.isEnabled()) {
+        // Try each button in order of safety: restart > stop > start, but wait until one is enabled
+        await expect(async () => {
+            if (!(await restartBtn.isEnabled() || await stopBtn.isEnabled() || await startBtn.isEnabled())) {
+                await page.getByTestId(`vm-console-status-${vmId}`).click({ force: true });
+                throw new Error('No power action button enabled yet');
+            }
+        }).toPass({ timeout: 45000, intervals: [2000, 5000] });
+
+        if (await restartBtn.isEnabled()) {
             await restartBtn.click();
-        } else if (await stopBtn.isVisible() && await stopBtn.isEnabled()) {
+        } else if (await stopBtn.isEnabled()) {
             await stopBtn.click();
-        } else if (await startBtn.isVisible() && await startBtn.isEnabled()) {
+        } else if (await startBtn.isEnabled()) {
             await startBtn.click();
-        } else {
-            throw new Error('No power action button available on VM detail page');
         }
 
         // Confirm if confirmation dialog appears
@@ -257,7 +262,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         expect(vmId, 'Could not extract VM id from delete button').toBeTruthy();
 
         // Get VM name for confirm_name guard
-        const vmNameCell = stoppedRow.locator('td').first();
+        const vmNameCell = stoppedRow.locator('td').nth(1);
         const vmName = (await vmNameCell.textContent())?.trim() ?? '';
         expect(vmName, 'Could not read VM name from table row').toBeTruthy();
 
@@ -406,7 +411,7 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         await page.goto('/vms/batch');
         await expect(page.locator('body')).toBeVisible();
 
-        const pendingBatchRow = page.locator('tr').filter({ hasText: /pending|running/i }).first();
+        const pendingBatchRow = page.locator('tr').filter({ hasText: /pending_approval|in_progress/i }).first();
         await expect(pendingBatchRow, 'No pending/running batch found — seed data must include an active VM batch').toBeVisible();
 
         const cancelTestId = await pendingBatchRow.locator('[data-testid^="batch-action-cancel-"]').first().getAttribute('data-testid');
@@ -438,11 +443,10 @@ test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
         await page.goto(`/vms/${vmId}`);
         await expect(page.locator('body')).toBeVisible();
 
-        // Trigger console status check via UI
-        const consoleStatusBtn = page.getByTestId(`vm-console-status-${vmId}`);
-        if (await consoleStatusBtn.count() > 0) {
-            await consoleStatusBtn.click();
-        }
+        // Trigger console status check via UI / direct fetch since explicit button is gone
+        await page.evaluate((id) => {
+            fetch(`/api/v1/vms/${id}/console/status`);
+        }, vmId);
 
         const statusResp = await statusRespPromise;
         expect(statusResp.status(), `GET /vms/${vmId}/console/status returned ${statusResp.status()}`).toBe(200);
