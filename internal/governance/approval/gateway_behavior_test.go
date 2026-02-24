@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/internal/domain"
@@ -16,14 +17,15 @@ import (
 type fakeAtomicWriter struct {
 	called bool
 
-	ticketID    string
-	eventID     string
-	approver    string
-	clusterID   string
-	storage     string
-	serviceID   string
-	namespace   string
-	requesterID string
+	ticketID     string
+	eventID      string
+	approver     string
+	clusterID    string
+	storage      string
+	serviceID    string
+	namespace    string
+	requesterID  string
+	modifiedSpec map[string]interface{}
 }
 
 func init() {
@@ -35,7 +37,7 @@ func (f *fakeAtomicWriter) ApproveCreateAndEnqueue(
 	ticketID, eventID, approver, clusterID, storageClass, serviceID, namespace, requesterID string,
 	_ map[string]interface{},
 	_ map[string]interface{},
-	_ map[string]interface{},
+	memoizedSpec map[string]interface{},
 ) (string, string, error) {
 	f.called = true
 	f.ticketID = ticketID
@@ -46,11 +48,25 @@ func (f *fakeAtomicWriter) ApproveCreateAndEnqueue(
 	f.serviceID = serviceID
 	f.namespace = namespace
 	f.requesterID = requesterID
+	f.modifiedSpec = memoizedSpec
 	return "vm-1", "vm-name", nil
 }
 
 func (f *fakeAtomicWriter) ApproveDeleteAndEnqueue(_ context.Context, _, _, _, _ string) error {
 	return nil
+}
+
+// asInt converts a JSON-decoded number (typically float64 or int) to int for assertions.
+func asInt(v interface{}) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case float64:
+		return int(n), true
+	case int64:
+		return int(n), true
+	}
+	return 0, false
 }
 
 func TestGatewayApproveCreate_CallsAtomicWriterWithResolvedIDs(t *testing.T) {
@@ -126,7 +142,7 @@ func TestGatewayApproveCreate_CallsAtomicWriterWithResolvedIDs(t *testing.T) {
 	// Isolate this test to gateway orchestration; validator behavior is covered separately.
 	gw.validator = nil
 
-	if err := gw.Approve(context.Background(), ticketID, "admin-1", "cluster-1", "sc-fast"); err != nil {
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", ApproveOpts{ClusterID: "cluster-1", StorageClass: "sc-fast"}); err != nil {
 		t.Fatalf("Approve() error = %v", err)
 	}
 	if !writer.called {
@@ -180,7 +196,7 @@ func TestGatewayApproveCreate_RequiresClusterSelection(t *testing.T) {
 		Save(context.Background())
 
 	gw := NewGateway(client, nil, &fakeAtomicWriter{})
-	if err := gw.Approve(context.Background(), ticketID, "admin-1", "", ""); err == nil {
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", ApproveOpts{}); err == nil {
 		t.Fatal("Approve() expected error when cluster id is empty, got nil")
 	}
 }
@@ -217,7 +233,7 @@ func TestGatewayApproveVNC_TransitionsTicketAndEventWithoutAtomicWriter(t *testi
 
 	writer := &fakeAtomicWriter{}
 	gw := NewGateway(client, nil, writer)
-	if err := gw.Approve(context.Background(), ticketID, "admin-1", "", ""); err != nil {
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", ApproveOpts{}); err != nil {
 		t.Fatalf("Approve() error = %v", err)
 	}
 	if writer.called {
@@ -386,5 +402,179 @@ func TestGatewayCancel_RequesterTransitionsTicketAndEvent(t *testing.T) {
 	}
 	if event.Status != domainevent.StatusCANCELLED {
 		t.Fatalf("event status = %s, want %s", event.Status, domainevent.StatusCANCELLED)
+	}
+}
+
+// --------------------------------------------------------------------------
+// Resource Override Tests (Issue #1 / #2 coverage)
+// --------------------------------------------------------------------------
+
+// createOverrideTestData sets up common entities for override tests.
+func createOverrideTestData(t *testing.T, client *ent.Client, suffix string) (ticketID, eventID string) {
+	t.Helper()
+	eventID = "event-override-" + suffix
+	ticketID = "ticket-override-" + suffix
+	payload := domain.VMCreationPayload{
+		RequesterID:    "user-1",
+		ServiceID:      "svc-1",
+		TemplateID:     "tpl-override-" + suffix,
+		InstanceSizeID: "size-override-" + suffix,
+		Namespace:      "team-a",
+	}
+	payloadRaw, err := payload.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	_, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("svc-1").
+		SetPayload(payloadRaw).
+		SetCreatedBy("user-1").
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	_, err = client.Template.Create().
+		SetID("tpl-override-" + suffix).
+		SetName("tpl-override-" + suffix).
+		SetSourceType("image").
+		SetImageURL("quay.io/containerdisks/ubuntu:22.04").
+		SetCreatedBy("seed").
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	_, err = client.InstanceSize.Create().
+		SetID("size-override-" + suffix).
+		SetName("size-override-" + suffix).
+		SetCPUCores(4).
+		SetMemoryMB(4096).
+		SetCreatedBy("seed").
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create instance size: %v", err)
+	}
+	_, err = client.ApprovalTicket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(approvalticket.StatusPENDING).
+		SetOperationType(approvalticket.OperationTypeCREATE).
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+	return ticketID, eventID
+}
+
+func TestGatewayApproveCreate_EnableOverrideAllZeros_ReturnsError(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_override_all_zeros")
+	ticketID, _ := createOverrideTestData(t, client, "all-zeros")
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	gw.validator = nil
+
+	opts := ApproveOpts{
+		ClusterID:      "cluster-1",
+		EnableOverride: true,
+		// All override values are zero
+	}
+	err := gw.Approve(context.Background(), ticketID, "admin-1", opts)
+	if err == nil {
+		t.Fatal("Approve() expected error when enable_override is true but all values are zero, got nil")
+	}
+	if !strings.Contains(err.Error(), "all resource override values are zero") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if writer.called {
+		t.Fatal("atomic writer should not be called when override validation fails")
+	}
+}
+
+func TestGatewayApproveCreate_EnableOverrideWithValues_WritesModifiedSpec(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_override_with_values")
+	ticketID, _ := createOverrideTestData(t, client, "with-values")
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	gw.validator = nil
+
+	opts := ApproveOpts{
+		ClusterID:       "cluster-1",
+		EnableOverride:  true,
+		CPULimit:        8,
+		CPURequest:      4,
+		MemoryLimitMB:   16384,
+		MemoryRequestMB: 8192,
+		DiskGB:          100,
+	}
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", opts); err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer not called")
+	}
+
+	// Verify modifiedSpec contains the override values.
+	ms := writer.modifiedSpec
+	if ms == nil {
+		t.Fatal("modifiedSpec is nil")
+	}
+	assertIntValue := func(t *testing.T, key string, expected int) {
+		t.Helper()
+		v, ok := asInt(ms[key])
+		if !ok {
+			t.Fatalf("modifiedSpec[%q] not found or not int: %v", key, ms[key])
+		}
+		if v != expected {
+			t.Fatalf("modifiedSpec[%q] = %d, want %d", key, v, expected)
+		}
+	}
+	assertIntValue(t, "cpu_limit", 8)
+	assertIntValue(t, "cpu_request", 4)
+	assertIntValue(t, "memory_limit_mb", 16384)
+	assertIntValue(t, "memory_request_mb", 8192)
+	assertIntValue(t, "disk_gb", 100)
+
+	if val, ok := ms["enable_override"].(bool); !ok || !val {
+		t.Fatalf("modifiedSpec[enable_override] = %v, want true", ms["enable_override"])
+	}
+}
+
+func TestGatewayApproveCreate_EnableOverrideDiskOnly_WorksWithoutCPUMemory(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_override_disk_only")
+	ticketID, _ := createOverrideTestData(t, client, "disk-only")
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	gw.validator = nil
+
+	opts := ApproveOpts{
+		ClusterID:      "cluster-1",
+		EnableOverride: true,
+		DiskGB:         200,
+	}
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", opts); err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer not called")
+	}
+	ms := writer.modifiedSpec
+	if ms == nil {
+		t.Fatal("modifiedSpec is nil")
+	}
+	v, ok := asInt(ms["disk_gb"])
+	if !ok || v != 200 {
+		t.Fatalf("modifiedSpec[disk_gb] = %v, want 200", ms["disk_gb"])
+	}
+	if val, ok := ms["enable_override"].(bool); !ok || !val {
+		t.Fatalf("modifiedSpec[enable_override] = %v, want true", ms["enable_override"])
 	}
 }

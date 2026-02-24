@@ -25,6 +25,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/domain"
+	"kv-shepherd.io/shepherd/internal/governance/approval"
 	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
@@ -829,8 +830,10 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 					ctx,
 					child.ID,
 					actor,
-					parentTicket.SelectedClusterID,
-					parentTicket.SelectedStorageClass,
+					approval.ApproveOpts{
+						ClusterID:    parentTicket.SelectedClusterID,
+						StorageClass: parentTicket.SelectedStorageClass,
+					},
 				); err != nil {
 					message := err.Error()
 					if len(message) > 512 {

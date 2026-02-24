@@ -461,11 +461,25 @@ func applyModifiedSpecOverrides(spec *domain.VMSpec, modifiedSpec map[string]int
 	if spec == nil || len(modifiedSpec) == 0 {
 		return
 	}
-	if v, ok := lookupIntValue(modifiedSpec, "cpu", "resources.cpu"); ok {
+	// cpu_limit takes precedence over cpu for the CPU limit value.
+	if v, ok := lookupIntValue(modifiedSpec, "cpu_limit"); ok && v > 0 {
+		spec.CPU = v
+	} else if v, ok := lookupIntValue(modifiedSpec, "cpu", "resources.cpu"); ok {
 		spec.CPU = v
 	}
-	if v, ok := lookupIntValue(modifiedSpec, "memory_mb", "resources.memory_mb"); ok {
+	// cpu_request maps to spec.CPURequest for K8s overcommit.
+	if v, ok := lookupIntValue(modifiedSpec, "cpu_request"); ok && v > 0 {
+		spec.CPURequest = v
+	}
+	// memory_limit_mb takes precedence over memory_mb for the memory limit value.
+	if v, ok := lookupIntValue(modifiedSpec, "memory_limit_mb"); ok && v > 0 {
 		spec.MemoryMB = v
+	} else if v, ok := lookupIntValue(modifiedSpec, "memory_mb", "resources.memory_mb"); ok {
+		spec.MemoryMB = v
+	}
+	// memory_request_mb maps to spec.MemoryRequestMB for K8s overcommit.
+	if v, ok := lookupIntValue(modifiedSpec, "memory_request_mb"); ok && v > 0 {
+		spec.MemoryRequestMB = v
 	}
 	if v, ok := lookupIntValue(modifiedSpec, "disk_gb", "resources.disk_gb"); ok && v >= 0 {
 		spec.DiskGB = v
