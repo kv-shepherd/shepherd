@@ -94,7 +94,7 @@ export default function VMBatchListPage() {
 
     const canRetry = (status: string) => status === 'FAILED' || status === 'PARTIAL_SUCCESS';
     const canCancel = (status: string) =>
-        status === 'PENDING_APPROVAL' || status === 'PENDING' || status === 'IN_PROGRESS';
+        status === 'PENDING_APPROVAL' || status === 'IN_PROGRESS';
 
     const columns: ColumnsType<BatchJobSummary> = [
         {

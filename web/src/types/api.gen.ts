@@ -1479,6 +1479,18 @@ export interface components {
             /** @description Admin selects target cluster (ADR-0017) */
             selected_cluster_id?: string;
             selected_storage_class?: string;
+            /** @description When true, admin overrides default resource requests/limits from InstanceSize (master-flow Stage 5.B). */
+            enable_override?: boolean;
+            /** @description CPU request in cores (overcommit scenario, Stage 5.B) */
+            cpu_request?: number;
+            /** @description CPU limit in cores (Stage 5.B) */
+            cpu_limit?: number;
+            /** @description Memory request in MB (Stage 5.B) */
+            memory_request_mb?: number;
+            /** @description Memory limit in MB (Stage 5.B) */
+            memory_limit_mb?: number;
+            /** @description Disk size in GB, admin can adjust (Stage 5.B) */
+            disk_gb?: number;
             comment?: string;
         };
         RejectDecisionRequest: {

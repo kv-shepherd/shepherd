@@ -609,8 +609,14 @@ test.describe('master-flow mock smoke interactions', () => {
     const confirmEl = page.locator('.ant-popover:visible, .ant-modal-content:visible').first();
     await expect(confirmEl).toBeVisible({ timeout: 5000 });
 
+    const confirmInput = confirmEl.locator('input');
+    if (await confirmInput.count()) {
+      await confirmInput.last().fill('vm-1');
+    }
+
     // Click confirm/OK button
     const confirmBtn = confirmEl.getByRole('button', { name: /confirm|ok|delete/i }).first();
+    await expect(confirmBtn).toBeEnabled({ timeout: 5000 });
     await confirmBtn.click();
 
     // Verify DELETE or POST to delete endpoint was called

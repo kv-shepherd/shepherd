@@ -217,7 +217,12 @@ export default function AppLayout({
                 <NotificationBell key="notification" />,
             ]}
             menuItemRender={(item, dom) => (
-                <Link href={item.path || '#'} legacyBehavior={false} style={{ width: '100%', display: 'block' }}>
+                <Link
+                    href={item.path || '#'}
+                    legacyBehavior={false}
+                    style={{ width: '100%', display: 'block' }}
+                    data-testid={`nav-item-${(item.path || '#').replace(/^\//, '').replace(/\//g, '-')}`}
+                >
                     {dom}
                 </Link>
             )}

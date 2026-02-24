@@ -1,7 +1,7 @@
 'use client';
 
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Card, Descriptions, Divider, Space, Table, Tag, Typography } from 'antd';
+import { PlusOutlined, ReloadOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { Button, Card, Descriptions, Divider, Input, Modal, Space, Table, Tag, Typography } from 'antd';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
@@ -10,7 +10,7 @@ import { VMListTable } from '@/features/vm-management/components/VMListTable';
 import { VMRequestWizard } from '@/features/vm-management/components/VMRequestWizard';
 import { useVMManagementController } from '@/features/vm-management/hooks/useVMManagementController';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 export default function VMsPage() {
     const { t } = useTranslation(['vm', 'common']);
@@ -110,7 +110,7 @@ export default function VMsPage() {
                 onStop={vm.stopVM}
                 onRestart={vm.restartVM}
                 onConsole={vm.requestConsole}
-                onDelete={vm.deleteVM}
+                onDelete={vm.openDeleteModal}
                 onDetail={(vmId) => router.push(`/vms/${vmId}`)}
                 selectedRowKeys={vm.selectedVMIDs}
                 onSelectionChange={vm.setSelectedVMIDs}
@@ -241,6 +241,39 @@ export default function VMsPage() {
                 onNext={vm.goToNextWizardStep}
                 onSubmit={vm.submitWizard}
             />
+
+            <Modal
+                title={(
+                    <Space>
+                        <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
+                        {t('action.delete_confirm')}
+                    </Space>
+                )}
+                open={vm.deleteOpen}
+                onOk={vm.submitDelete}
+                onCancel={vm.closeDeleteModal}
+                confirmLoading={vm.deletePending}
+                okButtonProps={{
+                    danger: true,
+                    disabled: vm.deleteConfirmName !== vm.deletingVM?.name,
+                }}
+                okText={t('common:button.delete')}
+                destroyOnHidden={true}
+                data-testid="vm-delete-modal"
+            >
+                <Paragraph>
+                    {t('action.delete_confirm_name', { name: vm.deletingVM?.name })}
+                </Paragraph>
+                <Paragraph type="secondary">
+                    {t('action.delete_type_name_hint')}
+                </Paragraph>
+                <Input
+                    value={vm.deleteConfirmName}
+                    onChange={(e) => vm.setDeleteConfirmName(e.target.value)}
+                    placeholder={vm.deletingVM?.name}
+                    status={vm.deleteConfirmName && vm.deleteConfirmName !== vm.deletingVM?.name ? 'error' : undefined}
+                />
+            </Modal>
         </div>
     );
 }
