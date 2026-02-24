@@ -255,7 +255,7 @@ export default function VMsPage() {
                 confirmLoading={vm.deletePending}
                 okButtonProps={{
                     danger: true,
-                    disabled: vm.deleteConfirmName !== vm.deletingVM?.name,
+                    disabled: vm.deletingVM?.environment !== 'test' ? vm.deleteConfirmName !== vm.deletingVM?.name : false,
                 }}
                 okText={t('common:button.delete')}
                 destroyOnHidden={true}
@@ -264,15 +264,19 @@ export default function VMsPage() {
                 <Paragraph>
                     {t('action.delete_confirm_name', { name: vm.deletingVM?.name })}
                 </Paragraph>
-                <Paragraph type="secondary">
-                    {t('action.delete_type_name_hint')}
-                </Paragraph>
-                <Input
-                    value={vm.deleteConfirmName}
-                    onChange={(e) => vm.setDeleteConfirmName(e.target.value)}
-                    placeholder={vm.deletingVM?.name}
-                    status={vm.deleteConfirmName && vm.deleteConfirmName !== vm.deletingVM?.name ? 'error' : undefined}
-                />
+                {vm.deletingVM?.environment !== 'test' && (
+                    <>
+                        <Paragraph type="secondary">
+                            {t('action.delete_type_name_hint')}
+                        </Paragraph>
+                        <Input
+                            value={vm.deleteConfirmName}
+                            onChange={(e) => vm.setDeleteConfirmName(e.target.value)}
+                            placeholder={vm.deletingVM?.name}
+                            status={vm.deleteConfirmName && vm.deleteConfirmName !== vm.deletingVM?.name ? 'error' : undefined}
+                        />
+                    </>
+                )}
             </Modal>
         </div>
     );
