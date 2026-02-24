@@ -12,6 +12,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
+	"kv-shepherd.io/shepherd/internal/governance/approval"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
@@ -131,7 +132,18 @@ func (s *Server) ApproveTicket(c *gin.Context, ticketId generated.TicketID) {
 		return
 	}
 
-	if err := s.gateway.Approve(ctx, ticketId, actor, req.SelectedClusterId, req.SelectedStorageClass); err != nil {
+	opts := approval.ApproveOpts{
+		ClusterID:       req.SelectedClusterId,
+		StorageClass:    req.SelectedStorageClass,
+		EnableOverride:  req.EnableOverride,
+		CPURequest:      req.CpuRequest,
+		CPULimit:        req.CpuLimit,
+		MemoryRequestMB: req.MemoryRequestMb,
+		MemoryLimitMB:   req.MemoryLimitMb,
+		DiskGB:          req.DiskGb,
+	}
+
+	if err := s.gateway.Approve(ctx, ticketId, actor, opts); err != nil {
 		if appErr, ok := apperrors.IsAppError(err); ok {
 			c.JSON(appErr.HTTPStatus, generated.Error{
 				Code:    appErr.Code,

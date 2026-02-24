@@ -256,6 +256,66 @@ func TestApplyModifiedSpecOverrides(t *testing.T) {
 	}
 }
 
+func TestApplyModifiedSpecOverrides_ResourceOverrideKeys(t *testing.T) {
+	spec := &domain.VMSpec{
+		Name:     "vm-01",
+		CPU:      2,
+		MemoryMB: 2048,
+		DiskGB:   10,
+		Image:    "test-image:1",
+	}
+
+	// Simulate modifiedSpec as written by gateway.go when enable_override=true.
+	applyModifiedSpecOverrides(spec, map[string]interface{}{
+		"enable_override":   true,
+		"cpu_limit":         8,
+		"cpu_request":       4,
+		"memory_limit_mb":   16384,
+		"memory_request_mb": 8192,
+		"disk_gb":           100,
+	})
+
+	if spec.CPU != 8 {
+		t.Fatalf("CPU (limit) mismatch: got %d, want 8", spec.CPU)
+	}
+	if spec.CPURequest != 4 {
+		t.Fatalf("CPURequest mismatch: got %d, want 4", spec.CPURequest)
+	}
+	if spec.MemoryMB != 16384 {
+		t.Fatalf("MemoryMB (limit) mismatch: got %d, want 16384", spec.MemoryMB)
+	}
+	if spec.MemoryRequestMB != 8192 {
+		t.Fatalf("MemoryRequestMB mismatch: got %d, want 8192", spec.MemoryRequestMB)
+	}
+	if spec.DiskGB != 100 {
+		t.Fatalf("DiskGB mismatch: got %d, want 100", spec.DiskGB)
+	}
+}
+
+func TestApplyModifiedSpecOverrides_CpuLimitTakesPrecedence(t *testing.T) {
+	spec := &domain.VMSpec{
+		Name:     "vm-01",
+		CPU:      2,
+		MemoryMB: 2048,
+		Image:    "test-image:1",
+	}
+
+	// Both "cpu" and "cpu_limit" present: cpu_limit should win.
+	applyModifiedSpecOverrides(spec, map[string]interface{}{
+		"cpu":             4,
+		"cpu_limit":       8,
+		"memory_mb":       4096,
+		"memory_limit_mb": 16384,
+	})
+
+	if spec.CPU != 8 {
+		t.Fatalf("CPU should use cpu_limit (8) over cpu (4): got %d", spec.CPU)
+	}
+	if spec.MemoryMB != 16384 {
+		t.Fatalf("MemoryMB should use memory_limit_mb (16384) over memory_mb (4096): got %d", spec.MemoryMB)
+	}
+}
+
 func TestResolveInstanceSizeSpecOverrides(t *testing.T) {
 	base := map[string]interface{}{
 		"spec.template.spec.domain.cpu.cores": float64(2),
