@@ -42,7 +42,7 @@
 | [ADR-0030](./ADR-0030-design-documentation-layering-and-fullstack-governance.md) | Design Documentation Layering and Full-Stack Governance | **Accepted** | - |
 | [ADR-0031](./ADR-0031-concurrency-and-worker-pool-standard.md) | Concurrency Safety and Worker Pool Standard | **Accepted** | - |
 | [ADR-0032](./ADR-0032-master-flow-traceability-manifest.md) | Master-Flow Traceability Manifest and Drift Enforcement | **Accepted** | - |
-| [ADR-0033](./ADR-0033-realtime-notification-acceleration.md) | Realtime Notification Acceleration with PostgreSQL LISTEN/NOTIFY | **Proposed** | - |
+| [ADR-0033](./ADR-0033-realtime-notification-acceleration.md) | Realtime Notification Acceleration with PostgreSQL LISTEN/NOTIFY | **Accepted** | - |
 | [ADR-0034](./ADR-0034-master-flow-spec-driven-test-first.md) | Master-Flow Spec-Driven Test-First Execution Standard | **Accepted** | - |
 | [ADR-0035](./ADR-0035-auth-provider-plugin-boundary.md) | Auth Provider Plugin Boundary and Type Discovery | **Accepted** | - |
 | [ADR-0036](./ADR-0036-template-instancesize-boundary-enforcement.md) | Template / InstanceSize Boundary Enforcement | **Accepted** | - |

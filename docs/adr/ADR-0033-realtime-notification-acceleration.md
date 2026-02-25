@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"  # proposed | accepted | deprecated | superseded by ADR-XXXX
+status: "accepted"  # proposed | accepted | deprecated | superseded by ADR-XXXX
 date: 2026-02-12
 deciders: ["@jindyzhao"]
 consulted: ["@jindyzhao"]
