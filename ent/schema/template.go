@@ -45,6 +45,11 @@ func (Template) Fields() []ent.Field {
 		// Used when source_type == "pvc". Example: "ubuntu-22.04-base"
 		field.String("pvc_name").
 			Optional(),
+		// pvc_namespace is the Kubernetes namespace where the PVC/DataVolume is located.
+		// Used when source_type == "pvc". Required together with pvc_name.
+		// ADR-0036: Namespace is needed so the VM creation worker can reference the correct PVC.
+		field.String("pvc_namespace").
+			Optional(),
 		// cloud_init stores raw cloud-init YAML configuration (userdata).
 		// Applied to VMs at boot time via cloud-init datasource.
 		field.Text("cloud_init").

@@ -73,7 +73,18 @@ describe('useAdminInstanceSizesController', () => {
     });
   });
 
-  it('submits create payload with parsed spec_overrides JSON', async () => {
+  /**
+   * Since ADR-0023 Stage 1, spec fields are driven by DynamicSchemaForm.
+   * The controller receives `spec_text` (JSON string from the form) and
+   * parses it into `spec_overrides` for the API payload.
+   *
+   * spec_text is a raw JSON string produced by DynamicSchemaForm.
+   * Valid object JSON → parsed into spec_overrides.
+   * Invalid / non-object JSON → silently ignored (spec_overrides: undefined).
+   *   This is intentional: DynamicSchemaForm already validates individual fields;
+   *   the controller does not show a toast for malformed spec_text.
+   */
+  it('submits create payload with spec_overrides parsed from spec_text', async () => {
     const createMutate = vi.fn();
     const updateMutate = vi.fn();
     const deleteMutate = vi.fn();
@@ -83,12 +94,13 @@ describe('useAdminInstanceSizesController', () => {
       .mockReturnValueOnce({ mutate: updateMutate, isPending: false });
     useApiActionMock.mockReturnValue({ mutate: deleteMutate, isPending: false });
 
+    // spec_text replaces spec_overrides_text; content is KubeVirt VirtualMachineSpec JSON.
     createFormState.validateFields.mockResolvedValue({
       name: 'm4.large',
       cpu_cores: 4,
       memory_mb: 8192,
       enabled: true,
-      spec_overrides_text: '{"spec":{"template":{"spec":{"domain":{"resources":{"limits":{"memory":"8Gi"}}}}}}}',
+      spec_text: '{"spec":{"template":{"spec":{"domain":{"resources":{"limits":{"memory":"8Gi"}}}}}}}',
     });
 
     const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
@@ -103,8 +115,8 @@ describe('useAdminInstanceSizesController', () => {
       cpu_cores: 4,
       memory_mb: 8192,
       enabled: true,
-      requires_gpu: false,
-      requires_hugepages: false,
+      // requires_gpu / requires_hugepages removed from formToPayload (ADR-0023 Stage 1).
+      // Those fields are now part of spec_overrides (KubeVirt spec), not top-level metadata.
       spec_overrides: {
         spec: {
           template: {
@@ -123,7 +135,16 @@ describe('useAdminInstanceSizesController', () => {
     }));
   });
 
-  it('rejects invalid spec_overrides JSON and does not mutate', async () => {
+  /**
+   * When spec_text is non-object JSON (array, null, primitive), spec_overrides is
+   * silently set to undefined — no error toast is shown.  DynamicSchemaForm handles
+   * field-level validation; the controller trusts its output.
+   *
+   * Contrast with old behaviour: spec_overrides_text triggered a user-facing
+   * error toast for invalid JSON.  That UX belonged to the raw textarea escape-hatch
+   * which has since been removed in favour of schema-driven rendering.
+   */
+  it('ignores non-object spec_text and still calls mutate with spec_overrides undefined', async () => {
     const createMutate = vi.fn();
 
     useApiMutationMock
@@ -135,7 +156,8 @@ describe('useAdminInstanceSizesController', () => {
       name: 'm4.large',
       cpu_cores: 4,
       memory_mb: 8192,
-      spec_overrides_text: '[]',
+      // Array JSON is non-object — controller ignores it silently.
+      spec_text: '[]',
     });
 
     const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
@@ -144,7 +166,12 @@ describe('useAdminInstanceSizesController', () => {
       await result.current.submitCreate();
     });
 
-    expect(createMutate).not.toHaveBeenCalled();
-    expect(messageErrorMock).toHaveBeenCalledWith('instanceSizes.spec_overrides_invalid');
+    // mutate IS called — invalid spec_text does not block submission.
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    expect(createMutate).toHaveBeenCalledWith(expect.objectContaining({
+      spec_overrides: undefined,
+    }));
+    // No error toast — DynamicSchemaForm owns field validation, not the controller.
+    expect(messageErrorMock).not.toHaveBeenCalled();
   });
 });

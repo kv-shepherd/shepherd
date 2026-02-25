@@ -95,7 +95,12 @@ func (v *ApprovalValidator) ValidateApproval(
 			return fmt.Errorf("query instance size: %w", err)
 		}
 
-		if err := ValidateOvercommit(size.CPUCores, size.CPURequest, size.MemoryMB, size.MemoryRequestMB, size.DedicatedCPU); err != nil {
+		// Resolve effective dedicated_cpu: consider both the indexed column AND any
+		// spec_overrides path that sets dedicatedCpuPlacement (ADR-0036 constraint guard).
+		// This prevents bypassing the dedicated+overcommit conflict check by only setting
+		// the flag inside spec_overrides while leaving the top-level dedicated_cpu unset.
+		effectiveDedicatedCPU := size.DedicatedCPU || hasDedicatedCPUInSpecOverrides(size.SpecOverrides)
+		if err := ValidateOvercommit(size.CPUCores, size.CPURequest, size.MemoryMB, size.MemoryRequestMB, effectiveDedicatedCPU); err != nil {
 			return err
 		}
 
@@ -303,6 +308,13 @@ func hasSRIOVRequirement(spec map[string]interface{}) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(fmt.Sprint(networks)), "sriov")
+}
+
+// hasDedicatedCPUInSpecOverrides is a package-internal alias for the exported
+// HasDedicatedCPUInSpecOverrides, kept for readability at the call site.
+// Single source of truth lives in instancesize_validator.go.
+func hasDedicatedCPUInSpecOverrides(spec map[string]interface{}) bool {
+	return HasDedicatedCPUInSpecOverrides(spec)
 }
 
 func extractHugepagesSize(spec map[string]interface{}) string {

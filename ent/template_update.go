@@ -148,6 +148,26 @@ func (_u *TemplateUpdate) ClearPvcName() *TemplateUpdate {
 	return _u
 }
 
+// SetPvcNamespace sets the "pvc_namespace" field.
+func (_u *TemplateUpdate) SetPvcNamespace(v string) *TemplateUpdate {
+	_u.mutation.SetPvcNamespace(v)
+	return _u
+}
+
+// SetNillablePvcNamespace sets the "pvc_namespace" field if the given value is not nil.
+func (_u *TemplateUpdate) SetNillablePvcNamespace(v *string) *TemplateUpdate {
+	if v != nil {
+		_u.SetPvcNamespace(*v)
+	}
+	return _u
+}
+
+// ClearPvcNamespace clears the value of the "pvc_namespace" field.
+func (_u *TemplateUpdate) ClearPvcNamespace() *TemplateUpdate {
+	_u.mutation.ClearPvcNamespace()
+	return _u
+}
+
 // SetCloudInit sets the "cloud_init" field.
 func (_u *TemplateUpdate) SetCloudInit(v string) *TemplateUpdate {
 	_u.mutation.SetCloudInit(v)
@@ -340,6 +360,12 @@ func (_u *TemplateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.PvcNameCleared() {
 		_spec.ClearField(template.FieldPvcName, field.TypeString)
 	}
+	if value, ok := _u.mutation.PvcNamespace(); ok {
+		_spec.SetField(template.FieldPvcNamespace, field.TypeString, value)
+	}
+	if _u.mutation.PvcNamespaceCleared() {
+		_spec.ClearField(template.FieldPvcNamespace, field.TypeString)
+	}
 	if value, ok := _u.mutation.CloudInit(); ok {
 		_spec.SetField(template.FieldCloudInit, field.TypeString, value)
 	}
@@ -501,6 +527,26 @@ func (_u *TemplateUpdateOne) SetNillablePvcName(v *string) *TemplateUpdateOne {
 // ClearPvcName clears the value of the "pvc_name" field.
 func (_u *TemplateUpdateOne) ClearPvcName() *TemplateUpdateOne {
 	_u.mutation.ClearPvcName()
+	return _u
+}
+
+// SetPvcNamespace sets the "pvc_namespace" field.
+func (_u *TemplateUpdateOne) SetPvcNamespace(v string) *TemplateUpdateOne {
+	_u.mutation.SetPvcNamespace(v)
+	return _u
+}
+
+// SetNillablePvcNamespace sets the "pvc_namespace" field if the given value is not nil.
+func (_u *TemplateUpdateOne) SetNillablePvcNamespace(v *string) *TemplateUpdateOne {
+	if v != nil {
+		_u.SetPvcNamespace(*v)
+	}
+	return _u
+}
+
+// ClearPvcNamespace clears the value of the "pvc_namespace" field.
+func (_u *TemplateUpdateOne) ClearPvcNamespace() *TemplateUpdateOne {
+	_u.mutation.ClearPvcNamespace()
 	return _u
 }
 
@@ -725,6 +771,12 @@ func (_u *TemplateUpdateOne) sqlSave(ctx context.Context) (_node *Template, err 
 	}
 	if _u.mutation.PvcNameCleared() {
 		_spec.ClearField(template.FieldPvcName, field.TypeString)
+	}
+	if value, ok := _u.mutation.PvcNamespace(); ok {
+		_spec.SetField(template.FieldPvcNamespace, field.TypeString, value)
+	}
+	if _u.mutation.PvcNamespaceCleared() {
+		_spec.ClearField(template.FieldPvcNamespace, field.TypeString)
 	}
 	if value, ok := _u.mutation.CloudInit(); ok {
 		_spec.SetField(template.FieldCloudInit, field.TypeString, value)

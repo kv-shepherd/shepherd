@@ -17,6 +17,9 @@ import (
 var publicPrefixes = []string{
 	"/api/v1/auth/login",
 	"/api/v1/health/",
+	// Schema metadata: does not contain sensitive data; must be accessible
+	// before login for bootstrap tooling (ADR-0023). Matches OpenAPI security:[].
+	"/api/v1/schemas/",
 }
 
 func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg middleware.JWTConfig) *gin.Engine {

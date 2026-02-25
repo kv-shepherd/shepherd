@@ -155,6 +155,11 @@
     "templates.pvc_name": "PVC / DataVolume Name",
     "templates.pvc_name_required": "PVC name is required for PVC mode",
     "templates.pvc_name_help": "Name of the PersistentVolumeClaim or DataVolume in the target namespace",
+    "templates.source_containerdisk": "Container Disk",
+    "templates.source_pvc": "PVC / DataVolume",
+    "templates.pvc_namespace": "PVC Namespace",
+    "templates.pvc_namespace_help": "Kubernetes namespace where the PVC/DataVolume is located (e.g. default)",
+    "templates.pvc_namespace_required": "PVC namespace is required",
     "templates.cloud_init": "Cloud-init Userdata (YAML)",
     "templates.cloud_init_help": "Cloud-config YAML applied at VM boot time (users, packages, etc.)",
     "templates.image_source": "Image Source",
@@ -260,5 +265,9 @@
     "authProviders.env.test": "Test",
     "authProviders.env.prod": "Production",
     "authProviders.mapping.delete_confirm": "Delete this mapping?",
-    "authProviders.mapping.edit_title": "Edit Mapping"
+    "authProviders.mapping.edit_title": "Edit Mapping",
+    "templates.spec": "Spec Overrides (Schema-driven)",
+    "dynamic_form.add_item": "Add {{label}}",
+    "dynamic_form.invalid_path": "Field path not found in schema: {{path}}",
+    "dynamic_form.advanced_settings": "Advanced Settings"
 }

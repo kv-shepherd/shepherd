@@ -33,6 +33,8 @@ type Template struct {
 	ImageURL string `json:"image_url,omitempty"`
 	// PvcName holds the value of the "pvc_name" field.
 	PvcName string `json:"pvc_name,omitempty"`
+	// PvcNamespace holds the value of the "pvc_namespace" field.
+	PvcNamespace string `json:"pvc_namespace,omitempty"`
 	// CloudInit holds the value of the "cloud_init" field.
 	CloudInit string `json:"cloud_init,omitempty"`
 	// OsFamily holds the value of the "os_family" field.
@@ -53,7 +55,7 @@ func (*Template) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case template.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case template.FieldID, template.FieldName, template.FieldDisplayName, template.FieldDescription, template.FieldSourceType, template.FieldImageURL, template.FieldPvcName, template.FieldCloudInit, template.FieldOsFamily, template.FieldOsVersion, template.FieldCreatedBy:
+		case template.FieldID, template.FieldName, template.FieldDisplayName, template.FieldDescription, template.FieldSourceType, template.FieldImageURL, template.FieldPvcName, template.FieldPvcNamespace, template.FieldCloudInit, template.FieldOsFamily, template.FieldOsVersion, template.FieldCreatedBy:
 			values[i] = new(sql.NullString)
 		case template.FieldCreatedAt, template.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -125,6 +127,12 @@ func (_m *Template) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field pvc_name", values[i])
 			} else if value.Valid {
 				_m.PvcName = value.String
+			}
+		case template.FieldPvcNamespace:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field pvc_namespace", values[i])
+			} else if value.Valid {
+				_m.PvcNamespace = value.String
 			}
 		case template.FieldCloudInit:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -215,6 +223,9 @@ func (_m *Template) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("pvc_name=")
 	builder.WriteString(_m.PvcName)
+	builder.WriteString(", ")
+	builder.WriteString("pvc_namespace=")
+	builder.WriteString(_m.PvcNamespace)
 	builder.WriteString(", ")
 	builder.WriteString("cloud_init=")
 	builder.WriteString(_m.CloudInit)

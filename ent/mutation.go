@@ -18663,6 +18663,7 @@ type TemplateMutation struct {
 	source_type   *string
 	image_url     *string
 	pvc_name      *string
+	pvc_namespace *string
 	cloud_init    *string
 	os_family     *string
 	os_version    *string
@@ -19131,6 +19132,55 @@ func (m *TemplateMutation) ResetPvcName() {
 	delete(m.clearedFields, template.FieldPvcName)
 }
 
+// SetPvcNamespace sets the "pvc_namespace" field.
+func (m *TemplateMutation) SetPvcNamespace(s string) {
+	m.pvc_namespace = &s
+}
+
+// PvcNamespace returns the value of the "pvc_namespace" field in the mutation.
+func (m *TemplateMutation) PvcNamespace() (r string, exists bool) {
+	v := m.pvc_namespace
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPvcNamespace returns the old "pvc_namespace" field's value of the Template entity.
+// If the Template object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TemplateMutation) OldPvcNamespace(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPvcNamespace is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPvcNamespace requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPvcNamespace: %w", err)
+	}
+	return oldValue.PvcNamespace, nil
+}
+
+// ClearPvcNamespace clears the value of the "pvc_namespace" field.
+func (m *TemplateMutation) ClearPvcNamespace() {
+	m.pvc_namespace = nil
+	m.clearedFields[template.FieldPvcNamespace] = struct{}{}
+}
+
+// PvcNamespaceCleared returns if the "pvc_namespace" field was cleared in this mutation.
+func (m *TemplateMutation) PvcNamespaceCleared() bool {
+	_, ok := m.clearedFields[template.FieldPvcNamespace]
+	return ok
+}
+
+// ResetPvcNamespace resets all changes to the "pvc_namespace" field.
+func (m *TemplateMutation) ResetPvcNamespace() {
+	m.pvc_namespace = nil
+	delete(m.clearedFields, template.FieldPvcNamespace)
+}
+
 // SetCloudInit sets the "cloud_init" field.
 func (m *TemplateMutation) SetCloudInit(s string) {
 	m.cloud_init = &s
@@ -19384,7 +19434,7 @@ func (m *TemplateMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TemplateMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 14)
 	if m.created_at != nil {
 		fields = append(fields, template.FieldCreatedAt)
 	}
@@ -19408,6 +19458,9 @@ func (m *TemplateMutation) Fields() []string {
 	}
 	if m.pvc_name != nil {
 		fields = append(fields, template.FieldPvcName)
+	}
+	if m.pvc_namespace != nil {
+		fields = append(fields, template.FieldPvcNamespace)
 	}
 	if m.cloud_init != nil {
 		fields = append(fields, template.FieldCloudInit)
@@ -19448,6 +19501,8 @@ func (m *TemplateMutation) Field(name string) (ent.Value, bool) {
 		return m.ImageURL()
 	case template.FieldPvcName:
 		return m.PvcName()
+	case template.FieldPvcNamespace:
+		return m.PvcNamespace()
 	case template.FieldCloudInit:
 		return m.CloudInit()
 	case template.FieldOsFamily:
@@ -19483,6 +19538,8 @@ func (m *TemplateMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldImageURL(ctx)
 	case template.FieldPvcName:
 		return m.OldPvcName(ctx)
+	case template.FieldPvcNamespace:
+		return m.OldPvcNamespace(ctx)
 	case template.FieldCloudInit:
 		return m.OldCloudInit(ctx)
 	case template.FieldOsFamily:
@@ -19557,6 +19614,13 @@ func (m *TemplateMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPvcName(v)
+		return nil
+	case template.FieldPvcNamespace:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPvcNamespace(v)
 		return nil
 	case template.FieldCloudInit:
 		v, ok := value.(string)
@@ -19638,6 +19702,9 @@ func (m *TemplateMutation) ClearedFields() []string {
 	if m.FieldCleared(template.FieldPvcName) {
 		fields = append(fields, template.FieldPvcName)
 	}
+	if m.FieldCleared(template.FieldPvcNamespace) {
+		fields = append(fields, template.FieldPvcNamespace)
+	}
 	if m.FieldCleared(template.FieldCloudInit) {
 		fields = append(fields, template.FieldCloudInit)
 	}
@@ -19675,6 +19742,9 @@ func (m *TemplateMutation) ClearField(name string) error {
 		return nil
 	case template.FieldPvcName:
 		m.ClearPvcName()
+		return nil
+	case template.FieldPvcNamespace:
+		m.ClearPvcNamespace()
 		return nil
 	case template.FieldCloudInit:
 		m.ClearCloudInit()
@@ -19716,6 +19786,9 @@ func (m *TemplateMutation) ResetField(name string) error {
 		return nil
 	case template.FieldPvcName:
 		m.ResetPvcName()
+		return nil
+	case template.FieldPvcNamespace:
+		m.ResetPvcNamespace()
 		return nil
 	case template.FieldCloudInit:
 		m.ResetCloudInit()
