@@ -22,6 +22,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/jobs"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/usecase"
 )
 
@@ -278,6 +279,24 @@ func (s *Server) CreateVMRequest(c *gin.Context) {
 		return
 	}
 
+	// Stage 2.E: Route the submission through the approval provider router.
+	// V1: router always selects the built-in provider (no-op other than logging).
+	// V2+: an external provider adapter can delegate to a third-party system here.
+	// Non-fatal: ticket is already PENDING in DB; log the error but do not unwind the user response.
+	if s.approvalRouter != nil {
+		if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &provider.ApprovalRequest{
+			EventID:   output.TicketID, // ticket_id echoed as event_id for provider correlation
+			Requester: actor,
+			Action:    "create",
+			Reason:    req.Reason,
+		}); routerErr != nil {
+			logger.Warn("approval router SubmitForApproval failed (ticket already PENDING in DB)",
+				zap.String("ticket_id", output.TicketID),
+				zap.Error(routerErr),
+			)
+		}
+	}
+
 	// Notification trigger: APPROVAL_PENDING → notify approvers (master-flow.md Stage 5.F).
 	if s.notifier != nil {
 		s.notifier.OnTicketSubmitted(ctx, output.TicketID, actor, req.Namespace)
@@ -382,6 +401,21 @@ func (s *Server) DeleteVM(c *gin.Context, vmId generated.VMID, params generated.
 	}
 
 	_ = result.Status // Keep use case output field for backward compatibility.
+
+	// Stage 2.E: Route the delete submission through the approval provider router.
+	// Same semantics as CreateVMRequest: ticket is already PENDING; router call is best-effort.
+	if s.approvalRouter != nil {
+		if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &provider.ApprovalRequest{
+			EventID:   result.TicketID,
+			Requester: actor,
+			Action:    "delete",
+		}); routerErr != nil {
+			logger.Warn("approval router SubmitForApproval failed for delete ticket (already PENDING in DB)",
+				zap.String("ticket_id", result.TicketID),
+				zap.Error(routerErr),
+			)
+		}
+	}
 
 	// Notification trigger: APPROVAL_PENDING → notify approvers for delete request.
 	if s.notifier != nil {
