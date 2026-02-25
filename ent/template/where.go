@@ -104,6 +104,11 @@ func PvcName(v string) predicate.Template {
 	return predicate.Template(sql.FieldEQ(FieldPvcName, v))
 }
 
+// PvcNamespace applies equality check predicate on the "pvc_namespace" field. It's identical to PvcNamespaceEQ.
+func PvcNamespace(v string) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldPvcNamespace, v))
+}
+
 // CloudInit applies equality check predicate on the "cloud_init" field. It's identical to CloudInitEQ.
 func CloudInit(v string) predicate.Template {
 	return predicate.Template(sql.FieldEQ(FieldCloudInit, v))
@@ -647,6 +652,81 @@ func PvcNameEqualFold(v string) predicate.Template {
 // PvcNameContainsFold applies the ContainsFold predicate on the "pvc_name" field.
 func PvcNameContainsFold(v string) predicate.Template {
 	return predicate.Template(sql.FieldContainsFold(FieldPvcName, v))
+}
+
+// PvcNamespaceEQ applies the EQ predicate on the "pvc_namespace" field.
+func PvcNamespaceEQ(v string) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldPvcNamespace, v))
+}
+
+// PvcNamespaceNEQ applies the NEQ predicate on the "pvc_namespace" field.
+func PvcNamespaceNEQ(v string) predicate.Template {
+	return predicate.Template(sql.FieldNEQ(FieldPvcNamespace, v))
+}
+
+// PvcNamespaceIn applies the In predicate on the "pvc_namespace" field.
+func PvcNamespaceIn(vs ...string) predicate.Template {
+	return predicate.Template(sql.FieldIn(FieldPvcNamespace, vs...))
+}
+
+// PvcNamespaceNotIn applies the NotIn predicate on the "pvc_namespace" field.
+func PvcNamespaceNotIn(vs ...string) predicate.Template {
+	return predicate.Template(sql.FieldNotIn(FieldPvcNamespace, vs...))
+}
+
+// PvcNamespaceGT applies the GT predicate on the "pvc_namespace" field.
+func PvcNamespaceGT(v string) predicate.Template {
+	return predicate.Template(sql.FieldGT(FieldPvcNamespace, v))
+}
+
+// PvcNamespaceGTE applies the GTE predicate on the "pvc_namespace" field.
+func PvcNamespaceGTE(v string) predicate.Template {
+	return predicate.Template(sql.FieldGTE(FieldPvcNamespace, v))
+}
+
+// PvcNamespaceLT applies the LT predicate on the "pvc_namespace" field.
+func PvcNamespaceLT(v string) predicate.Template {
+	return predicate.Template(sql.FieldLT(FieldPvcNamespace, v))
+}
+
+// PvcNamespaceLTE applies the LTE predicate on the "pvc_namespace" field.
+func PvcNamespaceLTE(v string) predicate.Template {
+	return predicate.Template(sql.FieldLTE(FieldPvcNamespace, v))
+}
+
+// PvcNamespaceContains applies the Contains predicate on the "pvc_namespace" field.
+func PvcNamespaceContains(v string) predicate.Template {
+	return predicate.Template(sql.FieldContains(FieldPvcNamespace, v))
+}
+
+// PvcNamespaceHasPrefix applies the HasPrefix predicate on the "pvc_namespace" field.
+func PvcNamespaceHasPrefix(v string) predicate.Template {
+	return predicate.Template(sql.FieldHasPrefix(FieldPvcNamespace, v))
+}
+
+// PvcNamespaceHasSuffix applies the HasSuffix predicate on the "pvc_namespace" field.
+func PvcNamespaceHasSuffix(v string) predicate.Template {
+	return predicate.Template(sql.FieldHasSuffix(FieldPvcNamespace, v))
+}
+
+// PvcNamespaceIsNil applies the IsNil predicate on the "pvc_namespace" field.
+func PvcNamespaceIsNil() predicate.Template {
+	return predicate.Template(sql.FieldIsNull(FieldPvcNamespace))
+}
+
+// PvcNamespaceNotNil applies the NotNil predicate on the "pvc_namespace" field.
+func PvcNamespaceNotNil() predicate.Template {
+	return predicate.Template(sql.FieldNotNull(FieldPvcNamespace))
+}
+
+// PvcNamespaceEqualFold applies the EqualFold predicate on the "pvc_namespace" field.
+func PvcNamespaceEqualFold(v string) predicate.Template {
+	return predicate.Template(sql.FieldEqualFold(FieldPvcNamespace, v))
+}
+
+// PvcNamespaceContainsFold applies the ContainsFold predicate on the "pvc_namespace" field.
+func PvcNamespaceContainsFold(v string) predicate.Template {
+	return predicate.Template(sql.FieldContainsFold(FieldPvcNamespace, v))
 }
 
 // CloudInitEQ applies the EQ predicate on the "cloud_init" field.

@@ -590,11 +590,15 @@ func extractTemplateImage(templateSpec map[string]interface{}) (string, error) {
 
 // extractTemplateImageFromEnt resolves the boot image from an Ent Template object.
 // ADR-0036: Template no longer stores spec JSONB; image_url and pvc_name are explicit fields.
+// PVC image format: "pvc:namespace/name" when pvc_namespace is set, "pvc:name" otherwise (legacy).
 func extractTemplateImageFromEnt(tpl *ent.Template) (string, error) {
 	if tpl.ImageURL != "" {
 		return tpl.ImageURL, nil
 	}
 	if tpl.PvcName != "" {
+		if tpl.PvcNamespace != "" {
+			return "pvc:" + tpl.PvcNamespace + "/" + tpl.PvcName, nil
+		}
 		return "pvc:" + tpl.PvcName, nil
 	}
 	return "", fmt.Errorf("template %s has no image_url or pvc_name configured", tpl.ID)
@@ -602,7 +606,7 @@ func extractTemplateImageFromEnt(tpl *ent.Template) (string, error) {
 
 // extractTemplateImageFromSnapshot resolves the boot image from a template snapshot map
 // stored at approval time. Snapshot keys use the ADR-0036 semantic format:
-// source_type, image_url, pvc_name. Falls back to legacy spec-map lookup.
+// source_type, image_url, pvc_name, pvc_namespace. Falls back to legacy spec-map lookup.
 func extractTemplateImageFromSnapshot(snapshot map[string]interface{}) (string, error) {
 	// ADR-0036 format (new snapshots)
 	sourceType := lookupStringValue(snapshot, "source_type")
@@ -613,6 +617,9 @@ func extractTemplateImageFromSnapshot(snapshot map[string]interface{}) (string, 
 		}
 	case "pvc":
 		if pvc := lookupStringValue(snapshot, "pvc_name"); pvc != "" {
+			if ns := lookupStringValue(snapshot, "pvc_namespace"); ns != "" {
+				return "pvc:" + ns + "/" + pvc, nil
+			}
 			return "pvc:" + pvc, nil
 		}
 	}

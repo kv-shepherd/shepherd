@@ -124,6 +124,20 @@ func (_c *TemplateCreate) SetNillablePvcName(v *string) *TemplateCreate {
 	return _c
 }
 
+// SetPvcNamespace sets the "pvc_namespace" field.
+func (_c *TemplateCreate) SetPvcNamespace(v string) *TemplateCreate {
+	_c.mutation.SetPvcNamespace(v)
+	return _c
+}
+
+// SetNillablePvcNamespace sets the "pvc_namespace" field if the given value is not nil.
+func (_c *TemplateCreate) SetNillablePvcNamespace(v *string) *TemplateCreate {
+	if v != nil {
+		_c.SetPvcNamespace(*v)
+	}
+	return _c
+}
+
 // SetCloudInit sets the "cloud_init" field.
 func (_c *TemplateCreate) SetCloudInit(v string) *TemplateCreate {
 	_c.mutation.SetCloudInit(v)
@@ -338,6 +352,10 @@ func (_c *TemplateCreate) createSpec() (*Template, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.PvcName(); ok {
 		_spec.SetField(template.FieldPvcName, field.TypeString, value)
 		_node.PvcName = value
+	}
+	if value, ok := _c.mutation.PvcNamespace(); ok {
+		_spec.SetField(template.FieldPvcNamespace, field.TypeString, value)
+		_node.PvcNamespace = value
 	}
 	if value, ok := _c.mutation.CloudInit(); ok {
 		_spec.SetField(template.FieldCloudInit, field.TypeString, value)

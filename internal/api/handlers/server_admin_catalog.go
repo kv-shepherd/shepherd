@@ -38,6 +38,8 @@ type templateCreateRequest struct {
 	ImageURL *string `json:"image_url"`
 	// PVCName is the PersistentVolumeClaim name, required when source_type == "pvc".
 	PVCName *string `json:"pvc_name"`
+	// PVCNamespace is the Kubernetes namespace where the PVC lives, required when source_type == "pvc".
+	PVCNamespace *string `json:"pvc_namespace"`
 	// CloudInit is optional cloud-init userdata YAML.
 	CloudInit *string `json:"cloud_init"`
 	OsFamily  *string `json:"os_family"`
@@ -51,10 +53,12 @@ type templateUpdateRequest struct {
 	SourceType  *string `json:"source_type"`
 	ImageURL    *string `json:"image_url"`
 	PVCName     *string `json:"pvc_name"`
-	CloudInit   *string `json:"cloud_init"`
-	OsFamily    *string `json:"os_family"`
-	OsVersion   *string `json:"os_version"`
-	Enabled     *bool   `json:"enabled"`
+	// PVCNamespace is the Kubernetes namespace where the PVC lives.
+	PVCNamespace *string `json:"pvc_namespace"`
+	CloudInit    *string `json:"cloud_init"`
+	OsFamily     *string `json:"os_family"`
+	OsVersion    *string `json:"os_version"`
+	Enabled      *bool   `json:"enabled"`
 }
 
 type instanceSizeCreateRequest struct {
@@ -229,8 +233,8 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 		return
 	}
 
-	// ADR-0036: Validate source_type and its dependent fields.
-	if err := validateTemplateSource(req.SourceType, req.ImageURL, req.PVCName); err != nil {
+	// ADR-0036: Validate source_type and its dependent fields (including pvc_namespace).
+	if err := validateTemplateSource(req.SourceType, req.ImageURL, req.PVCName, req.PVCNamespace); err != nil {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_TEMPLATE_SOURCE", Message: err.Error()})
 		return
 	}
@@ -261,6 +265,11 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 	if req.PVCName != nil {
 		if v := strings.TrimSpace(*req.PVCName); v != "" {
 			create = create.SetPvcName(v)
+		}
+	}
+	if req.PVCNamespace != nil {
+		if v := strings.TrimSpace(*req.PVCNamespace); v != "" {
+			create = create.SetPvcNamespace(v)
 		}
 	}
 	if req.CloudInit != nil {
@@ -315,8 +324,35 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateId generated.Templa
 		return
 	}
 
-	// ADR-0036: Validate source_type consistency if any source field is being updated.
-	if err := validateTemplateSource(req.SourceType, req.ImageURL, req.PVCName); err != nil {
+	// Finding 3 fix: resolve the effective source configuration by merging the
+	// existing DB record with the incoming request fields.
+	//
+	// Problem: validateTemplateSource(req.SourceType, ...) short-circuits when
+	// source_type is nil ("draft template" path), allowing a PATCH that sets
+	// pvc_namespace="" without source_type to clear pvc_namespace on a record
+	// that already has source_type="pvc", leaving the row in an inconsistent state.
+	//
+	// Fix: always validate against the effective (merged) state. If the request
+	// does not include a field, fall back to the stored value.
+	existingTpl, err := s.client.Template.Get(ctx, templateId)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "TEMPLATE_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to get admin template for update validation", zap.Error(err), zap.String("template_id", templateId))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	// Build resolved (merged) source fields for validation.
+	resolvedSourceType := resolveStringPtr(req.SourceType, existingTpl.SourceType)
+	resolvedImageURL := resolveStringPtr(req.ImageURL, existingTpl.ImageURL)
+	resolvedPVCName := resolveStringPtr(req.PVCName, existingTpl.PvcName)
+	resolvedPVCNamespace := resolveStringPtr(req.PVCNamespace, existingTpl.PvcNamespace)
+
+	// ADR-0036: Validate source_type consistency against the effective state.
+	if err := validateTemplateSource(resolvedSourceType, resolvedImageURL, resolvedPVCName, resolvedPVCNamespace); err != nil {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_TEMPLATE_SOURCE", Message: err.Error()})
 		return
 	}
@@ -351,6 +387,13 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateId generated.Templa
 			update = update.ClearPvcName()
 		} else {
 			update = update.SetPvcName(v)
+		}
+	}
+	if req.PVCNamespace != nil {
+		if v := strings.TrimSpace(*req.PVCNamespace); v == "" {
+			update = update.ClearPvcNamespace()
+		} else {
+			update = update.SetPvcNamespace(v)
 		}
 	}
 	if req.CloudInit != nil {
@@ -567,7 +610,23 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generate
 		return
 	}
 
-	if err := validateInstanceSizeUpdate(req); err != nil {
+	// Finding 2 fix: read the existing record BEFORE validation so that the effective
+	// dedicated_cpu value is the merge of (existing DB value) + (request value).
+	// Without this, a PATCH that changes only spec_overrides (not dedicated_cpu) would
+	// use dedicatedFlag=false even when the stored record has dedicated_cpu=true,
+	// causing false-positive rejection of a valid partial update.
+	existingSize, err := s.client.InstanceSize.Get(ctx, instanceSizeId)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "INSTANCE_SIZE_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to get admin instance size for update validation", zap.Error(err), zap.String("instance_size_id", instanceSizeId))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if err := validateInstanceSizeUpdate(req, existingSize.DedicatedCPU); err != nil {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
 		return
 	}
@@ -1930,10 +1989,42 @@ func validateInstanceSizeCreate(req instanceSizeCreateRequest) error {
 	if requiresHugepages && !hasHugepagesSize {
 		return fmt.Errorf("hugepages_size is required when requires_hugepages is true")
 	}
+
+	// ADR-0036 constraint: dedicated_cpu indexed field must agree with spec_overrides.
+	// Reject mismatches at write time to prevent data inconsistency that would be
+	// caught (confusingly) only at approval time.
+	if req.SpecOverrides != nil {
+		specHasDedicated := service.HasDedicatedCPUInSpecOverrides(req.SpecOverrides)
+		if specHasDedicated && !dedicated {
+			return fmt.Errorf(
+				"spec_overrides sets dedicatedCpuPlacement=true but dedicated_cpu is false; " +
+					"set dedicated_cpu=true to keep indexed field consistent with the spec override")
+		}
+		if dedicated && !specHasDedicated {
+			// spec_overrides explicitly sets dedicatedCpuPlacement to false — also an inconsistency.
+			// Use the canonical service function that checks BOTH flat dot-notation key AND nested
+			// map format (DynamicSchemaForm / Ant Design output).
+			if conflictPath, hasConflict := service.SpecOverrideSetsExplicitFalseForDedicatedCPU(req.SpecOverrides); hasConflict {
+				return fmt.Errorf(
+					"spec_overrides path %q is false but dedicated_cpu is true; "+
+						"remove the override or set dedicated_cpu=false", conflictPath)
+			}
+		}
+	}
+
 	return nil
 }
 
-func validateInstanceSizeUpdate(req instanceSizeUpdateRequest) error {
+// validateInstanceSizeUpdate validates a PATCH request for an InstanceSize.
+//
+// existingDedicatedCPU is the current value stored in the database. The effective
+// dedicated_cpu for validation is determined by merging:
+//   - If req.DedicatedCpu is set: use the request value (user is explicitly changing it).
+//   - If req.DedicatedCpu is nil: use the existing DB value (partial update, field unchanged).
+//
+// This prevents false-positive errors where a PATCH only updates spec_overrides
+// while leaving dedicated_cpu unchanged, but the validator would default to false.
+func validateInstanceSizeUpdate(req instanceSizeUpdateRequest, existingDedicatedCPU bool) error {
 	if req.CpuCores != nil && *req.CpuCores < 1 {
 		return fmt.Errorf("cpu_cores must be >= 1")
 	}
@@ -1952,7 +2043,54 @@ func validateInstanceSizeUpdate(req instanceSizeUpdateRequest) error {
 	if req.CpuCores != nil && req.DedicatedCpu != nil && *req.DedicatedCpu && req.CpuRequest != nil && *req.CpuRequest > 0 && *req.CpuRequest != *req.CpuCores {
 		return fmt.Errorf("cpu_request must equal cpu_cores when dedicated_cpu is true")
 	}
+
+	// ADR-0036 constraint: dedicated_cpu indexed field must agree with spec_overrides.
+	// Use the effective dedicated_cpu: request value if provided, else the existing DB value.
+	effectiveDedicated := existingDedicatedCPU
+	if req.DedicatedCpu != nil {
+		effectiveDedicated = *req.DedicatedCpu
+	}
+
+	if req.SpecOverrides != nil {
+		specHasDedicated := service.HasDedicatedCPUInSpecOverrides(*req.SpecOverrides)
+		if specHasDedicated && !effectiveDedicated {
+			return fmt.Errorf(
+				"spec_overrides sets dedicatedCpuPlacement=true but dedicated_cpu is false; " +
+					"set dedicated_cpu=true to keep indexed field consistent with the spec override")
+		}
+		if effectiveDedicated && !specHasDedicated {
+			// spec_overrides explicitly sets dedicatedCpuPlacement to false — also an inconsistency.
+			// Use the canonical service function that checks BOTH flat dot-notation key AND nested
+			// map format (DynamicSchemaForm / Ant Design output).
+			if conflictPath, hasConflict := service.SpecOverrideSetsExplicitFalseForDedicatedCPU(*req.SpecOverrides); hasConflict {
+				return fmt.Errorf(
+					"spec_overrides path %q is false but dedicated_cpu is true; "+
+						"remove the override or set dedicated_cpu=false", conflictPath)
+			}
+		}
+	}
+
 	return nil
+}
+
+// resolveStringPtr merges a PATCH request field with an existing database value for
+// template source validation.
+//
+//   - If reqField is non-nil, the request is explicitly providing a value (possibly empty
+//     to clear), so we use it unchanged.
+//   - If reqField is nil, the field is absent from the PATCH request (no change intended),
+//     so we fall back to the current stored value wrapped as *string.
+//
+// This lets validateTemplateSource see the effective (post-merge) state rather than
+// the partial view from the request alone.
+func resolveStringPtr(reqField *string, existingValue string) *string {
+	if reqField != nil {
+		return reqField
+	}
+	if existingValue == "" {
+		return nil
+	}
+	return &existingValue
 }
 
 func normalizePermissionKeys(raw []string) ([]string, error) {
@@ -2030,8 +2168,9 @@ func authProviderToAPI(p *ent.AuthProvider) generated.AuthProvider {
 
 // validateTemplateSource enforces the ADR-0036 rule that source_type must be
 // either "image" or "pvc" (when provided), and that the corresponding required
-// field (image_url or pvc_name) is present. The two modes are mutually exclusive.
-func validateTemplateSource(sourceType, imageURL, pvcName *string) error {
+// fields (image_url, or pvc_name + pvc_namespace) are present.
+// The two modes are mutually exclusive.
+func validateTemplateSource(sourceType, imageURL, pvcName, pvcNamespace *string) error {
 	if sourceType == nil {
 		// No source configured yet — allowed (draft template).
 		return nil
@@ -2044,6 +2183,9 @@ func validateTemplateSource(sourceType, imageURL, pvcName *string) error {
 	case "pvc":
 		if pvcName == nil || strings.TrimSpace(*pvcName) == "" {
 			return fmt.Errorf("pvc_name is required when source_type is 'pvc'")
+		}
+		if pvcNamespace == nil || strings.TrimSpace(*pvcNamespace) == "" {
+			return fmt.Errorf("pvc_namespace is required when source_type is 'pvc'")
 		}
 	default:
 		return fmt.Errorf("source_type must be 'image' or 'pvc', got %q", *sourceType)

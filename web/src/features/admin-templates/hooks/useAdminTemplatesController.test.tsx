@@ -73,7 +73,12 @@ describe('useAdminTemplatesController', () => {
     });
   });
 
-  it('submits create payload with parsed spec JSON', async () => {
+  /**
+   * master-flow Step 3: Template create submits cloud_init as-is (YAML text, NOT JSON).
+   * cloud_init is a first-class Template field edited directly by the admin.
+   * No JSON parsing, no spec_text intermediary.
+   */
+  it('submits create payload with cloud_init YAML directly', async () => {
     const createMutate = vi.fn();
     const updateMutate = vi.fn();
     const deleteMutate = vi.fn();
@@ -83,11 +88,14 @@ describe('useAdminTemplatesController', () => {
       .mockReturnValueOnce({ mutate: updateMutate, isPending: false });
     useApiActionMock.mockReturnValue({ mutate: deleteMutate, isPending: false });
 
+    const yamlCloudInit = '#cloud-config\nusers:\n  - name: admin\n    sudo: ALL=(ALL) NOPASSWD:ALL';
     createFormState.validateFields.mockResolvedValue({
       name: 'ubuntu-base',
       display_name: 'Ubuntu Base',
       enabled: true,
-      spec_text: '{"domain":{"cpu":{"cores":4}}}',
+      source_type: 'image',
+      image_url: 'docker.io/kubevirt/ubuntu:22.04',
+      cloud_init: yamlCloudInit,
     });
 
     const { result } = renderHook(() => useAdminTemplatesController({ t }));
@@ -96,14 +104,21 @@ describe('useAdminTemplatesController', () => {
       await result.current.submitCreate();
     });
 
+    // cloud_init is passed verbatim — it is YAML text, not parsed JSON.
+    // source_type='image' → pvc_name and pvc_namespace are cleared (undefined).
     expect(createMutate).toHaveBeenCalledWith({
       name: 'ubuntu-base',
       display_name: 'Ubuntu Base',
       enabled: true,
+      source_type: 'image',
+      image_url: 'docker.io/kubevirt/ubuntu:22.04',
+      cloud_init: yamlCloudInit,
+      pvc_name: undefined,
+      pvc_namespace: undefined,
     });
   });
 
-  it('rejects invalid create spec JSON and does not mutate', async () => {
+  it('clears image_url when source_type is pvc', async () => {
     const createMutate = vi.fn();
 
     useApiMutationMock
@@ -112,8 +127,12 @@ describe('useAdminTemplatesController', () => {
     useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
 
     createFormState.validateFields.mockResolvedValue({
-      name: 'ubuntu-base',
-      spec_text: '[]',
+      name: 'centos7-pvc',
+      enabled: true,
+      source_type: 'pvc',
+      pvc_name: 'centos7-base-disk',
+      pvc_namespace: 'default',
+      image_url: 'docker.io/stale/image',  // stale value that should be cleared
     });
 
     const { result } = renderHook(() => useAdminTemplatesController({ t }));
@@ -122,7 +141,9 @@ describe('useAdminTemplatesController', () => {
       await result.current.submitCreate();
     });
 
-    expect(createMutate).not.toHaveBeenCalled();
-    expect(messageErrorMock).toHaveBeenCalledWith('templates.spec_invalid');
+    // source_type='pvc' → image_url is cleared (undefined); pvc_namespace is preserved.
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ source_type: 'pvc', pvc_name: 'centos7-base-disk', pvc_namespace: 'default', image_url: undefined }),
+    );
   });
 });
