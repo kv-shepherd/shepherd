@@ -346,17 +346,18 @@ func clusterToAPI(cl *ent.Cluster) generated.Cluster {
 
 func templateToAPI(t *ent.Template) generated.Template {
 	return generated.Template{
-		Id:          t.ID,
-		Name:        t.Name,
-		DisplayName: t.DisplayName,
-		Description: t.Description,
-		SourceType:  generated.TemplateSourceType(t.SourceType),
-		ImageUrl:    t.ImageURL,
-		PvcName:     t.PvcName,
-		CloudInit:   t.CloudInit,
-		OsFamily:    t.OsFamily,
-		OsVersion:   t.OsVersion,
-		Enabled:     t.Enabled,
+		Id:           t.ID,
+		Name:         t.Name,
+		DisplayName:  t.DisplayName,
+		Description:  t.Description,
+		SourceType:   generated.TemplateSourceType(t.SourceType),
+		ImageUrl:     t.ImageURL,
+		PvcName:      t.PvcName,
+		PvcNamespace: t.PvcNamespace,
+		CloudInit:    t.CloudInit,
+		OsFamily:     t.OsFamily,
+		OsVersion:    t.OsVersion,
+		Enabled:      t.Enabled,
 	}
 }
 

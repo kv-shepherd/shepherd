@@ -13,31 +13,22 @@ interface UseAdminTemplatesControllerArgs {
     t: TFunction;
 }
 
-interface TemplateCreateFormValues extends TemplateCreateRequest {
-    spec_text?: string;
-}
+/**
+ * master-flow Step 3: Configure Template
+ *
+ * Template fields per design:
+ *   - name, display_name, description, os_family, os_version, enabled
+ *   - source_type: 'image' (containerdisk) | 'pvc'
+ *   - image_url: ContainerDisk image URL (when source_type='image')
+ *   - pvc_name:  DataVolume/PVC name    (when source_type='pvc')
+ *   - cloud_init: YAML cloud-init config (admin-editable plain text, NOT JSON)
+ *
+ * cloud_init is a first-class Template field — it is a plain YAML string stored
+ * verbatim. The admin edits it directly in a monospace textarea. There is no
+ * JSON spec or DynamicSchemaForm on the Template page (that belongs to InstanceSize,
+ * Step 4, via spec_overrides).
+ */
 
-interface TemplateEditFormValues extends TemplateUpdateRequest {
-    spec_text?: string;
-}
-
-function parseJSONMap(raw: string, onError: () => void): Record<string, unknown> | undefined {
-    const text = raw.trim();
-    if (!text) {
-        return undefined;
-    }
-    try {
-        const parsed = JSON.parse(text) as unknown;
-        if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
-            onError();
-            return undefined;
-        }
-        return parsed as Record<string, unknown>;
-    } catch {
-        onError();
-        return undefined;
-    }
-}
 
 export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerArgs) {
     const [messageApi, messageContextHolder] = message.useMessage();
@@ -55,8 +46,8 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
     const [searchedColumn, setSearchedColumn] = useState('');
     const [searchText, setSearchText] = useState('');
 
-    const [createForm] = Form.useForm<TemplateCreateFormValues>();
-    const [editForm] = Form.useForm<TemplateEditFormValues>();
+    const [createForm] = Form.useForm<TemplateCreateRequest>();
+    const [editForm] = Form.useForm<TemplateUpdateRequest>();
 
     const templatesQuery = useApiGet<TemplateList>(
         ['admin-templates', page],
@@ -136,13 +127,12 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
         createForm.resetFields();
         createForm.setFieldsValue({
             enabled: true,
-            spec_text: '{}',
+            source_type: 'image', // default to containerdisk mode per master-flow Step 3
         });
         setCreateOpen(true);
     };
 
     const openEditModal = (template: Template) => {
-        const hydrated = template as Template & { spec?: Record<string, unknown> };
         setEditingTemplate(template);
         editForm.setFieldsValue({
             display_name: template.display_name,
@@ -150,7 +140,15 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
             os_family: template.os_family,
             os_version: template.os_version,
             enabled: template.enabled,
-            spec_text: JSON.stringify(hydrated.spec ?? {}, null, 2),
+            source_type: template.source_type,
+            image_url: template.image_url,
+            pvc_name: template.pvc_name,
+            // pvc_namespace: must be populated so the required validation passes
+            // when editing an existing PVC-type template (master-flow Step 3).
+            pvc_namespace: template.pvc_namespace,
+            // cloud_init is the YAML cloud-init config (plain text, not JSON).
+            // master-flow Step 3: admin can freely edit this YAML text.
+            cloud_init: template.cloud_init,
         });
         setEditOpen(true);
     };
@@ -160,41 +158,41 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
         setDeleteOpen(true);
     };
 
+    /**
+     * Submit create: pass form values directly to the API.
+     *
+     * cloud_init is submitted as-is (YAML string). The source_type toggle
+     * determines which of image_url / pvc_name is relevant — clear the other
+     * to avoid sending stale data.
+     *
+     * master-flow Step 3: no spec JSON processing here. cloud_init is YAML.
+     */
     const submitCreate = async () => {
-        const values = await createForm.validateFields();
-        const spec = parseJSONMap(values.spec_text ?? '', () => {
-            messageApi.error(t('templates.spec_invalid'));
-        });
-        if (values.spec_text && !spec) {
-            return;
-        }
-        const { spec_text, ...payloadWithoutSpecText } = values;
-        void spec_text;
-        const payload: TemplateCreateRequest = { ...payloadWithoutSpecText };
+        const values = await createForm.validateFields() as TemplateCreateRequest;
+        const payload: TemplateCreateRequest = { ...values };
         if (payload.source_type === 'image') {
+            // Clear PVC fields so stale values are not sent to the API.
             payload.pvc_name = undefined;
+            payload.pvc_namespace = undefined;
         } else if (payload.source_type === 'pvc') {
             payload.image_url = undefined;
         }
         createMutation.mutate(payload);
     };
 
+    /**
+     * Submit edit: same as create, cloud_init passed verbatim.
+     */
     const submitEdit = async () => {
         if (!editingTemplate) {
             return;
         }
-        const values = await editForm.validateFields();
-        const spec = parseJSONMap(values.spec_text ?? '', () => {
-            messageApi.error(t('templates.spec_invalid'));
-        });
-        if (values.spec_text && !spec) {
-            return;
-        }
-        const { spec_text, ...payloadWithoutSpecText } = values;
-        void spec_text;
-        const payload: TemplateUpdateRequest = { ...payloadWithoutSpecText };
+        const values = await editForm.validateFields() as TemplateUpdateRequest;
+        const payload: TemplateUpdateRequest = { ...values };
         if (payload.source_type === 'image') {
+            // Clear PVC fields so stale values are not sent to the API.
             payload.pvc_name = undefined;
+            payload.pvc_namespace = undefined;
         } else if (payload.source_type === 'pvc') {
             payload.image_url = undefined;
         }

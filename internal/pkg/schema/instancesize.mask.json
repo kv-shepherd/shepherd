@@ -1,0 +1,54 @@
+{
+    "quick_fields": [
+        {
+            "path": "spec.template.spec.domain.cpu.cores",
+            "display_name": "CPU Cores"
+        },
+        {
+            "path": "spec.template.spec.domain.cpu.threads",
+            "display_name": "CPU Threads"
+        },
+        {
+            "path": "spec.template.spec.domain.memory.guest",
+            "display_name": "Guest Memory"
+        },
+        {
+            "path": "spec.template.spec.domain.cpu.dedicatedCpuPlacement",
+            "display_name": "Dedicated CPU"
+        }
+    ],
+    "advanced_fields": [
+        {
+            "path": "spec.template.spec.domain.devices.gpus",
+            "display_name": "GPU Devices"
+        },
+        {
+            "path": "spec.template.spec.domain.memory.hugepages.pageSize",
+            "display_name": "Hugepages Size"
+        },
+        {
+            "path": "spec.template.spec.domain.cpu.model",
+            "display_name": "CPU Model"
+        },
+        {
+            "path": "spec.template.spec.domain.cpu.sockets",
+            "display_name": "CPU Sockets"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.relaxed.enabled",
+            "display_name": "Hyper-V Relaxed"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.vapic.enabled",
+            "display_name": "Hyper-V vAPIC"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.autoattachGraphicsDevice",
+            "display_name": "Auto-attach Graphics"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.autoattachSerialConsole",
+            "display_name": "Auto-attach Serial Console"
+        }
+    ]
+}

@@ -788,11 +788,11 @@ func init() {
 	// template.DefaultSourceType holds the default value on creation for the source_type field.
 	template.DefaultSourceType = templateDescSourceType.Default.(string)
 	// templateDescEnabled is the schema descriptor for enabled field.
-	templateDescEnabled := templateFields[10].Descriptor()
+	templateDescEnabled := templateFields[11].Descriptor()
 	// template.DefaultEnabled holds the default value on creation for the enabled field.
 	template.DefaultEnabled = templateDescEnabled.Default.(bool)
 	// templateDescCreatedBy is the schema descriptor for created_by field.
-	templateDescCreatedBy := templateFields[11].Descriptor()
+	templateDescCreatedBy := templateFields[12].Descriptor()
 	// template.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	template.CreatedByValidator = templateDescCreatedBy.Validators[0].(func(string) error)
 	userMixin := schema.User{}.Mixin()

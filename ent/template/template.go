@@ -29,6 +29,8 @@ const (
 	FieldImageURL = "image_url"
 	// FieldPvcName holds the string denoting the pvc_name field in the database.
 	FieldPvcName = "pvc_name"
+	// FieldPvcNamespace holds the string denoting the pvc_namespace field in the database.
+	FieldPvcNamespace = "pvc_namespace"
 	// FieldCloudInit holds the string denoting the cloud_init field in the database.
 	FieldCloudInit = "cloud_init"
 	// FieldOsFamily holds the string denoting the os_family field in the database.
@@ -54,6 +56,7 @@ var Columns = []string{
 	FieldSourceType,
 	FieldImageURL,
 	FieldPvcName,
+	FieldPvcNamespace,
 	FieldCloudInit,
 	FieldOsFamily,
 	FieldOsVersion,
@@ -134,6 +137,11 @@ func ByImageURL(opts ...sql.OrderTermOption) OrderOption {
 // ByPvcName orders the results by the pvc_name field.
 func ByPvcName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPvcName, opts...).ToFunc()
+}
+
+// ByPvcNamespace orders the results by the pvc_namespace field.
+func ByPvcNamespace(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPvcNamespace, opts...).ToFunc()
 }
 
 // ByCloudInit orders the results by the cloud_init field.

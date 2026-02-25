@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/schemas/{entity_type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Retrieve dynamic schema and UI mask for an entity */
+        get: operations["getDynamicSchema"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/systems": {
         parameters: {
             query?: never;
@@ -1222,6 +1239,48 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        MaskField: {
+            /** @description Dot-notation JSON path resolving within the provided unified schema. */
+            path: string;
+            /** @description Desired localized or standardized label for the UI form projection. */
+            display_name: string;
+        };
+        SchemaMask: {
+            quick_fields: components["schemas"]["MaskField"][];
+            advanced_fields?: components["schemas"]["MaskField"][];
+        };
+        DynamicSchemaResponse: {
+            /** @description Full structure representing the requested JSON Schema payload. */
+            schema: {
+                [key: string]: unknown;
+            };
+            mask: components["schemas"]["SchemaMask"];
+            /**
+             * @description Semantic version of the schema (e.g. "1.2.0").
+             *     Frontend uses this for cache drift detection and audit (ADR-0023).
+             * @example 1.2.0
+             */
+            schema_version?: string;
+            /**
+             * @description Data source of the schema response (ADR-0023 degradation strategy):
+             *     - cache:    Served from server-side schema cache (nominal path).
+             *     - embedded: Backend fell back to a bundled embedded schema (warn user).
+             *     - remote:   Fetched live from KubeVirt API (slow path, no cache).
+             * @enum {string}
+             */
+            source?: "cache" | "embedded" | "remote";
+            /**
+             * @description When true, the response uses an older or embedded fallback schema.
+             *     Frontend MUST display a warning banner per ADR-0023 UI Degradation States.
+             * @default false
+             */
+            degraded: boolean;
+            /**
+             * Format: date-time
+             * @description ISO 8601 timestamp when the schema was fetched or last cached.
+             */
+            fetched_at?: string;
+        };
         Health: {
             /** @enum {string} */
             status: "ok" | "degraded" | "error";
@@ -1265,9 +1324,11 @@ export interface components {
         SystemCreateRequest: {
             /** @description RFC 1035 compliant name (ADR-0019) */
             name: string;
+            /** @description Markdown supported */
             description?: string;
         };
         SystemUpdateRequest: {
+            /** @description Markdown supported */
             description: string;
         };
         SystemList: {
@@ -1285,9 +1346,11 @@ export interface components {
         };
         ServiceCreateRequest: {
             name: string;
+            /** @description Markdown supported */
             description?: string;
         };
         ServiceUpdateRequest: {
+            /** @description Markdown supported */
             description: string;
         };
         ServiceList: {
@@ -1561,6 +1624,8 @@ export interface components {
             image_url?: string;
             /** @description PVC/DataVolume name for PVC mode */
             pvc_name?: string;
+            /** @description Kubernetes namespace where the PVC/DataVolume is located (required when source_type is 'pvc') */
+            pvc_namespace?: string;
             /** @description Cloud-init userdata YAML (applied at VM boot) */
             cloud_init?: string;
             os_family?: string;
@@ -1582,6 +1647,8 @@ export interface components {
             image_url?: string;
             /** @description Required when source_type is 'pvc' */
             pvc_name?: string;
+            /** @description Kubernetes namespace where the PVC/DataVolume is located. Required when source_type is 'pvc'. */
+            pvc_namespace?: string;
             /** @description Cloud-init userdata YAML */
             cloud_init?: string;
             os_family?: string;
@@ -1595,6 +1662,8 @@ export interface components {
             source_type?: "image" | "pvc";
             image_url?: string;
             pvc_name?: string;
+            /** @description Kubernetes namespace where the PVC/DataVolume is located */
+            pvc_namespace?: string;
             cloud_init?: string;
             os_family?: string;
             os_version?: string;
@@ -2119,6 +2188,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description Internal server error */
+        InternalServerError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
         /** @description Page number (1-indexed) */
@@ -2204,6 +2282,30 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getDynamicSchema: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entity_type: "instancesize";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dynamic schema retrieved successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DynamicSchemaResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     listSystems: {

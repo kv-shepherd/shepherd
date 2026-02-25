@@ -47,6 +47,8 @@ tags:
     description: RBAC role and global binding management
   - name: auth-providers
     description: Pluggable authentication provider management
+  - name: schemas
+    description: Dynamic configuration schemas for entities
 
 paths:
   # ── Health ──────────────────────────────────────────
@@ -83,6 +85,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  # ── Schemas ─────────────────────────────────────────
+  /schemas/{entity_type}:
+    get:
+      tags: [schemas]
+      summary: Retrieve dynamic schema and UI mask for an entity
+      operationId: getDynamicSchema
+      # Public endpoint: schema metadata does not contain sensitive data and
+      # must be accessible before a user logs in (bootstrap scenario, ADR-0023).
+      security: []
+      parameters:
+        - name: entity_type
+          in: path
+          required: true
+          schema:
+            type: string
+            # Only entity types with dynamic schema forms are listed here.
+            # template: excluded — cloud_init is a static YAML textarea, no dynamic schema (master-flow Step 3).
+            # cluster:  excluded — no cluster-level override schema defined yet (ADR-0023 phase 2).
+            enum: [instancesize]
+      responses:
+        '200':
+          description: Dynamic schema retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DynamicSchemaResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   # ── Systems ─────────────────────────────────────────
   /systems:
@@ -2094,9 +2127,74 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
 
   # ── Schemas ─────────────────────────────────────────
   schemas:
+    MaskField:
+      type: object
+      required: [path, display_name]
+      properties:
+        path:
+          type: string
+          description: Dot-notation JSON path resolving within the provided unified schema.
+        display_name:
+          type: string
+          description: Desired localized or standardized label for the UI form projection.
+    SchemaMask:
+      type: object
+      required: [quick_fields]
+      properties:
+        quick_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaskField'
+        advanced_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaskField'
+    DynamicSchemaResponse:
+      type: object
+      required: [schema, mask]
+      properties:
+        schema:
+          type: object
+          description: Full structure representing the requested JSON Schema payload.
+          additionalProperties: {}
+        mask:
+          $ref: '#/components/schemas/SchemaMask'
+        schema_version:
+          type: string
+          description: |
+            Semantic version of the schema (e.g. "1.2.0").
+            Frontend uses this for cache drift detection and audit (ADR-0023).
+          example: "1.2.0"
+        source:
+          type: string
+          enum: [cache, embedded, remote]
+          description: |
+            Data source of the schema response (ADR-0023 degradation strategy):
+            - cache:    Served from server-side schema cache (nominal path).
+            - embedded: Backend fell back to a bundled embedded schema (warn user).
+            - remote:   Fetched live from KubeVirt API (slow path, no cache).
+        degraded:
+          type: boolean
+          default: false
+          description: |
+            When true, the response uses an older or embedded fallback schema.
+            Frontend MUST display a warning banner per ADR-0023 UI Degradation States.
+        fetched_at:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when the schema was fetched or last cached.
+
+
+
     # ── Common ──────────────────────────────────────
     Health:
       type: object
@@ -2757,6 +2855,9 @@ components:
         pvc_name:
           type: string
           description: PVC/DataVolume name for PVC mode
+        pvc_namespace:
+          type: string
+          description: Kubernetes namespace where the PVC/DataVolume is located (required when source_type is 'pvc')
         cloud_init:
           type: string
           description: Cloud-init userdata YAML (applied at VM boot)
@@ -2790,6 +2891,11 @@ components:
         pvc_name:
           type: string
           description: Required when source_type is 'pvc'
+        pvc_namespace:
+          type: string
+          description: >-
+            Kubernetes namespace where the PVC/DataVolume is located.
+            Required when source_type is 'pvc'.
         cloud_init:
           type: string
           description: Cloud-init userdata YAML
@@ -2814,6 +2920,9 @@ components:
           type: string
         pvc_name:
           type: string
+        pvc_namespace:
+          type: string
+          description: Kubernetes namespace where the PVC/DataVolume is located
         cloud_init:
           type: string
         os_family:

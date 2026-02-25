@@ -4,10 +4,12 @@ import { useRef } from 'react';
 import {
     Button,
     Card,
+    Divider,
     Empty,
     Form,
     Input,
     Modal,
+    Radio,
     Space,
     Switch,
     Table,
@@ -55,7 +57,7 @@ function highlightText(text: string, highlight: string): React.ReactNode {
 }
 
 export function AdminTemplatesContent() {
-    const { t } = useTranslation(['admin', 'common']);
+    const { t } = useTranslation(['admin', 'common', 'error']);
     const templates = useAdminTemplatesController({ t });
     const searchInputRef = useRef<InputRef>(null);
 
@@ -289,6 +291,7 @@ export function AdminTemplatesContent() {
                 </div>
             </Card>
 
+            {/* ── Create Modal (master-flow Step 3) ── */}
             <Modal
                 title={t('common:button.add')}
                 open={templates.createOpen}
@@ -296,37 +299,83 @@ export function AdminTemplatesContent() {
                 onCancel={templates.closeCreateModal}
                 confirmLoading={templates.createPending}
                 destroyOnHidden={true}
+                width={640}
                 data-testid="template-create-modal"
             >
-                    <Form form={templates.createForm} layout="vertical" preserve={false}>
-                        <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
-                            <Input />
-                        </Form.Item>
-                        <Form.Item name="display_name" label={t('common:table.display_name')}>
-                            <Input />
-                        </Form.Item>
-                        <Form.Item name="os_family" label={t('templates.os_family')}>
-                            <Input placeholder={t('templates.os_family_placeholder')} />
-                        </Form.Item>
-                        <Form.Item name="os_version" label={t('templates.os_version')}>
-                            <Input placeholder={t('templates.os_version_placeholder')} />
-                        </Form.Item>
-                        <Form.Item name="description" label={t('common:table.description')}>
-                            <Input.TextArea rows={3} />
-                        </Form.Item>
-                        <Form.Item
-                            name="spec_text"
-                            label={t('templates.spec')}
-                            extra={t('templates.spec_help')}
-                        >
-                            <Input.TextArea rows={10} style={{ fontFamily: 'monospace' }} />
-                        </Form.Item>
-                        <Form.Item name="enabled" label={t('templates.enabled')} valuePropName="checked" initialValue={true}>
-                            <Switch />
-                        </Form.Item>
-                    </Form>
+                <Form form={templates.createForm} layout="vertical" preserve={false}>
+                    <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
+                        <Input placeholder="centos7-standard" />
+                    </Form.Item>
+                    <Form.Item name="display_name" label={t('common:table.display_name')}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="os_family" label={t('templates.os_family')}>
+                        <Input placeholder={t('templates.os_family_placeholder')} />
+                    </Form.Item>
+                    <Form.Item name="os_version" label={t('templates.os_version')}>
+                        <Input placeholder={t('templates.os_version_placeholder')} />
+                    </Form.Item>
+                    <Form.Item name="description" label={t('common:table.description')}>
+                        <Input.TextArea rows={3} />
+                    </Form.Item>
+
+                    {/* Image Source — master-flow Step 3: containerdisk vs pvc toggle */}
+                    <Divider orientation="left" plain>{t('templates.image_source')}</Divider>
+                    <Form.Item name="source_type" label={t('templates.source_type')} initialValue="image">
+                        <Radio.Group>
+                            <Radio value="image">{t('templates.source_containerdisk')}</Radio>
+                            <Radio value="pvc">{t('templates.source_pvc')}</Radio>
+                        </Radio.Group>
+                    </Form.Item>
+                    <Form.Item noStyle shouldUpdate={(prev, cur) => prev.source_type !== cur.source_type}>
+                        {({ getFieldValue }) =>
+                            getFieldValue('source_type') === 'pvc' ? (
+                                <>
+                                    <Form.Item
+                                        name="pvc_namespace"
+                                        label={t('templates.pvc_namespace')}
+                                        rules={[{ required: true, message: t('templates.pvc_namespace_required') }]}
+                                        extra={t('templates.pvc_namespace_help')}
+                                    >
+                                        <Input placeholder="default" />
+                                    </Form.Item>
+                                    <Form.Item
+                                        name="pvc_name"
+                                        label={t('templates.pvc_name')}
+                                        rules={[{ required: true, message: t('templates.pvc_name_required') }]}
+                                        extra={t('templates.pvc_name_help')}
+                                    >
+                                        <Input placeholder="centos7-base-disk" />
+                                    </Form.Item>
+                                </>
+                            ) : (
+                                <Form.Item name="image_url" label={t('templates.image_url')} rules={[{ required: true }]}>
+                                    <Input placeholder="docker.io/kubevirt/centos:7" />
+                                </Form.Item>
+                            )
+                        }
+                    </Form.Item>
+
+                    {/* cloud-init config — master-flow Step 3: YAML text, NOT JSON spec */}
+                    <Divider orientation="left" plain>{t('templates.cloud_init')}</Divider>
+                    <Form.Item
+                        name="cloud_init"
+                        extra={t('templates.cloud_init_help', 'YAML cloud-init configuration. Provides one-time password and initial OS setup.')}
+                    >
+                        <Input.TextArea
+                            rows={8}
+                            style={{ fontFamily: 'monospace', fontSize: 13 }}
+                            placeholder={'#cloud-config\nusers:\n  - name: admin\n    sudo: ALL=(ALL) NOPASSWD:ALL\nchpasswd:\n  expire: true\n  users:\n    - name: admin\n      password: changeme123'}
+                        />
+                    </Form.Item>
+
+                    <Form.Item name="enabled" label={t('templates.enabled')} valuePropName="checked" initialValue={true}>
+                        <Switch />
+                    </Form.Item>
+                </Form>
             </Modal>
 
+            {/* ── Edit Modal (master-flow Step 3) ── */}
             <Modal
                 title={t('common:button.edit')}
                 open={templates.editOpen}
@@ -334,32 +383,77 @@ export function AdminTemplatesContent() {
                 onCancel={templates.closeEditModal}
                 confirmLoading={templates.updatePending}
                 destroyOnHidden={true}
+                width={640}
                 data-testid="template-edit-modal"
             >
-                    <Form form={templates.editForm} layout="vertical" preserve={false}>
-                        <Form.Item name="display_name" label={t('common:table.display_name')}>
-                            <Input />
-                        </Form.Item>
-                        <Form.Item name="os_family" label={t('templates.os_family')}>
-                            <Input />
-                        </Form.Item>
-                        <Form.Item name="os_version" label={t('templates.os_version')}>
-                            <Input />
-                        </Form.Item>
-                        <Form.Item name="description" label={t('common:table.description')}>
-                            <Input.TextArea rows={3} />
-                        </Form.Item>
-                        <Form.Item
-                            name="spec_text"
-                            label={t('templates.spec')}
-                            extra={t('templates.spec_help')}
-                        >
-                            <Input.TextArea rows={10} style={{ fontFamily: 'monospace' }} />
-                        </Form.Item>
-                        <Form.Item name="enabled" label={t('templates.enabled')} valuePropName="checked">
-                            <Switch />
-                        </Form.Item>
-                    </Form>
+                <Form form={templates.editForm} layout="vertical" preserve={false}>
+                    <Form.Item name="display_name" label={t('common:table.display_name')}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="os_family" label={t('templates.os_family')}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="os_version" label={t('templates.os_version')}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="description" label={t('common:table.description')}>
+                        <Input.TextArea rows={3} />
+                    </Form.Item>
+
+                    {/* Image Source toggle */}
+                    <Divider orientation="left" plain>{t('templates.image_source')}</Divider>
+                    <Form.Item name="source_type" label={t('templates.source_type')}>
+                        <Radio.Group>
+                            <Radio value="image">{t('templates.source_containerdisk')}</Radio>
+                            <Radio value="pvc">{t('templates.source_pvc')}</Radio>
+                        </Radio.Group>
+                    </Form.Item>
+                    <Form.Item noStyle shouldUpdate={(prev, cur) => prev.source_type !== cur.source_type}>
+                        {({ getFieldValue }) =>
+                            getFieldValue('source_type') === 'pvc' ? (
+                                <>
+                                    <Form.Item
+                                        name="pvc_namespace"
+                                        label={t('templates.pvc_namespace')}
+                                        rules={[{ required: true, message: t('templates.pvc_namespace_required') }]}
+                                        extra={t('templates.pvc_namespace_help')}
+                                    >
+                                        <Input placeholder="default" />
+                                    </Form.Item>
+                                    <Form.Item
+                                        name="pvc_name"
+                                        label={t('templates.pvc_name')}
+                                        rules={[{ required: true, message: t('templates.pvc_name_required') }]}
+                                        extra={t('templates.pvc_name_help')}
+                                    >
+                                        <Input placeholder="centos7-base-disk" />
+                                    </Form.Item>
+                                </>
+                            ) : (
+                                <Form.Item name="image_url" label={t('templates.image_url')}>
+                                    <Input placeholder="docker.io/kubevirt/centos:7" />
+                                </Form.Item>
+                            )
+                        }
+                    </Form.Item>
+
+                    {/* cloud-init YAML editor */}
+                    <Divider orientation="left" plain>{t('templates.cloud_init')}</Divider>
+                    <Form.Item
+                        name="cloud_init"
+                        extra={t('templates.cloud_init_help', 'YAML cloud-init configuration. Provides one-time password and initial OS setup.')}
+                    >
+                        <Input.TextArea
+                            rows={8}
+                            style={{ fontFamily: 'monospace', fontSize: 13 }}
+                            placeholder={'#cloud-config\nusers:\n  - name: admin'}
+                        />
+                    </Form.Item>
+
+                    <Form.Item name="enabled" label={t('templates.enabled')} valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                </Form>
             </Modal>
 
             <Modal

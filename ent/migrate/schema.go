@@ -746,6 +746,7 @@ var (
 		{Name: "source_type", Type: field.TypeString, Nullable: true, Default: ""},
 		{Name: "image_url", Type: field.TypeString, Nullable: true},
 		{Name: "pvc_name", Type: field.TypeString, Nullable: true},
+		{Name: "pvc_namespace", Type: field.TypeString, Nullable: true},
 		{Name: "cloud_init", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "os_family", Type: field.TypeString, Nullable: true},
 		{Name: "os_version", Type: field.TypeString, Nullable: true},
@@ -766,7 +767,7 @@ var (
 			{
 				Name:    "template_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{TemplatesColumns[12]},
+				Columns: []*schema.Column{TemplatesColumns[13]},
 			},
 			{
 				Name:    "template_source_type",

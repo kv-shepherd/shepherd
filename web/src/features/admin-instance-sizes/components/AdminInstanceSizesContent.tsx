@@ -2,6 +2,7 @@
 
 import { useRef } from 'react';
 import {
+    Alert,
     Button,
     Card,
     Checkbox,
@@ -11,8 +12,8 @@ import {
     Input,
     InputNumber,
     Modal,
-    Select,
     Space,
+    Spin,
     Switch,
     Table,
     Tag,
@@ -25,8 +26,6 @@ import {
     DeleteOutlined,
     EditOutlined,
     HddOutlined,
-    MinusCircleOutlined,
-    PlusOutlined,
     ReloadOutlined,
     SearchOutlined,
     ThunderboltOutlined,
@@ -35,6 +34,13 @@ import { useTranslation } from 'react-i18next';
 
 import { useAdminInstanceSizesController } from '../hooks/useAdminInstanceSizesController';
 import { formatMemory, type InstanceSize } from '../types';
+import {
+    DynamicSchemaForm,
+    type DynamicSchemaFormHandle,
+    type SchemaNode,
+    type SchemaMask,
+} from '../../admin-templates/components/DynamicSchemaForm';
+import { useDynamicSchema } from '../../admin-templates/hooks/useDynamicSchema';
 
 const { Title, Text } = Typography;
 
@@ -61,11 +67,87 @@ function highlightText(text: string, highlight: string): React.ReactNode {
 }
 
 /**
- * Shared form fields for InstanceSize create/edit modals.
- * Uses Ant Design shouldUpdate pattern for conditional overcommit sections
- * and Form.List for GPU devices (per master-flow Stage 3 Step 4 design).
+ * Schema-driven spec_overrides section for InstanceSize modals.
+ *
+ * Replaces hardcoded Hugepages Select + GPU Form.List + JSON textarea.
+ * Loads schema+mask from GET /schemas/instancesize (ADR-0023 Stage 1).
+ *
+ * Degradation chain (ADR-0023):
+ *   success → DynamicSchemaForm renders mask fields
+ *   isError → collapsed warning, form still submittable without dynamic fields
+ *   isPending → loading spinner
  */
-function InstanceSizeFormFields({ isCreate }: { isCreate: boolean }) {
+function InstanceSizeSpecSection({
+    formRef,
+    disabled,
+}: {
+    formRef: React.RefObject<DynamicSchemaFormHandle | null>;
+    disabled?: boolean;
+}) {
+    const { t } = useTranslation(['admin', 'common']);
+    const { data, isError, isPending } = useDynamicSchema('instancesize');
+
+    if (isPending) {
+        return (
+            <Card size="small" style={{ textAlign: 'center', padding: 24 }}>
+                <Spin size="small" />
+                <Text type="secondary" style={{ marginLeft: 8 }}>
+                    {t('instanceSizes.schema_loading', 'Loading spec schema…')}
+                </Text>
+            </Card>
+        );
+    }
+
+    if (isError || !data) {
+        return (
+            <Alert
+                type="warning"
+                showIcon
+                message={t(
+                    'instanceSizes.schema_unavailable',
+                    'Spec schema unavailable — advanced KubeVirt settings cannot be configured right now.'
+                )}
+                style={{ marginBottom: 8 }}
+            />
+        );
+    }
+
+    return (
+        <Form.Item
+            name="spec_text"
+            // valuePropName="value" is injected by Form.Item automatically
+            noStyle
+        >
+            <DynamicSchemaForm
+                ref={formRef}
+                schema={data.schema as SchemaNode}
+                mask={data.mask as SchemaMask}
+                disabled={disabled}
+            />
+        </Form.Item>
+    );
+}
+
+/**
+ * Shared form fields for InstanceSize create/edit modals.
+ *
+ * Architecture:
+ * - Metadata fields (cpu_cores, memory_mb, overcommit, etc.) remain as
+ *   explicit Ant Design Form.Items — these are InstanceSize-specific API fields.
+ * - Spec overrides (hugepages, GPU devices, CPU model, etc.) are rendered
+ *   schema-driven via DynamicSchemaForm (ADR-0023 Stage 1).
+ *
+ * The `formRef` is passed down so the parent Form's onValuesChange can
+ * call formRef.current?.sync() to keep spec_text in sync (antd best practice:
+ * side effects in event handlers, not in render).
+ */
+function InstanceSizeFormFields({
+    isCreate,
+    formRef,
+}: {
+    isCreate: boolean;
+    formRef: React.RefObject<DynamicSchemaFormHandle | null>;
+}) {
     const { t } = useTranslation(['admin', 'common']);
 
     return (
@@ -97,7 +179,7 @@ function InstanceSizeFormFields({ isCreate }: { isCreate: boolean }) {
                 <InputNumber min={1} style={{ width: '100%' }} addonAfter={t('instanceSizes.cores')} />
             </Form.Item>
 
-            {/* CPU Overcommit: conditional reveal */}
+            {/* CPU Overcommit: conditional reveal using shouldUpdate (rendering only, no side effects) */}
             <Form.Item name="cpu_overcommit_enabled" valuePropName="checked">
                 <Checkbox>{t('instanceSizes.enable_cpu_overcommit')}</Checkbox>
             </Form.Item>
@@ -148,78 +230,27 @@ function InstanceSizeFormFields({ isCreate }: { isCreate: boolean }) {
                 <InputNumber min={1} style={{ width: '100%' }} addonAfter="GB" />
             </Form.Item>
 
-            {/* ── Advanced Settings ── */}
-            <Divider orientation="left" plain>
-                {t('instanceSizes.section_advanced')}
-            </Divider>
-
-            {/* Hugepages: Single Select replacing Switch + text input */}
-            <Form.Item name="hugepages_setting" label={t('instanceSizes.hugepages')}>
-                <Select
-                    options={[
-                        { value: 'none', label: 'None' },
-                        { value: '2Mi', label: '2Mi' },
-                        { value: '1Gi', label: '1Gi' },
-                    ]}
-                    placeholder={t('instanceSizes.hugepages_placeholder')}
-                />
-            </Form.Item>
-
-            <Form.Item name="dedicated_cpu" label={t('instanceSizes.dedicated')} valuePropName="checked">
-                <Switch />
-            </Form.Item>
-
             <Form.Item name="requires_sriov" label={t('instanceSizes.sriov')} valuePropName="checked">
                 <Switch />
             </Form.Item>
 
-            {/* GPU devices: dynamic Form.List */}
-            <Form.Item label={t('instanceSizes.gpu_devices')}>
-                <Form.List name="gpu_devices">
-                    {(fields, { add, remove }) => (
-                        <>
-                            {fields.map((field) => (
-                                <Space key={field.key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
-                                    <Form.Item
-                                        {...field}
-                                        name={[field.name, 'name']}
-                                        rules={[{ required: true, message: t('instanceSizes.gpu_name_required') }]}
-                                        style={{ margin: 0 }}
-                                    >
-                                        <Input placeholder="gpu1" style={{ width: 120 }} />
-                                    </Form.Item>
-                                    <Form.Item
-                                        {...field}
-                                        name={[field.name, 'deviceName']}
-                                        rules={[{ required: true, message: t('instanceSizes.gpu_device_required') }]}
-                                        style={{ margin: 0 }}
-                                    >
-                                        <Input placeholder="nvidia.com/GA102GL_A10" style={{ width: 280 }} />
-                                    </Form.Item>
-                                    <MinusCircleOutlined
-                                        onClick={() => remove(field.name)}
-                                        style={{ color: '#ff4d4f' }}
-                                    />
-                                </Space>
-                            ))}
-                            <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
-                                {t('instanceSizes.add_gpu')}
-                            </Button>
-                        </>
-                    )}
-                </Form.List>
-            </Form.Item>
+            {/* ── Spec Overrides (Schema-driven, ADR-0023 Stage 1) ── */}
+            <Divider orientation="left" plain>
+                {t('instanceSizes.section_advanced')}
+            </Divider>
 
-            {/* spec_overrides JSON (for advanced/escape-hatch usage) */}
-            <Form.Item
-                name="spec_overrides_text"
-                label={t('instanceSizes.spec_overrides')}
-                extra={t('instanceSizes.spec_overrides_help')}
-            >
-                <Input.TextArea rows={6} style={{ fontFamily: 'monospace', fontSize: 13 }} />
-            </Form.Item>
+            {/*
+             * DynamicSchemaForm renders KubeVirt spec fields driven by the
+             * mask from GET /schemas/instancesize.  This replaces the previous
+             * hardcoded Hugepages Select + GPU Form.List + JSON textarea.
+             *
+             * Data flow:
+             *   spec_text (JSON string in Form) ←→ DynamicSchemaForm
+             *   onValuesChange → formRef.current?.sync() → spec_text updated
+             */}
+            <InstanceSizeSpecSection formRef={formRef} disabled={false} />
 
-            <Form.Item name="enabled" label={t('instanceSizes.enabled')} valuePropName="checked" initialValue={true}>
+            <Form.Item name="enabled" label={t('instanceSizes.enabled')} valuePropName="checked" initialValue={true} style={{ marginTop: 16 }}>
                 <Switch />
             </Form.Item>
         </>
@@ -230,6 +261,11 @@ export function AdminInstanceSizesContent() {
     const { t } = useTranslation(['admin', 'common']);
     const sizes = useAdminInstanceSizesController({ t });
     const searchInputRef = useRef<InputRef>(null);
+
+    // Refs for DynamicSchemaForm imperative sync (antd best practice).
+    // formRef.current?.sync() is called in onValuesChange to update spec_text.
+    const createFormRef = useRef<DynamicSchemaFormHandle>(null);
+    const editFormRef = useRef<DynamicSchemaFormHandle>(null);
 
     const getColumnSearchProps = (dataIndex: keyof InstanceSize): Partial<ColumnsType<InstanceSize>[number]> => ({
         filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }: FilterDropdownProps) => (
@@ -438,7 +474,7 @@ export function AdminInstanceSizesContent() {
                     </Button>
                     <Button
                         type="primary"
-                        icon={<PlusOutlined />}
+                        icon={<HddOutlined />}
                         data-testid="instance-size-create-button"
                         onClick={sizes.openCreateModal}
                     >
@@ -488,12 +524,21 @@ export function AdminInstanceSizesContent() {
                 onCancel={sizes.closeCreateModal}
                 confirmLoading={sizes.createPending}
                 destroyOnHidden={true}
-                width={680}
+                width={720}
                 data-testid="instance-size-create-modal"
             >
-                    <Form form={sizes.createForm} layout="vertical" preserve={false}>
-                        <InstanceSizeFormFields isCreate={true} />
-                    </Form>
+                <Form
+                    form={sizes.createForm}
+                    layout="vertical"
+                    preserve={false}
+                    onValuesChange={() => {
+                        // antd best practice: side effects in event callbacks, not in render.
+                        // Sync spec_text JSON whenever any dynamic schema field changes.
+                        createFormRef.current?.sync();
+                    }}
+                >
+                    <InstanceSizeFormFields isCreate={true} formRef={createFormRef} />
+                </Form>
             </Modal>
 
             {/* Edit Modal */}
@@ -504,12 +549,19 @@ export function AdminInstanceSizesContent() {
                 onCancel={sizes.closeEditModal}
                 confirmLoading={sizes.updatePending}
                 destroyOnHidden={true}
-                width={680}
+                width={720}
                 data-testid="instance-size-edit-modal"
             >
-                    <Form form={sizes.editForm} layout="vertical" preserve={false}>
-                        <InstanceSizeFormFields isCreate={false} />
-                    </Form>
+                <Form
+                    form={sizes.editForm}
+                    layout="vertical"
+                    preserve={false}
+                    onValuesChange={() => {
+                        editFormRef.current?.sync();
+                    }}
+                >
+                    <InstanceSizeFormFields isCreate={false} formRef={editFormRef} />
+                </Form>
             </Modal>
 
             {/* Delete Modal */}

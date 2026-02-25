@@ -155,6 +155,11 @@
     "templates.pvc_name": "PVC / DataVolume 名称",
     "templates.pvc_name_required": "PVC 模式下名称必填",
     "templates.pvc_name_help": "目标命名空间中 PersistentVolumeClaim 或 DataVolume 的名称",
+    "templates.source_containerdisk": "容器镜像盘",
+    "templates.source_pvc": "PVC / DataVolume",
+    "templates.pvc_namespace": "PVC 命名空间",
+    "templates.pvc_namespace_help": "PVC/DataVolume 所在的 Kubernetes 命名空间（如 default）",
+    "templates.pvc_namespace_required": "PVC 命名空间必填",
     "templates.cloud_init": "Cloud-init 用户数据（YAML）",
     "templates.cloud_init_help": "VM 启动时应用的 cloud-config YAML（用户、软件包等）",
     "templates.image_source": "镜像源",
@@ -260,5 +265,9 @@
     "authProviders.env.test": "测试",
     "authProviders.env.prod": "生产",
     "authProviders.mapping.delete_confirm": "确定删除该映射吗？",
-    "authProviders.mapping.edit_title": "编辑映射"
+    "authProviders.mapping.edit_title": "编辑映射",
+    "templates.spec": "规格覆写（Schema 驱动）",
+    "dynamic_form.add_item": "添加 {{label}}",
+    "dynamic_form.invalid_path": "Schema 中未找到字段路径：{{path}}",
+    "dynamic_form.advanced_settings": "高级设置"
 }
