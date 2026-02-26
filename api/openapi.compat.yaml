@@ -1,4 +1,4 @@
-openapi: 3.1.0
+openapi: 3.0.3
 info:
   title: KubeVirt Shepherd API
   description: |
@@ -11,11 +11,9 @@ info:
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
-
 servers:
   - url: /api/v1
     description: Production API
-
 tags:
   - name: health
     description: Health check endpoints
@@ -49,7 +47,6 @@ tags:
     description: Pluggable authentication provider management
   - name: schemas
     description: Dynamic configuration schemas for entities
-
 paths:
   # ── Health ──────────────────────────────────────────
   /health/live:
@@ -65,7 +62,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
-
   /health/ready:
     get:
       tags: [health]
@@ -85,7 +81,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
   # ── Schemas ─────────────────────────────────────────
   /schemas/{entity_type}:
     get:
@@ -116,7 +111,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   # ── Systems ─────────────────────────────────────────
   /systems:
     get:
@@ -158,7 +152,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /systems/{system_id}:
     get:
       tags: [systems]
@@ -227,7 +220,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /systems/{system_id}/members:
     get:
       tags: [systems]
@@ -273,7 +265,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /systems/{system_id}/members/{user_id}:
     patch:
       tags: [systems]
@@ -315,7 +306,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
   # ── Services ────────────────────────────────────────
   /systems/{system_id}/services:
     get:
@@ -356,7 +346,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /systems/{system_id}/services/{service_id}:
     get:
       tags: [services]
@@ -421,7 +410,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   # ── VMs ─────────────────────────────────────────────
   /vms:
     get:
@@ -448,7 +436,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMList'
-
   /vms/request-context:
     get:
       tags: [vms]
@@ -464,7 +451,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMRequestContext'
-
   /vms/request:
     post:
       tags: [vms]
@@ -485,7 +471,6 @@ paths:
                 $ref: '#/components/schemas/ApprovalTicketResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
-
   /vms/batch:
     get:
       tags: [vms]
@@ -536,7 +521,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
   /vms/batch/power:
     post:
       tags: [vms]
@@ -566,7 +550,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
   /vms/batch/{batch_id}:
     get:
       tags: [vms]
@@ -583,7 +566,6 @@ paths:
                 $ref: '#/components/schemas/VMBatchStatusResponse'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /vms/batch/{batch_id}/retry:
     post:
       tags: [vms]
@@ -600,7 +582,6 @@ paths:
                 $ref: '#/components/schemas/VMBatchActionResponse'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /vms/batch/{batch_id}/cancel:
     post:
       tags: [vms]
@@ -617,7 +598,6 @@ paths:
                 $ref: '#/components/schemas/VMBatchActionResponse'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /vms/{vm_id}:
     get:
       tags: [vms]
@@ -658,7 +638,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /vms/{vm_id}/start:
     post:
       tags: [vms]
@@ -671,7 +650,6 @@ paths:
           description: Start accepted
         '404':
           $ref: '#/components/responses/NotFound'
-
   /vms/{vm_id}/stop:
     post:
       tags: [vms]
@@ -684,7 +662,6 @@ paths:
           description: Stop accepted
         '404':
           $ref: '#/components/responses/NotFound'
-
   /vms/{vm_id}/restart:
     post:
       tags: [vms]
@@ -697,7 +674,6 @@ paths:
           description: Restart accepted
         '404':
           $ref: '#/components/responses/NotFound'
-
   /vms/{vm_id}/power:
     post:
       tags: [vms]
@@ -729,7 +705,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /vms/{vm_id}/console/request:
     post:
       tags: [vms]
@@ -760,7 +735,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /vms/{vm_id}/console/status:
     get:
       tags: [vms]
@@ -782,7 +756,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /vms/{vm_id}/vnc:
     get:
       tags: [vms]
@@ -807,7 +780,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   # ── Approval ────────────────────────────────────────
   /approvals:
     get:
@@ -829,7 +801,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApprovalTicketList'
-
   /approvals/batch:
     post:
       tags: [approval]
@@ -858,7 +829,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
   /approvals/{ticket_id}/approve:
     post:
       tags: [approval]
@@ -877,7 +847,6 @@ paths:
           description: Request approved
         '404':
           $ref: '#/components/responses/NotFound'
-
   /approvals/{ticket_id}/reject:
     post:
       tags: [approval]
@@ -896,7 +865,6 @@ paths:
           description: Request rejected
         '404':
           $ref: '#/components/responses/NotFound'
-
   /approvals/{ticket_id}/cancel:
     post:
       tags: [approval]
@@ -913,7 +881,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   # ── Clusters ────────────────────────────────────────
   /admin/clusters:
     get:
@@ -947,7 +914,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Cluster'
-
   /admin/users:
     get:
       tags: [admin]
@@ -984,7 +950,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /admin/users/{user_id}:
     patch:
       tags: [admin]
@@ -1022,7 +987,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /admin/users/{user_id}/role-bindings:
     get:
       tags: [rbac, admin]
@@ -1064,7 +1028,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /admin/users/{user_id}/role-bindings/{binding_id}:
     delete:
       tags: [rbac, admin]
@@ -1078,7 +1041,6 @@ paths:
           description: Role binding deleted
         '404':
           $ref: '#/components/responses/NotFound'
-
   /admin/roles:
     get:
       tags: [rbac, admin]
@@ -1112,7 +1074,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /admin/roles/{role_id}:
     patch:
       tags: [rbac, admin]
@@ -1150,7 +1111,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /admin/permissions:
     get:
       tags: [rbac, admin]
@@ -1163,7 +1123,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PermissionList'
-
   /admin/auth-provider-types:
     get:
       tags: [auth-providers, admin]
@@ -1176,7 +1135,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthProviderTypeList'
-
   /admin/auth-providers:
     get:
       tags: [auth-providers, admin]
@@ -1210,7 +1168,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /admin/auth-providers/{provider_id}:
     patch:
       tags: [auth-providers, admin]
@@ -1246,7 +1203,6 @@ paths:
           description: Authentication provider deleted
         '404':
           $ref: '#/components/responses/NotFound'
-
   /admin/auth-providers/{provider_id}/test-connection:
     post:
       tags: [auth-providers, admin]
@@ -1263,7 +1219,6 @@ paths:
                 $ref: '#/components/schemas/AuthProviderConnectionTestResult'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /admin/auth-providers/{provider_id}/sample:
     get:
       tags: [auth-providers, admin]
@@ -1280,7 +1235,6 @@ paths:
                 $ref: '#/components/schemas/AuthProviderSampleResponse'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /admin/auth-providers/{provider_id}/sync:
     post:
       tags: [auth-providers, admin]
@@ -1305,7 +1259,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /admin/auth-providers/{provider_id}/group-mappings:
     get:
       tags: [auth-providers, admin]
@@ -1347,7 +1300,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /admin/auth-providers/{provider_id}/group-mappings/{mapping_id}:
     patch:
       tags: [auth-providers, admin]
@@ -1387,7 +1339,6 @@ paths:
           description: Group mapping deleted
         '404':
           $ref: '#/components/responses/NotFound'
-
   /admin/rate-limits/exemptions:
     get:
       tags: [admin]
@@ -1428,7 +1379,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /admin/rate-limits/exemptions/{user_id}:
     delete:
       tags: [admin]
@@ -1443,7 +1393,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /admin/rate-limits/users/{user_id}:
     put:
       tags: [admin]
@@ -1470,7 +1419,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
   /admin/rate-limits/status:
     get:
       tags: [admin]
@@ -1485,7 +1433,6 @@ paths:
                 $ref: '#/components/schemas/RateLimitStatusList'
         '403':
           $ref: '#/components/responses/Forbidden'
-
   # ── Templates ───────────────────────────────────────
   /admin/templates:
     get:
@@ -1523,7 +1470,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /admin/templates/{template_id}:
     patch:
       tags: [templates, admin]
@@ -1559,7 +1505,6 @@ paths:
           description: Template deleted
         '404':
           $ref: '#/components/responses/NotFound'
-
   /templates:
     get:
       tags: [templates]
@@ -1575,7 +1520,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TemplateList'
-
   # ── Instance Sizes ──────────────────────────────────
   /admin/instance-sizes:
     get:
@@ -1610,7 +1554,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /admin/instance-sizes/{instance_size_id}:
     patch:
       tags: [instance-sizes, admin]
@@ -1646,7 +1589,6 @@ paths:
           description: Instance size deleted
         '404':
           $ref: '#/components/responses/NotFound'
-
   /instance-sizes:
     get:
       tags: [instance-sizes]
@@ -1659,7 +1601,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InstanceSizeList'
-
   # ── Auth ────────────────────────────────────────────
   /auth/login:
     post:
@@ -1682,7 +1623,6 @@ paths:
                 $ref: '#/components/schemas/LoginResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
   /auth/me:
     get:
       tags: [auth]
@@ -1699,7 +1639,6 @@ paths:
                 $ref: '#/components/schemas/UserInfo'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
   /auth/change-password:
     post:
       tags: [auth]
@@ -1720,7 +1659,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
   # ── Namespace Registry (ADR-0017) ────────────────────
   /admin/namespaces:
     get:
@@ -1766,7 +1704,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
-
   /admin/namespaces/{namespace_id}:
     get:
       tags: [namespaces, admin]
@@ -1828,7 +1765,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
   # ── Cluster Environment Update ───────────────────────
   /admin/clusters/{cluster_id}/environment:
     put:
@@ -1856,7 +1792,6 @@ paths:
                 $ref: '#/components/schemas/Cluster'
         '404':
           $ref: '#/components/responses/NotFound'
-
   # ── Notifications (ADR-0015 §20) ─────────────────────
   /notifications:
     get:
@@ -1881,7 +1816,6 @@ paths:
                 $ref: '#/components/schemas/NotificationList'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
   /notifications/unread-count:
     get:
       tags: [notifications]
@@ -1896,7 +1830,6 @@ paths:
                 $ref: '#/components/schemas/UnreadCount'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
   /notifications/{notification_id}/read:
     patch:
       tags: [notifications]
@@ -1909,7 +1842,6 @@ paths:
           description: Notification marked as read
         '404':
           $ref: '#/components/responses/NotFound'
-
   /notifications/mark-all-read:
     post:
       tags: [notifications]
@@ -1918,7 +1850,6 @@ paths:
       responses:
         '204':
           description: All notifications marked as read
-
   # ── Audit Logs ──────────────────────────────────────
   /audit-logs:
     get:
@@ -1955,7 +1886,6 @@ paths:
                 $ref: '#/components/schemas/AuditLogList'
         '401':
           $ref: '#/components/responses/Unauthorized'
-
 components:
   # ── Security Schemes ────────────────────────────────
   securitySchemes:
@@ -1963,7 +1893,6 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-
   # ── Reusable Parameters (ADR-0023 Pagination) ──────
   parameters:
     Page:
@@ -2133,7 +2062,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-
   # ── Schemas ─────────────────────────────────────────
   schemas:
     MaskField:
@@ -2192,9 +2120,6 @@ components:
           type: string
           format: date-time
           description: ISO 8601 timestamp when the schema was fetched or last cached.
-
-
-
     # ── Common ──────────────────────────────────────
     Health:
       type: object
@@ -2209,7 +2134,6 @@ components:
           type: object
           additionalProperties:
             type: string
-
     Error:
       type: object
       required: [code]
@@ -2227,7 +2151,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FieldError'
-
     FieldError:
       type: object
       required: [field, code]
@@ -2238,7 +2161,6 @@ components:
           type: string
         message:
           type: string
-
     Pagination:
       type: object
       properties:
@@ -2250,7 +2172,6 @@ components:
           type: integer
         total_pages:
           type: integer
-
     # ── System ──────────────────────────────────────
     System:
       type: object
@@ -2273,7 +2194,6 @@ components:
         updated_at:
           type: string
           format: date-time
-
     SystemCreateRequest:
       type: object
       required: [name]
@@ -2288,7 +2208,6 @@ components:
         description:
           type: string
           description: Markdown supported
-
     SystemUpdateRequest:
       type: object
       required: [description]
@@ -2298,7 +2217,6 @@ components:
             validate: "required"
           type: string
           description: Markdown supported
-
     SystemList:
       type: object
       properties:
@@ -2308,7 +2226,6 @@ components:
             $ref: '#/components/schemas/System'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     # ── Service ─────────────────────────────────────
     Service:
       type: object
@@ -2327,7 +2244,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     ServiceCreateRequest:
       type: object
       required: [name]
@@ -2341,7 +2257,6 @@ components:
         description:
           type: string
           description: Markdown supported
-
     ServiceUpdateRequest:
       type: object
       required: [description]
@@ -2351,7 +2266,6 @@ components:
             validate: "required"
           type: string
           description: Markdown supported
-
     ServiceList:
       type: object
       properties:
@@ -2361,7 +2275,6 @@ components:
             $ref: '#/components/schemas/Service'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     # ── VM ──────────────────────────────────────────
     VM:
       type: object
@@ -2395,7 +2308,6 @@ components:
           type: string
           enum: [test, prod]
           description: Inherited from cluster environment (ADR-0015 §15)
-
     VMCreateRequest:
       type: object
       required: [service_id, template_id, instance_size_id, namespace, reason]
@@ -2425,7 +2337,6 @@ components:
             validate: "required"
           type: string
         # ⚠️ cluster_id is intentionally ABSENT — see ADR-0017
-
     VMRequestContext:
       type: object
       required: [templates, instance_sizes, namespaces]
@@ -2442,7 +2353,6 @@ components:
           type: array
           items:
             type: string
-
     VMList:
       type: object
       properties:
@@ -2452,19 +2362,15 @@ components:
             $ref: '#/components/schemas/VM'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     VMBatchOperation:
       type: string
       enum: [CREATE, DELETE, POWER]
-
     VMBatchPowerAction:
       type: string
       enum: [START, STOP, RESTART]
-
     VMBatchParentStatus:
       type: string
       enum: [PENDING_APPROVAL, IN_PROGRESS, COMPLETED, PARTIAL_SUCCESS, FAILED, CANCELLED]
-
     VMBatchChildItem:
       type: object
       properties:
@@ -2488,7 +2394,6 @@ components:
           description: Required for CREATE operation
         reason:
           type: string
-
     VMBatchPowerItem:
       type: object
       required: [vm_id]
@@ -2497,7 +2402,6 @@ components:
           type: string
         reason:
           type: string
-
     VMBatchSubmitRequest:
       type: object
       required: [operation, items]
@@ -2519,7 +2423,6 @@ components:
           maxItems: 100
           items:
             $ref: '#/components/schemas/VMBatchChildItem'
-
     VMBatchPowerRequest:
       type: object
       required: [operation, items]
@@ -2541,7 +2444,6 @@ components:
           maxItems: 100
           items:
             $ref: '#/components/schemas/VMBatchPowerItem'
-
     VMBatchSubmitResponse:
       type: object
       required: [batch_id, status, status_url, retry_after_seconds]
@@ -2554,7 +2456,6 @@ components:
           type: string
         retry_after_seconds:
           type: integer
-
     VMBatchChildStatus:
       type: object
       required: [ticket_id, event_id, status]
@@ -2575,7 +2476,6 @@ components:
         attempt_count:
           type: integer
           minimum: 0
-
     VMBatchStatusResponse:
       type: object
       required: [batch_id, operation, status, child_count, success_count, failed_count, pending_count, children, created_by, created_at, updated_at]
@@ -2606,7 +2506,6 @@ components:
         updated_at:
           type: string
           format: date-time
-
     VMBatchActionResponse:
       type: object
       required: [batch_id, status, affected_count]
@@ -2622,15 +2521,12 @@ components:
           description: Child ticket IDs that were actually affected by retry/cancel action.
           items:
             type: string
-
     VMConsoleRequestStatus:
       type: string
       enum: [PENDING_APPROVAL, APPROVED, REJECTED]
-
     VMConsoleStatus:
       type: string
       enum: [NOT_REQUESTED, PENDING_APPROVAL, APPROVED, REJECTED]
-
     VMConsoleRequestResponse:
       type: object
       required: [status]
@@ -2638,10 +2534,11 @@ components:
         status:
           $ref: '#/components/schemas/VMConsoleRequestStatus'
         ticket_id:
-          type: ["string", "null"]
+          type: "string"
+          nullable: true
         vnc_url:
-          type: ["string", "null"]
-
+          type: "string"
+          nullable: true
     VMConsoleStatusResponse:
       type: object
       required: [status]
@@ -2649,10 +2546,11 @@ components:
         status:
           $ref: '#/components/schemas/VMConsoleStatus'
         ticket_id:
-          type: ["string", "null"]
+          type: "string"
+          nullable: true
         vnc_url:
-          type: ["string", "null"]
-
+          type: "string"
+          nullable: true
     VMVNCSessionResponse:
       type: object
       required: [status, vm_id]
@@ -2665,7 +2563,6 @@ components:
         websocket_path:
           type: string
           description: Relative websocket/proxy path for noVNC bootstrap.
-
     # ── Approval ────────────────────────────────────
     ApprovalTicketResponse:
       type: object
@@ -2680,7 +2577,6 @@ components:
           type: string
           enum: [CREATE, DELETE, VNC_ACCESS]
           description: Type of operation this ticket represents (ADR-0015)
-
     ApprovalTicket:
       type: object
       required: [id, event_id, status, requester]
@@ -2711,13 +2607,13 @@ components:
           type: string
           description: For DELETE tickets, the VM name (for display)
         ticket_payload:
-          type: ["object", "null"]
+          type: "object"
+          nullable: true
           description: Contextual payload of the original request depending on operation_type
           additionalProperties: true
         created_at:
           type: string
           format: date-time
-
     ApprovalTicketList:
       type: object
       properties:
@@ -2727,7 +2623,6 @@ components:
             $ref: '#/components/schemas/ApprovalTicket'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     DeleteVMResponse:
       type: object
       required: [ticket_id, event_id, status]
@@ -2739,7 +2634,6 @@ components:
         status:
           type: string
           enum: [PENDING]
-
     ApprovalDecisionRequest:
       type: object
       properties:
@@ -2751,8 +2645,8 @@ components:
         enable_override:
           type: boolean
           description: >
-            When true, admin overrides default resource requests/limits
-            from InstanceSize (master-flow Stage 5.B).
+            When true, admin overrides default resource requests/limits from InstanceSize (master-flow Stage 5.B).
+
         cpu_request:
           x-oapi-codegen-extra-tags:
             validate: "gte=1"
@@ -2785,7 +2679,6 @@ components:
           description: Disk size in GB, admin can adjust (Stage 5.B)
         comment:
           type: string
-
     RejectDecisionRequest:
       type: object
       required: [reason]
@@ -2794,7 +2687,6 @@ components:
           x-oapi-codegen-extra-tags:
             validate: "required"
           type: string
-
     # ── Cluster ─────────────────────────────────────
     Cluster:
       type: object
@@ -2829,7 +2721,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     ClusterCreateRequest:
       type: object
       required: [name, kubeconfig]
@@ -2852,7 +2743,6 @@ components:
           type: string
           format: byte
           description: Base64-encoded kubeconfig (stored encrypted, ADR-0012)
-
     ClusterEnvironmentUpdate:
       type: object
       required: [environment]
@@ -2860,7 +2750,6 @@ components:
         environment:
           type: string
           enum: [test, prod]
-
     ClusterList:
       type: object
       properties:
@@ -2870,7 +2759,6 @@ components:
             $ref: '#/components/schemas/Cluster'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     # ── Template ────────────────────────────────────
     Template:
       type: object
@@ -2909,7 +2797,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     TemplateCreateRequest:
       type: object
       required: [name]
@@ -2937,8 +2824,7 @@ components:
         pvc_namespace:
           type: string
           description: >-
-            Kubernetes namespace where the PVC/DataVolume is located.
-            Required when source_type is 'pvc'.
+            Kubernetes namespace where the PVC/DataVolume is located. Required when source_type is 'pvc'.
         cloud_init:
           type: string
           description: Cloud-init userdata YAML
@@ -2948,7 +2834,6 @@ components:
           type: string
         enabled:
           type: boolean
-
     TemplateUpdateRequest:
       type: object
       properties:
@@ -2976,7 +2861,6 @@ components:
           type: string
         enabled:
           type: boolean
-
     TemplateList:
       type: object
       properties:
@@ -2986,7 +2870,6 @@ components:
             $ref: '#/components/schemas/Template'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     # ── Instance Size (ADR-0018) ────────────────────
     InstanceSize:
       type: object
@@ -3024,7 +2907,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     InstanceSizeCreateRequest:
       type: object
       required: [name, cpu_cores, memory_mb]
@@ -3079,7 +2961,6 @@ components:
           type: integer
         enabled:
           type: boolean
-
     InstanceSizeUpdateRequest:
       type: object
       properties:
@@ -3131,7 +3012,6 @@ components:
           type: integer
         enabled:
           type: boolean
-
     InstanceSizeList:
       type: object
       properties:
@@ -3141,7 +3021,6 @@ components:
             $ref: '#/components/schemas/InstanceSize'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     # ── Auth ────────────────────────────────────────
     LoginRequest:
       type: object
@@ -3156,7 +3035,6 @@ components:
             validate: "required"
           type: string
           format: password
-
     LoginResponse:
       type: object
       required: [token]
@@ -3164,11 +3042,11 @@ components:
         token:
           type: string
         expires_at:
-          type: ["string", "null"]
+          type: "string"
+          nullable: true
           format: date-time
         force_password_change:
           type: boolean
-
     UserInfo:
       type: object
       required: [id, username]
@@ -3192,7 +3070,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     User:
       type: object
       required: [id, username, enabled, created_at]
@@ -3214,7 +3091,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     UserList:
       type: object
       properties:
@@ -3224,7 +3100,6 @@ components:
             $ref: '#/components/schemas/User'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     UserCreateRequest:
       type: object
       required: [username, password]
@@ -3246,7 +3121,6 @@ components:
           type: boolean
         force_password_change:
           type: boolean
-
     UserUpdateRequest:
       type: object
       properties:
@@ -3261,7 +3135,6 @@ components:
           format: password
         force_password_change:
           type: boolean
-
     Role:
       type: object
       required: [id, name, permissions, built_in, enabled]
@@ -3285,7 +3158,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     RoleList:
       type: object
       properties:
@@ -3295,7 +3167,6 @@ components:
             $ref: '#/components/schemas/Role'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     RoleCreateRequest:
       type: object
       required: [name, permissions]
@@ -3316,7 +3187,6 @@ components:
             type: string
         enabled:
           type: boolean
-
     RoleUpdateRequest:
       type: object
       properties:
@@ -3330,7 +3200,6 @@ components:
             type: string
         enabled:
           type: boolean
-
     Permission:
       type: object
       required: [key]
@@ -3339,7 +3208,6 @@ components:
           type: string
         description:
           type: string
-
     PermissionList:
       type: object
       properties:
@@ -3349,7 +3217,6 @@ components:
             $ref: '#/components/schemas/Permission'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     GlobalRoleBinding:
       type: object
       required: [id, user_id, role_id, role_name, scope_type]
@@ -3376,7 +3243,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     GlobalRoleBindingList:
       type: object
       properties:
@@ -3386,7 +3252,6 @@ components:
             $ref: '#/components/schemas/GlobalRoleBinding'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     GlobalRoleBindingCreateRequest:
       type: object
       required: [role_id]
@@ -3405,7 +3270,6 @@ components:
           items:
             type: string
             enum: [test, prod]
-
     AuthProvider:
       type: object
       required: [id, name, auth_type, enabled]
@@ -3432,7 +3296,6 @@ components:
         updated_at:
           type: string
           format: date-time
-
     AuthProviderList:
       type: object
       properties:
@@ -3442,7 +3305,6 @@ components:
             $ref: '#/components/schemas/AuthProvider'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     AuthProviderCreateRequest:
       type: object
       required: [name, auth_type]
@@ -3463,7 +3325,6 @@ components:
           type: boolean
         sort_order:
           type: integer
-
     AuthProviderUpdateRequest:
       type: object
       properties:
@@ -3476,7 +3337,6 @@ components:
           type: boolean
         sort_order:
           type: integer
-
     AuthProviderType:
       type: object
       required: [type, display_name, built_in]
@@ -3492,7 +3352,6 @@ components:
         config_schema:
           type: object
           additionalProperties: true
-
     AuthProviderTypeList:
       type: object
       required: [items]
@@ -3503,7 +3362,6 @@ components:
             $ref: '#/components/schemas/AuthProviderType'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     AuthProviderConnectionTestResult:
       type: object
       required: [success]
@@ -3512,7 +3370,6 @@ components:
           type: boolean
         message:
           type: string
-
     AuthProviderSampleField:
       type: object
       required: [field, value_type, unique_count]
@@ -3528,7 +3385,6 @@ components:
           type: array
           items:
             type: string
-
     AuthProviderSampleResponse:
       type: object
       required: [provider_id, fields]
@@ -3539,7 +3395,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AuthProviderSampleField'
-
     AuthProviderGroupSyncRequest:
       type: object
       required: [source_field, groups]
@@ -3555,7 +3410,6 @@ components:
           minItems: 1
           items:
             type: string
-
     IdPSyncedGroup:
       type: object
       required: [id, provider_id, external_group_id, group_name]
@@ -3576,7 +3430,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     AuthProviderGroupSyncResponse:
       type: object
       properties:
@@ -3584,7 +3437,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/IdPSyncedGroup'
-
     IdPGroupMapping:
       type: object
       required: [id, provider_id, external_group_id, role_id]
@@ -3616,7 +3468,6 @@ components:
         updated_at:
           type: string
           format: date-time
-
     IdPGroupMappingList:
       type: object
       properties:
@@ -3626,7 +3477,6 @@ components:
             $ref: '#/components/schemas/IdPGroupMapping'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     IdPGroupMappingCreateRequest:
       type: object
       required: [external_group_id, role_id]
@@ -3650,7 +3500,6 @@ components:
           items:
             type: string
             enum: [test, prod]
-
     IdPGroupMappingUpdateRequest:
       type: object
       properties:
@@ -3665,7 +3514,6 @@ components:
           items:
             type: string
             enum: [test, prod]
-
     RateLimitExemptionCreateRequest:
       type: object
       required: [user_id]
@@ -3677,9 +3525,9 @@ components:
         reason:
           type: string
         expires_at:
-          type: ["string", "null"]
+          type: "string"
+          nullable: true
           format: date-time
-
     RateLimitExemption:
       type: object
       required: [user_id, exempted_by, created_at, updated_at]
@@ -3699,28 +3547,29 @@ components:
         updated_at:
           type: string
           format: date-time
-
     RateLimitUserOverrideRequest:
       type: object
       properties:
         max_pending_parents:
           x-oapi-codegen-extra-tags:
             validate: "gte=1"
-          type: ["integer", "null"]
+          type: "integer"
+          nullable: true
           minimum: 1
         max_pending_children:
           x-oapi-codegen-extra-tags:
             validate: "gte=1"
-          type: ["integer", "null"]
+          type: "integer"
+          nullable: true
           minimum: 1
         cooldown_seconds:
           x-oapi-codegen-extra-tags:
             validate: "gte=0"
-          type: ["integer", "null"]
+          type: "integer"
+          nullable: true
           minimum: 0
         reason:
           type: string
-
     RateLimitUserOverride:
       type: object
       required: [user_id, updated_by, created_at, updated_at]
@@ -3728,11 +3577,14 @@ components:
         user_id:
           type: string
         max_pending_parents:
-          type: ["integer", "null"]
+          type: "integer"
+          nullable: true
         max_pending_children:
-          type: ["integer", "null"]
+          type: "integer"
+          nullable: true
         cooldown_seconds:
-          type: ["integer", "null"]
+          type: "integer"
+          nullable: true
         reason:
           type: string
         updated_by:
@@ -3743,7 +3595,6 @@ components:
         updated_at:
           type: string
           format: date-time
-
     RateLimitUserStatus:
       type: object
       required: [user_id, exempted, effective_max_pending_parents, effective_max_pending_children, effective_cooldown_seconds, current_pending_parents, current_pending_children, cooldown_remaining_seconds]
@@ -3753,7 +3604,8 @@ components:
         exempted:
           type: boolean
         exemption_expires_at:
-          type: ["string", "null"]
+          type: "string"
+          nullable: true
           format: date-time
         effective_max_pending_parents:
           type: integer
@@ -3767,7 +3619,6 @@ components:
           type: integer
         cooldown_remaining_seconds:
           type: integer
-
     RateLimitStatusList:
       type: object
       required: [items, generated_at]
@@ -3781,7 +3632,6 @@ components:
           format: date-time
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     SystemMember:
       type: object
       required: [user_id, username, role]
@@ -3800,7 +3650,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     SystemMemberList:
       type: object
       properties:
@@ -3810,7 +3659,6 @@ components:
             $ref: '#/components/schemas/SystemMember'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     SystemMemberCreateRequest:
       type: object
       required: [user_id, role]
@@ -3824,7 +3672,6 @@ components:
             validate: "required,oneof=owner admin member viewer"
           type: string
           enum: [owner, admin, member, viewer]
-
     SystemMemberRoleUpdateRequest:
       type: object
       required: [role]
@@ -3834,7 +3681,6 @@ components:
             validate: "required,oneof=owner admin member viewer"
           type: string
           enum: [owner, admin, member, viewer]
-
     ChangePasswordRequest:
       type: object
       required: [old_password, new_password]
@@ -3849,7 +3695,6 @@ components:
             validate: "required"
           type: string
           format: password
-
     # ── Audit Log ──────────────────────────────────────
     AuditLog:
       type: object
@@ -3871,7 +3716,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     AuditLogList:
       type: object
       properties:
@@ -3906,7 +3750,6 @@ components:
         updated_at:
           type: string
           format: date-time
-
     NamespaceCreateRequest:
       type: object
       required: [name, environment]
@@ -3927,7 +3770,6 @@ components:
             validate: "max=512"
           type: string
           maxLength: 512
-
     NamespaceUpdateRequest:
       type: object
       properties:
@@ -3938,7 +3780,6 @@ components:
           maxLength: 512
         enabled:
           type: boolean
-
     NamespaceRegistryList:
       type: object
       properties:
@@ -3948,7 +3789,6 @@ components:
             $ref: '#/components/schemas/NamespaceRegistry'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     # ── Notification (ADR-0015 §20) ──────────────────
     Notification:
       type: object
@@ -3975,7 +3815,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     NotificationList:
       type: object
       properties:
@@ -3985,14 +3824,12 @@ components:
             $ref: '#/components/schemas/Notification'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     UnreadCount:
       type: object
       required: [count]
       properties:
         count:
           type: integer
-
     # ── Batch List ───────────────────────────────────
     VMBatchJobSummary:
       type: object
@@ -4017,7 +3854,6 @@ components:
         created_at:
           type: string
           format: date-time
-
     VMBatchList:
       type: object
       properties:
@@ -4027,7 +3863,6 @@ components:
             $ref: '#/components/schemas/VMBatchJobSummary'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     # ── VM Power Request ──────────────────────────────
     VMPowerRequest:
       type: object
@@ -4039,7 +3874,6 @@ components:
           type: string
           enum: [start, stop, restart]
           description: Power action to execute on the VM
-
     # ── Rate Limit Exemption List ─────────────────────
     RateLimitExemptionList:
       type: object
@@ -4050,6 +3884,5 @@ components:
             $ref: '#/components/schemas/RateLimitExemption'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
 security:
   - BearerAuth: []
