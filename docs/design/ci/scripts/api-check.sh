@@ -47,9 +47,22 @@ fi
 echo "🔄 Regenerating API code from OpenAPI spec..."
 cd "${PROJECT_ROOT}"
 
+if [ "${REQUIRE_OPENAPI_COMPAT:-0}" = "1" ]; then
+    echo "🔄 Generating OpenAPI compat artifact (REQUIRE_OPENAPI_COMPAT=1)..."
+    if ! make api-compat-generate > /dev/null 2>&1; then
+        echo -e "${RED}❌ OpenAPI compat generation failed!${NC}"
+        exit 2
+    fi
+fi
+
 if ! make api-generate > /dev/null 2>&1; then
     echo -e "${RED}❌ Code generation failed!${NC}"
     echo "Please check that oapi-codegen and openapi-typescript are properly installed."
+    exit 2
+fi
+
+if ! make api-compat > /dev/null 2>&1; then
+    echo -e "${RED}❌ OpenAPI compat check failed!${NC}"
     exit 2
 fi
 
