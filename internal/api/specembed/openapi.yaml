@@ -1,0 +1,4055 @@
+openapi: 3.1.0
+info:
+  title: KubeVirt Shepherd API
+  description: |
+    API for managing KubeVirt virtual machines and cloud-native governance.
+    Adheres to ADR-0021: API Contract-First Development.
+  version: 1.0.0
+  contact:
+    name: KubeVirt Shepherd Team
+    url: https://github.com/kv-shepherd/shepherd
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: /api/v1
+    description: Production API
+
+tags:
+  - name: health
+    description: Health check endpoints
+  - name: systems
+    description: System management (ADR-0015)
+  - name: services
+    description: Service management
+  - name: vms
+    description: Virtual machine management
+  - name: approval
+    description: Approval workflow (ADR-0005)
+  - name: clusters
+    description: Cluster management
+  - name: templates
+    description: Template management
+  - name: instance-sizes
+    description: Instance size management (ADR-0018)
+  - name: auth
+    description: Authentication
+  - name: admin
+    description: Admin operations
+  - name: audit
+    description: Audit log operations
+  - name: namespaces
+    description: Namespace registry management (ADR-0017)
+  - name: notifications
+    description: Platform inbox notifications (ADR-0015 §20)
+  - name: rbac
+    description: RBAC role and global binding management
+  - name: auth-providers
+    description: Pluggable authentication provider management
+  - name: schemas
+    description: Dynamic configuration schemas for entities
+
+paths:
+  # ── Health ──────────────────────────────────────────
+  /health/live:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      operationId: getLiveness
+      security: []
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /health/ready:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      operationId: getReadiness
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Schemas ─────────────────────────────────────────
+  /schemas/{entity_type}:
+    get:
+      tags: [schemas]
+      summary: Retrieve dynamic schema and UI mask for an entity
+      operationId: getDynamicSchema
+      # Public endpoint: schema metadata does not contain sensitive data and
+      # must be accessible before a user logs in (bootstrap scenario, ADR-0023).
+      security: []
+      parameters:
+        - name: entity_type
+          in: path
+          required: true
+          schema:
+            type: string
+            # Only entity types with dynamic schema forms are listed here.
+            # template: excluded — cloud_init is a static YAML textarea, no dynamic schema (master-flow Step 3).
+            # cluster:  excluded — no cluster-level override schema defined yet (ADR-0023 phase 2).
+            enum: [instancesize]
+      responses:
+        '200':
+          description: Dynamic schema retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DynamicSchemaResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ── Systems ─────────────────────────────────────────
+  /systems:
+    get:
+      tags: [systems]
+      summary: List systems
+      operationId: listSystems
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/SortBy'
+        - $ref: '#/components/parameters/SortOrder'
+      responses:
+        '200':
+          description: System list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [systems]
+      summary: Create system (self-service, no approval)
+      operationId: createSystem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemCreateRequest'
+      responses:
+        '201':
+          description: System created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/System'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /systems/{system_id}:
+    get:
+      tags: [systems]
+      summary: Get system by ID
+      operationId: getSystem
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+      responses:
+        '200':
+          description: System details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/System'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [systems]
+      summary: Update system description
+      description: |
+        Stage 4.C: only `description` is mutable.
+        System name is immutable after creation.
+      operationId: updateSystem
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemUpdateRequest'
+      responses:
+        '200':
+          description: System updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/System'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [systems]
+      summary: Delete system
+      description: |
+        Requires typing system name to confirm (ADR-0015 §13).
+        Cascade constraint: must have zero child services.
+      operationId: deleteSystem
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - name: confirm_name
+          in: query
+          description: |
+            Type system name to confirm deletion (ADR-0015 §13 addendum).
+            Must match the system name exactly.
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: System deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /systems/{system_id}/members:
+    get:
+      tags: [systems]
+      summary: List system members
+      operationId: listSystemMembers
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+      responses:
+        '200':
+          description: System member list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemMemberList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [systems]
+      summary: Add system member
+      operationId: addSystemMember
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemMemberCreateRequest'
+      responses:
+        '201':
+          description: System member created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /systems/{system_id}/members/{user_id}:
+    patch:
+      tags: [systems]
+      summary: Update system member role
+      operationId: updateSystemMemberRole
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/UserID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemMemberRoleUpdateRequest'
+      responses:
+        '200':
+          description: System member updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [systems]
+      summary: Remove system member
+      operationId: deleteSystemMember
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '204':
+          description: System member removed
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Services ────────────────────────────────────────
+  /systems/{system_id}/services:
+    get:
+      tags: [services]
+      summary: List services in a system
+      operationId: listServices
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Service list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceList'
+    post:
+      tags: [services]
+      summary: Create service (self-service, no approval)
+      operationId: createService
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceCreateRequest'
+      responses:
+        '201':
+          description: Service created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /systems/{system_id}/services/{service_id}:
+    get:
+      tags: [services]
+      summary: Get service details
+      operationId: getService
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/ServiceID'
+      responses:
+        '200':
+          description: Service details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [services]
+      summary: Update service description
+      description: |
+        Stage 4.C: only `description` is mutable.
+        Service name is immutable after creation.
+      operationId: updateService
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/ServiceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceUpdateRequest'
+      responses:
+        '200':
+          description: Service updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [services]
+      summary: Delete service
+      description: |
+        Cascade constraint: must have zero child VMs.
+        Requires confirm=true query parameter (ADR-0015 §13).
+      operationId: deleteService
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/ServiceID'
+        - $ref: '#/components/parameters/Confirm'
+      responses:
+        '204':
+          description: Service deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ── VMs ─────────────────────────────────────────────
+  /vms:
+    get:
+      tags: [vms]
+      summary: List VMs
+      operationId: listVMs
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/SortBy'
+        - $ref: '#/components/parameters/SortOrder'
+        - name: namespace
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VM list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMList'
+
+  /vms/request-context:
+    get:
+      tags: [vms]
+      summary: Get VM request context for current user
+      description: |
+        Returns user-visible context required by VM request wizard.
+        Context is computed using current RBAC/environment visibility rules.
+      operationId: getVMRequestContext
+      responses:
+        '200':
+          description: VM request context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMRequestContext'
+
+  /vms/request:
+    post:
+      tags: [vms]
+      summary: Submit VM creation request (requires approval)
+      operationId: createVMRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMCreateRequest'
+      responses:
+        '202':
+          description: Request accepted, pending approval
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalTicketResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /vms/batch:
+    get:
+      tags: [vms]
+      summary: List VM batch jobs
+      description: |
+        Returns a paginated list of batch job summaries for the current user.
+        Admins see all batches; regular users see only their own.
+      operationId: listVMBatches
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/SortBy'
+        - $ref: '#/components/parameters/SortOrder'
+      responses:
+        '200':
+          description: Batch job list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [vms]
+      summary: Submit VM batch request
+      description: |
+        Stage 5.E batch submit entrypoint (ADR-0015 §19).
+        Uses parent-child ticket model with idempotency key support.
+      operationId: submitVMBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMBatchSubmitRequest'
+      responses:
+        '202':
+          description: Batch request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchSubmitResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vms/batch/power:
+    post:
+      tags: [vms]
+      summary: Submit VM batch power request (compatibility endpoint)
+      description: |
+        Compatibility endpoint normalized into Stage 5.E parent-child pipeline.
+        Executes child power operations independently with best-effort semantics.
+      operationId: submitVMBatchPower
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMBatchPowerRequest'
+      responses:
+        '202':
+          description: Batch power request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchSubmitResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vms/batch/{batch_id}:
+    get:
+      tags: [vms]
+      summary: Get VM batch status
+      operationId: getVMBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchID'
+      responses:
+        '200':
+          description: Batch status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vms/batch/{batch_id}/retry:
+    post:
+      tags: [vms]
+      summary: Retry failed children in a VM batch
+      operationId: retryVMBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchID'
+      responses:
+        '200':
+          description: Retry action accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchActionResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vms/batch/{batch_id}/cancel:
+    post:
+      tags: [vms]
+      summary: Cancel pending children in a VM batch
+      operationId: cancelVMBatch
+      parameters:
+        - $ref: '#/components/parameters/BatchID'
+      responses:
+        '200':
+          description: Cancel action accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchActionResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vms/{vm_id}:
+    get:
+      tags: [vms]
+      summary: Get VM by ID
+      operationId: getVM
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '200':
+          description: VM details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VM'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [vms]
+      summary: Delete VM
+      description: |
+        Async via River (ADR-0006). Returns 202 Accepted with event_id.
+        test env: requires confirm=true query parameter.
+        prod env: requires confirm_name matching VM name exactly.
+        Tiered confirmation per ADR-0015 §13.
+      operationId: deleteVM
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+        - $ref: '#/components/parameters/Confirm'
+        - $ref: '#/components/parameters/ConfirmName'
+      responses:
+        '202':
+          description: Deletion accepted (approval ticket created)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteVMResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vm_id}/start:
+    post:
+      tags: [vms]
+      summary: Start VM
+      operationId: startVM
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '202':
+          description: Start accepted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vms/{vm_id}/stop:
+    post:
+      tags: [vms]
+      summary: Stop VM
+      operationId: stopVM
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '202':
+          description: Stop accepted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vms/{vm_id}/restart:
+    post:
+      tags: [vms]
+      summary: Restart VM
+      operationId: restartVM
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '202':
+          description: Restart accepted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vms/{vm_id}/power:
+    post:
+      tags: [vms]
+      summary: Unified VM power action (start / stop / restart)
+      description: |
+        Convenience endpoint that consolidates start, stop, and restart into one
+        call.  Delegates internally to the same handlers as the individual
+        /start, /stop, /restart endpoints.
+        Accepted by the frontend VM-detail page for power-state management.
+      operationId: powerVM
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMPowerRequest'
+      responses:
+        '202':
+          description: Power action accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VM'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vm_id}/console/request:
+    post:
+      tags: [vms]
+      summary: Request VM console access
+      description: |
+        Stage 6 VNC access entrypoint.
+        test env: direct token issuance.
+        prod env: create approval ticket and return pending status.
+      operationId: requestVMConsoleAccess
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '200':
+          description: Console access approved immediately (test env)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMConsoleRequestResponse'
+        '202':
+          description: Console access request accepted and pending approval (prod env)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMConsoleRequestResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vm_id}/console/status:
+    get:
+      tags: [vms]
+      summary: Get VM console access status
+      description: Polling endpoint for Stage 6 approval/access status.
+      operationId: getVMConsoleStatus
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '200':
+          description: Console access status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMConsoleStatusResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vm_id}/vnc:
+    get:
+      tags: [vms]
+      summary: Open VM VNC session
+      description: |
+        Validates one-time VNC bootstrap credential from secure cookie and establishes an access session.
+        Clients MUST NOT pass bearer credentials via URI query.
+        V1 returns session bootstrap metadata; proxy internals are implementation-defined.
+      operationId: openVMVNC
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '200':
+          description: VNC session ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMVNCSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ── Approval ────────────────────────────────────────
+  /approvals:
+    get:
+      tags: [approval]
+      summary: List approval tickets
+      operationId: listApprovals
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
+      responses:
+        '200':
+          description: Approval ticket list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalTicketList'
+
+  /approvals/batch:
+    post:
+      tags: [approval]
+      summary: Submit batch approval request (compatibility endpoint)
+      description: |
+        Compatibility endpoint normalized into Stage 5.E VM batch pipeline.
+      operationId: submitApprovalBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMBatchSubmitRequest'
+      responses:
+        '202':
+          description: Batch request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMBatchSubmitResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /approvals/{ticket_id}/approve:
+    post:
+      tags: [approval]
+      summary: Approve a request
+      operationId: approveTicket
+      parameters:
+        - $ref: '#/components/parameters/TicketID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecisionRequest'
+      responses:
+        '204':
+          description: Request approved
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /approvals/{ticket_id}/reject:
+    post:
+      tags: [approval]
+      summary: Reject a request
+      operationId: rejectTicket
+      parameters:
+        - $ref: '#/components/parameters/TicketID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectDecisionRequest'
+      responses:
+        '204':
+          description: Request rejected
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /approvals/{ticket_id}/cancel:
+    post:
+      tags: [approval]
+      summary: Cancel own pending request
+      operationId: cancelTicket
+      parameters:
+        - $ref: '#/components/parameters/TicketID'
+      responses:
+        '204':
+          description: Request cancelled
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ── Clusters ────────────────────────────────────────
+  /admin/clusters:
+    get:
+      tags: [clusters, admin]
+      summary: List clusters
+      operationId: listClusters
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Cluster list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterList'
+    post:
+      tags: [clusters, admin]
+      summary: Register a cluster
+      operationId: createCluster
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterCreateRequest'
+      responses:
+        '201':
+          description: Cluster registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+
+  /admin/users:
+    get:
+      tags: [admin]
+      summary: List users
+      operationId: listUsers
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: User list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserList'
+    post:
+      tags: [admin]
+      summary: Create a local JWT user
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/users/{user_id}:
+    patch:
+      tags: [admin]
+      summary: Update a local JWT user
+      operationId: updateUser
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [admin]
+      summary: Delete a local JWT user
+      operationId: deleteUser
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '204':
+          description: User deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/users/{user_id}/role-bindings:
+    get:
+      tags: [rbac, admin]
+      summary: List global role bindings for a user
+      operationId: listUserRoleBindings
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '200':
+          description: Role binding list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalRoleBindingList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [rbac, admin]
+      summary: Create global role binding for a user
+      operationId: createUserRoleBinding
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GlobalRoleBindingCreateRequest'
+      responses:
+        '201':
+          description: Role binding created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalRoleBinding'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/users/{user_id}/role-bindings/{binding_id}:
+    delete:
+      tags: [rbac, admin]
+      summary: Delete a user's global role binding
+      operationId: deleteUserRoleBinding
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+        - $ref: '#/components/parameters/RoleBindingID'
+      responses:
+        '204':
+          description: Role binding deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/roles:
+    get:
+      tags: [rbac, admin]
+      summary: List RBAC roles
+      operationId: listRoles
+      responses:
+        '200':
+          description: Role list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleList'
+    post:
+      tags: [rbac, admin]
+      summary: Create custom RBAC role
+      operationId: createRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleCreateRequest'
+      responses:
+        '201':
+          description: Role created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/roles/{role_id}:
+    patch:
+      tags: [rbac, admin]
+      summary: Update RBAC role
+      operationId: updateRole
+      parameters:
+        - $ref: '#/components/parameters/RoleID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleUpdateRequest'
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [rbac, admin]
+      summary: Delete RBAC role
+      operationId: deleteRole
+      parameters:
+        - $ref: '#/components/parameters/RoleID'
+      responses:
+        '204':
+          description: Role deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/permissions:
+    get:
+      tags: [rbac, admin]
+      summary: List supported permission keys
+      operationId: listPermissions
+      responses:
+        '200':
+          description: Permission list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionList'
+
+  /admin/auth-provider-types:
+    get:
+      tags: [auth-providers, admin]
+      summary: List registered authentication provider plugin types
+      operationId: listAuthProviderTypes
+      responses:
+        '200':
+          description: Registered authentication provider plugin types
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProviderTypeList'
+
+  /admin/auth-providers:
+    get:
+      tags: [auth-providers, admin]
+      summary: List authentication providers
+      operationId: listAuthProviders
+      responses:
+        '200':
+          description: Authentication provider list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProviderList'
+    post:
+      tags: [auth-providers, admin]
+      summary: Create authentication provider from registered plugin type
+      operationId: createAuthProvider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthProviderCreateRequest'
+      responses:
+        '201':
+          description: Authentication provider created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProvider'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/auth-providers/{provider_id}:
+    patch:
+      tags: [auth-providers, admin]
+      summary: Update authentication provider
+      operationId: updateAuthProvider
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthProviderUpdateRequest'
+      responses:
+        '200':
+          description: Authentication provider updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProvider'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [auth-providers, admin]
+      summary: Delete authentication provider
+      operationId: deleteAuthProvider
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '204':
+          description: Authentication provider deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/auth-providers/{provider_id}/test-connection:
+    post:
+      tags: [auth-providers, admin]
+      summary: Test authentication provider connectivity
+      operationId: testAuthProviderConnection
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: Connectivity test result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProviderConnectionTestResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/auth-providers/{provider_id}/sample:
+    get:
+      tags: [auth-providers, admin]
+      summary: Fetch sample identity data fields for mapping
+      operationId: getAuthProviderSample
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: Sample field summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProviderSampleResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/auth-providers/{provider_id}/sync:
+    post:
+      tags: [auth-providers, admin]
+      summary: Sync external groups for an auth provider
+      operationId: syncAuthProviderGroups
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthProviderGroupSyncRequest'
+      responses:
+        '200':
+          description: Synced group list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProviderGroupSyncResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/auth-providers/{provider_id}/group-mappings:
+    get:
+      tags: [auth-providers, admin]
+      summary: List IdP group mappings for an auth provider
+      operationId: listAuthProviderGroupMappings
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: Group mapping list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdPGroupMappingList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [auth-providers, admin]
+      summary: Create IdP group mapping
+      operationId: createAuthProviderGroupMapping
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdPGroupMappingCreateRequest'
+      responses:
+        '201':
+          description: Group mapping created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdPGroupMapping'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/auth-providers/{provider_id}/group-mappings/{mapping_id}:
+    patch:
+      tags: [auth-providers, admin]
+      summary: Update IdP group mapping
+      operationId: updateAuthProviderGroupMapping
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+        - $ref: '#/components/parameters/MappingID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdPGroupMappingUpdateRequest'
+      responses:
+        '200':
+          description: Group mapping updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdPGroupMapping'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [auth-providers, admin]
+      summary: Delete IdP group mapping
+      operationId: deleteAuthProviderGroupMapping
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+        - $ref: '#/components/parameters/MappingID'
+      responses:
+        '204':
+          description: Group mapping deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/rate-limits/exemptions:
+    get:
+      tags: [admin]
+      summary: List rate-limit exemptions
+      operationId: listRateLimitExemptions
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Exemption list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitExemptionList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [admin]
+      summary: Create or update a user rate-limit exemption
+      operationId: createRateLimitExemption
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateLimitExemptionCreateRequest'
+      responses:
+        '200':
+          description: Exemption saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitExemption'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/rate-limits/exemptions/{user_id}:
+    delete:
+      tags: [admin]
+      summary: Remove a user rate-limit exemption
+      operationId: deleteRateLimitExemption
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '204':
+          description: Exemption removed
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/rate-limits/users/{user_id}:
+    put:
+      tags: [admin]
+      summary: Upsert per-user rate-limit overrides
+      operationId: updateRateLimitUserOverrides
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateLimitUserOverrideRequest'
+      responses:
+        '200':
+          description: Override saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitUserOverride'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/rate-limits/status:
+    get:
+      tags: [admin]
+      summary: List current user rate-limit statuses
+      operationId: listRateLimitStatus
+      responses:
+        '200':
+          description: Rate-limit status list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitStatusList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ── Templates ───────────────────────────────────────
+  /admin/templates:
+    get:
+      tags: [templates, admin]
+      summary: List templates for admin management
+      operationId: listAdminTemplates
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Template list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateList'
+    post:
+      tags: [templates, admin]
+      summary: Create template
+      operationId: createAdminTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateCreateRequest'
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/templates/{template_id}:
+    patch:
+      tags: [templates, admin]
+      summary: Update template
+      operationId: updateAdminTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateUpdateRequest'
+      responses:
+        '200':
+          description: Template updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [templates, admin]
+      summary: Delete template
+      operationId: deleteAdminTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateID'
+      responses:
+        '204':
+          description: Template deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /templates:
+    get:
+      tags: [templates]
+      summary: List templates
+      operationId: listTemplates
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Template list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateList'
+
+  # ── Instance Sizes ──────────────────────────────────
+  /admin/instance-sizes:
+    get:
+      tags: [instance-sizes, admin]
+      summary: List instance sizes for admin management
+      operationId: listAdminInstanceSizes
+      responses:
+        '200':
+          description: Instance size list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceSizeList'
+    post:
+      tags: [instance-sizes, admin]
+      summary: Create instance size
+      operationId: createAdminInstanceSize
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstanceSizeCreateRequest'
+      responses:
+        '201':
+          description: Instance size created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceSize'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/instance-sizes/{instance_size_id}:
+    patch:
+      tags: [instance-sizes, admin]
+      summary: Update instance size
+      operationId: updateAdminInstanceSize
+      parameters:
+        - $ref: '#/components/parameters/InstanceSizeID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstanceSizeUpdateRequest'
+      responses:
+        '200':
+          description: Instance size updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceSize'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [instance-sizes, admin]
+      summary: Delete instance size
+      operationId: deleteAdminInstanceSize
+      parameters:
+        - $ref: '#/components/parameters/InstanceSizeID'
+      responses:
+        '204':
+          description: Instance size deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /instance-sizes:
+    get:
+      tags: [instance-sizes]
+      summary: List instance sizes
+      operationId: listInstanceSizes
+      responses:
+        '200':
+          description: Instance size list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceSizeList'
+
+  # ── Auth ────────────────────────────────────────────
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login with credentials
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Get current user info
+      operationId: getCurrentUser
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/change-password:
+    post:
+      tags: [auth]
+      summary: Change current user password
+      operationId: changePassword
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ── Namespace Registry (ADR-0017) ────────────────────
+  /admin/namespaces:
+    get:
+      tags: [namespaces, admin]
+      summary: List registered namespaces
+      operationId: listNamespaces
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: environment
+          in: query
+          description: Filter by environment type
+          schema:
+            type: string
+            enum: [test, prod]
+      responses:
+        '200':
+          description: Namespace list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NamespaceRegistryList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [namespaces, admin]
+      summary: Register a namespace
+      operationId: createNamespace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NamespaceCreateRequest'
+      responses:
+        '201':
+          description: Namespace registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NamespaceRegistry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/namespaces/{namespace_id}:
+    get:
+      tags: [namespaces, admin]
+      summary: Get namespace by ID
+      operationId: getNamespace
+      parameters:
+        - $ref: '#/components/parameters/NamespaceID'
+      responses:
+        '200':
+          description: Namespace details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NamespaceRegistry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [namespaces, admin]
+      summary: Update namespace
+      operationId: updateNamespace
+      parameters:
+        - $ref: '#/components/parameters/NamespaceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NamespaceUpdateRequest'
+      responses:
+        '200':
+          description: Namespace updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NamespaceRegistry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [namespaces, admin]
+      summary: Delete namespace
+      description: |
+        Only allowed if no VMs are deployed in this namespace.
+        Requires confirm_name for safety.
+      operationId: deleteNamespace
+      parameters:
+        - $ref: '#/components/parameters/NamespaceID'
+        - name: confirm_name
+          in: query
+          description: |
+            Type namespace name to confirm deletion (ADR-0015 §13 addendum).
+            Must match the namespace name exactly.
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Namespace deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ── Cluster Environment Update ───────────────────────
+  /admin/clusters/{cluster_id}/environment:
+    put:
+      tags: [clusters, admin]
+      summary: Update cluster environment
+      operationId: updateClusterEnvironment
+      parameters:
+        - name: cluster_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterEnvironmentUpdate'
+      responses:
+        '200':
+          description: Cluster environment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Notifications (ADR-0015 §20) ─────────────────────
+  /notifications:
+    get:
+      tags: [notifications]
+      summary: List notifications for current user
+      operationId: listNotifications
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: unread_only
+          in: query
+          description: Filter to unread notifications only
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Notification list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /notifications/unread-count:
+    get:
+      tags: [notifications]
+      summary: Get unread notification count
+      operationId: getUnreadCount
+      responses:
+        '200':
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCount'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /notifications/{notification_id}/read:
+    patch:
+      tags: [notifications]
+      summary: Mark notification as read
+      operationId: markNotificationRead
+      parameters:
+        - $ref: '#/components/parameters/NotificationID'
+      responses:
+        '204':
+          description: Notification marked as read
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notifications/mark-all-read:
+    post:
+      tags: [notifications]
+      summary: Mark all notifications as read
+      operationId: markAllNotificationsRead
+      responses:
+        '204':
+          description: All notifications marked as read
+
+  # ── Audit Logs ──────────────────────────────────────
+  /audit-logs:
+    get:
+      tags: [audit, admin]
+      summary: List audit logs
+      operationId: listAuditLogs
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: actor
+          in: query
+          schema:
+            type: string
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+        - name: resource_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Audit log list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  # ── Security Schemes ────────────────────────────────
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  # ── Reusable Parameters (ADR-0023 Pagination) ──────
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: Page number (1-indexed)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      description: Items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    SortBy:
+      name: sort_by
+      in: query
+      description: Field to sort by
+      schema:
+        type: string
+    SortOrder:
+      name: sort_order
+      in: query
+      description: Sort direction
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
+    SystemID:
+      name: system_id
+      in: path
+      required: true
+      schema:
+        type: string
+    VMID:
+      name: vm_id
+      in: path
+      required: true
+      schema:
+        type: string
+    TicketID:
+      name: ticket_id
+      in: path
+      required: true
+      schema:
+        type: string
+    BatchID:
+      name: batch_id
+      in: path
+      required: true
+      schema:
+        type: string
+    ServiceID:
+      name: service_id
+      in: path
+      required: true
+      schema:
+        type: string
+    UserID:
+      name: user_id
+      in: path
+      required: true
+      schema:
+        type: string
+    TemplateID:
+      name: template_id
+      in: path
+      required: true
+      schema:
+        type: string
+    InstanceSizeID:
+      name: instance_size_id
+      in: path
+      required: true
+      schema:
+        type: string
+    RoleID:
+      name: role_id
+      in: path
+      required: true
+      schema:
+        type: string
+    RoleBindingID:
+      name: binding_id
+      in: path
+      required: true
+      schema:
+        type: string
+    ProviderID:
+      name: provider_id
+      in: path
+      required: true
+      schema:
+        type: string
+    MappingID:
+      name: mapping_id
+      in: path
+      required: true
+      schema:
+        type: string
+    Confirm:
+      name: confirm
+      in: query
+      description: Simple deletion confirmation flag (ADR-0015 §13)
+      schema:
+        type: boolean
+    ConfirmName:
+      name: confirm_name
+      in: query
+      description: |
+        Type resource name to confirm deletion (ADR-0015 §13 addendum).
+        Must match the resource name exactly.
+      schema:
+        type: string
+    NamespaceID:
+      name: namespace_id
+      in: path
+      required: true
+      schema:
+        type: string
+    NotificationID:
+      name: notification_id
+      in: path
+      required: true
+      schema:
+        type: string
+  # ── Reusable Responses ──────────────────────────────
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Resource conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  # ── Schemas ─────────────────────────────────────────
+  schemas:
+    MaskField:
+      type: object
+      required: [path, display_name]
+      properties:
+        path:
+          type: string
+          description: Dot-notation JSON path resolving within the provided unified schema.
+        display_name:
+          type: string
+          description: Desired localized or standardized label for the UI form projection.
+    SchemaMask:
+      type: object
+      required: [quick_fields]
+      properties:
+        quick_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaskField'
+        advanced_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaskField'
+    DynamicSchemaResponse:
+      type: object
+      required: [schema, mask]
+      properties:
+        schema:
+          type: object
+          description: Full structure representing the requested JSON Schema payload.
+          additionalProperties: {}
+        mask:
+          $ref: '#/components/schemas/SchemaMask'
+        schema_version:
+          type: string
+          description: |
+            Semantic version of the schema (e.g. "1.2.0").
+            Frontend uses this for cache drift detection and audit (ADR-0023).
+          example: "1.2.0"
+        source:
+          type: string
+          enum: [cache, embedded, remote]
+          description: |
+            Data source of the schema response (ADR-0023 degradation strategy):
+            - cache:    Served from server-side schema cache (nominal path).
+            - embedded: Backend fell back to a bundled embedded schema (warn user).
+            - remote:   Fetched live from KubeVirt API (slow path, no cache).
+        degraded:
+          type: boolean
+          default: false
+          description: |
+            When true, the response uses an older or embedded fallback schema.
+            Frontend MUST display a warning banner per ADR-0023 UI Degradation States.
+        fetched_at:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when the schema was fetched or last cached.
+
+
+
+    # ── Common ──────────────────────────────────────
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        version:
+          type: string
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+
+    Error:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code (frontend handles i18n)
+        message:
+          type: string
+          description: English log message (not for UI display)
+        params:
+          type: object
+          additionalProperties: true
+        field_errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+
+    FieldError:
+      type: object
+      required: [field, code]
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
+
+    # ── System ──────────────────────────────────────
+    System:
+      type: object
+      required: [id, name, created_by, created_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          maxLength: 15
+        description:
+          type: string
+        created_by:
+          type: string
+        tenant_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SystemCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          x-oapi-codegen-extra-tags:
+            validate: "required,max=15"
+          type: string
+          maxLength: 15
+          pattern: '^[a-z]([a-z0-9-]*[a-z0-9])?$'
+          description: RFC 1035 compliant name (ADR-0019)
+        description:
+          type: string
+          description: Markdown supported
+
+    SystemUpdateRequest:
+      type: object
+      required: [description]
+      properties:
+        description:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          description: Markdown supported
+
+    SystemList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/System'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── Service ─────────────────────────────────────
+    Service:
+      type: object
+      required: [id, name, system_id, created_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        system_id:
+          type: string
+        next_instance_index:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    ServiceCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          x-oapi-codegen-extra-tags:
+            validate: "required,max=15"
+          type: string
+          maxLength: 15
+          pattern: '^[a-z]([a-z0-9-]*[a-z0-9])?$'
+        description:
+          type: string
+          description: Markdown supported
+
+    ServiceUpdateRequest:
+      type: object
+      required: [description]
+      properties:
+        description:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          description: Markdown supported
+
+    ServiceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── VM ──────────────────────────────────────────
+    VM:
+      type: object
+      required: [id, name, namespace, status]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        namespace:
+          type: string
+        cluster_id:
+          type: string
+        status:
+          type: string
+          enum: [CREATING, RUNNING, STOPPING, STOPPED, DELETING, FAILED, PENDING, MIGRATING, PAUSED, UNKNOWN]
+        hostname:
+          type: string
+        service_id:
+          type: string
+        instance:
+          type: string
+        ticket_id:
+          type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        environment:
+          type: string
+          enum: [test, prod]
+          description: Inherited from cluster environment (ADR-0015 §15)
+
+    VMCreateRequest:
+      type: object
+      required: [service_id, template_id, instance_size_id, namespace, reason]
+      properties:
+        service_id:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          format: uuid
+        template_id:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          format: uuid
+        instance_size_id:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          format: uuid
+        namespace:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          description: Target K8s namespace (immutable after submission, ADR-0017)
+        reason:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        # ⚠️ cluster_id is intentionally ABSENT — see ADR-0017
+
+    VMRequestContext:
+      type: object
+      required: [templates, instance_sizes, namespaces]
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/Template'
+        instance_sizes:
+          type: array
+          items:
+            $ref: '#/components/schemas/InstanceSize'
+        namespaces:
+          type: array
+          items:
+            type: string
+
+    VMList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VM'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    VMBatchOperation:
+      type: string
+      enum: [CREATE, DELETE, POWER]
+
+    VMBatchPowerAction:
+      type: string
+      enum: [START, STOP, RESTART]
+
+    VMBatchParentStatus:
+      type: string
+      enum: [PENDING_APPROVAL, IN_PROGRESS, COMPLETED, PARTIAL_SUCCESS, FAILED, CANCELLED]
+
+    VMBatchChildItem:
+      type: object
+      properties:
+        vm_id:
+          type: string
+          description: Required for DELETE operation
+        service_id:
+          type: string
+          format: uuid
+          description: Required for CREATE operation
+        template_id:
+          type: string
+          format: uuid
+          description: Required for CREATE operation
+        instance_size_id:
+          type: string
+          format: uuid
+          description: Required for CREATE operation
+        namespace:
+          type: string
+          description: Required for CREATE operation
+        reason:
+          type: string
+
+    VMBatchPowerItem:
+      type: object
+      required: [vm_id]
+      properties:
+        vm_id:
+          type: string
+        reason:
+          type: string
+
+    VMBatchSubmitRequest:
+      type: object
+      required: [operation, items]
+      properties:
+        operation:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          $ref: '#/components/schemas/VMBatchOperation'
+        request_id:
+          type: string
+          description: Client idempotency key
+        reason:
+          type: string
+        items:
+          x-oapi-codegen-extra-tags:
+            validate: "required,min=1"
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/VMBatchChildItem'
+
+    VMBatchPowerRequest:
+      type: object
+      required: [operation, items]
+      properties:
+        operation:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          $ref: '#/components/schemas/VMBatchPowerAction'
+        request_id:
+          type: string
+          description: Client idempotency key
+        reason:
+          type: string
+        items:
+          x-oapi-codegen-extra-tags:
+            validate: "required,min=1"
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/VMBatchPowerItem'
+
+    VMBatchSubmitResponse:
+      type: object
+      required: [batch_id, status, status_url, retry_after_seconds]
+      properties:
+        batch_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/VMBatchParentStatus'
+        status_url:
+          type: string
+        retry_after_seconds:
+          type: integer
+
+    VMBatchChildStatus:
+      type: object
+      required: [ticket_id, event_id, status]
+      properties:
+        ticket_id:
+          type: string
+        event_id:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
+        resource_id:
+          type: string
+        resource_name:
+          type: string
+        last_error:
+          type: string
+        attempt_count:
+          type: integer
+          minimum: 0
+
+    VMBatchStatusResponse:
+      type: object
+      required: [batch_id, operation, status, child_count, success_count, failed_count, pending_count, children, created_by, created_at, updated_at]
+      properties:
+        batch_id:
+          type: string
+        operation:
+          $ref: '#/components/schemas/VMBatchOperation'
+        status:
+          $ref: '#/components/schemas/VMBatchParentStatus'
+        child_count:
+          type: integer
+        success_count:
+          type: integer
+        failed_count:
+          type: integer
+        pending_count:
+          type: integer
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/VMBatchChildStatus'
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    VMBatchActionResponse:
+      type: object
+      required: [batch_id, status, affected_count]
+      properties:
+        batch_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/VMBatchParentStatus'
+        affected_count:
+          type: integer
+        affected_ticket_ids:
+          type: array
+          description: Child ticket IDs that were actually affected by retry/cancel action.
+          items:
+            type: string
+
+    VMConsoleRequestStatus:
+      type: string
+      enum: [PENDING_APPROVAL, APPROVED, REJECTED]
+
+    VMConsoleStatus:
+      type: string
+      enum: [NOT_REQUESTED, PENDING_APPROVAL, APPROVED, REJECTED]
+
+    VMConsoleRequestResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/VMConsoleRequestStatus'
+        ticket_id:
+          type: ["string", "null"]
+        vnc_url:
+          type: ["string", "null"]
+
+    VMConsoleStatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/VMConsoleStatus'
+        ticket_id:
+          type: ["string", "null"]
+        vnc_url:
+          type: ["string", "null"]
+
+    VMVNCSessionResponse:
+      type: object
+      required: [status, vm_id]
+      properties:
+        status:
+          type: string
+          enum: [SESSION_READY]
+        vm_id:
+          type: string
+        websocket_path:
+          type: string
+          description: Relative websocket/proxy path for noVNC bootstrap.
+
+    # ── Approval ────────────────────────────────────
+    ApprovalTicketResponse:
+      type: object
+      required: [ticket_id, status]
+      properties:
+        ticket_id:
+          type: string
+        status:
+          type: string
+          enum: [PENDING]
+        operation_type:
+          type: string
+          enum: [CREATE, DELETE, VNC_ACCESS]
+          description: Type of operation this ticket represents (ADR-0015)
+
+    ApprovalTicket:
+      type: object
+      required: [id, event_id, status, requester]
+      properties:
+        id:
+          type: string
+        event_id:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
+        operation_type:
+          type: string
+          enum: [CREATE, DELETE, VNC_ACCESS]
+          description: Type of operation this ticket represents (ADR-0015)
+        requester:
+          type: string
+        approver:
+          type: string
+        reason:
+          type: string
+        reject_reason:
+          type: string
+        target_vm_id:
+          type: string
+          description: For DELETE tickets, the VM being deleted
+        target_vm_name:
+          type: string
+          description: For DELETE tickets, the VM name (for display)
+        ticket_payload:
+          type: ["object", "null"]
+          description: Contextual payload of the original request depending on operation_type
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    ApprovalTicketList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApprovalTicket'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    DeleteVMResponse:
+      type: object
+      required: [ticket_id, event_id, status]
+      properties:
+        ticket_id:
+          type: string
+        event_id:
+          type: string
+        status:
+          type: string
+          enum: [PENDING]
+
+    ApprovalDecisionRequest:
+      type: object
+      properties:
+        selected_cluster_id:
+          type: string
+          description: Admin selects target cluster (ADR-0017)
+        selected_storage_class:
+          type: string
+        enable_override:
+          type: boolean
+          description: >
+            When true, admin overrides default resource requests/limits
+            from InstanceSize (master-flow Stage 5.B).
+        cpu_request:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+          description: CPU request in cores (overcommit scenario, Stage 5.B)
+        cpu_limit:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+          description: CPU limit in cores (Stage 5.B)
+        memory_request_mb:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+          description: Memory request in MB (Stage 5.B)
+        memory_limit_mb:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+          description: Memory limit in MB (Stage 5.B)
+        disk_gb:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+          description: Disk size in GB, admin can adjust (Stage 5.B)
+        comment:
+          type: string
+
+    RejectDecisionRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+
+    # ── Cluster ─────────────────────────────────────
+    Cluster:
+      type: object
+      required: [id, name, api_server_url, status]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        display_name:
+          type: string
+        api_server_url:
+          type: string
+        status:
+          type: string
+          enum: [UNKNOWN, HEALTHY, UNHEALTHY, UNREACHABLE]
+        environment:
+          type: string
+          enum: [test, prod]
+          description: Cluster environment type (ADR-0015 §1, §15)
+        kubevirt_version:
+          type: string
+        storage_classes:
+          type: array
+          items:
+            type: string
+          description: Auto-detected StorageClass list (ADR-0015 §8)
+        default_storage_class:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    ClusterCreateRequest:
+      type: object
+      required: [name, kubeconfig]
+      properties:
+        name:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        display_name:
+          type: string
+        environment:
+          x-oapi-codegen-extra-tags:
+            validate: "oneof=test prod"
+          type: string
+          enum: [test, prod]
+          default: test
+        kubeconfig:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          format: byte
+          description: Base64-encoded kubeconfig (stored encrypted, ADR-0012)
+
+    ClusterEnvironmentUpdate:
+      type: object
+      required: [environment]
+      properties:
+        environment:
+          type: string
+          enum: [test, prod]
+
+    ClusterList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cluster'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── Template ────────────────────────────────────
+    Template:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        source_type:
+          type: string
+          enum: [image, pvc]
+          description: Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+        image_url:
+          type: string
+          description: Container registry URL for ContainerDisk mode, e.g. quay.io/containerdisks/ubuntu:22.04
+        pvc_name:
+          type: string
+          description: PVC/DataVolume name for PVC mode
+        pvc_namespace:
+          type: string
+          description: Kubernetes namespace where the PVC/DataVolume is located (required when source_type is 'pvc')
+        cloud_init:
+          type: string
+          description: Cloud-init userdata YAML (applied at VM boot)
+        os_family:
+          type: string
+        os_version:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    TemplateCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        source_type:
+          x-oapi-codegen-extra-tags:
+            validate: "oneof=image pvc"
+          type: string
+          enum: [image, pvc]
+          description: Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+        image_url:
+          type: string
+          description: Required when source_type is 'image'
+        pvc_name:
+          type: string
+          description: Required when source_type is 'pvc'
+        pvc_namespace:
+          type: string
+          description: >-
+            Kubernetes namespace where the PVC/DataVolume is located.
+            Required when source_type is 'pvc'.
+        cloud_init:
+          type: string
+          description: Cloud-init userdata YAML
+        os_family:
+          type: string
+        os_version:
+          type: string
+        enabled:
+          type: boolean
+
+    TemplateUpdateRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        description:
+          type: string
+        source_type:
+          x-oapi-codegen-extra-tags:
+            validate: "oneof=image pvc"
+          type: string
+          enum: [image, pvc]
+        image_url:
+          type: string
+        pvc_name:
+          type: string
+        pvc_namespace:
+          type: string
+          description: Kubernetes namespace where the PVC/DataVolume is located
+        cloud_init:
+          type: string
+        os_family:
+          type: string
+        os_version:
+          type: string
+        enabled:
+          type: boolean
+
+    TemplateList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Template'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── Instance Size (ADR-0018) ────────────────────
+    InstanceSize:
+      type: object
+      required: [id, name, cpu_cores, memory_mb]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        cpu_cores:
+          type: integer
+        memory_mb:
+          type: integer
+        disk_gb:
+          type: integer
+        dedicated_cpu:
+          type: boolean
+        requires_gpu:
+          type: boolean
+        requires_sriov:
+          type: boolean
+        requires_hugepages:
+          type: boolean
+        hugepages_size:
+          type: string
+        spec_overrides:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    InstanceSizeCreateRequest:
+      type: object
+      required: [name, cpu_cores, memory_mb]
+      properties:
+        name:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        cpu_cores:
+          x-oapi-codegen-extra-tags:
+            validate: "required,gte=1"
+          type: integer
+          minimum: 1
+        memory_mb:
+          x-oapi-codegen-extra-tags:
+            validate: "required,gte=1"
+          type: integer
+          minimum: 1
+        disk_gb:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+        cpu_request:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+        memory_request_mb:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+        dedicated_cpu:
+          type: boolean
+        requires_gpu:
+          type: boolean
+        requires_sriov:
+          type: boolean
+        requires_hugepages:
+          type: boolean
+        hugepages_size:
+          type: string
+        spec_overrides:
+          type: object
+          additionalProperties: true
+        sort_order:
+          type: integer
+        enabled:
+          type: boolean
+
+    InstanceSizeUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        cpu_cores:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+        memory_mb:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+        disk_gb:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+        cpu_request:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+        memory_request_mb:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: integer
+          minimum: 1
+        dedicated_cpu:
+          type: boolean
+        requires_gpu:
+          type: boolean
+        requires_sriov:
+          type: boolean
+        requires_hugepages:
+          type: boolean
+        hugepages_size:
+          type: string
+        spec_overrides:
+          type: object
+          additionalProperties: true
+        sort_order:
+          type: integer
+        enabled:
+          type: boolean
+
+    InstanceSizeList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InstanceSize'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── Auth ────────────────────────────────────────
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        password:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          format: password
+
+    LoginResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+        expires_at:
+          type: ["string", "null"]
+          format: date-time
+        force_password_change:
+          type: boolean
+
+    UserInfo:
+      type: object
+      required: [id, username]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    User:
+      type: object
+      required: [id, username, enabled, created_at]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        enabled:
+          type: boolean
+        roles:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    UserList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    UserCreateRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        password:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          format: password
+        email:
+          type: string
+        display_name:
+          type: string
+        enabled:
+          type: boolean
+        force_password_change:
+          type: boolean
+
+    UserUpdateRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        display_name:
+          type: string
+        enabled:
+          type: boolean
+        password:
+          type: string
+          format: password
+        force_password_change:
+          type: boolean
+
+    Role:
+      type: object
+      required: [id, name, permissions, built_in, enabled]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        built_in:
+          type: boolean
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    RoleList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    RoleCreateRequest:
+      type: object
+      required: [name, permissions]
+      properties:
+        name:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        permissions:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+
+    RoleUpdateRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+
+    Permission:
+      type: object
+      required: [key]
+      properties:
+        key:
+          type: string
+        description:
+          type: string
+
+    PermissionList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    GlobalRoleBinding:
+      type: object
+      required: [id, user_id, role_id, role_name, scope_type]
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        role_id:
+          type: string
+        role_name:
+          type: string
+        scope_type:
+          type: string
+        scope_id:
+          type: string
+        allowed_environments:
+          type: array
+          items:
+            type: string
+            enum: [test, prod]
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    GlobalRoleBindingList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GlobalRoleBinding'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    GlobalRoleBindingCreateRequest:
+      type: object
+      required: [role_id]
+      properties:
+        role_id:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        scope_type:
+          type: string
+          default: global
+        scope_id:
+          type: string
+        allowed_environments:
+          type: array
+          items:
+            type: string
+            enum: [test, prod]
+
+    AuthProvider:
+      type: object
+      required: [id, name, auth_type, enabled]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        auth_type:
+          type: string
+          description: Registered auth provider plugin type key
+        config:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+        sort_order:
+          type: integer
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AuthProviderList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthProvider'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    AuthProviderCreateRequest:
+      type: object
+      required: [name, auth_type]
+      properties:
+        name:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        auth_type:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          description: Registered auth provider plugin type key
+        config:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+        sort_order:
+          type: integer
+
+    AuthProviderUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+        sort_order:
+          type: integer
+
+    AuthProviderType:
+      type: object
+      required: [type, display_name, built_in]
+      properties:
+        type:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        built_in:
+          type: boolean
+        config_schema:
+          type: object
+          additionalProperties: true
+
+    AuthProviderTypeList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthProviderType'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    AuthProviderConnectionTestResult:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+
+    AuthProviderSampleField:
+      type: object
+      required: [field, value_type, unique_count]
+      properties:
+        field:
+          type: string
+        value_type:
+          type: string
+          enum: [string, array, object, number, boolean, unknown]
+        unique_count:
+          type: integer
+        sample:
+          type: array
+          items:
+            type: string
+
+    AuthProviderSampleResponse:
+      type: object
+      required: [provider_id, fields]
+      properties:
+        provider_id:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthProviderSampleField'
+
+    AuthProviderGroupSyncRequest:
+      type: object
+      required: [source_field, groups]
+      properties:
+        source_field:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        groups:
+          x-oapi-codegen-extra-tags:
+            validate: "required,min=1"
+          type: array
+          minItems: 1
+          items:
+            type: string
+
+    IdPSyncedGroup:
+      type: object
+      required: [id, provider_id, external_group_id, group_name]
+      properties:
+        id:
+          type: string
+        provider_id:
+          type: string
+        external_group_id:
+          type: string
+        group_name:
+          type: string
+        source_field:
+          type: string
+        last_synced_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    AuthProviderGroupSyncResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdPSyncedGroup'
+
+    IdPGroupMapping:
+      type: object
+      required: [id, provider_id, external_group_id, role_id]
+      properties:
+        id:
+          type: string
+        provider_id:
+          type: string
+        external_group_id:
+          type: string
+        group_name:
+          type: string
+        role_id:
+          type: string
+        role_name:
+          type: string
+        scope_type:
+          type: string
+        scope_id:
+          type: string
+        allowed_environments:
+          type: array
+          items:
+            type: string
+            enum: [test, prod]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    IdPGroupMappingList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdPGroupMapping'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    IdPGroupMappingCreateRequest:
+      type: object
+      required: [external_group_id, role_id]
+      properties:
+        external_group_id:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        group_name:
+          type: string
+        role_id:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        scope_type:
+          type: string
+        scope_id:
+          type: string
+        allowed_environments:
+          type: array
+          items:
+            type: string
+            enum: [test, prod]
+
+    IdPGroupMappingUpdateRequest:
+      type: object
+      properties:
+        role_id:
+          type: string
+        scope_type:
+          type: string
+        scope_id:
+          type: string
+        allowed_environments:
+          type: array
+          items:
+            type: string
+            enum: [test, prod]
+
+    RateLimitExemptionCreateRequest:
+      type: object
+      required: [user_id]
+      properties:
+        user_id:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        reason:
+          type: string
+        expires_at:
+          type: ["string", "null"]
+          format: date-time
+
+    RateLimitExemption:
+      type: object
+      required: [user_id, exempted_by, created_at, updated_at]
+      properties:
+        user_id:
+          type: string
+        exempted_by:
+          type: string
+        reason:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    RateLimitUserOverrideRequest:
+      type: object
+      properties:
+        max_pending_parents:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: ["integer", "null"]
+          minimum: 1
+        max_pending_children:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=1"
+          type: ["integer", "null"]
+          minimum: 1
+        cooldown_seconds:
+          x-oapi-codegen-extra-tags:
+            validate: "gte=0"
+          type: ["integer", "null"]
+          minimum: 0
+        reason:
+          type: string
+
+    RateLimitUserOverride:
+      type: object
+      required: [user_id, updated_by, created_at, updated_at]
+      properties:
+        user_id:
+          type: string
+        max_pending_parents:
+          type: ["integer", "null"]
+        max_pending_children:
+          type: ["integer", "null"]
+        cooldown_seconds:
+          type: ["integer", "null"]
+        reason:
+          type: string
+        updated_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    RateLimitUserStatus:
+      type: object
+      required: [user_id, exempted, effective_max_pending_parents, effective_max_pending_children, effective_cooldown_seconds, current_pending_parents, current_pending_children, cooldown_remaining_seconds]
+      properties:
+        user_id:
+          type: string
+        exempted:
+          type: boolean
+        exemption_expires_at:
+          type: ["string", "null"]
+          format: date-time
+        effective_max_pending_parents:
+          type: integer
+        effective_max_pending_children:
+          type: integer
+        effective_cooldown_seconds:
+          type: integer
+        current_pending_parents:
+          type: integer
+        current_pending_children:
+          type: integer
+        cooldown_remaining_seconds:
+          type: integer
+
+    RateLimitStatusList:
+      type: object
+      required: [items, generated_at]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RateLimitUserStatus'
+        generated_at:
+          type: string
+          format: date-time
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    SystemMember:
+      type: object
+      required: [user_id, username, role]
+      properties:
+        user_id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [owner, admin, member, viewer]
+        created_at:
+          type: string
+          format: date-time
+
+    SystemMemberList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SystemMember'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    SystemMemberCreateRequest:
+      type: object
+      required: [user_id, role]
+      properties:
+        user_id:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        role:
+          x-oapi-codegen-extra-tags:
+            validate: "required,oneof=owner admin member viewer"
+          type: string
+          enum: [owner, admin, member, viewer]
+
+    SystemMemberRoleUpdateRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          x-oapi-codegen-extra-tags:
+            validate: "required,oneof=owner admin member viewer"
+          type: string
+          enum: [owner, admin, member, viewer]
+
+    ChangePasswordRequest:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          format: password
+        new_password:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          format: password
+
+    # ── Audit Log ──────────────────────────────────────
+    AuditLog:
+      type: object
+      required: [id, action, resource_type, resource_id, actor, created_at]
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        actor:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    AuditLogList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    # ── Namespace Registry (ADR-0017) ────────────────
+    NamespaceRegistry:
+      type: object
+      required: [id, name, environment]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: Globally unique namespace name (RFC 1035)
+        environment:
+          type: string
+          enum: [test, prod]
+        description:
+          type: string
+        enabled:
+          type: boolean
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    NamespaceCreateRequest:
+      type: object
+      required: [name, environment]
+      properties:
+        name:
+          x-oapi-codegen-extra-tags:
+            validate: "required,max=63"
+          type: string
+          maxLength: 63
+          description: Must follow RFC 1035 naming (ADR-0019)
+        environment:
+          x-oapi-codegen-extra-tags:
+            validate: "required,oneof=test prod"
+          type: string
+          enum: [test, prod]
+        description:
+          x-oapi-codegen-extra-tags:
+            validate: "max=512"
+          type: string
+          maxLength: 512
+
+    NamespaceUpdateRequest:
+      type: object
+      properties:
+        description:
+          x-oapi-codegen-extra-tags:
+            validate: "max=512"
+          type: string
+          maxLength: 512
+        enabled:
+          type: boolean
+
+    NamespaceRegistryList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NamespaceRegistry'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── Notification (ADR-0015 §20) ──────────────────
+    Notification:
+      type: object
+      required: [id, type, title, message, read, created_at]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [APPROVAL_PENDING, APPROVAL_COMPLETED, APPROVAL_REJECTED, VM_STATUS_CHANGE]
+        title:
+          type: string
+        message:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        read:
+          type: boolean
+        read_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    NotificationList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    UnreadCount:
+      type: object
+      required: [count]
+      properties:
+        count:
+          type: integer
+
+    # ── Batch List ───────────────────────────────────
+    VMBatchJobSummary:
+      type: object
+      required: [id, operation, status, child_count, success_count, failed_count, pending_count, created_at]
+      properties:
+        id:
+          type: string
+        operation:
+          type: string
+          description: Batch operation type (e.g. CREATE, POWER, DELETE)
+        status:
+          type: string
+          enum: [PENDING_APPROVAL, IN_PROGRESS, COMPLETED, PARTIAL_SUCCESS, FAILED, CANCELLED]
+        child_count:
+          type: integer
+        success_count:
+          type: integer
+        failed_count:
+          type: integer
+        pending_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    VMBatchList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VMBatchJobSummary'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    # ── VM Power Request ──────────────────────────────
+    VMPowerRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          x-oapi-codegen-extra-tags:
+            validate: "required,oneof=start stop restart"
+          type: string
+          enum: [start, stop, restart]
+          description: Power action to execute on the VM
+
+    # ── Rate Limit Exemption List ─────────────────────
+    RateLimitExemptionList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RateLimitExemption'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+security:
+  - BearerAuth: []
