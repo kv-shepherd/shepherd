@@ -48,6 +48,12 @@
 | [ADR-0036](./ADR-0036-template-instancesize-boundary-enforcement.md) | Template / InstanceSize Boundary Enforcement | **Accepted** | - |
 | [ADR-0037](./ADR-0037-openapi-validation-architecture-and-enforcement-policy.md) | OpenAPI Validation Architecture and Enforcement Policy | **Proposed** | - |
 
+> ℹ️ **ADR-0037 (Proposed) Review Sync Notes**:
+>
+> - Runtime validator spec source is canonical `internal/api/specembed/openapi.yaml` (not `generated.GetSwagger()`).
+> - `libopenapi-validator` lifecycle policy is per-validation instance creation (no shared/sync.Pool reuse).
+> - Compat removal validation order is: disable/remove compat first, then verify canonical codegen path.
+
 > ⚠️ **¹ ADR-0009 Partial Supersession Notice**:
 >
 > | Section | Status | Action |
@@ -102,6 +108,9 @@ For newcomers, we recommend reading ADRs in this order:
 9. **ADR-0015** (Governance Model V2) → Platform RBAC, approval workflows
 10. **ADR-0017** (VM Request Flow) → Clarifies user vs admin responsibilities
 11. **ADR-0018** (Instance Size Abstraction) → Schema-driven VM sizing
+12. **ADR-0021** (API Contract-First) → Contract-first API lifecycle
+13. **ADR-0029** (OpenAPI Toolchain Governance) → Lint/generate/diff enforcement baseline
+14. **ADR-0037** (OpenAPI Validation Architecture, **Proposed**) → Runtime/business validation architecture and compat bridge governance
 
 ### Historical Context
 - **ADR-0002** → Why we moved from Git storage to DB (Superseded by ADR-0007)
