@@ -149,8 +149,7 @@ func (s *Server) ApproveTicket(c *gin.Context, ticketId generated.TicketID) {
 	}
 
 	var req generated.ApprovalDecisionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -198,8 +197,7 @@ func (s *Server) RejectTicket(c *gin.Context, ticketId generated.TicketID) {
 	}
 
 	var req generated.RejectDecisionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 

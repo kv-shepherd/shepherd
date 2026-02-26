@@ -222,8 +222,7 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 	}
 
 	var req templateCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -319,8 +318,7 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateId generated.Templa
 	}
 
 	var req templateUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -495,8 +493,7 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 	}
 
 	var req instanceSizeCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -605,8 +602,7 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generate
 	}
 
 	var req instanceSizeUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -795,8 +791,7 @@ func (s *Server) CreateRole(c *gin.Context) {
 	}
 
 	var req roleCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -857,8 +852,7 @@ func (s *Server) UpdateRole(c *gin.Context, roleId generated.RoleID) {
 	}
 
 	var req roleUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -1068,8 +1062,7 @@ func (s *Server) CreateAuthProvider(c *gin.Context) {
 	}
 
 	var req authProviderCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -1136,8 +1129,7 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerId generated.Provide
 	}
 
 	var req authProviderUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -1324,8 +1316,7 @@ func (s *Server) SyncAuthProviderGroups(c *gin.Context, providerId generated.Pro
 	}
 
 	var req generated.AuthProviderGroupSyncRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 	sourceField := strings.TrimSpace(req.SourceField)
@@ -1471,8 +1462,7 @@ func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerId gener
 	}
 
 	var req generated.IdPGroupMappingCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -1548,8 +1538,7 @@ func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerId gener
 	}
 
 	var req generated.IdPGroupMappingUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
