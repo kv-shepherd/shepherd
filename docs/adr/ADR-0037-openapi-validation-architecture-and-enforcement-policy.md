@@ -43,6 +43,8 @@ This decision is made before production rollout, so architecture can be optimize
 ### Core Policy
 
 1. **Runtime OpenAPI validation**: use `github.com/pb33f/libopenapi-validator` with strict mode.
+   - Runtime validator must load the **canonical** OpenAPI spec from independent embed bytes (`internal/api/specembed/openapi.yaml`), not from `generated.GetSwagger()`.
+   - Validator lifecycle policy is fixed as **per-validation instance creation** (no shared instance reuse, no `sync.Pool` reuse for validator instances).
 2. **Business validation**: use `github.com/go-playground/validator/v10`.
 3. **Validation source-of-truth**: define `validate` tags via `x-oapi-codegen-extra-tags` in OpenAPI schema.
 4. **Lint and diff enforcement**:
@@ -54,6 +56,8 @@ This decision is made before production rollout, so architecture can be optimize
    - no bypass as default policy
 6. **Compatibility guardrail**:
    - provide `make api-diff` alias to `api-breaking` for workflow and issue compatibility.
+   - `api/openapi.compat.yaml` is a derived artifact for **Go codegen only**, not for runtime validation, linting, or frontend type generation.
+   - Compat removal verification must run on canonical path first: disable/remove compat artifact, then verify canonical codegen succeeds before deleting compat pipeline steps.
 
 ### Consequences
 
@@ -74,9 +78,12 @@ This ADR is considered correctly implemented when all items below are true:
    - undeclared body fields
    - undeclared query parameters
    - production-safe error responses
+   - canonical spec source verification (runtime validator does not consume compat-downgraded spec)
+   - `-race` coverage for middleware path
 4. `internal/api/validator` is used for business validation and produces standardized field error output.
 5. Request schema validation tags are declared in OpenAPI via `x-oapi-codegen-extra-tags`.
 6. PR pipeline performs breaking-change detection and blocks on violations.
+7. Generated-code CI path is deterministic and ordered: `api-compat-generate -> api-generate -> api-compat -> sync diff`.
 
 ---
 
@@ -114,8 +121,11 @@ This ADR is considered correctly implemented when all items below are true:
 
 * [Issue #280](https://github.com/kv-shepherd/shepherd/issues/280)
 * [oapi-codegen: x-oapi-codegen-extra-tags](https://github.com/oapi-codegen/oapi-codegen#x-oapi-codegen-extra-tags---generate-arbitrary-struct-tags-to-fields)
+* [oapi-codegen OpenAPI 3.1 support status](https://github.com/oapi-codegen/oapi-codegen#does-oapi-codegen-support-openapi-31)
 * [libopenapi-validator](https://github.com/pb33f/libopenapi-validator)
+* [libopenapi-validator/strict](https://pkg.go.dev/github.com/pb33f/libopenapi-validator/strict)
 * [go-playground/validator](https://github.com/go-playground/validator)
+* [Go embed package](https://pkg.go.dev/embed)
 
 ### Implementation Notes
 
@@ -131,6 +141,7 @@ This ADR is considered correctly implemented when all items below are true:
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-02-26 | @jindyzhao | Initial draft |
+| 2026-02-26 | @jindyzhao | Sync remediation/design-note corrections: canonical runtime spec source, per-validation validator lifecycle, compat exit verification order |
 
 ---
 
