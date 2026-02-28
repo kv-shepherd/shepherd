@@ -21,6 +21,9 @@ rules:
   # Require info license
   info-license: true
 
+  # Project convention is snake_case for schema properties
+  camel-case-properties: false
+
   # No eval in markdown
   no-eval-in-markdown: true
 

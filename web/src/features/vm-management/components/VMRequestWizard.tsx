@@ -177,7 +177,7 @@ export function VMRequestWizard({
                                             <Space direction="vertical" size={0}>
                                                 <Space size={6}>
                                                     <Text strong>{size.display_name || size.name}</Text>
-                                                    <Text type="secondary">{size.cpu_cores} vCPU · {formatMemory(size.memory_mb)}</Text>
+                                                    <Text type="secondary">{size.cpu_cores} vCPU · {formatMemory(size.memory_gi)}</Text>
                                                     {size.disk_gb && <Text type="secondary">· {size.disk_gb} GB</Text>}
                                                 </Space>
                                                 {capabilityTags(size, t).length > 0 && (
@@ -258,7 +258,7 @@ export function VMRequestWizard({
                                 {selectedTemplate?.display_name || selectedTemplate?.name || '—'}
                             </Descriptions.Item>
                             <Descriptions.Item label={t('wizard.confirm_size')}>
-                                {selectedSize ? `${selectedSize.display_name || selectedSize.name} (${selectedSize.cpu_cores} vCPU · ${formatMemory(selectedSize.memory_mb)})` : '—'}
+                                {selectedSize ? `${selectedSize.display_name || selectedSize.name} (${selectedSize.cpu_cores} vCPU · ${formatMemory(selectedSize.memory_gi)})` : '—'}
                                 {selectedSize && capabilityTags(selectedSize, t).length > 0 && (
                                     <div style={{ marginTop: 8 }}>
                                         <Space wrap>{capabilityTags(selectedSize, t)}</Space>

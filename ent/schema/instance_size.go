@@ -31,19 +31,19 @@ func (InstanceSize) Fields() []ent.Field {
 			Optional(), // Human-readable name
 		field.String("description").
 			Optional(),
-		field.Int("cpu_cores").
+		field.Float("cpu_cores").
 			Positive(),
-		field.Int("memory_mb").
+		field.Float("memory_gi").
 			Positive(),
 		field.Int("disk_gb").
 			Optional().
 			Positive(),
 		// Overcommit support
-		field.Int("cpu_request").
+		field.Float("cpu_request").
 			Optional(). // Defaults to cpu_cores if not set (no overcommit)
 			Positive(),
-		field.Int("memory_request_mb").
-			Optional(). // Defaults to memory_mb if not set
+		field.Float("memory_request_gi").
+			Optional(). // Defaults to memory_gi if not set
 			Positive(),
 		// KubeVirt dedicatedCpuPlacement support (ADR-0018)
 		// When true, VM requires Guaranteed QoS: CPU request must equal limit.

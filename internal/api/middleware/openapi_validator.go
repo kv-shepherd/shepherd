@@ -2,23 +2,26 @@ package middleware
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
-	"github.com/getkin/kin-openapi/openapi3filter"
-	"github.com/getkin/kin-openapi/routers"
-	"github.com/getkin/kin-openapi/routers/gorillamux"
 	"github.com/gin-gonic/gin"
+	libopenapi "github.com/pb33f/libopenapi"
+	validator "github.com/pb33f/libopenapi-validator"
+	validatorconfig "github.com/pb33f/libopenapi-validator/config"
+	validatorerrors "github.com/pb33f/libopenapi-validator/errors"
 	"go.uber.org/zap"
 
-	"kv-shepherd.io/shepherd/internal/api/generated"
+	"kv-shepherd.io/shepherd/internal/api/specembed"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
 const openAPIResponseValidationMessage = "response does not conform to OpenAPI contract"
+const openAPIRequestValidationMessage = "request does not conform to OpenAPI contract"
 
 // MustOpenAPIValidator creates an OpenAPI runtime validator middleware and panics on setup failure.
 func MustOpenAPIValidator(basePath string) gin.HandlerFunc {
@@ -29,95 +32,176 @@ func MustOpenAPIValidator(basePath string) gin.HandlerFunc {
 	return mw
 }
 
-// NewOpenAPIValidator validates request + response against the generated OpenAPI spec.
+// NewOpenAPIValidator validates request + response against the canonical OpenAPI spec.
 func NewOpenAPIValidator(basePath string) (gin.HandlerFunc, error) {
-	swagger, err := generated.GetSwagger()
+	document, err := libopenapi.NewDocument(specembed.CanonicalSpec)
 	if err != nil {
-		return nil, fmt.Errorf("load generated swagger: %w", err)
+		return nil, fmt.Errorf("load canonical openapi document: %w", err)
+	}
+	if _, err := document.BuildV3Model(); err != nil {
+		return nil, fmt.Errorf("build canonical openapi model: %w", err)
 	}
 
-	router, err := gorillamux.NewRouter(swagger)
-	if err != nil {
-		return nil, fmt.Errorf("create swagger router: %w", err)
+	runtime := &openAPIRuntimeValidator{
+		document:              document,
+		basePath:              normalizeBasePath(basePath),
+		validateResponse:      gin.Mode() != gin.ReleaseMode,
+		exposeValidationError: gin.Mode() != gin.ReleaseMode,
 	}
 
-	basePath = normalizeBasePath(basePath)
+	return runtime.middleware, nil
+}
 
-	return func(c *gin.Context) {
-		origPath := c.Request.URL.Path
-		origRawPath := c.Request.URL.RawPath
+type openAPIRuntimeValidator struct {
+	document              libopenapi.Document
+	basePath              string
+	validateResponse      bool
+	exposeValidationError bool
+}
 
-		route, pathParams, routeErr := findRouteWithFallback(router, c.Request, basePath)
-		if routeErr != nil {
-			c.Request.URL.Path = origPath
-			c.Request.URL.RawPath = origRawPath
-			// Route resolution mismatch should not break non-OpenAPI paths.
-			if isPathNotFoundError(routeErr) {
-				c.Next()
-				return
-			}
-			abortWithOpenAPIError(c, http.StatusBadRequest, "OPENAPI_ROUTE_INVALID", routeErr.Error())
+func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
+	requestValidator, err := v.newValidator()
+	if err != nil {
+		logger.Error("OpenAPI validator setup failed",
+			zap.String("method", c.Request.Method),
+			zap.String("path", c.Request.URL.Path),
+			zap.Error(err),
+		)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"code":    "OPENAPI_VALIDATOR_UNAVAILABLE",
+			"message": "OpenAPI validator could not be initialized",
+		})
+		return
+	}
+
+	restorePath := applyValidationPath(c.Request, v.basePath)
+	requestValid, requestErrs := requestValidator.ValidateHttpRequest(c.Request)
+	restorePath()
+
+	if !requestValid {
+		if allPathMissing(requestErrs) {
+			// Route is outside the OpenAPI contract scope.
+			c.Next()
 			return
 		}
-
-		reqValidationInput := &openapi3filter.RequestValidationInput{
-			Request:    c.Request,
-			PathParams: pathParams,
-			Route:      route,
-			Options: &openapi3filter.Options{
-				AuthenticationFunc: func(context.Context, *openapi3filter.AuthenticationInput) error {
-					// JWT/RBAC are handled by dedicated middleware in router chain.
-					return nil
-				},
-			},
-		}
-		if err := openapi3filter.ValidateRequest(c.Request.Context(), reqValidationInput); err != nil {
-			c.Request.URL.Path = origPath
-			c.Request.URL.RawPath = origRawPath
-			abortWithOpenAPIError(c, http.StatusBadRequest, "OPENAPI_REQUEST_INVALID", err.Error())
-			return
+		code := "OPENAPI_REQUEST_INVALID"
+		if hasRouteValidationError(requestErrs) {
+			code = "OPENAPI_ROUTE_INVALID"
 		}
 
-		c.Request.URL.Path = origPath
-		c.Request.URL.RawPath = origRawPath
-
-		buffered := newBufferedResponseWriter(c.Writer)
-		c.Writer = buffered
-		c.Next()
-
-		respValidationInput := &openapi3filter.ResponseValidationInput{
-			RequestValidationInput: reqValidationInput,
-			Status:                 buffered.Status(),
-			Header:                 buffered.Header().Clone(),
-			Options: &openapi3filter.Options{
-				AuthenticationFunc: func(context.Context, *openapi3filter.AuthenticationInput) error { return nil },
-			},
-		}
-		if buffered.Size() > 0 {
-			respValidationInput.SetBodyBytes(buffered.body.Bytes())
+		message := summarizeValidationErrors(requestErrs)
+		if !v.exposeValidationError {
+			message = openAPIRequestValidationMessage
 		}
 
-		if err := openapi3filter.ValidateResponse(c.Request.Context(), respValidationInput); err != nil {
-			logger.Error("OpenAPI response validation failed",
+		abortWithOpenAPIError(c, http.StatusBadRequest, code, message)
+		return
+	}
+
+	buffered := newBufferedResponseWriter(c.Writer)
+	c.Writer = buffered
+	c.Next()
+
+	if v.validateResponse {
+		responseIgnorePaths := []string{}
+		if shouldIgnoreDynamicSchemaResponseBody(c.Request, v.basePath) {
+			// Keep strict validation globally, but allow dynamic JSON Schema payload
+			// only on the canonical /schemas/* response body subtree.
+			responseIgnorePaths = append(responseIgnorePaths, "$.body.schema")
+		}
+
+		responseValidator, err := v.newValidator(responseIgnorePaths...)
+		if err != nil {
+			logger.Error("OpenAPI validator setup failed for response validation",
 				zap.String("method", c.Request.Method),
 				zap.String("path", c.Request.URL.Path),
-				zap.Int("status", buffered.Status()),
 				zap.Error(err),
 			)
 			buffered.ResetJSON(http.StatusInternalServerError, map[string]string{
-				"code":    "OPENAPI_RESPONSE_INVALID",
-				"message": openAPIResponseValidationMessage,
+				"code":    "OPENAPI_VALIDATOR_UNAVAILABLE",
+				"message": "OpenAPI validator could not be initialized",
 			})
+		} else {
+			restorePath = applyValidationPath(c.Request, v.basePath)
+			response := buildValidationResponse(c.Request, buffered)
+			responseValid, responseErrs := responseValidator.ValidateHttpResponse(c.Request, response)
+			restorePath()
+			if !responseValid && !allPathMissing(responseErrs) {
+				logger.Error("OpenAPI response validation failed",
+					zap.String("method", c.Request.Method),
+					zap.String("path", c.Request.URL.Path),
+					zap.Int("status", buffered.Status()),
+					zap.String("reason", summarizeValidationErrors(responseErrs)),
+				)
+				buffered.ResetJSON(http.StatusInternalServerError, map[string]string{
+					"code":    "OPENAPI_RESPONSE_INVALID",
+					"message": openAPIResponseValidationMessage,
+				})
+			}
 		}
+	}
 
-		if _, err := buffered.FlushToOriginal(); err != nil {
-			logger.Warn("failed to flush buffered response",
-				zap.String("method", c.Request.Method),
-				zap.String("path", c.Request.URL.Path),
-				zap.Error(err),
-			)
+	if _, err := buffered.FlushToOriginal(); err != nil {
+		logger.Warn("failed to flush buffered response",
+			zap.String("method", c.Request.Method),
+			zap.String("path", c.Request.URL.Path),
+			zap.Error(err),
+		)
+	}
+}
+
+func shouldIgnoreDynamicSchemaResponseBody(request *http.Request, basePath string) bool {
+	if request == nil || request.URL == nil {
+		return false
+	}
+	if request.Method != http.MethodGet {
+		return false
+	}
+	path := normalizeValidationPath(basePath, request.URL.Path)
+	return strings.HasPrefix(path, "/schemas/")
+}
+
+func (v *openAPIRuntimeValidator) newValidator(extraStrictIgnorePaths ...string) (validator.Validator, error) {
+	// Browser clients may attach framework/runtime cookies and forwarding headers
+	// that are unrelated to API contract parameters. Keep strict mode for API
+	// governance, but ignore these transport/runtime artifacts.
+	strictIgnorePaths := []string{"$.cookies.*"}
+	if len(extraStrictIgnorePaths) > 0 {
+		strictIgnorePaths = append(strictIgnorePaths, extraStrictIgnorePaths...)
+	}
+
+	openapiValidator, errs := validator.NewValidator(
+		v.document,
+		validatorconfig.WithStrictMode(),
+		validatorconfig.WithStrictIgnoredHeadersExtra(
+			"dnt",
+			"priority",
+			"x-forwarded-host",
+			"x-forwarded-port",
+			"sec-ch-ua",
+			"sec-ch-ua-mobile",
+			"sec-ch-ua-platform",
+			"sec-fetch-dest",
+			"sec-fetch-mode",
+			"sec-fetch-site",
+			"sec-fetch-user",
+		),
+		validatorconfig.WithStrictIgnorePaths(strictIgnorePaths...),
+	)
+	if len(errs) == 0 {
+		return openapiValidator, nil
+	}
+
+	joined := make([]error, 0, len(errs))
+	for _, err := range errs {
+		if err != nil {
+			joined = append(joined, err)
 		}
-	}, nil
+	}
+	if len(joined) == 0 {
+		return nil, fmt.Errorf("create openapi validator: unknown error")
+	}
+	return nil, fmt.Errorf("create openapi validator: %w", errors.Join(joined...))
 }
 
 func normalizeBasePath(basePath string) string {
@@ -144,58 +228,75 @@ func normalizeValidationPath(basePath, path string) string {
 	return path
 }
 
-func findRouteWithFallback(
-	router routers.Router,
-	req *http.Request,
-	basePath string,
-) (*routers.Route, map[string]string, error) {
-	origPath := req.URL.Path
-	origRawPath := req.URL.RawPath
+func applyValidationPath(request *http.Request, basePath string) func() {
+	if request == nil || request.URL == nil {
+		return func() {}
+	}
 
-	candidates := [][2]string{{origPath, origRawPath}}
-	normalizedPath := normalizeValidationPath(basePath, origPath)
-	normalizedRawPath := origRawPath
+	origPath := request.URL.Path
+	origRawPath := request.URL.RawPath
+	request.URL.Path = normalizeValidationPath(basePath, origPath)
 	if origRawPath != "" {
-		normalizedRawPath = normalizeValidationPath(basePath, origRawPath)
-	}
-	if normalizedPath != origPath || normalizedRawPath != origRawPath {
-		candidates = append(candidates, [2]string{normalizedPath, normalizedRawPath})
+		request.URL.RawPath = normalizeValidationPath(basePath, origRawPath)
 	}
 
-	var lastErr error
-	for _, candidate := range candidates {
-		req.URL.Path = candidate[0]
-		req.URL.RawPath = candidate[1]
-
-		route, pathParams, err := router.FindRoute(req)
-		if err == nil {
-			return route, pathParams, nil
-		}
-		if !isPathNotFoundError(err) {
-			return nil, nil, err
-		}
-		lastErr = err
+	return func() {
+		request.URL.Path = origPath
+		request.URL.RawPath = origRawPath
 	}
-
-	req.URL.Path = origPath
-	req.URL.RawPath = origRawPath
-	return nil, nil, lastErr
 }
 
-func isPathNotFoundError(err error) bool {
-	if err == nil {
+func allPathMissing(errs []*validatorerrors.ValidationError) bool {
+	if len(errs) == 0 {
 		return false
 	}
-	if err == routers.ErrPathNotFound {
-		return true
+	for _, err := range errs {
+		if err == nil || !err.IsPathMissingError() {
+			return false
+		}
 	}
-	if strings.Contains(err.Error(), routers.ErrPathNotFound.Error()) {
-		return true
-	}
-	if routeErr, ok := err.(*routers.RouteError); ok && strings.Contains(routeErr.Reason, routers.ErrPathNotFound.Error()) {
-		return true
+	return true
+}
+
+func hasRouteValidationError(errs []*validatorerrors.ValidationError) bool {
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		if err.IsOperationMissingError() {
+			return true
+		}
+		if err.ValidationType == "path" && !err.IsPathMissingError() {
+			return true
+		}
 	}
 	return false
+}
+
+func summarizeValidationErrors(errs []*validatorerrors.ValidationError) string {
+	if len(errs) == 0 {
+		return "request does not conform to OpenAPI contract"
+	}
+	messages := make([]string, 0, len(errs))
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		message := strings.TrimSpace(err.Message)
+		if message == "" {
+			message = strings.TrimSpace(err.Reason)
+		}
+		if message != "" {
+			messages = append(messages, message)
+		}
+	}
+	if len(messages) == 0 {
+		return "request does not conform to OpenAPI contract"
+	}
+	if len(messages) == 1 {
+		return messages[0]
+	}
+	return fmt.Sprintf("%s (and %d more validation errors)", messages[0], len(messages)-1)
 }
 
 func abortWithOpenAPIError(c *gin.Context, status int, code, message string) {
@@ -203,6 +304,17 @@ func abortWithOpenAPIError(c *gin.Context, status int, code, message string) {
 		"code":    code,
 		"message": message,
 	})
+}
+
+func buildValidationResponse(request *http.Request, buffered *bufferedResponseWriter) *http.Response {
+	body := io.NopCloser(bytes.NewReader(buffered.body.Bytes()))
+	return &http.Response{
+		StatusCode:    buffered.Status(),
+		Header:        buffered.Header().Clone(),
+		Body:          body,
+		ContentLength: int64(buffered.body.Len()),
+		Request:       request,
+	}
 }
 
 type bufferedResponseWriter struct {

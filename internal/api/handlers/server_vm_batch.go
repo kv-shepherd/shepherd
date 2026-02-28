@@ -83,8 +83,7 @@ func (s *Server) submitBatch(c *gin.Context) {
 	}
 
 	var req generated.VMBatchSubmitRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -355,8 +354,7 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 	}
 
 	var req generated.VMBatchPowerRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 

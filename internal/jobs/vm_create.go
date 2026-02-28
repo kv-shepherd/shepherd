@@ -198,9 +198,9 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		return fmt.Errorf("query instance size %s: %w", effectiveInstanceSizeID, err)
 	}
 	cpu := size.CPUCores
-	memoryMB := size.MemoryMB
+	memoryGi := size.MemoryGi
 	diskGB := size.DiskGB
-	applyInstanceSizeSnapshotOverrides(&cpu, &memoryMB, &diskGB, ticket.InstanceSizeSnapshot)
+	applyInstanceSizeSnapshotOverrides(&cpu, &memoryGi, &diskGB, ticket.InstanceSizeSnapshot)
 	specOverrides := resolveInstanceSizeSpecOverrides(size.SpecOverrides, ticket.InstanceSizeSnapshot)
 
 	tpl, err := w.entClient.Template.Get(ctx, effectiveTemplateID)
@@ -221,13 +221,20 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 	if err != nil {
 		return markFailed(fmt.Errorf("resolve image from template %s: %w", effectiveTemplateID, err), true)
 	}
+	cloudInit := tpl.CloudInit
+	if len(ticket.TemplateSnapshot) > 0 {
+		if snapCloudInit, ok := extractTemplateCloudInitFromSnapshot(ticket.TemplateSnapshot); ok {
+			cloudInit = snapCloudInit
+		}
+	}
 
 	spec := &domain.VMSpec{
-		Name:     vmName,
-		CPU:      cpu,
-		MemoryMB: memoryMB,
-		DiskGB:   diskGB,
-		Image:    image,
+		Name:      vmName,
+		CPU:       cpu,
+		MemoryGi:  memoryGi,
+		DiskGB:    diskGB,
+		Image:     image,
+		CloudInit: cloudInit,
 		Labels: map[string]string{
 			"shepherd.io/service-id":  payload.ServiceID,
 			"shepherd.io/template-id": effectiveTemplateID,
@@ -236,10 +243,10 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		SpecOverrides: specOverrides,
 	}
 	applyModifiedSpecOverrides(spec, ticket.ModifiedSpec)
-	if spec.CPU <= 0 || spec.MemoryMB <= 0 || strings.TrimSpace(spec.Name) == "" || strings.TrimSpace(spec.Image) == "" {
+	if spec.CPU <= 0 || spec.MemoryGi <= 0 || strings.TrimSpace(spec.Name) == "" || strings.TrimSpace(spec.Image) == "" {
 		return markFailed(fmt.Errorf(
-			"invalid effective vm spec for event %s (name=%q cpu=%d memory_mb=%d image=%q)",
-			eventID, spec.Name, spec.CPU, spec.MemoryMB, spec.Image,
+			"invalid effective vm spec for event %s (name=%q cpu=%.1f memory_gi=%.1f image=%q)",
+			eventID, spec.Name, spec.CPU, spec.MemoryGi, spec.Image,
 		), true)
 	}
 
@@ -416,15 +423,15 @@ func resolveEffectiveSelectionIDs(
 	return templateID, instanceSizeID
 }
 
-func applyInstanceSizeSnapshotOverrides(cpu, memoryMB, diskGB *int, snapshot map[string]interface{}) {
-	if cpu == nil || memoryMB == nil || diskGB == nil {
+func applyInstanceSizeSnapshotOverrides(cpu, memoryGi *float64, diskGB *int, snapshot map[string]interface{}) {
+	if cpu == nil || memoryGi == nil || diskGB == nil {
 		return
 	}
-	if v, ok := lookupIntValue(snapshot, "cpu_cores", "cpu"); ok {
+	if v, ok := lookupFloat64Value(snapshot, "cpu_cores", "cpu"); ok {
 		*cpu = v
 	}
-	if v, ok := lookupIntValue(snapshot, "memory_mb", "memory"); ok {
-		*memoryMB = v
+	if v, ok := lookupFloat64Value(snapshot, "memory_gi"); ok {
+		*memoryGi = v
 	}
 	if v, ok := lookupIntValue(snapshot, "disk_gb", "disk"); ok && v >= 0 {
 		*diskGB = v
@@ -462,24 +469,24 @@ func applyModifiedSpecOverrides(spec *domain.VMSpec, modifiedSpec map[string]int
 		return
 	}
 	// cpu_limit takes precedence over cpu for the CPU limit value.
-	if v, ok := lookupIntValue(modifiedSpec, "cpu_limit"); ok && v > 0 {
+	if v, ok := lookupFloat64Value(modifiedSpec, "cpu_limit"); ok && v > 0 {
 		spec.CPU = v
-	} else if v, ok := lookupIntValue(modifiedSpec, "cpu", "resources.cpu"); ok {
+	} else if v, ok := lookupFloat64Value(modifiedSpec, "cpu", "resources.cpu"); ok {
 		spec.CPU = v
 	}
 	// cpu_request maps to spec.CPURequest for K8s overcommit.
-	if v, ok := lookupIntValue(modifiedSpec, "cpu_request"); ok && v > 0 {
+	if v, ok := lookupFloat64Value(modifiedSpec, "cpu_request"); ok && v > 0 {
 		spec.CPURequest = v
 	}
-	// memory_limit_mb takes precedence over memory_mb for the memory limit value.
-	if v, ok := lookupIntValue(modifiedSpec, "memory_limit_mb"); ok && v > 0 {
-		spec.MemoryMB = v
-	} else if v, ok := lookupIntValue(modifiedSpec, "memory_mb", "resources.memory_mb"); ok {
-		spec.MemoryMB = v
+	// memory_limit_gi takes precedence over memory_gi for the memory limit value.
+	if v, ok := lookupFloat64Value(modifiedSpec, "memory_limit_gi"); ok && v > 0 {
+		spec.MemoryGi = v
+	} else if v, ok := lookupFloat64Value(modifiedSpec, "memory_gi", "resources.memory_gi"); ok {
+		spec.MemoryGi = v
 	}
-	// memory_request_mb maps to spec.MemoryRequestMB for K8s overcommit.
-	if v, ok := lookupIntValue(modifiedSpec, "memory_request_mb"); ok && v > 0 {
-		spec.MemoryRequestMB = v
+	// memory_request_gi maps to spec.MemoryRequestGi for K8s overcommit.
+	if v, ok := lookupFloat64Value(modifiedSpec, "memory_request_gi"); ok && v > 0 {
+		spec.MemoryRequestGi = v
 	}
 	if v, ok := lookupIntValue(modifiedSpec, "disk_gb", "resources.disk_gb"); ok && v >= 0 {
 		spec.DiskGB = v
@@ -628,6 +635,20 @@ func extractTemplateImageFromSnapshot(snapshot map[string]interface{}) (string, 
 	return extractTemplateImage(snapshot)
 }
 
+// extractTemplateCloudInitFromSnapshot resolves cloud-init userdata from a
+// template snapshot map. Returns (value, true) when the key is present; this
+// lets callers distinguish "missing key" from "explicitly empty cloud_init".
+func extractTemplateCloudInitFromSnapshot(snapshot map[string]interface{}) (string, bool) {
+	if len(snapshot) == 0 {
+		return "", false
+	}
+	raw, ok := lookupValue(snapshot, "cloud_init")
+	if !ok {
+		return "", false
+	}
+	return toString(raw), true
+}
+
 func extractImageFromVolumes(raw interface{}) string {
 	items, ok := raw.([]interface{})
 	if !ok {
@@ -673,6 +694,28 @@ func lookupIntValue(values map[string]interface{}, paths ...string) (int, bool) 
 		}
 		if v, ok := toInt(raw); ok {
 			return v, true
+		}
+	}
+	return 0, false
+}
+
+func lookupFloat64Value(values map[string]interface{}, paths ...string) (float64, bool) {
+	for _, path := range paths {
+		raw, ok := lookupValue(values, path)
+		if !ok {
+			continue
+		}
+		switch v := raw.(type) {
+		case float64:
+			return v, true
+		case float32:
+			return float64(v), true
+		case int:
+			return float64(v), true
+		case int64:
+			return float64(v), true
+		case int32:
+			return float64(v), true
 		}
 	}
 	return 0, false

@@ -97,8 +97,7 @@ func (s *Server) CreateNamespace(c *gin.Context) {
 	}
 
 	var req generated.NamespaceCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -182,8 +181,7 @@ func (s *Server) UpdateNamespace(c *gin.Context, namespaceId generated.Namespace
 	}
 
 	var req generated.NamespaceUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 

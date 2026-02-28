@@ -10,7 +10,7 @@ import (
 )
 
 func TestValidateOvercommit_DedicatedCPUConflict(t *testing.T) {
-	err := ValidateOvercommit(8, 4, 32768, 32768, true)
+	err := ValidateOvercommit(8, 4, 32, 32, true)
 	require.Error(t, err)
 
 	appErr, ok := apperrors.IsAppError(err)
@@ -19,8 +19,26 @@ func TestValidateOvercommit_DedicatedCPUConflict(t *testing.T) {
 }
 
 func TestValidateOvercommit_ValidGuaranteedQoS(t *testing.T) {
-	err := ValidateOvercommit(8, 8, 32768, 32768, true)
+	err := ValidateOvercommit(8, 8, 32, 32, true)
 	require.NoError(t, err)
+}
+
+func TestValidateOvercommit_RejectsNonHalfStepCPU(t *testing.T) {
+	err := ValidateOvercommit(1.3, 1.3, 4, 4, false)
+	require.Error(t, err)
+
+	appErr, ok := apperrors.IsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, "OVERCOMMIT_INVALID", appErr.Code)
+}
+
+func TestValidateOvercommit_RejectsNonHalfStepMemory(t *testing.T) {
+	err := ValidateOvercommit(2, 2, 3.3, 3.3, false)
+	require.Error(t, err)
+
+	appErr, ok := apperrors.IsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, "OVERCOMMIT_INVALID", appErr.Code)
 }
 
 func TestExtractRequiredCapabilities_FromFlags(t *testing.T) {

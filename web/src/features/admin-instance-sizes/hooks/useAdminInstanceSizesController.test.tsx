@@ -98,7 +98,7 @@ describe('useAdminInstanceSizesController', () => {
     createFormState.validateFields.mockResolvedValue({
       name: 'm4.large',
       cpu_cores: 4,
-      memory_mb: 8192,
+      memory_gi: 8,
       enabled: true,
       spec_text: '{"spec":{"template":{"spec":{"domain":{"resources":{"limits":{"memory":"8Gi"}}}}}}}',
     });
@@ -113,7 +113,7 @@ describe('useAdminInstanceSizesController', () => {
     expect(createMutate).toHaveBeenCalledWith(expect.objectContaining({
       name: 'm4.large',
       cpu_cores: 4,
-      memory_mb: 8192,
+      memory_gi: 8,
       enabled: true,
       // requires_gpu / requires_hugepages removed from formToPayload (ADR-0023 Stage 1).
       // Those fields are now part of spec_overrides (KubeVirt spec), not top-level metadata.
@@ -155,7 +155,7 @@ describe('useAdminInstanceSizesController', () => {
     createFormState.validateFields.mockResolvedValue({
       name: 'm4.large',
       cpu_cores: 4,
-      memory_mb: 8192,
+      memory_gi: 8,
       // Array JSON is non-object — controller ignores it silently.
       spec_text: '[]',
     });
@@ -173,5 +173,57 @@ describe('useAdminInstanceSizesController', () => {
     }));
     // No error toast — DynamicSchemaForm owns field validation, not the controller.
     expect(messageErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('submits update payload with cpu_request=0 and memory_request_gi=0 when overcommit is disabled', async () => {
+    const createMutate = vi.fn();
+    const updateMutate = vi.fn();
+
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      if (mutationCall % 2 === 1) {
+        return { mutate: createMutate, isPending: false };
+      }
+      return { mutate: updateMutate, isPending: false };
+    });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'size-1',
+        name: 'm4.large',
+        cpu_cores: 4,
+        memory_gi: 8,
+        disk_gb: 80,
+        dedicated_cpu: false,
+        enabled: true,
+      } as any);
+    });
+
+    editFormState.validateFields.mockResolvedValue({
+      name: 'm4.large',
+      cpu_cores: 4,
+      memory_gi: 8,
+      cpu_overcommit_enabled: false,
+      memory_overcommit_enabled: false,
+      spec_text: '{}',
+      enabled: true,
+    });
+
+    await act(async () => {
+      await result.current.submitEdit();
+    });
+
+    expect(updateMutate).toHaveBeenCalledTimes(1);
+    expect(updateMutate).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'size-1',
+      body: expect.objectContaining({
+        cpu_request: 0,
+        memory_request_gi: 0,
+      }),
+    }));
   });
 });

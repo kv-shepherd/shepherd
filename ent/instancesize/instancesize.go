@@ -25,14 +25,14 @@ const (
 	FieldDescription = "description"
 	// FieldCPUCores holds the string denoting the cpu_cores field in the database.
 	FieldCPUCores = "cpu_cores"
-	// FieldMemoryMB holds the string denoting the memory_mb field in the database.
-	FieldMemoryMB = "memory_mb"
+	// FieldMemoryGi holds the string denoting the memory_gi field in the database.
+	FieldMemoryGi = "memory_gi"
 	// FieldDiskGB holds the string denoting the disk_gb field in the database.
 	FieldDiskGB = "disk_gb"
 	// FieldCPURequest holds the string denoting the cpu_request field in the database.
 	FieldCPURequest = "cpu_request"
-	// FieldMemoryRequestMB holds the string denoting the memory_request_mb field in the database.
-	FieldMemoryRequestMB = "memory_request_mb"
+	// FieldMemoryRequestGi holds the string denoting the memory_request_gi field in the database.
+	FieldMemoryRequestGi = "memory_request_gi"
 	// FieldDedicatedCPU holds the string denoting the dedicated_cpu field in the database.
 	FieldDedicatedCPU = "dedicated_cpu"
 	// FieldRequiresGpu holds the string denoting the requires_gpu field in the database.
@@ -64,10 +64,10 @@ var Columns = []string{
 	FieldDisplayName,
 	FieldDescription,
 	FieldCPUCores,
-	FieldMemoryMB,
+	FieldMemoryGi,
 	FieldDiskGB,
 	FieldCPURequest,
-	FieldMemoryRequestMB,
+	FieldMemoryRequestGi,
 	FieldDedicatedCPU,
 	FieldRequiresGpu,
 	FieldRequiresSriov,
@@ -99,15 +99,15 @@ var (
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
 	// CPUCoresValidator is a validator for the "cpu_cores" field. It is called by the builders before save.
-	CPUCoresValidator func(int) error
-	// MemoryMBValidator is a validator for the "memory_mb" field. It is called by the builders before save.
-	MemoryMBValidator func(int) error
+	CPUCoresValidator func(float64) error
+	// MemoryGiValidator is a validator for the "memory_gi" field. It is called by the builders before save.
+	MemoryGiValidator func(float64) error
 	// DiskGBValidator is a validator for the "disk_gb" field. It is called by the builders before save.
 	DiskGBValidator func(int) error
 	// CPURequestValidator is a validator for the "cpu_request" field. It is called by the builders before save.
-	CPURequestValidator func(int) error
-	// MemoryRequestMBValidator is a validator for the "memory_request_mb" field. It is called by the builders before save.
-	MemoryRequestMBValidator func(int) error
+	CPURequestValidator func(float64) error
+	// MemoryRequestGiValidator is a validator for the "memory_request_gi" field. It is called by the builders before save.
+	MemoryRequestGiValidator func(float64) error
 	// DefaultDedicatedCPU holds the default value on creation for the "dedicated_cpu" field.
 	DefaultDedicatedCPU bool
 	// DefaultRequiresGpu holds the default value on creation for the "requires_gpu" field.
@@ -162,9 +162,9 @@ func ByCPUCores(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCPUCores, opts...).ToFunc()
 }
 
-// ByMemoryMB orders the results by the memory_mb field.
-func ByMemoryMB(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldMemoryMB, opts...).ToFunc()
+// ByMemoryGi orders the results by the memory_gi field.
+func ByMemoryGi(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMemoryGi, opts...).ToFunc()
 }
 
 // ByDiskGB orders the results by the disk_gb field.
@@ -177,9 +177,9 @@ func ByCPURequest(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCPURequest, opts...).ToFunc()
 }
 
-// ByMemoryRequestMB orders the results by the memory_request_mb field.
-func ByMemoryRequestMB(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldMemoryRequestMB, opts...).ToFunc()
+// ByMemoryRequestGi orders the results by the memory_request_gi field.
+func ByMemoryRequestGi(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMemoryRequestGi, opts...).ToFunc()
 }
 
 // ByDedicatedCPU orders the results by the dedicated_cpu field.

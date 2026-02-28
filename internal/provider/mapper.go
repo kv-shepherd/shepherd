@@ -123,7 +123,23 @@ func mapVMStatus(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineIn
 		}
 	}
 
-	// Check if VM is stopped (running=false)
+	// ADR-0011 / KV-005: Prefer RunStrategy over deprecated spec.Running.
+	// RunStrategy is the recommended field since KubeVirt v1.x.
+	if vm.Spec.RunStrategy != nil {
+		switch *vm.Spec.RunStrategy {
+		case kubevirtv1.RunStrategyHalted:
+			return domain.VMStatusStopped
+		case kubevirtv1.RunStrategyAlways,
+			kubevirtv1.RunStrategyRerunOnFailure,
+			kubevirtv1.RunStrategyManual,
+			kubevirtv1.RunStrategyOnce:
+			// These strategies don't definitively indicate stopped status.
+			// Fall through to unknown — actual running state comes from VMI/PrintableStatus above.
+		}
+	}
+
+	// Legacy fallback: spec.Running (deprecated, kept for backward compatibility
+	// with older KubeVirt clusters that may not set RunStrategy).
 	if vm.Spec.Running != nil && !*vm.Spec.Running {
 		return domain.VMStatusStopped
 	}
@@ -143,12 +159,12 @@ func mapVMSpec(vm *kubevirtv1.VirtualMachine) domain.VMSpec {
 
 	// CPU
 	if req, ok := domainRes.Requests["cpu"]; ok {
-		spec.CPU = int(req.Value())
+		spec.CPU = float64(req.MilliValue()) / 1000.0
 	}
 
-	// Memory
+	// Memory (bytes → Gi)
 	if req, ok := domainRes.Requests["memory"]; ok {
-		spec.MemoryMB = int(req.Value() / (1024 * 1024))
+		spec.MemoryGi = float64(req.Value()) / (1024 * 1024 * 1024)
 	}
 
 	// Labels

@@ -20,13 +20,15 @@ OAPI_CODEGEN_CONFIG := api/oapi-codegen.yaml
 OAPI_CODEGEN_INPUT := $(OPENAPI_SPEC)
 
 # Tool versions (pin in docs/design/DEPENDENCIES.md; override via env if needed)
-OAPI_CODEGEN_VERSION ?= v2.5.0
+OAPI_CODEGEN_VERSION ?= v2.5.1
 OPENAPI_TS_VERSION ?= 7.12.0
 VACUUM_VERSION ?= v0.23.8
 OASDIFF_VERSION ?= v1.11.10
 
 VACUUM_CMD := go run github.com/daveshanley/vacuum@$(VACUUM_VERSION)
 OASDIFF_CMD := go run github.com/oasdiff/oasdiff@$(OASDIFF_VERSION)
+OAPI_CODEGEN_CMD := go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
+OPENAPI_COMPAT_GEN_CMD := go run ./cmd/openapi-compat-gen/main.go
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main Targets
@@ -49,7 +51,7 @@ api-generate-go: ## Generate Go server code
 	@if [ -f $(COMPAT_SPEC) ]; then \
 		OAPI_CODEGEN_INPUT=$(COMPAT_SPEC); \
 	fi; \
-	go tool oapi-codegen -config $(OAPI_CODEGEN_CONFIG) $${OAPI_CODEGEN_INPUT:-$(OPENAPI_SPEC)}
+	$(OAPI_CODEGEN_CMD) -config $(OAPI_CODEGEN_CONFIG) $${OAPI_CODEGEN_INPUT:-$(OPENAPI_SPEC)}
 	@echo "✅ Go server code generated: $(GO_GENERATED_DIR)/"
 
 .PHONY: api-generate-ts
@@ -69,8 +71,8 @@ api-compat: ## Verify compat spec exists and is fresh (set REQUIRE_OPENAPI_COMPA
 	@bash ./docs/design/ci/scripts/openapi-compat.sh
 
 .PHONY: api-compat-generate
-api-compat-generate: ## Generate OpenAPI 3.0-compatible spec (placeholder)
-	@bash ./docs/design/ci/scripts/openapi-compat-generate.sh
+api-compat-generate: ## Generate OpenAPI 3.0-compatible spec (Go-native)
+	@$(OPENAPI_COMPAT_GEN_CMD) $(OPENAPI_SPEC) $(COMPAT_SPEC)
 
 .PHONY: api-breaking
 api-breaking: ## Detect breaking changes vs main branch
@@ -111,8 +113,8 @@ api-docs: ## Serve interactive API documentation
 .PHONY: api-tools
 api-tools: ## Install required API tooling
 	@echo "📦 Installing API development tools..."
-	# Go tool (tracked via go.mod tool directive)
-	go get -tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
+	# Go tools
+	go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
 	# Optional local binaries for faster/lower-network local runs
 	go install github.com/daveshanley/vacuum@$(VACUUM_VERSION)
 	go install github.com/oasdiff/oasdiff@$(OASDIFF_VERSION)

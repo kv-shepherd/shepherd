@@ -132,7 +132,7 @@ function InstanceSizeSpecSection({
  * Shared form fields for InstanceSize create/edit modals.
  *
  * Architecture:
- * - Metadata fields (cpu_cores, memory_mb, overcommit, etc.) remain as
+ * - Metadata fields (cpu_cores, memory_gi, overcommit, etc.) remain as
  *   explicit Ant Design Form.Items — these are InstanceSize-specific API fields.
  * - Spec overrides (hugepages, GPU devices, CPU model, etc.) are rendered
  *   schema-driven via DynamicSchemaForm (ADR-0023 Stage 1).
@@ -176,7 +176,11 @@ function InstanceSizeFormFields({
             </Divider>
 
             <Form.Item name="cpu_cores" label={t('instanceSizes.cpu')} rules={[{ required: true }]}>
-                <InputNumber min={1} style={{ width: '100%' }} addonAfter={t('instanceSizes.cores')} />
+                <InputNumber min={0.5} step={0.5} precision={1} style={{ width: '100%' }} addonAfter={t('instanceSizes.cores')} />
+            </Form.Item>
+
+            <Form.Item name="dedicated_cpu" valuePropName="checked">
+                <Checkbox>{t('instanceSizes.dedicated')}</Checkbox>
             </Form.Item>
 
             {/* CPU Overcommit: conditional reveal using shouldUpdate (rendering only, no side effects) */}
@@ -192,7 +196,7 @@ function InstanceSizeFormFields({
                         <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
                             <Space style={{ width: '100%' }} direction="vertical">
                                 <Form.Item name="cpu_request" label={t('instanceSizes.cpu_request')} style={{ margin: 0 }}>
-                                    <InputNumber min={1} style={{ width: '100%' }} addonAfter={t('instanceSizes.cores')} />
+                                    <InputNumber min={0.5} step={0.5} precision={1} style={{ width: '100%' }} addonAfter={t('instanceSizes.cores')} />
                                 </Form.Item>
                                 <Text type="secondary" style={{ fontSize: 12 }}>
                                     {t('instanceSizes.overcommit_ratio_hint')}
@@ -203,8 +207,8 @@ function InstanceSizeFormFields({
                 }
             </Form.Item>
 
-            <Form.Item name="memory_mb" label={t('instanceSizes.memory')} rules={[{ required: true }]}>
-                <InputNumber min={1} style={{ width: '100%' }} addonAfter="MB" />
+            <Form.Item name="memory_gi" label={t('instanceSizes.memory')} rules={[{ required: true }]}>
+                <InputNumber min={0.5} step={0.5} precision={1} style={{ width: '100%' }} addonAfter="Gi" />
             </Form.Item>
 
             {/* Memory Overcommit: conditional reveal */}
@@ -218,8 +222,8 @@ function InstanceSizeFormFields({
                 {({ getFieldValue }) =>
                     getFieldValue('memory_overcommit_enabled') ? (
                         <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
-                            <Form.Item name="memory_request_mb" label={t('instanceSizes.memory_request')} style={{ margin: 0 }}>
-                                <InputNumber min={1} style={{ width: '100%' }} addonAfter="MB" />
+                            <Form.Item name="memory_request_gi" label={t('instanceSizes.memory_request')} style={{ margin: 0 }}>
+                                <InputNumber min={0.5} step={0.5} precision={1} style={{ width: '100%' }} addonAfter="Gi" />
                             </Form.Item>
                         </Card>
                     ) : null
@@ -369,12 +373,12 @@ export function AdminInstanceSizesContent() {
         },
         {
             title: t('instanceSizes.memory'),
-            dataIndex: 'memory_mb',
-            key: 'memory_mb',
+            dataIndex: 'memory_gi',
+            key: 'memory_gi',
             width: 100,
             align: 'center' as const,
-            sorter: (a, b) => a.memory_mb - b.memory_mb,
-            render: (mb: number) => <Text strong>{formatMemory(mb)}</Text>,
+            sorter: (a, b) => a.memory_gi - b.memory_gi,
+            render: (gi: number) => <Text strong>{formatMemory(gi)}</Text>,
         },
         {
             title: t('instanceSizes.disk'),

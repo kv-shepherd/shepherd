@@ -52,8 +52,7 @@ func (s *Server) CreateUser(c *gin.Context) {
 	}
 
 	var req userCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -122,8 +121,7 @@ func (s *Server) UpdateUser(c *gin.Context, userId generated.UserID) {
 	}
 
 	var req userUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -309,8 +307,7 @@ func (s *Server) CreateUserRoleBinding(c *gin.Context, userId generated.UserID) 
 	}
 
 	var req userRoleBindingCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
