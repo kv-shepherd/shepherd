@@ -227,6 +227,29 @@ All PRs must pass these checks:
 
 See [docs/design/ci/README.md](docs/design/ci/README.md) for the complete list.
 
+### API Contract Checks (ADR-0021 / ADR-0029 / ADR-0037)
+
+When your PR changes API handlers/spec/codegen artifacts, run these checks locally:
+
+```bash
+make api-compat-generate
+make api-generate
+REQUIRE_OPENAPI_COMPAT=1 make api-compat
+REQUIRE_OPENAPI_COMPAT=1 make api-check
+make api-lint
+make api-breaking
+make api-contract-test
+```
+
+Compatibility and naming notes:
+
+- `api/openapi.yaml` is the canonical source of truth.
+- `api/openapi.compat.yaml` is a derived artifact for **Go codegen only**.
+- Runtime OpenAPI validation must use canonical embedded bytes (`internal/api/specembed/openapi.yaml`), not generated embedded compat bytes.
+- `make api-diff` is a compatibility alias of `make api-breaking`.
+- Contract workflow file is `.github/workflows/api-contract.yaml`.
+- Reusable rollout comment template: `docs/design/ci/templates/api-contract-rollout-comment.md`.
+
 ### Code Style
 
 - Follow [Effective Go](https://golang.org/doc/effective_go)
