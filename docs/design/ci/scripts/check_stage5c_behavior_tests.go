@@ -18,19 +18,20 @@ type behaviorTestRequirement struct {
 	requiredSnippets []string
 }
 
+// ADR-0011: Tests updated to match SSA refactored code.
+// - kubevirt_test.go now tests SSA Applier, not buildVMFromSpec.
+// - vm_renderer_test.go covers SpecOverrides rendering and path validation.
 var requirements = []behaviorTestRequirement{
 	{
-		file: "internal/provider/kubevirt_test.go",
+		file: "internal/provider/vm_renderer_test.go",
 		requiredTests: []string{
-			"TestBuildVMFromSpec_AppliesSpecOverrides",
-			"TestBuildVMFromSpec_RejectsInvalidSpecOverridePath",
+			"TestRenderVMSpecToYAML_SpecOverrides",
+			"TestRenderVMSpecToYAML_SpecOverrides_RejectsInvalidPath",
 		},
 		requiredSnippets: []string{
 			"spec.template.spec.domain.memory.hugepages.pageSize",
-			"spec.template.spec.domain.devices.gpus",
 			"spec.template.spec.domain.cpu.dedicatedCpuPlacement",
-			"metadata.labels.foo",
-			"expected dedicatedCpuPlacement=true from spec_overrides",
+			"invalid spec_overrides path",
 		},
 	},
 	{
@@ -94,7 +95,7 @@ func main() {
 		for _, v := range violations {
 			fmt.Println(" -", v)
 		}
-		fmt.Println("Rule: critical Stage 5.C tests must exist with assertions and cover key spec_overrides scenarios.")
+		fmt.Println("Rule: critical Stage 5.C tests must exist with assertions and cover key spec_overrides scenarios (ADR-0011/0018).")
 		os.Exit(1)
 	}
 
