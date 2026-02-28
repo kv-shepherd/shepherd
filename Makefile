@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg
+.PHONY: all build test lint clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg check-kubevirt-ssa
 
 # Go parameters
 GOCMD=go
@@ -125,6 +125,10 @@ test-backend-docker-pg:
 ## master-flow-strict-docker-pg: Run master-flow strict chain against an isolated Docker PostgreSQL container
 master-flow-strict-docker-pg:
 	./scripts/run_with_docker_pg.sh -- make master-flow-strict
+
+## check-kubevirt-ssa: Verify KubeVirt write paths use SSA (ADR-0011)
+check-kubevirt-ssa:
+	go run docs/design/ci/scripts/check_kubevirt_ssa_compliance.go
 
 ## help: Show this help message
 help:
