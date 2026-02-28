@@ -1,10 +1,9 @@
 # ADR-0037 Implementation Note: OpenAPI Validation Architecture and Enforcement Policy
 
-Status: Draft implementation note for ADR-0037 (`proposed`)  
-Linked ADR: `docs/adr/ADR-0037-openapi-validation-architecture-and-enforcement-policy.md`  
-Last Updated: 2026-02-26 rev.9
+Status: Implementation note for ADR-0037 (`accepted`)
+Linked ADR: `docs/adr/ADR-0037-openapi-validation-architecture-and-enforcement-policy.md`
 
-> **rev.3 Change Summary (2026-02-26)**:
+> **rev.3 Change Summary**:
 > 1. Added frontend toolchain impact overview (completely missing from original design note)
 > 2. Refined compat bridge layer exit criteria with automated detection triggers
 > 3. Added compat script robustness improvements (3.1-only keywords + multi-element union detection)
@@ -14,14 +13,14 @@ Last Updated: 2026-02-26 rev.9
 > 7. Added spec loading security considerations
 > 8. Enhanced CI governance coverage (contract testing + spec drift prevention)
 >
-> **rev.4 Change Summary (2026-02-26, post-review fixes)**:
+> **rev.4 Change Summary (post-review fixes)**:
 > 1. **BLOCKING FIX**: Runtime validator must use `//go:embed` canonical spec, NOT `generated.GetSwagger()` (resolves compat scope contradiction)
 > 2. **BLOCKING FIX**: CI ordering corrected: `api-compat-generate` → `api-generate` → `api-compat` → sync diff; `api-check.sh` added to PR-6 changelist
 > 3. PR-1 required checks now reference specific job/check names, not workflow step names
 > 4. Compat fail-closed upgraded from regex to YAML-aware AST/object traversal; block-style union coverage added
 > 5. Added libopenapi-validator concurrency/lifecycle policy and `-race` test requirement for PR-3
 >
-> **rev.5 Change Summary (2026-02-26, second review fixes)**:
+> **rev.5 Change Summary (second review fixes)**:
 > 1. **BLOCKING FIX**: `//go:embed ../../api/openapi.yaml` is illegal (Go embed forbids `..`); replaced with `internal/api/specembed/` derived-file approach
 > 2. Cleaned ALL stale `generated.GetSwagger()` references from best-practice alignment section
 > 3. Clarified strict mode API: `validator.NewValidator(doc, config.WithStrictMode())` per pb33f official docs (not a separate `strict` sub-package)
@@ -30,33 +29,72 @@ Last Updated: 2026-02-26 rev.9
 > 6. Added dependency management plan for compat YAML AST parsing upgrade
 > 7. Synced version metadata
 >
-> **rev.6 Change Summary (2026-02-26, best-practice cleanup)**:
+> **rev.6 Change Summary (best-practice cleanup)**:
 > 1. Corrected `PyYAML` statement: it is third-party (not Python stdlib), so CI must install from pinned requirements
 > 2. Clarified strict API wording: prefer top-level `validator.NewValidator(..., config.WithStrictMode())`; `strict` package is internal/advanced path and not needed here
 > 3. Hardened dependency reproducibility guidance for YAML AST conversion in blocking CI gates
 >
-> **rev.7 Change Summary (2026-02-26, best-practice cross-audit)**:
+> **rev.7 Change Summary (best-practice cross-audit)**:
 > 1. All dependency versions confirmed via pkg.go.dev version listing pages (libopenapi v0.33.11, libopenapi-validator v0.12.1, validator/v10 v10.30.1 all verified)
 > 2. Refined PR-3 concurrency validation strategy: default conservative (sync.Pool/per-request) with benchmark-driven conditional switch
 > 3. Added post-PR-7 monitoring enhancement plan with concrete Prometheus metric definitions and implementation timeline
 > 4. Added version verification record section with full audit trail
 >
-> **rev.8 Change Summary (2026-02-26, implementation-feasibility corrections)**:
+> **rev.8 Change Summary (implementation-feasibility corrections)**:
 > 1. **BLOCKING FIX**: PR-3 concurrency policy updated to per-validation instance creation only (no shared/sync.Pool reuse), aligned with `libopenapi-validator/strict` docs
 > 2. **BLOCKING FIX**: compat exit steps corrected to require disabling/removing compat before canonical codegen verification (matches current `build/api.mk` behavior)
 > 3. Fixed typo in rollout command examples and synchronized source-evidence wording
 >
-> **rev.9 Change Summary (2026-02-26, Go-native tooling + final audit refinements)**:
+> **rev.9 Change Summary (Go-native tooling + final audit refinements)**:
 > 1. **PR-2 major upgrade**: Replaced Python/PyYAML compat script with Go-native tool (`cmd/openapi-compat-gen/main.go` using `gopkg.in/yaml.v3` AST traversal). Evaluated and excluded `dense-analysis/openapi-spec-converter` (depends on `kin-openapi` + requires Node.js for tests).
 > 2. **PR-3 API selection**: Clarified that `NewDocument([]byte)` is the correct and optimal choice for self-contained embedded spec; `NewDocumentWithConfiguration` is only relevant when external `$ref` file references need resolution — not applicable here.
 > 3. **PR-4 defensive addition**: Confirmed `gin.Recovery()` middleware should be registered at outermost router layer as last-resort panic defense for `InvalidValidationError` edge cases.
 > 4. Added `gopkg.in/yaml.v3` (already an indirect dependency) to version baseline table.
+>
+> **rev.10 Change Summary (PR-2 execution backfill)**:
+> 1. Marked PR-2 as completed in progress tracking.
+> 2. Backfilled concrete execution evidence: Go compat generator implementation, Makefile wiring, legacy script removal, and test/verification command results.
+> 3. Kept remaining PR-3~PR-7 items unchanged for sequential execution.
+>
+> **rev.11 Change Summary (PR-3 execution backfill)**:
+> 1. Marked PR-3 as completed in progress tracking.
+> 2. Backfilled runtime validator migration evidence: canonical spec embedding (`internal/api/specembed`), middleware migration to `libopenapi-validator` strict mode, and Makefile sync integration.
+> 3. Backfilled verification evidence including middleware `-race` tests and frontend E2E smoke regression (`35 passed`).
+>
+> **rev.12 Change Summary (scope cleanup)**:
+> 1. Simplified PR-2/PR-3 sections in this ADR note to retain only progress and test records.
+> 2. Moved submission-scoped details (file lists/splitting guidance) to `REMEDIATION-PLAN-BEST-STATE.md`.
+>
+> **rev.13 Change Summary (revalidation backfill)**:
+> 1. Backfilled final local revalidation results for PR-2/PR-3 scope.
+> 2. Added `make api-check` and API middleware race-test rerun records.
+> 3. Confirmed frontend E2E re-run remains green (`35 passed`).
+>
+> **rev.14 Change Summary (validator instance lifecycle optimization)**:
+> 1. **Source-confirmed optimization**: Read `libopenapi-validator@v0.12.1/validator.go` directly — `NewValidator()` calls `BuildV3Model()` and `warmSchemaCaches()` (pre-compiles all schemas). Original middleware created **two** validator instances per request (one for request, one for response validation), incurring double `warmSchemaCaches` cost.
+> 2. **Interim optimization (later superseded in rev.16)**: Middleware briefly reused one validator instance within a single request goroutine for request+response validation to avoid duplicate schema warm-up.
+> 3. **Supersession**: rev.16 reverted to strict per-validation creation to align exactly with `libopenapi-validator/strict` guidance and ADR-0037 lifecycle wording.
+> 4. **Error semantic fix**: Validator creation failure changed from 400 (incorrect: route error semantics) to 500 (correct: server initialization failure), error code `OPENAPI_VALIDATOR_UNAVAILABLE`.
+> 5. Verified: `go test -race -v ./internal/api/middleware/...` ✅ (7 tests pass, no data races).
+>
+> **rev.15 Change Summary (PR-4~PR-7 execution backfill)**:
+> 1. Marked PR-4/PR-5/PR-6/PR-7 as completed in execution tracking.
+> 2. Backfilled PR-4: unified `internal/api/validator` package, `WithRequiredStructEnabled`, field-level error mapping, and request validation helper wiring.
+> 3. Backfilled PR-5: OpenAPI request schema `x-oapi-codegen-extra-tags.validate` rollout + generated tag visibility + handler bind/validate consolidation.
+> 4. Backfilled PR-6: CI ordering fixed to `api-compat-generate -> api-generate -> api-compat -> sync diff`, compat enforced by default, changelog PR comment publishing, contract-test gate enabled, and frontend type sync check added.
+> 5. Backfilled PR-7: ADR amendment block + CONTRIBUTING/API contract guidance + rollout comment template alignment.
+>
+> **rev.16 Change Summary (consistency remediation)**:
+> 1. Fixed CI required-check reliability: removed workflow path filters so required checks do not stay pending when files outside filter change.
+> 2. Re-aligned middleware with strict lifecycle policy: validator instance is now created per validation call (request and response each create their own instance), no reuse.
+> 3. Added release-mode regression test to ensure request validation errors return generic messages without detailed leakage.
+> 4. Cleaned stale design-template/tooling references to removed `openapi-compat-generate.sh` script and synchronized with Go-native compat generator.
 
 ---
 
 ## Purpose
 
-This note captures implementation impacts while ADR-0037 is in review. It is intentionally operational and file-oriented. It augments — but does not replace — the remediation plan (`ai-code/rewire-codex/REMEDIATION-PLAN-BEST-STATE.md`).
+This note captures implementation impacts for ADR-0037. It is intentionally operational and file-oriented. It augments — but does not replace — the remediation plan (`ai-code/rewire-codex/REMEDIATION-PLAN-BEST-STATE.md`).
 
 ---
 
@@ -64,7 +102,7 @@ This note captures implementation impacts while ADR-0037 is in review. It is int
 
 ### Placement Decision
 
-Use `docs/design/notes/` for ADR-0037 execution tracking during review, because it is non-normative and ADR-oriented. Do not add a new normative spec document under other `docs/design/*` sections until ADR-0037 is accepted.
+Use `docs/design/notes/` for ADR-0037 execution tracking because it is non-normative and ADR-oriented. The normative decision is recorded in accepted ADR-0037.
 
 ### Serial Execution Order
 
@@ -81,22 +119,81 @@ Use `docs/design/notes/` for ADR-0037 execution tracking during review, because 
 - [x] PR-1 local compatibility alias (`api-diff`) added in `build/api.mk`
 - [x] PR-1 workflow permission prepared in `.github/workflows/api-contract.yaml` (`pull-requests: write`)
 - [ ] PR-1 branch protection applied in GitHub UI (deferred until ADR path is approved for rollout)
-- [ ] PR-2 OpenAPI 3.1 nullable fixes + Vacuum lint green + frontend type regen
-- [ ] PR-3 runtime validator migration + frontend E2E regression
-- [ ] PR-4 unified business validator package
-- [ ] PR-5 spec-driven validate tags and handler migration + frontend typecheck
-- [ ] PR-6 CI completion and PR comment/blocking gates + frontend type sync gate
-- [ ] PR-7 ADR/docs/contributing alignment (acceptance-dependent items)
+- [x] PR-2 OpenAPI 3.1 nullable fixes + Vacuum lint green + frontend type regen
+- [x] PR-3 runtime validator migration + frontend E2E regression
+- [x] PR-4 unified business validator package
+- [x] PR-5 spec-driven validate tags and handler migration + frontend typecheck
+- [x] PR-6 CI completion and PR comment/blocking gates + frontend type sync gate
+- [x] PR-7 ADR/docs/contributing alignment (acceptance-dependent items)
+
+### PR-2 Progress and Test Record
+
+> Submission-scoped file lists are maintained in `ai-code/rewire-codex/REMEDIATION-PLAN-BEST-STATE.md` only.
+
+Verification executed (local):
+
+1. `go test ./cmd/openapi-compat-gen/...`
+2. `make api-compat-generate`
+3. `make api-compat`
+4. `make api-generate`
+5. `make api-lint`
+6. `cd web && npm run typecheck`
+7. `cd web && npm run test:run`
+8. `go build ./...`
+
+### PR-3 Progress and Test Record
+
+> Submission-scoped file lists are maintained in `ai-code/rewire-codex/REMEDIATION-PLAN-BEST-STATE.md` only.
+
+Verification executed (local):
+
+1. `go test ./internal/api/specembed ./internal/api/middleware`
+2. `go test -race ./internal/api/middleware/...`
+3. `go test ./internal/api/...`
+4. `go test ./internal/app/...`
+5. `make api-check`
+6. `go build ./...`
+7. `cd web && npm run test:e2e` (`35 passed`)
+
+### PR-4 Progress and Test Record
+
+Verification executed (local):
+
+1. `go get github.com/go-playground/validator/v10@v10.30.1`
+2. `go test ./internal/api/validator/...`
+3. `go test ./internal/api/handlers/...`
+4. `go test ./...`
+
+### PR-5 Progress and Test Record
+
+Verification executed (local):
+
+1. `make api-compat-generate`
+2. `make api-generate`
+3. `rg -n 'validate:\"' internal/api/generated/server.gen.go`
+4. `go test ./internal/api/...`
+5. `cd web && npm run typecheck`
+6. `cd web && npm run test:run`
+
+### PR-6 Progress and Test Record
+
+Verification executed (local):
+
+1. `REQUIRE_OPENAPI_COMPAT=1 make api-check`
+2. `make api-compat`
+3. `make api-lint`
+4. `make api-contract-test`
+5. `go test -race ./internal/api/middleware/...`
 
 ---
 
-## Empirical Toolchain Checkpoint (2026-02-26)
+## Empirical Toolchain Checkpoint
 
 1. Canonical spec should still move to pure OpenAPI 3.1 syntax (`type: ["<type>", "null"]`) for correctness.
 2. However, current Go codegen is not yet fully compatible on this repository's schemas:
    - local repro with `oapi-codegen v2.5.1` still fails on `type: ["object", "null"]`
    - failing field: `ApprovalTicket.ticket_payload`
-   - **Internet search confirmed**: `oapi-codegen` as of 2026-02 still does not support OpenAPI 3.1 `type: [T, "null"]` syntax. Their roadmap lists this as "as needs arise" priority with no confirmed timeline.
+   - **Internet search confirmed**: `oapi-codegen` still does not support OpenAPI 3.1 `type: [T, "null"]` syntax. Their roadmap lists this as "as needs arise" priority with no confirmed timeline.
 3. Therefore, do **not** revert canonical spec back to 3.0 syntax.
 4. Keep/use a generated 3.0-compatible artifact (`api/openapi.compat.yaml`) as a temporary bridge **for Go codegen only** until an empirically verified `oapi-codegen` version passes on this spec.
 5. PR-2 execution should include compat artifact generation in the validation path when 3.1 unions are present.
@@ -111,7 +208,7 @@ Use `docs/design/notes/` for ADR-0037 execution tracking during review, because 
 
 ---
 
-## Go Codegen Alternative Evaluation (2026-02-26 Assessment)
+## Go Codegen Alternative Evaluation (Assessment)
 
 ### Core Question
 
@@ -532,13 +629,13 @@ Use sequential atomic PRs, one concern per PR, with baseline refresh between eac
 | context7: oapi-codegen/oapi-codegen docs | `x-oapi-codegen-extra-tags` + nullable + `x-go-type` | PR-5 implementation path validated |
 | context7: go-playground/validator docs | `WithRequiredStructEnabled()` + `ValidationErrors` | PR-4 initialization pattern validated |
 
-### rev.7 Version Verification Record (pkg.go.dev confirmed 2026-02-26 14:55 UTC+8)
+### rev.7 Version Verification Record (pkg.go.dev confirmed)
 
 | Component | Plan Version | pkg.go.dev Status | Result |
 |-----------|-------------|-------------------|--------|
 | `github.com/pb33f/libopenapi` | v0.33.11 | Exists (top of version list) | ✅ Correct |
 | `github.com/pb33f/libopenapi-validator` | v0.12.1 | Exists (v0.12.0 and v0.12.1 both published) | ✅ Correct |
-| `github.com/go-playground/validator/v10` | v10.30.1 | Exists (released 2025-12-24) | ✅ Correct |
+| `github.com/go-playground/validator/v10` | v10.30.1 | Exists (released) | ✅ Correct |
 | `github.com/oapi-codegen/oapi-codegen/v2` | v2.5.1 | Internet search + context7 confirmed | ✅ Correct |
 | `openapi-typescript` | ^7.12.0 | Internet search confirmed v7.x supports 3.1 | ✅ Correct |
 | `gopkg.in/yaml.v3` | v3 (already indirect dep) | Project already has it; direct use in PR-2 Go tool | ✅ Directly available |
@@ -551,7 +648,7 @@ Use sequential atomic PRs, one concern per PR, with baseline refresh between eac
 |--------|-----------------|------------|
 | pkg.go.dev: libopenapi versions | v0.33.11 is latest | Version correct |
 | pkg.go.dev: libopenapi-validator versions | v0.12.1 published | Version correct |
-| pkg.go.dev: validator/v10 versions | v10.30.1 (2025-12-24) | Version correct |
+| pkg.go.dev: validator/v10 versions | v10.30.1  | Version correct |
 | [pkg.go.dev: libopenapi-validator/strict docs](https://pkg.go.dev/github.com/pb33f/libopenapi-validator/strict) | per-validation creation required; validator reuse discouraged | PR-3 uses fixed per-validation strategy |
 | Internet search: OpenAPI validation monitoring | validation failure metrics is best practice | Added §13 monitoring plan |
 | Internet search: Go embed derived-file pattern | `..` forbidden, read-only, concurrent-safe | specembed approach correct |
