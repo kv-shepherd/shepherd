@@ -1,16 +1,15 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
-	k8sv1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 
 	"kv-shepherd.io/shepherd/internal/domain"
@@ -19,6 +18,7 @@ import (
 // KubeVirtProviderImpl implements KubeVirtProvider using our client abstraction.
 // ADR-0001: Use official kubevirt.io/client-go client (bound at composition root).
 // ADR-0004: Interface composition (implements InfrastructureProvider + sub-providers).
+// ADR-0011: VM writes use Server-Side Apply via DynamicSSAClient.
 type KubeVirtProviderImpl struct {
 	clientFactory    ClusterClientFactory
 	mapper           *KubeVirtMapper
@@ -110,7 +110,17 @@ func (p *KubeVirtProviderImpl) ListVMs(ctx context.Context, cluster, namespace s
 }
 
 // CreateVM creates a VM via SSA Apply (ADR-0011).
+//
+// The provider acts as a "YAML porter" — it submits the rendered YAML as an
+// SSA Patch, never constructing typed structs.
 func (p *KubeVirtProviderImpl) CreateVM(ctx context.Context, cluster, namespace string, spec *domain.VMSpec) (*domain.VM, error) {
+	if spec == nil {
+		return nil, fmt.Errorf("create vm: spec is nil")
+	}
+	if strings.TrimSpace(spec.RenderedYAML) == "" {
+		return nil, fmt.Errorf("create vm: spec.rendered_yaml is required (ADR-0011)")
+	}
+
 	client, err := p.clientFactory(cluster)
 	if err != nil {
 		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
@@ -119,36 +129,75 @@ func (p *KubeVirtProviderImpl) CreateVM(ctx context.Context, cluster, namespace 
 	opCtx, cancel := p.withTimeout(ctx)
 	defer cancel()
 
-	vm, err := buildVMFromSpec(namespace, spec)
-	if err != nil {
-		return nil, fmt.Errorf("build vm from spec: %w", err)
+	if err := validateYAMLResourceHalfSteps([]byte(spec.RenderedYAML)); err != nil {
+		return nil, fmt.Errorf("validate vm yaml resource steps for create: %w", err)
 	}
-	created, err := client.VM().Create(opCtx, namespace, vm, k8smetav1.CreateOptions{})
+
+	// SSA Apply: idempotent, conflict-free, FieldOwner-tracked.
+	result, err := client.SSA().ApplyYAML(opCtx, namespace, []byte(spec.RenderedYAML))
 	if err != nil {
-		return nil, fmt.Errorf("create vm in %s: %w", namespace, err)
+		return nil, fmt.Errorf("create vm %s/%s via ssa: %w", namespace, spec.Name, err)
+	}
+
+	// Read back the full typed object for domain mapping.
+	created, err := client.VM().Get(opCtx, namespace, result.GetName(), k8smetav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get vm after ssa create: %w", err)
 	}
 
 	return p.mapper.MapVM(created, nil)
 }
 
-// UpdateVM updates a VM specification.
+// UpdateVM updates a VM via SSA Apply (ADR-0011).
+//
+// Unlike the previous Get-Modify-Put pattern, SSA is declarative: the caller
+// provides the full desired state in spec.RenderedYAML, and the API server
+// merges it with existing state, preserving fields owned by other managers.
+//
+// Safety: The YAML metadata.name is validated against the `name` parameter
+// to prevent accidental overwrites of a different VM.
 func (p *KubeVirtProviderImpl) UpdateVM(ctx context.Context, cluster, namespace, name string, spec *domain.VMSpec) (*domain.VM, error) {
+	if spec == nil {
+		return nil, fmt.Errorf("update vm: spec is nil")
+	}
+	if strings.TrimSpace(spec.RenderedYAML) == "" {
+		return nil, fmt.Errorf("update vm: spec.rendered_yaml is required (ADR-0011)")
+	}
+
 	client, err := p.clientFactory(cluster)
 	if err != nil {
 		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
 	}
 
-	existing, err := client.VM().Get(ctx, namespace, name, k8smetav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("get vm %s/%s for update: %w", namespace, name, err)
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	if err := validateYAMLResourceHalfSteps([]byte(spec.RenderedYAML)); err != nil {
+		return nil, fmt.Errorf("validate vm yaml resource steps for update: %w", err)
 	}
 
-	if err := applySpecToVM(existing, spec); err != nil {
-		return nil, fmt.Errorf("apply vm spec overrides: %w", err)
-	}
-	updated, err := client.VM().Update(ctx, namespace, existing, k8smetav1.UpdateOptions{})
+	// Safety check: validate YAML target name matches the `name` parameter.
+	yamlName, err := extractNameFromYAML([]byte(spec.RenderedYAML))
 	if err != nil {
-		return nil, fmt.Errorf("update vm %s/%s: %w", namespace, name, err)
+		return nil, fmt.Errorf("validate yaml name for update: %w", err)
+	}
+	if yamlName != name {
+		return nil, fmt.Errorf(
+			"yaml metadata.name %q does not match update target %q: refusing to overwrite a different resource",
+			yamlName, name,
+		)
+	}
+
+	// SSA Apply is the same for create and update — naturally idempotent.
+	result, err := client.SSA().ApplyYAML(opCtx, namespace, []byte(spec.RenderedYAML))
+	if err != nil {
+		return nil, fmt.Errorf("update vm %s/%s via ssa: %w", namespace, name, err)
+	}
+
+	// Read back for domain mapping.
+	updated, err := client.VM().Get(opCtx, namespace, result.GetName(), k8smetav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get vm after ssa update: %w", err)
 	}
 
 	return p.mapper.MapVM(updated, nil)
@@ -222,23 +271,37 @@ func (p *KubeVirtProviderImpl) UnpauseVM(ctx context.Context, cluster, namespace
 	return client.VMI().Unpause(opCtx, namespace, name, &kubevirtv1.UnpauseOptions{})
 }
 
-// ValidateSpec performs dry-run validation (ADR-0011).
+// ValidateSpec performs dry-run validation via SSA DryRun (ADR-0011).
+//
+// Server-side DryRun is more authoritative than Go compiler checks for external
+// CRDs: it validates against the actual CRD schema installed on the cluster.
 func (p *KubeVirtProviderImpl) ValidateSpec(ctx context.Context, cluster, namespace string, spec *domain.VMSpec) (*domain.ValidationResult, error) {
+	if spec == nil {
+		return &domain.ValidationResult{
+			Valid:  false,
+			Errors: []string{"spec is nil"},
+		}, nil
+	}
+	if strings.TrimSpace(spec.RenderedYAML) == "" {
+		return &domain.ValidationResult{
+			Valid:  false,
+			Errors: []string{"spec.rendered_yaml is required (ADR-0011)"},
+		}, nil
+	}
+
 	client, err := p.clientFactory(cluster)
 	if err != nil {
 		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
 	}
 
-	vm, err := buildVMFromSpec(namespace, spec)
-	if err != nil {
+	if err := validateYAMLResourceHalfSteps([]byte(spec.RenderedYAML)); err != nil {
 		return &domain.ValidationResult{
 			Valid:  false,
-			Errors: []string{err.Error()},
+			Errors: []string{fmt.Sprintf("validate vm yaml resource steps: %v", err)},
 		}, nil
 	}
-	_, err = client.VM().Create(ctx, namespace, vm, k8smetav1.CreateOptions{
-		DryRun: []string{k8smetav1.DryRunAll},
-	})
+
+	err = client.SSA().DryRunApplyYAML(ctx, namespace, []byte(spec.RenderedYAML))
 	if err != nil {
 		return &domain.ValidationResult{
 			Valid:  false,
@@ -249,363 +312,54 @@ func (p *KubeVirtProviderImpl) ValidateSpec(ctx context.Context, cluster, namesp
 	return &domain.ValidationResult{Valid: true}, nil
 }
 
-// buildVMFromSpec creates a KubeVirt VM object from a domain spec.
-func buildVMFromSpec(namespace string, spec *domain.VMSpec) (*kubevirtv1.VirtualMachine, error) {
-	if spec == nil {
-		return nil, fmt.Errorf("vm spec is nil")
+// extractNameFromYAML extracts metadata.name from YAML bytes for safety validation.
+// Used by UpdateVM to ensure the YAML target matches the function parameter.
+func extractNameFromYAML(yamlData []byte) (string, error) {
+	obj := &unstructured.Unstructured{}
+	decoder := k8syaml.NewYAMLOrJSONDecoder(bytes.NewReader(yamlData), 4096)
+	if err := decoder.Decode(obj); err != nil {
+		return "", fmt.Errorf("decode yaml for name extraction: %w", err)
 	}
-	name := strings.TrimSpace(spec.Name)
+	name := obj.GetName()
 	if name == "" {
-		return nil, fmt.Errorf("vm name is required")
+		return "", fmt.Errorf("yaml does not contain metadata.name")
 	}
-	if spec.CPU <= 0 {
-		return nil, fmt.Errorf("vm cpu must be > 0")
-	}
-	if spec.MemoryMB <= 0 {
-		return nil, fmt.Errorf("vm memory_mb must be > 0")
-	}
-	image := strings.TrimSpace(spec.Image)
-	if image == "" {
-		return nil, fmt.Errorf("vm image is required")
-	}
-
-	running := true
-	cpuLimitQty := resource.MustParse(fmt.Sprintf("%d", spec.CPU))
-	memLimitQty := resource.MustParse(fmt.Sprintf("%dMi", spec.MemoryMB))
-
-	// Overcommit: if CPURequest/MemoryRequestMB are set, use them for requests.
-	// Otherwise, default to limits (Guaranteed QoS).
-	cpuRequestQty := cpuLimitQty
-	if spec.CPURequest > 0 {
-		cpuRequestQty = resource.MustParse(fmt.Sprintf("%d", spec.CPURequest))
-	}
-	memRequestQty := memLimitQty
-	if spec.MemoryRequestMB > 0 {
-		memRequestQty = resource.MustParse(fmt.Sprintf("%dMi", spec.MemoryRequestMB))
-	}
-
-	volumes, disks, err := buildDisksAndVolumes(image, spec.DiskGB)
-	if err != nil {
-		return nil, err
-	}
-
-	vm := &kubevirtv1.VirtualMachine{
-		ObjectMeta: k8smetav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Labels:    spec.Labels,
-		},
-		Spec: kubevirtv1.VirtualMachineSpec{
-			Running: &running,
-			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
-				ObjectMeta: k8smetav1.ObjectMeta{
-					Labels: spec.Labels,
-				},
-				Spec: kubevirtv1.VirtualMachineInstanceSpec{
-					Domain: kubevirtv1.DomainSpec{
-						CPU: &kubevirtv1.CPU{
-							Cores: uint32(spec.CPU),
-						},
-						Resources: kubevirtv1.ResourceRequirements{
-							Requests: k8sv1.ResourceList{
-								k8sv1.ResourceCPU:    cpuRequestQty,
-								k8sv1.ResourceMemory: memRequestQty,
-							},
-							Limits: k8sv1.ResourceList{
-								k8sv1.ResourceCPU:    cpuLimitQty,
-								k8sv1.ResourceMemory: memLimitQty,
-							},
-						},
-						Devices: kubevirtv1.Devices{
-							Disks: disks,
-						},
-					},
-					Volumes: volumes,
-				},
-			},
-		},
-	}
-	if err := applySpecOverrides(vm, spec.SpecOverrides); err != nil {
-		return nil, fmt.Errorf("apply spec_overrides: %w", err)
-	}
-	return vm, nil
+	return name, nil
 }
 
-// applySpecToVM applies domain spec changes to an existing K8s VM.
-func applySpecToVM(vm *kubevirtv1.VirtualMachine, spec *domain.VMSpec) error {
-	if vm == nil || spec == nil {
-		return nil
-	}
-	if vm.Spec.Template == nil {
-		vm.Spec.Template = &kubevirtv1.VirtualMachineInstanceTemplateSpec{}
-	}
-	if spec.Labels != nil {
-		if vm.Labels == nil {
-			vm.Labels = make(map[string]string)
-		}
-		for k, v := range spec.Labels {
-			vm.Labels[k] = v
-		}
-		if vm.Spec.Template.ObjectMeta.Labels == nil {
-			vm.Spec.Template.ObjectMeta.Labels = make(map[string]string)
-		}
-		for k, v := range spec.Labels {
-			vm.Spec.Template.ObjectMeta.Labels[k] = v
-		}
-	}
-	if spec.CPU > 0 {
-		vm.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{Cores: uint32(spec.CPU)}
-	}
-	if spec.CPU > 0 || spec.MemoryMB > 0 {
-		if vm.Spec.Template.Spec.Domain.Resources.Requests == nil {
-			vm.Spec.Template.Spec.Domain.Resources.Requests = k8sv1.ResourceList{}
-		}
-		if vm.Spec.Template.Spec.Domain.Resources.Limits == nil {
-			vm.Spec.Template.Spec.Domain.Resources.Limits = k8sv1.ResourceList{}
-		}
-	}
-	if spec.CPU > 0 {
-		cpuLimitQty := resource.MustParse(fmt.Sprintf("%d", spec.CPU))
-		cpuRequestQty := cpuLimitQty
-		if spec.CPURequest > 0 {
-			cpuRequestQty = resource.MustParse(fmt.Sprintf("%d", spec.CPURequest))
-		}
-		vm.Spec.Template.Spec.Domain.Resources.Requests[k8sv1.ResourceCPU] = cpuRequestQty
-		vm.Spec.Template.Spec.Domain.Resources.Limits[k8sv1.ResourceCPU] = cpuLimitQty
-	}
-	if spec.MemoryMB > 0 {
-		memLimitQty := resource.MustParse(fmt.Sprintf("%dMi", spec.MemoryMB))
-		memRequestQty := memLimitQty
-		if spec.MemoryRequestMB > 0 {
-			memRequestQty = resource.MustParse(fmt.Sprintf("%dMi", spec.MemoryRequestMB))
-		}
-		vm.Spec.Template.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = memRequestQty
-		vm.Spec.Template.Spec.Domain.Resources.Limits[k8sv1.ResourceMemory] = memLimitQty
-	}
-	if image := strings.TrimSpace(spec.Image); image != "" {
-		volumes, disks, err := buildDisksAndVolumes(image, spec.DiskGB)
-		if err == nil {
-			vm.Spec.Template.Spec.Volumes = mergeManagedVolumes(vm.Spec.Template.Spec.Volumes, volumes)
-			vm.Spec.Template.Spec.Domain.Devices.Disks = mergeManagedDisks(vm.Spec.Template.Spec.Domain.Devices.Disks, disks)
-		}
-	}
-	return applySpecOverrides(vm, spec.SpecOverrides)
-}
-
-func applySpecOverrides(vm *kubevirtv1.VirtualMachine, overrides map[string]interface{}) error {
-	if vm == nil || len(overrides) == 0 {
-		return nil
+// validateYAMLResourceHalfSteps enforces CPU/Memory 0.5-step standards for any
+// rendered YAML path, including caller-provided pre-rendered YAML.
+func validateYAMLResourceHalfSteps(yamlData []byte) error {
+	obj := &unstructured.Unstructured{}
+	decoder := k8syaml.NewYAMLOrJSONDecoder(bytes.NewReader(yamlData), 4096)
+	if err := decoder.Decode(obj); err != nil {
+		return fmt.Errorf("decode yaml: %w", err)
 	}
 
-	paths, err := normalizeSpecOverridePaths(overrides)
-	if err != nil {
-		return err
-	}
-	if len(paths) == 0 {
-		return nil
-	}
-
-	unstructuredVM, err := runtime.DefaultUnstructuredConverter.ToUnstructured(vm)
-	if err != nil {
-		return fmt.Errorf("to unstructured vm: %w", err)
-	}
-
-	for path, value := range paths {
-		if err := setUnstructuredPath(unstructuredVM, path, value); err != nil {
+	for path := range cpuResourcePaths {
+		if err := validateNestedPathHalfStep(obj, path, validateCPUHalfStep); err != nil {
 			return err
 		}
 	}
-
-	var patched kubevirtv1.VirtualMachine
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredVM, &patched); err != nil {
-		return fmt.Errorf("from unstructured vm: %w", err)
-	}
-
-	*vm = patched
-	return nil
-}
-
-func normalizeSpecOverridePaths(overrides map[string]interface{}) (map[string]interface{}, error) {
-	out := make(map[string]interface{}, len(overrides))
-	for rawPath, rawValue := range overrides {
-		path := strings.TrimSpace(rawPath)
-		if path == "" {
-			continue
+	for path := range memoryResourcePaths {
+		if err := validateNestedPathHalfStep(obj, path, validateMemoryHalfStep); err != nil {
+			return err
 		}
-		switch {
-		case path == "spec":
-			nested, ok := rawValue.(map[string]interface{})
-			if !ok {
-				return nil, fmt.Errorf("invalid spec_overrides path %q: value must be object", rawPath)
-			}
-			flattenSpecMap("spec", nested, out)
-		case strings.HasPrefix(path, "spec."):
-			out[path] = normalizeSpecOverrideValue(rawValue)
-		default:
-			return nil, fmt.Errorf("invalid spec_overrides path %q: only spec.* is allowed", rawPath)
-		}
-	}
-	return out, nil
-}
-
-func flattenSpecMap(prefix string, values map[string]interface{}, out map[string]interface{}) {
-	for rawKey, rawValue := range values {
-		key := strings.TrimSpace(rawKey)
-		if key == "" {
-			continue
-		}
-		path := prefix + "." + key
-		if nested, ok := rawValue.(map[string]interface{}); ok {
-			flattenSpecMap(path, nested, out)
-			continue
-		}
-		out[path] = normalizeSpecOverrideValue(rawValue)
-	}
-}
-
-func normalizeSpecOverrideValue(raw interface{}) interface{} {
-	switch v := raw.(type) {
-	case map[string]interface{}:
-		out := make(map[string]interface{}, len(v))
-		for key, value := range v {
-			out[key] = normalizeSpecOverrideValue(value)
-		}
-		return out
-	case []interface{}:
-		out := make([]interface{}, 0, len(v))
-		for _, item := range v {
-			out = append(out, normalizeSpecOverrideValue(item))
-		}
-		return out
-	case float64:
-		if math.Trunc(v) == v {
-			return int64(v)
-		}
-		return v
-	default:
-		return raw
-	}
-}
-
-func setUnstructuredPath(root map[string]interface{}, path string, value interface{}) error {
-	segments := strings.Split(path, ".")
-	current := root
-	for idx, segment := range segments {
-		if segment == "" {
-			return fmt.Errorf("invalid path segment in %q", path)
-		}
-		if idx == len(segments)-1 {
-			current[segment] = value
-			return nil
-		}
-
-		next, ok := current[segment]
-		if !ok || next == nil {
-			child := map[string]interface{}{}
-			current[segment] = child
-			current = child
-			continue
-		}
-		child, ok := next.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("invalid override path %q: %q is not an object", path, strings.Join(segments[:idx+1], "."))
-		}
-		current = child
 	}
 	return nil
 }
 
-func buildDisksAndVolumes(image string, diskGB int) ([]kubevirtv1.Volume, []kubevirtv1.Disk, error) {
-	const (
-		rootVolumeName = "rootdisk"
-		dataVolumeName = "datadisk"
-	)
-	image = strings.TrimSpace(image)
-	if image == "" {
-		return nil, nil, fmt.Errorf("vm image is required")
+func validateNestedPathHalfStep(
+	obj *unstructured.Unstructured,
+	path string,
+	validateFn func(path string, value interface{}) error,
+) error {
+	value, found, err := unstructured.NestedFieldNoCopy(obj.Object, strings.Split(path, ".")...)
+	if err != nil {
+		return fmt.Errorf("read yaml field %q: %w", path, err)
 	}
-
-	rootDisk := kubevirtv1.Disk{
-		Name: rootVolumeName,
-		DiskDevice: kubevirtv1.DiskDevice{
-			Disk: &kubevirtv1.DiskTarget{Bus: kubevirtv1.DiskBusVirtio},
-		},
+	if !found {
+		return nil
 	}
-
-	rootVolume := kubevirtv1.Volume{
-		Name: rootVolumeName,
-	}
-	switch {
-	case strings.HasPrefix(image, "pvc:"):
-		claimName := strings.TrimSpace(strings.TrimPrefix(image, "pvc:"))
-		if claimName == "" {
-			return nil, nil, fmt.Errorf("pvc image reference is empty")
-		}
-		rootVolume.VolumeSource = kubevirtv1.VolumeSource{
-			PersistentVolumeClaim: &kubevirtv1.PersistentVolumeClaimVolumeSource{
-				PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
-					ClaimName: claimName,
-				},
-			},
-		}
-	default:
-		rootVolume.VolumeSource = kubevirtv1.VolumeSource{
-			ContainerDisk: &kubevirtv1.ContainerDiskSource{
-				Image: image,
-			},
-		}
-	}
-
-	volumes := []kubevirtv1.Volume{rootVolume}
-	disks := []kubevirtv1.Disk{rootDisk}
-
-	if diskGB > 0 {
-		dataDisk := kubevirtv1.Disk{
-			Name: dataVolumeName,
-			DiskDevice: kubevirtv1.DiskDevice{
-				Disk: &kubevirtv1.DiskTarget{Bus: kubevirtv1.DiskBusVirtio},
-			},
-		}
-		dataVolume := kubevirtv1.Volume{
-			Name: dataVolumeName,
-			VolumeSource: kubevirtv1.VolumeSource{
-				EmptyDisk: &kubevirtv1.EmptyDiskSource{
-					Capacity: resource.MustParse(fmt.Sprintf("%dGi", diskGB)),
-				},
-			},
-		}
-		volumes = append(volumes, dataVolume)
-		disks = append(disks, dataDisk)
-	}
-
-	return volumes, disks, nil
-}
-
-func mergeManagedVolumes(existing, desired []kubevirtv1.Volume) []kubevirtv1.Volume {
-	merged := make([]kubevirtv1.Volume, 0, len(existing)+len(desired))
-	for _, volume := range existing {
-		if !isManagedVMStorageName(volume.Name) {
-			merged = append(merged, volume)
-		}
-	}
-	return append(merged, desired...)
-}
-
-func mergeManagedDisks(existing, desired []kubevirtv1.Disk) []kubevirtv1.Disk {
-	merged := make([]kubevirtv1.Disk, 0, len(existing)+len(desired))
-	for _, disk := range existing {
-		if !isManagedVMStorageName(disk.Name) {
-			merged = append(merged, disk)
-		}
-	}
-	return append(merged, desired...)
-}
-
-func isManagedVMStorageName(name string) bool {
-	switch name {
-	case "rootdisk", "datadisk":
-		return true
-	default:
-		return false
-	}
+	return validateFn(path, value)
 }

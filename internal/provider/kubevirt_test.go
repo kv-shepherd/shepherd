@@ -1,197 +1,280 @@
 package provider
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
-	k8sv1 "k8s.io/api/core/v1"
-
-	"kv-shepherd.io/shepherd/internal/domain"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
-func TestBuildVMFromSpec_ValidContainerDisk(t *testing.T) {
-	spec := &domain.VMSpec{
-		Name:     "vm-01",
-		CPU:      4,
-		MemoryMB: 8192,
-		DiskGB:   20,
-		Image:    "docker.io/kubevirt/centos:7",
-		Labels: map[string]string{
-			"env": "test",
-		},
-	}
+// validVMYAML is a minimal valid VirtualMachine YAML for testing.
+const validVMYAML = `
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: test-vm
+  namespace: test-ns
+  labels:
+    env: test
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        env: test
+    spec:
+      domain:
+        cpu:
+          cores: 4
+        resources:
+          requests:
+            cpu: "4"
+            memory: "8Gi"
+          limits:
+            cpu: "4"
+            memory: "8Gi"
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+      volumes:
+        - name: rootdisk
+          containerDisk:
+            image: docker.io/kubevirt/centos:7
+`
 
-	vm, err := buildVMFromSpec("test-ns", spec)
-	if err != nil {
-		t.Fatalf("buildVMFromSpec returned error: %v", err)
-	}
+func TestKubevirtSSAApplier_ApplyYAML(t *testing.T) {
+	scheme := runtime.NewScheme()
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
 
-	if vm.Name != "vm-01" {
-		t.Fatalf("vm name mismatch: got %q", vm.Name)
-	}
-	if vm.Namespace != "test-ns" {
-		t.Fatalf("vm namespace mismatch: got %q", vm.Namespace)
-	}
-	if vm.Spec.Template == nil {
-		t.Fatalf("vm template is nil")
-	}
+	// Intercept the Patch call to verify SSA is used.
+	var capturedPatch []byte
+	var capturedPatchType types.PatchType
+	var capturedName string
 
-	cpu := vm.Spec.Template.Spec.Domain.Resources.Requests[k8sv1.ResourceCPU]
-	if cpu.String() != "4" {
-		t.Fatalf("cpu request mismatch: got %q", cpu.String())
-	}
-	mem := vm.Spec.Template.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory]
-	if mem.String() != "8Gi" {
-		t.Fatalf("memory request mismatch: got %q", mem.String())
-	}
-
-	volumes := vm.Spec.Template.Spec.Volumes
-	if len(volumes) != 2 {
-		t.Fatalf("expected 2 volumes (root+data), got %d", len(volumes))
-	}
-	disks := vm.Spec.Template.Spec.Domain.Devices.Disks
-	if len(disks) != 2 {
-		t.Fatalf("expected 2 disks (root+data), got %d", len(disks))
-	}
-
-	rootFound := false
-	dataFound := false
-	for _, v := range volumes {
-		switch v.Name {
-		case "rootdisk":
-			rootFound = v.VolumeSource.ContainerDisk != nil
-		case "datadisk":
-			dataFound = v.VolumeSource.EmptyDisk != nil
+	dynClient.PrependReactor("patch", "virtualmachines", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		patchAction, ok := action.(k8stesting.PatchActionImpl)
+		if !ok {
+			return false, nil, nil
 		}
-	}
-	if !rootFound {
-		t.Fatalf("rootdisk container source missing")
-	}
-	if !dataFound {
-		t.Fatalf("datadisk emptyDisk source missing")
-	}
-}
+		capturedPatch = patchAction.GetPatch()
+		capturedPatchType = patchAction.GetPatchType()
+		capturedName = patchAction.GetName()
 
-func TestBuildVMFromSpec_ValidPVCSource(t *testing.T) {
-	spec := &domain.VMSpec{
-		Name:     "vm-pvc",
-		CPU:      2,
-		MemoryMB: 4096,
-		Image:    "pvc:base-os-disk",
-	}
+		// Return the object from the patch body as the result.
+		obj := &unstructured.Unstructured{}
+		if err := json.Unmarshal(capturedPatch, &obj.Object); err != nil {
+			return true, nil, fmt.Errorf("unmarshal patch: %w", err)
+		}
+		return true, obj, nil
+	})
 
-	vm, err := buildVMFromSpec("prod-ns", spec)
+	applier := NewKubevirtSSAApplier(dynClient)
+
+	result, err := applier.ApplyYAML(context.Background(), "test-ns", []byte(validVMYAML))
 	if err != nil {
-		t.Fatalf("buildVMFromSpec returned error: %v", err)
+		t.Fatalf("ApplyYAML returned error: %v", err)
 	}
 
-	if vm.Spec.Template == nil || len(vm.Spec.Template.Spec.Volumes) == 0 {
-		t.Fatalf("expected at least one volume")
+	// Verify SSA patch type is used (ApplyPatchType).
+	if capturedPatchType != types.ApplyPatchType {
+		t.Fatalf("expected ApplyPatchType, got %q", capturedPatchType)
 	}
-	root := vm.Spec.Template.Spec.Volumes[0]
-	if root.Name != "rootdisk" {
-		t.Fatalf("expected rootdisk, got %q", root.Name)
+
+	// Verify the patch targets the correct resource name.
+	if capturedName != "test-vm" {
+		t.Fatalf("expected patch target name=test-vm, got %q", capturedName)
 	}
-	if root.VolumeSource.PersistentVolumeClaim == nil {
-		t.Fatalf("expected rootdisk persistentVolumeClaim source")
+
+	// Verify the returned object.
+	if result.GetName() != "test-vm" {
+		t.Fatalf("expected name=test-vm, got %q", result.GetName())
 	}
-	if root.VolumeSource.PersistentVolumeClaim.ClaimName != "base-os-disk" {
-		t.Fatalf("pvc claim mismatch: got %q", root.VolumeSource.PersistentVolumeClaim.ClaimName)
+	if result.GetNamespace() != "test-ns" {
+		t.Fatalf("expected namespace=test-ns, got %q", result.GetNamespace())
+	}
+
+	// Verify the patch body contains valid JSON with expected fields.
+	var patchMap map[string]interface{}
+	if err := json.Unmarshal(capturedPatch, &patchMap); err != nil {
+		t.Fatalf("patch body is not valid JSON: %v", err)
+	}
+	if patchMap["apiVersion"] != "kubevirt.io/v1" {
+		t.Fatalf("expected apiVersion=kubevirt.io/v1 in patch, got %v", patchMap["apiVersion"])
+	}
+	if patchMap["kind"] != "VirtualMachine" {
+		t.Fatalf("expected kind=VirtualMachine in patch, got %v", patchMap["kind"])
 	}
 }
 
-func TestBuildVMFromSpec_ValidationErrors(t *testing.T) {
-	testCases := []struct {
-		name string
-		spec *domain.VMSpec
-	}{
-		{name: "nil spec", spec: nil},
-		{name: "missing name", spec: &domain.VMSpec{CPU: 1, MemoryMB: 512, Image: "img"}},
-		{name: "missing cpu", spec: &domain.VMSpec{Name: "vm", MemoryMB: 512, Image: "img"}},
-		{name: "missing memory", spec: &domain.VMSpec{Name: "vm", CPU: 1, Image: "img"}},
-		{name: "missing image", spec: &domain.VMSpec{Name: "vm", CPU: 1, MemoryMB: 512}},
-	}
+func TestKubevirtSSAApplier_ApplyYAML_MissingName(t *testing.T) {
+	scheme := runtime.NewScheme()
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
+	applier := NewKubevirtSSAApplier(dynClient)
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := buildVMFromSpec("ns", tc.spec)
-			if err == nil {
-				t.Fatalf("expected error, got nil")
-			}
-		})
-	}
-}
+	noNameYAML := `
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  namespace: test-ns
+spec:
+  runStrategy: Always
+`
 
-func TestBuildVMFromSpec_AppliesSpecOverrides(t *testing.T) {
-	spec := &domain.VMSpec{
-		Name:     "vm-adv",
-		CPU:      2,
-		MemoryMB: 2048,
-		Image:    "docker.io/kubevirt/fedora:40",
-		SpecOverrides: map[string]interface{}{
-			"spec.template.spec.domain.cpu.cores":                          float64(6),
-			"spec.template.spec.domain.memory.hugepages.pageSize":          "2Mi",
-			"spec.template.spec.domain.cpu.dedicatedCpuPlacement":          true,
-			"spec.template.spec.domain.devices.gpus":                       []interface{}{map[string]interface{}{"name": "gpu0", "deviceName": "nvidia.com/A10"}},
-			"spec.template.spec.domain.resources.requests.memory":          "3072Mi",
-			"spec.template.spec.domain.resources.limits.memory":            "4096Mi",
-			"spec.template.spec.domain.devices.networkInterfaceMultiqueue": true,
-		},
-	}
-
-	vm, err := buildVMFromSpec("ns-1", spec)
-	if err != nil {
-		t.Fatalf("buildVMFromSpec returned error: %v", err)
-	}
-	if vm.Spec.Template == nil {
-		t.Fatalf("vm template is nil")
-	}
-	if vm.Spec.Template.Spec.Domain.CPU == nil {
-		t.Fatalf("vm cpu is nil")
-	}
-	if vm.Spec.Template.Spec.Domain.CPU.Cores != 6 {
-		t.Fatalf("expected overridden cpu cores=6, got %d", vm.Spec.Template.Spec.Domain.CPU.Cores)
-	}
-	if !vm.Spec.Template.Spec.Domain.CPU.DedicatedCPUPlacement {
-		t.Fatalf("expected dedicatedCpuPlacement=true from spec_overrides")
-	}
-	if vm.Spec.Template.Spec.Domain.Memory == nil ||
-		vm.Spec.Template.Spec.Domain.Memory.Hugepages == nil ||
-		vm.Spec.Template.Spec.Domain.Memory.Hugepages.PageSize != "2Mi" {
-		t.Fatalf("expected hugepages.pageSize=2Mi from spec_overrides")
-	}
-	if len(vm.Spec.Template.Spec.Domain.Devices.GPUs) != 1 {
-		t.Fatalf("expected one GPU override, got %d", len(vm.Spec.Template.Spec.Domain.Devices.GPUs))
-	}
-	if vm.Spec.Template.Spec.Domain.Devices.GPUs[0].Name != "gpu0" {
-		t.Fatalf("expected gpu name gpu0, got %q", vm.Spec.Template.Spec.Domain.Devices.GPUs[0].Name)
-	}
-	memReq := vm.Spec.Template.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory]
-	if memReq.String() != "3Gi" {
-		t.Fatalf("expected memory request 3Gi after override, got %q", memReq.String())
-	}
-	memLimit := vm.Spec.Template.Spec.Domain.Resources.Limits[k8sv1.ResourceMemory]
-	if memLimit.String() != "4Gi" {
-		t.Fatalf("expected memory limit 4Gi after override, got %q", memLimit.String())
-	}
-	if vm.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue == nil ||
-		!*vm.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue {
-		t.Fatalf("expected networkInterfaceMultiqueue=true from spec_overrides")
-	}
-}
-
-func TestBuildVMFromSpec_RejectsInvalidSpecOverridePath(t *testing.T) {
-	spec := &domain.VMSpec{
-		Name:     "vm-invalid",
-		CPU:      2,
-		MemoryMB: 1024,
-		Image:    "docker.io/kubevirt/centos:7",
-		SpecOverrides: map[string]interface{}{
-			"metadata.labels.foo": "bar",
-		},
-	}
-
-	_, err := buildVMFromSpec("ns", spec)
+	_, err := applier.ApplyYAML(context.Background(), "test-ns", []byte(noNameYAML))
 	if err == nil {
-		t.Fatalf("expected error for invalid override path, got nil")
+		t.Fatalf("expected error for missing name, got nil")
+	}
+}
+
+func TestKubevirtSSAApplier_ApplyYAML_InvalidYAML(t *testing.T) {
+	scheme := runtime.NewScheme()
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
+	applier := NewKubevirtSSAApplier(dynClient)
+
+	_, err := applier.ApplyYAML(context.Background(), "test-ns", []byte("not: valid: yaml: {{{}}}"))
+	if err == nil {
+		t.Fatalf("expected error for invalid yaml, got nil")
+	}
+}
+
+func TestKubevirtSSAApplier_DryRunApplyYAML(t *testing.T) {
+	scheme := runtime.NewScheme()
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
+
+	var patchCalled bool
+
+	dynClient.PrependReactor("patch", "virtualmachines", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		patchCalled = true
+		patchAction, ok := action.(k8stesting.PatchActionImpl)
+		if !ok {
+			return false, nil, nil
+		}
+
+		obj := &unstructured.Unstructured{}
+		if err := json.Unmarshal(patchAction.GetPatch(), &obj.Object); err != nil {
+			return true, nil, fmt.Errorf("unmarshal patch: %w", err)
+		}
+		return true, obj, nil
+	})
+
+	applier := NewKubevirtSSAApplier(dynClient)
+
+	err := applier.DryRunApplyYAML(context.Background(), "test-ns", []byte(validVMYAML))
+	if err != nil {
+		t.Fatalf("DryRunApplyYAML returned error: %v", err)
+	}
+
+	// Verify the patch was called (regardless of DryRun propagation in fake client).
+	if !patchCalled {
+		t.Fatalf("expected patch to be called for DryRun")
+	}
+}
+
+func TestKubevirtSSAApplier_GVR(t *testing.T) {
+	// Verify the GVR constants match expected KubeVirt API group.
+	expected := schema.GroupVersionResource{
+		Group:    "kubevirt.io",
+		Version:  "v1",
+		Resource: "virtualmachines",
+	}
+	if vmGVR != expected {
+		t.Fatalf("vmGVR mismatch: got %v, expected %v", vmGVR, expected)
+	}
+}
+
+func TestKubevirtSSAApplier_FieldOwnerConstant(t *testing.T) {
+	// Verify the FieldOwner constant is set correctly.
+	if FieldOwner != "kubevirt-shepherd" {
+		t.Fatalf("expected FieldOwner=kubevirt-shepherd, got %q", FieldOwner)
+	}
+}
+
+func TestKubevirtSSAApplier_DecodeAndMarshal_JSONRoundtrip(t *testing.T) {
+	scheme := runtime.NewScheme()
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
+	applier := NewKubevirtSSAApplier(dynClient)
+
+	obj, jsonData, err := applier.decodeAndMarshal([]byte(validVMYAML))
+	if err != nil {
+		t.Fatalf("decodeAndMarshal returned error: %v", err)
+	}
+
+	// Verify the decoded object has the expected fields.
+	if obj.GetName() != "test-vm" {
+		t.Fatalf("expected name=test-vm, got %q", obj.GetName())
+	}
+	if obj.GetNamespace() != "test-ns" {
+		t.Fatalf("expected namespace=test-ns, got %q", obj.GetNamespace())
+	}
+	if obj.GetKind() != "VirtualMachine" {
+		t.Fatalf("expected kind=VirtualMachine, got %q", obj.GetKind())
+	}
+
+	// Verify JSON roundtrip: the JSON should be valid and contain the expected fields.
+	var decoded map[string]interface{}
+	if err := json.NewDecoder(bytes.NewReader(jsonData)).Decode(&decoded); err != nil {
+		t.Fatalf("json decode failed: %v", err)
+	}
+	if decoded["apiVersion"] != "kubevirt.io/v1" {
+		t.Fatalf("expected apiVersion=kubevirt.io/v1, got %v", decoded["apiVersion"])
+	}
+
+	// Verify nested fields survive JSON roundtrip.
+	spec, ok := decoded["spec"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected spec to be a map")
+	}
+	if spec["runStrategy"] != "Always" {
+		t.Fatalf("expected runStrategy=Always, got %v", spec["runStrategy"])
+	}
+}
+
+func TestKubevirtSSAApplier_DecodeAndMarshal_EmptyYAML(t *testing.T) {
+	scheme := runtime.NewScheme()
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
+	applier := NewKubevirtSSAApplier(dynClient)
+
+	_, _, err := applier.decodeAndMarshal([]byte(""))
+	if err == nil {
+		t.Fatalf("expected error for empty YAML, got nil")
+	}
+}
+
+func TestValidateYAMLResourceHalfSteps_AcceptsStandardValues(t *testing.T) {
+	if err := validateYAMLResourceHalfSteps([]byte(validVMYAML)); err != nil {
+		t.Fatalf("expected standard values to pass, got: %v", err)
+	}
+}
+
+func TestValidateYAMLResourceHalfSteps_RejectsNonStandardCPU(t *testing.T) {
+	invalid := strings.Replace(validVMYAML, `cpu: "4"`, `cpu: "1300m"`, 1)
+	err := validateYAMLResourceHalfSteps([]byte(invalid))
+	if err == nil {
+		t.Fatalf("expected non-standard cpu to fail")
+	}
+	if !strings.Contains(err.Error(), "500m increments") {
+		t.Fatalf("expected cpu half-step error, got: %v", err)
+	}
+}
+
+func TestValidateYAMLResourceHalfSteps_RejectsNonStandardMemory(t *testing.T) {
+	invalid := strings.Replace(validVMYAML, `memory: "8Gi"`, `memory: "1300Mi"`, 1)
+	err := validateYAMLResourceHalfSteps([]byte(invalid))
+	if err == nil {
+		t.Fatalf("expected non-standard memory to fail")
+	}
+	if !strings.Contains(err.Error(), "512Mi increments") {
+		t.Fatalf("expected memory half-step error, got: %v", err)
 	}
 }

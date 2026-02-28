@@ -206,6 +206,11 @@ jobs:
         with:
           go-version: "1.25"
 
+      # ADR-0011 fail-fast: SSA compliance is the cheapest static check (~100ms).
+      # Runs before any heavy steps (Node.js install, frontend build, tests).
+      - name: Check KubeVirt SSA compliance (ADR-0011 strict gate)
+        run: go run docs/design/ci/scripts/check_kubevirt_ssa_compliance.go
+
       - name: Setup Node.js (for OpenAPI TS generation)
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
         with:
