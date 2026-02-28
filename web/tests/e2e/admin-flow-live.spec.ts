@@ -454,10 +454,10 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         const numberInputs = createModal.getByRole('spinbutton');
         const inputCount = await numberInputs.count();
         if (inputCount >= 2) {
-            // First spinbutton after name is sort_order, then cpu_cores, then memory_mb
-            // Find cpu_cores and memory_mb by targeting the required InputNumber fields
-            await numberInputs.nth(1).fill('2');  // cpu_cores
-            await numberInputs.nth(2).fill('4096');  // memory_mb (in MB)
+            // First spinbutton after name is sort_order, then cpu_cores, then memory_gi
+            // Find cpu_cores and memory_gi by targeting the required InputNumber fields
+            await numberInputs.nth(1).fill('4');    // cpu_cores
+            await numberInputs.nth(2).fill('4');    // memory_gi (in Gi)
         }
         await createModal.getByRole('button', { name: 'OK' }).click();
 

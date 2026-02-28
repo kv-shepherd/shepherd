@@ -96,8 +96,7 @@ func (s *Server) CreateCluster(c *gin.Context) {
 	}
 
 	var req generated.ClusterCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -159,8 +158,7 @@ func (s *Server) UpdateClusterEnvironment(c *gin.Context, clusterId string) {
 	}
 
 	var req generated.ClusterEnvironmentUpdate
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -367,8 +365,8 @@ func instanceSizeToAPI(sz *ent.InstanceSize) generated.InstanceSize {
 		Name:              sz.Name,
 		DisplayName:       sz.DisplayName,
 		Description:       sz.Description,
-		CpuCores:          sz.CPUCores,
-		MemoryMb:          sz.MemoryMB,
+		CpuCores:          float32(sz.CPUCores),
+		MemoryGi:          float32(sz.MemoryGi),
 		DiskGb:            sz.DiskGB,
 		DedicatedCpu:      sz.DedicatedCPU,
 		RequiresGpu:       sz.RequiresGpu,

@@ -31,17 +31,17 @@ func ValidateSpecOverrides(overrides map[string]interface{}) error {
 }
 
 // DetectSpecOverridesConflicts checks for logical conflicts between the indexed
-// database columns (cpu_cores, memory_mb, etc.) and the spec_overrides JSONB.
+// database columns (cpu_cores, memory_gi, etc.) and the spec_overrides JSONB.
 //
 // Returns a list of warning messages. These are informational — the save proceeds,
 // but administrators are warned about potential inconsistencies.
 //
 // ADR-0018 §4: Hybrid Model — indexed columns take precedence for scheduling queries.
 func DetectSpecOverridesConflicts(
-	cpuCores int,
-	memoryMB int,
+	cpuCores float64,
+	memoryGi float64,
 	dedicatedCPU bool,
-	cpuRequest *int,
+	cpuRequest *float64,
 	overrides map[string]interface{},
 ) []string {
 	var warnings []string
@@ -65,9 +65,9 @@ func DetectSpecOverridesConflicts(
 		"spec.domain.cpu.cores",
 	} {
 		if raw, ok := overrides[cpuPath]; ok {
-			if v, isNum := toIntSafe(raw); isNum && v != cpuCores {
+			if v, isNum := toFloat64Safe(raw); isNum && v != cpuCores {
 				warnings = append(warnings, fmt.Sprintf(
-					"spec_overrides path %q value %d conflicts with indexed cpu_cores=%d; "+
+					"spec_overrides path %q value %.1f conflicts with indexed cpu_cores=%.1f; "+
 						"the indexed field takes precedence for scheduling queries",
 					cpuPath, v, cpuCores,
 				))
@@ -82,9 +82,9 @@ func DetectSpecOverridesConflicts(
 	} {
 		if _, ok := overrides[memPath]; ok {
 			warnings = append(warnings, fmt.Sprintf(
-				"spec_overrides path %q may conflict with indexed memory_mb=%d; "+
+				"spec_overrides path %q may conflict with indexed memory_gi=%.1f; "+
 					"consider using the indexed field instead",
-				memPath, memoryMB,
+				memPath, memoryGi,
 			))
 		}
 	}
@@ -130,6 +130,21 @@ func toIntSafe(raw interface{}) (int, bool) {
 		return int(v), true
 	case float64:
 		return int(v), v == float64(int(v)) // only exact integers
+	default:
+		return 0, false
+	}
+}
+
+func toFloat64Safe(raw interface{}) (float64, bool) {
+	switch v := raw.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
 	default:
 		return 0, false
 	}

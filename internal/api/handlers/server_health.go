@@ -17,15 +17,15 @@ func (s *Server) GetLiveness(c *gin.Context) {
 
 // GetReadiness handles GET /health/ready — Kubernetes readiness probe.
 func (s *Server) GetReadiness(c *gin.Context) {
-	checks := make(map[string]string)
+	checks := generated.Health_Checks{}
 	allHealthy := true
 
 	// Database check.
 	if err := s.pool.Ping(c.Request.Context()); err != nil {
-		checks["database"] = "error"
+		checks.Database = "error"
 		allHealthy = false
 	} else {
-		checks["database"] = "ok"
+		checks.Database = "ok"
 	}
 
 	status := generated.HealthStatusOk

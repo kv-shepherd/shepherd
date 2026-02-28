@@ -2,53 +2,63 @@
     "quick_fields": [
         {
             "path": "spec.template.spec.domain.cpu.cores",
-            "display_name": "CPU Cores"
-        },
-        {
-            "path": "spec.template.spec.domain.cpu.threads",
-            "display_name": "CPU Threads"
+            "display_name": "CPU Cores",
+            "display_name_key": "instanceSizes.mask.cpu_cores"
         },
         {
             "path": "spec.template.spec.domain.memory.guest",
-            "display_name": "Guest Memory"
+            "display_name": "Guest Memory",
+            "display_name_key": "instanceSizes.mask.guest_memory"
         },
         {
-            "path": "spec.template.spec.domain.cpu.dedicatedCpuPlacement",
-            "display_name": "Dedicated CPU"
+            "path": "spec.template.spec.domain.memory.hugepages.pageSize",
+            "display_name": "Hugepages Size (2Mi/1Gi or custom MB)",
+            "display_name_key": "instanceSizes.mask.hugepages_size",
+            "help_key": "instanceSizes.mask.hugepages_help",
+            "placeholder_key": "instanceSizes.mask.hugepages_placeholder"
         }
     ],
     "advanced_fields": [
         {
             "path": "spec.template.spec.domain.devices.gpus",
-            "display_name": "GPU Devices"
+            "display_name": "GPU Devices",
+            "display_name_key": "instanceSizes.mask.gpu_devices",
+            "help_key": "instanceSizes.mask.gpu_devices_help"
         },
         {
-            "path": "spec.template.spec.domain.memory.hugepages.pageSize",
-            "display_name": "Hugepages Size"
+            "path": "spec.template.spec.domain.cpu.threads",
+            "display_name": "CPU Threads",
+            "display_name_key": "instanceSizes.mask.cpu_threads"
         },
         {
             "path": "spec.template.spec.domain.cpu.model",
-            "display_name": "CPU Model"
+            "display_name": "CPU Model",
+            "display_name_key": "instanceSizes.mask.cpu_model"
         },
         {
             "path": "spec.template.spec.domain.cpu.sockets",
-            "display_name": "CPU Sockets"
+            "display_name": "CPU Sockets",
+            "display_name_key": "instanceSizes.mask.cpu_sockets"
         },
         {
             "path": "spec.template.spec.domain.features.hyperv.relaxed.enabled",
-            "display_name": "Hyper-V Relaxed"
+            "display_name": "Hyper-V Relaxed",
+            "display_name_key": "instanceSizes.mask.hyperv_relaxed"
         },
         {
             "path": "spec.template.spec.domain.features.hyperv.vapic.enabled",
-            "display_name": "Hyper-V vAPIC"
+            "display_name": "Hyper-V vAPIC",
+            "display_name_key": "instanceSizes.mask.hyperv_vapic"
         },
         {
             "path": "spec.template.spec.domain.devices.autoattachGraphicsDevice",
-            "display_name": "Auto-attach Graphics"
+            "display_name": "Auto-attach Graphics",
+            "display_name_key": "instanceSizes.mask.autoattach_graphics"
         },
         {
             "path": "spec.template.spec.domain.devices.autoattachSerialConsole",
-            "display_name": "Auto-attach Serial Console"
+            "display_name": "Auto-attach Serial Console",
+            "display_name_key": "instanceSizes.mask.autoattach_serial"
         }
     ]
 }

@@ -27,7 +27,7 @@ import {
     WarningOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { useApiGet } from '@/hooks/useApiQuery';
+import { useApiGet, type ApiErrorResponse } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
 import type { components } from '@/types/api.gen';
 
@@ -37,6 +37,7 @@ type SystemList = components['schemas']['SystemList'];
 type VMList = components['schemas']['VMList'];
 type ApprovalTicketList = components['schemas']['ApprovalTicketList'];
 type Health = components['schemas']['Health'];
+type ApiFetchResult<T> = { data?: T; error?: ApiErrorResponse; response: Response };
 
 const HEALTH_STATUS_MAP: Record<string, { color: string; icon: React.ReactNode }> = {
     ok: { color: '#52c41a', icon: <CheckCircleOutlined /> },
@@ -47,16 +48,29 @@ const HEALTH_STATUS_MAP: Record<string, { color: string; icon: React.ReactNode }
 export default function DashboardPage() {
     const { t } = useTranslation('common');
 
+    const fetchReadiness = async (): Promise<ApiFetchResult<Health>> => {
+        const result = await api.GET('/health/ready');
+        // /health/ready uses 503 + Health payload for degraded state.
+        if (result.error && result.response.status === 503) {
+            return { data: result.error as unknown as Health, response: result.response };
+        }
+        return result as unknown as ApiFetchResult<Health>;
+    };
+
+    const fetchLiveness = async (): Promise<ApiFetchResult<Health>> => {
+        return api.GET('/health/live') as unknown as ApiFetchResult<Health>;
+    };
+
     // Fetch health status
     const { data: health, isLoading: healthLoading } = useApiGet<Health>(
         ['health'],
-        () => api.GET('/health/ready'),
+        fetchReadiness,
         { refetchInterval: 30000 }
     );
 
     const { data: liveness, isLoading: livenessLoading } = useApiGet<Health>(
         ['health-live'],
-        () => api.GET('/health/live'),
+        fetchLiveness,
         { refetchInterval: 30000 }
     );
 

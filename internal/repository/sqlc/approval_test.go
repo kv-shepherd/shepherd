@@ -49,7 +49,7 @@ func TestQueries_ApproveCreateTicket(t *testing.T) {
 	seedApprovalTicket(t, ctx, pool, ticketID, eventID, "CREATE", "PENDING")
 
 	templateSnapshot := []byte(`{"name":"tpl-v3"}`)
-	instanceSizeSnapshot := []byte(`{"cpu_cores":4,"memory_mb":8192}`)
+	instanceSizeSnapshot := []byte(`{"cpu_cores":4,"memory_gi":8}`)
 	modifiedSpec := []byte(`{"cpu":4}`)
 
 	rows, err := q.ApproveCreateTicket(ctx, ApproveCreateTicketParams{

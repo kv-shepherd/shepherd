@@ -120,11 +120,18 @@ func TestValidateTemplateSpec_ProhibitedPaths(t *testing.T) {
 			expectedPath: "memory",
 		},
 		{
-			name: "memory_mb field",
+			name: "memory_gi field",
 			spec: map[string]interface{}{
-				"memory_mb": 4096,
+				"memory_gi": 4,
 			},
-			expectedPath: "memory_mb",
+			expectedPath: "memory_gi",
+		},
+		{
+			name: "memory_request_gi field",
+			spec: map[string]interface{}{
+				"memory_request_gi": 2,
+			},
+			expectedPath: "memory_request_gi",
 		},
 		{
 			name: "resources.requests",
@@ -271,7 +278,8 @@ func TestIsProhibitedTemplatePath(t *testing.T) {
 		{"CPU", true}, // case insensitive
 		{"cpu_cores", true},
 		{"memory", true},
-		{"memory_mb", true},
+		{"memory_gi", true},
+		{"memory_request_gi", true},
 		{"resources", true},
 		{"resources.requests", true},
 		{"resources.limits.memory", true},

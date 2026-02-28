@@ -25,10 +25,10 @@ interface InstanceSizeFormValues {
     display_name?: string;
     description?: string;
     cpu_cores: number;
-    memory_mb: number;
+    memory_gi: number;
     disk_gb?: number;
     cpu_request?: number;
-    memory_request_mb?: number;
+    memory_request_gi?: number;
     cpu_overcommit_enabled?: boolean;
     memory_overcommit_enabled?: boolean;
     // legacy hugepages_setting removed: now driven by DynamicSchemaForm spec_text
@@ -48,10 +48,11 @@ interface InstanceSizeFormValues {
 /**
  * Maps UI form values to API request payload.
  * spec_text (produced by DynamicSchemaForm) is parsed into spec_overrides.
- * Overcommit checkboxes → cpu_request / memory_request_mb.
+ * Overcommit checkboxes → cpu_request / memory_request_gi.
  */
 function formToPayload(
     values: InstanceSizeFormValues,
+    mode: 'create' | 'update',
 ): Omit<InstanceSizeCreateRequest, 'name'> & { name?: string } {
     // Parse DynamicSchemaForm spec_text → spec_overrides map
     let specOverrides: Record<string, unknown> | undefined;
@@ -66,13 +67,15 @@ function formToPayload(
         }
     }
 
-    // If overcommit not enabled, clear the request fields
+    // Overcommit clear semantics:
+    // - create: omit request fields when disabled
+    // - update: send 0 as clear sentinel so backend can clear persisted values
     const rest = { ...values };
     if (!values.cpu_overcommit_enabled) {
-        rest.cpu_request = undefined;
+        rest.cpu_request = mode === 'update' ? 0 : undefined;
     }
     if (!values.memory_overcommit_enabled) {
-        rest.memory_request_mb = undefined;
+        rest.memory_request_gi = mode === 'update' ? 0 : undefined;
     }
 
     // Exclude form-only fields from the API payload
@@ -170,6 +173,7 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
         createForm.setFieldsValue({
             enabled: true,
             sort_order: 0,
+            dedicated_cpu: false,
             spec_text: '{}',
         });
         setCreateOpen(true);
@@ -178,7 +182,7 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
     const openEditModal = (item: InstanceSize) => {
         const hydrated = item as InstanceSize & {
             cpu_request?: number;
-            memory_request_mb?: number;
+            memory_request_gi?: number;
             sort_order?: number;
         };
 
@@ -189,13 +193,13 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
             display_name: item.display_name,
             description: item.description,
             cpu_cores: item.cpu_cores,
-            memory_mb: item.memory_mb,
+            memory_gi: item.memory_gi,
             disk_gb: item.disk_gb,
             dedicated_cpu: item.dedicated_cpu,
             cpu_request: hydrated.cpu_request,
-            memory_request_mb: hydrated.memory_request_mb,
+            memory_request_gi: hydrated.memory_request_gi,
             cpu_overcommit_enabled: !!hydrated.cpu_request,
-            memory_overcommit_enabled: !!hydrated.memory_request_mb,
+            memory_overcommit_enabled: !!hydrated.memory_request_gi,
             requires_sriov: item.requires_sriov,
             sort_order: hydrated.sort_order,
             // spec_text: DynamicSchemaForm will parse this JSON string on mount
@@ -212,7 +216,7 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
 
     const submitCreate = async () => {
         const values = await createForm.validateFields();
-        const payload = formToPayload(values);
+        const payload = formToPayload(values, 'create');
         createMutation.mutate(payload as InstanceSizeCreateRequest);
     };
 
@@ -221,7 +225,7 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
             return;
         }
         const values = await editForm.validateFields();
-        const payload = formToPayload(values);
+        const payload = formToPayload(values, 'update');
         updateMutation.mutate({
             id: editingItem.id,
             body: payload as InstanceSizeUpdateRequest,

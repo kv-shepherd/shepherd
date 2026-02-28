@@ -90,13 +90,13 @@ func Description(v string) predicate.InstanceSize {
 }
 
 // CPUCores applies equality check predicate on the "cpu_cores" field. It's identical to CPUCoresEQ.
-func CPUCores(v int) predicate.InstanceSize {
+func CPUCores(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldEQ(FieldCPUCores, v))
 }
 
-// MemoryMB applies equality check predicate on the "memory_mb" field. It's identical to MemoryMBEQ.
-func MemoryMB(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldEQ(FieldMemoryMB, v))
+// MemoryGi applies equality check predicate on the "memory_gi" field. It's identical to MemoryGiEQ.
+func MemoryGi(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldEQ(FieldMemoryGi, v))
 }
 
 // DiskGB applies equality check predicate on the "disk_gb" field. It's identical to DiskGBEQ.
@@ -105,13 +105,13 @@ func DiskGB(v int) predicate.InstanceSize {
 }
 
 // CPURequest applies equality check predicate on the "cpu_request" field. It's identical to CPURequestEQ.
-func CPURequest(v int) predicate.InstanceSize {
+func CPURequest(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldEQ(FieldCPURequest, v))
 }
 
-// MemoryRequestMB applies equality check predicate on the "memory_request_mb" field. It's identical to MemoryRequestMBEQ.
-func MemoryRequestMB(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldEQ(FieldMemoryRequestMB, v))
+// MemoryRequestGi applies equality check predicate on the "memory_request_gi" field. It's identical to MemoryRequestGiEQ.
+func MemoryRequestGi(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldEQ(FieldMemoryRequestGi, v))
 }
 
 // DedicatedCPU applies equality check predicate on the "dedicated_cpu" field. It's identical to DedicatedCPUEQ.
@@ -450,83 +450,83 @@ func DescriptionContainsFold(v string) predicate.InstanceSize {
 }
 
 // CPUCoresEQ applies the EQ predicate on the "cpu_cores" field.
-func CPUCoresEQ(v int) predicate.InstanceSize {
+func CPUCoresEQ(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldEQ(FieldCPUCores, v))
 }
 
 // CPUCoresNEQ applies the NEQ predicate on the "cpu_cores" field.
-func CPUCoresNEQ(v int) predicate.InstanceSize {
+func CPUCoresNEQ(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldNEQ(FieldCPUCores, v))
 }
 
 // CPUCoresIn applies the In predicate on the "cpu_cores" field.
-func CPUCoresIn(vs ...int) predicate.InstanceSize {
+func CPUCoresIn(vs ...float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldIn(FieldCPUCores, vs...))
 }
 
 // CPUCoresNotIn applies the NotIn predicate on the "cpu_cores" field.
-func CPUCoresNotIn(vs ...int) predicate.InstanceSize {
+func CPUCoresNotIn(vs ...float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldNotIn(FieldCPUCores, vs...))
 }
 
 // CPUCoresGT applies the GT predicate on the "cpu_cores" field.
-func CPUCoresGT(v int) predicate.InstanceSize {
+func CPUCoresGT(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldGT(FieldCPUCores, v))
 }
 
 // CPUCoresGTE applies the GTE predicate on the "cpu_cores" field.
-func CPUCoresGTE(v int) predicate.InstanceSize {
+func CPUCoresGTE(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldGTE(FieldCPUCores, v))
 }
 
 // CPUCoresLT applies the LT predicate on the "cpu_cores" field.
-func CPUCoresLT(v int) predicate.InstanceSize {
+func CPUCoresLT(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldLT(FieldCPUCores, v))
 }
 
 // CPUCoresLTE applies the LTE predicate on the "cpu_cores" field.
-func CPUCoresLTE(v int) predicate.InstanceSize {
+func CPUCoresLTE(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldLTE(FieldCPUCores, v))
 }
 
-// MemoryMBEQ applies the EQ predicate on the "memory_mb" field.
-func MemoryMBEQ(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldEQ(FieldMemoryMB, v))
+// MemoryGiEQ applies the EQ predicate on the "memory_gi" field.
+func MemoryGiEQ(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldEQ(FieldMemoryGi, v))
 }
 
-// MemoryMBNEQ applies the NEQ predicate on the "memory_mb" field.
-func MemoryMBNEQ(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldNEQ(FieldMemoryMB, v))
+// MemoryGiNEQ applies the NEQ predicate on the "memory_gi" field.
+func MemoryGiNEQ(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldNEQ(FieldMemoryGi, v))
 }
 
-// MemoryMBIn applies the In predicate on the "memory_mb" field.
-func MemoryMBIn(vs ...int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldIn(FieldMemoryMB, vs...))
+// MemoryGiIn applies the In predicate on the "memory_gi" field.
+func MemoryGiIn(vs ...float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldIn(FieldMemoryGi, vs...))
 }
 
-// MemoryMBNotIn applies the NotIn predicate on the "memory_mb" field.
-func MemoryMBNotIn(vs ...int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldNotIn(FieldMemoryMB, vs...))
+// MemoryGiNotIn applies the NotIn predicate on the "memory_gi" field.
+func MemoryGiNotIn(vs ...float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldNotIn(FieldMemoryGi, vs...))
 }
 
-// MemoryMBGT applies the GT predicate on the "memory_mb" field.
-func MemoryMBGT(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldGT(FieldMemoryMB, v))
+// MemoryGiGT applies the GT predicate on the "memory_gi" field.
+func MemoryGiGT(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldGT(FieldMemoryGi, v))
 }
 
-// MemoryMBGTE applies the GTE predicate on the "memory_mb" field.
-func MemoryMBGTE(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldGTE(FieldMemoryMB, v))
+// MemoryGiGTE applies the GTE predicate on the "memory_gi" field.
+func MemoryGiGTE(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldGTE(FieldMemoryGi, v))
 }
 
-// MemoryMBLT applies the LT predicate on the "memory_mb" field.
-func MemoryMBLT(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldLT(FieldMemoryMB, v))
+// MemoryGiLT applies the LT predicate on the "memory_gi" field.
+func MemoryGiLT(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldLT(FieldMemoryGi, v))
 }
 
-// MemoryMBLTE applies the LTE predicate on the "memory_mb" field.
-func MemoryMBLTE(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldLTE(FieldMemoryMB, v))
+// MemoryGiLTE applies the LTE predicate on the "memory_gi" field.
+func MemoryGiLTE(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldLTE(FieldMemoryGi, v))
 }
 
 // DiskGBEQ applies the EQ predicate on the "disk_gb" field.
@@ -580,42 +580,42 @@ func DiskGBNotNil() predicate.InstanceSize {
 }
 
 // CPURequestEQ applies the EQ predicate on the "cpu_request" field.
-func CPURequestEQ(v int) predicate.InstanceSize {
+func CPURequestEQ(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldEQ(FieldCPURequest, v))
 }
 
 // CPURequestNEQ applies the NEQ predicate on the "cpu_request" field.
-func CPURequestNEQ(v int) predicate.InstanceSize {
+func CPURequestNEQ(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldNEQ(FieldCPURequest, v))
 }
 
 // CPURequestIn applies the In predicate on the "cpu_request" field.
-func CPURequestIn(vs ...int) predicate.InstanceSize {
+func CPURequestIn(vs ...float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldIn(FieldCPURequest, vs...))
 }
 
 // CPURequestNotIn applies the NotIn predicate on the "cpu_request" field.
-func CPURequestNotIn(vs ...int) predicate.InstanceSize {
+func CPURequestNotIn(vs ...float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldNotIn(FieldCPURequest, vs...))
 }
 
 // CPURequestGT applies the GT predicate on the "cpu_request" field.
-func CPURequestGT(v int) predicate.InstanceSize {
+func CPURequestGT(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldGT(FieldCPURequest, v))
 }
 
 // CPURequestGTE applies the GTE predicate on the "cpu_request" field.
-func CPURequestGTE(v int) predicate.InstanceSize {
+func CPURequestGTE(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldGTE(FieldCPURequest, v))
 }
 
 // CPURequestLT applies the LT predicate on the "cpu_request" field.
-func CPURequestLT(v int) predicate.InstanceSize {
+func CPURequestLT(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldLT(FieldCPURequest, v))
 }
 
 // CPURequestLTE applies the LTE predicate on the "cpu_request" field.
-func CPURequestLTE(v int) predicate.InstanceSize {
+func CPURequestLTE(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldLTE(FieldCPURequest, v))
 }
 
@@ -629,54 +629,54 @@ func CPURequestNotNil() predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldNotNull(FieldCPURequest))
 }
 
-// MemoryRequestMBEQ applies the EQ predicate on the "memory_request_mb" field.
-func MemoryRequestMBEQ(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldEQ(FieldMemoryRequestMB, v))
+// MemoryRequestGiEQ applies the EQ predicate on the "memory_request_gi" field.
+func MemoryRequestGiEQ(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldEQ(FieldMemoryRequestGi, v))
 }
 
-// MemoryRequestMBNEQ applies the NEQ predicate on the "memory_request_mb" field.
-func MemoryRequestMBNEQ(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldNEQ(FieldMemoryRequestMB, v))
+// MemoryRequestGiNEQ applies the NEQ predicate on the "memory_request_gi" field.
+func MemoryRequestGiNEQ(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldNEQ(FieldMemoryRequestGi, v))
 }
 
-// MemoryRequestMBIn applies the In predicate on the "memory_request_mb" field.
-func MemoryRequestMBIn(vs ...int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldIn(FieldMemoryRequestMB, vs...))
+// MemoryRequestGiIn applies the In predicate on the "memory_request_gi" field.
+func MemoryRequestGiIn(vs ...float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldIn(FieldMemoryRequestGi, vs...))
 }
 
-// MemoryRequestMBNotIn applies the NotIn predicate on the "memory_request_mb" field.
-func MemoryRequestMBNotIn(vs ...int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldNotIn(FieldMemoryRequestMB, vs...))
+// MemoryRequestGiNotIn applies the NotIn predicate on the "memory_request_gi" field.
+func MemoryRequestGiNotIn(vs ...float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldNotIn(FieldMemoryRequestGi, vs...))
 }
 
-// MemoryRequestMBGT applies the GT predicate on the "memory_request_mb" field.
-func MemoryRequestMBGT(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldGT(FieldMemoryRequestMB, v))
+// MemoryRequestGiGT applies the GT predicate on the "memory_request_gi" field.
+func MemoryRequestGiGT(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldGT(FieldMemoryRequestGi, v))
 }
 
-// MemoryRequestMBGTE applies the GTE predicate on the "memory_request_mb" field.
-func MemoryRequestMBGTE(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldGTE(FieldMemoryRequestMB, v))
+// MemoryRequestGiGTE applies the GTE predicate on the "memory_request_gi" field.
+func MemoryRequestGiGTE(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldGTE(FieldMemoryRequestGi, v))
 }
 
-// MemoryRequestMBLT applies the LT predicate on the "memory_request_mb" field.
-func MemoryRequestMBLT(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldLT(FieldMemoryRequestMB, v))
+// MemoryRequestGiLT applies the LT predicate on the "memory_request_gi" field.
+func MemoryRequestGiLT(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldLT(FieldMemoryRequestGi, v))
 }
 
-// MemoryRequestMBLTE applies the LTE predicate on the "memory_request_mb" field.
-func MemoryRequestMBLTE(v int) predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldLTE(FieldMemoryRequestMB, v))
+// MemoryRequestGiLTE applies the LTE predicate on the "memory_request_gi" field.
+func MemoryRequestGiLTE(v float64) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldLTE(FieldMemoryRequestGi, v))
 }
 
-// MemoryRequestMBIsNil applies the IsNil predicate on the "memory_request_mb" field.
-func MemoryRequestMBIsNil() predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldIsNull(FieldMemoryRequestMB))
+// MemoryRequestGiIsNil applies the IsNil predicate on the "memory_request_gi" field.
+func MemoryRequestGiIsNil() predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldIsNull(FieldMemoryRequestGi))
 }
 
-// MemoryRequestMBNotNil applies the NotNil predicate on the "memory_request_mb" field.
-func MemoryRequestMBNotNil() predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldNotNull(FieldMemoryRequestMB))
+// MemoryRequestGiNotNil applies the NotNil predicate on the "memory_request_gi" field.
+func MemoryRequestGiNotNil() predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldNotNull(FieldMemoryRequestGi))
 }
 
 // DedicatedCPUEQ applies the EQ predicate on the "dedicated_cpu" field.

@@ -140,6 +140,41 @@ func TestGetDynamicSchema_InstancesizeMask_ContainsCpuCores(t *testing.T) {
 	}
 }
 
+func TestGetDynamicSchema_InstancesizeMask_RetainsMetadataKeys(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	srv := &Server{}
+	c, w := newSchemaGinContext(t, "instancesize")
+	srv.GetDynamicSchema(c, generated.Instancesize)
+
+	var resp generated.DynamicSchemaResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	targetPath := "spec.template.spec.domain.memory.hugepages.pageSize"
+	var target *generated.MaskField
+	for i := range resp.Mask.QuickFields {
+		if resp.Mask.QuickFields[i].Path == targetPath {
+			target = &resp.Mask.QuickFields[i]
+			break
+		}
+	}
+	if target == nil {
+		t.Fatalf("quick_fields does not contain path %q", targetPath)
+	}
+	if target.DisplayNameKey == "" {
+		t.Errorf("display_name_key is empty for %q", targetPath)
+	}
+	if target.HelpKey == "" {
+		t.Errorf("help_key is empty for %q", targetPath)
+	}
+	if target.PlaceholderKey == "" {
+		t.Errorf("placeholder_key is empty for %q", targetPath)
+	}
+}
+
 // newSchemaGinContext builds a minimal gin.Context for GET /schemas/{entityType}.
 // /schemas/ is a public endpoint (OpenAPI security:[], router.go publicPrefixes).
 // No authentication headers are required.

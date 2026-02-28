@@ -20,23 +20,31 @@ type VM struct {
 }
 
 // VMSpec represents the desired state of a VM.
+// Resource units: CPU in cores (0.5 step), Memory in Gi (0.5 step).
 type VMSpec struct {
-	Name     string            `json:"name,omitempty"`
-	CPU      int               `json:"cpu"`
-	MemoryMB int               `json:"memory_mb"`
-	DiskGB   int               `json:"disk_gb,omitempty"`
-	Image    string            `json:"image,omitempty"`
-	Labels   map[string]string `json:"labels,omitempty"`
+	Name      string            `json:"name,omitempty"`
+	CPU       float64           `json:"cpu"`
+	MemoryGi  float64           `json:"memory_gi"`
+	DiskGB    int               `json:"disk_gb,omitempty"`
+	Image     string            `json:"image,omitempty"`
+	CloudInit string            `json:"cloud_init,omitempty"`
+	Labels    map[string]string `json:"labels,omitempty"`
 
-	// CPURequest is the K8s CPU request (overcommit: request ≤ limit/CPU).
+	// CPURequest is the K8s CPU request in cores (overcommit: request ≤ limit/CPU).
 	// Zero means "use CPU" (no overcommit). Set via admin resource override (Stage 5.B).
-	CPURequest int `json:"cpu_request,omitempty"`
-	// MemoryRequestMB is the K8s memory request in MB (overcommit: request ≤ limit/MemoryMB).
-	// Zero means "use MemoryMB" (no overcommit). Set via admin resource override (Stage 5.B).
-	MemoryRequestMB int `json:"memory_request_mb,omitempty"`
+	CPURequest float64 `json:"cpu_request,omitempty"`
+	// MemoryRequestGi is the K8s memory request in Gi (overcommit: request ≤ limit/MemoryGi).
+	// Zero means "use MemoryGi" (no overcommit). Set via admin resource override (Stage 5.B).
+	MemoryRequestGi float64 `json:"memory_request_gi,omitempty"`
 
 	// SpecOverrides carries advanced KubeVirt spec path/value overrides (ADR-0018 Hybrid Model).
 	SpecOverrides map[string]interface{} `json:"spec_overrides,omitempty"`
+
+	// RenderedYAML is the fully-rendered VM YAML string from text/template.
+	// Required by CreateVM / UpdateVM / ValidateSpec (ADR-0011).
+	// Populated by the usecase/handler layer, not by the provider.
+	// The provider acts as a "YAML porter" — it submits this YAML via SSA.
+	RenderedYAML string `json:"-"` // excluded from JSON serialization
 }
 
 // VMStatus represents the current status of a VM.

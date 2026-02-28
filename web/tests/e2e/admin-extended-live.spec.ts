@@ -329,7 +329,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         await createModal.getByRole('textbox').first().fill(sizeName);
         // Fill CPU and memory fields (Ant Design InputNumber uses role="spinbutton")
         await createModal.getByRole('spinbutton').nth(1).fill('2');  // cpu_cores
-        await createModal.getByRole('spinbutton').nth(2).fill('4096');  // memory_mb
+        await createModal.getByRole('spinbutton').nth(2).fill('4');    // memory_gi
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'InstanceSize', 201);

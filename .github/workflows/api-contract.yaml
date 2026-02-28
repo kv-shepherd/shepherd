@@ -13,20 +13,18 @@ name: API Contract Validation
 
 on:
   pull_request:
-    paths:
-      - 'api/**'
-      - 'internal/api/**'
-      - 'web/src/types/api.gen.ts'
-      - 'api/.vacuum.yaml'  # ADR-0029: vacuum replaces spectral
+    # NOTE:
+    # This workflow must run for every PR because its jobs are intended to be
+    # configured as required checks in branch protection. If a required-check
+    # workflow is skipped by path filters, GitHub leaves checks in "Pending".
   push:
     branches: [main]
-    paths:
-      - 'api/**'
 
 # Principle of Least Privilege (ADR-0029)
 permissions:
   contents: read
-  pull-requests: read
+  issues: write
+  pull-requests: write
 
 jobs:
   # ─────────────────────────────────────────────────────────────────
@@ -102,11 +100,53 @@ jobs:
 
       - name: Generate Changelog
         if: steps.check_file.outputs.exists == 'true' && env.base_exists == 'true'
-        uses: oasdiff/oasdiff-action/changelog@1c611ffb1253a72924624aa4fb662e302b3565d3  # v0.0.21
-        with:
-          base: origin/${{ github.base_ref }}:api/openapi.yaml
-          revision: api/openapi.yaml
-          format: markdown
+        run: |
+          make api-changelog > /tmp/api-changelog.md
+          if [ ! -s /tmp/api-changelog.md ]; then
+            echo "_No API changelog output._" > /tmp/api-changelog.md
+          fi
+
+      - name: Publish Changelog Comment
+        if: github.event_name == 'pull_request' && steps.check_file.outputs.exists == 'true' && env.base_exists == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          MARKER="<!-- api-contract-changelog -->"
+          COMMENT_BODY="$(mktemp)"
+          {
+            echo "${MARKER}"
+            echo "## API Changelog"
+            echo
+            cat /tmp/api-changelog.md
+          } > "${COMMENT_BODY}"
+
+          COMMENTS_API="https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments"
+          EXISTING_ID="$(curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${COMMENTS_API}" | jq -r --arg marker "${MARKER}" '.[] | select(.body | contains($marker)) | .id' | head -n1)"
+
+          JSON_PAYLOAD="$(jq -Rs '{body: .}' < "${COMMENT_BODY}")"
+          if [ -n "${EXISTING_ID}" ]; then
+            curl -fsSL -X PATCH \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/json" \
+              "https://api.github.com/repos/${REPO}/issues/comments/${EXISTING_ID}" \
+              -d "${JSON_PAYLOAD}" > /dev/null
+            echo "✅ Updated existing API changelog comment (${EXISTING_ID})"
+          else
+            curl -fsSL -X POST \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/json" \
+              "${COMMENTS_API}" \
+              -d "${JSON_PAYLOAD}" > /dev/null
+            echo "✅ Created new API changelog comment"
+          fi
 
   # ─────────────────────────────────────────────────────────────────
   # Stage 3: Verify Generated Code is in Sync
@@ -140,52 +180,64 @@ jobs:
 
       - name: Verify oapi-codegen version (ADR-0028 omitzero)
         run: |
-          VERSION="$(go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.0 -version | tail -n 1)"
+          VERSION="$(go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.1 -version | tail -n 1)"
           echo "Detected oapi-codegen: ${VERSION}"
-          if [ "${VERSION}" != "v2.5.0" ]; then
-            echo "::error::oapi-codegen must be v2.5.0, got ${VERSION}"
+          if [ "${VERSION}" != "v2.5.1" ]; then
+            echo "::error::oapi-codegen must be v2.5.1, got ${VERSION}"
             exit 1
           fi
+
+      - name: Generate OpenAPI compat spec
+        run: make api-compat-generate
 
       - name: Regenerate API code
         run: make api-generate
 
-      - name: Generate OpenAPI compat spec (if required)
-        env:
-          REQUIRE_OPENAPI_COMPAT: ${{ vars.REQUIRE_OPENAPI_COMPAT || '0' }}
-        run: |
-          if [ "${REQUIRE_OPENAPI_COMPAT}" = "1" ]; then
-            make api-compat-generate
-          else
-            echo "Skipping compat generation (REQUIRE_OPENAPI_COMPAT=0)"
-          fi
-
       - name: Check OpenAPI compat spec (if required)
         env:
-          REQUIRE_OPENAPI_COMPAT: ${{ vars.REQUIRE_OPENAPI_COMPAT || '0' }}
+          REQUIRE_OPENAPI_COMPAT: ${{ vars.REQUIRE_OPENAPI_COMPAT || '1' }}
         run: make api-compat
+
+      - name: Frontend type sync check
+        run: |
+          cd web
+          npm run api:generate
+          git diff --exit-code src/types/api.gen.ts
+          npm run typecheck
 
       - name: Check for uncommitted changes
         run: |
-          if [ -n "$(git status --porcelain internal/api/generated/ web/src/types/api.gen.ts 2>/dev/null)" ]; then
+          if [ -n "$(git status --porcelain internal/api/generated/ web/src/types/api.gen.ts api/openapi.compat.yaml internal/api/specembed/openapi.yaml 2>/dev/null)" ]; then
             echo "::error::Generated code is out of sync with OpenAPI spec!"
             echo ""
             echo "The following files have uncommitted changes after regeneration:"
-            git status --porcelain internal/api/generated/ web/src/types/api.gen.ts
+            git status --porcelain internal/api/generated/ web/src/types/api.gen.ts api/openapi.compat.yaml internal/api/specembed/openapi.yaml
             echo ""
-            echo "Please run 'make api-generate' and commit the changes."
+            echo "Please run 'make api-compat-generate && make api-generate && make api-compat' and commit the changes."
             exit 1
           fi
           echo "✅ Generated code is in sync with OpenAPI spec"
 
   # ─────────────────────────────────────────────────────────────────
-  # Stage 4: Contract Testing (Optional - requires running server)
+  # Stage 4: Contract Testing
   # ─────────────────────────────────────────────────────────────────
-  # contract-test:
-  #   name: Contract Testing
-  #   runs-on: ubuntu-24.04
-  #   needs: [lint-spec, generated-code-sync]
-  #   steps:
-  #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-  #     - name: Run contract tests with libopenapi-validator
-  #       run: make api-contract-test
+  contract-test:
+    name: Contract Testing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [lint-spec, generated-code-sync]
+    if: hashFiles('go.mod') != ''
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5  # v6.2.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run contract tests with libopenapi-validator
+        run: make api-contract-test

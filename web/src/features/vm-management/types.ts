@@ -38,12 +38,13 @@ export const VM_STATUS_MAP: Record<
     UNKNOWN: { color: 'default', badge: 'default' },
 };
 
-export const formatMemory = (memoryMb: number): string => {
-    if (!Number.isFinite(memoryMb) || memoryMb <= 0) {
-        return '0 MB';
+/**
+ * Formats memory in GiB for display.
+ * Values are already in Gi from the API (post int→float64 migration).
+ */
+export const formatMemory = (memoryGi: number): string => {
+    if (!Number.isFinite(memoryGi) || memoryGi <= 0) {
+        return '0 Gi';
     }
-    if (memoryMb % 1024 === 0) {
-        return `${memoryMb / 1024} Gi`;
-    }
-    return `${memoryMb} MB`;
+    return `${Number.isInteger(memoryGi) ? memoryGi : memoryGi.toFixed(1)} Gi`;
 };
