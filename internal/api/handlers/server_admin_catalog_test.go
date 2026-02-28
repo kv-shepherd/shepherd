@@ -98,7 +98,7 @@ func TestAdminInstanceSizeCRUD(t *testing.T) {
 		t,
 		http.MethodPost,
 		"/admin/instance-sizes",
-		`{"name":"m4.large","display_name":"M4 Large","cpu_cores":4,"memory_mb":8192,"disk_gb":80,"dedicated_cpu":false,"enabled":true}`,
+		`{"name":"m4.large","display_name":"M4 Large","cpu_cores":4,"memory_gi":8,"disk_gb":80,"dedicated_cpu":false,"enabled":true}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)

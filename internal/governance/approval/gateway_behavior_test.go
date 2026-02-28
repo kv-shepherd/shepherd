@@ -115,7 +115,7 @@ func TestGatewayApproveCreate_CallsAtomicWriterWithResolvedIDs(t *testing.T) {
 		SetID("size-override").
 		SetName("size").
 		SetCPUCores(2).
-		SetMemoryMB(2048).
+		SetMemoryGi(2).
 		SetCreatedBy("seed").
 		Save(context.Background())
 	if err != nil {
@@ -450,7 +450,7 @@ func createOverrideTestData(t *testing.T, client *ent.Client, suffix string) (ti
 		SetID("size-override-" + suffix).
 		SetName("size-override-" + suffix).
 		SetCPUCores(4).
-		SetMemoryMB(4096).
+		SetMemoryGi(4).
 		SetCreatedBy("seed").
 		Save(context.Background())
 	if err != nil {
@@ -509,8 +509,8 @@ func TestGatewayApproveCreate_EnableOverrideWithValues_WritesModifiedSpec(t *tes
 		EnableOverride:  true,
 		CPULimit:        8,
 		CPURequest:      4,
-		MemoryLimitMB:   16384,
-		MemoryRequestMB: 8192,
+		MemoryLimitGi:   16,
+		MemoryRequestGi: 8,
 		DiskGB:          100,
 	}
 	if err := gw.Approve(context.Background(), ticketID, "admin-1", opts); err != nil {
@@ -525,6 +525,20 @@ func TestGatewayApproveCreate_EnableOverrideWithValues_WritesModifiedSpec(t *tes
 	if ms == nil {
 		t.Fatal("modifiedSpec is nil")
 	}
+	assertFloat64Value := func(t *testing.T, key string, expected float64) {
+		t.Helper()
+		v, ok := ms[key].(float64)
+		if !ok {
+			t.Fatalf("modifiedSpec[%q] not found or not float64: %v", key, ms[key])
+		}
+		if v != expected {
+			t.Fatalf("modifiedSpec[%q] = %f, want %f", key, v, expected)
+		}
+	}
+	assertFloat64Value(t, "cpu_limit", 8)
+	assertFloat64Value(t, "cpu_request", 4)
+	assertFloat64Value(t, "memory_limit_gi", 16)
+	assertFloat64Value(t, "memory_request_gi", 8)
 	assertIntValue := func(t *testing.T, key string, expected int) {
 		t.Helper()
 		v, ok := asInt(ms[key])
@@ -535,10 +549,6 @@ func TestGatewayApproveCreate_EnableOverrideWithValues_WritesModifiedSpec(t *tes
 			t.Fatalf("modifiedSpec[%q] = %d, want %d", key, v, expected)
 		}
 	}
-	assertIntValue(t, "cpu_limit", 8)
-	assertIntValue(t, "cpu_request", 4)
-	assertIntValue(t, "memory_limit_mb", 16384)
-	assertIntValue(t, "memory_request_mb", 8192)
 	assertIntValue(t, "disk_gb", 100)
 
 	if val, ok := ms["enable_override"].(bool); !ok || !val {

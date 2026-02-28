@@ -34,10 +34,10 @@ type ApproveOpts struct {
 
 	// Resource override fields (master-flow Stage 5.B).
 	EnableOverride  bool
-	CPURequest      int
-	CPULimit        int
-	MemoryRequestMB int
-	MemoryLimitMB   int
+	CPURequest      float64
+	CPULimit        float64
+	MemoryRequestGi float64
+	MemoryLimitGi   float64
 	DiskGB          int
 }
 
@@ -154,21 +154,21 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 	// Stage 5.B: If admin enabled resource override, validate overcommit constraints.
 	if opts.EnableOverride {
 		// Guard: at least one override field must be non-zero to avoid a no-op override.
-		if opts.CPULimit == 0 && opts.CPURequest == 0 && opts.MemoryLimitMB == 0 && opts.MemoryRequestMB == 0 && opts.DiskGB == 0 {
+		if opts.CPULimit == 0 && opts.CPURequest == 0 && opts.MemoryLimitGi == 0 && opts.MemoryRequestGi == 0 && opts.DiskGB == 0 {
 			return fmt.Errorf("enable_override is true but all resource override values are zero for ticket %s", ticketID)
 		}
 
 		cpuCores := opts.CPULimit
 		cpuRequest := opts.CPURequest
-		memoryMB := opts.MemoryLimitMB
-		memoryRequestMB := opts.MemoryRequestMB
+		memoryGi := opts.MemoryLimitGi
+		memoryRequestGi := opts.MemoryRequestGi
 
 		// Fetch the InstanceSize to determine dedicatedCPU.
 		instanceSizeEntity, err := g.client.InstanceSize.Get(ctx, effectiveInstanceSizeID)
 		if err != nil {
 			return fmt.Errorf("get instance size %s for override validation: %w", effectiveInstanceSizeID, err)
 		}
-		if err := service.ValidateOvercommit(cpuCores, cpuRequest, memoryMB, memoryRequestMB, instanceSizeEntity.DedicatedCPU); err != nil {
+		if err := service.ValidateOvercommit(cpuCores, cpuRequest, memoryGi, memoryRequestGi, instanceSizeEntity.DedicatedCPU); err != nil {
 			return fmt.Errorf("resource override validation for ticket %s: %w", ticketID, err)
 		}
 	}
@@ -195,11 +195,11 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 		if opts.CPULimit > 0 {
 			modifiedSpec["cpu_limit"] = opts.CPULimit
 		}
-		if opts.MemoryRequestMB > 0 {
-			modifiedSpec["memory_request_mb"] = opts.MemoryRequestMB
+		if opts.MemoryRequestGi > 0 {
+			modifiedSpec["memory_request_gi"] = opts.MemoryRequestGi
 		}
-		if opts.MemoryLimitMB > 0 {
-			modifiedSpec["memory_limit_mb"] = opts.MemoryLimitMB
+		if opts.MemoryLimitGi > 0 {
+			modifiedSpec["memory_limit_gi"] = opts.MemoryLimitGi
 		}
 		if opts.DiskGB > 0 {
 			modifiedSpec["disk_gb"] = opts.DiskGB
@@ -814,10 +814,10 @@ func buildInstanceSizeSnapshot(size *ent.InstanceSize) map[string]interface{} {
 		"display_name":       size.DisplayName,
 		"description":        size.Description,
 		"cpu_cores":          size.CPUCores,
-		"memory_mb":          size.MemoryMB,
+		"memory_gi":          size.MemoryGi,
 		"disk_gb":            size.DiskGB,
 		"cpu_request":        size.CPURequest,
-		"memory_request_mb":  size.MemoryRequestMB,
+		"memory_request_gi":  size.MemoryRequestGi,
 		"dedicated_cpu":      size.DedicatedCPU,
 		"requires_gpu":       size.RequiresGpu,
 		"requires_sriov":     size.RequiresSriov,
@@ -835,18 +835,19 @@ func buildTemplateSnapshot(tpl *ent.Template) map[string]interface{} {
 		return map[string]interface{}{}
 	}
 	return map[string]interface{}{
-		"id":           tpl.ID,
-		"name":         tpl.Name,
-		"display_name": tpl.DisplayName,
-		"description":  tpl.Description,
-		"source_type":  tpl.SourceType,
-		"image_url":    tpl.ImageURL,
-		"pvc_name":     tpl.PvcName,
-		"cloud_init":   tpl.CloudInit,
-		"os_family":    tpl.OsFamily,
-		"os_version":   tpl.OsVersion,
-		"enabled":      tpl.Enabled,
-		"created_by":   tpl.CreatedBy,
+		"id":            tpl.ID,
+		"name":          tpl.Name,
+		"display_name":  tpl.DisplayName,
+		"description":   tpl.Description,
+		"source_type":   tpl.SourceType,
+		"image_url":     tpl.ImageURL,
+		"pvc_name":      tpl.PvcName,
+		"pvc_namespace": tpl.PvcNamespace,
+		"cloud_init":    tpl.CloudInit,
+		"os_family":     tpl.OsFamily,
+		"os_version":    tpl.OsVersion,
+		"enabled":       tpl.Enabled,
+		"created_by":    tpl.CreatedBy,
 	}
 }
 

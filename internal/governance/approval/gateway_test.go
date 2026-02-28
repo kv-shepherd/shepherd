@@ -57,26 +57,34 @@ func TestResolveEffectiveSelectionIDs(t *testing.T) {
 
 func TestBuildTemplateSnapshot(t *testing.T) {
 	tpl := &ent.Template{
-		ID:          "tpl-1",
-		Name:        "ubuntu",
-		DisplayName: "Ubuntu",
-		Description: "Ubuntu template",
-		SourceType:  "image",
-		ImageURL:    "docker.io/ubuntu:22.04",
-		OsFamily:    "linux",
-		OsVersion:   "22.04",
-		Enabled:     true,
-		CreatedBy:   "admin",
+		ID:           "tpl-1",
+		Name:         "ubuntu",
+		DisplayName:  "Ubuntu",
+		Description:  "Ubuntu template",
+		SourceType:   "pvc",
+		PvcName:      "ubuntu-base",
+		PvcNamespace: "golden-images",
+		CloudInit:    "#cloud-config\nusers:\n  - name: admin",
+		OsFamily:     "linux",
+		OsVersion:    "22.04",
+		Enabled:      true,
+		CreatedBy:    "admin",
 	}
 
 	snapshot := buildTemplateSnapshot(tpl)
 	if snapshot["id"] != "tpl-1" {
 		t.Fatalf("snapshot id mismatch: got %v", snapshot["id"])
 	}
-	if snapshot["source_type"] != "image" {
+	if snapshot["source_type"] != "pvc" {
 		t.Fatalf("snapshot source type mismatch: got %v", snapshot["source_type"])
 	}
-	if snapshot["image_url"] != "docker.io/ubuntu:22.04" {
-		t.Fatalf("snapshot image url mismatch: got %v", snapshot["image_url"])
+	if snapshot["pvc_name"] != "ubuntu-base" {
+		t.Fatalf("snapshot pvc name mismatch: got %v", snapshot["pvc_name"])
+	}
+	if snapshot["pvc_namespace"] != "golden-images" {
+		t.Fatalf("snapshot pvc namespace mismatch: got %v", snapshot["pvc_namespace"])
+	}
+	if snapshot["cloud_init"] != "#cloud-config\nusers:\n  - name: admin" {
+		t.Fatalf("snapshot cloud_init mismatch: got %v", snapshot["cloud_init"])
 	}
 }

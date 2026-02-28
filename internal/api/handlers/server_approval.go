@@ -157,10 +157,10 @@ func (s *Server) ApproveTicket(c *gin.Context, ticketId generated.TicketID) {
 		ClusterID:       req.SelectedClusterId,
 		StorageClass:    req.SelectedStorageClass,
 		EnableOverride:  req.EnableOverride,
-		CPURequest:      req.CpuRequest,
-		CPULimit:        req.CpuLimit,
-		MemoryRequestMB: req.MemoryRequestMb,
-		MemoryLimitMB:   req.MemoryLimitMb,
+		CPURequest:      float64(req.CpuRequest),
+		CPULimit:        float64(req.CpuLimit),
+		MemoryRequestGi: float64(req.MemoryRequestGi),
+		MemoryLimitGi:   float64(req.MemoryLimitGi),
 		DiskGB:          req.DiskGb,
 	}
 

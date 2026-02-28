@@ -83,14 +83,14 @@ func (_c *InstanceSizeCreate) SetNillableDescription(v *string) *InstanceSizeCre
 }
 
 // SetCPUCores sets the "cpu_cores" field.
-func (_c *InstanceSizeCreate) SetCPUCores(v int) *InstanceSizeCreate {
+func (_c *InstanceSizeCreate) SetCPUCores(v float64) *InstanceSizeCreate {
 	_c.mutation.SetCPUCores(v)
 	return _c
 }
 
-// SetMemoryMB sets the "memory_mb" field.
-func (_c *InstanceSizeCreate) SetMemoryMB(v int) *InstanceSizeCreate {
-	_c.mutation.SetMemoryMB(v)
+// SetMemoryGi sets the "memory_gi" field.
+func (_c *InstanceSizeCreate) SetMemoryGi(v float64) *InstanceSizeCreate {
+	_c.mutation.SetMemoryGi(v)
 	return _c
 }
 
@@ -109,29 +109,29 @@ func (_c *InstanceSizeCreate) SetNillableDiskGB(v *int) *InstanceSizeCreate {
 }
 
 // SetCPURequest sets the "cpu_request" field.
-func (_c *InstanceSizeCreate) SetCPURequest(v int) *InstanceSizeCreate {
+func (_c *InstanceSizeCreate) SetCPURequest(v float64) *InstanceSizeCreate {
 	_c.mutation.SetCPURequest(v)
 	return _c
 }
 
 // SetNillableCPURequest sets the "cpu_request" field if the given value is not nil.
-func (_c *InstanceSizeCreate) SetNillableCPURequest(v *int) *InstanceSizeCreate {
+func (_c *InstanceSizeCreate) SetNillableCPURequest(v *float64) *InstanceSizeCreate {
 	if v != nil {
 		_c.SetCPURequest(*v)
 	}
 	return _c
 }
 
-// SetMemoryRequestMB sets the "memory_request_mb" field.
-func (_c *InstanceSizeCreate) SetMemoryRequestMB(v int) *InstanceSizeCreate {
-	_c.mutation.SetMemoryRequestMB(v)
+// SetMemoryRequestGi sets the "memory_request_gi" field.
+func (_c *InstanceSizeCreate) SetMemoryRequestGi(v float64) *InstanceSizeCreate {
+	_c.mutation.SetMemoryRequestGi(v)
 	return _c
 }
 
-// SetNillableMemoryRequestMB sets the "memory_request_mb" field if the given value is not nil.
-func (_c *InstanceSizeCreate) SetNillableMemoryRequestMB(v *int) *InstanceSizeCreate {
+// SetNillableMemoryRequestGi sets the "memory_request_gi" field if the given value is not nil.
+func (_c *InstanceSizeCreate) SetNillableMemoryRequestGi(v *float64) *InstanceSizeCreate {
 	if v != nil {
-		_c.SetMemoryRequestMB(*v)
+		_c.SetMemoryRequestGi(*v)
 	}
 	return _c
 }
@@ -345,12 +345,12 @@ func (_c *InstanceSizeCreate) check() error {
 			return &ValidationError{Name: "cpu_cores", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.cpu_cores": %w`, err)}
 		}
 	}
-	if _, ok := _c.mutation.MemoryMB(); !ok {
-		return &ValidationError{Name: "memory_mb", err: errors.New(`ent: missing required field "InstanceSize.memory_mb"`)}
+	if _, ok := _c.mutation.MemoryGi(); !ok {
+		return &ValidationError{Name: "memory_gi", err: errors.New(`ent: missing required field "InstanceSize.memory_gi"`)}
 	}
-	if v, ok := _c.mutation.MemoryMB(); ok {
-		if err := instancesize.MemoryMBValidator(v); err != nil {
-			return &ValidationError{Name: "memory_mb", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.memory_mb": %w`, err)}
+	if v, ok := _c.mutation.MemoryGi(); ok {
+		if err := instancesize.MemoryGiValidator(v); err != nil {
+			return &ValidationError{Name: "memory_gi", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.memory_gi": %w`, err)}
 		}
 	}
 	if v, ok := _c.mutation.DiskGB(); ok {
@@ -363,9 +363,9 @@ func (_c *InstanceSizeCreate) check() error {
 			return &ValidationError{Name: "cpu_request", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.cpu_request": %w`, err)}
 		}
 	}
-	if v, ok := _c.mutation.MemoryRequestMB(); ok {
-		if err := instancesize.MemoryRequestMBValidator(v); err != nil {
-			return &ValidationError{Name: "memory_request_mb", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.memory_request_mb": %w`, err)}
+	if v, ok := _c.mutation.MemoryRequestGi(); ok {
+		if err := instancesize.MemoryRequestGiValidator(v); err != nil {
+			return &ValidationError{Name: "memory_request_gi", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.memory_request_gi": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.DedicatedCPU(); !ok {
@@ -450,24 +450,24 @@ func (_c *InstanceSizeCreate) createSpec() (*InstanceSize, *sqlgraph.CreateSpec)
 		_node.Description = value
 	}
 	if value, ok := _c.mutation.CPUCores(); ok {
-		_spec.SetField(instancesize.FieldCPUCores, field.TypeInt, value)
+		_spec.SetField(instancesize.FieldCPUCores, field.TypeFloat64, value)
 		_node.CPUCores = value
 	}
-	if value, ok := _c.mutation.MemoryMB(); ok {
-		_spec.SetField(instancesize.FieldMemoryMB, field.TypeInt, value)
-		_node.MemoryMB = value
+	if value, ok := _c.mutation.MemoryGi(); ok {
+		_spec.SetField(instancesize.FieldMemoryGi, field.TypeFloat64, value)
+		_node.MemoryGi = value
 	}
 	if value, ok := _c.mutation.DiskGB(); ok {
 		_spec.SetField(instancesize.FieldDiskGB, field.TypeInt, value)
 		_node.DiskGB = value
 	}
 	if value, ok := _c.mutation.CPURequest(); ok {
-		_spec.SetField(instancesize.FieldCPURequest, field.TypeInt, value)
+		_spec.SetField(instancesize.FieldCPURequest, field.TypeFloat64, value)
 		_node.CPURequest = value
 	}
-	if value, ok := _c.mutation.MemoryRequestMB(); ok {
-		_spec.SetField(instancesize.FieldMemoryRequestMB, field.TypeInt, value)
-		_node.MemoryRequestMB = value
+	if value, ok := _c.mutation.MemoryRequestGi(); ok {
+		_spec.SetField(instancesize.FieldMemoryRequestGi, field.TypeFloat64, value)
+		_node.MemoryRequestGi = value
 	}
 	if value, ok := _c.mutation.DedicatedCPU(); ok {
 		_spec.SetField(instancesize.FieldDedicatedCPU, field.TypeBool, value)

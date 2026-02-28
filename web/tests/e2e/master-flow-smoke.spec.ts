@@ -137,7 +137,7 @@ async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOpt
     if (method === 'GET' && path.endsWith('/vms/request-context')) {
       return json({
         templates: [{ id: 'tpl-1', name: 'ubuntu-24', display_name: 'Ubuntu 24', enabled: true }],
-        instance_sizes: [{ id: 'size-1', name: 'small', display_name: 'Small', cpu_cores: 2, memory_mb: 4096, enabled: true }],
+        instance_sizes: [{ id: 'size-1', name: 'small', display_name: 'Small', cpu_cores: 2, memory_gi: 4, enabled: true }],
         namespaces: ['prod-shop'],
       });
     }
@@ -161,7 +161,7 @@ async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOpt
     // ── Instance Sizes ─────────────────────────────────────────────────────
     if (method === 'GET' && path.endsWith('/instance-sizes')) {
       return json({
-        items: [{ id: 'size-1', name: 'small', display_name: 'Small', cpu_cores: 2, memory_mb: 4096, enabled: true }],
+        items: [{ id: 'size-1', name: 'small', display_name: 'Small', cpu_cores: 2, memory_gi: 4, enabled: true }],
         pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
       });
     }

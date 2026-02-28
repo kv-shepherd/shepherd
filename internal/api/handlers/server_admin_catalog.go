@@ -65,11 +65,11 @@ type instanceSizeCreateRequest struct {
 	Name              string                 `json:"name" binding:"required"`
 	DisplayName       *string                `json:"display_name"`
 	Description       *string                `json:"description"`
-	CpuCores          int                    `json:"cpu_cores" binding:"required,min=1"`
-	MemoryMb          int                    `json:"memory_mb" binding:"required,min=1"`
+	CpuCores          float64                `json:"cpu_cores" binding:"required,min=0.5"`
+	MemoryGi          float64                `json:"memory_gi" binding:"required,min=0.5"`
 	DiskGb            *int                   `json:"disk_gb"`
-	CpuRequest        *int                   `json:"cpu_request"`
-	MemoryRequestMb   *int                   `json:"memory_request_mb"`
+	CpuRequest        *float64               `json:"cpu_request"`
+	MemoryRequestGi   *float64               `json:"memory_request_gi"`
 	DedicatedCpu      *bool                  `json:"dedicated_cpu"`
 	RequiresGpu       *bool                  `json:"requires_gpu"`
 	RequiresSriov     *bool                  `json:"requires_sriov"`
@@ -84,11 +84,11 @@ type instanceSizeUpdateRequest struct {
 	Name              *string                 `json:"name"`
 	DisplayName       *string                 `json:"display_name"`
 	Description       *string                 `json:"description"`
-	CpuCores          *int                    `json:"cpu_cores"`
-	MemoryMb          *int                    `json:"memory_mb"`
+	CpuCores          *float64                `json:"cpu_cores"`
+	MemoryGi          *float64                `json:"memory_gi"`
 	DiskGb            *int                    `json:"disk_gb"`
-	CpuRequest        *int                    `json:"cpu_request"`
-	MemoryRequestMb   *int                    `json:"memory_request_mb"`
+	CpuRequest        *float64                `json:"cpu_request"`
+	MemoryRequestGi   *float64                `json:"memory_request_gi"`
 	DedicatedCpu      *bool                   `json:"dedicated_cpu"`
 	RequiresGpu       *bool                   `json:"requires_gpu"`
 	RequiresSriov     *bool                   `json:"requires_sriov"`
@@ -507,7 +507,7 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 		SetID(id.String()).
 		SetName(strings.TrimSpace(req.Name)).
 		SetCPUCores(req.CpuCores).
-		SetMemoryMB(req.MemoryMb).
+		SetMemoryGi(req.MemoryGi).
 		SetCreatedBy(actor)
 	if req.DisplayName != nil {
 		if v := strings.TrimSpace(*req.DisplayName); v != "" {
@@ -525,8 +525,8 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 	if req.CpuRequest != nil {
 		create = create.SetCPURequest(*req.CpuRequest)
 	}
-	if req.MemoryRequestMb != nil {
-		create = create.SetMemoryRequestMB(*req.MemoryRequestMb)
+	if req.MemoryRequestGi != nil {
+		create = create.SetMemoryRequestGi(*req.MemoryRequestGi)
 	}
 	if req.DedicatedCpu != nil {
 		create = create.SetDedicatedCPU(*req.DedicatedCpu)
@@ -556,7 +556,7 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 		}
 		// Detect conflicts between spec_overrides and indexed columns (advisory).
 		if warnings := service.DetectSpecOverridesConflicts(
-			req.CpuCores, req.MemoryMb,
+			req.CpuCores, req.MemoryGi,
 			req.DedicatedCpu != nil && *req.DedicatedCpu,
 			req.CpuRequest, req.SpecOverrides,
 		); len(warnings) > 0 {
@@ -653,8 +653,8 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generate
 	if req.CpuCores != nil {
 		update = update.SetCPUCores(*req.CpuCores)
 	}
-	if req.MemoryMb != nil {
-		update = update.SetMemoryMB(*req.MemoryMb)
+	if req.MemoryGi != nil {
+		update = update.SetMemoryGi(*req.MemoryGi)
 	}
 	if req.DiskGb != nil {
 		if *req.DiskGb <= 0 {
@@ -670,11 +670,11 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generate
 			update = update.SetCPURequest(*req.CpuRequest)
 		}
 	}
-	if req.MemoryRequestMb != nil {
-		if *req.MemoryRequestMb <= 0 {
-			update = update.ClearMemoryRequestMB()
+	if req.MemoryRequestGi != nil {
+		if *req.MemoryRequestGi <= 0 {
+			update = update.ClearMemoryRequestGi()
 		} else {
-			update = update.SetMemoryRequestMB(*req.MemoryRequestMb)
+			update = update.SetMemoryRequestGi(*req.MemoryRequestGi)
 		}
 	}
 	if req.DedicatedCpu != nil {
@@ -1954,20 +1954,36 @@ func validateInstanceSizeCreate(req instanceSizeCreateRequest) error {
 	if strings.TrimSpace(req.Name) == "" {
 		return fmt.Errorf("name is required")
 	}
-	if req.CpuCores < 1 {
-		return fmt.Errorf("cpu_cores must be >= 1")
+	if req.CpuCores < 0.5 {
+		return fmt.Errorf("cpu_cores must be >= 0.5")
 	}
-	if req.MemoryMb < 1 {
-		return fmt.Errorf("memory_mb must be >= 1")
+	if !service.IsHalfStep(req.CpuCores) {
+		return fmt.Errorf("cpu_cores must use 0.5-step values (0.5, 1.0, 1.5, ...)")
+	}
+	if req.MemoryGi < 0.5 {
+		return fmt.Errorf("memory_gi must be >= 0.5")
+	}
+	if !service.IsHalfStep(req.MemoryGi) {
+		return fmt.Errorf("memory_gi must use 0.5-step values (0.5, 1.0, 1.5, ...)")
 	}
 	if req.DiskGb != nil && *req.DiskGb < 1 {
 		return fmt.Errorf("disk_gb must be >= 1")
 	}
-	if req.CpuRequest != nil && *req.CpuRequest < 1 {
-		return fmt.Errorf("cpu_request must be >= 1")
+	if req.CpuRequest != nil {
+		if *req.CpuRequest < 0.5 {
+			return fmt.Errorf("cpu_request must be >= 0.5")
+		}
+		if !service.IsHalfStep(*req.CpuRequest) {
+			return fmt.Errorf("cpu_request must use 0.5-step values (0.5, 1.0, 1.5, ...)")
+		}
 	}
-	if req.MemoryRequestMb != nil && *req.MemoryRequestMb < 1 {
-		return fmt.Errorf("memory_request_mb must be >= 1")
+	if req.MemoryRequestGi != nil {
+		if *req.MemoryRequestGi < 0.5 {
+			return fmt.Errorf("memory_request_gi must be >= 0.5")
+		}
+		if !service.IsHalfStep(*req.MemoryRequestGi) {
+			return fmt.Errorf("memory_request_gi must use 0.5-step values (0.5, 1.0, 1.5, ...)")
+		}
 	}
 	dedicated := req.DedicatedCpu != nil && *req.DedicatedCpu
 	if dedicated && req.CpuRequest != nil && *req.CpuRequest != req.CpuCores {
@@ -2014,17 +2030,37 @@ func validateInstanceSizeCreate(req instanceSizeCreateRequest) error {
 // This prevents false-positive errors where a PATCH only updates spec_overrides
 // while leaving dedicated_cpu unchanged, but the validator would default to false.
 func validateInstanceSizeUpdate(req instanceSizeUpdateRequest, existingDedicatedCPU bool) error {
-	if req.CpuCores != nil && *req.CpuCores < 1 {
-		return fmt.Errorf("cpu_cores must be >= 1")
+	if req.CpuCores != nil {
+		if *req.CpuCores < 0.5 {
+			return fmt.Errorf("cpu_cores must be >= 0.5")
+		}
+		if !service.IsHalfStep(*req.CpuCores) {
+			return fmt.Errorf("cpu_cores must use 0.5-step values (0.5, 1.0, 1.5, ...)")
+		}
 	}
-	if req.MemoryMb != nil && *req.MemoryMb < 1 {
-		return fmt.Errorf("memory_mb must be >= 1")
+	if req.MemoryGi != nil {
+		if *req.MemoryGi < 0.5 {
+			return fmt.Errorf("memory_gi must be >= 0.5")
+		}
+		if !service.IsHalfStep(*req.MemoryGi) {
+			return fmt.Errorf("memory_gi must use 0.5-step values (0.5, 1.0, 1.5, ...)")
+		}
 	}
-	if req.CpuRequest != nil && *req.CpuRequest < 0 {
-		return fmt.Errorf("cpu_request must be >= 0")
+	if req.CpuRequest != nil {
+		if *req.CpuRequest < 0 {
+			return fmt.Errorf("cpu_request must be >= 0")
+		}
+		if *req.CpuRequest > 0 && !service.IsHalfStep(*req.CpuRequest) {
+			return fmt.Errorf("cpu_request must use 0.5-step values (0.5, 1.0, 1.5, ...)")
+		}
 	}
-	if req.MemoryRequestMb != nil && *req.MemoryRequestMb < 0 {
-		return fmt.Errorf("memory_request_mb must be >= 0")
+	if req.MemoryRequestGi != nil {
+		if *req.MemoryRequestGi < 0 {
+			return fmt.Errorf("memory_request_gi must be >= 0")
+		}
+		if *req.MemoryRequestGi > 0 && !service.IsHalfStep(*req.MemoryRequestGi) {
+			return fmt.Errorf("memory_request_gi must use 0.5-step values (0.5, 1.0, 1.5, ...)")
+		}
 	}
 	if req.DiskGb != nil && *req.DiskGb < 0 {
 		return fmt.Errorf("disk_gb must be >= 0")

@@ -58,8 +58,8 @@ var prohibitedTemplatePrefixes = []string{
 	"cpu_cores",
 	"cpu_request",
 	"memory",
-	"memory_mb",
-	"memory_request_mb",
+	"memory_gi",
+	"memory_request_gi",
 	"disk_gb",
 	"dedicated_cpu",
 	// KubeVirt domain spec hardware paths

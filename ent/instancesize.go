@@ -29,15 +29,15 @@ type InstanceSize struct {
 	// Description holds the value of the "description" field.
 	Description string `json:"description,omitempty"`
 	// CPUCores holds the value of the "cpu_cores" field.
-	CPUCores int `json:"cpu_cores,omitempty"`
-	// MemoryMB holds the value of the "memory_mb" field.
-	MemoryMB int `json:"memory_mb,omitempty"`
+	CPUCores float64 `json:"cpu_cores,omitempty"`
+	// MemoryGi holds the value of the "memory_gi" field.
+	MemoryGi float64 `json:"memory_gi,omitempty"`
 	// DiskGB holds the value of the "disk_gb" field.
 	DiskGB int `json:"disk_gb,omitempty"`
 	// CPURequest holds the value of the "cpu_request" field.
-	CPURequest int `json:"cpu_request,omitempty"`
-	// MemoryRequestMB holds the value of the "memory_request_mb" field.
-	MemoryRequestMB int `json:"memory_request_mb,omitempty"`
+	CPURequest float64 `json:"cpu_request,omitempty"`
+	// MemoryRequestGi holds the value of the "memory_request_gi" field.
+	MemoryRequestGi float64 `json:"memory_request_gi,omitempty"`
 	// DedicatedCPU holds the value of the "dedicated_cpu" field.
 	DedicatedCPU bool `json:"dedicated_cpu,omitempty"`
 	// RequiresGpu holds the value of the "requires_gpu" field.
@@ -68,7 +68,9 @@ func (*InstanceSize) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case instancesize.FieldDedicatedCPU, instancesize.FieldRequiresGpu, instancesize.FieldRequiresSriov, instancesize.FieldRequiresHugepages, instancesize.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case instancesize.FieldCPUCores, instancesize.FieldMemoryMB, instancesize.FieldDiskGB, instancesize.FieldCPURequest, instancesize.FieldMemoryRequestMB, instancesize.FieldSortOrder:
+		case instancesize.FieldCPUCores, instancesize.FieldMemoryGi, instancesize.FieldCPURequest, instancesize.FieldMemoryRequestGi:
+			values[i] = new(sql.NullFloat64)
+		case instancesize.FieldDiskGB, instancesize.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
 		case instancesize.FieldID, instancesize.FieldName, instancesize.FieldDisplayName, instancesize.FieldDescription, instancesize.FieldHugepagesSize, instancesize.FieldCreatedBy:
 			values[i] = new(sql.NullString)
@@ -126,16 +128,16 @@ func (_m *InstanceSize) assignValues(columns []string, values []any) error {
 				_m.Description = value.String
 			}
 		case instancesize.FieldCPUCores:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
 				return fmt.Errorf("unexpected type %T for field cpu_cores", values[i])
 			} else if value.Valid {
-				_m.CPUCores = int(value.Int64)
+				_m.CPUCores = value.Float64
 			}
-		case instancesize.FieldMemoryMB:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field memory_mb", values[i])
+		case instancesize.FieldMemoryGi:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field memory_gi", values[i])
 			} else if value.Valid {
-				_m.MemoryMB = int(value.Int64)
+				_m.MemoryGi = value.Float64
 			}
 		case instancesize.FieldDiskGB:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -144,16 +146,16 @@ func (_m *InstanceSize) assignValues(columns []string, values []any) error {
 				_m.DiskGB = int(value.Int64)
 			}
 		case instancesize.FieldCPURequest:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
 				return fmt.Errorf("unexpected type %T for field cpu_request", values[i])
 			} else if value.Valid {
-				_m.CPURequest = int(value.Int64)
+				_m.CPURequest = value.Float64
 			}
-		case instancesize.FieldMemoryRequestMB:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field memory_request_mb", values[i])
+		case instancesize.FieldMemoryRequestGi:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field memory_request_gi", values[i])
 			} else if value.Valid {
-				_m.MemoryRequestMB = int(value.Int64)
+				_m.MemoryRequestGi = value.Float64
 			}
 		case instancesize.FieldDedicatedCPU:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -265,8 +267,8 @@ func (_m *InstanceSize) String() string {
 	builder.WriteString("cpu_cores=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CPUCores))
 	builder.WriteString(", ")
-	builder.WriteString("memory_mb=")
-	builder.WriteString(fmt.Sprintf("%v", _m.MemoryMB))
+	builder.WriteString("memory_gi=")
+	builder.WriteString(fmt.Sprintf("%v", _m.MemoryGi))
 	builder.WriteString(", ")
 	builder.WriteString("disk_gb=")
 	builder.WriteString(fmt.Sprintf("%v", _m.DiskGB))
@@ -274,8 +276,8 @@ func (_m *InstanceSize) String() string {
 	builder.WriteString("cpu_request=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CPURequest))
 	builder.WriteString(", ")
-	builder.WriteString("memory_request_mb=")
-	builder.WriteString(fmt.Sprintf("%v", _m.MemoryRequestMB))
+	builder.WriteString("memory_request_gi=")
+	builder.WriteString(fmt.Sprintf("%v", _m.MemoryRequestGi))
 	builder.WriteString(", ")
 	builder.WriteString("dedicated_cpu=")
 	builder.WriteString(fmt.Sprintf("%v", _m.DedicatedCPU))

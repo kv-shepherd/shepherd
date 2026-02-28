@@ -18,7 +18,9 @@ const (
 	adminPermissionTestPath          = "internal/api/handlers/permission_enforcement_test.go"
 	frontendTemplateHookTestPath     = "web/src/features/admin-templates/hooks/useAdminTemplatesController.test.tsx"
 	frontendInstanceSizeHookTestPath = "web/src/features/admin-instance-sizes/hooks/useAdminInstanceSizesController.test.tsx"
-	frontendLiveE2EPath              = "web/tests/e2e/master-flow-live.spec.ts"
+	frontendMasterFlowLiveE2EPath    = "web/tests/e2e/master-flow-live.spec.ts"
+	frontendAdminFlowLiveE2EPath     = "web/tests/e2e/admin-flow-live.spec.ts"
+	frontendAdminExtendedE2EPath     = "web/tests/e2e/admin-extended-live.spec.ts"
 )
 
 func main() {
@@ -47,19 +49,31 @@ func main() {
 	})
 	checkFragments(&violations, frontendTemplateHookTestPath, []string{
 		"useAdminTemplatesController",
-		"submits create payload with parsed spec JSON",
-		"rejects invalid create spec JSON and does not mutate",
-		"templates.spec_invalid",
+		"submits create payload with cloud_init YAML directly",
+		"clears image_url when source_type is pvc",
+		"cloud_init",
 	})
 	checkFragments(&violations, frontendInstanceSizeHookTestPath, []string{
 		"useAdminInstanceSizesController",
-		"submits create payload with parsed spec_overrides JSON",
-		"rejects invalid spec_overrides JSON and does not mutate",
-		"instanceSizes.spec_overrides_invalid",
+		"submits create payload with spec_overrides parsed from spec_text",
+		"ignores non-object spec_text and still calls mutate with spec_overrides undefined",
+		"spec_overrides: undefined",
 	})
-	checkFragments(&violations, frontendLiveE2EPath, []string{
-		"admin template flow performs create/delete against real Stage 3 API",
-		"admin instance-size flow performs create/delete against real Stage 3 API",
+	checkFragments(&violations, frontendMasterFlowLiveE2EPath, []string{
+		"Stage 3 – listAdminTemplates: admin template list conforms to TemplateList schema",
+		"Stage 3 – listAdminInstanceSizes: instance-size list conforms to InstanceSizeList schema",
+		"/api/v1/admin/templates",
+		"/api/v1/admin/instance-sizes",
+	})
+	checkFragments(&violations, frontendAdminFlowLiveE2EPath, []string{
+		"Stage 3 – listAdminTemplates + createAdminTemplate (schema-validated)",
+		"Stage 3 – listAdminInstanceSizes + createAdminInstanceSize (schema-validated)",
+		"/api/v1/admin/templates",
+		"/api/v1/admin/instance-sizes",
+	})
+	checkFragments(&violations, frontendAdminExtendedE2EPath, []string{
+		"updateAdminTemplate – PATCH /admin/templates/{id} conforms to Template schema",
+		"updateAdminInstanceSize – PATCH /admin/instance-sizes/{id} conforms to InstanceSize schema",
 		"/api/v1/admin/templates",
 		"/api/v1/admin/instance-sizes",
 	})

@@ -10,9 +10,10 @@ import {
     InputNumber,
     Select,
     Space,
+    Tooltip,
     Typography,
 } from 'antd';
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { MinusCircleOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
@@ -23,7 +24,12 @@ const { Text } = Typography;
 
 export interface MaskField {
     path: string;
-    display_name: string;
+    display_name?: string;
+    display_name_key?: string;
+    help_text?: string;
+    help_key?: string;
+    placeholder?: string;
+    placeholder_key?: string;
 }
 
 export interface SchemaMask {
@@ -64,6 +70,47 @@ export interface DynamicSchemaFormProps {
 export interface DynamicSchemaFormHandle {
     /** Serialize current dynamic field values → spec_text JSON string. */
     sync: () => void;
+}
+
+export const HUGEPAGES_PAGE_SIZE_PATH = 'spec.template.spec.domain.memory.hugepages.pageSize';
+export const HUGEPAGES_PRESET_OPTIONS = ['2Mi', '1Gi'] as const;
+
+/**
+ * Normalizes hugepages pageSize user input:
+ * - "512"   -> "512Mi" (custom MB input)
+ * - "512Mi" -> "512Mi"
+ * - "1Gi"   -> "1Gi"
+ */
+export function normalizeHugepagesPageSizeValue(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+
+    const compact = trimmed.replace(/\s+/g, '');
+    const mbOnly = compact.match(/^([1-9]\d*)$/);
+    if (mbOnly) {
+        return `${mbOnly[1]}Mi`;
+    }
+    const mi = compact.match(/^([1-9]\d*)mi$/i);
+    if (mi) {
+        return `${mi[1]}Mi`;
+    }
+    const gi = compact.match(/^([1-9]\d*)gi$/i);
+    if (gi) {
+        return `${gi[1]}Gi`;
+    }
+
+    return compact;
+}
+
+export function isValidHugepagesPageSizeValue(value: unknown): boolean {
+    if (value === undefined || value === null || value === '') return true;
+    if (typeof value !== 'string') return false;
+    if (HUGEPAGES_PRESET_OPTIONS.includes(value as (typeof HUGEPAGES_PRESET_OPTIONS)[number])) {
+        return true;
+    }
+    // Custom value is MB-only (Mi) to keep operator input predictable.
+    return /^[1-9]\d*Mi$/.test(value);
 }
 
 // ─── Spec Overrides Serialisation ─────────────────────────────────────────────
@@ -138,6 +185,9 @@ interface DynamicFieldGroupProps {
     node: SchemaNode;
     namePath: (string | number)[];
     label: string;
+    fieldPath?: string;
+    helpText?: string;
+    placeholder?: string;
     disabled?: boolean;
 }
 
@@ -157,6 +207,9 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
     node,
     namePath,
     label,
+    fieldPath,
+    helpText,
+    placeholder,
     disabled,
 }) => {
     const { t } = useTranslation(['admin', 'common']);
@@ -167,7 +220,20 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
     if (node.type === 'array' && node.items?.properties) {
         const itemKeys = Object.keys(node.items.properties);
         return (
-            <Card size="small" title={<Text strong>{label}</Text>} style={{ marginBottom: 16 }}>
+            <Card
+                size="small"
+                title={(
+                    <Space size={6}>
+                        <Text strong>{label}</Text>
+                        {helpText && (
+                            <Tooltip title={helpText} trigger={['hover', 'click']}>
+                                <QuestionCircleOutlined style={{ color: 'rgba(0,0,0,0.45)' }} />
+                            </Tooltip>
+                        )}
+                    </Space>
+                )}
+                style={{ marginBottom: 16 }}
+            >
                 <Form.List name={namePath}>
                     {(fields, { add, remove }) => (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -193,6 +259,8 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
                                                     node={subNode}
                                                     namePath={[field.name, itemKey]}
                                                     label={itemKey}
+                                                    fieldPath={fieldPath ? `${fieldPath}.${itemKey}` : undefined}
+                                                    placeholder={placeholder}
                                                     disabled={disabled}
                                                 />
                                             );
@@ -224,13 +292,67 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
         );
     }
 
+    if (fieldPath === HUGEPAGES_PAGE_SIZE_PATH) {
+        return (
+            <Form.Item
+                label={label}
+                name={namePath}
+                style={{ marginBottom: 8 }}
+                tooltip={helpText ? { title: helpText, trigger: ['hover', 'click'] } : undefined}
+                getValueProps={(fieldValue?: string) => ({
+                    value: fieldValue ? [fieldValue] : [],
+                })}
+                getValueFromEvent={(nextValue: unknown) => {
+                    if (Array.isArray(nextValue)) {
+                        const latest = nextValue[nextValue.length - 1];
+                        return normalizeHugepagesPageSizeValue(latest);
+                    }
+                    return normalizeHugepagesPageSizeValue(nextValue);
+                }}
+                rules={[
+                    {
+                        validator: (_, fieldValue: unknown) => {
+                            if (isValidHugepagesPageSizeValue(fieldValue)) {
+                                return Promise.resolve();
+                            }
+                            return Promise.reject(
+                                new Error(
+                                    t(
+                                        'dynamic_form.hugepages_invalid',
+                                        'Hugepages must be 2Mi/1Gi, or a custom MB value (e.g. 512).'
+                                    )
+                                )
+                            );
+                        },
+                    },
+                ]}
+            >
+                <Select
+                    mode="tags"
+                    maxCount={1}
+                    allowClear
+                    disabled={disabled}
+                    data-testid={`dynamic-form-${namePath.join('.')}`}
+                    placeholder={placeholder ?? t('dynamic_form.hugepages_placeholder', 'Select 2Mi/1Gi or input MB')}
+                    options={HUGEPAGES_PRESET_OPTIONS.map((opt) => ({ label: opt, value: opt }))}
+                />
+            </Form.Item>
+        );
+    }
+
     // enum → dropdown (options from schema, not developer-defined — Stage 1 constraint)
     if (node.enum && Array.isArray(node.enum)) {
         return (
-            <Form.Item label={label} name={namePath} style={{ marginBottom: 8 }}>
+            <Form.Item
+                label={label}
+                name={namePath}
+                style={{ marginBottom: 8 }}
+                tooltip={helpText ? { title: helpText, trigger: ['hover', 'click'] } : undefined}
+            >
                 <Select
                     disabled={disabled}
                     data-testid={`dynamic-form-${namePath.join('.')}`}
+                    placeholder={placeholder}
                 >
                     {node.enum.map((opt: string | number) => (
                         <Select.Option key={String(opt)} value={opt}>
@@ -251,12 +373,14 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
             name={namePath}
             valuePropName={node.type === 'boolean' ? 'checked' : 'value'}
             style={{ marginBottom: 8 }}
+            tooltip={helpText ? { title: helpText, trigger: ['hover', 'click'] } : undefined}
         >
             {node.type === 'integer' || node.type === 'number' ? (
                 <InputNumber
                     style={{ width: '100%' }}
                     disabled={disabled}
                     data-testid={`dynamic-form-${namePath.join('.')}`}
+                    placeholder={placeholder}
                 />
             ) : node.type === 'boolean' ? (
                 // master-flow.md Stage 1: "boolean → checkbox" (not Switch).
@@ -271,6 +395,7 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
                 <Input
                     disabled={disabled}
                     data-testid={`dynamic-form-${namePath.join('.')}`}
+                    placeholder={placeholder}
                 />
             )}
         </Form.Item>
@@ -422,12 +547,27 @@ export const DynamicSchemaForm = React.forwardRef<DynamicSchemaFormHandle, Dynam
                     );
                 }
                 const namePath = field.path.split('.');
+                const label =
+                    field.display_name_key
+                        ? t(field.display_name_key, field.display_name ?? field.path)
+                        : (field.display_name ?? field.path);
+                const helpText =
+                    field.help_key
+                        ? t(field.help_key, field.help_text ?? '')
+                        : field.help_text;
+                const placeholder =
+                    field.placeholder_key
+                        ? t(field.placeholder_key, field.placeholder ?? '')
+                        : field.placeholder;
                 return (
                     <DynamicFieldGroup
                         key={field.path}
                         node={node}
                         namePath={namePath}
-                        label={field.display_name}
+                        label={label}
+                        fieldPath={field.path}
+                        helpText={helpText}
+                        placeholder={placeholder}
                         disabled={disabled}
                     />
                 );

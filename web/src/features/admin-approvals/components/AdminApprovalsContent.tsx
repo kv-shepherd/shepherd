@@ -339,7 +339,7 @@ export function AdminApprovalsContent() {
                                                                 })
                                                             ]}
                                                         >
-                                                            <InputNumber min={1} addonAfter={t('approve_modal.cores')} style={{ width: '100%' }} />
+                                                            <InputNumber min={0.5} step={0.5} precision={1} addonAfter={t('approve_modal.cores')} style={{ width: '100%' }} />
                                                         </Form.Item>
                                                         <Form.Item
                                                             name="cpu_limit"
@@ -358,27 +358,27 @@ export function AdminApprovalsContent() {
                                                                 })
                                                             ]}
                                                         >
-                                                            <InputNumber min={1} addonAfter={t('approve_modal.cores')} style={{ width: '100%' }} />
+                                                            <InputNumber min={0.5} step={0.5} precision={1} addonAfter={t('approve_modal.cores')} style={{ width: '100%' }} />
                                                         </Form.Item>
                                                     </Space>
                                                     <Space style={{ width: '100%' }}>
-                                                        <Form.Item name="memory_request_mb" label={t('approve_modal.memory_request')} style={{ marginBottom: 0, flex: 1 }}>
-                                                            <InputNumber min={1} addonAfter="MB" style={{ width: '100%' }} />
+                                                        <Form.Item name="memory_request_gi" label={t('approve_modal.memory_request')} style={{ marginBottom: 0, flex: 1 }}>
+                                                            <InputNumber min={0.5} step={0.5} precision={1} addonAfter="Gi" style={{ width: '100%' }} />
                                                         </Form.Item>
-                                                        <Form.Item name="memory_limit_mb" label={t('approve_modal.memory_limit')} style={{ marginBottom: 0, flex: 1 }}>
-                                                            <InputNumber min={1} addonAfter="MB" style={{ width: '100%' }} />
+                                                        <Form.Item name="memory_limit_gi" label={t('approve_modal.memory_limit')} style={{ marginBottom: 0, flex: 1 }}>
+                                                            <InputNumber min={0.5} step={0.5} precision={1} addonAfter="Gi" style={{ width: '100%' }} />
                                                         </Form.Item>
                                                     </Space>
                                                 </Space>
                                                 <Form.Item noStyle shouldUpdate={(prev, cur) =>
                                                     prev.cpu_request !== cur.cpu_request || prev.cpu_limit !== cur.cpu_limit ||
-                                                    prev.memory_request_mb !== cur.memory_request_mb || prev.memory_limit_mb !== cur.memory_limit_mb
+                                                    prev.memory_request_gi !== cur.memory_request_gi || prev.memory_limit_gi !== cur.memory_limit_gi
                                                 }>
                                                     {({ getFieldValue: gfv }) => {
                                                         const cpuReq = gfv('cpu_request');
                                                         const cpuLim = gfv('cpu_limit');
-                                                        const memReq = gfv('memory_request_mb');
-                                                        const memLim = gfv('memory_limit_mb');
+                                                        const memReq = gfv('memory_request_gi');
+                                                        const memLim = gfv('memory_limit_gi');
                                                         const isOvercommit = (cpuReq && cpuLim && cpuReq !== cpuLim) ||
                                                             (memReq && memLim && memReq !== memLim);
                                                         if (!isOvercommit) return null;

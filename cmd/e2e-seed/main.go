@@ -435,7 +435,7 @@ func ensureInstanceSize(ctx context.Context, client *ent.Client, fx fixtureConfi
 			SetDisplayName("E2E Small").
 			SetDescription("e2e size").
 			SetCPUCores(2).
-			SetMemoryMB(4096).
+			SetMemoryGi(4.0).
 			SetDiskGB(40).
 			SetEnabled(true).
 			SetCreatedBy("e2e-seed").
@@ -447,7 +447,7 @@ func ensureInstanceSize(ctx context.Context, client *ent.Client, fx fixtureConfi
 		SetDisplayName("E2E Small").
 		SetDescription("e2e size").
 		SetCPUCores(2).
-		SetMemoryMB(4096).
+		SetMemoryGi(4.0).
 		SetDiskGB(40).
 		SetEnabled(true).
 		Save(ctx)

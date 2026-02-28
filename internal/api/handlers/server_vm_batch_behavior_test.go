@@ -802,7 +802,7 @@ func mustCreateBatchCreatePrerequisites(
 		SetID(sizeRawID).
 		SetName("size-" + sizeRawID[len(sizeRawID)-4:]).
 		SetCPUCores(2).
-		SetMemoryMB(2048).
+		SetMemoryGi(2).
 		SetCreatedBy(actor).
 		Save(t.Context())
 	if err != nil {
