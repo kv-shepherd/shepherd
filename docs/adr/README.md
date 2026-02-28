@@ -46,9 +46,9 @@
 | [ADR-0034](./ADR-0034-master-flow-spec-driven-test-first.md) | Master-Flow Spec-Driven Test-First Execution Standard | **Accepted** | - |
 | [ADR-0035](./ADR-0035-auth-provider-plugin-boundary.md) | Auth Provider Plugin Boundary and Type Discovery | **Accepted** | - |
 | [ADR-0036](./ADR-0036-template-instancesize-boundary-enforcement.md) | Template / InstanceSize Boundary Enforcement | **Accepted** | - |
-| [ADR-0037](./ADR-0037-openapi-validation-architecture-and-enforcement-policy.md) | OpenAPI Validation Architecture and Enforcement Policy | **Proposed** | - |
+| [ADR-0037](./ADR-0037-openapi-validation-architecture-and-enforcement-policy.md) | OpenAPI Validation Architecture and Enforcement Policy | **Accepted** | - |
 
-> ℹ️ **ADR-0037 (Proposed) Review Sync Notes**:
+> ℹ️ **ADR-0037 Amendment Highlights**:
 >
 > - Runtime validator spec source is canonical `internal/api/specembed/openapi.yaml` (not `generated.GetSwagger()`).
 > - `libopenapi-validator` lifecycle policy is per-validation instance creation (no shared/sync.Pool reuse).
@@ -110,7 +110,7 @@ For newcomers, we recommend reading ADRs in this order:
 11. **ADR-0018** (Instance Size Abstraction) → Schema-driven VM sizing
 12. **ADR-0021** (API Contract-First) → Contract-first API lifecycle
 13. **ADR-0029** (OpenAPI Toolchain Governance) → Lint/generate/diff enforcement baseline
-14. **ADR-0037** (OpenAPI Validation Architecture, **Proposed**) → Runtime/business validation architecture and compat bridge governance
+14. **ADR-0037** (OpenAPI Validation Architecture, **Accepted**) → Runtime/business validation architecture and compat bridge governance
 
 ### Historical Context
 - **ADR-0002** → Why we moved from Git storage to DB (Superseded by ADR-0007)

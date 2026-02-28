@@ -89,7 +89,7 @@ api-compat:
 
 ## api-compat-generate: Generate 3.0-compatible spec from canonical 3.1 spec
 api-compat-generate:
-	@./docs/design/ci/scripts/openapi-compat-generate.sh
+	@go run ./cmd/openapi-compat-gen/main.go api/openapi.yaml api/openapi.compat.yaml
 
 ## api-diff: Show breaking changes vs main branch
 api-diff:
@@ -140,8 +140,8 @@ go install github.com/tufin/oasdiff@latest
 ### GitHub Action
 
 ```yaml
-# .github/workflows/api-check.yml
-name: API Contract Check
+# .github/workflows/api-contract.yaml
+name: API Contract Validation
 
 on:
   pull_request:
@@ -575,7 +575,7 @@ additional-imports:
 
 ### Phase 2: CI Integration
 
-- [ ] Create `.github/workflows/api-check.yml`
+- [ ] Create `.github/workflows/api-contract.yaml`
 - [ ] Add `api-check` to required status checks
 - [ ] Test breaking change detection on a PR
 
@@ -624,4 +624,3 @@ additional-imports:
 >
 > See [ADR-0029](../../adr/ADR-0029-openapi-toolchain-governance.md) and
 > [ADR-0029 Implementation Details](./ADR-0029-openapi-toolchain-implementation.md) for complete toolchain specification.
-

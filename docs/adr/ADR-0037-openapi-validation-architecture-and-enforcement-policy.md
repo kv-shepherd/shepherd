@@ -1,7 +1,7 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"  # proposed | accepted | deprecated | superseded by ADR-XXXX
-date: 2026-02-26
+status: "accepted"  # proposed | accepted | deprecated | superseded by ADR-XXXX
+date: 2026-02-28
 deciders:
   - jindyzhao
 consulted: []
@@ -10,7 +10,7 @@ informed: []
 
 # ADR-0037: OpenAPI Validation Architecture and Enforcement Policy
 
-> **Review Period**: Until 2026-02-28 (48-hour minimum)<br>
+> **Accepted**: 2026-02-28<br>
 > **Discussion**: [Issue #280](https://github.com/kv-shepherd/shepherd/issues/280)<br>
 > **Amends**: [ADR-0021](./ADR-0021-api-contract-first.md), [ADR-0029](./ADR-0029-openapi-toolchain-governance.md)
 
@@ -131,7 +131,7 @@ This ADR is considered correctly implemented when all items below are true:
 
 1. Detailed rollout and file-level execution are tracked in:
    - `docs/design/notes/ADR-0037-openapi-validation-architecture-and-enforcement-policy.md`
-2. During `proposed` review period, normative design specs should not be rewritten directly.
+2. The ADR review window is complete; normative decisions now follow this accepted ADR.
 3. After acceptance, append amendment blocks to prior ADRs as needed.
 
 ---
@@ -142,6 +142,7 @@ This ADR is considered correctly implemented when all items below are true:
 |------|--------|--------|
 | 2026-02-26 | @jindyzhao | Initial draft |
 | 2026-02-26 | @jindyzhao | Sync remediation/design-note corrections: canonical runtime spec source, per-validation validator lifecycle, compat exit verification order |
+| 2026-02-28 | @jindyzhao | Review period closed; ADR accepted and finalized |
 
 ---
 

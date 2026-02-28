@@ -630,6 +630,7 @@ When external integrations require SDK access:
 
 | Date | Author | Change |
 |------|--------|--------|
+| 2026-03-01 | @jindyzhao | Append ADR-0037 amendment block (runtime canonical spec source, validator lifecycle, compat scope, CI ordering) |
 | 2026-01-28 | @jindyzhao | Added Mock Server integration, OpenAPI version policy, and SDK publishing strategy |
 | 2026-01-27 | @jindyzhao | Initial draft based on 2026 best practices research |
 
@@ -654,7 +655,12 @@ For detailed implementation specifications including CI/CD pipeline configuratio
 |------------------|--------|-------------------|----------|
 | §Technology Stack (Line 69-77) | **CLARIFIED** | Linter: spectral → vacuum (Go-native). Validation: added libopenapi-validator with StrictMode. Overlay: oas-patch → libopenapi (Go-native). | [ADR-0029](./ADR-0029-openapi-toolchain-governance.md) |
 
+### ADR-0037: OpenAPI Validation Architecture and Enforcement Policy (2026-03-01)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §Technology Stack / §Acceptance Checklist | **CLARIFIED** | Runtime validator must validate against canonical embedded spec (`internal/api/specembed/openapi.yaml`), validator lifecycle is fixed to per-validation instance creation, and `api/openapi.compat.yaml` is restricted to Go codegen only with generated-code CI ordering `api-compat-generate -> api-generate -> api-compat -> sync diff`. | [ADR-0037](./ADR-0037-openapi-validation-architecture-and-enforcement-policy.md) |
+
 ---
 
 _End of ADR-0021_
-
