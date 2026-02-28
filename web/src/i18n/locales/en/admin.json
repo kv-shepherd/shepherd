@@ -170,7 +170,7 @@
     "instanceSizes.memory": "Memory",
     "instanceSizes.disk": "Disk",
     "instanceSizes.cpu_request": "CPU Request (cores)",
-    "instanceSizes.memory_request": "Memory Request (MB)",
+    "instanceSizes.memory_request": "Memory Request (Gi)",
     "instanceSizes.sort_order": "Sort Order",
     "instanceSizes.capabilities": "Capabilities",
     "instanceSizes.dedicated": "Dedicated CPU",
