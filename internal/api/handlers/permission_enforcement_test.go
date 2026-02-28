@@ -271,7 +271,7 @@ func TestPermissionEnforcement_CreateAdminInstanceSize_RequiresInstanceSizeWrite
 		t,
 		http.MethodPost,
 		"/admin/instance-sizes",
-		`{"name":"m4.large","cpu_cores":4,"memory_mb":8192}`,
+		`{"name":"m4.large","cpu_cores":4,"memory_gi":8}`,
 		"user-a",
 		[]string{"instance_size:read"},
 	)

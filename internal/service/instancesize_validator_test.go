@@ -99,12 +99,12 @@ func TestValidateSpecOverrides_InvalidPaths(t *testing.T) {
 }
 
 func TestDetectSpecOverridesConflicts_NoConflicts(t *testing.T) {
-	warnings := DetectSpecOverridesConflicts(4, 8192, false, nil, nil)
+	warnings := DetectSpecOverridesConflicts(4, 8, false, nil, nil)
 	if len(warnings) != 0 {
 		t.Fatalf("nil overrides should produce no warnings, got: %v", warnings)
 	}
 
-	warnings = DetectSpecOverridesConflicts(4, 8192, false, nil, map[string]interface{}{
+	warnings = DetectSpecOverridesConflicts(4, 8, false, nil, map[string]interface{}{
 		"spec.template.spec.domain.devices.networkInterfaceMultiqueue": true,
 	})
 	if len(warnings) != 0 {
@@ -116,7 +116,7 @@ func TestDetectSpecOverridesConflicts_CPUConflict(t *testing.T) {
 	overrides := map[string]interface{}{
 		"spec.template.spec.domain.cpu.cores": 8,
 	}
-	warnings := DetectSpecOverridesConflicts(4, 8192, false, nil, overrides)
+	warnings := DetectSpecOverridesConflicts(4, 8, false, nil, overrides)
 	if len(warnings) == 0 {
 		t.Fatal("expected CPU conflict warning")
 	}
@@ -135,7 +135,7 @@ func TestDetectSpecOverridesConflicts_CPUMatch(t *testing.T) {
 	overrides := map[string]interface{}{
 		"spec.template.spec.domain.cpu.cores": 4,
 	}
-	warnings := DetectSpecOverridesConflicts(4, 8192, false, nil, overrides)
+	warnings := DetectSpecOverridesConflicts(4, 8, false, nil, overrides)
 	for _, w := range warnings {
 		if strings.Contains(w, "cpu_cores") {
 			t.Errorf("matching CPU should not produce conflict warning, got: %s", w)
@@ -147,7 +147,7 @@ func TestDetectSpecOverridesConflicts_DedicatedCPUInconsistency(t *testing.T) {
 	overrides := map[string]interface{}{
 		"spec.template.spec.domain.cpu.dedicatedCpuPlacement": false,
 	}
-	warnings := DetectSpecOverridesConflicts(4, 8192, true, nil, overrides)
+	warnings := DetectSpecOverridesConflicts(4, 8, true, nil, overrides)
 	if len(warnings) == 0 {
 		t.Fatal("expected warning for dedicated_cpu inconsistency")
 	}
@@ -163,8 +163,8 @@ func TestDetectSpecOverridesConflicts_DedicatedCPUInconsistency(t *testing.T) {
 }
 
 func TestDetectSpecOverridesConflicts_DedicatedCPUOvercommit(t *testing.T) {
-	cpuReq := 2
-	warnings := DetectSpecOverridesConflicts(4, 8192, true, &cpuReq, nil)
+	cpuReq := 2.0
+	warnings := DetectSpecOverridesConflicts(4, 8, true, &cpuReq, nil)
 	if len(warnings) == 0 {
 		t.Fatal("expected warning for dedicated_cpu + overcommit")
 	}
@@ -183,13 +183,13 @@ func TestDetectSpecOverridesConflicts_MemoryConflict(t *testing.T) {
 	overrides := map[string]interface{}{
 		"spec.template.spec.domain.resources.requests.memory": "16Gi",
 	}
-	warnings := DetectSpecOverridesConflicts(4, 8192, false, nil, overrides)
+	warnings := DetectSpecOverridesConflicts(4, 8, false, nil, overrides)
 	if len(warnings) == 0 {
 		t.Fatal("expected memory conflict warning")
 	}
 	found := false
 	for _, w := range warnings {
-		if strings.Contains(w, "memory_mb") {
+		if strings.Contains(w, "memory_gi") {
 			found = true
 		}
 	}

@@ -25,8 +25,7 @@ const passwordHashCost = 12
 // Login handles POST /auth/login (Stage 1.5).
 func (s *Server) Login(c *gin.Context) {
 	var req generated.LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -132,8 +131,7 @@ func (s *Server) ChangePassword(c *gin.Context) {
 	}
 
 	var req generated.ChangePasswordRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 

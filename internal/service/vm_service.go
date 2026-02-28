@@ -36,6 +36,9 @@ func (s *VMService) ValidateAndPrepare(ctx context.Context, cluster, namespace s
 	if spec == nil {
 		return nil, apperrors.BadRequest(apperrors.CodeValidationFailed, "spec is required")
 	}
+	if err := ensureRenderedYAML(namespace, spec); err != nil {
+		return nil, apperrors.BadRequest(apperrors.CodeValidationFailed, fmt.Sprintf("render vm yaml: %v", err))
+	}
 
 	result, err := s.infra.ValidateSpec(ctx, cluster, namespace, spec)
 	if err != nil {
@@ -66,6 +69,9 @@ func (s *VMService) ListVMs(ctx context.Context, cluster, namespace string, opts
 // ExecuteK8sCreate creates the VM on K8s (outside transaction).
 // Idempotent: handles AlreadyExists error gracefully.
 func (s *VMService) ExecuteK8sCreate(ctx context.Context, cluster, namespace string, spec *domain.VMSpec) (*domain.VM, error) {
+	if err := ensureRenderedYAML(namespace, spec); err != nil {
+		return nil, fmt.Errorf("render vm yaml: %w", err)
+	}
 	vm, err := s.infra.CreateVM(ctx, cluster, namespace, spec)
 	if err != nil {
 		logger.Error("K8s VM creation failed",
@@ -82,6 +88,34 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, cluster, namespace str
 		zap.String("name", vm.Name),
 	)
 	return vm, nil
+}
+
+// ensureRenderedYAML renders spec.RenderedYAML when absent, keeping the provider
+// layer strictly focused on SSA submission.
+func ensureRenderedYAML(namespace string, spec *domain.VMSpec) error {
+	if spec == nil {
+		return fmt.Errorf("spec is nil")
+	}
+	if spec.RenderedYAML != "" {
+		return nil
+	}
+	rendered, err := provider.RenderVMSpecToYAML(namespace, &provider.VMRenderInput{
+		Name:            spec.Name,
+		CPUCores:        spec.CPU,
+		MemoryGi:        spec.MemoryGi,
+		DiskGB:          spec.DiskGB,
+		Image:           spec.Image,
+		CloudInit:       spec.CloudInit,
+		Labels:          spec.Labels,
+		CPURequest:      spec.CPURequest,
+		MemoryRequestGi: spec.MemoryRequestGi,
+		SpecOverrides:   spec.SpecOverrides,
+	})
+	if err != nil {
+		return err
+	}
+	spec.RenderedYAML = rendered
+	return nil
 }
 
 // StartVM starts a VM.

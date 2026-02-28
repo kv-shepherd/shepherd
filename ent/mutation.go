@@ -8903,16 +8903,16 @@ type InstanceSizeMutation struct {
 	name                 *string
 	display_name         *string
 	description          *string
-	cpu_cores            *int
-	addcpu_cores         *int
-	memory_mb            *int
-	addmemory_mb         *int
+	cpu_cores            *float64
+	addcpu_cores         *float64
+	memory_gi            *float64
+	addmemory_gi         *float64
 	disk_gb              *int
 	adddisk_gb           *int
-	cpu_request          *int
-	addcpu_request       *int
-	memory_request_mb    *int
-	addmemory_request_mb *int
+	cpu_request          *float64
+	addcpu_request       *float64
+	memory_request_gi    *float64
+	addmemory_request_gi *float64
 	dedicated_cpu        *bool
 	requires_gpu         *bool
 	requires_sriov       *bool
@@ -9240,13 +9240,13 @@ func (m *InstanceSizeMutation) ResetDescription() {
 }
 
 // SetCPUCores sets the "cpu_cores" field.
-func (m *InstanceSizeMutation) SetCPUCores(i int) {
-	m.cpu_cores = &i
+func (m *InstanceSizeMutation) SetCPUCores(f float64) {
+	m.cpu_cores = &f
 	m.addcpu_cores = nil
 }
 
 // CPUCores returns the value of the "cpu_cores" field in the mutation.
-func (m *InstanceSizeMutation) CPUCores() (r int, exists bool) {
+func (m *InstanceSizeMutation) CPUCores() (r float64, exists bool) {
 	v := m.cpu_cores
 	if v == nil {
 		return
@@ -9257,7 +9257,7 @@ func (m *InstanceSizeMutation) CPUCores() (r int, exists bool) {
 // OldCPUCores returns the old "cpu_cores" field's value of the InstanceSize entity.
 // If the InstanceSize object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InstanceSizeMutation) OldCPUCores(ctx context.Context) (v int, err error) {
+func (m *InstanceSizeMutation) OldCPUCores(ctx context.Context) (v float64, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldCPUCores is only allowed on UpdateOne operations")
 	}
@@ -9271,17 +9271,17 @@ func (m *InstanceSizeMutation) OldCPUCores(ctx context.Context) (v int, err erro
 	return oldValue.CPUCores, nil
 }
 
-// AddCPUCores adds i to the "cpu_cores" field.
-func (m *InstanceSizeMutation) AddCPUCores(i int) {
+// AddCPUCores adds f to the "cpu_cores" field.
+func (m *InstanceSizeMutation) AddCPUCores(f float64) {
 	if m.addcpu_cores != nil {
-		*m.addcpu_cores += i
+		*m.addcpu_cores += f
 	} else {
-		m.addcpu_cores = &i
+		m.addcpu_cores = &f
 	}
 }
 
 // AddedCPUCores returns the value that was added to the "cpu_cores" field in this mutation.
-func (m *InstanceSizeMutation) AddedCPUCores() (r int, exists bool) {
+func (m *InstanceSizeMutation) AddedCPUCores() (r float64, exists bool) {
 	v := m.addcpu_cores
 	if v == nil {
 		return
@@ -9295,60 +9295,60 @@ func (m *InstanceSizeMutation) ResetCPUCores() {
 	m.addcpu_cores = nil
 }
 
-// SetMemoryMB sets the "memory_mb" field.
-func (m *InstanceSizeMutation) SetMemoryMB(i int) {
-	m.memory_mb = &i
-	m.addmemory_mb = nil
+// SetMemoryGi sets the "memory_gi" field.
+func (m *InstanceSizeMutation) SetMemoryGi(f float64) {
+	m.memory_gi = &f
+	m.addmemory_gi = nil
 }
 
-// MemoryMB returns the value of the "memory_mb" field in the mutation.
-func (m *InstanceSizeMutation) MemoryMB() (r int, exists bool) {
-	v := m.memory_mb
+// MemoryGi returns the value of the "memory_gi" field in the mutation.
+func (m *InstanceSizeMutation) MemoryGi() (r float64, exists bool) {
+	v := m.memory_gi
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldMemoryMB returns the old "memory_mb" field's value of the InstanceSize entity.
+// OldMemoryGi returns the old "memory_gi" field's value of the InstanceSize entity.
 // If the InstanceSize object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InstanceSizeMutation) OldMemoryMB(ctx context.Context) (v int, err error) {
+func (m *InstanceSizeMutation) OldMemoryGi(ctx context.Context) (v float64, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldMemoryMB is only allowed on UpdateOne operations")
+		return v, errors.New("OldMemoryGi is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldMemoryMB requires an ID field in the mutation")
+		return v, errors.New("OldMemoryGi requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldMemoryMB: %w", err)
+		return v, fmt.Errorf("querying old value for OldMemoryGi: %w", err)
 	}
-	return oldValue.MemoryMB, nil
+	return oldValue.MemoryGi, nil
 }
 
-// AddMemoryMB adds i to the "memory_mb" field.
-func (m *InstanceSizeMutation) AddMemoryMB(i int) {
-	if m.addmemory_mb != nil {
-		*m.addmemory_mb += i
+// AddMemoryGi adds f to the "memory_gi" field.
+func (m *InstanceSizeMutation) AddMemoryGi(f float64) {
+	if m.addmemory_gi != nil {
+		*m.addmemory_gi += f
 	} else {
-		m.addmemory_mb = &i
+		m.addmemory_gi = &f
 	}
 }
 
-// AddedMemoryMB returns the value that was added to the "memory_mb" field in this mutation.
-func (m *InstanceSizeMutation) AddedMemoryMB() (r int, exists bool) {
-	v := m.addmemory_mb
+// AddedMemoryGi returns the value that was added to the "memory_gi" field in this mutation.
+func (m *InstanceSizeMutation) AddedMemoryGi() (r float64, exists bool) {
+	v := m.addmemory_gi
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ResetMemoryMB resets all changes to the "memory_mb" field.
-func (m *InstanceSizeMutation) ResetMemoryMB() {
-	m.memory_mb = nil
-	m.addmemory_mb = nil
+// ResetMemoryGi resets all changes to the "memory_gi" field.
+func (m *InstanceSizeMutation) ResetMemoryGi() {
+	m.memory_gi = nil
+	m.addmemory_gi = nil
 }
 
 // SetDiskGB sets the "disk_gb" field.
@@ -9422,13 +9422,13 @@ func (m *InstanceSizeMutation) ResetDiskGB() {
 }
 
 // SetCPURequest sets the "cpu_request" field.
-func (m *InstanceSizeMutation) SetCPURequest(i int) {
-	m.cpu_request = &i
+func (m *InstanceSizeMutation) SetCPURequest(f float64) {
+	m.cpu_request = &f
 	m.addcpu_request = nil
 }
 
 // CPURequest returns the value of the "cpu_request" field in the mutation.
-func (m *InstanceSizeMutation) CPURequest() (r int, exists bool) {
+func (m *InstanceSizeMutation) CPURequest() (r float64, exists bool) {
 	v := m.cpu_request
 	if v == nil {
 		return
@@ -9439,7 +9439,7 @@ func (m *InstanceSizeMutation) CPURequest() (r int, exists bool) {
 // OldCPURequest returns the old "cpu_request" field's value of the InstanceSize entity.
 // If the InstanceSize object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InstanceSizeMutation) OldCPURequest(ctx context.Context) (v int, err error) {
+func (m *InstanceSizeMutation) OldCPURequest(ctx context.Context) (v float64, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldCPURequest is only allowed on UpdateOne operations")
 	}
@@ -9453,17 +9453,17 @@ func (m *InstanceSizeMutation) OldCPURequest(ctx context.Context) (v int, err er
 	return oldValue.CPURequest, nil
 }
 
-// AddCPURequest adds i to the "cpu_request" field.
-func (m *InstanceSizeMutation) AddCPURequest(i int) {
+// AddCPURequest adds f to the "cpu_request" field.
+func (m *InstanceSizeMutation) AddCPURequest(f float64) {
 	if m.addcpu_request != nil {
-		*m.addcpu_request += i
+		*m.addcpu_request += f
 	} else {
-		m.addcpu_request = &i
+		m.addcpu_request = &f
 	}
 }
 
 // AddedCPURequest returns the value that was added to the "cpu_request" field in this mutation.
-func (m *InstanceSizeMutation) AddedCPURequest() (r int, exists bool) {
+func (m *InstanceSizeMutation) AddedCPURequest() (r float64, exists bool) {
 	v := m.addcpu_request
 	if v == nil {
 		return
@@ -9491,74 +9491,74 @@ func (m *InstanceSizeMutation) ResetCPURequest() {
 	delete(m.clearedFields, instancesize.FieldCPURequest)
 }
 
-// SetMemoryRequestMB sets the "memory_request_mb" field.
-func (m *InstanceSizeMutation) SetMemoryRequestMB(i int) {
-	m.memory_request_mb = &i
-	m.addmemory_request_mb = nil
+// SetMemoryRequestGi sets the "memory_request_gi" field.
+func (m *InstanceSizeMutation) SetMemoryRequestGi(f float64) {
+	m.memory_request_gi = &f
+	m.addmemory_request_gi = nil
 }
 
-// MemoryRequestMB returns the value of the "memory_request_mb" field in the mutation.
-func (m *InstanceSizeMutation) MemoryRequestMB() (r int, exists bool) {
-	v := m.memory_request_mb
+// MemoryRequestGi returns the value of the "memory_request_gi" field in the mutation.
+func (m *InstanceSizeMutation) MemoryRequestGi() (r float64, exists bool) {
+	v := m.memory_request_gi
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldMemoryRequestMB returns the old "memory_request_mb" field's value of the InstanceSize entity.
+// OldMemoryRequestGi returns the old "memory_request_gi" field's value of the InstanceSize entity.
 // If the InstanceSize object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InstanceSizeMutation) OldMemoryRequestMB(ctx context.Context) (v int, err error) {
+func (m *InstanceSizeMutation) OldMemoryRequestGi(ctx context.Context) (v float64, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldMemoryRequestMB is only allowed on UpdateOne operations")
+		return v, errors.New("OldMemoryRequestGi is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldMemoryRequestMB requires an ID field in the mutation")
+		return v, errors.New("OldMemoryRequestGi requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldMemoryRequestMB: %w", err)
+		return v, fmt.Errorf("querying old value for OldMemoryRequestGi: %w", err)
 	}
-	return oldValue.MemoryRequestMB, nil
+	return oldValue.MemoryRequestGi, nil
 }
 
-// AddMemoryRequestMB adds i to the "memory_request_mb" field.
-func (m *InstanceSizeMutation) AddMemoryRequestMB(i int) {
-	if m.addmemory_request_mb != nil {
-		*m.addmemory_request_mb += i
+// AddMemoryRequestGi adds f to the "memory_request_gi" field.
+func (m *InstanceSizeMutation) AddMemoryRequestGi(f float64) {
+	if m.addmemory_request_gi != nil {
+		*m.addmemory_request_gi += f
 	} else {
-		m.addmemory_request_mb = &i
+		m.addmemory_request_gi = &f
 	}
 }
 
-// AddedMemoryRequestMB returns the value that was added to the "memory_request_mb" field in this mutation.
-func (m *InstanceSizeMutation) AddedMemoryRequestMB() (r int, exists bool) {
-	v := m.addmemory_request_mb
+// AddedMemoryRequestGi returns the value that was added to the "memory_request_gi" field in this mutation.
+func (m *InstanceSizeMutation) AddedMemoryRequestGi() (r float64, exists bool) {
+	v := m.addmemory_request_gi
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ClearMemoryRequestMB clears the value of the "memory_request_mb" field.
-func (m *InstanceSizeMutation) ClearMemoryRequestMB() {
-	m.memory_request_mb = nil
-	m.addmemory_request_mb = nil
-	m.clearedFields[instancesize.FieldMemoryRequestMB] = struct{}{}
+// ClearMemoryRequestGi clears the value of the "memory_request_gi" field.
+func (m *InstanceSizeMutation) ClearMemoryRequestGi() {
+	m.memory_request_gi = nil
+	m.addmemory_request_gi = nil
+	m.clearedFields[instancesize.FieldMemoryRequestGi] = struct{}{}
 }
 
-// MemoryRequestMBCleared returns if the "memory_request_mb" field was cleared in this mutation.
-func (m *InstanceSizeMutation) MemoryRequestMBCleared() bool {
-	_, ok := m.clearedFields[instancesize.FieldMemoryRequestMB]
+// MemoryRequestGiCleared returns if the "memory_request_gi" field was cleared in this mutation.
+func (m *InstanceSizeMutation) MemoryRequestGiCleared() bool {
+	_, ok := m.clearedFields[instancesize.FieldMemoryRequestGi]
 	return ok
 }
 
-// ResetMemoryRequestMB resets all changes to the "memory_request_mb" field.
-func (m *InstanceSizeMutation) ResetMemoryRequestMB() {
-	m.memory_request_mb = nil
-	m.addmemory_request_mb = nil
-	delete(m.clearedFields, instancesize.FieldMemoryRequestMB)
+// ResetMemoryRequestGi resets all changes to the "memory_request_gi" field.
+func (m *InstanceSizeMutation) ResetMemoryRequestGi() {
+	m.memory_request_gi = nil
+	m.addmemory_request_gi = nil
+	delete(m.clearedFields, instancesize.FieldMemoryRequestGi)
 }
 
 // SetDedicatedCPU sets the "dedicated_cpu" field.
@@ -9984,8 +9984,8 @@ func (m *InstanceSizeMutation) Fields() []string {
 	if m.cpu_cores != nil {
 		fields = append(fields, instancesize.FieldCPUCores)
 	}
-	if m.memory_mb != nil {
-		fields = append(fields, instancesize.FieldMemoryMB)
+	if m.memory_gi != nil {
+		fields = append(fields, instancesize.FieldMemoryGi)
 	}
 	if m.disk_gb != nil {
 		fields = append(fields, instancesize.FieldDiskGB)
@@ -9993,8 +9993,8 @@ func (m *InstanceSizeMutation) Fields() []string {
 	if m.cpu_request != nil {
 		fields = append(fields, instancesize.FieldCPURequest)
 	}
-	if m.memory_request_mb != nil {
-		fields = append(fields, instancesize.FieldMemoryRequestMB)
+	if m.memory_request_gi != nil {
+		fields = append(fields, instancesize.FieldMemoryRequestGi)
 	}
 	if m.dedicated_cpu != nil {
 		fields = append(fields, instancesize.FieldDedicatedCPU)
@@ -10043,14 +10043,14 @@ func (m *InstanceSizeMutation) Field(name string) (ent.Value, bool) {
 		return m.Description()
 	case instancesize.FieldCPUCores:
 		return m.CPUCores()
-	case instancesize.FieldMemoryMB:
-		return m.MemoryMB()
+	case instancesize.FieldMemoryGi:
+		return m.MemoryGi()
 	case instancesize.FieldDiskGB:
 		return m.DiskGB()
 	case instancesize.FieldCPURequest:
 		return m.CPURequest()
-	case instancesize.FieldMemoryRequestMB:
-		return m.MemoryRequestMB()
+	case instancesize.FieldMemoryRequestGi:
+		return m.MemoryRequestGi()
 	case instancesize.FieldDedicatedCPU:
 		return m.DedicatedCPU()
 	case instancesize.FieldRequiresGpu:
@@ -10090,14 +10090,14 @@ func (m *InstanceSizeMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldDescription(ctx)
 	case instancesize.FieldCPUCores:
 		return m.OldCPUCores(ctx)
-	case instancesize.FieldMemoryMB:
-		return m.OldMemoryMB(ctx)
+	case instancesize.FieldMemoryGi:
+		return m.OldMemoryGi(ctx)
 	case instancesize.FieldDiskGB:
 		return m.OldDiskGB(ctx)
 	case instancesize.FieldCPURequest:
 		return m.OldCPURequest(ctx)
-	case instancesize.FieldMemoryRequestMB:
-		return m.OldMemoryRequestMB(ctx)
+	case instancesize.FieldMemoryRequestGi:
+		return m.OldMemoryRequestGi(ctx)
 	case instancesize.FieldDedicatedCPU:
 		return m.OldDedicatedCPU(ctx)
 	case instancesize.FieldRequiresGpu:
@@ -10161,18 +10161,18 @@ func (m *InstanceSizeMutation) SetField(name string, value ent.Value) error {
 		m.SetDescription(v)
 		return nil
 	case instancesize.FieldCPUCores:
-		v, ok := value.(int)
+		v, ok := value.(float64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCPUCores(v)
 		return nil
-	case instancesize.FieldMemoryMB:
-		v, ok := value.(int)
+	case instancesize.FieldMemoryGi:
+		v, ok := value.(float64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetMemoryMB(v)
+		m.SetMemoryGi(v)
 		return nil
 	case instancesize.FieldDiskGB:
 		v, ok := value.(int)
@@ -10182,18 +10182,18 @@ func (m *InstanceSizeMutation) SetField(name string, value ent.Value) error {
 		m.SetDiskGB(v)
 		return nil
 	case instancesize.FieldCPURequest:
-		v, ok := value.(int)
+		v, ok := value.(float64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCPURequest(v)
 		return nil
-	case instancesize.FieldMemoryRequestMB:
-		v, ok := value.(int)
+	case instancesize.FieldMemoryRequestGi:
+		v, ok := value.(float64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetMemoryRequestMB(v)
+		m.SetMemoryRequestGi(v)
 		return nil
 	case instancesize.FieldDedicatedCPU:
 		v, ok := value.(bool)
@@ -10269,8 +10269,8 @@ func (m *InstanceSizeMutation) AddedFields() []string {
 	if m.addcpu_cores != nil {
 		fields = append(fields, instancesize.FieldCPUCores)
 	}
-	if m.addmemory_mb != nil {
-		fields = append(fields, instancesize.FieldMemoryMB)
+	if m.addmemory_gi != nil {
+		fields = append(fields, instancesize.FieldMemoryGi)
 	}
 	if m.adddisk_gb != nil {
 		fields = append(fields, instancesize.FieldDiskGB)
@@ -10278,8 +10278,8 @@ func (m *InstanceSizeMutation) AddedFields() []string {
 	if m.addcpu_request != nil {
 		fields = append(fields, instancesize.FieldCPURequest)
 	}
-	if m.addmemory_request_mb != nil {
-		fields = append(fields, instancesize.FieldMemoryRequestMB)
+	if m.addmemory_request_gi != nil {
+		fields = append(fields, instancesize.FieldMemoryRequestGi)
 	}
 	if m.addsort_order != nil {
 		fields = append(fields, instancesize.FieldSortOrder)
@@ -10294,14 +10294,14 @@ func (m *InstanceSizeMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case instancesize.FieldCPUCores:
 		return m.AddedCPUCores()
-	case instancesize.FieldMemoryMB:
-		return m.AddedMemoryMB()
+	case instancesize.FieldMemoryGi:
+		return m.AddedMemoryGi()
 	case instancesize.FieldDiskGB:
 		return m.AddedDiskGB()
 	case instancesize.FieldCPURequest:
 		return m.AddedCPURequest()
-	case instancesize.FieldMemoryRequestMB:
-		return m.AddedMemoryRequestMB()
+	case instancesize.FieldMemoryRequestGi:
+		return m.AddedMemoryRequestGi()
 	case instancesize.FieldSortOrder:
 		return m.AddedSortOrder()
 	}
@@ -10314,18 +10314,18 @@ func (m *InstanceSizeMutation) AddedField(name string) (ent.Value, bool) {
 func (m *InstanceSizeMutation) AddField(name string, value ent.Value) error {
 	switch name {
 	case instancesize.FieldCPUCores:
-		v, ok := value.(int)
+		v, ok := value.(float64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddCPUCores(v)
 		return nil
-	case instancesize.FieldMemoryMB:
-		v, ok := value.(int)
+	case instancesize.FieldMemoryGi:
+		v, ok := value.(float64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddMemoryMB(v)
+		m.AddMemoryGi(v)
 		return nil
 	case instancesize.FieldDiskGB:
 		v, ok := value.(int)
@@ -10335,18 +10335,18 @@ func (m *InstanceSizeMutation) AddField(name string, value ent.Value) error {
 		m.AddDiskGB(v)
 		return nil
 	case instancesize.FieldCPURequest:
-		v, ok := value.(int)
+		v, ok := value.(float64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddCPURequest(v)
 		return nil
-	case instancesize.FieldMemoryRequestMB:
-		v, ok := value.(int)
+	case instancesize.FieldMemoryRequestGi:
+		v, ok := value.(float64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddMemoryRequestMB(v)
+		m.AddMemoryRequestGi(v)
 		return nil
 	case instancesize.FieldSortOrder:
 		v, ok := value.(int)
@@ -10375,8 +10375,8 @@ func (m *InstanceSizeMutation) ClearedFields() []string {
 	if m.FieldCleared(instancesize.FieldCPURequest) {
 		fields = append(fields, instancesize.FieldCPURequest)
 	}
-	if m.FieldCleared(instancesize.FieldMemoryRequestMB) {
-		fields = append(fields, instancesize.FieldMemoryRequestMB)
+	if m.FieldCleared(instancesize.FieldMemoryRequestGi) {
+		fields = append(fields, instancesize.FieldMemoryRequestGi)
 	}
 	if m.FieldCleared(instancesize.FieldHugepagesSize) {
 		fields = append(fields, instancesize.FieldHugepagesSize)
@@ -10410,8 +10410,8 @@ func (m *InstanceSizeMutation) ClearField(name string) error {
 	case instancesize.FieldCPURequest:
 		m.ClearCPURequest()
 		return nil
-	case instancesize.FieldMemoryRequestMB:
-		m.ClearMemoryRequestMB()
+	case instancesize.FieldMemoryRequestGi:
+		m.ClearMemoryRequestGi()
 		return nil
 	case instancesize.FieldHugepagesSize:
 		m.ClearHugepagesSize()
@@ -10445,8 +10445,8 @@ func (m *InstanceSizeMutation) ResetField(name string) error {
 	case instancesize.FieldCPUCores:
 		m.ResetCPUCores()
 		return nil
-	case instancesize.FieldMemoryMB:
-		m.ResetMemoryMB()
+	case instancesize.FieldMemoryGi:
+		m.ResetMemoryGi()
 		return nil
 	case instancesize.FieldDiskGB:
 		m.ResetDiskGB()
@@ -10454,8 +10454,8 @@ func (m *InstanceSizeMutation) ResetField(name string) error {
 	case instancesize.FieldCPURequest:
 		m.ResetCPURequest()
 		return nil
-	case instancesize.FieldMemoryRequestMB:
-		m.ResetMemoryRequestMB()
+	case instancesize.FieldMemoryRequestGi:
+		m.ResetMemoryRequestGi()
 		return nil
 	case instancesize.FieldDedicatedCPU:
 		m.ResetDedicatedCPU()

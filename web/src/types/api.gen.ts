@@ -1244,6 +1244,16 @@ export interface components {
             path: string;
             /** @description Desired localized or standardized label for the UI form projection. */
             display_name: string;
+            /** @description Optional i18n key for localized field label lookup. */
+            display_name_key?: string;
+            /** @description Optional plain help text shown via tooltip/help icon. */
+            help_text?: string;
+            /** @description Optional i18n key for localized help text lookup. */
+            help_key?: string;
+            /** @description Optional plain placeholder shown in form control. */
+            placeholder?: string;
+            /** @description Optional i18n key for localized placeholder lookup. */
+            placeholder_key?: string;
         };
         SchemaMask: {
             quick_fields: components["schemas"]["MaskField"][];
@@ -1286,6 +1296,8 @@ export interface components {
             status: "ok" | "degraded" | "error";
             version?: string;
             checks?: {
+                database?: string;
+            } & {
                 [key: string]: string;
             };
         };
@@ -1557,10 +1569,10 @@ export interface components {
             cpu_request?: number;
             /** @description CPU limit in cores (Stage 5.B) */
             cpu_limit?: number;
-            /** @description Memory request in MB (Stage 5.B) */
-            memory_request_mb?: number;
-            /** @description Memory limit in MB (Stage 5.B) */
-            memory_limit_mb?: number;
+            /** @description Memory request in Gi (Stage 5.B) */
+            memory_request_gi?: number;
+            /** @description Memory limit in Gi (Stage 5.B) */
+            memory_limit_gi?: number;
             /** @description Disk size in GB, admin can adjust (Stage 5.B) */
             disk_gb?: number;
             comment?: string;
@@ -1679,7 +1691,7 @@ export interface components {
             display_name?: string;
             description?: string;
             cpu_cores: number;
-            memory_mb: number;
+            memory_gi: number;
             disk_gb?: number;
             dedicated_cpu?: boolean;
             requires_gpu?: boolean;
@@ -1698,10 +1710,10 @@ export interface components {
             display_name?: string;
             description?: string;
             cpu_cores: number;
-            memory_mb: number;
+            memory_gi: number;
             disk_gb?: number;
             cpu_request?: number;
-            memory_request_mb?: number;
+            memory_request_gi?: number;
             dedicated_cpu?: boolean;
             requires_gpu?: boolean;
             requires_sriov?: boolean;
@@ -1718,10 +1730,12 @@ export interface components {
             display_name?: string;
             description?: string;
             cpu_cores?: number;
-            memory_mb?: number;
+            memory_gi?: number;
             disk_gb?: number;
+            /** @description CPU request in cores. Set `0` to clear override and fall back to cpu_cores. */
             cpu_request?: number;
-            memory_request_mb?: number;
+            /** @description Memory request in Gi. Set `0` to clear override and fall back to memory_gi. */
+            memory_request_gi?: number;
             dedicated_cpu?: boolean;
             requires_gpu?: boolean;
             requires_sriov?: boolean;
@@ -2279,7 +2293,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["Health"];
                 };
             };
         };

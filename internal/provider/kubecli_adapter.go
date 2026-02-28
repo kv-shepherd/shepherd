@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/clientcmd"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -65,7 +66,16 @@ func (f *kubeconfigClusterFactory) get(cluster string) (KubeVirtClusterClient, e
 		return nil, fmt.Errorf("build kubevirt client for cluster %s: %w", cluster, err)
 	}
 
-	client := &kubevirtClusterClient{client: virtClient}
+	// Build dynamic client from the same REST config for SSA operations (ADR-0011).
+	dynClient, err := dynamic.NewForConfig(restCfg)
+	if err != nil {
+		return nil, fmt.Errorf("build dynamic client for cluster %s: %w", cluster, err)
+	}
+
+	client := &kubevirtClusterClient{
+		client:    virtClient,
+		ssaClient: NewKubevirtSSAApplier(dynClient),
+	}
 
 	f.mu.Lock()
 	f.cache[cluster] = client
@@ -75,7 +85,8 @@ func (f *kubeconfigClusterFactory) get(cluster string) (KubeVirtClusterClient, e
 }
 
 type kubevirtClusterClient struct {
-	client kubecli.KubevirtClient
+	client    kubecli.KubevirtClient
+	ssaClient *KubevirtSSAApplier
 }
 
 func (c *kubevirtClusterClient) VM() VirtualMachineClient {
@@ -84,6 +95,11 @@ func (c *kubevirtClusterClient) VM() VirtualMachineClient {
 
 func (c *kubevirtClusterClient) VMI() VirtualMachineInstanceClient {
 	return &kubevirtVMIClient{client: c.client}
+}
+
+// SSA returns the DynamicSSAClient for Server-Side Apply operations (ADR-0011).
+func (c *kubevirtClusterClient) SSA() DynamicSSAClient {
+	return c.ssaClient
 }
 
 type kubevirtVMClient struct {
@@ -98,13 +114,8 @@ func (c *kubevirtVMClient) List(ctx context.Context, namespace string, opts k8sm
 	return c.client.VirtualMachine(namespace).List(ctx, opts)
 }
 
-func (c *kubevirtVMClient) Create(ctx context.Context, namespace string, vm *kubevirtv1.VirtualMachine, opts k8smetav1.CreateOptions) (*kubevirtv1.VirtualMachine, error) {
-	return c.client.VirtualMachine(namespace).Create(ctx, vm, opts)
-}
-
-func (c *kubevirtVMClient) Update(ctx context.Context, namespace string, vm *kubevirtv1.VirtualMachine, opts k8smetav1.UpdateOptions) (*kubevirtv1.VirtualMachine, error) {
-	return c.client.VirtualMachine(namespace).Update(ctx, vm, opts)
-}
+// Create and Update are intentionally removed (ADR-0011).
+// All VM writes use DynamicSSAClient.ApplyYAML() via SSA().
 
 func (c *kubevirtVMClient) Delete(ctx context.Context, namespace, name string, opts k8smetav1.DeleteOptions) error {
 	return c.client.VirtualMachine(namespace).Delete(ctx, name, opts)

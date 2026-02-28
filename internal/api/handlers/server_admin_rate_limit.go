@@ -40,8 +40,7 @@ func (s *Server) CreateRateLimitExemption(c *gin.Context) {
 	}
 
 	var req rateLimitExemptionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -187,8 +186,7 @@ func (s *Server) UpdateRateLimitUserOverrides(c *gin.Context, userId string) {
 	}
 
 	var req rateLimitUserOverrideRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 	if req.MaxPendingParents == nil && req.MaxPendingChildren == nil && req.CooldownSeconds == nil && req.Reason == nil {

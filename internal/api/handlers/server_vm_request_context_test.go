@@ -71,7 +71,7 @@ func TestVMHandler_GetVMRequestContext_CatalogAndVisibility(t *testing.T) {
 		SetID("size-enabled").
 		SetName("small").
 		SetCPUCores(2).
-		SetMemoryMB(4096).
+		SetMemoryGi(4).
 		SetCreatedBy("seed").
 		SetSortOrder(1).
 		SetEnabled(true).
@@ -83,7 +83,7 @@ func TestVMHandler_GetVMRequestContext_CatalogAndVisibility(t *testing.T) {
 		SetID("size-disabled").
 		SetName("legacy").
 		SetCPUCores(1).
-		SetMemoryMB(1024).
+		SetMemoryGi(1).
 		SetCreatedBy("seed").
 		SetSortOrder(2).
 		SetEnabled(false).
@@ -164,7 +164,7 @@ func TestVMHandler_GetVMRequestContext_OrdersCatalogDeterministically(t *testing
 		SetID("size-b").
 		SetName("medium").
 		SetCPUCores(4).
-		SetMemoryMB(8192).
+		SetMemoryGi(8).
 		SetCreatedBy("seed").
 		SetSortOrder(20).
 		SetEnabled(true).
@@ -176,7 +176,7 @@ func TestVMHandler_GetVMRequestContext_OrdersCatalogDeterministically(t *testing
 		SetID("size-a").
 		SetName("small").
 		SetCPUCores(2).
-		SetMemoryMB(4096).
+		SetMemoryGi(4).
 		SetCreatedBy("seed").
 		SetSortOrder(10).
 		SetEnabled(true).

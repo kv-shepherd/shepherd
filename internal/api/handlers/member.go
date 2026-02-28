@@ -154,8 +154,7 @@ func (s *Server) AddSystemMember(c *gin.Context, systemId generated.SystemID) {
 	}
 
 	var req generated.SystemMemberCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -221,8 +220,7 @@ func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemId generated.Syste
 	}
 
 	var req generated.SystemMemberRoleUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 

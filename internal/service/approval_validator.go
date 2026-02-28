@@ -100,7 +100,7 @@ func (v *ApprovalValidator) ValidateApproval(
 		// This prevents bypassing the dedicated+overcommit conflict check by only setting
 		// the flag inside spec_overrides while leaving the top-level dedicated_cpu unset.
 		effectiveDedicatedCPU := size.DedicatedCPU || hasDedicatedCPUInSpecOverrides(size.SpecOverrides)
-		if err := ValidateOvercommit(size.CPUCores, size.CPURequest, size.MemoryMB, size.MemoryRequestMB, effectiveDedicatedCPU); err != nil {
+		if err := ValidateOvercommit(size.CPUCores, size.CPURequest, size.MemoryGi, size.MemoryRequestGi, effectiveDedicatedCPU); err != nil {
 			return err
 		}
 
@@ -148,7 +148,24 @@ func validateNamespaceClusterEnvironment(namespaceEnv, clusterEnv string) error 
 //  1. dedicatedCPU + overcommit (cpu_request != cpu_cores) → BLOCKING ERROR
 //  2. cpu_request > cpu_cores → BLOCKING ERROR (invalid overcommit ratio)
 //  3. memory_request > memory_limit → BLOCKING ERROR
-func ValidateOvercommit(cpuCores, cpuRequest, memoryMb, memoryRequestMb int, dedicatedCPU bool) error {
+func ValidateOvercommit(cpuCores, cpuRequest, memoryGi, memoryRequestGi float64, dedicatedCPU bool) error {
+	if cpuCores > 0 && !IsHalfStep(cpuCores) {
+		return apperrors.BadRequest("OVERCOMMIT_INVALID",
+			fmt.Sprintf("CPU limit (%.3g) must use 0.5-step values (0.5, 1.0, 1.5, ...)", cpuCores))
+	}
+	if cpuRequest > 0 && !IsHalfStep(cpuRequest) {
+		return apperrors.BadRequest("OVERCOMMIT_INVALID",
+			fmt.Sprintf("CPU request (%.3g) must use 0.5-step values (0.5, 1.0, 1.5, ...)", cpuRequest))
+	}
+	if memoryGi > 0 && !IsHalfStep(memoryGi) {
+		return apperrors.BadRequest("OVERCOMMIT_INVALID",
+			fmt.Sprintf("memory limit (%.3gGi) must use 0.5-step values (0.5Gi, 1.0Gi, 1.5Gi, ...)", memoryGi))
+	}
+	if memoryRequestGi > 0 && !IsHalfStep(memoryRequestGi) {
+		return apperrors.BadRequest("OVERCOMMIT_INVALID",
+			fmt.Sprintf("memory request (%.3gGi) must use 0.5-step values (0.5Gi, 1.0Gi, 1.5Gi, ...)", memoryRequestGi))
+	}
+
 	// cpu_request == 0 means "use cpu_cores" (no overcommit).
 	overcommitActive := cpuRequest > 0 && cpuRequest != cpuCores
 
@@ -156,20 +173,20 @@ func ValidateOvercommit(cpuCores, cpuRequest, memoryMb, memoryRequestMb int, ded
 	// KubeVirt: dedicatedCpuPlacement requires Guaranteed QoS (request == limit).
 	if dedicatedCPU && overcommitActive {
 		return apperrors.BadRequest("DEDICATED_CPU_OVERCOMMIT_CONFLICT",
-			fmt.Sprintf("dedicated CPU requires Guaranteed QoS: CPU request (%d) must equal CPU limit (%d); overcommit is not allowed with dedicatedCpuPlacement",
+			fmt.Sprintf("dedicated CPU requires Guaranteed QoS: CPU request (%.1f) must equal CPU limit (%.1f); overcommit is not allowed with dedicatedCpuPlacement",
 				cpuRequest, cpuCores))
 	}
 
 	// Rule 2: CPU request cannot exceed limit (invalid overcommit direction).
 	if overcommitActive && cpuRequest > cpuCores {
 		return apperrors.BadRequest("OVERCOMMIT_INVALID",
-			fmt.Sprintf("CPU request (%d) cannot exceed CPU limit (%d)", cpuRequest, cpuCores))
+			fmt.Sprintf("CPU request (%.1f) cannot exceed CPU limit (%.1f)", cpuRequest, cpuCores))
 	}
 
 	// Rule 3: Memory request cannot exceed limit.
-	if memoryRequestMb > 0 && memoryRequestMb > memoryMb {
+	if memoryRequestGi > 0 && memoryRequestGi > memoryGi {
 		return apperrors.BadRequest("OVERCOMMIT_INVALID",
-			fmt.Sprintf("memory request (%dMB) cannot exceed memory limit (%dMB)", memoryRequestMb, memoryMb))
+			fmt.Sprintf("memory request (%.1fGi) cannot exceed memory limit (%.1fGi)", memoryRequestGi, memoryGi))
 	}
 	return nil
 }

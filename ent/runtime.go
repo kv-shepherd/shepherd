@@ -368,11 +368,11 @@ func init() {
 	// instancesizeDescCPUCores is the schema descriptor for cpu_cores field.
 	instancesizeDescCPUCores := instancesizeFields[4].Descriptor()
 	// instancesize.CPUCoresValidator is a validator for the "cpu_cores" field. It is called by the builders before save.
-	instancesize.CPUCoresValidator = instancesizeDescCPUCores.Validators[0].(func(int) error)
-	// instancesizeDescMemoryMB is the schema descriptor for memory_mb field.
-	instancesizeDescMemoryMB := instancesizeFields[5].Descriptor()
-	// instancesize.MemoryMBValidator is a validator for the "memory_mb" field. It is called by the builders before save.
-	instancesize.MemoryMBValidator = instancesizeDescMemoryMB.Validators[0].(func(int) error)
+	instancesize.CPUCoresValidator = instancesizeDescCPUCores.Validators[0].(func(float64) error)
+	// instancesizeDescMemoryGi is the schema descriptor for memory_gi field.
+	instancesizeDescMemoryGi := instancesizeFields[5].Descriptor()
+	// instancesize.MemoryGiValidator is a validator for the "memory_gi" field. It is called by the builders before save.
+	instancesize.MemoryGiValidator = instancesizeDescMemoryGi.Validators[0].(func(float64) error)
 	// instancesizeDescDiskGB is the schema descriptor for disk_gb field.
 	instancesizeDescDiskGB := instancesizeFields[6].Descriptor()
 	// instancesize.DiskGBValidator is a validator for the "disk_gb" field. It is called by the builders before save.
@@ -380,11 +380,11 @@ func init() {
 	// instancesizeDescCPURequest is the schema descriptor for cpu_request field.
 	instancesizeDescCPURequest := instancesizeFields[7].Descriptor()
 	// instancesize.CPURequestValidator is a validator for the "cpu_request" field. It is called by the builders before save.
-	instancesize.CPURequestValidator = instancesizeDescCPURequest.Validators[0].(func(int) error)
-	// instancesizeDescMemoryRequestMB is the schema descriptor for memory_request_mb field.
-	instancesizeDescMemoryRequestMB := instancesizeFields[8].Descriptor()
-	// instancesize.MemoryRequestMBValidator is a validator for the "memory_request_mb" field. It is called by the builders before save.
-	instancesize.MemoryRequestMBValidator = instancesizeDescMemoryRequestMB.Validators[0].(func(int) error)
+	instancesize.CPURequestValidator = instancesizeDescCPURequest.Validators[0].(func(float64) error)
+	// instancesizeDescMemoryRequestGi is the schema descriptor for memory_request_gi field.
+	instancesizeDescMemoryRequestGi := instancesizeFields[8].Descriptor()
+	// instancesize.MemoryRequestGiValidator is a validator for the "memory_request_gi" field. It is called by the builders before save.
+	instancesize.MemoryRequestGiValidator = instancesizeDescMemoryRequestGi.Validators[0].(func(float64) error)
 	// instancesizeDescDedicatedCPU is the schema descriptor for dedicated_cpu field.
 	instancesizeDescDedicatedCPU := instancesizeFields[9].Descriptor()
 	// instancesize.DefaultDedicatedCPU holds the default value on creation for the dedicated_cpu field.

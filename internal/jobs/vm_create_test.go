@@ -156,6 +156,15 @@ func TestExtractTemplateImageFromSnapshot(t *testing.T) {
 			wantImage: "pvc:fedora-golden",
 		},
 		{
+			name: "adr0036 pvc source with namespace",
+			snapshot: map[string]interface{}{
+				"source_type":   "pvc",
+				"pvc_name":      "fedora-golden",
+				"pvc_namespace": "golden-images",
+			},
+			wantImage: "pvc:golden-images/fedora-golden",
+		},
+		{
 			name: "legacy spec fallback",
 			snapshot: map[string]interface{}{
 				"image_source": map[string]interface{}{
@@ -193,6 +202,52 @@ func TestExtractTemplateImageFromSnapshot(t *testing.T) {
 	}
 }
 
+func TestExtractTemplateCloudInitFromSnapshot(t *testing.T) {
+	tests := []struct {
+		name      string
+		snapshot  map[string]interface{}
+		wantValue string
+		wantFound bool
+	}{
+		{
+			name: "snapshot contains cloud_init",
+			snapshot: map[string]interface{}{
+				"cloud_init": "#cloud-config\nusers:\n  - name: admin",
+			},
+			wantValue: "#cloud-config\nusers:\n  - name: admin",
+			wantFound: true,
+		},
+		{
+			name: "snapshot contains empty cloud_init",
+			snapshot: map[string]interface{}{
+				"cloud_init": "",
+			},
+			wantValue: "",
+			wantFound: true,
+		},
+		{
+			name: "snapshot missing cloud_init",
+			snapshot: map[string]interface{}{
+				"source_type": "image",
+			},
+			wantValue: "",
+			wantFound: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, found := extractTemplateCloudInitFromSnapshot(tc.snapshot)
+			if found != tc.wantFound {
+				t.Fatalf("found mismatch: got %v want %v", found, tc.wantFound)
+			}
+			if got != tc.wantValue {
+				t.Fatalf("value mismatch: got %q want %q", got, tc.wantValue)
+			}
+		})
+	}
+}
+
 func TestResolveEffectiveSelectionIDs(t *testing.T) {
 	payload := domain.VMCreationPayload{
 		TemplateID:     "tpl-A",
@@ -211,11 +266,34 @@ func TestResolveEffectiveSelectionIDs(t *testing.T) {
 	}
 }
 
+func TestApplyInstanceSizeSnapshotOverrides_UsesCanonicalMemoryGiOnly(t *testing.T) {
+	cpu := 2.0
+	mem := 2.0
+	disk := 10
+	snapshot := map[string]interface{}{
+		"memory_gi": 8.0,
+		"cpu_cores": 4.0,
+		"disk_gb":   80,
+	}
+
+	applyInstanceSizeSnapshotOverrides(&cpu, &mem, &disk, snapshot)
+
+	if cpu != 4.0 {
+		t.Fatalf("cpu mismatch: got %.1f want 4.0", cpu)
+	}
+	if mem != 8.0 {
+		t.Fatalf("memoryGi mismatch: got %.1f want 8.0", mem)
+	}
+	if disk != 80 {
+		t.Fatalf("disk mismatch: got %d want 80", disk)
+	}
+}
+
 func TestApplyModifiedSpecOverrides(t *testing.T) {
 	spec := &domain.VMSpec{
 		Name:     "vm-01",
 		CPU:      2,
-		MemoryMB: 2048,
+		MemoryGi: 2,
 		DiskGB:   10,
 		Image:    "old-image:1",
 		SpecOverrides: map[string]interface{}{
@@ -225,7 +303,7 @@ func TestApplyModifiedSpecOverrides(t *testing.T) {
 
 	applyModifiedSpecOverrides(spec, map[string]interface{}{
 		"cpu":       4,
-		"memory_mb": "4096",
+		"memory_gi": 4.0,
 		"disk_gb":   20,
 		"image_source": map[string]interface{}{
 			"image": "new-image:2",
@@ -237,10 +315,10 @@ func TestApplyModifiedSpecOverrides(t *testing.T) {
 	})
 
 	if spec.CPU != 4 {
-		t.Fatalf("cpu mismatch: got %d", spec.CPU)
+		t.Fatalf("cpu mismatch: got %.1f", spec.CPU)
 	}
-	if spec.MemoryMB != 4096 {
-		t.Fatalf("memory mismatch: got %d", spec.MemoryMB)
+	if spec.MemoryGi != 4.0 {
+		t.Fatalf("memory mismatch: got %.1f", spec.MemoryGi)
 	}
 	if spec.DiskGB != 20 {
 		t.Fatalf("disk mismatch: got %d", spec.DiskGB)
@@ -260,7 +338,7 @@ func TestApplyModifiedSpecOverrides_ResourceOverrideKeys(t *testing.T) {
 	spec := &domain.VMSpec{
 		Name:     "vm-01",
 		CPU:      2,
-		MemoryMB: 2048,
+		MemoryGi: 2,
 		DiskGB:   10,
 		Image:    "test-image:1",
 	}
@@ -268,24 +346,24 @@ func TestApplyModifiedSpecOverrides_ResourceOverrideKeys(t *testing.T) {
 	// Simulate modifiedSpec as written by gateway.go when enable_override=true.
 	applyModifiedSpecOverrides(spec, map[string]interface{}{
 		"enable_override":   true,
-		"cpu_limit":         8,
-		"cpu_request":       4,
-		"memory_limit_mb":   16384,
-		"memory_request_mb": 8192,
+		"cpu_limit":         8.0,
+		"cpu_request":       4.0,
+		"memory_limit_gi":   16.0,
+		"memory_request_gi": 8.0,
 		"disk_gb":           100,
 	})
 
 	if spec.CPU != 8 {
-		t.Fatalf("CPU (limit) mismatch: got %d, want 8", spec.CPU)
+		t.Fatalf("CPU (limit) mismatch: got %.1f, want 8", spec.CPU)
 	}
 	if spec.CPURequest != 4 {
-		t.Fatalf("CPURequest mismatch: got %d, want 4", spec.CPURequest)
+		t.Fatalf("CPURequest mismatch: got %.1f, want 4", spec.CPURequest)
 	}
-	if spec.MemoryMB != 16384 {
-		t.Fatalf("MemoryMB (limit) mismatch: got %d, want 16384", spec.MemoryMB)
+	if spec.MemoryGi != 16 {
+		t.Fatalf("MemoryGi (limit) mismatch: got %.1f, want 16", spec.MemoryGi)
 	}
-	if spec.MemoryRequestMB != 8192 {
-		t.Fatalf("MemoryRequestMB mismatch: got %d, want 8192", spec.MemoryRequestMB)
+	if spec.MemoryRequestGi != 8 {
+		t.Fatalf("MemoryRequestGi mismatch: got %.1f, want 8", spec.MemoryRequestGi)
 	}
 	if spec.DiskGB != 100 {
 		t.Fatalf("DiskGB mismatch: got %d, want 100", spec.DiskGB)
@@ -296,23 +374,23 @@ func TestApplyModifiedSpecOverrides_CpuLimitTakesPrecedence(t *testing.T) {
 	spec := &domain.VMSpec{
 		Name:     "vm-01",
 		CPU:      2,
-		MemoryMB: 2048,
+		MemoryGi: 2,
 		Image:    "test-image:1",
 	}
 
 	// Both "cpu" and "cpu_limit" present: cpu_limit should win.
 	applyModifiedSpecOverrides(spec, map[string]interface{}{
-		"cpu":             4,
-		"cpu_limit":       8,
-		"memory_mb":       4096,
-		"memory_limit_mb": 16384,
+		"cpu":             4.0,
+		"cpu_limit":       8.0,
+		"memory_gi":       4.0,
+		"memory_limit_gi": 16.0,
 	})
 
 	if spec.CPU != 8 {
-		t.Fatalf("CPU should use cpu_limit (8) over cpu (4): got %d", spec.CPU)
+		t.Fatalf("CPU should use cpu_limit (8) over cpu (4): got %.1f", spec.CPU)
 	}
-	if spec.MemoryMB != 16384 {
-		t.Fatalf("MemoryMB should use memory_limit_mb (16384) over memory_mb (4096): got %d", spec.MemoryMB)
+	if spec.MemoryGi != 16 {
+		t.Fatalf("MemoryGi should use memory_limit_gi (16) over memory_gi (4): got %.1f", spec.MemoryGi)
 	}
 }
 

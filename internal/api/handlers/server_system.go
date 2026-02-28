@@ -112,8 +112,7 @@ func (s *Server) CreateSystem(c *gin.Context) {
 	actor := middleware.GetUserID(ctx)
 
 	var req generated.SystemCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -223,8 +222,7 @@ func (s *Server) UpdateSystem(c *gin.Context, systemId generated.SystemID) {
 	}
 
 	var req generated.SystemUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -406,8 +404,7 @@ func (s *Server) CreateService(c *gin.Context, systemId generated.SystemID) {
 	}
 
 	var req generated.ServiceCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
@@ -496,8 +493,7 @@ func (s *Server) UpdateService(c *gin.Context, systemId generated.SystemID, serv
 	}
 
 	var req generated.ServiceUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 

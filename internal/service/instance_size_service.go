@@ -40,17 +40,17 @@ func (s *InstanceSizeService) GetByID(ctx context.Context, id string) (*ent.Inst
 }
 
 // GetEffectiveCPURequest returns cpu_request if set, otherwise cpu_cores (no overcommit default).
-func GetEffectiveCPURequest(size *ent.InstanceSize) int {
+func GetEffectiveCPURequest(size *ent.InstanceSize) float64 {
 	if size.CPURequest > 0 {
 		return size.CPURequest
 	}
 	return size.CPUCores
 }
 
-// GetEffectiveMemoryRequest returns memory_request_mb if set, otherwise memory_mb.
-func GetEffectiveMemoryRequest(size *ent.InstanceSize) int {
-	if size.MemoryRequestMB > 0 {
-		return size.MemoryRequestMB
+// GetEffectiveMemoryRequest returns memory_request_gi if set, otherwise memory_gi.
+func GetEffectiveMemoryRequest(size *ent.InstanceSize) float64 {
+	if size.MemoryRequestGi > 0 {
+		return size.MemoryRequestGi
 	}
-	return size.MemoryMB
+	return size.MemoryGi
 }

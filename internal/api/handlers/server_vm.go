@@ -227,8 +227,7 @@ func (s *Server) CreateVMRequest(c *gin.Context) {
 	}
 
 	var req generated.VMCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 	visibility, err := s.resolveNamespaceVisibility(c)
@@ -604,8 +603,7 @@ func (s *Server) PowerVM(c *gin.Context, vmId generated.VMID) {
 	}
 
 	var req generated.VMPowerRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "valid action field required"})
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 

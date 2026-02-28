@@ -120,7 +120,7 @@ describe('useVMManagementController', () => {
           data: {
             namespaces: ['prod'],
             templates: [{ id: 'tpl-1', name: 'Ubuntu Template' }],
-            instance_sizes: [{ id: 'size-1', name: 'small', cpu_cores: 2, memory_mb: 4096 }],
+            instance_sizes: [{ id: 'size-1', name: 'small', cpu_cores: 2, memory_gi: 4 }],
           },
           isLoading: false,
         };

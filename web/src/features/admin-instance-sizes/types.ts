@@ -5,12 +5,16 @@ export type InstanceSizeList = components['schemas']['InstanceSizeList'];
 export type InstanceSizeCreateRequest = components['schemas']['InstanceSizeCreateRequest'];
 export type InstanceSizeUpdateRequest = components['schemas']['InstanceSizeUpdateRequest'];
 
-export function formatMemory(mb: number): string {
-    if (mb >= 1024) {
-        const gb = mb / 1024;
-        return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`;
+/**
+ * Formats memory in GiB for display.
+ * Values are already in Gi from the API (post int→float64 migration).
+ * 0.5-step increments are supported (e.g. 0.5 Gi, 1 Gi, 1.5 Gi).
+ */
+export function formatMemory(gi: number): string {
+    if (!Number.isFinite(gi) || gi <= 0) {
+        return '0 Gi';
     }
-    return `${mb} MB`;
+    return `${Number.isInteger(gi) ? gi : gi.toFixed(1)} Gi`;
 }
 
 export function getCapabilityLabels(record: InstanceSize): string[] {

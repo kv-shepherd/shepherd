@@ -13,6 +13,7 @@
 
 OPENAPI_SPEC := api/openapi.yaml
 COMPAT_SPEC := api/openapi.compat.yaml
+SPECEMBED_SPEC := internal/api/specembed/openapi.yaml
 VACUUM_CONFIG := api/.vacuum.yaml
 GO_GENERATED_DIR := internal/api/generated
 TS_GENERATED_FILE := web/src/types/api.gen.ts
@@ -20,7 +21,7 @@ OAPI_CODEGEN_CONFIG := api/oapi-codegen.yaml
 OAPI_CODEGEN_INPUT := $(OPENAPI_SPEC)
 
 # Tool versions (pin in docs/design/DEPENDENCIES.md; override via env if needed)
-OAPI_CODEGEN_VERSION ?= v2.5.0
+OAPI_CODEGEN_VERSION ?= v2.5.1
 OPENAPI_TS_VERSION ?= 7.12.0
 VACUUM_VERSION ?= v0.23.8
 OASDIFF_VERSION ?= v1.11.10
@@ -28,6 +29,7 @@ OASDIFF_VERSION ?= v1.11.10
 VACUUM_CMD := go run github.com/daveshanley/vacuum@$(VACUUM_VERSION)
 OASDIFF_CMD := go run github.com/oasdiff/oasdiff@$(OASDIFF_VERSION)
 OAPI_CODEGEN_CMD := go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
+OPENAPI_COMPAT_GEN_CMD := go run ./cmd/openapi-compat-gen/main.go
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main Targets
@@ -40,8 +42,13 @@ api-lint: ## Validate OpenAPI spec with Vacuum (ADR-0029)
 	@echo "✅ OpenAPI spec is valid"
 
 .PHONY: api-generate
-api-generate: api-generate-go api-generate-ts ## Generate all API code from OpenAPI spec
+api-generate: api-specembed-sync api-generate-go api-generate-ts ## Generate all API code from OpenAPI spec
 	@echo "✅ All API code generated successfully"
+
+.PHONY: api-specembed-sync
+api-specembed-sync: ## Sync canonical OpenAPI spec into runtime embed package
+	@mkdir -p $(dir $(SPECEMBED_SPEC))
+	@cp $(OPENAPI_SPEC) $(SPECEMBED_SPEC)
 
 .PHONY: api-generate-go
 api-generate-go: ## Generate Go server code
@@ -70,8 +77,12 @@ api-compat: ## Verify compat spec exists and is fresh (set REQUIRE_OPENAPI_COMPA
 	@bash ./docs/design/ci/scripts/openapi-compat.sh
 
 .PHONY: api-compat-generate
-api-compat-generate: ## Generate OpenAPI 3.0-compatible spec (placeholder)
-	@bash ./docs/design/ci/scripts/openapi-compat-generate.sh
+api-compat-generate: ## Generate OpenAPI 3.0-compatible spec (Go-native)
+	@$(OPENAPI_COMPAT_GEN_CMD) $(OPENAPI_SPEC) $(COMPAT_SPEC)
+
+.PHONY: api-contract-test
+api-contract-test: ## Run runtime OpenAPI contract tests
+	@go test ./internal/api/middleware/... -run OpenAPI -count=1
 
 .PHONY: api-breaking
 api-breaking: ## Detect breaking changes vs main branch
@@ -82,6 +93,9 @@ api-breaking: ## Detect breaking changes vs main branch
 	else \
 		echo "⚠️  No base spec found on main branch (new API?)"; \
 	fi
+
+.PHONY: api-diff
+api-diff: api-breaking ## Compatibility alias for Issue #85 terminology
 
 .PHONY: api-changelog
 api-changelog: ## Generate changelog vs main branch
@@ -153,6 +167,7 @@ api-help: ## Show API-related targets
 	@echo ""
 	@echo "CI/Review:"
 	@echo "  api-check      Verify generated code is in sync"
+	@echo "  api-diff       Alias of api-breaking (compatibility)"
 	@echo "  api-breaking   Detect breaking changes vs main"
 	@echo "  api-changelog  Generate changelog vs main"
 	@echo ""
