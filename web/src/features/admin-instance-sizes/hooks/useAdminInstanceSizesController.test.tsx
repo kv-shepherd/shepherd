@@ -200,7 +200,7 @@ describe('useAdminInstanceSizesController', () => {
         disk_gb: 80,
         dedicated_cpu: false,
         enabled: true,
-      } as any);
+      });
     });
 
     editFormState.validateFields.mockResolvedValue({
