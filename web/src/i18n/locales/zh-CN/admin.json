@@ -170,7 +170,7 @@
     "instanceSizes.memory": "内存",
     "instanceSizes.disk": "磁盘",
     "instanceSizes.cpu_request": "CPU 请求值（核）",
-    "instanceSizes.memory_request": "内存请求值（MB）",
+    "instanceSizes.memory_request": "内存请求值（Gi）",
     "instanceSizes.sort_order": "排序值",
     "instanceSizes.capabilities": "特殊能力",
     "instanceSizes.dedicated": "独占 CPU",
