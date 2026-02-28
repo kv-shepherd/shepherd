@@ -150,11 +150,26 @@ For detailed implementation specifications including CI pipeline configuration a
 
 ---
 
+## Amendments by Subsequent ADRs
+
+### ADR-0037 Amendment (2026-02-28)
+
+This ADR is amended by [ADR-0037](./ADR-0037-openapi-validation-architecture-and-enforcement-policy.md) with the following clarifications:
+
+1. Runtime validator spec source is the canonical embedded artifact (`internal/api/specembed/openapi.yaml`), not `generated.GetSwagger()`.
+2. Validator lifecycle policy is fixed to per-request instance creation (no cross-request reuse).
+3. `api/openapi.compat.yaml` is a derived artifact used for Go code generation only; it must not be used for runtime validation, linting, or frontend type generation.
+4. Generated-code gate ordering is fixed as: `api-compat-generate -> api-generate -> api-compat -> sync diff`.
+5. Compatibility terminology is normalized: `api-diff` is a compatibility alias for `api-breaking`.
+
+---
+
 ## Changelog
 
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-02-03 | @jindyzhao | Initial draft |
+| 2026-02-28 | @jindyzhao | Append ADR-0037 amendment block (runtime source, lifecycle, compat scope, CI order, alias normalization) |
 
 ---
 

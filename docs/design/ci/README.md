@@ -257,7 +257,7 @@ ci/
 | `workflows/docs-links-advisory.yaml` | GitHub Actions for advisory dead-link checks (lychee + custom) | `.github/workflows/` |
 | `scripts/api-check.sh` | Verifies generated code is in sync | `scripts/` |
 | `scripts/openapi-compat.sh` | Enforces OpenAPI compat spec presence/freshness | `scripts/` |
-| `scripts/openapi-compat-generate.sh` | Generates a minimal OpenAPI 3.0.3 compat artifact (rewrites version; fails on detected 3.1-only keywords) | `scripts/` |
+| `cmd/openapi-compat-gen/main.go` | Generates OpenAPI 3.0.3 compat artifact from canonical 3.1 spec (Go-native, fail-closed) | `cmd/openapi-compat-gen/` |
 | ~~`spectral/.spectral.yaml`~~ | ~~OpenAPI linting rules~~ | ~~Deprecated by ADR-0029~~ |
 | `vacuum/.vacuum.yaml` | **Vacuum ruleset** (ADR-0029) | `api/` |
 | `api-templates/openapi.yaml` | Starting OpenAPI specification | `api/` |
@@ -281,11 +281,11 @@ ci/
 
 - **Linting**: **Vacuum** (ADR-0029) is the linter for OpenAPI specs. Vacuum is fully compatible with Spectral rulesets.
 - **Breaking changes**: `oasdiff` is used to detect breaking changes between base and PR specs.
-- **OpenAPI 3.1**: The canonical spec remains 3.1, but Go tooling (`oapi-codegen`, `kin-openapi`) targets 3.0.x. If 3.1-only features are used, generate `api/openapi.compat.yaml` (3.0-compatible) for Go codegen and validation while preserving `api/openapi.yaml` as the source of truth.
+- **OpenAPI 3.1**: The canonical spec remains 3.1. Go codegen currently uses a 3.0-compatible derived artifact (`api/openapi.compat.yaml`) while preserving `api/openapi.yaml` as the source of truth.
 - **Frontend types**: `openapi-typescript` can consume OpenAPI 3.1 directly.
 - **Contract validation**: `libopenapi-validator` (ADR-0029) validates requests/responses against the OpenAPI spec in middleware with **StrictMode**.
 - **Compat enforcement**: `openapi-compat.sh` checks `api/openapi.compat.yaml` is present and up to date; set `REQUIRE_OPENAPI_COMPAT=1` in CI to block merges when compat spec is required.
-- **Compat generation**: `openapi-compat-generate.sh` currently performs a minimal 3.0.3 rewrite and blocks obvious 3.1-only keywords; upgrade to a full overlay transform before enabling strict compat in 3.1-heavy specs.
+- **Compat generation**: `make api-compat-generate` uses `cmd/openapi-compat-gen/main.go` (Go-native `yaml.Node` traversal) and fails closed on unsupported 3.1 constructs.
 - **Critical fingerprint lock**: `check_openapi_critical_fingerprint.go` compares critical OpenAPI nodes against `docs/design/ci/locks/openapi-critical.lock`; after intentional contract change, refresh with `go run docs/design/ci/scripts/check_openapi_critical_fingerprint.go -write-lock` in the same commit.
 - **Version pinning**: tool versions must be read from `docs/design/DEPENDENCIES.md` (do not hardcode in other docs).
 
@@ -330,7 +330,7 @@ When transitioning from Design Phase to Coding Phase:
 7. **If needed**: add a spec-compat step (3.1 → 3.0) that writes `api/openapi.compat.yaml` for Go codegen/validation until 3.1 support is available.
 8. **CI enforcement**: run `REQUIRE_OPENAPI_COMPAT=1 make api-compat` once 3.1-only features are used.
 9. **Block merges**: add `make api-check` (and `REQUIRE_OPENAPI_COMPAT=1 make api-compat` when required) as required CI checks before any coding begins.
-10. **Compat generation hardening**: replace the current minimal compat rewrite with a full overlay-based transform before enabling `REQUIRE_OPENAPI_COMPAT=1` for 3.1-heavy specs.
+10. **Compat generation hardening**: keep fail-closed behavior in `cmd/openapi-compat-gen/main.go`; if unsupported 3.1 constructs are introduced, CI must fail until conversion rules are explicitly extended.
 11. **Enforce middleware**: Keep `internal/api/middleware/openapi_validator.go` runtime validator implemented and router-wired (`internal/app/router.go`), with environment-aware error handling.
 12. **Enable docs governance workflow**: ensure `.github/workflows/docs-governance.yaml` runs `check_design_doc_governance.sh` as a required PR check before coding.
 13. **Verify locally**: `bash docs/design/ci/scripts/check_design_doc_governance.sh`
