@@ -143,6 +143,44 @@ func TestOpenAPIValidatorRejectsUndeclaredQueryParamInStrictMode(t *testing.T) {
 	assertErrorCode(t, resp.Body.Bytes(), "OPENAPI_REQUEST_INVALID")
 }
 
+func TestOpenAPIValidatorAllowsUndeclaredCookieInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/health/live", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live", nil)
+	req.AddCookie(&http.Cookie{Name: "__next_hmr_refresh_hash__", Value: "dev"})
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for undeclared cookie in strict mode, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsBrowserRuntimeHeadersInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.POST("/api/v1/auth/login", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"token": "ok"})
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"username":"admin","password":"admin"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Dnt", "1")
+	req.Header.Set("Sec-Ch-Ua", `"Chromium";v="132", "Not=A?Brand";v="99"`)
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Priority", "u=1, i")
+	req.Header.Set("X-Forwarded-Host", "10.1.111.111:3000")
+	req.Header.Set("X-Forwarded-Port", "3000")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for browser runtime headers in strict mode, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestOpenAPIValidatorAcceptsValidVMCreateRequest(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.POST("/api/v1/vms/request", func(c *gin.Context) {
@@ -196,6 +234,85 @@ func TestOpenAPIValidatorRejectsInvalidResponseBody(t *testing.T) {
 
 	if resp.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 for invalid response schema, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	assertErrorCode(t, resp.Body.Bytes(), "OPENAPI_RESPONSE_INVALID")
+}
+
+func TestOpenAPIValidatorAcceptsReadinessDegradedResponse(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/health/ready", func(c *gin.Context) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status": "degraded",
+			"checks": gin.H{"database": "error"},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for readiness degraded response, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAcceptsDynamicSchemaResponse(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/schemas/:entity_type", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"schema": gin.H{
+				"$id":         "kv-shepherd:instancesize:kubevirt-v1.7.0",
+				"$schema":     "https://json-schema.org/draft/2020-12/schema",
+				"title":       "KubeVirt VirtualMachineSpec",
+				"type":        "object",
+				"description": "schema payload from backend cache",
+				"properties": gin.H{
+					"spec": gin.H{
+						"type": "object",
+					},
+				},
+			},
+			"mask": gin.H{
+				"quick_fields": []gin.H{
+					{
+						"path":         "spec.template.spec.domain.cpu.cores",
+						"display_name": "CPU Cores",
+					},
+				},
+			},
+			"schema_version": "1.7.0",
+			"source":         "embedded",
+			"degraded":       false,
+			"fetched_at":     time.Now().UTC().Format(time.RFC3339),
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/schemas/instancesize", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dynamic schema response, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorRejectsSchemaFieldOutsideDynamicSchemaEndpoint(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/health/live", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status": "ok",
+			"schema": gin.H{
+				"unexpected": true,
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for undeclared schema field outside /schemas/*, got %d body=%s", resp.Code, resp.Body.String())
 	}
 	assertErrorCode(t, resp.Body.Bytes(), "OPENAPI_RESPONSE_INVALID")
 }

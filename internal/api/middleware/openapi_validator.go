@@ -103,7 +103,14 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 	c.Next()
 
 	if v.validateResponse {
-		responseValidator, err := v.newValidator()
+		responseIgnorePaths := []string{}
+		if shouldIgnoreDynamicSchemaResponseBody(c.Request, v.basePath) {
+			// Keep strict validation globally, but allow dynamic JSON Schema payload
+			// only on the canonical /schemas/* response body subtree.
+			responseIgnorePaths = append(responseIgnorePaths, "$.body.schema")
+		}
+
+		responseValidator, err := v.newValidator(responseIgnorePaths...)
 		if err != nil {
 			logger.Error("OpenAPI validator setup failed for response validation",
 				zap.String("method", c.Request.Method),
@@ -143,8 +150,44 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 	}
 }
 
-func (v *openAPIRuntimeValidator) newValidator() (validator.Validator, error) {
-	openapiValidator, errs := validator.NewValidator(v.document, validatorconfig.WithStrictMode())
+func shouldIgnoreDynamicSchemaResponseBody(request *http.Request, basePath string) bool {
+	if request == nil || request.URL == nil {
+		return false
+	}
+	if request.Method != http.MethodGet {
+		return false
+	}
+	path := normalizeValidationPath(basePath, request.URL.Path)
+	return strings.HasPrefix(path, "/schemas/")
+}
+
+func (v *openAPIRuntimeValidator) newValidator(extraStrictIgnorePaths ...string) (validator.Validator, error) {
+	// Browser clients may attach framework/runtime cookies and forwarding headers
+	// that are unrelated to API contract parameters. Keep strict mode for API
+	// governance, but ignore these transport/runtime artifacts.
+	strictIgnorePaths := []string{"$.cookies.*"}
+	if len(extraStrictIgnorePaths) > 0 {
+		strictIgnorePaths = append(strictIgnorePaths, extraStrictIgnorePaths...)
+	}
+
+	openapiValidator, errs := validator.NewValidator(
+		v.document,
+		validatorconfig.WithStrictMode(),
+		validatorconfig.WithStrictIgnoredHeadersExtra(
+			"dnt",
+			"priority",
+			"x-forwarded-host",
+			"x-forwarded-port",
+			"sec-ch-ua",
+			"sec-ch-ua-mobile",
+			"sec-ch-ua-platform",
+			"sec-fetch-dest",
+			"sec-fetch-mode",
+			"sec-fetch-site",
+			"sec-fetch-user",
+		),
+		validatorconfig.WithStrictIgnorePaths(strictIgnorePaths...),
+	)
 	if len(errs) == 0 {
 		return openapiValidator, nil
 	}

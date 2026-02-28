@@ -80,7 +80,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/Health'
   # ── Schemas ─────────────────────────────────────────
   /schemas/{entity_type}:
     get:
@@ -2074,6 +2074,21 @@ components:
         display_name:
           type: string
           description: Desired localized or standardized label for the UI form projection.
+        display_name_key:
+          type: string
+          description: Optional i18n key for localized field label lookup.
+        help_text:
+          type: string
+          description: Optional plain help text shown via tooltip/help icon.
+        help_key:
+          type: string
+          description: Optional i18n key for localized help text lookup.
+        placeholder:
+          type: string
+          description: Optional plain placeholder shown in form control.
+        placeholder_key:
+          type: string
+          description: Optional i18n key for localized placeholder lookup.
     SchemaMask:
       type: object
       required: [quick_fields]
@@ -2093,7 +2108,7 @@ components:
         schema:
           type: object
           description: Full structure representing the requested JSON Schema payload.
-          additionalProperties: {}
+          additionalProperties: true
         mask:
           $ref: '#/components/schemas/SchemaMask'
         schema_version:
@@ -2132,6 +2147,9 @@ components:
           type: string
         checks:
           type: object
+          properties:
+            database:
+              type: string
           additionalProperties:
             type: string
     Error:
@@ -2649,28 +2667,32 @@ components:
 
         cpu_request:
           x-oapi-codegen-extra-tags:
-            validate: "gte=1"
-          type: integer
-          minimum: 1
+            validate: "gte=0.5"
+          type: number
+          minimum: 0.5
+          multipleOf: 0.5
           description: CPU request in cores (overcommit scenario, Stage 5.B)
         cpu_limit:
           x-oapi-codegen-extra-tags:
-            validate: "gte=1"
-          type: integer
-          minimum: 1
+            validate: "gte=0.5"
+          type: number
+          minimum: 0.5
+          multipleOf: 0.5
           description: CPU limit in cores (Stage 5.B)
-        memory_request_mb:
+        memory_request_gi:
           x-oapi-codegen-extra-tags:
-            validate: "gte=1"
-          type: integer
-          minimum: 1
-          description: Memory request in MB (Stage 5.B)
-        memory_limit_mb:
+            validate: "gte=0.5"
+          type: number
+          minimum: 0.5
+          multipleOf: 0.5
+          description: Memory request in Gi (Stage 5.B)
+        memory_limit_gi:
           x-oapi-codegen-extra-tags:
-            validate: "gte=1"
-          type: integer
-          minimum: 1
-          description: Memory limit in MB (Stage 5.B)
+            validate: "gte=0.5"
+          type: number
+          minimum: 0.5
+          multipleOf: 0.5
+          description: Memory limit in Gi (Stage 5.B)
         disk_gb:
           x-oapi-codegen-extra-tags:
             validate: "gte=1"
@@ -2873,7 +2895,7 @@ components:
     # ── Instance Size (ADR-0018) ────────────────────
     InstanceSize:
       type: object
-      required: [id, name, cpu_cores, memory_mb]
+      required: [id, name, cpu_cores, memory_gi]
       properties:
         id:
           type: string
@@ -2884,9 +2906,9 @@ components:
         description:
           type: string
         cpu_cores:
-          type: integer
-        memory_mb:
-          type: integer
+          type: number
+        memory_gi:
+          type: number
         disk_gb:
           type: integer
         dedicated_cpu:
@@ -2909,7 +2931,7 @@ components:
           format: date-time
     InstanceSizeCreateRequest:
       type: object
-      required: [name, cpu_cores, memory_mb]
+      required: [name, cpu_cores, memory_gi]
       properties:
         name:
           x-oapi-codegen-extra-tags:
@@ -2921,14 +2943,16 @@ components:
           type: string
         cpu_cores:
           x-oapi-codegen-extra-tags:
-            validate: "required,gte=1"
-          type: integer
-          minimum: 1
-        memory_mb:
+            validate: "required,gte=0.5"
+          type: number
+          minimum: 0.5
+          multipleOf: 0.5
+        memory_gi:
           x-oapi-codegen-extra-tags:
-            validate: "required,gte=1"
-          type: integer
-          minimum: 1
+            validate: "required,gte=0.5"
+          type: number
+          minimum: 0.5
+          multipleOf: 0.5
         disk_gb:
           x-oapi-codegen-extra-tags:
             validate: "gte=1"
@@ -2936,14 +2960,16 @@ components:
           minimum: 1
         cpu_request:
           x-oapi-codegen-extra-tags:
-            validate: "gte=1"
-          type: integer
-          minimum: 1
-        memory_request_mb:
+            validate: "gte=0.5"
+          type: number
+          minimum: 0.5
+          multipleOf: 0.5
+        memory_request_gi:
           x-oapi-codegen-extra-tags:
-            validate: "gte=1"
-          type: integer
-          minimum: 1
+            validate: "gte=0.5"
+          type: number
+          minimum: 0.5
+          multipleOf: 0.5
         dedicated_cpu:
           type: boolean
         requires_gpu:
@@ -2972,29 +2998,35 @@ components:
           type: string
         cpu_cores:
           x-oapi-codegen-extra-tags:
-            validate: "gte=1"
-          type: integer
-          minimum: 1
-        memory_mb:
+            validate: "gte=0.5"
+          type: number
+          minimum: 0.5
+          multipleOf: 0.5
+        memory_gi:
           x-oapi-codegen-extra-tags:
-            validate: "gte=1"
-          type: integer
-          minimum: 1
+            validate: "gte=0.5"
+          type: number
+          minimum: 0.5
+          multipleOf: 0.5
         disk_gb:
           x-oapi-codegen-extra-tags:
             validate: "gte=1"
           type: integer
           minimum: 1
         cpu_request:
+          description: CPU request in cores. Set `0` to clear override and fall back to cpu_cores.
           x-oapi-codegen-extra-tags:
-            validate: "gte=1"
-          type: integer
-          minimum: 1
-        memory_request_mb:
+            validate: "gte=0"
+          type: number
+          minimum: 0
+          multipleOf: 0.5
+        memory_request_gi:
+          description: Memory request in Gi. Set `0` to clear override and fall back to memory_gi.
           x-oapi-codegen-extra-tags:
-            validate: "gte=1"
-          type: integer
-          minimum: 1
+            validate: "gte=0"
+          type: number
+          minimum: 0
+          multipleOf: 0.5
         dedicated_cpu:
           type: boolean
         requires_gpu:
