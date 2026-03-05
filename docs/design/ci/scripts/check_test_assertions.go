@@ -101,6 +101,10 @@ func main() {
 				if !strings.HasPrefix(funcDecl.Name.Name, "Test") {
 					continue
 				}
+				// TestMain is process-level setup/teardown and typically has no assertions.
+				if funcDecl.Name.Name == "TestMain" {
+					continue
+				}
 
 				// Ensure test body contains at least one assertion call.
 				if !hasAssertion(funcDecl.Body) {

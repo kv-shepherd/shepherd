@@ -56,7 +56,7 @@ func main() {
 		"TestSystemHandler_DeleteService_Success",
 	})
 	checkFragments(&violations, frontendVMHookTestPath, []string{
-		"deleteVM('vm-2', 'vm-two')",
+		"deleteVM('vm-2', 'vm-two',",
 		"expect(deleteMutate).toHaveBeenCalledWith({ vmId: 'vm-2', vmName: 'vm-two' });",
 	})
 	checkFragments(&violations, frontendSystemHookTestPath, []string{
@@ -67,8 +67,9 @@ func main() {
 		"expect(deleteMutate).toHaveBeenCalledWith({ systemId: 'sys-1', serviceId: 'svc-1' });",
 	})
 	checkFragments(&violations, frontendLiveE2EPath, []string{
-		"system delete enforces confirm_name and calls real Stage 5.D API",
-		"service delete sends confirm=true and returns conflict when child VMs exist",
+		"Stage 5.D – deleteService returns 409 when child VMs exist (cascade guard)",
+		"deleteSystem with confirm_name guard",
+		"deleteService with confirm=true",
 		"confirm_name=",
 		"SERVICE_HAS_VMS",
 	})

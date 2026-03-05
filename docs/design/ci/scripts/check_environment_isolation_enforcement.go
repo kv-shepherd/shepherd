@@ -18,7 +18,7 @@ func main() {
 		{
 			path: "internal/governance/approval/gateway.go",
 			fragments: []string{
-				"ValidateApproval(ctx, clusterID, effectiveInstanceSizeID, payload.Namespace)",
+				"ValidateApproval(ctx, opts.ClusterID, effectiveInstanceSizeID, payload.Namespace)",
 			},
 		},
 		{
