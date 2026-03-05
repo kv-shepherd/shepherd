@@ -37,8 +37,9 @@ type stageTestMatrix struct {
 }
 
 type stageTestMapping struct {
-	ID    string   `json:"id"`
-	Tests []string `json:"tests"`
+	ID              string   `json:"id"`
+	Tests           []string `json:"tests"`
+	LiveStepMarkers []string `json:"live_step_markers,omitempty"`
 }
 
 func main() {
@@ -94,6 +95,7 @@ func main() {
 
 	mappingByID := make(map[string]stageTestMapping, len(matrix.Stages))
 	stageExecutableCoverage := make(map[string]bool, len(matrix.Stages))
+	liveSpecContentCache := make(map[string]string)
 	for _, mapping := range matrix.Stages {
 		stageID := strings.TrimSpace(mapping.ID)
 		if stageID == "" {
@@ -115,6 +117,7 @@ func main() {
 		}
 
 		seen := make(map[string]struct{}, len(mapping.Tests))
+		liveSpecPaths := make([]string, 0, len(mapping.Tests))
 		for _, path := range mapping.Tests {
 			testPath := strings.TrimSpace(path)
 			if testPath == "" {
@@ -133,6 +136,44 @@ func main() {
 				continue
 			}
 			stageExecutableCoverage[stageID] = true
+			if strings.HasSuffix(strings.ToLower(testPath), "-live.spec.ts") {
+				liveSpecPaths = append(liveSpecPaths, testPath)
+			}
+		}
+
+		if len(mapping.LiveStepMarkers) > 0 {
+			if len(liveSpecPaths) == 0 {
+				violations = append(
+					violations,
+					fmt.Sprintf("stage %q declares live_step_markers but has no mapped *-live.spec.ts test file", stageID),
+				)
+				continue
+			}
+			seenMarker := make(map[string]struct{}, len(mapping.LiveStepMarkers))
+			for _, rawMarker := range mapping.LiveStepMarkers {
+				marker := strings.TrimSpace(rawMarker)
+				if marker == "" {
+					violations = append(violations, fmt.Sprintf("stage %q has empty live_step_markers entry", stageID))
+					continue
+				}
+				if _, dup := seenMarker[marker]; dup {
+					violations = append(violations, fmt.Sprintf("stage %q has duplicate live_step_markers entry %q", stageID, marker))
+					continue
+				}
+				seenMarker[marker] = struct{}{}
+
+				ok, err := markerExistsInAnyFile(liveSpecPaths, marker, liveSpecContentCache)
+				if err != nil {
+					violations = append(violations, fmt.Sprintf("stage %q marker %q check failed: %v", stageID, marker, err))
+					continue
+				}
+				if !ok {
+					violations = append(
+						violations,
+						fmt.Sprintf("stage %q marker %q not found in mapped live specs (%s)", stageID, marker, strings.Join(liveSpecPaths, ", ")),
+					)
+				}
+			}
 		}
 	}
 
@@ -334,6 +375,24 @@ func hasJSTestMarker(path string) (bool, error) {
 		return false, err
 	}
 	return jsTestRe.Match(b), nil
+}
+
+func markerExistsInAnyFile(paths []string, marker string, cache map[string]string) (bool, error) {
+	for _, path := range paths {
+		content, ok := cache[path]
+		if !ok {
+			b, err := os.ReadFile(path)
+			if err != nil {
+				return false, err
+			}
+			content = string(b)
+			cache[path] = content
+		}
+		if strings.Contains(content, marker) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func hasGoTestFunction(path string) (bool, error) {

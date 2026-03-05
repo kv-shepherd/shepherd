@@ -112,16 +112,16 @@
 
 | Pattern | Reason | CI Check Script |
 |---------|--------|-----------------|
-| GORM import | Use Ent only | `check_no_gorm_import.go` |
+| GORM import | Use Ent only | `shepherd-arch/forbiddenimports` |
 | Redis import | PostgreSQL only in V1 | `check_no_redis_import.sh` |
 | SQLite usage in tests | PostgreSQL-only policy across runtime and tests | `check_no_sqlite_in_tests.go` |
-| Naked goroutines | Use worker pool (ADR-0031) | `check_naked_goroutine.go` |
+| Naked goroutines | Use worker pool (ADR-0031) | `shepherd-arch/nakedgoroutine` |
 | Wire import | Manual DI only | `check_manual_di.sh` |
-| Outbox pattern | Use River directly | `check_no_outbox_import.go` |
+| Outbox pattern | Use River directly | `shepherd-arch/forbiddenimports` |
 | sqlc outside whitelist | Limited to specific dirs | `check_sqlc_usage.sh` |
-| Handler manages transactions | UseCase layer only | `check_transaction_boundary.go` |
+| Handler manages transactions | UseCase layer only | `shepherd-arch/txboundary` |
 | K8s calls in transactions | Two-phase pattern only | `check_k8s_in_transaction.go` |
-| Unsafe semaphore usage | Always `defer Release()` (ADR-0031) | `check_semaphore_usage.go` |
+| Unsafe semaphore usage | Always `defer Release()` (ADR-0031) | `shepherd-arch/semaphoreusage` |
 | Runtime code change without corresponding test delta | Enforce test-first delivery | `check_changed_code_has_tests.sh` |
 
 ---
@@ -134,9 +134,9 @@
 
 | ADR | Constraint | Scope | Enforcement |
 |-----|------------|-------|-------------|
-| [ADR-0003](../adr/ADR-0003-database-orm.md) | Ent ORM only, no GORM | All data access | CI: `check_no_gorm_import.go` |
+| [ADR-0003](../adr/ADR-0003-database-orm.md) | Ent ORM only, no GORM | All data access | CI: `shepherd-arch/forbiddenimports` |
 | [ADR-0008](../adr/ADR-0008-postgresql-stability.md) | PostgreSQL-only baseline; no SQLite fallback in test path | Runtime + tests | CI: `check_no_sqlite_in_tests.go` |
-| [ADR-0006](../adr/ADR-0006-unified-async-model.md) | All K8s operations via River Queue | External API calls¹ | CI: `check_river_bypass.go` |
+| [ADR-0006](../adr/ADR-0006-unified-async-model.md) | All K8s operations via River Queue | External API calls¹ | CI: `shepherd-arch/riverbypass` |
 | [ADR-0009](../adr/ADR-0009-domain-event-pattern.md) | Payload is immutable (append-only) | DomainEvent table | Code Review |
 | [ADR-0012](../adr/ADR-0012-hybrid-transaction.md) | K8s calls outside DB transactions | UseCase layer | CI: `check_k8s_in_transaction.go` |
 | [ADR-0013](../adr/ADR-0013-manual-di.md) | Manual DI, no Wire/fx | All DI | CI: `check_manual_di.sh` |
@@ -149,7 +149,7 @@
 | [ADR-0025](../adr/ADR-0025-secret-bootstrap.md) | Auto-generate secrets on first boot; priority: env vars > DB-generated | Bootstrap flow | Code Review |
 | [ADR-0028](../adr/ADR-0028-oapi-codegen-optional-field-strategy.md) | oapi-codegen with `omitzero`; Go 1.25+ required | API code generation | CI: `make generate` |
 | [ADR-0029](../adr/ADR-0029-openapi-toolchain-governance.md) | Vacuum for linting, libopenapi-validator | API toolchain | CI: `make api-lint` |
-| [ADR-0031](../adr/ADR-0031-concurrency-and-worker-pool-standard.md) | No naked `go` statements; worker pool with context propagation; semaphore Acquire/Release leak-safe | In-process concurrency | CI: `check_naked_goroutine.go`, `check_semaphore_usage.go` |
+| [ADR-0031](../adr/ADR-0031-concurrency-and-worker-pool-standard.md) | No naked `go` statements; worker pool with context propagation; semaphore Acquire/Release leak-safe | In-process concurrency | CI: `shepherd-arch/nakedgoroutine`, `shepherd-arch/semaphoreusage` |
 | [ADR-0034](../adr/ADR-0034-master-flow-spec-driven-test-first.md) | Required master-flow stages must have executable tests or explicit deferred debt; runtime code diffs must carry test diffs | Cross-layer interaction delivery | CI: `check_master_flow_test_matrix.go`, `check_changed_code_has_tests.sh` |
 
 > ¹ **ADR-0006 Scope Clarification**: "All writes via River Queue" applies to operations requiring external system calls (K8s API).

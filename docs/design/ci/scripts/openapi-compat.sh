@@ -36,7 +36,17 @@ if [ ! -f "${COMPAT_SPEC}" ]; then
     exit 0
 fi
 
-if [ "${COMPAT_SPEC}" -ot "${CANONICAL_SPEC}" ]; then
+# Compare by regenerated content instead of file mtimes.
+# Git checkouts may assign non-meaningful timestamps and cause false negatives in CI.
+TMP_COMPAT="$(mktemp)"
+trap 'rm -f "${TMP_COMPAT}"' EXIT
+if ! (cd "${PROJECT_ROOT}" && go run ./cmd/openapi-compat-gen/main.go "${CANONICAL_SPEC}" "${TMP_COMPAT}") >/dev/null 2>&1; then
+    echo -e "${RED}❌ Failed to generate OpenAPI compat artifact for verification.${NC}"
+    echo "Ensure cmd/openapi-compat-gen builds and canonical spec is valid."
+    exit 1
+fi
+
+if ! cmp -s "${COMPAT_SPEC}" "${TMP_COMPAT}"; then
     echo -e "${RED}❌ OpenAPI compat spec is stale.${NC}"
     echo "Canonical: api/openapi.yaml"
     echo "Compat:    api/openapi.compat.yaml"

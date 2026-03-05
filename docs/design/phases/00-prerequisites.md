@@ -261,7 +261,8 @@ pools.General.Submit(func() {
 
 ### CI Enforcement
 
-See [ci/scripts/check_naked_goroutine.go](../ci/scripts/check_naked_goroutine.go) and [ci/scripts/check_semaphore_usage.go](../ci/scripts/check_semaphore_usage.go).
+See [ci/README.md §Script Summary](../ci/README.md#script-summary) and
+[tools/shepherd-linter/README.md](../../../tools/shepherd-linter/README.md) for current architecture-enforcement entry points.
 
 ---
 

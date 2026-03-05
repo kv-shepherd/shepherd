@@ -46,7 +46,8 @@ func main() {
 		{
 			path: "web/tests/e2e/master-flow-live.spec.ts",
 			required: []string{
-				"auth provider flow uses discovered types and performs create/delete",
+				"Stage 2.B – listAuthProviderTypes: auth provider type list conforms to AuthProviderTypeList schema",
+				"Stage 2.B – listAuthProviders: auth provider list conforms to AuthProviderList schema",
 				"/api/v1/admin/auth-provider-types",
 				"/api/v1/admin/auth-providers",
 			},

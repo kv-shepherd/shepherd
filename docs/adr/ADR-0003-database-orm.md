@@ -262,7 +262,7 @@ func WithTx(ctx context.Context, client *ent.Client, fn func(tx *ent.Tx) error) 
 ### Mitigation
 
 - CI checks for Ent codegen sync (`check_ent_codegen.go`)
-- Forbidden GORM imports (`check_forbidden_imports.go`)
+- Forbidden GORM imports (enforced by `shepherd-arch/forbiddenimports`)
 
 ---
 

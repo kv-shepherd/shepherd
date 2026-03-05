@@ -1,10 +1,16 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg check-kubevirt-ssa
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg
 
 # Go parameters
 GOCMD=go
+
+# golangci-lint binary — prefer PATH, fall back to ~/go/bin (ADR-0039)
+GOLANGCI_LINT=$(shell which golangci-lint 2>/dev/null || echo $(HOME)/go/bin/golangci-lint)
+
+# shepherd-linter paths (ADR-0039)
+SHEPHERD_LINTER_DIR=tools/shepherd-linter
 GOBUILD=$(GOCMD) build
 GOTEST=$(GOCMD) test
 GOMOD=$(GOCMD) mod
@@ -60,9 +66,56 @@ test-cover:
 	$(GOTEST) -race -coverprofile=coverage.out -covermode=atomic -timeout=300s ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 
-## lint: Run golangci-lint
-lint:
-	golangci-lint run ./...
+## lint: Run golangci-lint (auto-detects module plugin via .custom-gcl.yml; ADR-0039)
+## Depends on lint-version-check to fail fast on golang.org/x/tools version drift.
+lint: lint-version-check
+	@if [ -f .custom-gcl.yml ]; then \
+		if [ ! -f ./custom-gcl ] || [ .custom-gcl.yml -nt ./custom-gcl ]; then \
+			echo "Building custom golangci-lint binary (module plugin)..."; \
+			$(GOLANGCI_LINT) custom; \
+		fi; \
+		echo "Running custom-gcl (includes shepherd-arch)..."; \
+		./custom-gcl run ./...; \
+	else \
+		$(GOLANGCI_LINT) run ./...; \
+	fi
+
+## lint-arch: Run architecture enforcement linters via shepherd-lint binary (ADR-0039)
+## Replaces individual 'go run docs/design/ci/scripts/check_*.go' invocations for Batch 1 scripts.
+lint-arch:
+	@if [ ! -f $(BUILD_DIR)/shepherd-lint ]; then $(MAKE) build-shepherd-lint; fi
+	./$(BUILD_DIR)/shepherd-lint ./internal/... ./cmd/... ./pkg/...
+
+## lint-version-check: Verify golang.org/x/tools version alignment between golangci-lint and shepherd-linter/go.mod
+## Prevents plugin ABI mismatches (ADR-0039 §critical constraint).
+lint-version-check:
+	@set -e; \
+	GCLLINT=$$(command -v golangci-lint 2>/dev/null || echo "$$HOME/go/bin/golangci-lint"); \
+	LINT_VER=$$(go version -m "$$GCLLINT" 2>/dev/null | awk '/golang\.org\/x\/tools/{print $$3}'); \
+	MOD_VER=$$(awk '/^require golang\.org\/x\/tools /{print $$3} /^\tgolang\.org\/x\/tools /{print $$2}' $(SHEPHERD_LINTER_DIR)/go.mod | head -1); \
+	if [ -z "$$LINT_VER" ]; then \
+		echo "WARNING (ADR-0039): cannot detect golang.org/x/tools version from golangci-lint binary"; \
+		exit 0; \
+	fi; \
+	if [ "$$LINT_VER" != "$$MOD_VER" ]; then \
+		echo "ERROR (ADR-0039): golang.org/x/tools version mismatch!"; \
+		echo "  golangci-lint built with: $$LINT_VER"; \
+		echo "  shepherd-linter go.mod:  $$MOD_VER"; \
+		echo "  Fix: run 'cd tools/shepherd-linter && go get golang.org/x/tools@$$LINT_VER && go mod tidy'"; \
+		exit 1; \
+	fi; \
+	echo "OK (ADR-0039): golang.org/x/tools aligned at $$LINT_VER"
+
+## build-shepherd-lint: Build the shepherd-lint architecture enforcement binary (ADR-0039)
+build-shepherd-lint:
+	@echo "Building shepherd-lint..."
+	@mkdir -p $(BUILD_DIR)
+	cd $(SHEPHERD_LINTER_DIR) && $(GOCMD) build -o ../../$(BUILD_DIR)/shepherd-lint ./cmd/shepherd-lint/
+	@echo "shepherd-lint built: $(BUILD_DIR)/shepherd-lint"
+
+## shepherd-lint: Build and run shepherd-lint on the main project (ADR-0039)
+shepherd-lint: build-shepherd-lint
+	./$(BUILD_DIR)/shepherd-lint ./internal/... ./cmd/... ./pkg/...
 
 ## fmt: Format code
 fmt:
@@ -125,10 +178,6 @@ test-backend-docker-pg:
 ## master-flow-strict-docker-pg: Run master-flow strict chain against an isolated Docker PostgreSQL container
 master-flow-strict-docker-pg:
 	./scripts/run_with_docker_pg.sh -- make master-flow-strict
-
-## check-kubevirt-ssa: Verify KubeVirt write paths use SSA (ADR-0011)
-check-kubevirt-ssa:
-	go run docs/design/ci/scripts/check_kubevirt_ssa_compliance.go
 
 ## help: Show this help message
 help:

@@ -3,14 +3,14 @@
 // scripts/ci/check_dead_tests.go
 
 /*
-死测试检测 - CI 警告（不阻断）
+Dead test detection - CI warning (non-blocking)
 
-检查规则：
-1. 检测只有 t.Skip() 的测试
-2. 检测被注释掉的测试逻辑
-3. 检测空函数体的测试
+Rules:
+1. Detect tests containing only t.Skip().
+2. Detect tests with commented-out/placeholder-only logic.
+3. Detect tests with empty function bodies.
 
-这是警告级别，不会阻断 CI。
+This check is warning-level and does not block CI.
 */
 
 package main
@@ -64,35 +64,35 @@ func main() {
 					continue
 				}
 
-				// 检查空函数体
+				// Empty function body.
 				if funcDecl.Body == nil || len(funcDecl.Body.List) == 0 {
 					warnings = append(warnings, deadTest{
 						file:   path,
 						line:   fset.Position(funcDecl.Pos()).Line,
 						name:   funcDecl.Name.Name,
-						reason: "空函数体",
+						reason: "empty function body",
 					})
 					continue
 				}
 
-				// 检查只有 t.Skip 的测试
+				// t.Skip-only test.
 				if isOnlySkip(funcDecl.Body) {
 					warnings = append(warnings, deadTest{
 						file:   path,
 						line:   fset.Position(funcDecl.Pos()).Line,
 						name:   funcDecl.Name.Name,
-						reason: "只有 t.Skip()",
+						reason: "contains only t.Skip()",
 					})
 					continue
 				}
 
-				// 检查只有 TODO 注释的测试
+				// TODO-only placeholder test.
 				if hasOnlyTODO(funcDecl.Body) {
 					warnings = append(warnings, deadTest{
 						file:   path,
 						line:   fset.Position(funcDecl.Pos()).Line,
 						name:   funcDecl.Name.Name,
-						reason: "只有 TODO 注释，无实际测试",
+						reason: "TODO placeholder without actual assertions",
 					})
 				}
 			}
@@ -102,14 +102,14 @@ func main() {
 	}
 
 	if len(warnings) > 0 {
-		fmt.Println("⚠️ 发现可能的死测试（需人工确认）:")
+		fmt.Println("WARNING: found potential dead tests (manual review required):")
 		for _, w := range warnings {
 			fmt.Printf("  %s:%d: %s - %s\n", w.file, w.line, w.name, w.reason)
 		}
-		fmt.Println("\n这些测试可能需要补充实现或删除。")
-		// 不退出，只警告
+		fmt.Println("\nThese tests may need implementation or removal.")
+		// Warning only; do not exit non-zero.
 	} else {
-		fmt.Println("✅ 死测试检测通过")
+		fmt.Println("OK: dead test check passed")
 	}
 }
 
@@ -118,7 +118,7 @@ func isOnlySkip(body *ast.BlockStmt) bool {
 		return false
 	}
 
-	// 检查是否所有语句都是 Skip
+	// Return true only when every statement is a Skip/SkipNow call.
 	for _, stmt := range body.List {
 		exprStmt, ok := stmt.(*ast.ExprStmt)
 		if !ok {
@@ -137,11 +137,11 @@ func isOnlySkip(body *ast.BlockStmt) bool {
 }
 
 func hasOnlyTODO(body *ast.BlockStmt) bool {
-	// 简化检查：如果函数体只有一个语句且是空语句或 TODO 相关
+	// Simplified heuristic: one literal-only statement often indicates placeholder TODO text.
 	if len(body.List) == 1 {
 		if exprStmt, ok := body.List[0].(*ast.ExprStmt); ok {
 			if _, ok := exprStmt.X.(*ast.BasicLit); ok {
-				return true // 可能是字符串字面量如 "TODO"
+				return true // Could be a bare string literal like "TODO".
 			}
 		}
 	}

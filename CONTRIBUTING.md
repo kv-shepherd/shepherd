@@ -220,12 +220,16 @@ All PRs must pass these checks:
 
 | Check | Description |
 |-------|-------------|
-| `golangci-lint` | Static analysis |
+| `golangci-lint` | Static analysis (standard linters) |
+| `shepherd-arch` (golangci-lint) | Architecture enforcement: import boundaries, ADR compliance, concurrency rules (ADR-0039) |
 | `go test -race` | Unit tests with race detection |
-| `check_naked_goroutine.go` | No naked goroutines |
 | `check_sqlc_usage.sh` | sqlc scope enforcement |
 
 See [docs/design/ci/README.md](docs/design/ci/README.md) for the complete list.
+
+> ⚠️ **Rule (ADR-0039)**: New CI gates for Go code MUST be written as
+> `go/analysis.Analyzer` entries in `tools/shepherd-linter/`.
+> Do NOT add new `.go` scripts to `docs/design/ci/scripts/`.
 
 ### API Contract Checks (ADR-0021 / ADR-0029 / ADR-0037)
 
