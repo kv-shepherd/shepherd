@@ -12,7 +12,7 @@ informed: []
 > **Review Period**: Until 2026-02-10 (48-hour minimum)  
 > **Discussion**: [Issue #151](https://github.com/kv-shepherd/shepherd/issues/151)  
 > **Related**: [ADR-0006](./ADR-0006-unified-async-model.md), [ADR-0012](./ADR-0012-hybrid-transaction.md), [ADR-0008](./ADR-0008-postgresql-stability.md)  
-> **CI Enforcement**: `docs/design/ci/scripts/check_naked_goroutine.go`, `docs/design/ci/scripts/check_semaphore_usage.go`
+> **CI Enforcement**: `shepherd-arch/nakedgoroutine`, `shepherd-arch/semaphoreusage`
 
 ---
 
@@ -77,8 +77,8 @@ We need a single, enforceable concurrency standard that keeps runtime behavior p
 
 ### Confirmation
 
-* CI blocks `go` statements in `internal/` (non-test) via `docs/design/ci/scripts/check_naked_goroutine.go`.
-* CI blocks unsafe semaphore usage via `docs/design/ci/scripts/check_semaphore_usage.go`.
+* CI blocks `go` statements in `internal/` (non-test) via `shepherd-arch/nakedgoroutine`.
+* CI blocks unsafe semaphore usage via `shepherd-arch/semaphoreusage`.
 * Code review verifies any new exemption is justified and added to the exemption list.
 
 ---
