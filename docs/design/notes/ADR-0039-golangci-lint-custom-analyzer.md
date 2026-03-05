@@ -1,12 +1,93 @@
 # Design Note: ADR-0039 — golangci-lint Custom Analyzer Plugin
 
-> **Status**: Pending ADR-0039 acceptance (Review period: Until 2026-03-04)  
+> **Status**: Implementation Complete. ADR accepted on 2026-03-05.  
 > **ADR**: [ADR-0039](../../adr/ADR-0039-golangci-lint-custom-analyzer.md)  
 > **Author**: @jindyzhao  
-> **Date**: 2026-03-02
+> **Date**: 2026-03-02  
+> **Last Updated**: 2026-03-05
 
 This note captures concrete implementation details for ADR-0039.
-It will be merged into `docs/design/ci/README.md` after the ADR is accepted.
+It complements `docs/design/ci/README.md` with implementation-level migration notes.
+
+---
+
+## Implementation Update (2026-03-03)
+
+- Full local lint gate now passes: `make lint` returns `0 issues`.
+- Strict custom analyzer proofread passes:
+  `./custom-gcl-proofread run ./...` returns `0 issues`.
+- Added no-cap lint audit to detect hidden debt beyond cap-limited runs:
+  `./custom-gcl run --max-issues-per-linter=0 --max-same-issues=0 ./...`.
+- Tuned `gocritic` by disabling `hugeParam` (`.golangci.yml`) to reduce
+  low-signal micro-optimization noise while keeping correctness-focused checks strict.
+
+---
+
+## Implementation Findings (Batch 1 Prototype — 2026-03-02)
+
+A proof-of-concept implementation of Batch 1 was executed prior to ADR acceptance to validate feasibility.
+
+### Finding 1: golangci-lint upgraded to v2.10.1 ✔️
+
+**Original concern**: The project had golangci-lint v1.64.8 installed, which does not support the v2 module plugin system.  
+**Resolution**: golangci-lint upgraded to **v2.10.1** on 2026-03-02 using the official install script.
+`.golangci.yml` migrated to v2 format using `golangci-lint migrate`.
+
+The ADR Confirmation criterion `golangci-lint run --enable shepherd-arch passes on main branch` will be
+validated during the Batch 1 PR by running `golangci-lint custom` to build the custom binary.
+
+### Finding 2: Batch 1 completion — 9 of 10 scripts implemented ✔️
+
+All AST-analyzable scripts from Batch 1 have been implemented as `go/analysis` Analyzers.
+
+| Script | Analyzer | Status |
+|--------|----------|--------|
+| `check_forbidden_imports.go` | `forbiddenimports.Analyzer` | ✅ Done |
+| `check_no_gorm_import.go` | merged into `forbiddenimports.Analyzer` | ✅ Done |
+| `check_no_outbox_import.go` | merged into `forbiddenimports.Analyzer` | ✅ Done |
+| `check_naked_goroutine.go` | `nakedgoroutine.Analyzer` | ✅ Done |
+| `check_river_bypass.go` | `riverbypass.Analyzer` | ✅ Done |
+| `check_no_runtime_mock.go` | `runtimemock.Analyzer` | ✅ Done |
+| `check_semaphore_usage.go` | `semaphoreusage.Analyzer` | ✅ Done |
+| `check_transaction_boundary.go` | `txboundary.Analyzer` | ✅ Done |
+| `check_river_job_args.go` | `riverjobargs.Analyzer` | ✅ Done |
+| `check_handler_explicit_rbac_guards.go` | **retained as `go run`** — file-content string matching; not AST-analyzable | 📌 Batch 3 |
+
+> **Note**: `forbiddenimports.Analyzer` consolidates three original scripts (`check_forbidden_imports.go`,
+> `check_no_gorm_import.go`, `check_no_outbox_import.go`) into a single import-path denylist.
+
+All 7 Analyzers build successfully and pass `go test ./...` with zero violations on the main project code.
+All tests include both positive (violation) and negative (clean) fixtures per the ADR Confirmation requirement.
+
+### Finding 3: Test coverage ✔️
+
+All 7 Analyzers include `// want` annotated violation fixtures and clean fixtures,
+fulfilling the ADR Confirmation requirement: "both positive and negative test cases".
+
+### Finding 4: Strict proofread before cleanup ✔️
+
+Before cleaning legacy CI invocations, a strict verification pass was executed:
+
+```bash
+# analyzer unit/integration
+cd tools/shepherd-linter && go test ./...
+
+# standalone binary path
+make build-shepherd-lint
+make lint-arch
+
+# module plugin path
+golangci-lint custom --name custom-gcl-proofread
+./custom-gcl-proofread run ./...
+```
+
+Result:
+
+- `shepherd-arch` path reports **0 issues**
+- no analyzer panic in golangci-lint plugin execution
+- full lint baseline remains non-zero (expected debt tracked separately in `ai-code/go_lint/`)
+
+This strict proofread is now a precondition for CI cleanup changes.
 
 ---
 
@@ -82,37 +163,37 @@ As of 2026-03-02, `docs/design/ci/scripts/` contains **54 files**:
 
 ## New Module Structure
 
+> The structure below reflects the **actual implementation** (canonical per ADR-0039 §1).
+
 ```
 tools/shepherd-linter/
-├── go.mod
+├── go.mod                                   # module kv-shepherd.io/shepherd-linter
 ├── go.sum
-├── plugin/
-│   └── main.go                          # golangci-lint plugin entrypoint
-├── analyzers/
-│   ├── forbidden_imports/
+├── plugin.go                                # register.LinterPlugin + register.Plugin() init
+├── cmd/
+│   └── shepherd-lint/
+│       └── main.go                          # multichecker.Main() for standalone binary
+├── analyzer/                                # singular, one package per logical check
+│   ├── forbiddenimports/
 │   │   ├── analyzer.go
-│   │   └── analyzer_test.go
-│   ├── naked_goroutine/
+│   │   ├── analyzer_test.go
+│   │   └── testdata/src/                   # per-analyzer testdata (analysistest.TestData())
+│   ├── nakedgoroutine/
 │   │   ├── analyzer.go
-│   │   └── analyzer_test.go
-│   ├── river_bypass/
-│   │   ├── analyzer.go
-│   │   └── analyzer_test.go
-│   ├── kubevirt_ssa_compliance/
-│   │   ├── analyzer.go                  # Migrated from check_kubevirt_ssa_compliance.go
-│   │   └── analyzer_test.go
-│   └── ... (one directory per analyzer)
-└── testdata/
-    └── src/
-        ├── forbidden_imports/           # analysistest fixtures
-        ├── naked_goroutine/
-        └── ...
+│   │   ├── analyzer_test.go
+│   │   └── testdata/src/
+│   └── riverbypass/
+│       ├── analyzer.go
+│       ├── analyzer_test.go
+│       └── testdata/src/
+└── README.md
 ```
 
 ### `go.mod` version constraint
 
+Run before upgrading `golang.org/x/tools` in `go.mod`:
+
 ```bash
-# Verify versions before writing go.mod
 go version -m $(which golangci-lint)
 ```
 
@@ -122,8 +203,11 @@ The `go.mod` MUST NOT use `replace` directives that conflict with golangci-lint'
 
 ## Analyzer Migration Pattern
 
-The existing `check_kubevirt_ssa_compliance.go` provides the reference pattern.
-Its `ast.Inspect` + `*ast.CompositeLit` logic maps directly:
+### Batch 1 Pattern — AST-Only (pure syntax, no type info)
+
+Applicable for: `nakedgoroutine`, `riverbypass`, `forbiddenimports`, `runtimemock`, `semaphoreusage`, `txboundary`, `riverjobargs`
+
+These analyzers work on syntactic structure only (package import paths, AST node types, method names, struct field names). They do not need runtime type information because the entities they check have project-wide unique names enforced by ADR convention.
 
 **Before (`go run` script)**:
 ```go
@@ -134,29 +218,74 @@ ast.Inspect(node, func(n ast.Node) bool {
 })
 ```
 
-**After (Analyzer)**:
+**After (Batch 1 Analyzer — AST-only)**:
 ```go
 var Analyzer = &analysis.Analyzer{
-    Name: "kubevirt_ssa_compliance",
-    Doc:  "Enforces ADR-0011: VM write paths must use SSA, not typed struct construction.",
-    Run:  run,
+    Name:     "kubevirt_ssa_compliance",
+    Doc:      "Enforces ADR-0011: VM write paths must use SSA, not typed struct construction.",
+    Requires: []*analysis.Analyzer{inspect.Analyzer},
+    Run:      run,
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
-    for _, file := range pass.Files {
-        ast.Inspect(file, func(n ast.Node) bool {
-            cl, ok := n.(*ast.CompositeLit)
-            if !ok { return true }
-            // ... same logic, but report via:
-            pass.Reportf(cl.Pos(), "ADR-0011: VM write paths must not construct KubeVirt typed structs: %s", typeName)
-            return true
-        })
-    }
+    insp := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+    insp.Preorder([]ast.Node{(*ast.CompositeLit)(nil)}, func(n ast.Node) {
+        cl := n.(*ast.CompositeLit)
+        // ... same logic, but report via:
+        pass.Reportf(cl.Pos(), "ADR-0011: VM write paths must not construct KubeVirt typed structs: %s", typeName)
+    })
     return nil, nil
 }
 ```
 
+### Batch 2 Pattern — Type-Aware (REQUIRED for Batch 2+)
+
+> ⚠️ **Batch 2 MUST use `pass.TypesInfo`** for analyzers that operate on method calls or struct construction
+> where the same method/struct name may appear in unrelated packages. AST string matching alone
+> (e.g., `sel.Sel.Name == "Create"`) produces false positives on any type with that method name.
+
+Applicable for: `kubevirt_ssa_compliance`, `k8s_in_transaction`, `auth_provider_boundary`
+
+**Batch 2 Analyzer — type-aware (preferred)**:
+```go
+var Analyzer = &analysis.Analyzer{
+    Name:     "kubevirt_ssa_compliance",
+    Doc:      "Enforces ADR-0011: VM write paths must use SSA, not typed struct construction.",
+    Requires: []*analysis.Analyzer{inspect.Analyzer},
+    Run:      run,
+}
+
+func run(pass *analysis.Pass) (interface{}, error) {
+    insp := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+    insp.Preorder([]ast.Node{(*ast.CompositeLit)(nil)}, func(n ast.Node) {
+        cl := n.(*ast.CompositeLit)
+
+        // ✅ Type-aware: use TypesInfo to verify the actual Go type, not just the name.
+        // This eliminates false positives from identically-named structs in other packages.
+        tv, ok := pass.TypesInfo.Types[cl]
+        if !ok {
+            return
+        }
+        typeName := tv.Type.String()
+        // Only flag types from the actual kubevirt API package.
+        if strings.HasPrefix(typeName, "kubevirt.io/api/core/v1.") {
+            pass.Reportf(cl.Pos(),
+                "ADR-0011: direct struct construction of KubeVirt type %q: use SSA unstructured.Unstructured instead",
+                typeName)
+        }
+    })
+    return nil, nil
+}
+```
+
+**Decision Rule for Batch 2**:
+- If the analyzer checks a method/function call where name conflicts are possible → **use `pass.TypesInfo`**
+- If the analyzer checks an import path → AST `file.Imports` is sufficient (import paths are globally unique)
+- If the analyzer checks an AST statement type (e.g., `*ast.GoStmt`) → AST-only is correct
+
 The `pass.Reportf()` call is what enables IDE integration and golangci-lint integration.
+
+
 
 ---
 
@@ -173,8 +302,10 @@ linters:
     custom:
       shepherd-arch:
         type: module
-        path: github.com/kv-shepherd/shepherd/tools/shepherd-linter
-        description: Architecture enforcement (ADR compliance, import boundaries, concurrency rules)
+        description: >
+          Architecture enforcement linters for kubevirt-shepherd.
+          Enforces ADR compliance, import boundaries, concurrency rules,
+          and coding conventions defined in docs/adr/.
 ```
 
 ---
@@ -185,18 +316,18 @@ For each migrated script in `Makefile` (example):
 ```makefile
 # Before:
 check-naked-goroutine:
-    go run docs/design/ci/scripts/check_naked_goroutine.go
+    go run <legacy-batch1-script>.go
 
 # After (Batch 1 complete):  
 check-naked-goroutine:
-    golangci-lint run --enable shepherd-arch --disable-all
-    # Note: shepherd-arch includes naked_goroutine.Analyzer
+    make lint-arch
+    # Note: lint-arch runs shepherd-lint (shepherd-arch analyzers)
 ```
 
 After all Batch 1+2 scripts are migrated, the Makefile target becomes:
 ```makefile
 check-arch:
-    golangci-lint run --enable shepherd-arch
+    ./custom-gcl run ./...
 ```
 
 ---
@@ -222,7 +353,7 @@ Add new rule to `§Architecture Decisions`:
 ## Pending Changes Block (to be added to `docs/design/ci/README.md` after ADR acceptance)
 
 ```markdown
-<!-- PENDING: ADR-0039 (under review until 2026-03-04) -->
+<!-- PENDING: ADR-0039 (accepted on 2026-03-05) -->
 > ⚠️ **Pending Change**: Architecture CI gates are being migrated to  
 > `tools/shepherd-linter` golangci-lint custom Analyzer plugin.  
 > See docs/design/notes/ADR-0039-golangci-lint-custom-analyzer.md for migration plan.

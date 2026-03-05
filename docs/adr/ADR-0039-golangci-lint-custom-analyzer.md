@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"
+status: "accepted"
 date: 2026-03-02
 deciders: ["@jindyzhao"]
 consulted: ["@jindyzhao"]
@@ -10,8 +10,20 @@ informed: ["@jindyzhao"]
 # ADR-0039: Architecture Enforcement via golangci-lint Custom Analyzer Plugin
 
 > **Review Period**: Until 2026-03-04 (48-hour minimum)<br>
-> **Discussion**: [Issue #TBD](https://github.com/kv-shepherd/shepherd/issues/)<br>
+> **Accepted On**: 2026-03-05<br>
+> **Discussion**: [Issue #293](https://github.com/kv-shepherd/shepherd/issues/293)<br>
 > **Related**: `CONTRIBUTING.md`, `docs/design/ci/README.md`, all `check_*.go` scripts
+
+---
+
+## Implementation Update (2026-03-03)
+
+- Full local lint gate now passes: `make lint` reports `0 issues`.
+- Strict analyzer proofread passes: `./custom-gcl-proofread run ./...` reports `0 issues`.
+- No-cap audit was added to avoid hidden debt behind issue caps:
+  `./custom-gcl run --max-issues-per-linter=0 --max-same-issues=0 ./...`.
+- `gocritic` rule tuning applied: disabled `hugeParam` in `.golangci.yml` due high-noise/low-signal
+  micro-optimization findings on immutable DTO/config paths.
 
 ---
 
@@ -53,61 +65,112 @@ A new Go module **`shepherd-linter`** is created as a package within the monorep
 
 ```
 tools/shepherd-linter/
-├── go.mod               # Separate go.mod; versions MUST match golangci-lint v2
-├── plugin/
-│   └── main.go          # Required: package main, func New(conf any) ([]*analysis.Analyzer, error)
-└── analyzers/
-    ├── forbidden_imports/
+├── go.mod               # module kv-shepherd.io/shepherd-linter
+├── go.sum
+├── cmd/
+│   └── shepherd-lint/
+│       └── main.go      # package main: multichecker.Main() + New() plugin entrypoint
+└── analyzer/            # singular; one package per logical check
+    ├── nakedgoroutine/
     │   ├── analyzer.go
-    │   └── analyzer_test.go
-    ├── naked_goroutine/
+    │   ├── analyzer_test.go
+    │   └── testdata/src/    # per-analyzer testdata/ (required by analysistest)
+    ├── forbiddenimports/
     │   ├── analyzer.go
-    │   └── analyzer_test.go
-    ├── river_bypass/
+    │   ├── analyzer_test.go
+    │   └── testdata/src/
+    ├── riverbypass/
     │   ├── analyzer.go
-    │   └── analyzer_test.go
-    └── ...               # One package per logical check
+    │   ├── analyzer_test.go
+    │   └── testdata/src/
+    └── ...               # one package per logical check
 ```
 
-> ⚠️ **Critical constraint**: All Go module dependencies in `tools/shepherd-linter/go.mod` that overlap with `golangci-lint`'s own dependencies **MUST use the exact same versions** as the `golangci-lint` binary in use. Run `go version -m golangci-lint` to verify.
+> **Design rationale for structure choices**:
+> - `analyzer/` (singular) — Go convention for package directories; matches `go/analysis` package naming.
+> - `cmd/shepherd-lint/main.go` — Go standard layout for executables under `cmd/`; `plugin/` would imply a build plugin artifact.
+> - Per-analyzer `testdata/src/` — required by `golang.org/x/tools/go/analysis/analysistest`: `analysistest.TestData()` resolves relative to the test package directory. A global `testdata/` at module root does not work.
+
+> ⚠️ **Critical constraint**: All Go module dependencies in `tools/shepherd-linter/go.mod` that overlap with `golangci-lint`'s own dependencies **MUST use the exact same versions** as the `golangci-lint` binary in use. Run `go version -m $(which golangci-lint)` to verify.
 
 #### 2. Plugin entrypoint
 
+The root package (`tools/shepherd-linter/plugin.go`) implements the `register.LinterPlugin` interface
+required by golangci-lint v2 Module Plugin System:
+
 ```go
-// tools/shepherd-linter/plugin/main.go
-package main
+// tools/shepherd-linter/plugin.go
+package shepherdlinter
 
-import "golang.org/x/tools/go/analysis"
+import (
+    "github.com/golangci/plugin-module-register/register"
+    "golang.org/x/tools/go/analysis"
+)
 
-// New is the required golangci-lint module plugin entrypoint.
-func New(conf any) ([]*analysis.Analyzer, error) {
-    return []*analysis.Analyzer{
-        forbidden_imports.Analyzer,
-        naked_goroutine.Analyzer,
-        river_bypass.Analyzer,
-        kubevirt_ssa_compliance.Analyzer,
-        k8s_in_transaction.Analyzer,
-        // ... all migrated analyzers
-    }, nil
+func init() {
+    register.Plugin("shepherd-arch", New)
+}
+
+// New is the golangci-lint v2 Module Plugin entrypoint.
+func New(settings any) (register.LinterPlugin, error) {
+    return &shepherdArchPlugin{}, nil
+}
+
+type shepherdArchPlugin struct{}
+
+func (p *shepherdArchPlugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
+    return AllAnalyzers, nil
+}
+
+func (p *shepherdArchPlugin) GetLoadMode() string {
+    // Batch 1: AST-only. Change to register.LoadModeTypesInfo for Batch 2.
+    return register.LoadModeSyntax
 }
 ```
 
-#### 3. golangci-lint configuration
+The standalone binary (`cmd/shepherd-lint/main.go`) imports the root package and uses `multichecker.Main()`:
+
+#### 3. golangci-lint v2 configuration
+
+The project uses **golangci-lint v2.10.1** (upgraded from v1.64.8 on 2026-03-02).
+
+**`.custom-gcl.yml`** (new file, project root — created at Batch 1 acceptance):
 
 ```yaml
-# .golangci.yml
+# .custom-gcl.yml
+version: v2.10.1
+plugins:
+  # Local module plugin — no remote proxy needed for monorepo
+  - module: 'kv-shepherd.io/shepherd-linter'
+    path: ./tools/shepherd-linter
+```
+
+**`.golangci.yml`** additions (after running `golangci-lint custom`):
+
+```yaml
 version: "2"
 
 linters:
+  enable:
+    - shepherd-arch  # custom architecture enforcement
   settings:
     custom:
       shepherd-arch:
         type: module
-        path: github.com/kv-shepherd/shepherd/tools/shepherd-linter
         description: >
           Architecture enforcement linters for kubevirt-shepherd.
           Enforces ADR compliance, import boundaries, concurrency rules,
           and coding conventions defined in docs/adr/.
+```
+
+The workflow for a developer to enable the plugin:
+
+```bash
+# 1. Build the custom golangci-lint binary with shepherd-arch embedded
+golangci-lint custom
+
+# 2. Run with all linters including shepherd-arch
+./custom-gcl run ./...
 ```
 
 #### 4. Migration strategy (three batches)
@@ -120,16 +183,18 @@ Scripts with pure AST analysis and no file system or external data dependencies:
 
 | Original script | Target analyzer |
 |-----------------|-----------------|
-| `check_forbidden_imports.go` | `forbidden_imports.Analyzer` |
-| `check_naked_goroutine.go` | `naked_goroutine.Analyzer` |
-| `check_river_bypass.go` | `river_bypass.Analyzer` |
-| `check_no_gorm_import.go` | `no_gorm_import.Analyzer` |
-| `check_no_outbox_import.go` | `no_outbox_import.Analyzer` |
-| `check_no_runtime_mock.go` | `no_runtime_mock.Analyzer` |
-| `check_handler_explicit_rbac_guards.go` | `handler_rbac_guards.Analyzer` |
-| `check_semaphore_usage.go` | `semaphore_usage.Analyzer` |
-| `check_transaction_boundary.go` | `transaction_boundary.Analyzer` |
-| `check_river_job_args.go` | `river_job_args.Analyzer` |
+| `check_forbidden_imports.go` | `forbiddenimports.Analyzer` |
+| `check_naked_goroutine.go` | `nakedgoroutine.Analyzer` |
+| `check_river_bypass.go` | `riverbypass.Analyzer` |
+| `check_no_gorm_import.go` | merged into `forbiddenimports.Analyzer` |
+| `check_no_outbox_import.go` | merged into `forbiddenimports.Analyzer` |
+| `check_no_runtime_mock.go` | `runtimemock.Analyzer` |
+| `check_semaphore_usage.go` | `semaphoreusage.Analyzer` |
+| `check_transaction_boundary.go` | `txboundary.Analyzer` |
+| `check_river_job_args.go` | `riverjobargs.Analyzer` |
+
+> **Note**: `check_handler_explicit_rbac_guards.go` uses file-content string matching
+> and is NOT AST-analyzable. It is retained as `go run` (Batch 3).
 
 **Batch 2 — P1 (AST + file path conventions)**
 
@@ -180,12 +245,12 @@ func TestNakedGoroutineAnalyzer(t *testing.T) {
 }
 ```
 
-Test fixtures are placed in `tools/shepherd-linter/testdata/src/<analyzer-name>/`.
+Test fixtures are placed in `<analyzer-package>/testdata/src/<analyzer-name>/` (per-analyzer, co-located).
 
 ### Consequences
 
 * ✅ Good, because golangci-lint runs all Analyzers in parallel with caching; CI time for architecture checks reduces from `N × go-compile-time` to approximately `1 × golangci-lint-time`.
-* ✅ Good, because IDE plugins (GoLand, VSCode with `gopls`) surface Analyzer diagnostics in real-time as the developer codes, eliminating the "wait for CI" feedback loop.
+* ✅ Good, because IDE integration (GoLand built-in, VSCode via `golangci-lint` extension or `golangci-lint-langserver`) surfaces custom linter diagnostics in real-time, eliminating the "wait for CI" feedback loop.
 * ✅ Good, because existing AST logic in `check_kubevirt_ssa_compliance.go` and others uses `ast.Inspect` / `*ast.CompositeLit` patterns that map directly to `go/analysis.Pass.ResultOf` and `analysis.Analyzer.Run`, minimizing rewrite effort.
 * ✅ Good, because each Analyzer is independently testable with `analysistest`, improving confidence in constraint enforcement.
 * 🟡 Neutral, because the `tools/shepherd-linter/go.mod` version pinning constraint requires careful maintenance when upgrading `golangci-lint`.
@@ -195,9 +260,10 @@ Test fixtures are placed in `tools/shepherd-linter/testdata/src/<analyzer-name>/
 
 * PR merging Batch 1 must demonstrate: `golangci-lint run --enable shepherd-arch` passes on main branch; IDE shows diagnostic on a deliberately injected violation.
 * All migrated Analyzers have `analysistest`-based unit tests with both positive and negative test cases.
+* Before removing legacy Batch1 CI invocations, run a strict proofread checklist: `go test ./tools/shepherd-linter/...`, `make lint-arch`, and `./custom-gcl run ./...`.
 * `check_no_new_run_scripts.sh` CI gate is added and passing before Batch 1 PR merges.
 * `CONTRIBUTING.md` §CI Checks section is updated to reference `shepherd-arch` as the canonical architecture enforcement linter.
-* Existing `go run` invocations for migrated scripts are **removed from `Makefile` and CI workflows** after each batch is validated.
+* Existing `go run` invocations for migrated scripts are **removed from `Makefile` and CI workflows** after each batch is validated, and duplicate architecture lint execution in multiple jobs should be avoided.
 
 ---
 
@@ -216,7 +282,7 @@ Test fixtures are placed in `tools/shepherd-linter/testdata/src/<analyzer-name>/
 A new `shepherd-linter` module in `tools/` exposes all Architecture Analyzers as a single golangci-lint plugin.
 
 * ✅ Good, because single `golangci-lint run` replaces all individual `go run` invocations.
-* ✅ Good, because IDE integration via LSP/gopls surfaces violations in real-time.
+* ✅ Good, because IDE integration via golangci-lint (GoLand, golangci-lint-langserver) surfaces violations in real-time.
 * ✅ Good, because existing `go/ast` logic translates directly to `go/analysis` with minimal rewrite.
 * ✅ Good, because each Analyzer is independently testable.
 * 🟡 Neutral, because version pinning discipline is required for `go.mod`.
@@ -250,10 +316,10 @@ Compile all checks into a single binary (`shepherd-check`) invoked as a single C
 
 ### Implementation Notes
 
-* **Step 1**: Create `tools/shepherd-linter/` module skeleton with `plugin/main.go` and `go.mod`.
+* **Step 1**: Create `tools/shepherd-linter/` module skeleton with `plugin.go` (register.LinterPlugin) and `cmd/shepherd-lint/main.go` (multichecker).
 * **Step 2**: Migrate Batch 1 scripts. Validate with `analysistest`. Remove from `Makefile`/CI.
 * **Step 3**: Add `check_no_new_run_scripts.sh` gate. Update `CONTRIBUTING.md`.
-* **Step 4**: Migrate Batch 2 scripts. Validate with `analysistest`. Remove from `Makefile`/CI.
+* **Step 4**: Migrate Batch 2 scripts. Upgrade `GetLoadMode()` to `register.LoadModeTypesInfo`. Validate. Remove from CI.
 * **Step 5**: Categorize Batch 3 scripts as permanently retained; document rationale in `docs/design/ci/README.md`.
 * **Revisit trigger**: If golangci-lint introduces breaking changes to its module plugin API, evaluate migration path at that time.
 
@@ -264,3 +330,6 @@ Compile all checks into a single binary (`shepherd-check`) invoked as a single C
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-03-02 | @jindyzhao | Initial draft |
+| 2026-03-02 | @jindyzhao | Corrected directory structure to reflect Go/analysistest best practices; updated golangci-lint version to v2.10.1; updated `.custom-gcl.yml` to use local path plugin |
+| 2026-03-02 | @jindyzhao | Fixed `New()` signature: Go Plugin `[]*analysis.Analyzer` → Module Plugin `register.LinterPlugin`; added `register.Plugin()` init; removed `handler_rbac_guards` from Batch 1 (not AST-analyzable); updated implementation notes |
+| 2026-03-05 | @jindyzhao | Status changed to `accepted`; proofread command updated to `./custom-gcl run ./...` |
