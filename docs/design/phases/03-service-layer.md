@@ -176,14 +176,14 @@ func Bootstrap(cfg *config.Config) (*App, error) {
 
 | Rule | Enforcement |
 |------|-------------|
-| Service layer must not manage transactions | `shepherd-arch/txboundary` |
-| K8s calls forbidden inside transactions | `shepherd-arch/k8sintransaction` |
+| Service layer must not manage transactions | `check_transaction_boundary.go` |
+| K8s calls forbidden inside transactions | `check_k8s_in_transaction.go` |
 | Transaction boundaries at UseCase layer | - |
 
 > ⚠️ **Developer Guidance**: Run these checks locally before committing:
 > ```bash
-> golangci-lint custom
-> ./custom-gcl run ./...
+> go run scripts/ci/check_transaction_boundary.go ./...
+> go run scripts/ci/check_k8s_in_transaction.go ./...
 > ```
 >
 > **Anti-Pattern (ADR-0012)**: K8s API calls inside DB transactions cause:
