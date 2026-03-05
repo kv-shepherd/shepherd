@@ -36,10 +36,10 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	if err := logger.Init(cfg.Log.Level, cfg.Log.Format); err != nil {
-		return fmt.Errorf("init logger: %w", err)
+	if initErr := logger.Init(cfg.Log.Level, cfg.Log.Format); initErr != nil {
+		return fmt.Errorf("init logger: %w", initErr)
 	}
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	ctx := context.Background()
 

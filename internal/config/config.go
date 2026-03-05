@@ -11,6 +11,7 @@ package config
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -52,7 +53,7 @@ type DatabaseConfig struct {
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
 	User     string `mapstructure:"user"`
-	Password string `mapstructure:"password"`
+	Password string `mapstructure:"password"` //nolint:gosec // Configuration schema intentionally models a credential field.
 	Database string `mapstructure:"database"`
 	SSLMode  string `mapstructure:"sslmode"`
 
@@ -92,7 +93,7 @@ type SessionConfig struct {
 	IdleTimeout time.Duration `mapstructure:"idle_timeout"`
 	Cookie      string        `mapstructure:"cookie"`
 	Secure      bool          `mapstructure:"secure"`
-	HttpOnly    bool          `mapstructure:"http_only"`
+	HTTPOnly    bool          `mapstructure:"http_only"`
 }
 
 // K8sConfig contains Kubernetes operation settings.
@@ -117,7 +118,7 @@ type RiverConfig struct {
 // ADR-0025: Auto-generate secrets on first boot if missing.
 type SecurityConfig struct {
 	EncryptionKey       string         `mapstructure:"encryption_key"`
-	SessionSecret       string         `mapstructure:"session_secret"`
+	SessionSecret       string         `mapstructure:"session_secret"` //nolint:gosec // Configuration schema intentionally models a secret field.
 	JWTVerificationKeys []string       `mapstructure:"jwt_verification_keys"`
 	PasswordPolicy      PasswordPolicy `mapstructure:"password_policy"`
 }
@@ -163,7 +164,8 @@ func Load() (*Config, error) {
 	setDefaults(v)
 
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		var notFoundErr viper.ConfigFileNotFoundError
+		if !errors.As(err, &notFoundErr) {
 			return nil, fmt.Errorf("read config: %w", err)
 		}
 		// Config file is optional, use defaults and env vars
