@@ -79,7 +79,7 @@ func NewResourceRoleChecker(client *ent.Client) *ResourceRoleChecker {
 
 // CheckResourceRole walks the resource hierarchy to find the user's role.
 // Returns the role and whether any binding was found.
-func (c *ResourceRoleChecker) CheckResourceRole(ctx context.Context, userID string, resourceType string, resourceID string) (ResourceRole, bool, error) {
+func (c *ResourceRoleChecker) CheckResourceRole(ctx context.Context, userID, resourceType, resourceID string) (ResourceRole, bool, error) {
 	// 1. Check direct binding on this resource.
 	binding, err := c.findBinding(ctx, userID, resourceType, resourceID)
 	if err != nil {
@@ -95,11 +95,17 @@ func (c *ResourceRoleChecker) CheckResourceRole(ctx context.Context, userID stri
 		// VM → Service (via service edge)
 		vmEnt, err := c.client.VM.Get(ctx, resourceID)
 		if err != nil {
-			return "", false, nil
+			if ent.IsNotFound(err) {
+				return "", false, nil
+			}
+			return "", false, err
 		}
 		svc, err := vmEnt.QueryService().Only(ctx)
 		if err != nil {
-			return "", false, nil
+			if ent.IsNotFound(err) {
+				return "", false, nil
+			}
+			return "", false, err
 		}
 		return c.CheckResourceRole(ctx, userID, "service", svc.ID)
 
@@ -107,11 +113,17 @@ func (c *ResourceRoleChecker) CheckResourceRole(ctx context.Context, userID stri
 		// Service → System (via system edge)
 		svcEnt, err := c.client.Service.Get(ctx, resourceID)
 		if err != nil {
-			return "", false, nil
+			if ent.IsNotFound(err) {
+				return "", false, nil
+			}
+			return "", false, err
 		}
 		sys, err := svcEnt.QuerySystem().Only(ctx)
 		if err != nil {
-			return "", false, nil
+			if ent.IsNotFound(err) {
+				return "", false, nil
+			}
+			return "", false, err
 		}
 		return c.CheckResourceRole(ctx, userID, "system", sys.ID)
 
@@ -160,7 +172,7 @@ func RoleCanPerform(role ResourceRole, action string) bool {
 
 // RequireResourceAccess returns middleware that checks resource-level permissions.
 // It first checks global permissions, then falls back to resource role hierarchy.
-func RequireResourceAccess(checker *ResourceRoleChecker, resourceType string, action string, paramName string) gin.HandlerFunc {
+func RequireResourceAccess(checker *ResourceRoleChecker, resourceType, action, paramName string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 1. Global permission check: platform:admin allows everything.
 		perms, _ := c.Get("permissions")

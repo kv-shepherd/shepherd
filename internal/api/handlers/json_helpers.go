@@ -8,8 +8,12 @@ import (
 
 // jsonParseSchema parses raw JSON bytes into a map[string]interface{}.
 // Intended for parsing large embedded schema files once at startup.
-func jsonParseSchema(data []byte, out *map[string]interface{}) error {
-	return json.Unmarshal(data, out)
+func jsonParseSchema(data []byte) (map[string]interface{}, error) {
+	out := map[string]interface{}{}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // jsonParseMask parses raw JSON bytes into a generated.SchemaMask struct.

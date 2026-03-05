@@ -25,7 +25,7 @@ func TestVMConsole_Request_TestEnvironmentIssuesDirectVNCURL(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newVMConsoleBehaviorTestServer(t)
-	vm := mustCreateVMConsoleTarget(t, client, "actor-1", namespaceregistry.EnvironmentTest, entvm.StatusRUNNING)
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentTest, entvm.StatusRUNNING)
 
 	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
 	srv.RequestVMConsoleAccess(c, vm.ID)
@@ -63,7 +63,7 @@ func TestVMConsole_Request_ProductionCreatesPendingApprovalTicket(t *testing.T) 
 	t.Parallel()
 
 	srv, client := newVMConsoleBehaviorTestServer(t)
-	vm := mustCreateVMConsoleTarget(t, client, "actor-1", namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
 
 	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
 	srv.RequestVMConsoleAccess(c, vm.ID)
@@ -111,7 +111,7 @@ func TestVMConsole_Request_ProductionRejectsDuplicatePendingRequest(t *testing.T
 	t.Parallel()
 
 	srv, client := newVMConsoleBehaviorTestServer(t)
-	vm := mustCreateVMConsoleTarget(t, client, "actor-1", namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
 	mustSeedPendingVNCRequest(t, client, vm.ID, vm.ClusterID, vm.Namespace, "actor-1")
 
 	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
@@ -127,7 +127,7 @@ func TestVMConsole_Request_RejectsNonRunningVM(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newVMConsoleBehaviorTestServer(t)
-	vm := mustCreateVMConsoleTarget(t, client, "actor-1", namespaceregistry.EnvironmentTest, entvm.StatusSTOPPED)
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentTest, entvm.StatusSTOPPED)
 
 	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
 	srv.RequestVMConsoleAccess(c, vm.ID)
@@ -142,7 +142,7 @@ func TestVMConsole_Status_ProductionPendingAndApproved(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newVMConsoleBehaviorTestServer(t)
-	vm := mustCreateVMConsoleTarget(t, client, "actor-1", namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
 	ticketID := mustSeedPendingVNCRequest(t, client, vm.ID, vm.ClusterID, vm.Namespace, "actor-1")
 
 	pendingCtx, pendingW := newAuthedGinContext(
@@ -202,7 +202,7 @@ func TestVMConsole_OpenVNC_RejectsTokenReplay(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newVMConsoleBehaviorTestServer(t)
-	vm := mustCreateVMConsoleTarget(t, client, "actor-1", namespaceregistry.EnvironmentTest, entvm.StatusRUNNING)
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentTest, entvm.StatusRUNNING)
 
 	reqCtx, reqW := newAuthedGinContext(
 		t,
@@ -266,11 +266,11 @@ func newVMConsoleBehaviorTestServer(t *testing.T) (*Server, *ent.Client) {
 func mustCreateVMConsoleTarget(
 	t *testing.T,
 	client *ent.Client,
-	actor string,
 	environment namespaceregistry.Environment,
 	status entvm.Status,
 ) *ent.VM {
 	t.Helper()
+	actor := "actor-1"
 
 	systemID := "sys-" + uuid.NewString()
 	serviceID := "svc-" + uuid.NewString()

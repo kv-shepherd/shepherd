@@ -7,7 +7,7 @@
 > **Language**: English (Canonical Version)  
 > **Source**: Extracted from ADR-0018 Appendix
 >
-> 🌐 **Other Languages**: [中文版](../../i18n/zh-CN/design/interaction-flows/master-flow.md)
+> 🌐 **Other Languages**: [Chinese Translation](../../i18n/zh-CN/design/interaction-flows/master-flow.md)
 
 ---
 

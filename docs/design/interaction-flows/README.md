@@ -32,7 +32,7 @@ This directory serves as the **single source of truth for product interaction fl
 
 | Language | Location |
 |----------|----------|
-| 中文 (Chinese) | [i18n/zh-CN/design/interaction-flows/master-flow.md](../../i18n/zh-CN/design/interaction-flows/master-flow.md) |
+| Chinese | [i18n/zh-CN/design/interaction-flows/master-flow.md](../../i18n/zh-CN/design/interaction-flows/master-flow.md) |
 
 > **Note**: The English version is the canonical source of truth. Translations are provided for convenience and may lag behind.
 

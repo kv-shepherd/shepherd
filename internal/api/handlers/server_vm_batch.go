@@ -111,8 +111,8 @@ func (s *Server) submitBatch(c *gin.Context) {
 	}
 
 	if strings.TrimSpace(req.RequestId) != "" {
-		if existingID, ok, err := s.findBatchByRequestID(ctx, actor, op, req.RequestId); err != nil {
-			logger.Error("failed to query batch idempotency", zap.Error(err))
+		if existingID, ok, findErr := s.findBatchByRequestID(ctx, actor, op, req.RequestId); findErr != nil {
+			logger.Error("failed to query batch idempotency", zap.Error(findErr))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		} else if ok {
@@ -156,8 +156,8 @@ func (s *Server) submitBatch(c *gin.Context) {
 		})
 		return
 	}
-	if extraLimit, err := s.evaluateAdditionalBatchSubmissionLimits(ctx, actor, len(req.Items), limitPolicy); err != nil {
-		logger.Error("failed to evaluate additional batch submission limits", zap.Error(err))
+	if extraLimit, limitErr := s.evaluateAdditionalBatchSubmissionLimits(ctx, actor, len(req.Items), limitPolicy); limitErr != nil {
+		logger.Error("failed to evaluate additional batch submission limits", zap.Error(limitErr))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	} else if extraLimit != nil {
@@ -194,7 +194,8 @@ func (s *Server) submitBatch(c *gin.Context) {
 
 	children, err := s.prepareBatchChildren(ctx, actor, op, req, visibility)
 	if err != nil {
-		if appErr, ok := err.(*batchValidationError); ok {
+		var appErr *batchValidationError
+		if errors.As(err, &appErr) {
 			c.JSON(appErr.status, appErr.body)
 			return
 		}
@@ -376,8 +377,8 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 	}
 
 	if strings.TrimSpace(req.RequestId) != "" {
-		if existingID, ok, err := s.findBatchByRequestID(ctx, actor, opKey, req.RequestId); err != nil {
-			logger.Error("failed to query power-batch idempotency", zap.Error(err))
+		if existingID, ok, findErr := s.findBatchByRequestID(ctx, actor, opKey, req.RequestId); findErr != nil {
+			logger.Error("failed to query power-batch idempotency", zap.Error(findErr))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		} else if ok {
@@ -419,8 +420,8 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 		})
 		return
 	}
-	if extraLimit, err := s.evaluateAdditionalBatchSubmissionLimits(ctx, actor, len(req.Items), limitPolicy); err != nil {
-		logger.Error("failed to evaluate power-batch additional limits", zap.Error(err))
+	if extraLimit, limitErr := s.evaluateAdditionalBatchSubmissionLimits(ctx, actor, len(req.Items), limitPolicy); limitErr != nil {
+		logger.Error("failed to evaluate power-batch additional limits", zap.Error(limitErr))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	} else if extraLimit != nil {
@@ -455,7 +456,8 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 	}
 	children, err := s.prepareBatchPowerChildren(ctx, actor, jobOperation, childEventType, req, visibility)
 	if err != nil {
-		if appErr, ok := err.(*batchValidationError); ok {
+		var appErr *batchValidationError
+		if errors.As(err, &appErr) {
 			c.JSON(appErr.status, appErr.body)
 			return
 		}
@@ -622,7 +624,7 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 }
 
 // GetVMBatch handles GET /vms/batch/{batch_id}.
-func (s *Server) GetVMBatch(c *gin.Context, batchId generated.BatchID) {
+func (s *Server) GetVMBatch(c *gin.Context, batchID generated.BatchID) {
 	ctx := c.Request.Context()
 	if !requireAnyGlobalPermission(c, "vm:read", "vm:create", "vm:delete", "vm:operate") {
 		return
@@ -633,13 +635,17 @@ func (s *Server) GetVMBatch(c *gin.Context, batchId generated.BatchID) {
 		return
 	}
 
-	resp, _, err := s.loadBatchView(ctx, string(batchId))
+	resp, _, err := s.loadBatchView(ctx, batchID)
 	if err != nil {
 		if ent.IsNotFound(err) || errors.Is(err, errBatchNotFound) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "BATCH_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to load batch view", zap.Error(err), zap.String("batch_id", string(batchId)))
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while loading batch view", zap.Error(err), zap.String("batch_id", batchID))
+			return
+		}
+		logger.Error("failed to load batch view", zap.Error(err), zap.String("batch_id", batchID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -653,16 +659,16 @@ func (s *Server) GetVMBatch(c *gin.Context, batchId generated.BatchID) {
 }
 
 // RetryVMBatch handles POST /vms/batch/{batch_id}/retry.
-func (s *Server) RetryVMBatch(c *gin.Context, batchId generated.BatchID) {
-	s.mutateBatchChildren(c, string(batchId), "retry")
+func (s *Server) RetryVMBatch(c *gin.Context, batchID generated.BatchID) {
+	s.mutateBatchChildren(c, batchID, "retry")
 }
 
 // CancelVMBatch handles POST /vms/batch/{batch_id}/cancel.
-func (s *Server) CancelVMBatch(c *gin.Context, batchId generated.BatchID) {
-	s.mutateBatchChildren(c, string(batchId), "cancel")
+func (s *Server) CancelVMBatch(c *gin.Context, batchID generated.BatchID) {
+	s.mutateBatchChildren(c, batchID, "cancel")
 }
 
-func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action string) {
+func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 	ctx := c.Request.Context()
 	if !requireAnyGlobalPermission(c, "vm:create", "vm:delete", "vm:operate") {
 		return
@@ -679,6 +685,10 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 			c.JSON(http.StatusNotFound, generated.Error{Code: "BATCH_NOT_FOUND"})
 			return
 		}
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while loading batch for action", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
+			return
+		}
 		logger.Error("failed to load batch for action", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -693,6 +703,10 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 			c.JSON(http.StatusNotFound, generated.Error{Code: "BATCH_NOT_FOUND"})
 			return
 		}
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while loading parent batch ticket", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
+			return
+		}
 		logger.Error("failed to load parent batch ticket", zap.Error(err), zap.String("batch_id", batchID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -701,6 +715,10 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "BATCH_NOT_FOUND"})
+			return
+		}
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while loading parent batch event", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
 			return
 		}
 		logger.Error("failed to load parent batch event", zap.Error(err), zap.String("batch_id", batchID))
@@ -737,28 +755,36 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 			if isPowerBatch {
 				retryStatus = approvalticket.StatusEXECUTING
 			}
-			if _, err := s.client.ApprovalTicket.Update().
+			if _, updateTicketErr := s.client.ApprovalTicket.Update().
 				Where(approvalticket.IDIn(targetIDs...)).
 				SetStatus(retryStatus).
 				ClearRejectReason().
-				Save(ctx); err != nil {
-				logger.Error("failed to reset child tickets for retry", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
+				Save(ctx); updateTicketErr != nil {
+				if isRequestContextCanceled(updateTicketErr) {
+					logger.Debug("request canceled while resetting child tickets for retry", zap.Error(updateTicketErr), zap.String("batch_id", batchID), zap.String("action", action))
+					return
+				}
+				logger.Error("failed to reset child tickets for retry", zap.Error(updateTicketErr), zap.String("batch_id", batchID), zap.String("action", action))
 				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 				return
 			}
-			if _, err := s.client.DomainEvent.Update().
+			if _, updateEventErr := s.client.DomainEvent.Update().
 				Where(domainevent.IDIn(targetEventIDs...)).
 				SetStatus(domainevent.StatusPENDING).
-				Save(ctx); err != nil {
-				logger.Error("failed to reset child events for retry", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
+				Save(ctx); updateEventErr != nil {
+				if isRequestContextCanceled(updateEventErr) {
+					logger.Debug("request canceled while resetting child events for retry", zap.Error(updateEventErr), zap.String("batch_id", batchID), zap.String("action", action))
+					return
+				}
+				logger.Error("failed to reset child events for retry", zap.Error(updateEventErr), zap.String("batch_id", batchID), zap.String("action", action))
 				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 				return
 			}
 
 			for _, child := range targetChildren {
 				if isPowerBatch {
-					ev, err := s.client.DomainEvent.Get(ctx, child.EventID)
-					if err != nil {
+					ev, eventErr := s.client.DomainEvent.Get(ctx, child.EventID)
+					if eventErr != nil {
 						_, _ = s.client.ApprovalTicket.UpdateOneID(child.ID).
 							SetStatus(approvalticket.StatusFAILED).
 							SetRejectReason("failed to load child event during power retry").
@@ -769,12 +795,12 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 						logger.Warn("failed to load child event during power-batch retry",
 							zap.String("ticket_id", child.ID),
 							zap.String("batch_id", batchID),
-							zap.Error(err),
+							zap.Error(eventErr),
 						)
 						continue
 					}
 					var powerPayload domain.VMPowerPayload
-					if err := json.Unmarshal(ev.Payload, &powerPayload); err != nil {
+					if decodeErr := json.Unmarshal(ev.Payload, &powerPayload); decodeErr != nil {
 						_, _ = s.client.ApprovalTicket.UpdateOneID(child.ID).
 							SetStatus(approvalticket.StatusFAILED).
 							SetRejectReason("invalid power payload for retry").
@@ -785,7 +811,7 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 						logger.Warn("failed to parse child power payload during retry",
 							zap.String("ticket_id", child.ID),
 							zap.String("batch_id", batchID),
-							zap.Error(err),
+							zap.Error(decodeErr),
 						)
 						continue
 					}
@@ -805,7 +831,7 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 						)
 						continue
 					}
-					if err := s.enqueueBatchPowerJob(ctx, child.EventID, op); err != nil {
+					if enqueueErr := s.enqueueBatchPowerJob(ctx, child.EventID, op); enqueueErr != nil {
 						_, _ = s.client.ApprovalTicket.UpdateOneID(child.ID).
 							SetStatus(approvalticket.StatusFAILED).
 							SetRejectReason("failed to enqueue vm_power job").
@@ -816,7 +842,7 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 						logger.Warn("failed to enqueue power child during batch retry",
 							zap.String("ticket_id", child.ID),
 							zap.String("batch_id", batchID),
-							zap.Error(err),
+							zap.Error(enqueueErr),
 						)
 						continue
 					}
@@ -824,7 +850,7 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 					affectedTicketIDs = append(affectedTicketIDs, child.ID)
 					continue
 				}
-				if err := s.gateway.Approve(
+				if approveErr := s.gateway.Approve(
 					ctx,
 					child.ID,
 					actor,
@@ -832,8 +858,8 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 						ClusterID:    parentTicket.SelectedClusterID,
 						StorageClass: parentTicket.SelectedStorageClass,
 					},
-				); err != nil {
-					message := err.Error()
+				); approveErr != nil {
+					message := approveErr.Error()
 					if len(message) > 512 {
 						message = message[:512]
 					}
@@ -847,7 +873,7 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 					logger.Warn("failed to re-approve child ticket during batch retry",
 						zap.String("ticket_id", child.ID),
 						zap.String("batch_id", batchID),
-						zap.Error(err),
+						zap.Error(approveErr),
 					)
 					continue
 				}
@@ -855,19 +881,27 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 				affectedTicketIDs = append(affectedTicketIDs, child.ID)
 			}
 		} else {
-			if _, err := s.client.ApprovalTicket.Update().
+			if _, cancelTicketErr := s.client.ApprovalTicket.Update().
 				Where(approvalticket.IDIn(targetIDs...)).
 				SetStatus(approvalticket.StatusCANCELLED).
-				Save(ctx); err != nil {
-				logger.Error("failed to mutate child tickets", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
+				Save(ctx); cancelTicketErr != nil {
+				if isRequestContextCanceled(cancelTicketErr) {
+					logger.Debug("request canceled while mutating child tickets", zap.Error(cancelTicketErr), zap.String("batch_id", batchID), zap.String("action", action))
+					return
+				}
+				logger.Error("failed to mutate child tickets", zap.Error(cancelTicketErr), zap.String("batch_id", batchID), zap.String("action", action))
 				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 				return
 			}
-			if _, err := s.client.DomainEvent.Update().
+			if _, cancelEventErr := s.client.DomainEvent.Update().
 				Where(domainevent.IDIn(targetEventIDs...)).
 				SetStatus(domainevent.StatusCANCELLED).
-				Save(ctx); err != nil {
-				logger.Error("failed to mutate child events", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
+				Save(ctx); cancelEventErr != nil {
+				if isRequestContextCanceled(cancelEventErr) {
+					logger.Debug("request canceled while mutating child events", zap.Error(cancelEventErr), zap.String("batch_id", batchID), zap.String("action", action))
+					return
+				}
+				logger.Error("failed to mutate child events", zap.Error(cancelEventErr), zap.String("batch_id", batchID), zap.String("action", action))
 				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 				return
 			}
@@ -878,6 +912,10 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID string, action stri
 
 	updated, _, err := s.loadBatchView(ctx, batchID)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while reloading batch after action", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
+			return
+		}
 		logger.Error("failed to reload batch after action", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -1028,7 +1066,7 @@ func normalizeBatchOperation(op generated.VMBatchOperation) (string, domain.Even
 	}
 }
 
-func normalizeBatchPowerOperation(op generated.VMBatchPowerAction) (opKey string, jobOperation string, childEventType domain.EventType, err error) {
+func normalizeBatchPowerOperation(op generated.VMBatchPowerAction) (opKey, jobOperation string, childEventType domain.EventType, err error) {
 	switch strings.TrimSpace(strings.ToUpper(string(op))) {
 	case "START":
 		return "POWER_START", "START", domain.EventVMStartRequested, nil
@@ -1139,7 +1177,7 @@ func batchParentEventTypes() []string {
 	}
 }
 
-func (s *Server) pendingBatchParentCounters(ctx context.Context, actor string) (int, int, error) {
+func (s *Server) pendingBatchParentCounters(ctx context.Context, actor string) (global, user int, err error) {
 	events, err := s.client.DomainEvent.Query().
 		Where(
 			domainevent.AggregateTypeEQ("batch"),
@@ -1151,8 +1189,8 @@ func (s *Server) pendingBatchParentCounters(ctx context.Context, actor string) (
 		return 0, 0, err
 	}
 
-	global := len(events)
-	user := 0
+	global = len(events)
+	user = 0
 	for _, ev := range events {
 		if ev.CreatedBy == actor {
 			user++
@@ -1317,7 +1355,7 @@ func (s *Server) evaluateAdditionalBatchSubmissionLimits(
 	return nil, nil
 }
 
-func (s *Server) findBatchByRequestID(ctx context.Context, actor, op, requestID string) (string, bool, error) {
+func (s *Server) findBatchByRequestID(ctx context.Context, actor, op, requestID string) (batchID string, found bool, err error) {
 	events, err := s.client.DomainEvent.Query().
 		Where(
 			domainevent.AggregateTypeEQ("batch"),
@@ -1376,7 +1414,7 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 		return generated.VMBatchStatusResponse{}, nil, err
 	}
 
-	operation := generated.VMBatchOperation("CREATE")
+	var operation generated.VMBatchOperation
 	switch domain.EventType(parentEvent.EventType) {
 	case domain.EventBatchDeleteRequested:
 		operation = generated.VMBatchOperation("DELETE")
@@ -1402,9 +1440,9 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 	}
 	eventByID := map[string]*ent.DomainEvent{}
 	if len(eventIDs) > 0 {
-		events, err := s.client.DomainEvent.Query().Where(domainevent.IDIn(eventIDs...)).All(ctx)
-		if err != nil {
-			return generated.VMBatchStatusResponse{}, nil, err
+		events, eventsErr := s.client.DomainEvent.Query().Where(domainevent.IDIn(eventIDs...)).All(ctx)
+		if eventsErr != nil {
+			return generated.VMBatchStatusResponse{}, nil, eventsErr
 		}
 		for _, ev := range events {
 			eventByID[ev.ID] = ev
@@ -1444,18 +1482,20 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 			switch domain.EventType(ev.EventType) {
 			case domain.EventVMDeletionRequested:
 				var payload domain.VMDeletePayload
-				if err := json.Unmarshal(ev.Payload, &payload); err == nil {
+				if decodeErr := json.Unmarshal(ev.Payload, &payload); decodeErr == nil {
 					if strings.TrimSpace(payload.VMName) != "" {
 						resourceName = payload.VMName
 					}
 				}
 			case domain.EventVMCreationRequested:
 				var payload domain.VMCreationPayload
-				if err := json.Unmarshal(ev.Payload, &payload); err == nil {
+				if decodeErr := json.Unmarshal(ev.Payload, &payload); decodeErr == nil {
 					if resourceID == "" {
 						resourceID = strings.TrimSpace(payload.ServiceID)
 					}
 				}
+			default:
+				// Other event types don't encode VM name/ID in a known payload shape.
 			}
 		}
 
@@ -1488,8 +1528,8 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 			SetStatus(projectionStatus).
 			SetCreatedBy(parent.Requester).
 			SetReason(parent.Reason)
-		if _, err := createBuilder.Save(ctx); err != nil && !ent.IsConstraintError(err) {
-			logger.Warn("failed to backfill batch projection row", zap.String("batch_id", parent.ID), zap.Error(err))
+		if _, saveErr := createBuilder.Save(ctx); saveErr != nil && !ent.IsConstraintError(saveErr) {
+			logger.Warn("failed to backfill batch projection row", zap.String("batch_id", parent.ID), zap.Error(saveErr))
 		}
 	} else {
 		_, err = s.client.BatchApprovalTicket.UpdateOneID(parent.ID).
@@ -1655,10 +1695,7 @@ func (s *Server) ListVMBatches(c *gin.Context, params generated.ListVMBatchesPar
 	offset := (page - 1) * perPage
 
 	// Build ordering: default newest-first per ADR-0015 list semantics.
-	desc := true
-	if params.SortOrder == generated.ListVMBatchesParamsSortOrderAsc {
-		desc = false
-	}
+	desc := params.SortOrder != generated.ListVMBatchesParamsSortOrderAsc
 
 	// Count total (without pagination).
 	query := s.client.BatchApprovalTicket.Query()
@@ -1669,6 +1706,10 @@ func (s *Server) ListVMBatches(c *gin.Context, params generated.ListVMBatchesPar
 
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while counting vm batches", zap.Error(err))
+			return
+		}
 		logger.Error("failed to count vm batches", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -1682,6 +1723,10 @@ func (s *Server) ListVMBatches(c *gin.Context, params generated.ListVMBatchesPar
 
 	rows, err := query.Order(orderFn).Offset(offset).Limit(perPage).All(ctx)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while listing vm batches", zap.Error(err), zap.Int("page", page))
+			return
+		}
 		logger.Error("failed to list vm batches", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return

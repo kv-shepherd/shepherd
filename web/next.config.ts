@@ -4,6 +4,19 @@ const nextConfig: NextConfig = {
   // Transpile antd and pro-components for proper SSR/CSR handling
   transpilePackages: ["antd", "@ant-design/pro-components"],
 
+  // E2E isolation:
+  // - production/local dev default: ".next"
+  // - live E2E default: ".next-e2e"
+  // - live E2E per-run override: NEXT_DIST_DIR (set by run_e2e_live.sh)
+  // Per-run dist dir avoids stale/concurrent Next dev lock conflicts.
+  distDir: process.env.NEXT_DIST_DIR || (process.env.LIVE_E2E ? ".next-e2e" : ".next"),
+
+  // For live E2E runs we route Next's tsconfig auto-adjustment to a temporary file
+  // (under .next-e2e) so repository tsconfig.json is not rewritten on each run.
+  typescript: {
+    tsconfigPath: process.env.NEXT_TSCONFIG_PATH || "tsconfig.json",
+  },
+
   // Optimize barrel file imports (AGENTS.md §2.1)
   // Note: Turbopack does this automatically, but we configure it
   // explicitly for webpack fallback compatibility.

@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -99,4 +101,23 @@ func TestToSystemMember(t *testing.T) {
 			t.Fatalf("DisplayName = %q, want %q", member.DisplayName, "Alice")
 		}
 	})
+}
+
+func TestMemberHandler_ListSystemMembers_RequestContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newSystemBehaviorTestServer(t)
+	c, w := newAuthedGinContext(t, http.MethodGet, "/systems/sys-cancelled/members", "", "user-a", []string{"system:read"})
+	reqCtx, cancel := context.WithCancel(c.Request.Context())
+	cancel()
+	c.Request = c.Request.WithContext(reqCtx)
+
+	srv.ListSystemMembers(c, "sys-cancelled")
+
+	if w.Body.Len() != 0 {
+		t.Fatalf("expected empty body for canceled request, got %q", w.Body.String())
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d for canceled request", w.Code, http.StatusOK)
+	}
 }

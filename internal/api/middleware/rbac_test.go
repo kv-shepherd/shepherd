@@ -48,7 +48,7 @@ func TestRequirePermission(t *testing.T) {
 	run := func(perms interface{}, required string) (int, bool) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
-		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c.Request = httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 		if perms != nil {
 			c.Set("permissions", perms)
 		}

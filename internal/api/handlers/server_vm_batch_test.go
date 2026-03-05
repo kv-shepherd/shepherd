@@ -401,5 +401,5 @@ func mustOpenAPIUUID(t *testing.T, raw string) openapi_types.UUID {
 	if err != nil {
 		t.Fatalf("uuid.Parse(%q) failed: %v", raw, err)
 	}
-	return openapi_types.UUID(id)
+	return id
 }

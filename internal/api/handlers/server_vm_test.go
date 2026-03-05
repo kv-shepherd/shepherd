@@ -328,9 +328,10 @@ func mustCreateServiceForVM(t *testing.T, client *ent.Client, actor string) stri
 // findVMInList locates a VM by ID from the list, fatally fails if not found.
 func findVMInList(t *testing.T, items []generated.VM, vmID string) generated.VM {
 	t.Helper()
-	for _, item := range items {
+	for i := range items {
+		item := &items[i]
 		if item.Id == vmID {
-			return item
+			return *item
 		}
 	}
 	t.Fatalf("VM %q not found in list response", vmID)

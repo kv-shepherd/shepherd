@@ -176,4 +176,40 @@ describe('useAdminRbacController', () => {
       allowed_environments: ['test'],
     });
   });
+
+  it('hydrates role edit form fields after opening edit modal', async () => {
+    useApiMutationMock
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
+    useApiActionMock
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminRbacController({ t }));
+
+    act(() => {
+      result.current.openEditRoleModal({
+        id: 'role-2',
+        name: 'ops-editor',
+        display_name: 'Ops Editor',
+        description: 'edit ops resources',
+        permissions: ['approval:view'],
+        built_in: false,
+        enabled: true,
+      });
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(roleEditFormState.resetFields).toHaveBeenCalled();
+    expect(roleEditFormState.setFieldsValue).toHaveBeenCalledWith({
+      display_name: 'Ops Editor',
+      description: 'edit ops resources',
+      permissions: ['approval:view'],
+      enabled: true,
+    });
+  });
 });

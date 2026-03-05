@@ -84,12 +84,3 @@ func NewServer(deps ServerDeps) *Server {
 		notifier:       deps.Notifier,
 	}
 }
-
-// actorFromCtx extracts the authenticated user ID from the request context.
-// All handlers use this instead of hardcoded "anonymous".
-func actorFromCtx(c interface{ GetString(string) string }) string {
-	if uid := c.GetString("user_id"); uid != "" {
-		return uid
-	}
-	return "anonymous"
-}

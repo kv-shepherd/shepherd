@@ -553,8 +553,8 @@ const (
 | Rule | CI Script |
 |------|-----------|
 | Run `go generate ./ent` after schema changes | `check_ent_codegen.go` |
-| No handwritten SQL strings | `check_forbidden_imports.go` |
-| Transaction boundaries at UseCase layer | `check_transaction_boundary.go` |
+| No handwritten SQL strings | `shepherd-arch/forbiddenimports` |
+| Transaction boundaries at UseCase layer | `shepherd-arch/txboundary` |
 
 ---
 

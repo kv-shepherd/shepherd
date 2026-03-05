@@ -2,7 +2,7 @@
 
 import { Form, message } from 'antd';
 import type { TFunction } from 'i18next';
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 
 import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
@@ -70,22 +70,32 @@ function formToPayload(
     // Overcommit clear semantics:
     // - create: omit request fields when disabled
     // - update: send 0 as clear sentinel so backend can clear persisted values
-    const rest = { ...values };
-    if (!values.cpu_overcommit_enabled) {
-        rest.cpu_request = mode === 'update' ? 0 : undefined;
-    }
-    if (!values.memory_overcommit_enabled) {
-        rest.memory_request_gi = mode === 'update' ? 0 : undefined;
-    }
+    const cpuRequest =
+        values.cpu_overcommit_enabled ? values.cpu_request : (mode === 'update' ? 0 : undefined);
+    const memoryRequestGi =
+        values.memory_overcommit_enabled ? values.memory_request_gi : (mode === 'update' ? 0 : undefined);
 
-    // Exclude form-only fields from the API payload
-    const { spec_text, cpu_overcommit_enabled, memory_overcommit_enabled, ...apiFields } = rest;
-    void spec_text; void cpu_overcommit_enabled; void memory_overcommit_enabled;
-
-    return {
-        ...apiFields,
+    // Explicit whitelist to avoid leaking dynamic-form internals (for example "spec")
+    // into API payload and violating OpenAPI additionalProperties=false checks.
+    const payload: Omit<InstanceSizeCreateRequest, 'name'> & { name?: string } = {
+        name: values.name,
+        display_name: values.display_name,
+        description: values.description,
+        cpu_cores: values.cpu_cores,
+        memory_gi: values.memory_gi,
+        disk_gb: values.disk_gb,
+        cpu_request: cpuRequest,
+        memory_request_gi: memoryRequestGi,
+        dedicated_cpu: values.dedicated_cpu,
+        requires_sriov: values.requires_sriov,
+        sort_order: values.sort_order,
+        enabled: values.enabled,
         spec_overrides: specOverrides,
     };
+
+    return Object.fromEntries(
+        Object.entries(payload).filter(([, value]) => value !== undefined)
+    ) as Omit<InstanceSizeCreateRequest, 'name'> & { name?: string };
 }
 
 export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesControllerArgs) {
@@ -180,34 +190,47 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
     };
 
     const openEditModal = (item: InstanceSize) => {
-        const hydrated = item as InstanceSize & {
+        setEditingItem(item);
+        setEditOpen(true);
+    };
+
+    // Edit modal uses destroyOnHidden, so form fields are unmounted while closed.
+    // Hydrate fields after modal opens to avoid empty required values.
+    useEffect(() => {
+        if (!editOpen || !editingItem) {
+            return;
+        }
+
+        const hydrated = editingItem as InstanceSize & {
             cpu_request?: number;
             memory_request_gi?: number;
             sort_order?: number;
         };
 
-
-        setEditingItem(item);
-        editForm.setFieldsValue({
-            name: item.name,
-            display_name: item.display_name,
-            description: item.description,
-            cpu_cores: item.cpu_cores,
-            memory_gi: item.memory_gi,
-            disk_gb: item.disk_gb,
-            dedicated_cpu: item.dedicated_cpu,
-            cpu_request: hydrated.cpu_request,
-            memory_request_gi: hydrated.memory_request_gi,
-            cpu_overcommit_enabled: !!hydrated.cpu_request,
-            memory_overcommit_enabled: !!hydrated.memory_request_gi,
-            requires_sriov: item.requires_sriov,
-            sort_order: hydrated.sort_order,
-            // spec_text: DynamicSchemaForm will parse this JSON string on mount
-            spec_text: JSON.stringify(item.spec_overrides ?? {}, null, 2),
-            enabled: item.enabled,
-        });
-        setEditOpen(true);
-    };
+        // Defer one tick so Modal/Form fields are mounted before hydration.
+        const timer = setTimeout(() => {
+            editForm.resetFields();
+            editForm.setFieldsValue({
+                name: editingItem.name,
+                display_name: editingItem.display_name,
+                description: editingItem.description,
+                cpu_cores: editingItem.cpu_cores,
+                memory_gi: editingItem.memory_gi,
+                disk_gb: editingItem.disk_gb,
+                dedicated_cpu: editingItem.dedicated_cpu,
+                cpu_request: hydrated.cpu_request,
+                memory_request_gi: hydrated.memory_request_gi,
+                cpu_overcommit_enabled: !!hydrated.cpu_request,
+                memory_overcommit_enabled: !!hydrated.memory_request_gi,
+                requires_sriov: editingItem.requires_sriov,
+                sort_order: hydrated.sort_order,
+                // spec_text: DynamicSchemaForm will parse this JSON string on mount
+                spec_text: JSON.stringify(editingItem.spec_overrides ?? {}, null, 2),
+                enabled: editingItem.enabled,
+            });
+        }, 0);
+        return () => clearTimeout(timer);
+    }, [editForm, editOpen, editingItem]);
 
     const openDeleteModal = (item: InstanceSize) => {
         setDeletingItem(item);

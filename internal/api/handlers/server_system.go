@@ -33,6 +33,10 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 			).
 			All(ctx)
 		if err != nil {
+			if isRequestContextCanceled(err) {
+				logger.Debug("request canceled while querying system bindings", zap.Error(err), zap.String("actor", actor))
+				return
+			}
 			logger.Error("failed to query system bindings", zap.Error(err), zap.String("actor", actor))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
@@ -70,6 +74,10 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while counting systems", zap.Error(err))
+			return
+		}
 		logger.Error("failed to count systems", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -81,6 +89,10 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 		Order(ent.Desc(entsystem.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while listing systems", zap.Error(err), zap.Int("page", page))
+			return
+		}
 		logger.Error("failed to list systems", zap.Error(err), zap.Int("page", page))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -186,22 +198,22 @@ func (s *Server) CreateSystem(c *gin.Context) {
 }
 
 // GetSystem handles GET /systems/{system_id}.
-func (s *Server) GetSystem(c *gin.Context, systemId generated.SystemID) {
+func (s *Server) GetSystem(c *gin.Context, systemID generated.SystemID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "system:read") {
 		return
 	}
-	if _, ok := s.requireSystemRole(c, systemId, "view"); !ok {
+	if _, ok := s.requireSystemRole(c, systemID, "view"); !ok {
 		return
 	}
 
-	sys, err := s.client.System.Get(ctx, systemId)
+	sys, err := s.client.System.Get(ctx, systemID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "SYSTEM_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get system", zap.Error(err), zap.String("system_id", systemId))
+		logger.Error("failed to get system", zap.Error(err), zap.String("system_id", systemID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -211,12 +223,12 @@ func (s *Server) GetSystem(c *gin.Context, systemId generated.SystemID) {
 
 // UpdateSystem handles PATCH /systems/{system_id}.
 // Stage 4.C: only description is mutable; name is immutable.
-func (s *Server) UpdateSystem(c *gin.Context, systemId generated.SystemID) {
+func (s *Server) UpdateSystem(c *gin.Context, systemID generated.SystemID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "system:write") {
 		return
 	}
-	actor, ok := s.requireSystemRole(c, systemId, "update")
+	actor, ok := s.requireSystemRole(c, systemID, "update")
 	if !ok {
 		return
 	}
@@ -226,24 +238,24 @@ func (s *Server) UpdateSystem(c *gin.Context, systemId generated.SystemID) {
 		return
 	}
 
-	existing, err := s.client.System.Get(ctx, systemId)
+	existing, err := s.client.System.Get(ctx, systemID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "SYSTEM_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get system for update", zap.Error(err), zap.String("system_id", systemId))
+		logger.Error("failed to get system for update", zap.Error(err), zap.String("system_id", systemID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
-	updated, err := s.client.System.UpdateOneID(systemId).
+	updated, err := s.client.System.UpdateOneID(systemID).
 		SetDescription(req.Description).
 		Save(ctx)
 	if err != nil {
 		logger.Error("failed to update system",
 			zap.Error(err),
-			zap.String("system_id", systemId),
+			zap.String("system_id", systemID),
 			zap.String("actor", actor),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -251,7 +263,7 @@ func (s *Server) UpdateSystem(c *gin.Context, systemId generated.SystemID) {
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "system.update", "system", systemId, actor, map[string]interface{}{
+		_ = s.audit.LogAction(ctx, "system.update", "system", systemID, actor, map[string]interface{}{
 			"field": "description",
 			"old":   existing.Description,
 			"new":   req.Description,
@@ -263,23 +275,23 @@ func (s *Server) UpdateSystem(c *gin.Context, systemId generated.SystemID) {
 
 // DeleteSystem handles DELETE /systems/{system_id}.
 // ADR-0015 §13 addendum: confirm_name query param required.
-func (s *Server) DeleteSystem(c *gin.Context, systemId generated.SystemID, params generated.DeleteSystemParams) {
+func (s *Server) DeleteSystem(c *gin.Context, systemID generated.SystemID, params generated.DeleteSystemParams) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "system:delete") {
 		return
 	}
-	actor, ok := s.requireSystemRole(c, systemId, "delete")
+	actor, ok := s.requireSystemRole(c, systemID, "delete")
 	if !ok {
 		return
 	}
 
 	// Check for child services via edge.
 	count, err := s.client.System.Query().
-		Where(entsystem.IDEQ(systemId)).
+		Where(entsystem.IDEQ(systemID)).
 		QueryServices().
 		Count(ctx)
 	if err != nil {
-		logger.Error("failed to count system services", zap.Error(err), zap.String("system_id", systemId))
+		logger.Error("failed to count system services", zap.Error(err), zap.String("system_id", systemID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -288,13 +300,13 @@ func (s *Server) DeleteSystem(c *gin.Context, systemId generated.SystemID, param
 		return
 	}
 
-	sys, err := s.client.System.Get(ctx, systemId)
+	sys, err := s.client.System.Get(ctx, systemID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "SYSTEM_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get system for delete", zap.Error(err), zap.String("system_id", systemId))
+		logger.Error("failed to get system for delete", zap.Error(err), zap.String("system_id", systemID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -308,18 +320,18 @@ func (s *Server) DeleteSystem(c *gin.Context, systemId generated.SystemID, param
 		return
 	}
 
-	if err := s.client.System.DeleteOneID(systemId).Exec(ctx); err != nil {
-		logger.Error("failed to delete system", zap.Error(err), zap.String("system_id", systemId))
+	if err := s.client.System.DeleteOneID(systemID).Exec(ctx); err != nil {
+		logger.Error("failed to delete system", zap.Error(err), zap.String("system_id", systemID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		if err := s.audit.LogAction(ctx, "system.delete", "system", systemId, actor, nil); err != nil {
+		if err := s.audit.LogAction(ctx, "system.delete", "system", systemID, actor, nil); err != nil {
 			logger.Warn("audit log write failed",
 				zap.Error(err),
 				zap.String("action", "system.delete"),
-				zap.String("resource_id", systemId),
+				zap.String("resource_id", systemID),
 			)
 		}
 	}
@@ -328,18 +340,18 @@ func (s *Server) DeleteSystem(c *gin.Context, systemId generated.SystemID, param
 }
 
 // ListServices handles GET /systems/{system_id}/services.
-func (s *Server) ListServices(c *gin.Context, systemId generated.SystemID, params generated.ListServicesParams) {
+func (s *Server) ListServices(c *gin.Context, systemID generated.SystemID, params generated.ListServicesParams) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "service:read") {
 		return
 	}
-	if _, ok := s.requireSystemRole(c, systemId, "view"); !ok {
+	if _, ok := s.requireSystemRole(c, systemID, "view"); !ok {
 		return
 	}
 
 	// Query services via system edge.
 	query := s.client.System.Query().
-		Where(entsystem.IDEQ(systemId)).
+		Where(entsystem.IDEQ(systemID)).
 		QueryServices()
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
@@ -347,7 +359,7 @@ func (s *Server) ListServices(c *gin.Context, systemId generated.SystemID, param
 
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
-		logger.Error("failed to count services", zap.Error(err), zap.String("system_id", systemId))
+		logger.Error("failed to count services", zap.Error(err), zap.String("system_id", systemID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -358,14 +370,14 @@ func (s *Server) ListServices(c *gin.Context, systemId generated.SystemID, param
 		Order(ent.Desc(entservice.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
-		logger.Error("failed to list services", zap.Error(err), zap.String("system_id", systemId))
+		logger.Error("failed to list services", zap.Error(err), zap.String("system_id", systemID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	items := make([]generated.Service, 0, len(services))
 	for _, svc := range services {
-		items = append(items, serviceToAPI(svc, systemId))
+		items = append(items, serviceToAPI(svc, systemID))
 	}
 
 	totalPages := (total + perPage - 1) / perPage
@@ -381,24 +393,24 @@ func (s *Server) ListServices(c *gin.Context, systemId generated.SystemID, param
 }
 
 // CreateService handles POST /systems/{system_id}/services.
-func (s *Server) CreateService(c *gin.Context, systemId generated.SystemID) {
+func (s *Server) CreateService(c *gin.Context, systemID generated.SystemID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "service:create") {
 		return
 	}
-	actor, ok := s.requireSystemRole(c, systemId, "create")
+	actor, ok := s.requireSystemRole(c, systemID, "create")
 	if !ok {
 		return
 	}
 
 	// Verify system exists.
-	_, err := s.client.System.Get(ctx, systemId)
+	_, err := s.client.System.Get(ctx, systemID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "SYSTEM_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get system for service creation", zap.Error(err), zap.String("system_id", systemId))
+		logger.Error("failed to get system for service creation", zap.Error(err), zap.String("system_id", systemID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -412,7 +424,7 @@ func (s *Server) CreateService(c *gin.Context, systemId generated.SystemID) {
 	create := s.client.Service.Create().
 		SetID(id.String()).
 		SetName(req.Name).
-		SetSystemID(systemId) // ent edge setter
+		SetSystemID(systemID) // ent edge setter
 	if req.Description != "" {
 		create = create.SetDescription(req.Description)
 	}
@@ -425,7 +437,7 @@ func (s *Server) CreateService(c *gin.Context, systemId generated.SystemID) {
 		}
 		logger.Error("failed to create service",
 			zap.Error(err),
-			zap.String("system_id", systemId),
+			zap.String("system_id", systemID),
 			zap.String("actor", actor),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -434,7 +446,7 @@ func (s *Server) CreateService(c *gin.Context, systemId generated.SystemID) {
 
 	if s.audit != nil {
 		if err := s.audit.LogAction(ctx, "service.create", "service", svc.ID, actor,
-			map[string]interface{}{"system_id": systemId}); err != nil {
+			map[string]interface{}{"system_id": systemID}); err != nil {
 			logger.Warn("audit log write failed",
 				zap.Error(err),
 				zap.String("action", "service.create"),
@@ -443,24 +455,24 @@ func (s *Server) CreateService(c *gin.Context, systemId generated.SystemID) {
 		}
 	}
 
-	c.JSON(http.StatusCreated, serviceToAPI(svc, systemId))
+	c.JSON(http.StatusCreated, serviceToAPI(svc, systemID))
 }
 
 // GetService handles GET /systems/{system_id}/services/{service_id}.
-func (s *Server) GetService(c *gin.Context, systemId generated.SystemID, serviceId generated.ServiceID) {
+func (s *Server) GetService(c *gin.Context, systemID generated.SystemID, serviceID generated.ServiceID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "service:read") {
 		return
 	}
-	if _, ok := s.requireSystemRole(c, systemId, "view"); !ok {
+	if _, ok := s.requireSystemRole(c, systemID, "view"); !ok {
 		return
 	}
 
 	// Verify the service exists and belongs to the given system.
 	svc, err := s.client.Service.Query().
 		Where(
-			entservice.IDEQ(serviceId),
-			entservice.HasSystemWith(entsystem.IDEQ(systemId)),
+			entservice.IDEQ(serviceID),
+			entservice.HasSystemWith(entsystem.IDEQ(systemID)),
 		).
 		Only(ctx)
 	if err != nil {
@@ -470,24 +482,24 @@ func (s *Server) GetService(c *gin.Context, systemId generated.SystemID, service
 		}
 		logger.Error("failed to get service",
 			zap.Error(err),
-			zap.String("system_id", systemId),
-			zap.String("service_id", serviceId),
+			zap.String("system_id", systemID),
+			zap.String("service_id", serviceID),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
-	c.JSON(http.StatusOK, serviceToAPI(svc, systemId))
+	c.JSON(http.StatusOK, serviceToAPI(svc, systemID))
 }
 
 // UpdateService handles PATCH /systems/{system_id}/services/{service_id}.
 // Stage 4.C: only description is mutable; name is immutable.
-func (s *Server) UpdateService(c *gin.Context, systemId generated.SystemID, serviceId generated.ServiceID) {
+func (s *Server) UpdateService(c *gin.Context, systemID generated.SystemID, serviceID generated.ServiceID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "service:create") {
 		return
 	}
-	actor, ok := s.requireSystemRole(c, systemId, "update")
+	actor, ok := s.requireSystemRole(c, systemID, "update")
 	if !ok {
 		return
 	}
@@ -499,8 +511,8 @@ func (s *Server) UpdateService(c *gin.Context, systemId generated.SystemID, serv
 
 	existing, err := s.client.Service.Query().
 		Where(
-			entservice.IDEQ(serviceId),
-			entservice.HasSystemWith(entsystem.IDEQ(systemId)),
+			entservice.IDEQ(serviceID),
+			entservice.HasSystemWith(entsystem.IDEQ(systemID)),
 		).
 		Only(ctx)
 	if err != nil {
@@ -510,21 +522,21 @@ func (s *Server) UpdateService(c *gin.Context, systemId generated.SystemID, serv
 		}
 		logger.Error("failed to get service for update",
 			zap.Error(err),
-			zap.String("system_id", systemId),
-			zap.String("service_id", serviceId),
+			zap.String("system_id", systemID),
+			zap.String("service_id", serviceID),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
-	updated, err := s.client.Service.UpdateOneID(serviceId).
+	updated, err := s.client.Service.UpdateOneID(serviceID).
 		SetDescription(req.Description).
 		Save(ctx)
 	if err != nil {
 		logger.Error("failed to update service",
 			zap.Error(err),
-			zap.String("system_id", systemId),
-			zap.String("service_id", serviceId),
+			zap.String("system_id", systemID),
+			zap.String("service_id", serviceID),
 			zap.String("actor", actor),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -532,26 +544,26 @@ func (s *Server) UpdateService(c *gin.Context, systemId generated.SystemID, serv
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "service.update", "service", serviceId, actor, map[string]interface{}{
-			"system_id": systemId,
+		_ = s.audit.LogAction(ctx, "service.update", "service", serviceID, actor, map[string]interface{}{
+			"system_id": systemID,
 			"field":     "description",
 			"old":       existing.Description,
 			"new":       req.Description,
 		})
 	}
 
-	c.JSON(http.StatusOK, serviceToAPI(updated, systemId))
+	c.JSON(http.StatusOK, serviceToAPI(updated, systemID))
 }
 
 // DeleteService handles DELETE /systems/{system_id}/services/{service_id}.
 // ADR-0015 §13: requires confirm=true query param.
 // Cascade constraint: must have zero child VMs.
-func (s *Server) DeleteService(c *gin.Context, systemId generated.SystemID, serviceId generated.ServiceID, params generated.DeleteServiceParams) {
+func (s *Server) DeleteService(c *gin.Context, systemID generated.SystemID, serviceID generated.ServiceID, params generated.DeleteServiceParams) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "service:delete") {
 		return
 	}
-	actor, ok := s.requireSystemRole(c, systemId, "delete")
+	actor, ok := s.requireSystemRole(c, systemID, "delete")
 	if !ok {
 		return
 	}
@@ -559,8 +571,8 @@ func (s *Server) DeleteService(c *gin.Context, systemId generated.SystemID, serv
 	// Verify the service exists and belongs to the given system.
 	svc, err := s.client.Service.Query().
 		Where(
-			entservice.IDEQ(serviceId),
-			entservice.HasSystemWith(entsystem.IDEQ(systemId)),
+			entservice.IDEQ(serviceID),
+			entservice.HasSystemWith(entsystem.IDEQ(systemID)),
 		).
 		Only(ctx)
 	if err != nil {
@@ -570,8 +582,8 @@ func (s *Server) DeleteService(c *gin.Context, systemId generated.SystemID, serv
 		}
 		logger.Error("failed to get service for delete",
 			zap.Error(err),
-			zap.String("system_id", systemId),
-			zap.String("service_id", serviceId),
+			zap.String("system_id", systemID),
+			zap.String("service_id", serviceID),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -591,7 +603,7 @@ func (s *Server) DeleteService(c *gin.Context, systemId generated.SystemID, serv
 	if err != nil {
 		logger.Error("failed to count service VMs",
 			zap.Error(err),
-			zap.String("service_id", serviceId),
+			zap.String("service_id", serviceID),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -605,22 +617,22 @@ func (s *Server) DeleteService(c *gin.Context, systemId generated.SystemID, serv
 	}
 
 	// Hard delete.
-	if err := s.client.Service.DeleteOneID(serviceId).Exec(ctx); err != nil {
+	if err := s.client.Service.DeleteOneID(serviceID).Exec(ctx); err != nil {
 		logger.Error("failed to delete service",
 			zap.Error(err),
-			zap.String("service_id", serviceId),
+			zap.String("service_id", serviceID),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		if err := s.audit.LogAction(ctx, "service.delete", "service", serviceId, actor,
-			map[string]interface{}{"system_id": systemId}); err != nil {
+		if err := s.audit.LogAction(ctx, "service.delete", "service", serviceID, actor,
+			map[string]interface{}{"system_id": systemID}); err != nil {
 			logger.Warn("audit log write failed",
 				zap.Error(err),
 				zap.String("action", "service.delete"),
-				zap.String("resource_id", serviceId),
+				zap.String("resource_id", serviceID),
 			)
 		}
 	}
@@ -642,13 +654,13 @@ func systemToAPI(sys *ent.System) generated.System {
 }
 
 // serviceToAPI converts ent Service to generated Service.
-// systemId is passed because Service stores FK in unexported field.
-func serviceToAPI(svc *ent.Service, systemId string) generated.Service {
+// systemID is passed because Service stores FK in unexported field.
+func serviceToAPI(svc *ent.Service, systemID string) generated.Service {
 	return generated.Service{
 		Id:                svc.ID,
 		Name:              svc.Name,
 		Description:       svc.Description,
-		SystemId:          systemId,
+		SystemId:          systemID,
 		NextInstanceIndex: svc.NextInstanceIndex,
 		CreatedAt:         svc.CreatedAt,
 	}

@@ -14,18 +14,22 @@
  *   vm-console-status-{id}
  *   vm-action-start-{id}
  *   vm-action-stop-{id}
+ *   vm-action-delete-{id}
  *   vm-action-console-{id}
  */
-import { Badge, Button, Card, Descriptions, Space, Tag, Typography } from 'antd';
+import { Badge, Button, Card, Descriptions, Input, Modal, Space, Tag, Typography } from 'antd';
 import {
     ArrowLeftOutlined,
+    DeleteOutlined,
     DesktopOutlined,
+    ExclamationCircleOutlined,
     PauseCircleOutlined,
     PlayCircleOutlined,
     RedoOutlined,
 } from '@ant-design/icons';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
+import { useState } from 'react';
 import dayjs from 'dayjs';
 
 import { useApiGet } from '@/lib/api/useApiGet';
@@ -34,7 +38,7 @@ import { api } from '@/lib/api/client';
 import { useMessage } from '@/lib/hooks/useMessage';
 import { VM_STATUS_MAP } from '@/features/vm-management/types';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 export default function VMDetailPage() {
     const { t } = useTranslation(['vm', 'common']);
@@ -42,6 +46,8 @@ export default function VMDetailPage() {
     const router = useRouter();
     const vmId = params.id;
     const { messageApi, messageContextHolder } = useMessage();
+    const [deleteOpen, setDeleteOpen] = useState(false);
+    const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
     const { data: vm, isLoading, refetch } = useApiGet(
         ['vm-detail', vmId],
@@ -62,12 +68,37 @@ export default function VMDetailPage() {
         }
     );
 
+    const deleteMutation = useApiMutation(
+        () =>
+            api.DELETE('/vms/{vm_id}', {
+                params: {
+                    path: { vm_id: vmId },
+                    query: { confirm: true, confirm_name: vm?.name ?? '' },
+                },
+            }),
+        {
+            onSuccess: (resp) => {
+                const ticketID = resp?.ticket_id ?? '—';
+                void messageApi.success(t('delete_request_submitted', { ticket_id: ticketID }));
+                setDeleteOpen(false);
+                setDeleteConfirmName('');
+                router.push('/vms');
+            },
+            onError: (err) => {
+                void messageApi.error(err.message || t('common:message.error'));
+            },
+        }
+    );
+
     // vm data is typed from the generated spec
     const vmData = vm;
     const status = vmData?.status as string | undefined;
     const mapped = VM_STATUS_MAP[status ?? 'UNKNOWN'] ?? VM_STATUS_MAP.UNKNOWN;
     const isRunning = status === 'RUNNING';
     const isStopped = status === 'STOPPED';
+    const canDelete = isStopped || status === 'FAILED';
+    const requiresNameConfirm = vmData?.environment !== 'test';
+    const deleteConfirmMatched = !requiresNameConfirm || deleteConfirmName === (vmData?.name ?? '');
 
     return (
         <div data-testid="vm-detail-page">
@@ -161,8 +192,66 @@ export default function VMDetailPage() {
                     >
                         {t('action.refresh_status', { defaultValue: 'Refresh Status' })}
                     </Button>
+                    <Button
+                        danger
+                        icon={<DeleteOutlined />}
+                        data-testid={`vm-action-delete-${vmId}`}
+                        disabled={!canDelete || !vmData?.name}
+                        loading={deleteMutation.isPending}
+                        onClick={() => {
+                            setDeleteConfirmName('');
+                            setDeleteOpen(true);
+                        }}
+                    >
+                        {t('action.delete')}
+                    </Button>
                 </Space>
             </Card>
+            <Modal
+                title={(
+                    <Space>
+                        <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
+                        {t('action.delete_confirm')}
+                    </Space>
+                )}
+                open={deleteOpen}
+                onOk={() => {
+                    if (!vmData?.name) {
+                        return;
+                    }
+                    if (requiresNameConfirm && deleteConfirmName !== vmData.name) {
+                        void messageApi.warning(t('action.delete_type_name_hint'));
+                        return;
+                    }
+                    deleteMutation.mutate();
+                }}
+                onCancel={() => {
+                    setDeleteOpen(false);
+                    setDeleteConfirmName('');
+                }}
+                confirmLoading={deleteMutation.isPending}
+                okButtonProps={{ danger: true, disabled: !deleteConfirmMatched }}
+                okText={t('common:button.delete')}
+                destroyOnHidden={true}
+                data-testid="vm-delete-modal"
+            >
+                <Paragraph>
+                    {t('action.delete_confirm_name', { name: vmData?.name ?? vmId })}
+                </Paragraph>
+                {requiresNameConfirm && (
+                    <>
+                        <Paragraph type="secondary">
+                            {t('action.delete_type_name_hint')}
+                        </Paragraph>
+                        <Input
+                            value={deleteConfirmName}
+                            onChange={(e) => setDeleteConfirmName(e.target.value)}
+                            placeholder={vmData?.name ?? vmId}
+                            status={deleteConfirmName && deleteConfirmName !== vmData?.name ? 'error' : undefined}
+                        />
+                    </>
+                )}
+            </Modal>
         </div>
     );
 }

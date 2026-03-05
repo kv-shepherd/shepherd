@@ -150,10 +150,10 @@ Frontend translates using these codes:
 ```json
 // src/i18n/locales/zh-CN/errors.json
 {
-  "NAMESPACE_PERMISSION_DENIED": "您没有创建命名空间 '{{namespace}}' 的权限",
-  "NAMESPACE_CREATION_FAILED": "创建命名空间 '{{namespace}}' 失败：{{reason}}",
-  "CLUSTER_UNHEALTHY": "集群 '{{cluster}}' 当前不可用",
-  "APPROVAL_REQUIRED": "此操作需要审批"
+  "NAMESPACE_PERMISSION_DENIED": "You don't have permission to create namespace '{{namespace}}'",
+  "NAMESPACE_CREATION_FAILED": "Failed to create namespace '{{namespace}}': {{reason}}",
+  "CLUSTER_UNHEALTHY": "Cluster '{{cluster}}' is currently unavailable",
+  "APPROVAL_REQUIRED": "This action requires approval"
 }
 ```
 

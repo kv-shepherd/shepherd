@@ -152,7 +152,7 @@ func TestRun(t *testing.T) {
 
 	t.Run("usage error", func(t *testing.T) {
 		t.Parallel()
-		err := run(nil, os.Stdout, os.Stderr)
+		err := run(nil, os.Stdout)
 		if err == nil {
 			t.Fatal("expected usage error, got nil")
 		}
@@ -182,7 +182,7 @@ components:
 		if err := os.WriteFile(inPath, []byte(input), 0o644); err != nil {
 			t.Fatalf("write input: %v", err)
 		}
-		if err := run([]string{inPath, outPath}, os.Stdout, os.Stderr); err != nil {
+		if err := run([]string{inPath, outPath}, os.Stdout); err != nil {
 			t.Fatalf("run returned error: %v", err)
 		}
 		out, err := os.ReadFile(outPath)

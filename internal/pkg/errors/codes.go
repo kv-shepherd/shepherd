@@ -1,3 +1,4 @@
+//revive:disable-next-line:var-naming // Package name is fixed by import path and existing public usage.
 package errors
 
 import "net/http"

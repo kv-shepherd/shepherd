@@ -2,9 +2,11 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -133,7 +135,7 @@ func TestOpenAPIValidatorRejectsUndeclaredQueryParamInStrictMode(t *testing.T) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live?debug=true", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live?debug=true", http.NoBody)
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -149,7 +151,7 @@ func TestOpenAPIValidatorAllowsUndeclaredCookieInStrictMode(t *testing.T) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: "__next_hmr_refresh_hash__", Value: "dev"})
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
@@ -213,7 +215,7 @@ func TestOpenAPIValidatorAllowsNonContractPath(t *testing.T) {
 		c.Status(http.StatusNoContent)
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/internal/metrics", nil)
+	req := httptest.NewRequest(http.MethodGet, "/internal/metrics", http.NoBody)
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -228,7 +230,7 @@ func TestOpenAPIValidatorRejectsInvalidResponseBody(t *testing.T) {
 		c.JSON(http.StatusOK, gin.H{"status": "NOT_OK"})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live", http.NoBody)
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -247,7 +249,7 @@ func TestOpenAPIValidatorAcceptsReadinessDegradedResponse(t *testing.T) {
 		})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", http.NoBody)
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -287,7 +289,7 @@ func TestOpenAPIValidatorAcceptsDynamicSchemaResponse(t *testing.T) {
 		})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/schemas/instancesize", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/schemas/instancesize", http.NoBody)
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -307,12 +309,262 @@ func TestOpenAPIValidatorRejectsSchemaFieldOutsideDynamicSchemaEndpoint(t *testi
 		})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live", http.NoBody)
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 for undeclared schema field outside /schemas/*, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	assertErrorCode(t, resp.Body.Bytes(), "OPENAPI_RESPONSE_INVALID")
+}
+
+func TestOpenAPIValidatorSkipsResponseValidationForCanceledRequest(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/health/live", func(c *gin.Context) {
+		// Intentionally invalid against Health schema to verify validator is skipped.
+		c.JSON(http.StatusOK, gin.H{"status": "NOT_OK"})
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live", http.NoBody).WithContext(ctx)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if strings.Contains(resp.Body.String(), "OPENAPI_RESPONSE_INVALID") {
+		t.Fatalf("did not expect OPENAPI_RESPONSE_INVALID for canceled request, got body=%s", resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsDynamicAuthProviderConfigInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/admin/auth-providers", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"id":        "provider-1",
+					"name":      "corp-ldap",
+					"auth_type": "ldap",
+					"enabled":   true,
+					"config": gin.H{
+						"host": "ldap.example.com",
+						"port": 389,
+						"nested": gin.H{
+							"base_dn": "dc=example,dc=com",
+						},
+					},
+				},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/auth-providers", http.NoBody)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dynamic auth provider config, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsDynamicAuthProviderConfigInRequestBody(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.POST("/api/v1/admin/auth-providers", func(c *gin.Context) {
+		c.JSON(http.StatusCreated, gin.H{
+			"id":        "provider-1",
+			"name":      "corp-oidc",
+			"auth_type": "oidc",
+			"enabled":   true,
+			"config": gin.H{
+				"issuer": "https://idp.example.com",
+			},
+		})
+	})
+
+	reqBody := `{
+		"name":"corp-oidc",
+		"auth_type":"oidc",
+		"enabled":true,
+		"config":{
+			"test_endpoint":"https://idp.example.com/healthz",
+			"nested":{"tenant":"team-a"}
+		}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/auth-providers", bytes.NewBufferString(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for request with dynamic auth provider config, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorStillRejectsUndeclaredAuthProviderRequestTopLevelField(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.POST("/api/v1/admin/auth-providers", func(c *gin.Context) {
+		c.JSON(http.StatusCreated, gin.H{
+			"id":        "provider-1",
+			"name":      "corp-oidc",
+			"auth_type": "oidc",
+			"enabled":   true,
+			"config":    gin.H{},
+		})
+	})
+
+	reqBody := `{
+		"name":"corp-oidc",
+		"auth_type":"oidc",
+		"rogue":"must-fail",
+		"config":{"test_endpoint":"https://idp.example.com/healthz"}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/auth-providers", bytes.NewBufferString(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for undeclared top-level request field, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	assertErrorCode(t, resp.Body.Bytes(), "OPENAPI_REQUEST_INVALID")
+}
+
+func TestOpenAPIValidatorAllowsDynamicAuthProviderTypeConfigSchemaInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/admin/auth-provider-types", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"type":         "ldap",
+					"display_name": "LDAP",
+					"built_in":     true,
+					"config_schema": gin.H{
+						"type":                 "object",
+						"required":             []string{"host"},
+						"additionalProperties": false,
+						"properties": gin.H{
+							"host": gin.H{"type": "string"},
+							"port": gin.H{"type": "integer"},
+						},
+					},
+				},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/auth-provider-types", http.NoBody)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dynamic auth provider type config_schema, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsDynamicApprovalTicketPayloadInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/approvals", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"id":        "ticket-1",
+					"event_id":  "evt-1",
+					"status":    "PENDING",
+					"requester": "u-1",
+					"ticket_payload": gin.H{
+						"template_id":      "tpl-1",
+						"instance_size_id": "size-1",
+						"vm_name":          "vm-dev-1",
+						"instance": gin.H{
+							"name": "vm-dev-1",
+						},
+					},
+				},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/approvals", http.NoBody)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dynamic approval ticket payload, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsDynamicErrorParamsInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.POST("/api/v1/systems", func(c *gin.Context) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    "REFERENCE_NOT_FOUND",
+			"message": "referenced cluster does not exist",
+			"params": gin.H{
+				"resource_id": "cluster-1",
+				"resource":    "cluster",
+				"meta": gin.H{
+					"scope": "test",
+				},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/systems", bytes.NewBufferString(`{"name":"shop"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for error response with dynamic params, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAcceptsClusterCreateBadRequestResponse(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.POST("/api/v1/admin/clusters", func(c *gin.Context) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    "INVALID_KUBECONFIG",
+			"message": "kubeconfig is invalid",
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/clusters", bytes.NewBufferString(`{"name":"c1","kubeconfig":"a3ViZWNvbmZpZw=="}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for cluster bad request response, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorStillRejectsUndeclaredAuthProviderTopLevelField(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/admin/auth-providers", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"id":        "provider-1",
+					"name":      "corp-ldap",
+					"auth_type": "ldap",
+					"enabled":   true,
+					"rogue":     "must-fail",
+					"config": gin.H{
+						"host": "ldap.example.com",
+						"port": 389,
+					},
+				},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/auth-providers", http.NoBody)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for undeclared top-level field, got %d body=%s", resp.Code, resp.Body.String())
 	}
 	assertErrorCode(t, resp.Body.Bytes(), "OPENAPI_RESPONSE_INVALID")
 }

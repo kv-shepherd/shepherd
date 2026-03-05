@@ -53,8 +53,21 @@ api.use({
  * Middleware: handle 401 responses globally (redirect to login).
  */
 api.use({
-  async onResponse({ response }) {
+  async onResponse({ request, response }) {
     if (response.status === 401 && typeof window !== 'undefined') {
+      const requestPath = (() => {
+        try {
+          return new URL(request.url, window.location.origin).pathname;
+        } catch {
+          return '';
+        }
+      })();
+      // Keep invalid-login UX on /login: backend 401 should surface inline error,
+      // not trigger global logout redirect.
+      if (requestPath.endsWith('/auth/login')) {
+        return response;
+      }
+
       const { useAuthStore } = await import('@/stores/auth');
       useAuthStore.getState().logout();
       window.location.href = '/login';
