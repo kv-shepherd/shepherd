@@ -24,6 +24,7 @@
       "phases": [
         "docs/design/phases/00-prerequisites.md#ci-enforcement",
         "docs/design/phases/01-contracts.md",
+        "docs/design/phases/01-contracts.md#ent-usage-standards-ci-enforcement",
         "docs/design/phases/05-auth-api-frontend.md"
       ],
       "checklists": [
