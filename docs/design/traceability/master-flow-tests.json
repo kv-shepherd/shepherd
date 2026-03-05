@@ -31,15 +31,26 @@
     {
       "id": "stage-1",
       "tests": [
+        "internal/app/bootstrap_test.go",
         "internal/config/config_test.go",
-        "internal/app/bootstrap_test.go"
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 1 / Step 1",
+        "Stage 1 / Step 2"
       ]
     },
     {
       "id": "stage-1-5",
       "tests": [
+        "internal/api/handlers/server_auth_test.go",
         "internal/config/secret_bootstrap_test.go",
-        "internal/api/handlers/server_auth_test.go"
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 1.5 / Step 1",
+        "Stage 1.5 / Step 2",
+        "Stage 1.5 / Step 3"
       ]
     },
     {
@@ -47,21 +58,35 @@
       "tests": [
         "cmd/seed/main_test.go",
         "internal/api/middleware/jwt_test.go",
-        "internal/api/middleware/rbac_test.go"
+        "internal/api/middleware/rbac_test.go",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 2 / Step 1",
+        "Stage 2 / Step 2"
       ]
     },
     {
       "id": "stage-2-a",
       "tests": [
         "cmd/seed/main_test.go",
-        "internal/api/middleware/rbac_test.go"
+        "internal/api/middleware/rbac_test.go",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 2.A / Step 1"
       ]
     },
     {
       "id": "stage-2-a-plus",
       "tests": [
         "internal/api/middleware/rbac_test.go",
-        "internal/api/handlers/member_test.go"
+        "internal/api/handlers/server_admin_identity_test.go",
+        "web/tests/e2e/admin-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 2.A+ / Step 1",
+        "Stage 2.A+ / Step 2"
       ]
     },
     {
@@ -69,7 +94,12 @@
       "tests": [
         "internal/api/middleware/jwt_test.go",
         "internal/api/handlers/server_admin_identity_test.go",
+        "web/tests/e2e/admin-flow-live.spec.ts",
         "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 2.B / Step 1",
+        "Stage 2.B / Step 2"
       ]
     },
     {
@@ -77,7 +107,10 @@
       "tests": [
         "internal/api/middleware/jwt_test.go",
         "internal/api/handlers/server_admin_identity_test.go",
-        "web/tests/e2e/master-flow-live.spec.ts"
+        "web/tests/e2e/admin-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 2.C / Step 1"
       ]
     },
     {
@@ -86,6 +119,9 @@
         "internal/api/handlers/environment_visibility_test.go",
         "internal/api/middleware/jwt_test.go",
         "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 2.D / Step 1"
       ]
     },
     {
@@ -94,7 +130,14 @@
         "internal/app/modules/approval_test.go",
         "internal/governance/approval/gateway_behavior_test.go",
         "internal/governance/approval/gateway_test.go",
-        "web/src/features/admin-approvals/hooks/useAdminApprovalsController.test.tsx"
+        "web/src/features/admin-approvals/hooks/useAdminApprovalsController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 2.E / Step 1",
+        "Stage 2.E / Step 2",
+        "Stage 2.E / Step 3",
+        "Stage 2.E / Step 4"
       ]
     },
     {
@@ -105,14 +148,25 @@
         "internal/api/handlers/permission_enforcement_test.go",
         "web/src/features/admin-templates/hooks/useAdminTemplatesController.test.tsx",
         "web/src/features/admin-instance-sizes/hooks/useAdminInstanceSizesController.test.tsx",
+        "web/tests/e2e/admin-flow-live.spec.ts",
         "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 3 / Step 1",
+        "Stage 3 / Step 2",
+        "Stage 3 / Step 3",
+        "Stage 3 / Step 4"
       ]
     },
     {
       "id": "stage-3-c",
       "tests": [
+        "internal/jobs/vm_create_test.go",
         "internal/usecase/approval_atomic_test.go",
-        "internal/jobs/vm_create_test.go"
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 3.C / Step 1"
       ]
     },
     {
@@ -120,7 +174,12 @@
       "tests": [
         "internal/jobs/vm_create_test.go",
         "internal/service/approval_validator_test.go",
-        "internal/usecase/approval_atomic_test.go"
+        "internal/usecase/approval_atomic_test.go",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 3.JIT Namespace / Step 1",
+        "Stage 3.JIT Namespace / Step 2"
       ]
     },
     {
@@ -133,6 +192,9 @@
         "web/src/features/systems-management/hooks/useSystemsManagementController.test.tsx",
         "web/src/features/systems-management/hooks/useSystemMembersController.test.tsx",
         "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 4.A / Step 1"
       ]
     },
     {
@@ -140,7 +202,11 @@
       "tests": [
         "internal/api/middleware/rbac_test.go",
         "internal/api/handlers/member_test.go",
-        "web/src/features/systems-management/hooks/useSystemMembersController.test.tsx"
+        "web/src/features/systems-management/hooks/useSystemMembersController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 4.A+ / Step 1"
       ]
     },
     {
@@ -151,6 +217,9 @@
         "internal/api/middleware/rbac_test.go",
         "web/src/features/services-management/hooks/useServicesManagementController.test.tsx",
         "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 4.B / Step 1"
       ]
     },
     {
@@ -160,7 +229,12 @@
         "internal/api/handlers/server_system_stage_test.go",
         "internal/api/middleware/openapi_validator_test.go",
         "web/src/features/systems-management/hooks/useSystemsManagementController.test.tsx",
-        "web/src/features/services-management/hooks/useServicesManagementController.test.tsx"
+        "web/src/features/services-management/hooks/useServicesManagementController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 4.C / Step 1",
+        "Stage 4.C / Step 2"
       ]
     },
     {
@@ -170,7 +244,12 @@
         "internal/api/handlers/server_system_stage_test.go",
         "internal/api/middleware/openapi_validator_test.go",
         "web/src/features/systems-management/hooks/useSystemsManagementController.test.tsx",
-        "web/src/features/services-management/hooks/useServicesManagementController.test.tsx"
+        "web/src/features/services-management/hooks/useServicesManagementController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 4.C / Step 1",
+        "Stage 4.C / Step 2"
       ]
     },
     {
@@ -180,6 +259,11 @@
         "internal/jobs/vm_create_test.go",
         "web/src/features/vm-management/hooks/useVMManagementController.test.tsx",
         "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 5.A / Step 1",
+        "Stage 5.A / Step 2",
+        "Stage 5.A / Step 3"
       ]
     },
     {
@@ -188,13 +272,24 @@
         "internal/governance/approval/gateway_behavior_test.go",
         "internal/governance/approval/gateway_test.go",
         "internal/service/approval_validator_test.go",
-        "web/src/features/admin-approvals/hooks/useAdminApprovalsController.test.tsx"
+        "web/src/features/admin-approvals/hooks/useAdminApprovalsController.test.tsx",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 5.B / Step 1",
+        "Stage 5.B / Step 2",
+        "Stage 5.B / Step 3"
       ]
     },
     {
       "id": "stage-5b-constraint-note-dedicated-cpu-vs-overcommit",
       "tests": [
-        "internal/service/approval_validator_test.go"
+        "internal/service/approval_validator_test.go",
+        "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 5.B Constraint / Step 1",
+        "Stage 5.B Constraint / Step 2"
       ]
     },
     {
@@ -206,6 +301,9 @@
         "web/src/features/systems-management/hooks/useSystemsManagementController.test.tsx",
         "web/src/features/vm-management/hooks/useVMManagementController.test.tsx",
         "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 5.D / Step 1"
       ]
     },
     {
@@ -215,6 +313,11 @@
         "internal/api/handlers/server_vm_batch_behavior_test.go",
         "web/src/features/vm-management/hooks/useVMManagementController.test.tsx",
         "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 5.E / Step 1",
+        "Stage 5.E / Step 2-5",
+        "Stage 5.E / Step 6"
       ]
     },
     {
@@ -224,6 +327,11 @@
         "internal/api/handlers/server_notification_behavior_test.go",
         "web/src/features/notifications/hooks/useNotificationsController.test.tsx",
         "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 5.F / Step 1",
+        "Stage 5.F / Step 2",
+        "Stage 5.F / Step 3"
       ]
     },
     {
@@ -235,6 +343,13 @@
         "internal/governance/approval/gateway_behavior_test.go",
         "web/src/features/vm-management/hooks/useVMManagementController.test.tsx",
         "web/tests/e2e/master-flow-live.spec.ts"
+      ],
+      "live_step_markers": [
+        "Stage 6 / Step 1",
+        "Stage 6 / Step 2",
+        "Stage 6 / Step 3",
+        "Stage 6 / Step 4",
+        "Stage 6 / Step 5"
       ]
     }
   ]

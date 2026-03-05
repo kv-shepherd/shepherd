@@ -2,6 +2,23 @@
 
 set -euo pipefail
 
+LOG_TS_FORMAT="${LOG_TS_FORMAT:-%Y-%m-%dT%H:%M:%S%z}"
+ts_now() {
+  date +"${LOG_TS_FORMAT}"
+}
+
+log_info() {
+  printf '%s INFO: %s\n' "$(ts_now)" "$*"
+}
+
+log_warn() {
+  printf '%s WARN: %s\n' "$(ts_now)" "$*"
+}
+
+log_error() {
+  printf '%s ERROR: %s\n' "$(ts_now)" "$*" >&2
+}
+
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 cd "$ROOT_DIR"
 
@@ -40,12 +57,12 @@ EOF
 }
 
 if ! command -v docker >/dev/null 2>&1; then
-  echo "ERROR: docker command not found"
+  log_error "docker command not found"
   exit 1
 fi
 
 if ! docker info >/dev/null 2>&1; then
-  echo "ERROR: docker daemon is not available"
+  log_error "docker daemon is not available"
   exit 1
 fi
 
@@ -100,14 +117,14 @@ CONTAINER_NAME="shepherd-test-pg-$(date +%s)-$RANDOM"
 
 cleanup() {
   if [[ "$KEEP_CONTAINER" -eq 1 ]]; then
-    echo "INFO: keeping container ${CONTAINER_NAME}"
+    log_info "keeping container ${CONTAINER_NAME}"
     return
   fi
   docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
-echo "INFO: starting PostgreSQL test container ${CONTAINER_NAME} (${PG_IMAGE})"
+log_info "starting PostgreSQL test container ${CONTAINER_NAME} (${PG_IMAGE})"
 
 DOCKER_PORT_ARGS=()
 if [[ -n "${PG_PORT}" ]]; then
@@ -130,7 +147,7 @@ if ! docker run -d \
   --health-retries 60 \
   "${PG_IMAGE}" >/dev/null 2>"${RUN_ERR_LOG}"; then
   if [[ -n "${PG_PORT}" ]] && rg -q "Unable to enable OPEN PORT rule|failed to set up container networking" "${RUN_ERR_LOG}"; then
-    echo "WARN: bridge networking failed; retrying PostgreSQL container in host mode on port ${PG_PORT}"
+    log_warn "bridge networking failed; retrying PostgreSQL container in host mode on port ${PG_PORT}"
     docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
     if ! docker run -d \
       --name "${CONTAINER_NAME}" \
@@ -167,7 +184,7 @@ if [[ -z "${PG_PORT}" ]]; then
   done
 
   if [[ -z "${PG_PORT}" ]]; then
-    echo "ERROR: unable to determine mapped PostgreSQL port"
+    log_error "unable to determine mapped PostgreSQL port"
     docker logs "${CONTAINER_NAME}" || true
     exit 1
   fi
@@ -180,12 +197,12 @@ while true; do
     break
   fi
   if [[ "${HEALTH}" == "unhealthy" ]]; then
-    echo "ERROR: PostgreSQL container became unhealthy"
+    log_error "PostgreSQL container became unhealthy"
     docker logs "${CONTAINER_NAME}" || true
     exit 1
   fi
   if (( SECONDS >= DEADLINE )); then
-    echo "ERROR: timed out waiting for PostgreSQL health (${PG_WAIT_TIMEOUT_SEC}s)"
+    log_error "timed out waiting for PostgreSQL health (${PG_WAIT_TIMEOUT_SEC}s)"
     docker logs "${CONTAINER_NAME}" || true
     exit 1
   fi
@@ -194,10 +211,10 @@ done
 
 TEST_DSN="postgres://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DB}?sslmode=disable"
 if [[ "${HOST_NETWORK_MODE}" -eq 1 ]]; then
-  echo "INFO: PostgreSQL is healthy on ${PG_HOST}:${PG_PORT} (host network mode)"
+  log_info "PostgreSQL is healthy on ${PG_HOST}:${PG_PORT} (host network mode)"
 else
-  echo "INFO: PostgreSQL is healthy on ${PG_HOST}:${PG_PORT}"
+  log_info "PostgreSQL is healthy on ${PG_HOST}:${PG_PORT}"
 fi
-echo "INFO: running command: ${COMMAND[*]}"
+log_info "running command: ${COMMAND[*]}"
 
 TEST_DATABASE_URL="${TEST_DSN}" DATABASE_URL="${TEST_DSN}" "${COMMAND[@]}"
