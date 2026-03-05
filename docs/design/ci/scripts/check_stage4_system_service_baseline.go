@@ -79,9 +79,10 @@ func main() {
 		"dispatches remove/update role operations with user identity",
 	})
 	checkFragments(&violations, frontendLiveE2EPath, []string{
-		"system/service create-update-delete follows Stage 4 + Stage 5.D success paths",
-		"system delete enforces confirm_name and calls real Stage 5.D API",
-		"service delete sends confirm=true and returns conflict when child VMs exist",
+		"Stage 4.B – createService + updateService + deleteService (schema-validated)",
+		"Stage 5.D – deleteService returns 409 when child VMs exist (cascade guard)",
+		"deleteSystem with confirm_name guard",
+		"deleteService with confirm=true",
 	})
 
 	if len(violations) > 0 {

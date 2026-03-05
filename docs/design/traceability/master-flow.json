@@ -5,7 +5,7 @@
     {
       "id": "stage-1",
       "phases": [
-        "docs/design/phases/00-prerequisites.md",
+        "docs/design/phases/00-prerequisites.md#ci-enforcement",
         "docs/design/phases/02-providers.md"
       ],
       "checklists": [
@@ -22,7 +22,7 @@
     {
       "id": "stage-1-5",
       "phases": [
-        "docs/design/phases/00-prerequisites.md",
+        "docs/design/phases/00-prerequisites.md#ci-enforcement",
         "docs/design/phases/01-contracts.md",
         "docs/design/phases/05-auth-api-frontend.md"
       ],

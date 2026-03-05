@@ -38,6 +38,9 @@ coverage.html
 tmp/
 server
 .run/
+/custom-gcl
+/custom-gcl-proofread
+/.golangci.bck.yml
 
 # Configuration (only commit .example)
 config/config.yaml

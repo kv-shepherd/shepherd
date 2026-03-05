@@ -62,7 +62,7 @@ Out of scope:
 - Stage matrix gate:
   - `docs/design/ci/scripts/check_master_flow_test_matrix.go`
 - Runtime anti-shortcut gates:
-  - `docs/design/ci/scripts/check_no_runtime_mock.go`
+  - `shepherd-arch/runtimemock`
   - `docs/design/ci/scripts/check_provider_wiring.go`
   - `docs/design/ci/scripts/check_no_runtime_placeholders.go`
   - `docs/design/ci/scripts/check_no_sqlite_in_tests.go`

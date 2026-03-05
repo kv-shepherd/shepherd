@@ -24,21 +24,15 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 
 | Script | Check Content | Level | Blocks CI |
 |--------|---------------|-------|-----------|
-| [check_transaction_boundary.go](./scripts/check_transaction_boundary.go) | Service layer must not manage transactions | Required | ✅ Yes |
-| [check_k8s_in_transaction.go](./scripts/check_k8s_in_transaction.go) | No K8s API calls inside transactions | Required | ✅ Yes |
+| `shepherd-arch` (golangci-lint module plugin) | Batch1 architecture gates: forbidden imports, no runtime mock wiring, no naked goroutines, River bypass, semaphore pairing, service tx boundary, River job args claim-check | Required | ✅ Yes |
+| `shepherd-arch/k8sintransaction` (Analyzer) | No K8s API calls inside transactions | Required | ✅ Yes |
 | [check_validate_spec.go](./scripts/check_validate_spec.go) | No ValidateSpec calls inside transactions | Required | ✅ Yes |
 | [check_openapi_critical_contract.go](./scripts/check_openapi_critical_contract.go) | Enforce stage-critical OpenAPI contracts (auth/vm/approval/audit/notification + global BearerAuth) | Required | ✅ Yes |
 | [check_openapi_critical_fingerprint.go](./scripts/check_openapi_critical_fingerprint.go) | Lock SHA256 fingerprints for critical OpenAPI nodes (intentional-change only) | Required | ✅ Yes |
-| [check_forbidden_imports.go](./scripts/check_forbidden_imports.go) | Block fake client, hardcoded paths | Required | ✅ Yes |
 | [check_no_runtime_placeholders.go](./scripts/check_no_runtime_placeholders.go) | Block TODO/FIXME/placeholder/stub markers in runtime code | Required | ✅ Yes |
-| [check_no_runtime_mock.go](./scripts/check_no_runtime_mock.go) | Block runtime `NewMockProvider()` wiring (test-only mock) | Required | ✅ Yes |
 | [check_provider_wiring.go](./scripts/check_provider_wiring.go) | Enforce runtime wiring path uses real `NewKubeVirtProvider()` and VM module rejects `mock` provider | Required | ✅ Yes |
-| [check_no_gorm_import.go](./scripts/check_no_gorm_import.go) | **Block GORM imports** (migrated to Ent) | Required | ✅ Yes |
 | [check_no_sqlite_in_tests.go](./scripts/check_no_sqlite_in_tests.go) | Block SQLite usage in tests and `go.mod` (PostgreSQL-only policy) | Required | ✅ Yes |
-| [check_no_outbox_import.go](./scripts/check_no_outbox_import.go) | **Block Outbox imports** (use River Queue, ADR-0006) | Required | ✅ Yes |
 | [check_no_redis_import.sh](./scripts/check_no_redis_import.sh) | **Block Redis imports** (removed dependency) | Required | ✅ Yes |
-| [check_river_bypass.go](./scripts/check_river_bypass.go) | **Block direct writes bypassing River Queue** (ADR-0006) | Required | ✅ Yes |
-| [check_naked_goroutine.go](./scripts/check_naked_goroutine.go) | Block naked `go func()` (ADR-0031) | Required | ✅ Yes |
 | [check_vm_create_status_progression.go](./scripts/check_vm_create_status_progression.go) | Enforce Stage 5.C VM status persistence (`CREATING -> RUNNING|FAILED`) | Required | ✅ Yes |
 | [check_vm_create_spec_completeness.go](./scripts/check_vm_create_spec_completeness.go) | Enforce Stage 5.C carries `spec_overrides` through Worker→Provider rendering path | Required | ✅ Yes |
 | [check_critical_test_presence.go](./scripts/check_critical_test_presence.go) | Require paired `_test.go` coverage for critical runtime paths (worker/provider/usecase/gateway/validator) | Required | ✅ Yes |
@@ -57,17 +51,19 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 | [check_frontend_no_placeholder_pages.go](./scripts/check_frontend_no_placeholder_pages.go) | Block placeholder/stub markers in frontend route pages (`app/**/page.tsx`) | Required | ✅ Yes |
 | [check_frontend_route_shell_architecture.go](./scripts/check_frontend_route_shell_architecture.go) | Enforce route-shell thresholds for `app/**/page.tsx` (page size + write API call count), with explicit legacy allowlist + lock to prevent allowlist expansion | Required | ✅ Yes |
 | [check_changed_code_has_tests.sh](./scripts/check_changed_code_has_tests.sh) | Enforce strict test-first delta: runtime code changes must include corresponding test changes | Required | ✅ Yes |
+| [check_no_new_run_scripts.sh](./scripts/check_no_new_run_scripts.sh) | Block adding new Go-based CI scripts in `docs/design/ci/scripts/` (must use `shepherd-linter`) | Required | ✅ Yes |
+| [check_no_legacy_batch1_invocations.sh](./scripts/check_no_legacy_batch1_invocations.sh) | Block CI entrypoints from invoking migrated Batch1 legacy scripts | Required | ✅ Yes |
+| [check_no_chinese_chars.sh](./scripts/check_no_chinese_chars.sh) | Block Chinese characters in repository content except approved i18n paths (`docs/i18n/zh-CN/design/interaction-flows/master-flow.md`, `web/src/i18n/locales/zh-CN/**`) | Required | ✅ Yes |
 | [check_module_noop_hooks.go](./scripts/check_module_noop_hooks.go) | Block silent noop `ContributeServerDeps` / `RegisterWorkers` hooks unless allowlisted | Required | ✅ Yes |
 | [check_ent_codegen.go](./scripts/check_ent_codegen.go) | Ent code generation sync check | Required | ✅ Yes |
 | [check_manual_di.sh](./scripts/check_manual_di.sh) | **Strict Manual DI convention** (replaces Wire check) | Required | ✅ Yes |
 | [check_sqlc_usage.sh](./scripts/check_sqlc_usage.sh) | **sqlc usage scope** (ADR-0012 whitelist enforcement) | Required | ✅ Yes |
-| [check_semaphore_usage.go](./scripts/check_semaphore_usage.go) | Semaphore Acquire/Release pairing (ADR-0031) | Required | ✅ Yes |
 | [check_repository_tests.go](./scripts/check_repository_tests.go) | Repository methods must have tests | Required | ✅ Yes |
 | [check_dead_tests.go](./scripts/check_dead_tests.go) | Orphan/invalid test detection | Warning | ⚠️ No |
 | [check_test_assertions.go](./scripts/check_test_assertions.go) | Tests must have assertions | Required | ✅ Yes |
 | [check_doc_claims_consistency.go](./scripts/check_doc_claims_consistency.go) | Block checklist \"done\" claims that lack implementation evidence | Required | ✅ Yes |
 | [check_master_flow_api_alignment.go](./scripts/check_master_flow_api_alignment.go) | Enforce every master-flow API path is either in OpenAPI or explicit deferred allowlist | Required | ✅ Yes |
-| [check_master_flow_test_matrix.go](./scripts/check_master_flow_test_matrix.go) | Enforce required master-flow stages have executable tests or explicit deferred entries (ADR-0034 strict profile: full stage set) | Required | ✅ Yes |
+| [check_master_flow_test_matrix.go](./scripts/check_master_flow_test_matrix.go) | Enforce required master-flow stages have executable tests or explicit deferred entries; when `live_step_markers` are declared, enforce those ASCII flow markers exist in mapped `*-live.spec.ts` files (ADR-0034 strict profile: full stage set) | Required | ✅ Yes |
 | [check_master_flow_completion_readiness.go](./scripts/check_master_flow_completion_readiness.go) | Full-completion claim gate: deferred/exemption allowlists must all be empty | Required (for completion claim) | ✅ Yes |
 | [check_markdown_links.go](./scripts/check_markdown_links.go) | Validate local markdown links and anchors | Required | ✅ Yes |
 | [check_master_flow_traceability.go](./scripts/check_master_flow_traceability.go) | Enforce master-flow traceability manifest (ADR-0032) | Required | ✅ Yes |
@@ -75,7 +71,7 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 
 ### Exempt Directories
 
-The following directories are exempt from `check_naked_goroutine.go`:
+The following directories are exempt from the `nakedgoroutine` analyzer in `shepherd-arch`:
 
 | Directory | Exemption Reason |
 |-----------|------------------|
@@ -88,16 +84,16 @@ The following directories are exempt from `check_naked_goroutine.go`:
 > 
 > | Check Script | Applicable Scenario in Async Model |
 > |--------------|-------------------------------------|
-> | `check_k8s_in_transaction.go` | Ensures K8s calls in UseCase layer are outside DB transactions |
+> | `shepherd-arch/k8sintransaction` | Ensures K8s calls in UseCase layer are outside DB transactions |
 > | `check_validate_spec.go` | Ensures validation logic completes before transaction starts |
-> | `check_transaction_boundary.go` | Ensures Service layer does not actively manage transaction boundaries |
-> | `check_river_bypass.go` | **Detects direct writes bypassing River Queue in UseCase layer** |
+> | `shepherd-arch/txboundary` | Ensures Service layer does not actively manage transaction boundaries |
+> | `shepherd-arch/riverbypass` | **Detects direct writes bypassing River Queue in UseCase layer** |
 >
 > These checks remain valid under the async model as they protect UseCase layer transaction integrity.
 >
 > **River Bypass Detection (ADR-0006 Enforcement)**:
 >
-> The `check_river_bypass.go` script scans `internal/usecase/` for direct database write operations to protected entities (VM, ApprovalTicket, Service, System, Cluster). These operations MUST be submitted as River Jobs, with actual writes performed by Workers after transaction commit.
+> The `shepherd-arch/riverbypass` analyzer scans `internal/usecase/` for direct database write operations to protected entities (VM, ApprovalTicket, Service, System, Cluster). These operations MUST be submitted as River Jobs, with actual writes performed by Workers after transaction commit.
 >
 > | Entity Type | River Required? | Rationale |
 > |-------------|-----------------|----------|
@@ -113,8 +109,9 @@ The following directories are exempt from `check_naked_goroutine.go`:
 ### Local Execution
 
 ```bash
-# Single script
-go run docs/design/ci/scripts/check_transaction_boundary.go
+# Batch1 architecture checks via golangci-lint module plugin
+golangci-lint custom
+./custom-gcl run ./...
 
 # Spec-driven stage coverage
 go run docs/design/ci/scripts/check_master_flow_test_matrix.go
@@ -124,6 +121,9 @@ go run docs/design/ci/scripts/check_no_sqlite_in_tests.go
 
 # Strict test-first delta (diff against origin/main)
 bash docs/design/ci/scripts/check_changed_code_has_tests.sh
+
+# Enforce English-only content policy (except approved i18n paths)
+bash docs/design/ci/scripts/check_no_chinese_chars.sh
 
 # Strict live e2e must not contain page.route/route.fulfill mocks
 bash docs/design/ci/scripts/check_live_e2e_no_mock.sh
@@ -136,6 +136,10 @@ make master-flow-strict
 
 # Run strict live e2e only (no mock routes; requires backend env)
 bash scripts/run_e2e_live.sh --no-db-wrapper
+# run_e2e_live.sh includes preflight gates:
+#   - check_master_flow_test_matrix.go (incl. live_step_markers)
+#   - check_live_e2e_no_mock.sh
+# set E2E_SKIP_PREFLIGHT_GATES=1 only for emergency local debugging.
 
 # Isolated Docker PostgreSQL wrapper (auto start/wait/cleanup)
 ./scripts/run_with_docker_pg.sh -- make master-flow-strict
@@ -159,6 +163,13 @@ bash docs/design/ci/scripts/check_design_doc_governance.sh
 
 See the build job in `.github/workflows/ci.yml`.
 
+Current split (2026-03-03 optimization):
+
+- `ci-checks`: canonical static governance and strict script gates (including frontend typecheck/unit).
+- `master-flow-strict`: PostgreSQL behavior suites + optional live e2e (`ENABLE_LIVE_E2E=true`).
+
+This split avoids duplicate execution of the same static checks across both jobs while keeping gate coverage unchanged.
+
 ---
 
 ## Directory Structure
@@ -179,20 +190,14 @@ ci/
 │   ├── frontend-route-shell-legacy.lock # Lockfile for allowed legacy route-shell exception paths
 │   └── openapi-critical.lock       # Fingerprint lock for critical OpenAPI nodes
 └── scripts/
-    ├── check_transaction_boundary.go  # Transaction boundary check
     ├── check_k8s_in_transaction.go    # K8s transaction call check
     ├── check_validate_spec.go         # ValidateSpec transaction check
     ├── check_openapi_critical_contract.go # Critical OpenAPI node regression check
     ├── check_openapi_critical_fingerprint.go # Critical OpenAPI fingerprint lock check
-    ├── check_forbidden_imports.go     # Forbidden import check
     ├── check_no_runtime_placeholders.go # Runtime TODO/placeholder marker check
-    ├── check_no_runtime_mock.go       # Runtime MockProvider wiring check
     ├── check_provider_wiring.go       # Runtime provider wiring path check
-    ├── check_no_gorm_import.go        # Block GORM imports (migrated to Ent)
     ├── check_no_sqlite_in_tests.go    # Block SQLite usage in tests/go.mod
-    ├── check_no_outbox_import.go      # Block Outbox imports
     ├── check_no_redis_import.sh       # Block Redis imports
-    ├── check_naked_goroutine.go       # Naked goroutine check
     ├── check_vm_create_status_progression.go # Stage 5.C VM status persistence check
     ├── check_vm_create_spec_completeness.go # Stage 5.C spec_overrides passthrough check
     ├── check_critical_test_presence.go # Critical runtime path test-presence check
@@ -211,10 +216,12 @@ ci/
     ├── check_frontend_no_placeholder_pages.go # Frontend placeholder route-page marker check
     ├── check_frontend_route_shell_architecture.go # Frontend route shell threshold gate
     ├── check_changed_code_has_tests.sh # Runtime code diff must include test diff
+    ├── check_no_new_run_scripts.sh # Prevent adding new legacy go-run CI scripts
+    ├── check_no_legacy_batch1_invocations.sh # Prevent invoking migrated Batch1 legacy scripts in CI entrypoints
+    ├── check_no_chinese_chars.sh # Enforce English-only content (except approved i18n paths)
     ├── check_module_noop_hooks.go     # Noop module hook allowlist enforcement
     ├── check_ent_codegen.go           # Ent code generation sync check
     ├── check_manual_di.sh             # Strict Manual DI convention check (replaces Wire)
-    ├── check_semaphore_usage.go       # Semaphore usage check
     ├── check_repository_tests.go      # Repository test coverage check
     ├── check_dead_tests.go            # Dead test detection
     ├── check_test_assertions.go       # Test assertion check

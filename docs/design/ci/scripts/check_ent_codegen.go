@@ -3,17 +3,17 @@
 // scripts/ci/check_ent_codegen.go
 
 /*
-Ent 代码生成同步检查 - CI 强制执行
+Ent code generation synchronization check - CI enforced
 
-🛑 检查规则：
-1. 运行 `go generate ./ent` 后检查 git diff
-2. 如果有差异，说明 ent/ 目录代码与 ent/schema/ 不同步
-3. 开发者必须提交生成的代码
+Rules:
+1. Run `go generate ./ent` and verify git diff.
+2. Differences mean ent/ generated code is out of sync with ent/schema/.
+3. Generated files must be committed.
 
-使用方式：
+Usage:
   go run scripts/ci/check_ent_codegen.go
 
-或在 CI 中：
+Or in CI:
   cd ent && go generate . && git diff --exit-code
 */
 
@@ -29,51 +29,51 @@ import (
 )
 
 func main() {
-	// 检查 ent 目录是否存在
+	// Ensure ent directory exists.
 	if _, err := os.Stat("ent"); os.IsNotExist(err) {
-		fmt.Println("⚠️ ent/ 目录不存在，跳过检查")
+		fmt.Println("WARN: ent/ directory does not exist, skipping check")
 		os.Exit(0)
 	}
 
-	// 检查 ent/schema 目录是否存在
+	// Ensure ent/schema directory exists.
 	if _, err := os.Stat("ent/schema"); os.IsNotExist(err) {
-		fmt.Println("⚠️ ent/schema/ 目录不存在，跳过检查")
+		fmt.Println("WARN: ent/schema/ directory does not exist, skipping check")
 		os.Exit(0)
 	}
 
-	fmt.Println("🔄 运行 go generate ./ent ...")
+	fmt.Println("Running go generate ./ent ...")
 
-	// 记录 go generate 前的工作区状态，避免本地已有改动导致误报。
+	// Snapshot workspace state before generation to avoid false positives from pre-existing local changes.
 	beforeTracked, err := gitNameOnlyDiff("ent/")
 	if err != nil {
-		fmt.Printf("❌ 读取 go generate 前 tracked 状态失败: %v\n", err)
+		fmt.Printf("ERROR: failed to read pre-generate tracked state: %v\n", err)
 		os.Exit(1)
 	}
 	beforeUntracked, err := gitUntracked("ent/")
 	if err != nil {
-		fmt.Printf("❌ 读取 go generate 前 untracked 状态失败: %v\n", err)
+		fmt.Printf("ERROR: failed to read pre-generate untracked state: %v\n", err)
 		os.Exit(1)
 	}
 
-	// 运行 go generate
+	// Run go generate.
 	generateCmd := exec.Command("go", "generate", "./ent")
 	generateCmd.Stdout = os.Stdout
 	generateCmd.Stderr = os.Stderr
 	if err := generateCmd.Run(); err != nil {
-		fmt.Printf("❌ go generate 失败: %v\n", err)
+		fmt.Printf("ERROR: go generate failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("🔍 检查 ent/ 目录是否有未提交的变更...")
+	fmt.Println("Checking ent/ for uncommitted changes...")
 
 	afterTracked, err := gitNameOnlyDiff("ent/")
 	if err != nil {
-		fmt.Printf("❌ 读取 go generate 后 tracked 状态失败: %v\n", err)
+		fmt.Printf("ERROR: failed to read post-generate tracked state: %v\n", err)
 		os.Exit(1)
 	}
 	afterUntracked, err := gitUntracked("ent/")
 	if err != nil {
-		fmt.Printf("❌ 读取 go generate 后 untracked 状态失败: %v\n", err)
+		fmt.Printf("ERROR: failed to read post-generate untracked state: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -81,29 +81,29 @@ func main() {
 	newUntracked := diffSet(afterUntracked, beforeUntracked)
 
 	if len(newTracked) > 0 {
-		fmt.Println("❌ Ent 生成代码不同步!")
-		fmt.Println("\n以下文件需要重新生成并提交:")
+		fmt.Println("ERROR: Ent generated code is out of sync")
+		fmt.Println("\nThe following files must be regenerated and committed:")
 		sort.Strings(newTracked)
 		for _, file := range newTracked {
 			fmt.Printf("  - %s\n", file)
 		}
-		fmt.Println("\n📋 修复方法:")
-		fmt.Println("  1. 运行: go generate ./ent")
-		fmt.Println("  2. 提交生成的文件: git add ent/ && git commit")
+		fmt.Println("\nFix:")
+		fmt.Println("  1. Run: go generate ./ent")
+		fmt.Println("  2. Commit generated files: git add ent/ && git commit")
 		os.Exit(1)
 	}
 
 	if len(newUntracked) > 0 {
 		sort.Strings(newUntracked)
-		fmt.Println("❌ ent/ 目录有未跟踪的新文件!")
-		fmt.Println("\n请添加并提交这些文件:")
+		fmt.Println("ERROR: ent/ has new untracked files")
+		fmt.Println("\nPlease add and commit these files:")
 		for _, file := range newUntracked {
 			fmt.Printf("  - %s\n", file)
 		}
 		os.Exit(1)
 	}
 
-	fmt.Println("✅ Ent 代码生成同步检查通过")
+	fmt.Println("OK: Ent code generation synchronization check passed")
 }
 
 func gitNameOnlyDiff(path string) ([]string, error) {
