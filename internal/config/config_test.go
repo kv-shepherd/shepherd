@@ -66,6 +66,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Security.PasswordPolicy.Mode != "nist" {
 		t.Errorf("PasswordPolicy.Mode = %q, want nist", cfg.Security.PasswordPolicy.Mode)
 	}
+	if !cfg.Session.HTTPOnly {
+		t.Errorf("Session.HTTPOnly = %v, want true", cfg.Session.HTTPOnly)
+	}
 
 	// Worker pool defaults
 	if cfg.Worker.GeneralPoolSize != 100 {
@@ -163,5 +166,17 @@ func TestLoad_ServerCORSFlagsFromEnv(t *testing.T) {
 	}
 	if !cfg.Server.UnsafeAllowAllOrigins {
 		t.Fatalf("Server.UnsafeAllowAllOrigins = %v, want true", cfg.Server.UnsafeAllowAllOrigins)
+	}
+}
+
+func TestLoad_SessionHTTPOnlyFromEnv(t *testing.T) {
+	t.Setenv("SESSION_HTTP_ONLY", "false")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Session.HTTPOnly {
+		t.Fatalf("Session.HTTPOnly = %v, want false", cfg.Session.HTTPOnly)
 	}
 }

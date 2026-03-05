@@ -82,3 +82,22 @@ func TestBuiltInRoles_CanonicalPermissionSets(t *testing.T) {
 	assertHasPerm("role-operator", "vm:operate", "vm:create", "vm:read", "vnc:access")
 	assertHasPerm("role-viewer", "vm:read", "system:read", "service:read")
 }
+
+func TestBuiltInRoles_MetadataCompleteness(t *testing.T) {
+	t.Parallel()
+
+	for _, role := range builtInRoles() {
+		if strings.TrimSpace(role.Name) == "" {
+			t.Fatalf("role %s has empty Name", role.ID)
+		}
+		if strings.TrimSpace(role.DisplayName) == "" {
+			t.Fatalf("role %s has empty DisplayName", role.ID)
+		}
+		if strings.TrimSpace(role.Description) == "" {
+			t.Fatalf("role %s has empty Description", role.ID)
+		}
+		if len(role.Permissions) == 0 {
+			t.Fatalf("role %s has no permissions", role.ID)
+		}
+	}
+}
