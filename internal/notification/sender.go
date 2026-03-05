@@ -16,7 +16,6 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	entnotification "kv-shepherd.io/shepherd/ent/notification"
-	entuser "kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
@@ -30,7 +29,7 @@ const (
 
 // Params holds the required fields for creating a notification.
 type Params struct {
-	RecipientID  string // User ID (preferred) or username of the recipient
+	RecipientID  string // User ID of the recipient
 	Type         string // One of Type* constants above
 	Title        string // Human-readable title
 	Message      string // Body text
@@ -70,11 +69,6 @@ func (s *InboxSender) Send(ctx context.Context, params Params) error {
 		return fmt.Errorf("notification params invalid: %w", err)
 	}
 
-	recipientUserID, err := s.resolveRecipientUserID(ctx, params.RecipientID)
-	if err != nil {
-		return fmt.Errorf("resolve recipient user %s: %w", params.RecipientID, err)
-	}
-
 	notifType, err := toEntType(params.Type)
 	if err != nil {
 		return err
@@ -88,15 +82,14 @@ func (s *InboxSender) Send(ctx context.Context, params Params) error {
 		SetResourceType(params.ResourceType).
 		SetResourceID(params.ResourceID).
 		SetRead(false).
-		SetUserID(recipientUserID).
+		SetUserID(params.RecipientID).
 		Save(ctx)
 	if err != nil {
-		return fmt.Errorf("create notification for user %s: %w", recipientUserID, err)
+		return fmt.Errorf("create notification for user %s: %w", params.RecipientID, err)
 	}
 
 	logger.Debug("notification sent",
-		zap.String("recipient", recipientUserID),
-		zap.String("recipient_input", params.RecipientID),
+		zap.String("recipient", params.RecipientID),
 		zap.String("type", params.Type),
 		zap.String("title", params.Title),
 	)
@@ -162,25 +155,4 @@ func toEntType(t string) (entnotification.Type, error) {
 	default:
 		return "", fmt.Errorf("unknown notification type: %s", t)
 	}
-}
-
-func (s *InboxSender) resolveRecipientUserID(ctx context.Context, rawRecipient string) (string, error) {
-	recipient := rawRecipient
-
-	// Fast path: treat input as canonical user ID.
-	if _, err := s.client.User.Get(ctx, recipient); err == nil {
-		return recipient, nil
-	} else if !ent.IsNotFound(err) {
-		return "", fmt.Errorf("lookup by id: %w", err)
-	}
-
-	// Compatibility path: some approval records store requester as username.
-	userByUsername, err := s.client.User.Query().Where(entuser.UsernameEQ(recipient)).Only(ctx)
-	if err == nil {
-		return userByUsername.ID, nil
-	}
-	if ent.IsNotFound(err) {
-		return "", fmt.Errorf("recipient not found by id or username")
-	}
-	return "", fmt.Errorf("lookup by username: %w", err)
 }

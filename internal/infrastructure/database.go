@@ -25,6 +25,7 @@ import (
 	"kv-shepherd.io/shepherd/ent"
 	entmigrate "kv-shepherd.io/shepherd/ent/migrate"
 	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
@@ -156,17 +157,10 @@ func (c *DatabaseClients) AutoMigrate(ctx context.Context) error {
 // InitRiverClient creates a River client with registered workers.
 // Called after NewDatabaseClients; workers param comes from bootstrap.
 func (c *DatabaseClients) InitRiverClient(workers *river.Workers, cfg config.RiverConfig) error {
-	vmOpsWorkers := cfg.MaxWorkers
-	if vmOpsWorkers < 1 {
-		vmOpsWorkers = 1
-	}
+	riverQueues := buildRiverQueues(cfg.MaxWorkers)
+
 	riverClient, err := river.NewClient(riverpgxv5.New(c.Pool), &river.Config{
-		Queues: map[string]river.QueueConfig{
-			river.QueueDefault: {MaxWorkers: cfg.MaxWorkers},
-			"vm_operations":    {MaxWorkers: vmOpsWorkers},
-			// ADR-0038: dedicated queue for adaptive VM status sync polling jobs.
-			"vm_status_sync": {MaxWorkers: vmOpsWorkers},
-		},
+		Queues:                      riverQueues,
 		Workers:                     workers,
 		CompletedJobRetentionPeriod: cfg.CompletedJobRetentionPeriod,
 	})
@@ -176,6 +170,19 @@ func (c *DatabaseClients) InitRiverClient(workers *river.Workers, cfg config.Riv
 	c.RiverClient = riverClient
 	logger.Info("River client initialized", zap.Int("max_workers", cfg.MaxWorkers))
 	return nil
+}
+
+func buildRiverQueues(maxWorkers int) map[string]river.QueueConfig {
+	vmOpsWorkers := maxWorkers
+	if vmOpsWorkers < 1 {
+		vmOpsWorkers = 1
+	}
+	return map[string]river.QueueConfig{
+		river.QueueDefault: {MaxWorkers: maxWorkers},
+		"vm_operations":    {MaxWorkers: vmOpsWorkers},
+		// ADR-0038: dedicated queue for adaptive VM status sync polling jobs.
+		jobs.VMStatusSyncJobKind: {MaxWorkers: vmOpsWorkers},
+	}
 }
 
 // GetWorkerPool returns the worker connection pool.

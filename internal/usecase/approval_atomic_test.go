@@ -1,6 +1,10 @@
 package usecase
 
-import "testing"
+import (
+	"testing"
+
+	"kv-shepherd.io/shepherd/internal/jobs"
+)
 
 func TestApprovalAtomicWriterValidateCreateInput(t *testing.T) {
 	t.Parallel()
@@ -118,5 +122,23 @@ func TestMarshalJSONOrNull_NestedSnapshot(t *testing.T) {
 	}
 	if len(b) == 0 {
 		t.Fatal("marshalJSONOrNull(nested) should return non-empty json bytes")
+	}
+}
+
+func TestVMStatusSyncInsertOpts(t *testing.T) {
+	t.Parallel()
+
+	opts := vmStatusSyncInsertOpts()
+	if opts == nil {
+		t.Fatal("vmStatusSyncInsertOpts() returned nil")
+	}
+	if opts.Queue != jobs.VMStatusSyncJobKind {
+		t.Fatalf("queue = %q, want %q", opts.Queue, jobs.VMStatusSyncJobKind)
+	}
+	if opts.MaxAttempts != 3 {
+		t.Fatalf("max attempts = %d, want 3", opts.MaxAttempts)
+	}
+	if !opts.UniqueOpts.ByArgs || !opts.UniqueOpts.ByQueue {
+		t.Fatalf("unique opts = %+v, want ByArgs=true and ByQueue=true", opts.UniqueOpts)
 	}
 }

@@ -11,11 +11,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	_ "github.com/jackc/pgx/v5/stdlib" // Register pgx SQL driver for database/sql opens in tests.
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
-
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/enttest"
 )
@@ -43,16 +42,16 @@ func OpenEntPostgres(t *testing.T, prefix string) *ent.Client {
 	}
 	t.Cleanup(func() { _ = adminDB.Close() })
 
-	if pingErr := adminDB.PingContext(context.Background()); pingErr != nil {
-		t.Fatalf("ping postgres: %v", pingErr)
+	if err := adminDB.PingContext(context.Background()); err != nil {
+		t.Fatalf("ping postgres: %v", err)
 	}
 
-	if _, execErr := adminDB.ExecContext(context.Background(), fmt.Sprintf("CREATE SCHEMA %q", schema)); execErr != nil {
-		t.Fatalf("create test schema %q: %v", schema, execErr)
+	if _, err := adminDB.ExecContext(context.Background(), fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)); err != nil {
+		t.Fatalf("create test schema %q: %v", schema, err)
 	}
 
 	t.Cleanup(func() {
-		_, _ = adminDB.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %q CASCADE", schema))
+		_, _ = adminDB.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schema))
 	})
 
 	schemaDSN, err := dsnWithSearchPath(dsn, schema)

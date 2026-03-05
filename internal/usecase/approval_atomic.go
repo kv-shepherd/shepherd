@@ -142,14 +142,7 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	// Subsequent polls are self-scheduled by VMStatusSyncWorker.scheduleNext().
 	if _, err := w.riverClient.InsertTx(ctx, tx, jobs.VMStatusSyncArgs{
 		EventID: eventID,
-	}, &river.InsertOpts{
-		Queue:       "vm_status_sync",
-		MaxAttempts: 3,
-		UniqueOpts: river.UniqueOpts{
-			ByArgs:  true,
-			ByQueue: true,
-		},
-	}); err != nil {
+	}, vmStatusSyncInsertOpts()); err != nil {
 		return "", "", fmt.Errorf("enqueue vm_status_sync for event %s: %w", eventID, err)
 	}
 
@@ -158,6 +151,17 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	}
 
 	return vmID, vmName, nil
+}
+
+func vmStatusSyncInsertOpts() *river.InsertOpts {
+	return &river.InsertOpts{
+		Queue:       jobs.VMStatusSyncJobKind,
+		MaxAttempts: 3,
+		UniqueOpts: river.UniqueOpts{
+			ByArgs:  true,
+			ByQueue: true,
+		},
+	}
 }
 
 func marshalJSONOrNull(value map[string]interface{}) ([]byte, error) {

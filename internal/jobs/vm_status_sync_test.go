@@ -12,8 +12,8 @@ import (
 func TestVMStatusSyncArgs_Kind(t *testing.T) {
 	t.Parallel()
 	var args VMStatusSyncArgs
-	if got := args.Kind(); got != "vm_status_sync" {
-		t.Fatalf("Kind() = %q, want vm_status_sync", got)
+	if got := args.Kind(); got != VMStatusSyncJobKind {
+		t.Fatalf("Kind() = %q, want %q", got, VMStatusSyncJobKind)
 	}
 }
 
@@ -30,7 +30,7 @@ func TestVMStatusSyncArgs_NoInsertOpts(t *testing.T) {
 	// This test documents that design decision; the compile-time assertion above
 	// enforces it at build time.
 	var args VMStatusSyncArgs
-	if args.Kind() != "vm_status_sync" {
+	if args.Kind() != VMStatusSyncJobKind {
 		t.Fatal("unexpected kind change")
 	}
 }

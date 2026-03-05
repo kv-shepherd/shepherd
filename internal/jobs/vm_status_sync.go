@@ -36,6 +36,9 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
+	// VMStatusSyncJobKind is the River kind/queue name for vm status sync jobs.
+	VMStatusSyncJobKind = "vm_status_sync"
+
 	// highTierIntervalSec is the poll interval for transitional VMs (CREATING, DELETING, etc.).
 	highTierIntervalSec = 15
 	// lowTierIntervalSec is the poll interval for stable VMs (RUNNING, STOPPED, FAILED).
@@ -65,7 +68,7 @@ type VMStatusSyncArgs struct {
 }
 
 // Kind returns the job kind identifier for VM status sync.
-func (VMStatusSyncArgs) Kind() string { return "vm_status_sync" }
+func (VMStatusSyncArgs) Kind() string { return VMStatusSyncJobKind }
 
 // Note: VMStatusSyncArgs intentionally does NOT implement JobArgsWithInsertOpts.
 // All insert options (Queue, MaxAttempts, UniqueOpts, ScheduledAt) are managed
@@ -284,7 +287,7 @@ func (w *VMStatusSyncWorker) scheduleNext(ctx context.Context, eventID string, i
 
 	scheduledAt := time.Now().Add(time.Duration(intervalSec) * time.Second)
 	_, err := riverClient.Insert(ctx, VMStatusSyncArgs{EventID: eventID}, &river.InsertOpts{
-		Queue:       "vm_status_sync",
+		Queue:       VMStatusSyncJobKind,
 		MaxAttempts: 3,
 		ScheduledAt: scheduledAt,
 		UniqueOpts: river.UniqueOpts{
