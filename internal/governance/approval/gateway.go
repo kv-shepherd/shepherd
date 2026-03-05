@@ -60,6 +60,7 @@ type Gateway struct {
 	validator    *service.ApprovalValidator
 	atomicWriter AtomicApprovalWriter
 	notifier     *notification.Triggers // Optional: nil-safe for backward compatibility
+	vmService    *service.VMService     // Optional: nil-safe; enables DryRun Pre-flight Gate (ADR-0006 Addendum)
 }
 
 // NewGateway creates a new approval Gateway.
@@ -76,6 +77,15 @@ func NewGateway(client *ent.Client, auditLogger *audit.Logger, atomicWriter Atom
 // This is a setter to avoid breaking the existing constructor signature.
 func (g *Gateway) SetNotifier(notifier *notification.Triggers) {
 	g.notifier = notifier
+}
+
+// SetVMService injects a VMService for DryRun Pre-flight Gate validation.
+// Must be called after both Gateway and VMService are initialized.
+// When vmService is nil (default), the DryRun gate is skipped (backward compatible).
+// Returns g for method chaining.
+func (g *Gateway) SetVMService(svc *service.VMService) *Gateway {
+	g.vmService = svc
+	return g
 }
 
 // Approve approves a pending ticket. Admin-determined fields set here (ADR-0017).
@@ -146,10 +156,54 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 	}
 
 	if g.validator != nil {
-		if err := g.validator.ValidateApproval(ctx, opts.ClusterID, effectiveInstanceSizeID, payload.Namespace); err != nil {
-			return fmt.Errorf("approval validation failed for ticket %s: %w", ticketID, err)
+		if validateErr := g.validator.ValidateApproval(ctx, opts.ClusterID, effectiveInstanceSizeID, payload.Namespace); validateErr != nil {
+			return fmt.Errorf("approval validation failed for ticket %s: %w", ticketID, validateErr)
 		}
 	}
+
+	// Load template and instance size once — shared by DryRun gate, overcommit validation,
+	// and snapshot building below. This avoids the 2-3 redundant DB reads from the previous
+	// implementation.
+	templateEntity, err := g.client.Template.Get(ctx, effectiveTemplateID)
+	if err != nil {
+		return fmt.Errorf("get template %s for ticket %s: %w", effectiveTemplateID, ticketID, err)
+	}
+	instanceSizeEntity, err := g.client.InstanceSize.Get(ctx, effectiveInstanceSizeID)
+	if err != nil {
+		return fmt.Errorf("get instance size %s for ticket %s: %w", effectiveInstanceSizeID, ticketID, err)
+	}
+
+	// ── DryRun Pre-flight Gate (ADR-0006 Addendum) ──────────────────────────────
+	// At this point: opts.ClusterID is known (admin-selected), so we can invoke a
+	// real K8s server-side DryRun. Per K8s best practices, DryRun traverses the
+	// full admission chain (schema + mutating + validating webhooks) without
+	// persisting. This is the most authoritative available pre-flight check.
+	//
+	// Gate failure → return synchronous error; do NOT enqueue River job.
+	// Gate unavailable (vmService nil) → skip silently (backward compatible).
+	if g.vmService != nil {
+		dryRunSpec, buildSpecErr := g.buildDryRunSpec(payload, templateEntity, instanceSizeEntity, opts)
+		if buildSpecErr != nil {
+			return apperrors.BadRequest(apperrors.CodeValidationFailed,
+				fmt.Sprintf("build dryrun spec for ticket %s: %v", ticketID, buildSpecErr))
+		}
+		result, validateErr := g.vmService.ValidateAndPrepare(ctx, opts.ClusterID, payload.Namespace, dryRunSpec)
+		if validateErr != nil {
+			// K8s unreachable — server-side failure, not a client validation error.
+			return fmt.Errorf("pre-flight dryrun gate: cluster %s unavailable for ticket %s: %w",
+				opts.ClusterID, ticketID, validateErr)
+		}
+		if !result.Valid {
+			return apperrors.BadRequest(apperrors.CodeValidationFailed,
+				fmt.Sprintf("vm spec rejected by cluster %s for ticket %s: %s",
+					opts.ClusterID, ticketID, strings.Join(result.Errors, "; ")))
+		}
+		logger.Info("pre-flight dryrun passed",
+			zap.String("ticket_id", ticketID),
+			zap.String("cluster_id", opts.ClusterID),
+		)
+	}
+	// ── End DryRun Pre-flight Gate ────────────────────────────────────────────────
 
 	// Stage 5.B: If admin enabled resource override, validate overcommit constraints.
 	if opts.EnableOverride {
@@ -163,27 +217,14 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 		memoryGi := opts.MemoryLimitGi
 		memoryRequestGi := opts.MemoryRequestGi
 
-		// Fetch the InstanceSize to determine dedicatedCPU.
-		instanceSizeEntity, err := g.client.InstanceSize.Get(ctx, effectiveInstanceSizeID)
-		if err != nil {
-			return fmt.Errorf("get instance size %s for override validation: %w", effectiveInstanceSizeID, err)
+		// Reuse instanceSizeEntity loaded above (no extra DB round-trip).
+		if overcommitErr := service.ValidateOvercommit(cpuCores, cpuRequest, memoryGi, memoryRequestGi, instanceSizeEntity.DedicatedCPU); overcommitErr != nil {
+			return fmt.Errorf("resource override validation for ticket %s: %w", ticketID, overcommitErr)
 		}
-		if err := service.ValidateOvercommit(cpuCores, cpuRequest, memoryGi, memoryRequestGi, instanceSizeEntity.DedicatedCPU); err != nil {
-			return fmt.Errorf("resource override validation for ticket %s: %w", ticketID, err)
-		}
-	}
-
-	templateEntity, err := g.client.Template.Get(ctx, effectiveTemplateID)
-	if err != nil {
-		return fmt.Errorf("get template %s for ticket %s: %w", effectiveTemplateID, ticketID, err)
-	}
-	instanceSizeEntityForSnapshot, err := g.client.InstanceSize.Get(ctx, effectiveInstanceSizeID)
-	if err != nil {
-		return fmt.Errorf("get instance size %s for ticket %s: %w", effectiveInstanceSizeID, ticketID, err)
 	}
 
 	templateSnapshot := buildTemplateSnapshot(templateEntity)
-	instanceSizeSnapshot := buildInstanceSizeSnapshot(instanceSizeEntityForSnapshot)
+	instanceSizeSnapshot := buildInstanceSizeSnapshot(instanceSizeEntity)
 	modifiedSpec := cloneMap(ticket.ModifiedSpec)
 
 	// Merge admin resource overrides into modifiedSpec (Stage 5.B).
@@ -728,7 +769,7 @@ func (g *Gateway) syncBatchProjectionByParentID(ctx context.Context, parentTicke
 		}
 	}
 
-	status := batchapprovalticket.StatusIN_PROGRESS
+	var status batchapprovalticket.Status
 	switch {
 	case activeCount > 0:
 		status = batchapprovalticket.StatusIN_PROGRESS
@@ -791,9 +832,9 @@ func resolveEffectiveSelectionIDs(
 	templateID string,
 	instanceSizeID string,
 	modifiedSpec map[string]interface{},
-) (string, string) {
-	effectiveTemplateID := strings.TrimSpace(templateID)
-	effectiveInstanceSizeID := strings.TrimSpace(instanceSizeID)
+) (effectiveTemplateID, effectiveInstanceSizeID string) {
+	effectiveTemplateID = strings.TrimSpace(templateID)
+	effectiveInstanceSizeID = strings.TrimSpace(instanceSizeID)
 
 	if override := lookupStringValue(modifiedSpec, "template_id"); override != "" {
 		effectiveTemplateID = override
@@ -890,4 +931,75 @@ func PriorityTier(createdAt time.Time) string {
 	default:
 		return "normal" // Default
 	}
+}
+
+// buildDryRunSpec constructs a domain.VMSpec for DryRun pre-flight validation.
+//
+// Uses the same image resolution strategy as VMCreateWorker (ADR-0036: semantic fields
+// image_url / pvc_name rather than spec JSONB). Admin resource overrides are applied
+// so the DryRun reflects the actual resource allocation that will be submitted.
+//
+// The "dryrun-" prefix on the VM name makes the intent clear in K8s audit logs
+// without risking collisions (server-side DryRun does not persist).
+func (g *Gateway) buildDryRunSpec(
+	payload *vmCreatePayload,
+	tmpl *ent.Template,
+	size *ent.InstanceSize,
+	opts ApproveOpts,
+) (*domain.VMSpec, error) {
+	// Resolve boot image (ADR-0036 semantic fields).
+	image, err := resolveTemplateImageForDryRun(tmpl)
+	if err != nil {
+		return nil, fmt.Errorf("resolve image for dryrun from template %s: %w", tmpl.ID, err)
+	}
+
+	spec := &domain.VMSpec{
+		Name:            "dryrun-" + payload.ServiceID, // unique per request, not persisted
+		CPU:             size.CPUCores,
+		MemoryGi:        size.MemoryGi,
+		DiskGB:          size.DiskGB,
+		Image:           image,
+		CloudInit:       tmpl.CloudInit,
+		SpecOverrides:   cloneMap(size.SpecOverrides),
+		CPURequest:      size.CPURequest,
+		MemoryRequestGi: size.MemoryRequestGi,
+	}
+
+	// Apply admin resource overrides — must match what the actual job will use.
+	if opts.EnableOverride {
+		if opts.CPULimit > 0 {
+			spec.CPU = opts.CPULimit
+		}
+		if opts.MemoryLimitGi > 0 {
+			spec.MemoryGi = opts.MemoryLimitGi
+		}
+		if opts.CPURequest > 0 {
+			spec.CPURequest = opts.CPURequest
+		}
+		if opts.MemoryRequestGi > 0 {
+			spec.MemoryRequestGi = opts.MemoryRequestGi
+		}
+		if opts.DiskGB > 0 {
+			spec.DiskGB = opts.DiskGB
+		}
+	} else if opts.DiskGB > 0 {
+		spec.DiskGB = opts.DiskGB
+	}
+
+	return spec, nil
+}
+
+// resolveTemplateImageForDryRun extracts the boot image string from an Ent Template.
+// Mirrors VMCreateWorker.extractTemplateImageFromEnt (ADR-0036 semantic template fields).
+func resolveTemplateImageForDryRun(tpl *ent.Template) (string, error) {
+	if tpl.ImageURL != "" {
+		return tpl.ImageURL, nil
+	}
+	if tpl.PvcName != "" {
+		if tpl.PvcNamespace != "" {
+			return "pvc:" + tpl.PvcNamespace + "/" + tpl.PvcName, nil
+		}
+		return "pvc:" + tpl.PvcName, nil
+	}
+	return "", fmt.Errorf("template %s has no image_url or pvc_name configured", tpl.ID)
 }

@@ -8,6 +8,8 @@ import (
 
 // IdPGroupMapping holds the schema definition for the IdPGroupMapping entity.
 // master-flow Stage 2.C: Maps IdP groups to platform roles for automatic RBAC.
+//
+//revive:disable-next-line:var-naming // Ent schema type name is coupled to generated runtime references.
 type IdPGroupMapping struct {
 	ent.Schema
 }

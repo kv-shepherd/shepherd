@@ -231,3 +231,51 @@ To avoid ambiguity from shorthand phrases like "all writes async", this ADR scop
 - River is mandatory for writes that coordinate **external side effects** (for example Kubernetes/provider calls, external channels).
 - Pure PostgreSQL writes that require transaction-level atomicity (for example audit/event/notification persistence in the same business transaction) may remain synchronous.
 - This clarification aligns with this ADR's existing notification exception and with [ADR-0012](./ADR-0012-hybrid-transaction.md).
+
+---
+
+## DryRun Pre-flight Gate Addendum (2026-03-03) {#adr-0006-dryrun-preflight-gate-2026-03-03}
+
+> **Type**: Implementation scope addendum (extends the §Dry Run Exception section above).  
+> **Status**: Implemented in `internal/governance/approval/gateway.go`.
+
+### Problem
+
+The §Dry Run Exception section defines `POST /vms/dry-run` as a synchronous endpoint.
+However, it does not address when DryRun validation should occur in the **approval path**
+(`POST /vms` → River Job → `approveCreate()`).
+
+Before this addendum, K8s Apply errors in the approved path were only discovered inside the River Worker,
+after the approval ticket had already been accepted. This produced a confusing UX:
+"Approved successfully" → cloud job silently fails minutes later.
+
+### Decision
+
+> All change operations that enter the River queue via the **approval gateway** must execute a
+> `DryRunApply()` Pre-flight Gate **before enqueuing the River Job**.
+>
+> Gate failure (the K8s server rejects the rendered spec) must return a synchronous error (4xx),
+> not enter the queue. Gate success is required before the ticket transitions to `APPROVED`.
+
+**Implementation location**: `gateway.go` → method `approveCreate()`.
+
+The gate is optional at construction time: if `VMService` is not injected (`nil`), the gate is silently skipped
+(backward-compatible for unit-test installs that do not have a K8s cluster).
+
+### Why This Does Not Require a New ADR
+
+- The architectural principle (`DryRunApply()` as synchronous pre-validation) is already established in
+  ADR-0011 §DryRunApply and the §Dry Run Exception section of this ADR.
+- The change is a **scope boundary clarification**: extending where the existing mechanism is applied,
+  not introducing a new mechanism.
+- Gate failure semantics follow the existing 4xx convention for synchronous validation errors.
+
+### Implementation Evidence
+
+| File | Change |
+|------|--------|
+| `internal/governance/approval/gateway.go` | `vmService` field, `SetVMService()` setter, DryRun Gate logic, `buildDryRunSpec()` |
+| `internal/app/modules/approval.go` | Updated `NewApprovalModule(infra, vmSvc)` signature |
+| `internal/app/modules/vm.go` | Added `VMService()` accessor |
+| `internal/app/bootstrap.go` | Wired `SetVMService()` in application startup |
+| `internal/governance/approval/gateway_behavior_test.go` | 13 DryRun Gate-specific test cases |

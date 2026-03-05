@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -74,7 +75,7 @@ func TestPool_Submit_CancelledContext(t *testing.T) {
 	err = pools.General.Submit(cancelledCtx, func(ctx context.Context) {
 		t.Error("Task should not execute with cancelled context")
 	})
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Submit() error = %v, want context.Canceled", err)
 	}
 }
@@ -180,7 +181,7 @@ func TestPool_Submit_ContextCancelledWhileQueued(t *testing.T) {
 	var taskExecuted atomic.Bool
 	var submitWg sync.WaitGroup
 	submitWg.Add(1)
-	go func() { //nolint:naked-goroutine // test helper
+	go func() { //nolint:shepherd-arch // test helper
 		defer submitWg.Done()
 		_ = pools.General.Submit(cancelCtx, func(ctx context.Context) {
 			taskExecuted.Store(true)

@@ -17,7 +17,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/pkg/worker"
 	"kv-shepherd.io/shepherd/internal/provider"
-	_ "kv-shepherd.io/shepherd/plugins/authprovider/autoreg"
+	_ "kv-shepherd.io/shepherd/plugins/authprovider/autoreg" // Register built-in auth-provider plugins.
 )
 
 // Application holds composed application dependencies.
@@ -44,11 +44,12 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 		return nil, fmt.Errorf("init vm module: %w", err)
 	}
 
-	baseModules := []modules.Module{
+	baseModules := make([]modules.Module, 0, 4)
+	baseModules = append(baseModules,
 		vmModule,
 		modules.NewGovernanceModule(infra),
 		modules.NewAdminModule(infra),
-	}
+	)
 
 	workers := river.NewWorkers()
 	for _, mod := range baseModules {
@@ -58,9 +59,9 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 		}
 		registrar.RegisterWorkers(workers)
 	}
-	if err := infra.InitRiver(workers); err != nil {
+	if initRiverErr := infra.InitRiver(workers); initRiverErr != nil {
 		infra.Close()
-		return nil, fmt.Errorf("init river workers: %w", err)
+		return nil, fmt.Errorf("init river workers: %w", initRiverErr)
 	}
 	// Notification retention cleanup (master-flow Stage 5.F): run daily and once
 	// on startup to avoid long-lived inbox bloat.
@@ -76,13 +77,16 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 		)
 	}
 
-	approvalModule, err := modules.NewApprovalModule(infra)
+	// P1-A: Pass vmModule's VMService to ApprovalModule to enable DryRun Pre-flight Gate (ADR-0006 Addendum).
+	// vmModule is guaranteed to be non-nil here (error check above).
+	approvalModule, err := modules.NewApprovalModule(infra, vmModule.VMService())
 	if err != nil {
 		infra.Close()
 		return nil, fmt.Errorf("init approval module: %w", err)
 	}
 
-	allModules := append(baseModules, approvalModule)
+	baseModules = append(baseModules, approvalModule)
+	allModules := baseModules
 	serverDeps := modules.NewServerDeps(cfg, infra, allModules)
 	server := handlers.NewServer(serverDeps)
 

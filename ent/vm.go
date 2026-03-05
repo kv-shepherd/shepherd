@@ -38,6 +38,16 @@ type VM struct {
 	CreatedBy string `json:"created_by,omitempty"`
 	// TicketID holds the value of the "ticket_id" field.
 	TicketID string `json:"ticket_id,omitempty"`
+	// ADR-0038: polling tier — high for transitional VMs, low for stable VMs
+	PollingTier vm.PollingTier `json:"polling_tier,omitempty"`
+	// ADR-0038: polling interval in seconds (15 for high-tier, 1800 for low-tier)
+	PollIntervalSec int `json:"poll_interval_sec,omitempty"`
+	// ADR-0038: K8s resourceVersion cache — prevents etcd penetration on routine polls
+	LastK8sRv *string `json:"last_k8s_rv,omitempty"`
+	// ADR-0038: timestamp of last successful K8s status sync
+	LastPolledAt *time.Time `json:"last_polled_at,omitempty"`
+	// ADR-0038: timestamp when VM entered high-frequency polling tier
+	HighTierSince *time.Time `json:"high_tier_since,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the VMQuery when eager-loading is set.
 	Edges        VMEdges `json:"edges"`
@@ -81,9 +91,11 @@ func (*VM) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case vm.FieldID, vm.FieldName, vm.FieldInstance, vm.FieldNamespace, vm.FieldClusterID, vm.FieldStatus, vm.FieldHostname, vm.FieldCreatedBy, vm.FieldTicketID:
+		case vm.FieldPollIntervalSec:
+			values[i] = new(sql.NullInt64)
+		case vm.FieldID, vm.FieldName, vm.FieldInstance, vm.FieldNamespace, vm.FieldClusterID, vm.FieldStatus, vm.FieldHostname, vm.FieldCreatedBy, vm.FieldTicketID, vm.FieldPollingTier, vm.FieldLastK8sRv:
 			values[i] = new(sql.NullString)
-		case vm.FieldCreatedAt, vm.FieldUpdatedAt:
+		case vm.FieldCreatedAt, vm.FieldUpdatedAt, vm.FieldLastPolledAt, vm.FieldHighTierSince:
 			values[i] = new(sql.NullTime)
 		case vm.ForeignKeys[0]: // service_vms
 			values[i] = new(sql.NullString)
@@ -168,6 +180,39 @@ func (_m *VM) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.TicketID = value.String
 			}
+		case vm.FieldPollingTier:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field polling_tier", values[i])
+			} else if value.Valid {
+				_m.PollingTier = vm.PollingTier(value.String)
+			}
+		case vm.FieldPollIntervalSec:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field poll_interval_sec", values[i])
+			} else if value.Valid {
+				_m.PollIntervalSec = int(value.Int64)
+			}
+		case vm.FieldLastK8sRv:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field last_k8s_rv", values[i])
+			} else if value.Valid {
+				_m.LastK8sRv = new(string)
+				*_m.LastK8sRv = value.String
+			}
+		case vm.FieldLastPolledAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_polled_at", values[i])
+			} else if value.Valid {
+				_m.LastPolledAt = new(time.Time)
+				*_m.LastPolledAt = value.Time
+			}
+		case vm.FieldHighTierSince:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field high_tier_since", values[i])
+			} else if value.Valid {
+				_m.HighTierSince = new(time.Time)
+				*_m.HighTierSince = value.Time
+			}
 		case vm.ForeignKeys[0]:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field service_vms", values[i])
@@ -250,6 +295,27 @@ func (_m *VM) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("ticket_id=")
 	builder.WriteString(_m.TicketID)
+	builder.WriteString(", ")
+	builder.WriteString("polling_tier=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PollingTier))
+	builder.WriteString(", ")
+	builder.WriteString("poll_interval_sec=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PollIntervalSec))
+	builder.WriteString(", ")
+	if v := _m.LastK8sRv; v != nil {
+		builder.WriteString("last_k8s_rv=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.LastPolledAt; v != nil {
+		builder.WriteString("last_polled_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.HighTierSince; v != nil {
+		builder.WriteString("high_tier_since=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

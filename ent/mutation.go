@@ -21025,28 +21025,34 @@ func (m *UserMutation) ResetEdge(name string) error {
 // VMMutation represents an operation that mutates the VM nodes in the graph.
 type VMMutation struct {
 	config
-	op               Op
-	typ              string
-	id               *string
-	created_at       *time.Time
-	updated_at       *time.Time
-	name             *string
-	instance         *string
-	namespace        *string
-	cluster_id       *string
-	status           *vm.Status
-	hostname         *string
-	created_by       *string
-	ticket_id        *string
-	clearedFields    map[string]struct{}
-	service          *string
-	clearedservice   bool
-	revisions        map[string]struct{}
-	removedrevisions map[string]struct{}
-	clearedrevisions bool
-	done             bool
-	oldValue         func(context.Context) (*VM, error)
-	predicates       []predicate.VM
+	op                   Op
+	typ                  string
+	id                   *string
+	created_at           *time.Time
+	updated_at           *time.Time
+	name                 *string
+	instance             *string
+	namespace            *string
+	cluster_id           *string
+	status               *vm.Status
+	hostname             *string
+	created_by           *string
+	ticket_id            *string
+	polling_tier         *vm.PollingTier
+	poll_interval_sec    *int
+	addpoll_interval_sec *int
+	last_k8s_rv          *string
+	last_polled_at       *time.Time
+	high_tier_since      *time.Time
+	clearedFields        map[string]struct{}
+	service              *string
+	clearedservice       bool
+	revisions            map[string]struct{}
+	removedrevisions     map[string]struct{}
+	clearedrevisions     bool
+	done                 bool
+	oldValue             func(context.Context) (*VM, error)
+	predicates           []predicate.VM
 }
 
 var _ ent.Mutation = (*VMMutation)(nil)
@@ -21552,6 +21558,245 @@ func (m *VMMutation) ResetTicketID() {
 	delete(m.clearedFields, vm.FieldTicketID)
 }
 
+// SetPollingTier sets the "polling_tier" field.
+func (m *VMMutation) SetPollingTier(vt vm.PollingTier) {
+	m.polling_tier = &vt
+}
+
+// PollingTier returns the value of the "polling_tier" field in the mutation.
+func (m *VMMutation) PollingTier() (r vm.PollingTier, exists bool) {
+	v := m.polling_tier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPollingTier returns the old "polling_tier" field's value of the VM entity.
+// If the VM object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VMMutation) OldPollingTier(ctx context.Context) (v vm.PollingTier, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPollingTier is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPollingTier requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPollingTier: %w", err)
+	}
+	return oldValue.PollingTier, nil
+}
+
+// ResetPollingTier resets all changes to the "polling_tier" field.
+func (m *VMMutation) ResetPollingTier() {
+	m.polling_tier = nil
+}
+
+// SetPollIntervalSec sets the "poll_interval_sec" field.
+func (m *VMMutation) SetPollIntervalSec(i int) {
+	m.poll_interval_sec = &i
+	m.addpoll_interval_sec = nil
+}
+
+// PollIntervalSec returns the value of the "poll_interval_sec" field in the mutation.
+func (m *VMMutation) PollIntervalSec() (r int, exists bool) {
+	v := m.poll_interval_sec
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPollIntervalSec returns the old "poll_interval_sec" field's value of the VM entity.
+// If the VM object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VMMutation) OldPollIntervalSec(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPollIntervalSec is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPollIntervalSec requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPollIntervalSec: %w", err)
+	}
+	return oldValue.PollIntervalSec, nil
+}
+
+// AddPollIntervalSec adds i to the "poll_interval_sec" field.
+func (m *VMMutation) AddPollIntervalSec(i int) {
+	if m.addpoll_interval_sec != nil {
+		*m.addpoll_interval_sec += i
+	} else {
+		m.addpoll_interval_sec = &i
+	}
+}
+
+// AddedPollIntervalSec returns the value that was added to the "poll_interval_sec" field in this mutation.
+func (m *VMMutation) AddedPollIntervalSec() (r int, exists bool) {
+	v := m.addpoll_interval_sec
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPollIntervalSec resets all changes to the "poll_interval_sec" field.
+func (m *VMMutation) ResetPollIntervalSec() {
+	m.poll_interval_sec = nil
+	m.addpoll_interval_sec = nil
+}
+
+// SetLastK8sRv sets the "last_k8s_rv" field.
+func (m *VMMutation) SetLastK8sRv(s string) {
+	m.last_k8s_rv = &s
+}
+
+// LastK8sRv returns the value of the "last_k8s_rv" field in the mutation.
+func (m *VMMutation) LastK8sRv() (r string, exists bool) {
+	v := m.last_k8s_rv
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastK8sRv returns the old "last_k8s_rv" field's value of the VM entity.
+// If the VM object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VMMutation) OldLastK8sRv(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastK8sRv is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastK8sRv requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastK8sRv: %w", err)
+	}
+	return oldValue.LastK8sRv, nil
+}
+
+// ClearLastK8sRv clears the value of the "last_k8s_rv" field.
+func (m *VMMutation) ClearLastK8sRv() {
+	m.last_k8s_rv = nil
+	m.clearedFields[vm.FieldLastK8sRv] = struct{}{}
+}
+
+// LastK8sRvCleared returns if the "last_k8s_rv" field was cleared in this mutation.
+func (m *VMMutation) LastK8sRvCleared() bool {
+	_, ok := m.clearedFields[vm.FieldLastK8sRv]
+	return ok
+}
+
+// ResetLastK8sRv resets all changes to the "last_k8s_rv" field.
+func (m *VMMutation) ResetLastK8sRv() {
+	m.last_k8s_rv = nil
+	delete(m.clearedFields, vm.FieldLastK8sRv)
+}
+
+// SetLastPolledAt sets the "last_polled_at" field.
+func (m *VMMutation) SetLastPolledAt(t time.Time) {
+	m.last_polled_at = &t
+}
+
+// LastPolledAt returns the value of the "last_polled_at" field in the mutation.
+func (m *VMMutation) LastPolledAt() (r time.Time, exists bool) {
+	v := m.last_polled_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastPolledAt returns the old "last_polled_at" field's value of the VM entity.
+// If the VM object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VMMutation) OldLastPolledAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastPolledAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastPolledAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastPolledAt: %w", err)
+	}
+	return oldValue.LastPolledAt, nil
+}
+
+// ClearLastPolledAt clears the value of the "last_polled_at" field.
+func (m *VMMutation) ClearLastPolledAt() {
+	m.last_polled_at = nil
+	m.clearedFields[vm.FieldLastPolledAt] = struct{}{}
+}
+
+// LastPolledAtCleared returns if the "last_polled_at" field was cleared in this mutation.
+func (m *VMMutation) LastPolledAtCleared() bool {
+	_, ok := m.clearedFields[vm.FieldLastPolledAt]
+	return ok
+}
+
+// ResetLastPolledAt resets all changes to the "last_polled_at" field.
+func (m *VMMutation) ResetLastPolledAt() {
+	m.last_polled_at = nil
+	delete(m.clearedFields, vm.FieldLastPolledAt)
+}
+
+// SetHighTierSince sets the "high_tier_since" field.
+func (m *VMMutation) SetHighTierSince(t time.Time) {
+	m.high_tier_since = &t
+}
+
+// HighTierSince returns the value of the "high_tier_since" field in the mutation.
+func (m *VMMutation) HighTierSince() (r time.Time, exists bool) {
+	v := m.high_tier_since
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHighTierSince returns the old "high_tier_since" field's value of the VM entity.
+// If the VM object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VMMutation) OldHighTierSince(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHighTierSince is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHighTierSince requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHighTierSince: %w", err)
+	}
+	return oldValue.HighTierSince, nil
+}
+
+// ClearHighTierSince clears the value of the "high_tier_since" field.
+func (m *VMMutation) ClearHighTierSince() {
+	m.high_tier_since = nil
+	m.clearedFields[vm.FieldHighTierSince] = struct{}{}
+}
+
+// HighTierSinceCleared returns if the "high_tier_since" field was cleared in this mutation.
+func (m *VMMutation) HighTierSinceCleared() bool {
+	_, ok := m.clearedFields[vm.FieldHighTierSince]
+	return ok
+}
+
+// ResetHighTierSince resets all changes to the "high_tier_since" field.
+func (m *VMMutation) ResetHighTierSince() {
+	m.high_tier_since = nil
+	delete(m.clearedFields, vm.FieldHighTierSince)
+}
+
 // SetServiceID sets the "service" edge to the Service entity by id.
 func (m *VMMutation) SetServiceID(id string) {
 	m.service = &id
@@ -21679,7 +21924,7 @@ func (m *VMMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *VMMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 15)
 	if m.created_at != nil {
 		fields = append(fields, vm.FieldCreatedAt)
 	}
@@ -21710,6 +21955,21 @@ func (m *VMMutation) Fields() []string {
 	if m.ticket_id != nil {
 		fields = append(fields, vm.FieldTicketID)
 	}
+	if m.polling_tier != nil {
+		fields = append(fields, vm.FieldPollingTier)
+	}
+	if m.poll_interval_sec != nil {
+		fields = append(fields, vm.FieldPollIntervalSec)
+	}
+	if m.last_k8s_rv != nil {
+		fields = append(fields, vm.FieldLastK8sRv)
+	}
+	if m.last_polled_at != nil {
+		fields = append(fields, vm.FieldLastPolledAt)
+	}
+	if m.high_tier_since != nil {
+		fields = append(fields, vm.FieldHighTierSince)
+	}
 	return fields
 }
 
@@ -21738,6 +21998,16 @@ func (m *VMMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case vm.FieldTicketID:
 		return m.TicketID()
+	case vm.FieldPollingTier:
+		return m.PollingTier()
+	case vm.FieldPollIntervalSec:
+		return m.PollIntervalSec()
+	case vm.FieldLastK8sRv:
+		return m.LastK8sRv()
+	case vm.FieldLastPolledAt:
+		return m.LastPolledAt()
+	case vm.FieldHighTierSince:
+		return m.HighTierSince()
 	}
 	return nil, false
 }
@@ -21767,6 +22037,16 @@ func (m *VMMutation) OldField(ctx context.Context, name string) (ent.Value, erro
 		return m.OldCreatedBy(ctx)
 	case vm.FieldTicketID:
 		return m.OldTicketID(ctx)
+	case vm.FieldPollingTier:
+		return m.OldPollingTier(ctx)
+	case vm.FieldPollIntervalSec:
+		return m.OldPollIntervalSec(ctx)
+	case vm.FieldLastK8sRv:
+		return m.OldLastK8sRv(ctx)
+	case vm.FieldLastPolledAt:
+		return m.OldLastPolledAt(ctx)
+	case vm.FieldHighTierSince:
+		return m.OldHighTierSince(ctx)
 	}
 	return nil, fmt.Errorf("unknown VM field %s", name)
 }
@@ -21846,6 +22126,41 @@ func (m *VMMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTicketID(v)
 		return nil
+	case vm.FieldPollingTier:
+		v, ok := value.(vm.PollingTier)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPollingTier(v)
+		return nil
+	case vm.FieldPollIntervalSec:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPollIntervalSec(v)
+		return nil
+	case vm.FieldLastK8sRv:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastK8sRv(v)
+		return nil
+	case vm.FieldLastPolledAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastPolledAt(v)
+		return nil
+	case vm.FieldHighTierSince:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHighTierSince(v)
+		return nil
 	}
 	return fmt.Errorf("unknown VM field %s", name)
 }
@@ -21853,13 +22168,21 @@ func (m *VMMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *VMMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addpoll_interval_sec != nil {
+		fields = append(fields, vm.FieldPollIntervalSec)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *VMMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case vm.FieldPollIntervalSec:
+		return m.AddedPollIntervalSec()
+	}
 	return nil, false
 }
 
@@ -21868,6 +22191,13 @@ func (m *VMMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *VMMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case vm.FieldPollIntervalSec:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPollIntervalSec(v)
+		return nil
 	}
 	return fmt.Errorf("unknown VM numeric field %s", name)
 }
@@ -21884,6 +22214,15 @@ func (m *VMMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(vm.FieldTicketID) {
 		fields = append(fields, vm.FieldTicketID)
+	}
+	if m.FieldCleared(vm.FieldLastK8sRv) {
+		fields = append(fields, vm.FieldLastK8sRv)
+	}
+	if m.FieldCleared(vm.FieldLastPolledAt) {
+		fields = append(fields, vm.FieldLastPolledAt)
+	}
+	if m.FieldCleared(vm.FieldHighTierSince) {
+		fields = append(fields, vm.FieldHighTierSince)
 	}
 	return fields
 }
@@ -21907,6 +22246,15 @@ func (m *VMMutation) ClearField(name string) error {
 		return nil
 	case vm.FieldTicketID:
 		m.ClearTicketID()
+		return nil
+	case vm.FieldLastK8sRv:
+		m.ClearLastK8sRv()
+		return nil
+	case vm.FieldLastPolledAt:
+		m.ClearLastPolledAt()
+		return nil
+	case vm.FieldHighTierSince:
+		m.ClearHighTierSince()
 		return nil
 	}
 	return fmt.Errorf("unknown VM nullable field %s", name)
@@ -21945,6 +22293,21 @@ func (m *VMMutation) ResetField(name string) error {
 		return nil
 	case vm.FieldTicketID:
 		m.ResetTicketID()
+		return nil
+	case vm.FieldPollingTier:
+		m.ResetPollingTier()
+		return nil
+	case vm.FieldPollIntervalSec:
+		m.ResetPollIntervalSec()
+		return nil
+	case vm.FieldLastK8sRv:
+		m.ResetLastK8sRv()
+		return nil
+	case vm.FieldLastPolledAt:
+		m.ResetLastPolledAt()
+		return nil
+	case vm.FieldHighTierSince:
+		m.ResetHighTierSince()
 		return nil
 	}
 	return fmt.Errorf("unknown VM field %s", name)

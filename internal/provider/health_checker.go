@@ -26,31 +26,42 @@ type ClusterHealth struct {
 	ClusterName     string        `json:"cluster_name"`
 	Status          ClusterStatus `json:"status"`
 	KubeVirtVersion string        `json:"kubevirt_version,omitempty"`
+	EnabledFeatures []string      `json:"enabled_features,omitempty"` // ADR-0014: merged GA + explicit featureGates
 	LastChecked     time.Time     `json:"last_checked"`
 	Error           string        `json:"error,omitempty"`
 }
 
 // ClusterHealthChecker performs periodic health checks on registered clusters.
 type ClusterHealthChecker struct {
-	clientFactory ClusterClientFactory
-	interval      time.Duration
-	results       map[string]*ClusterHealth
-	mu            sync.RWMutex
-	stopCh        chan struct{}
-	stopOnce      sync.Once // ISSUE-010: prevent double-close panic
+	clientFactory      ClusterClientFactory
+	capabilityDetector *CapabilityDetector // ADR-0014: nil-safe, optional
+	interval           time.Duration
+	results            map[string]*ClusterHealth
+	mu                 sync.RWMutex
+	stopCh             chan struct{}
+	stopOnce           sync.Once // ISSUE-010: prevent double-close panic
 }
 
 // NewClusterHealthChecker creates a new ClusterHealthChecker.
 func NewClusterHealthChecker(clientFactory ClusterClientFactory, interval time.Duration) *ClusterHealthChecker {
 	return &ClusterHealthChecker{
-		clientFactory: clientFactory,
-		interval:      interval,
-		results:       make(map[string]*ClusterHealth),
-		stopCh:        make(chan struct{}),
+		clientFactory:      clientFactory,
+		capabilityDetector: NewCapabilityDetector(), // always enabled
+		interval:           interval,
+		results:            make(map[string]*ClusterHealth),
+		stopCh:             make(chan struct{}),
 	}
 }
 
 // CheckCluster performs a single health check for a cluster.
+//
+// Connectivity probe: calls client.KubeVirt().GetVersion() which does a GET on the
+// cluster-scoped KubeVirt CR singleton. This is namespace-independent and always exists
+// on correctly-installed KubeVirt clusters — unlike the former VM list probe which
+// required VMs to exist in the "default" namespace.
+//
+// Capability detection: runs CapabilityDetector.Detect() after connectivity is confirmed.
+// Detection failure is non-fatal (RBAC may restrict featureGates access).
 func (c *ClusterHealthChecker) CheckCluster(ctx context.Context, clusterName string) *ClusterHealth {
 	health := &ClusterHealth{
 		ClusterName: clusterName,
@@ -68,15 +79,44 @@ func (c *ClusterHealthChecker) CheckCluster(ctx context.Context, clusterName str
 		return health
 	}
 
-	// Verify API connectivity by listing VMs (lightweight check)
-	_, err = client.VM().List(ctx, "default", defaultListOpts())
-	if err != nil {
+	// Connectivity probe: GET KubeVirt CR (cluster-scoped singleton, no namespace dependency).
+	// If this fails, the cluster is genuinely unreachable or RBAC is fully denied.
+	// GetVersion() returns ("", nil) if the field is not yet populated — that is not an error.
+	version, probeErr := client.KubeVirt().GetVersion(ctx)
+	if probeErr != nil {
 		health.Status = ClusterStatusUnhealthy
-		health.Error = fmt.Sprintf("kubevirt api error: %v", err)
+		health.Error = fmt.Sprintf("kubevirt api probe failed: %v", probeErr)
+		logger.Warn("Cluster health check probe failed",
+			zap.String("cluster", clusterName),
+			zap.Error(probeErr),
+		)
 		return health
 	}
 
 	health.Status = ClusterStatusHealthy
+	if version != "" {
+		health.KubeVirtVersion = version
+	}
+
+	// Capability detection: non-fatal, runs after connectivity confirmed.
+	// capabilityDetector is always non-nil (initialized in NewClusterHealthChecker).
+	if c.capabilityDetector != nil {
+		caps, detectErr := c.capabilityDetector.Detect(ctx, client)
+		if detectErr != nil {
+			// Non-fatal: log and continue with empty EnabledFeatures.
+			logger.Warn("capability detection failed, using GA table only",
+				zap.String("cluster", clusterName),
+				zap.Error(detectErr),
+			)
+		} else {
+			health.EnabledFeatures = caps.EnabledFeatures
+			// Prefer version from caps (may override the probe result with more detail).
+			if caps.KubeVirtVersion != "" {
+				health.KubeVirtVersion = caps.KubeVirtVersion
+			}
+		}
+	}
+
 	return health
 }
 
@@ -101,7 +141,7 @@ func (c *ClusterHealthChecker) UpdateHealth(health *ClusterHealth) {
 }
 
 // Start begins periodic health checking for the given clusters.
-// nolint:naked-goroutine // health checker ticker loop; doesn't fit worker pool pattern.
+// nolint:shepherd-arch // health checker ticker loop; doesn't fit worker pool pattern.
 func (c *ClusterHealthChecker) Start(ctx context.Context, clusterNames []string) {
 	go func() {
 		ticker := time.NewTicker(c.interval)

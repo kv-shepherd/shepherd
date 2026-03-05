@@ -25,7 +25,7 @@ func (a *Application) Start(ctx context.Context) error {
 		if err := a.refreshClusterHealth(ctx); err != nil {
 			return fmt.Errorf("initial cluster health refresh: %w", err)
 		}
-		go a.runClusterHealthLoop(ctx) //nolint:naked-goroutine // dedicated background lifecycle loop.
+		go a.runClusterHealthLoop(ctx) //nolint:shepherd-arch // dedicated background lifecycle loop.
 		logger.Info("Cluster health checker started")
 	}
 
@@ -99,6 +99,12 @@ func (a *Application) refreshClusterHealth(ctx context.Context) error {
 		update := a.EntClient.Cluster.UpdateOneID(cl.ID).SetStatus(nextStatus)
 		if health.KubeVirtVersion != "" {
 			update = update.SetKubevirtVersion(health.KubeVirtVersion)
+		}
+		// P1-C (ADR-0014): Persist capability features detected during health check.
+		// SetEnabledFeatures replaces the full slice (idempotent on each cycle).
+		// Only persist when HEALTHY: avoid overwriting good features on transient failures.
+		if health.Status == provider.ClusterStatusHealthy {
+			update = update.SetEnabledFeatures(health.EnabledFeatures)
 		}
 		if _, err := update.Save(ctx); err != nil {
 			logger.Warn("persist cluster health failed",

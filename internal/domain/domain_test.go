@@ -86,3 +86,24 @@ func TestPowerAndDeletePayload_ToJSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &gotPower))
 	require.Equal(t, powerPayload, gotPower)
 }
+
+func TestVMJSON_OmitsResourceVersion(t *testing.T) {
+	t.Parallel()
+
+	vm := VM{
+		ID:              "vm-1",
+		Name:            "vm-1",
+		Namespace:       "dev",
+		Cluster:         "cluster-a",
+		Status:          VMStatusRunning,
+		ResourceVersion: "123456",
+	}
+
+	data, err := json.Marshal(vm)
+	require.NoError(t, err)
+
+	var decoded map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	_, exists := decoded["resource_version"]
+	require.False(t, exists, "resource_version must be excluded from JSON payload")
+}

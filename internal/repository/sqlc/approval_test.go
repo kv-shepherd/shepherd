@@ -26,7 +26,7 @@ func TestQueries_AllocateServiceInstance(t *testing.T) {
 
 	systemID := "sys-allocate"
 	serviceID := "svc-allocate"
-	seedSystemAndService(t, ctx, pool, systemID, serviceID, 1)
+	seedSystemAndService(ctx, t, pool, systemID, serviceID, 1)
 
 	row, err := q.AllocateServiceInstance(ctx, serviceID)
 	require.NoError(t, err)
@@ -46,7 +46,7 @@ func TestQueries_ApproveCreateTicket(t *testing.T) {
 
 	ticketID := "ticket-create-1"
 	eventID := "event-create-1"
-	seedApprovalTicket(t, ctx, pool, ticketID, eventID, "CREATE", "PENDING")
+	seedApprovalTicket(ctx, t, pool, ticketID, eventID, "CREATE", "PENDING")
 
 	templateSnapshot := []byte(`{"name":"tpl-v3"}`)
 	instanceSizeSnapshot := []byte(`{"cpu_cores":4,"memory_gi":8}`)
@@ -116,7 +116,7 @@ func TestQueries_ApproveDeleteTicket(t *testing.T) {
 
 	ticketID := "ticket-delete-1"
 	eventID := "event-delete-1"
-	seedApprovalTicket(t, ctx, pool, ticketID, eventID, "DELETE", "PENDING")
+	seedApprovalTicket(ctx, t, pool, ticketID, eventID, "DELETE", "PENDING")
 
 	rows, err := q.ApproveDeleteTicket(ctx, ApproveDeleteTicketParams{
 		Approver: pgtype.Text{String: "admin-delete", Valid: true},
@@ -142,7 +142,7 @@ func TestQueries_InsertVM(t *testing.T) {
 
 	systemID := "sys-insert-vm"
 	serviceID := "svc-insert-vm"
-	seedSystemAndService(t, ctx, pool, systemID, serviceID, 1)
+	seedSystemAndService(ctx, t, pool, systemID, serviceID, 1)
 
 	vmID := "vm-insert-1"
 	err := q.InsertVM(ctx, InsertVMParams{
@@ -182,7 +182,7 @@ func TestQueries_SetDomainEventStatus(t *testing.T) {
 	q, pool := newSQLCTestQueries(t, "set_domain_event_status")
 
 	eventID := "event-status-1"
-	seedDomainEvent(t, ctx, pool, eventID, "PENDING")
+	seedDomainEvent(ctx, t, pool, eventID, "PENDING")
 
 	rows, err := q.SetDomainEventStatus(ctx, SetDomainEventStatusParams{
 		ID:     eventID,
@@ -202,8 +202,8 @@ func TestQueries_SetVMStatus(t *testing.T) {
 
 	systemID := "sys-set-vm-status"
 	serviceID := "svc-set-vm-status"
-	seedSystemAndService(t, ctx, pool, systemID, serviceID, 1)
-	seedVM(t, ctx, pool, "vm-status-1", serviceID, "CREATING")
+	seedSystemAndService(ctx, t, pool, systemID, serviceID, 1)
+	seedVM(ctx, t, pool, "vm-status-1", serviceID, "CREATING")
 
 	rows, err := q.SetVMStatus(ctx, SetVMStatusParams{
 		ID:     "vm-status-1",
@@ -222,7 +222,7 @@ func TestQueries_WithTx(t *testing.T) {
 	q, pool := newSQLCTestQueries(t, "with_tx")
 
 	eventID := "event-tx-1"
-	seedDomainEvent(t, ctx, pool, eventID, "PENDING")
+	seedDomainEvent(ctx, t, pool, eventID, "PENDING")
 
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
@@ -265,7 +265,7 @@ func newSQLCTestQueries(t *testing.T, prefix string) (*Queries, *pgxpool.Pool) {
 	require.NoError(t, adminPool.Ping(ctx))
 
 	schema := newSchemaName(prefix)
-	_, err = adminPool.Exec(ctx, fmt.Sprintf(`CREATE SCHEMA "%s"`, schema))
+	_, err = adminPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %q", schema))
 	require.NoError(t, err)
 
 	schemaDSN, err := dsnWithSearchPath(dsn, schema)
@@ -281,7 +281,7 @@ func newSQLCTestQueries(t *testing.T, prefix string) (*Queries, *pgxpool.Pool) {
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		_, _ = adminPool.Exec(context.Background(), fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schema))
+		_, _ = adminPool.Exec(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %q CASCADE", schema))
 		adminPool.Close()
 	})
 	t.Cleanup(testPool.Close)
@@ -289,7 +289,7 @@ func newSQLCTestQueries(t *testing.T, prefix string) (*Queries, *pgxpool.Pool) {
 	return New(testPool), testPool
 }
 
-func seedSystemAndService(t *testing.T, ctx context.Context, pool *pgxpool.Pool, systemID, serviceID string, nextIndex int32) {
+func seedSystemAndService(ctx context.Context, t *testing.T, pool *pgxpool.Pool, systemID, serviceID string, nextIndex int32) {
 	t.Helper()
 	_, err := pool.Exec(
 		ctx,
@@ -311,7 +311,7 @@ func seedSystemAndService(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
 	require.NoError(t, err)
 }
 
-func seedApprovalTicket(t *testing.T, ctx context.Context, pool *pgxpool.Pool, ticketID, eventID, opType, status string) {
+func seedApprovalTicket(ctx context.Context, t *testing.T, pool *pgxpool.Pool, ticketID, eventID, opType, status string) {
 	t.Helper()
 	_, err := pool.Exec(
 		ctx,
@@ -331,7 +331,7 @@ func seedApprovalTicket(t *testing.T, ctx context.Context, pool *pgxpool.Pool, t
 	require.NoError(t, err)
 }
 
-func seedDomainEvent(t *testing.T, ctx context.Context, pool *pgxpool.Pool, eventID, status string) {
+func seedDomainEvent(ctx context.Context, t *testing.T, pool *pgxpool.Pool, eventID, status string) {
 	t.Helper()
 	_, err := pool.Exec(
 		ctx,
@@ -346,7 +346,7 @@ func seedDomainEvent(t *testing.T, ctx context.Context, pool *pgxpool.Pool, even
 	require.NoError(t, err)
 }
 
-func seedVM(t *testing.T, ctx context.Context, pool *pgxpool.Pool, vmID, serviceID, status string) {
+func seedVM(ctx context.Context, t *testing.T, pool *pgxpool.Pool, vmID, serviceID, status string) {
 	t.Helper()
 	_, err := pool.Exec(
 		ctx,

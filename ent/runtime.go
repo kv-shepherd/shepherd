@@ -871,6 +871,10 @@ func init() {
 	vmDescCreatedBy := vmFields[7].Descriptor()
 	// vm.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	vm.CreatedByValidator = vmDescCreatedBy.Validators[0].(func(string) error)
+	// vmDescPollIntervalSec is the schema descriptor for poll_interval_sec field.
+	vmDescPollIntervalSec := vmFields[10].Descriptor()
+	// vm.DefaultPollIntervalSec holds the default value on creation for the poll_interval_sec field.
+	vm.DefaultPollIntervalSec = vmDescPollIntervalSec.Default.(int)
 	vmrevisionMixin := schema.VMRevision{}.Mixin()
 	vmrevisionMixinFields0 := vmrevisionMixin[0].Fields()
 	_ = vmrevisionMixinFields0

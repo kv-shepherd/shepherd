@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
 	"kv-shepherd.io/shepherd/internal/api/handlers"
@@ -54,6 +55,15 @@ func NewVMModule(infra *Infrastructure) (*VMModule, error) {
 
 func (m *VMModule) Name() string { return "vm" }
 
+// VMService returns the VMService instance for cross-module wiring (e.g., DryRun Gate in ApprovalModule).
+// Returns nil if the module was not initialized correctly.
+func (m *VMModule) VMService() *service.VMService {
+	if m == nil {
+		return nil
+	}
+	return m.vmService
+}
+
 func (m *VMModule) ContributeServerDeps(deps *handlers.ServerDeps) {
 	if deps == nil {
 		return
@@ -70,6 +80,10 @@ func (m *VMModule) RegisterWorkers(workers *river.Workers) {
 	river.AddWorker(workers, jobs.NewVMCreateWorker(m.infra.EntClient, m.vmService, m.infra.AuditLogger))
 	river.AddWorker(workers, jobs.NewVMDeleteWorker(m.infra.EntClient, m.vmService, m.infra.AuditLogger))
 	river.AddWorker(workers, jobs.NewVMPowerWorker(m.infra.EntClient, m.vmService, m.infra.AuditLogger))
+	// ADR-0038 Phase 2: Register adaptive status sync worker.
+	river.AddWorker(workers, jobs.NewVMStatusSyncWorker(m.infra.EntClient, m.vmService, func() *river.Client[pgx.Tx] {
+		return m.infra.RiverClient
+	}))
 }
 
 func (m *VMModule) Shutdown(context.Context) error { return nil }

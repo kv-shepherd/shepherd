@@ -5,5 +5,5 @@
 package autoreg
 
 import (
-	_ "kv-shepherd.io/shepherd/plugins/authprovider/example"
+	_ "kv-shepherd.io/shepherd/plugins/authprovider/example" // Side-effect import registers the example plugin adapter.
 )

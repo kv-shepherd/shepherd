@@ -24,7 +24,7 @@ type VNCDecision struct {
 // 2. VM must be RUNNING
 // 3. test env -> direct token issuance
 // 4. prod env -> approval required; reject duplicate pending requests
-func EvaluateVNCRequest(env namespaceregistry.Environment, vmStatus entvm.Status, hasPermission bool, hasPendingRequest bool) VNCDecision {
+func EvaluateVNCRequest(env namespaceregistry.Environment, vmStatus entvm.Status, hasPermission, hasPendingRequest bool) VNCDecision {
 	if !hasPermission {
 		return VNCDecision{RejectCode: "FORBIDDEN"}
 	}

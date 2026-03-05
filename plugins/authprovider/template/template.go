@@ -1,4 +1,4 @@
-package template
+package authtemplate
 
 import (
 	"context"
@@ -47,9 +47,13 @@ func (a *Adapter) ValidateConfig(config map[string]interface{}) error {
 	return nil
 }
 
-func (a *Adapter) TestConnection(_ context.Context, config map[string]interface{}) (bool, string, error) {
-	if err := a.ValidateConfig(config); err != nil {
-		return false, err.Error(), nil
+func (a *Adapter) TestConnection(_ context.Context, config map[string]interface{}) (ok bool, message string, err error) {
+	validationMessage := ""
+	if vErr := a.ValidateConfig(config); vErr != nil {
+		validationMessage = vErr.Error()
+	}
+	if validationMessage != "" {
+		return false, validationMessage, nil
 	}
 	return true, "configuration accepted", nil
 }

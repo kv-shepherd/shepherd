@@ -211,18 +211,18 @@ func (a *genericAuthProviderAdminAdapter) ValidateConfig(config map[string]inter
 	return nil
 }
 
-func (a *genericAuthProviderAdminAdapter) TestConnection(ctx context.Context, config map[string]interface{}) (bool, string, error) {
+func (a *genericAuthProviderAdminAdapter) TestConnection(ctx context.Context, config map[string]interface{}) (ok bool, message string, err error) {
 	endpoint := strings.TrimSpace(configStringValue(config, "test_endpoint", "healthcheck_url"))
 	if endpoint == "" {
 		return true, "configuration accepted (no healthcheck endpoint configured)", nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return false, "invalid healthcheck endpoint", nil
 	}
 	client := &http.Client{Timeout: 8 * time.Second}
-	resp, err := client.Do(req) // #nosec G107 -- endpoint is admin-supplied configuration.
+	resp, err := client.Do(req) // #nosec G704 -- endpoint is admin-supplied configuration and validated by privileged operators.
 	if err != nil {
 		return false, "healthcheck request failed: " + err.Error(), nil
 	}
