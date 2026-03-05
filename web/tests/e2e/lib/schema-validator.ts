@@ -209,6 +209,52 @@ interface PlaywrightResponse {
     json(): Promise<unknown>;
     status(): number;
     url(): string;
+    request?: () => {
+        method(): string;
+        headers(): Record<string, string>;
+    };
+}
+
+function isReleasedResponseBodyError(message: string): boolean {
+    return message.includes('No resource with given identifier') || message.includes('Target closed');
+}
+
+function buildRetryHeaders(headers: Record<string, string>): Record<string, string> {
+    const forwarded: Record<string, string> = {};
+    for (const [rawKey, value] of Object.entries(headers)) {
+        const key = rawKey.toLowerCase();
+        if (!value) continue;
+        if (key === 'authorization' || key === 'cookie' || key === 'accept') {
+            forwarded[rawKey] = value;
+            continue;
+        }
+        // Preserve x-* headers used by local proxy/auth chains.
+        if (key.startsWith('x-')) {
+            forwarded[rawKey] = value;
+        }
+    }
+    return forwarded;
+}
+
+async function retryReleasedGetBody(response: PlaywrightResponse): Promise<unknown | null> {
+    const req = typeof response.request === 'function' ? response.request() : undefined;
+    if (!req || req.method() !== 'GET') {
+        return null;
+    }
+
+    const retryResp = await fetch(response.url(), {
+        method: 'GET',
+        headers: buildRetryHeaders(req.headers()),
+    });
+
+    if (retryResp.status !== response.status()) {
+        throw new Error(
+            `[schema-validator] fallback GET status mismatch for ${response.url()}: ` +
+            `original=${response.status()} fallback=${retryResp.status}`
+        );
+    }
+
+    return retryResp.json();
 }
 
 /**
@@ -236,19 +282,25 @@ export async function validateApiResponse(
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         // Distinguish navigation race-condition from real JSON parse failure
-        if (msg.includes('No resource with given identifier') || msg.includes('Target closed')) {
+        if (isReleasedResponseBodyError(msg)) {
+            const fallbackBody = await retryReleasedGetBody(response);
+            if (fallbackBody !== null) {
+                body = fallbackBody;
+            } else {
+                throw new Error(
+                    `[schema-validator] Response body was released before it could be read.\n` +
+                    `This is a test infrastructure race condition: page navigation completed\n` +
+                    `before Playwright read the response body for ${response.url()}.\n` +
+                    `Fix: register page.waitForResponse() BEFORE triggering page.goto().\n` +
+                    `Original error: ${msg}`
+                );
+            }
+        } else {
             throw new Error(
-                `[schema-validator] Response body was released before it could be read.\n` +
-                `This is a test infrastructure race condition: page navigation completed\n` +
-                `before Playwright read the response body for ${response.url()}.\n` +
-                `Fix: register page.waitForResponse() BEFORE triggering page.goto().\n` +
-                `Original error: ${msg}`
+                `[schema-validator] Failed to parse response body as JSON for ${response.url()} ` +
+                `(HTTP ${response.status()}): ${msg}`
             );
         }
-        throw new Error(
-            `[schema-validator] Failed to parse response body as JSON for ${response.url()} ` +
-            `(HTTP ${response.status()}): ${msg}`
-        );
     }
     try {
         validateResponse(schemaName, body);

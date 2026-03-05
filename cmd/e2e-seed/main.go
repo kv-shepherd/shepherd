@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"kv-shepherd.io/shepherd/ent"
 	entapprovalticket "kv-shepherd.io/shepherd/ent/approvalticket"
@@ -30,17 +32,19 @@ import (
 	entuser "kv-shepherd.io/shepherd/ent/user"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/infrastructure"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
 const (
 	defaultAdminUsername = "e2e-admin"
-	defaultAdminPassword = "e2e-admin-123"
+	defaultAdminPassword = "e2e-admin-123" // #nosec G101 -- test fixture credential for local e2e seeding only.
 	defaultAdminEmail    = "e2e-admin@localhost"
 
 	defaultNamespaceName = "e2e-test"
 	defaultClusterName   = "e2e-cluster"
+	defaultClusterAPIURL = "https://e2e.invalid"
 	defaultSystemName    = "e2e-system"
 	defaultServiceName   = "e2e-service"
 	defaultTemplateName  = "e2e-template"
@@ -57,6 +61,7 @@ type fixtureConfig struct {
 
 	NamespaceName string
 	ClusterName   string
+	ClusterAPIURL string
 	SystemName    string
 	ServiceName   string
 	TemplateName  string
@@ -78,10 +83,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if err := logger.Init(cfg.Log.Level, cfg.Log.Format); err != nil {
-		return fmt.Errorf("init logger: %w", err)
+	if initErr := logger.Init(cfg.Log.Level, cfg.Log.Format); initErr != nil {
+		return fmt.Errorf("init logger: %w", initErr)
 	}
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	ctx := context.Background()
 	db, err := infrastructure.NewDatabaseClients(ctx, cfg.Database)
@@ -97,12 +102,12 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("ensure admin user: %w", err)
 	}
-	if err := ensureAdminRoleBinding(ctx, client, adminID); err != nil {
-		return fmt.Errorf("ensure admin role binding: %w", err)
+	if bindErr := ensureAdminRoleBinding(ctx, client, adminID); bindErr != nil {
+		return fmt.Errorf("ensure admin role binding: %w", bindErr)
 	}
 
-	if err := ensureNamespaceRegistry(ctx, client, fx); err != nil {
-		return fmt.Errorf("ensure namespace: %w", err)
+	if nsErr := ensureNamespaceRegistry(ctx, client, fx); nsErr != nil {
+		return fmt.Errorf("ensure namespace: %w", nsErr)
 	}
 	clusterID, err := ensureCluster(ctx, client, fx)
 	if err != nil {
@@ -116,23 +121,23 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("ensure service: %w", err)
 	}
-	if err := ensureTemplate(ctx, client, fx); err != nil {
-		return fmt.Errorf("ensure template: %w", err)
+	if tplErr := ensureTemplate(ctx, client, fx); tplErr != nil {
+		return fmt.Errorf("ensure template: %w", tplErr)
 	}
-	if err := ensureInstanceSize(ctx, client, fx); err != nil {
-		return fmt.Errorf("ensure instance size: %w", err)
+	if sizeErr := ensureInstanceSize(ctx, client, fx); sizeErr != nil {
+		return fmt.Errorf("ensure instance size: %w", sizeErr)
 	}
-	if err := ensureVM(ctx, client, fx.RunningVMID, "vm-live", "01", entvm.StatusRUNNING, fx.NamespaceName, clusterID, serviceID, fx.AdminUsername); err != nil {
-		return fmt.Errorf("ensure running vm: %w", err)
+	if runningVMErr := ensureVM(ctx, client, fx.RunningVMID, "vm-live", "01", entvm.StatusRUNNING, fx.NamespaceName, clusterID, serviceID, fx.AdminUsername); runningVMErr != nil {
+		return fmt.Errorf("ensure running vm: %w", runningVMErr)
 	}
-	if err := ensureVM(ctx, client, fx.StoppedVMID, "vm-stopped", "02", entvm.StatusSTOPPED, fx.NamespaceName, clusterID, serviceID, fx.AdminUsername); err != nil {
-		return fmt.Errorf("ensure stopped vm: %w", err)
+	if stoppedVMErr := ensureVM(ctx, client, fx.StoppedVMID, "vm-stopped", "02", entvm.StatusSTOPPED, fx.NamespaceName, clusterID, serviceID, fx.AdminUsername); stoppedVMErr != nil {
+		return fmt.Errorf("ensure stopped vm: %w", stoppedVMErr)
 	}
 
 	// ── Phase 2: Extended fixtures (auth provider, extra user, notifications, approvals) ──
 
-	if err := ensureAuthProvider(ctx, client); err != nil {
-		return fmt.Errorf("ensure auth provider: %w", err)
+	if providerErr := ensureAuthProvider(ctx, client); providerErr != nil {
+		return fmt.Errorf("ensure auth provider: %w", providerErr)
 	}
 
 	secondUserID, err := ensureSecondUser(ctx, client)
@@ -141,16 +146,16 @@ func run() error {
 	}
 	_ = secondUserID // Used for member management tests; ID logged below
 
-	if err := ensureApprovalTickets(ctx, client, adminID); err != nil {
-		return fmt.Errorf("ensure approval tickets: %w", err)
+	if approvalErr := ensureApprovalTickets(ctx, client); approvalErr != nil {
+		return fmt.Errorf("ensure approval tickets: %w", approvalErr)
 	}
 
-	if err := ensureNotifications(ctx, client, adminID); err != nil {
-		return fmt.Errorf("ensure notifications: %w", err)
+	if notifyErr := ensureNotifications(ctx, client, adminID); notifyErr != nil {
+		return fmt.Errorf("ensure notifications: %w", notifyErr)
 	}
 
-	if err := ensureBatchApprovalTickets(ctx, client, fx.AdminUsername); err != nil {
-		return fmt.Errorf("ensure batch approval tickets: %w", err)
+	if batchErr := ensureBatchApprovalTickets(ctx, client, fx.AdminUsername, clusterID, fx.NamespaceName); batchErr != nil {
+		return fmt.Errorf("ensure batch approval tickets: %w", batchErr)
 	}
 
 	fmt.Printf("e2e fixtures ready (user=%s namespace=%s system=%s service=%s)\n",
@@ -166,6 +171,7 @@ func loadFixtureConfig() fixtureConfig {
 		AdminEmail:    envOrDefault("E2E_ADMIN_EMAIL", defaultAdminEmail),
 		NamespaceName: envOrDefault("E2E_NAMESPACE", defaultNamespaceName),
 		ClusterName:   envOrDefault("E2E_CLUSTER", defaultClusterName),
+		ClusterAPIURL: envOrDefault("E2E_CLUSTER_API_SERVER", defaultClusterAPIURL),
 		SystemName:    envOrDefault("E2E_SYSTEM", defaultSystemName),
 		ServiceName:   envOrDefault("E2E_SERVICE", defaultServiceName),
 		TemplateName:  envOrDefault("E2E_TEMPLATE", defaultTemplateName),
@@ -181,6 +187,56 @@ func envOrDefault(key, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+type clusterSeedInput struct {
+	Kubeconfig []byte
+	APIServer  string
+	Status     entcluster.Status
+}
+
+func resolveClusterSeedInput(fx fixtureConfig) (clusterSeedInput, error) {
+	const fallbackStub = "apiVersion: v1\nkind: Config\nclusters: []\ncontexts: []\nusers: []\n"
+	rawB64 := strings.TrimSpace(os.Getenv("E2E_KUBECONFIG_B64"))
+	if rawB64 == "" {
+		return clusterSeedInput{
+			Kubeconfig: []byte(fallbackStub),
+			APIServer:  fx.ClusterAPIURL,
+			Status:     entcluster.StatusUNREACHABLE,
+		}, nil
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(rawB64)
+	if err != nil {
+		return clusterSeedInput{}, fmt.Errorf("decode E2E_KUBECONFIG_B64: %w", err)
+	}
+	if strings.TrimSpace(string(decoded)) == "" {
+		return clusterSeedInput{}, fmt.Errorf("E2E_KUBECONFIG_B64 decoded to empty content")
+	}
+
+	cfg, err := clientcmd.Load(decoded)
+	if err != nil {
+		return clusterSeedInput{}, fmt.Errorf("parse kubeconfig from E2E_KUBECONFIG_B64: %w", err)
+	}
+
+	apiServer := strings.TrimSpace(fx.ClusterAPIURL)
+	if apiServer == "" || apiServer == defaultClusterAPIURL {
+		for _, cluster := range cfg.Clusters {
+			if server := strings.TrimSpace(cluster.Server); server != "" {
+				apiServer = server
+				break
+			}
+		}
+	}
+	if apiServer == "" {
+		return clusterSeedInput{}, fmt.Errorf("kubeconfig in E2E_KUBECONFIG_B64 does not contain any cluster server")
+	}
+
+	return clusterSeedInput{
+		Kubeconfig: decoded,
+		APIServer:  apiServer,
+		Status:     entcluster.StatusHEALTHY,
+	}, nil
 }
 
 func ensureAdminUser(ctx context.Context, client *ent.Client, fx fixtureConfig) (string, error) {
@@ -285,7 +341,10 @@ func ensureNamespaceRegistry(ctx context.Context, client *ent.Client, fx fixture
 }
 
 func ensureCluster(ctx context.Context, client *ent.Client, fx fixtureConfig) (string, error) {
-	kubeconfig := []byte("apiVersion: v1\nkind: Config\nclusters: []\ncontexts: []\nusers: []\n")
+	clusterInput, err := resolveClusterSeedInput(fx)
+	if err != nil {
+		return "", err
+	}
 
 	obj, err := client.Cluster.Query().Where(entcluster.NameEQ(fx.ClusterName)).Only(ctx)
 	if err != nil {
@@ -297,9 +356,9 @@ func ensureCluster(ctx context.Context, client *ent.Client, fx fixtureConfig) (s
 			SetID(id.String()).
 			SetName(fx.ClusterName).
 			SetDisplayName("E2E Cluster").
-			SetAPIServerURL("https://e2e.invalid").
-			SetEncryptedKubeconfig(kubeconfig).
-			SetStatus(entcluster.StatusHEALTHY).
+			SetAPIServerURL(clusterInput.APIServer).
+			SetEncryptedKubeconfig(clusterInput.Kubeconfig).
+			SetStatus(clusterInput.Status).
 			SetEnvironment(entcluster.EnvironmentTest).
 			SetEnabled(true).
 			SetCreatedBy("e2e-seed").
@@ -312,9 +371,9 @@ func ensureCluster(ctx context.Context, client *ent.Client, fx fixtureConfig) (s
 
 	updated, err := client.Cluster.UpdateOneID(obj.ID).
 		SetDisplayName("E2E Cluster").
-		SetAPIServerURL("https://e2e.invalid").
-		SetEncryptedKubeconfig(kubeconfig).
-		SetStatus(entcluster.StatusHEALTHY).
+		SetAPIServerURL(clusterInput.APIServer).
+		SetEncryptedKubeconfig(clusterInput.Kubeconfig).
+		SetStatus(clusterInput.Status).
 		SetEnvironment(entcluster.EnvironmentTest).
 		SetEnabled(true).
 		Save(ctx)
@@ -501,7 +560,7 @@ func ensureVM(
 const (
 	defaultAuthProviderName = "e2e-ldap"
 	defaultSecondUsername   = "e2e-user"
-	defaultSecondPassword   = "e2e-user-123"
+	defaultSecondPassword   = "e2e-user-123" // #nosec G101 -- test fixture credential for local e2e seeding only.
 	defaultSecondEmail      = "e2e-user@localhost"
 )
 
@@ -590,7 +649,7 @@ func ensureSecondUser(ctx context.Context, client *ent.Client) (string, error) {
 // ensureApprovalTickets creates PENDING approval tickets for tests that exercise
 // approveTicket, rejectTicket, cancelTicket, submitApprovalBatch.
 // Each ticket requires a DomainEvent (ADR-0009 claim-check pattern).
-func ensureApprovalTickets(ctx context.Context, client *ent.Client, adminID string) error {
+func ensureApprovalTickets(ctx context.Context, client *ent.Client) error {
 	// We need 3 PENDING tickets: one for approve, one for reject, one for cancel
 	for i, suffix := range []string{"approve", "reject", "cancel"} {
 		eventID := fmt.Sprintf("evt-e2e-seed-%s", suffix)
@@ -611,7 +670,7 @@ func ensureApprovalTickets(ctx context.Context, client *ent.Client, adminID stri
 				"instance_size_id": "e2e-small",
 				"reason":           fmt.Sprintf("E2E seed ticket for %s test", suffix),
 			})
-			_, err := client.DomainEvent.Create().
+			_, createEventErr := client.DomainEvent.Create().
 				SetID(eventID).
 				SetEventType("VM_CREATION_REQUESTED").
 				SetAggregateType("vm").
@@ -620,8 +679,8 @@ func ensureApprovalTickets(ctx context.Context, client *ent.Client, adminID stri
 				SetStatus(entdomainevent.StatusPENDING).
 				SetCreatedBy("e2e-seed").
 				Save(ctx)
-			if err != nil {
-				return fmt.Errorf("create domain event %s: %w", eventID, err)
+			if createEventErr != nil {
+				return fmt.Errorf("create domain event %s: %w", eventID, createEventErr)
 			}
 		}
 
@@ -633,7 +692,7 @@ func ensureApprovalTickets(ctx context.Context, client *ent.Client, adminID stri
 			return err
 		}
 		if !ticketExists {
-			_, err := client.ApprovalTicket.Create().
+			_, createTicketErr := client.ApprovalTicket.Create().
 				SetID(ticketID).
 				SetEventID(eventID).
 				SetOperationType(entapprovalticket.OperationTypeCREATE).
@@ -641,8 +700,8 @@ func ensureApprovalTickets(ctx context.Context, client *ent.Client, adminID stri
 				SetRequester("e2e-seed").
 				SetReason(fmt.Sprintf("E2E seed ticket for %s test", suffix)).
 				Save(ctx)
-			if err != nil {
-				return fmt.Errorf("create approval ticket %s: %w", ticketID, err)
+			if createTicketErr != nil {
+				return fmt.Errorf("create approval ticket %s: %w", ticketID, createTicketErr)
 			}
 		} else {
 			// Reset to PENDING if it was previously approved/rejected during a test run
@@ -723,71 +782,218 @@ func ensureNotifications(ctx context.Context, client *ent.Client, adminID string
 // ensureBatchApprovalTickets creates batch operation records for tests that
 // exercise retryVMBatch (needs a FAILED batch) and cancelVMBatch (needs an
 // IN_PROGRESS or PENDING_APPROVAL batch).
-func ensureBatchApprovalTickets(ctx context.Context, client *ent.Client, createdBy string) error {
-	batches := []struct {
-		id        string
-		batchType entbatchapprovalticket.BatchType
-		status    entbatchapprovalticket.Status
-		child     int
-		success   int
-		failed    int
-		pending   int
-	}{
+func ensureBatchApprovalTickets(
+	ctx context.Context,
+	client *ent.Client,
+	createdBy string,
+	clusterID string,
+	namespaceName string,
+) error {
+	type childFixture struct {
+		status       entapprovalticket.Status
+		rejectReason string
+	}
+	type batchFixture struct {
+		id                 string
+		parentEventStatus  entdomainevent.Status
+		parentTicketStatus entapprovalticket.Status
+		projectionStatus   entbatchapprovalticket.Status
+		children           []childFixture
+	}
+
+	serviceID := defaultServiceName
+	if svc, err := client.Service.Query().Where(entservice.NameEQ(defaultServiceName)).Only(ctx); err == nil {
+		serviceID = svc.ID
+	}
+	templateID := defaultTemplateName
+	if tpl, err := client.Template.Query().Where(enttemplate.NameEQ(defaultTemplateName)).Only(ctx); err == nil {
+		templateID = tpl.ID
+	}
+	sizeID := defaultSizeName
+	if size, err := client.InstanceSize.Query().Where(entinstancesize.NameEQ(defaultSizeName)).Only(ctx); err == nil {
+		sizeID = size.ID
+	}
+	selectedClusterID := strings.TrimSpace(clusterID)
+	selectedStorageClass := ""
+	if selectedClusterID != "" {
+		if clusterObj, err := client.Cluster.Get(ctx, selectedClusterID); err == nil {
+			selectedStorageClass = strings.TrimSpace(clusterObj.DefaultStorageClass)
+		}
+	}
+	seedNamespace := strings.TrimSpace(namespaceName)
+	if seedNamespace == "" {
+		seedNamespace = defaultNamespaceName
+	}
+
+	batches := []batchFixture{
 		{
-			id:        "batch-e2e-seed-failed",
-			batchType: entbatchapprovalticket.BatchTypeBATCH_CREATE,
-			status:    entbatchapprovalticket.StatusFAILED,
-			child:     3,
-			success:   1,
-			failed:    2,
-			pending:   0,
+			id:                 "batch-e2e-seed-failed",
+			parentEventStatus:  entdomainevent.StatusFAILED,
+			parentTicketStatus: entapprovalticket.StatusFAILED,
+			projectionStatus:   entbatchapprovalticket.StatusFAILED,
+			children: []childFixture{
+				{status: entapprovalticket.StatusSUCCESS},
+				{status: entapprovalticket.StatusFAILED, rejectReason: "seeded failed child for retry"},
+				{status: entapprovalticket.StatusREJECTED, rejectReason: "seeded rejected child for retry"},
+			},
 		},
 		{
-			id:        "batch-e2e-seed-pending",
-			batchType: entbatchapprovalticket.BatchTypeBATCH_CREATE,
-			status:    entbatchapprovalticket.StatusIN_PROGRESS,
-			child:     5,
-			success:   0,
-			failed:    0,
-			pending:   5,
+			id:                 "batch-e2e-seed-pending",
+			parentEventStatus:  entdomainevent.StatusPENDING,
+			parentTicketStatus: entapprovalticket.StatusPENDING,
+			projectionStatus:   entbatchapprovalticket.StatusIN_PROGRESS,
+			children: []childFixture{
+				{status: entapprovalticket.StatusPENDING},
+				{status: entapprovalticket.StatusPENDING},
+				{status: entapprovalticket.StatusPENDING},
+				{status: entapprovalticket.StatusPENDING},
+				{status: entapprovalticket.StatusPENDING},
+			},
 		},
 	}
 
 	for _, b := range batches {
-		exists, err := client.BatchApprovalTicket.Query().
-			Where(entbatchapprovalticket.IDEQ(b.id)).
-			Exist(ctx)
+		parentEventID := fmt.Sprintf("evt-%s-parent", b.id)
+		parentReason := "Seeded by e2e-seed for batch operation testing"
+
+		existingChildren, err := client.ApprovalTicket.Query().
+			Where(entapprovalticket.ParentTicketIDEQ(b.id)).
+			All(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("query existing child tickets for batch %s: %w", b.id, err)
 		}
-		if exists {
-			// Reset counters and status for idempotent re-runs
-			_, err := client.BatchApprovalTicket.UpdateOneID(b.id).
-				SetStatus(b.status).
-				SetChildCount(b.child).
-				SetSuccessCount(b.success).
-				SetFailedCount(b.failed).
-				SetPendingCount(b.pending).
-				Save(ctx)
-			if err != nil {
-				return fmt.Errorf("reset batch %s: %w", b.id, err)
-			}
-			continue
+		staleEventIDs := make([]string, 0, len(existingChildren)+1)
+		for _, child := range existingChildren {
+			staleEventIDs = append(staleEventIDs, child.EventID)
 		}
-		_, err = client.BatchApprovalTicket.Create().
-			SetID(b.id).
-			SetBatchType(b.batchType).
-			SetStatus(b.status).
-			SetChildCount(b.child).
-			SetSuccessCount(b.success).
-			SetFailedCount(b.failed).
-			SetPendingCount(b.pending).
+		staleEventIDs = append(staleEventIDs, parentEventID)
+
+		if _, err := client.ApprovalTicket.Delete().
+			Where(entapprovalticket.ParentTicketIDEQ(b.id)).
+			Exec(ctx); err != nil {
+			return fmt.Errorf("delete existing child tickets for batch %s: %w", b.id, err)
+		}
+		if err := client.ApprovalTicket.DeleteOneID(b.id).Exec(ctx); err != nil && !ent.IsNotFound(err) {
+			return fmt.Errorf("delete parent ticket for batch %s: %w", b.id, err)
+		}
+		if _, err := client.DomainEvent.Delete().
+			Where(entdomainevent.IDIn(staleEventIDs...)).
+			Exec(ctx); err != nil {
+			return fmt.Errorf("delete stale events for batch %s: %w", b.id, err)
+		}
+		if err := client.BatchApprovalTicket.DeleteOneID(b.id).Exec(ctx); err != nil && !ent.IsNotFound(err) {
+			return fmt.Errorf("delete projection for batch %s: %w", b.id, err)
+		}
+
+		parentPayload, _ := json.Marshal(map[string]interface{}{
+			"operation":    "CREATE",
+			"request_id":   fmt.Sprintf("seed-%s", b.id),
+			"reason":       parentReason,
+			"submitted_by": createdBy,
+			"items":        []map[string]interface{}{},
+		})
+		if _, err := client.DomainEvent.Create().
+			SetID(parentEventID).
+			SetEventType(string(domain.EventBatchCreateRequested)).
+			SetAggregateType("batch").
+			SetAggregateID(b.id).
+			SetPayload(parentPayload).
+			SetStatus(b.parentEventStatus).
 			SetCreatedBy(createdBy).
-			SetReason("Seeded by e2e-seed for batch operation testing").
-			Save(ctx)
-		if err != nil {
-			return fmt.Errorf("create batch %s: %w", b.id, err)
+			Save(ctx); err != nil {
+			return fmt.Errorf("create parent event for batch %s: %w", b.id, err)
+		}
+		parentCreate := client.ApprovalTicket.Create().
+			SetID(b.id).
+			SetEventID(parentEventID).
+			SetOperationType(entapprovalticket.OperationTypeCREATE).
+			SetStatus(b.parentTicketStatus).
+			SetRequester(createdBy).
+			SetReason(parentReason)
+		// For FAILED parent batches used by retryVMBatch, seed the selected
+		// cluster context to match real approved CREATE tickets.
+		if b.parentTicketStatus != entapprovalticket.StatusPENDING && selectedClusterID != "" {
+			parentCreate = parentCreate.SetSelectedClusterID(selectedClusterID)
+			if selectedStorageClass != "" {
+				parentCreate = parentCreate.SetSelectedStorageClass(selectedStorageClass)
+			}
+		}
+		if _, err := parentCreate.Save(ctx); err != nil {
+			return fmt.Errorf("create parent ticket for batch %s: %w", b.id, err)
+		}
+
+		successCount := 0
+		failedCount := 0
+		pendingCount := 0
+		for idx, child := range b.children {
+			childEventID := fmt.Sprintf("evt-%s-child-%02d", b.id, idx+1)
+			childTicketID := fmt.Sprintf("tkt-%s-child-%02d", b.id, idx+1)
+			childReason := fmt.Sprintf("Seeded batch child %d for %s", idx+1, b.id)
+			childPayload, _ := json.Marshal(map[string]interface{}{
+				"requester_id":      createdBy,
+				"service_id":        serviceID,
+				"template_id":       templateID,
+				"instance_size_id":  sizeID,
+				"namespace":         seedNamespace,
+				"reason":            childReason,
+				"batch_seed_ticket": childTicketID,
+			})
+
+			var childEventStatus entdomainevent.Status
+			switch child.status {
+			case entapprovalticket.StatusSUCCESS:
+				successCount++
+				childEventStatus = entdomainevent.StatusCOMPLETED
+			case entapprovalticket.StatusFAILED, entapprovalticket.StatusREJECTED:
+				failedCount++
+				childEventStatus = entdomainevent.StatusFAILED
+			default:
+				pendingCount++
+				childEventStatus = entdomainevent.StatusPENDING
+			}
+
+			if _, err := client.DomainEvent.Create().
+				SetID(childEventID).
+				SetEventType(string(domain.EventVMCreationRequested)).
+				SetAggregateType("vm").
+				SetAggregateID(serviceID).
+				SetPayload(childPayload).
+				SetStatus(childEventStatus).
+				SetCreatedBy(createdBy).
+				Save(ctx); err != nil {
+				return fmt.Errorf("create child event %s for batch %s: %w", childEventID, b.id, err)
+			}
+
+			childCreate := client.ApprovalTicket.Create().
+				SetID(childTicketID).
+				SetEventID(childEventID).
+				SetOperationType(entapprovalticket.OperationTypeCREATE).
+				SetStatus(child.status).
+				SetRequester(createdBy).
+				SetReason(childReason).
+				SetParentTicketID(b.id)
+			if child.rejectReason != "" {
+				childCreate = childCreate.SetRejectReason(child.rejectReason)
+			}
+			if _, err := childCreate.Save(ctx); err != nil {
+				return fmt.Errorf("create child ticket %s for batch %s: %w", childTicketID, b.id, err)
+			}
+		}
+
+		if _, err := client.BatchApprovalTicket.Create().
+			SetBatchType(entbatchapprovalticket.BatchTypeBATCH_CREATE).
+			SetStatus(b.projectionStatus).
+			SetChildCount(len(b.children)).
+			SetSuccessCount(successCount).
+			SetFailedCount(failedCount).
+			SetPendingCount(pendingCount).
+			SetID(b.id).
+			SetCreatedBy(createdBy).
+			SetReason(parentReason).
+			Save(ctx); err != nil {
+			return fmt.Errorf("create projection for batch %s: %w", b.id, err)
 		}
 	}
+
 	return nil
 }

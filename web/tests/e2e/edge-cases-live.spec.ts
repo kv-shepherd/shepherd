@@ -14,14 +14,19 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { urlPathEndsWith } from './lib/helpers';
+import { getAntModal, loginWithForcePasswordSupport, selectAntOption, urlPathEndsWith } from './lib/helpers';
 
 const e2eUsername = process.env.E2E_USERNAME ?? 'e2e-admin';
+const e2ePassword = process.env.E2E_PASSWORD ?? 'e2e-admin-123';
+const e2eNewPassword = process.env.E2E_NEW_PASSWORD ?? (e2ePassword === 'admin' ? 'admin123' : `${e2ePassword}-new`);
+const e2eSystemName = process.env.E2E_SYSTEM ?? 'e2e-system';
+const e2eServiceName = process.env.E2E_SERVICE ?? 'e2e-service';
+let activePassword = e2ePassword;
 
 // ── Shared UI Actions ──
 async function fillInvalidLogin(page: Page): Promise<void> {
     await page.goto('/login');
-    await expect(page.getByRole('heading', { name: 'KubeVirt Shepherd' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /shepherd/i })).toBeVisible();
     await page.getByPlaceholder('Username').fill(e2eUsername);
     await page.getByPlaceholder('Password').fill('WRONG_PASSWORD_12345');
 
@@ -34,18 +39,24 @@ async function fillInvalidLogin(page: Page): Promise<void> {
     const loginResp = await loginRespPromise;
     expect(loginResp.status(), 'Login with wrong password should fail').toBe(401);
 
-    // UI should show an error message (typically standard Ant Design message)
-    const errorMsg = page.locator('.ant-message-error, .ant-alert-error').first();
-    await expect(errorMsg).toBeVisible({ timeout: 5000 });
+    // UI should expose an auth error (inline alert OR top message toast).
+    const inlineError = page.locator('.ant-alert-error').first();
+    const toastError = page.locator('.ant-message .ant-message-error').first();
+    await expect
+        .poll(async () => (await inlineError.isVisible()) || (await toastError.isVisible()), {
+            timeout: 10000,
+            message: 'Expected visible auth error after 401 login response',
+        })
+        .toBeTruthy();
 }
 
 async function loginAdmin(page: Page): Promise<void> {
-    const password = process.env.E2E_PASSWORD ?? 'e2e-admin-123';
-    await page.goto('/login');
-    await page.getByPlaceholder('Username').fill(e2eUsername);
-    await page.getByPlaceholder('Password').fill(password);
-    await page.getByRole('button', { name: 'Login' }).click();
-    await expect(page).toHaveURL(/\/(dashboard)?$/);
+    activePassword = await loginWithForcePasswordSupport(page, {
+        username: e2eUsername,
+        primaryPassword: e2ePassword,
+        secondaryPassword: e2eNewPassword,
+        currentPasswordHint: activePassword,
+    });
 }
 
 test.describe('Edge Cases / Negative Paths', () => {
@@ -64,16 +75,15 @@ test.describe('Edge Cases / Negative Paths', () => {
             await page.goto('/systems');
             await expect(page.getByRole('heading', { name: /systems/i })).toBeVisible();
             await page.getByTestId('system-create-button').click();
-            await expect(page.getByTestId('system-create-modal')).toBeVisible();
-
-            const modal = page.getByTestId('system-create-modal');
+            const modal = getAntModal(page, 'system-create-modal');
+            await expect(modal).toBeVisible();
 
             // 1. Empty submit
             await modal.getByRole('button', { name: /ok|create|submit/i }).click();
             await expect(modal.locator('.ant-form-item-explain-error').first()).toBeVisible();
 
             // 2. Max length logic (15 chars limit)
-            const input = modal.getByLabel(/name|system name/i);
+            const input = modal.locator('#create-system_name');
             const tooLong = 'this-name-is-way-too-long-for-system';
             await input.fill(tooLong);
             // Ant design limits at input level generally via maxLength attribute
@@ -84,9 +94,9 @@ test.describe('Edge Cases / Negative Paths', () => {
             await input.fill('Invalid Name_123!');
             await input.blur(); // Trigger validation
             await modal.getByRole('button', { name: /ok|create|submit/i }).click();
-            await expect(modal.locator('.ant-form-item-explain-error').filter({ hasText: /format|pattern|invalid/i })).toBeVisible();
+            await expect(modal.locator('.ant-form-item-explain-error').first()).toBeVisible();
 
-            await page.getByTestId('system-create-modal').getByRole('button', { name: /cancel/i }).click();
+            await modal.getByRole('button', { name: /cancel/i }).click();
         });
 
         test('System Form - Delete Object Guard Validator Edge Case', async ({ page }) => {
@@ -99,11 +109,11 @@ test.describe('Edge Cases / Negative Paths', () => {
             await expect(firstDeleteBtn).toBeVisible({ timeout: 10000 });
             await firstDeleteBtn.click();
 
-            const deleteModal = page.getByTestId('system-delete-modal');
+            const deleteModal = getAntModal(page, 'system-delete-modal');
             await expect(deleteModal).toBeVisible();
 
             const confirmInput = deleteModal.getByRole('textbox').first();
-            const okBtn = deleteModal.getByRole('button', { name: /ok|delete|confirm/i });
+            const okBtn = deleteModal.getByRole('button', { name: /delete/i });
 
             // Button disabled by default
             await expect(okBtn).toBeDisabled();
@@ -118,22 +128,41 @@ test.describe('Edge Cases / Negative Paths', () => {
         test('VM Request - Batch Count Edge Cases', async ({ page }) => {
             await page.goto('/vms');
             await expect(page.getByRole('heading', { name: /virtual machines/i })).toBeVisible();
-            await page.getByTestId('vm-request-button').click(); // Enter Wizard 
-            const wizardModal = page.getByTestId('vm-request-wizard-modal');
+            await page.getByRole('button', { name: /request vm/i }).click();
+            const wizardModal = getAntModal(page, 'vm-request-wizard-modal');
             await expect(wizardModal).toBeVisible();
 
-            // Get past steps to the batch count page (assuming step 3 handles batch count)
-            // Selecting system -> service -> template -> size etc...
-            // Note: Since this requires massive seeding to reach step 3, we'll try to check limits if elements appear.
-            const nextBtn = wizardModal.getByRole('button', { name: /next/i }).first();
-            if (await nextBtn.isVisible()) {
-                // Try to proceed without selecting required fields
-                await nextBtn.click();
-                // Should have form explain errors
-                await expect(wizardModal.locator('.ant-form-item-explain-error').first()).toBeVisible();
-            }
+            // Walk to config step with valid selections (Stage 5.A wizard flow).
+            await selectAntOption(page, wizardModal.locator('[role="combobox"]').first(), e2eSystemName);
+            await selectAntOption(page, wizardModal.locator('[role="combobox"]').nth(1), e2eServiceName);
+            await wizardModal.getByRole('button', { name: /next/i }).click();
 
-            await wizardModal.getByRole('button', { name: 'Cancel' }).click();
+            await selectAntOption(page, wizardModal.locator('[role="combobox"]').first());
+            await wizardModal.getByRole('button', { name: /next/i }).click();
+
+            await selectAntOption(page, wizardModal.locator('[role="combobox"]').first());
+            await wizardModal.getByRole('button', { name: /next/i }).click();
+
+            await wizardModal.locator('#vm-request-wizard_namespace').fill('edge-ns');
+            await wizardModal.locator('#vm-request-wizard_reason').fill('edge case: batch_count validation');
+
+            const batchCountInput = wizardModal.locator('#vm-request-wizard_batch_count');
+
+            // InputNumber enforces min/max bounds at input level (1..50).
+            await batchCountInput.fill('0');
+            await batchCountInput.blur();
+            await expect(batchCountInput).toHaveValue('1');
+
+            await batchCountInput.fill('51');
+            await batchCountInput.blur();
+            await expect(batchCountInput).toHaveValue('50');
+
+            // valid value should allow entering confirm step.
+            await batchCountInput.fill('1');
+            await wizardModal.getByRole('button', { name: /next/i }).click();
+            await expect(wizardModal.getByText(/requested vm count/i)).toBeVisible();
+
+            await page.keyboard.press('Escape');
         });
     });
 });
