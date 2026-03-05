@@ -134,19 +134,19 @@ func (s *Server) CreateNamespace(c *gin.Context) {
 }
 
 // GetNamespace handles GET /admin/namespaces/{namespace_id}.
-func (s *Server) GetNamespace(c *gin.Context, namespaceId generated.NamespaceID) {
+func (s *Server) GetNamespace(c *gin.Context, namespaceID generated.NamespaceID) {
 	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "cluster:read", "cluster:write", "cluster:manage")
 	if !ok {
 		return
 	}
 
-	ns, err := s.client.NamespaceRegistry.Get(ctx, namespaceId)
+	ns, err := s.client.NamespaceRegistry.Get(ctx, namespaceID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "NAMESPACE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get namespace", zap.Error(err), zap.String("namespace_id", namespaceId))
+		logger.Error("failed to get namespace", zap.Error(err), zap.String("namespace_id", namespaceID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -174,7 +174,7 @@ func (s *Server) GetNamespace(c *gin.Context, namespaceId generated.NamespaceID)
 }
 
 // UpdateNamespace handles PUT /admin/namespaces/{namespace_id}.
-func (s *Server) UpdateNamespace(c *gin.Context, namespaceId generated.NamespaceID) {
+func (s *Server) UpdateNamespace(c *gin.Context, namespaceID generated.NamespaceID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
 	if !ok {
 		return
@@ -185,7 +185,7 @@ func (s *Server) UpdateNamespace(c *gin.Context, namespaceId generated.Namespace
 		return
 	}
 
-	update := s.client.NamespaceRegistry.UpdateOneID(namespaceId)
+	update := s.client.NamespaceRegistry.UpdateOneID(namespaceID)
 	if req.Description != "" {
 		update = update.SetDescription(req.Description)
 	}
@@ -197,7 +197,7 @@ func (s *Server) UpdateNamespace(c *gin.Context, namespaceId generated.Namespace
 			c.JSON(http.StatusNotFound, generated.Error{Code: "NAMESPACE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to update namespace", zap.Error(err), zap.String("namespace_id", namespaceId))
+		logger.Error("failed to update namespace", zap.Error(err), zap.String("namespace_id", namespaceID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -211,19 +211,19 @@ func (s *Server) UpdateNamespace(c *gin.Context, namespaceId generated.Namespace
 
 // DeleteNamespace handles DELETE /admin/namespaces/{namespace_id}.
 // ADR-0015 §13 addendum: confirm_name query param required.
-func (s *Server) DeleteNamespace(c *gin.Context, namespaceId generated.NamespaceID, params generated.DeleteNamespaceParams) {
+func (s *Server) DeleteNamespace(c *gin.Context, namespaceID generated.NamespaceID, params generated.DeleteNamespaceParams) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
 	if !ok {
 		return
 	}
 
-	ns, err := s.client.NamespaceRegistry.Get(ctx, namespaceId)
+	ns, err := s.client.NamespaceRegistry.Get(ctx, namespaceID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "NAMESPACE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get namespace for delete", zap.Error(err), zap.String("namespace_id", namespaceId))
+		logger.Error("failed to get namespace for delete", zap.Error(err), zap.String("namespace_id", namespaceID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -252,14 +252,14 @@ func (s *Server) DeleteNamespace(c *gin.Context, namespaceId generated.Namespace
 		return
 	}
 
-	if err := s.client.NamespaceRegistry.DeleteOneID(namespaceId).Exec(ctx); err != nil {
-		logger.Error("failed to delete namespace", zap.Error(err), zap.String("namespace_id", namespaceId))
+	if err := s.client.NamespaceRegistry.DeleteOneID(namespaceID).Exec(ctx); err != nil {
+		logger.Error("failed to delete namespace", zap.Error(err), zap.String("namespace_id", namespaceID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "namespace.delete", "namespace", namespaceId, actor, map[string]interface{}{
+		_ = s.audit.LogAction(ctx, "namespace.delete", "namespace", namespaceID, actor, map[string]interface{}{
 			"name": ns.Name,
 		})
 	}

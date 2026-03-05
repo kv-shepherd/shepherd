@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 
@@ -45,7 +46,7 @@ func TestBatchHandler_SubmitApprovalBatch_AliasPath(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newBatchBehaviorTestServer(t)
-	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
+	vmID := mustCreateBatchDeleteTargetVM(t, client)
 	body := mustJSON(t, generated.VMBatchSubmitRequest{
 		Operation: generated.VMBatchOperation("DELETE"),
 		Items: []generated.VMBatchChildItem{
@@ -89,7 +90,7 @@ func TestBatchHandler_SubmitDelete_GetAndCancel(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newBatchBehaviorTestServer(t)
-	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
+	vmID := mustCreateBatchDeleteTargetVM(t, client)
 
 	submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
 		Operation: generated.VMBatchOperation("DELETE"),
@@ -142,8 +143,8 @@ func TestBatchHandler_SubmitDelete_GetAndCancel(t *testing.T) {
 		t.Fatalf("get status = %d, want %d body=%s", getW.Code, http.StatusOK, getW.Body.String())
 	}
 	var getResp generated.VMBatchStatusResponse
-	if err := json.Unmarshal(getW.Body.Bytes(), &getResp); err != nil {
-		t.Fatalf("decode get response: %v", err)
+	if decodeErr := json.Unmarshal(getW.Body.Bytes(), &getResp); decodeErr != nil {
+		t.Fatalf("decode get response: %v", decodeErr)
 	}
 	if getResp.ChildCount != 1 || getResp.PendingCount != 1 {
 		t.Fatalf("unexpected get counters: child=%d pending=%d", getResp.ChildCount, getResp.PendingCount)
@@ -155,8 +156,8 @@ func TestBatchHandler_SubmitDelete_GetAndCancel(t *testing.T) {
 		t.Fatalf("cancel status = %d, want %d body=%s", cancelW.Code, http.StatusOK, cancelW.Body.String())
 	}
 	var cancelResp generated.VMBatchActionResponse
-	if err := json.Unmarshal(cancelW.Body.Bytes(), &cancelResp); err != nil {
-		t.Fatalf("decode cancel response: %v", err)
+	if decodeErr := json.Unmarshal(cancelW.Body.Bytes(), &cancelResp); decodeErr != nil {
+		t.Fatalf("decode cancel response: %v", decodeErr)
 	}
 	if cancelResp.AffectedCount != 1 {
 		t.Fatalf("affected_count = %d, want 1", cancelResp.AffectedCount)
@@ -181,7 +182,7 @@ func TestBatchHandler_GetVMBatch_HidesOtherUsersBatch(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newBatchBehaviorTestServer(t)
-	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
+	vmID := mustCreateBatchDeleteTargetVM(t, client)
 
 	submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
 		Operation: generated.VMBatchOperation("DELETE"),
@@ -273,11 +274,68 @@ func TestBatchHandler_RetryVMBatch_Errors(t *testing.T) {
 	}
 }
 
+func TestBatchHandler_GetVMBatch_RequestContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newBatchBehaviorTestServer(t)
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms/batch/batch-cancelled", "", "user-a", []string{"vm:read"})
+	reqCtx, cancel := context.WithCancel(c.Request.Context())
+	cancel()
+	c.Request = c.Request.WithContext(reqCtx)
+
+	srv.GetVMBatch(c, "batch-cancelled")
+
+	if w.Body.Len() != 0 {
+		t.Fatalf("expected empty body for canceled request, got %q", w.Body.String())
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d for canceled request", w.Code, http.StatusOK)
+	}
+}
+
+func TestBatchHandler_ListVMBatches_RequestContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newBatchBehaviorTestServer(t)
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms/batch", "", "user-a", []string{"vm:read"})
+	reqCtx, cancel := context.WithCancel(c.Request.Context())
+	cancel()
+	c.Request = c.Request.WithContext(reqCtx)
+
+	srv.ListVMBatches(c, generated.ListVMBatchesParams{})
+
+	if w.Body.Len() != 0 {
+		t.Fatalf("expected empty body for canceled request, got %q", w.Body.String())
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d for canceled request", w.Code, http.StatusOK)
+	}
+}
+
+func TestBatchHandler_RetryVMBatch_RequestContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newBatchBehaviorTestServer(t)
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/batch/batch-cancelled/retry", "", "user-a", []string{"vm:delete"})
+	reqCtx, cancel := context.WithCancel(c.Request.Context())
+	cancel()
+	c.Request = c.Request.WithContext(reqCtx)
+
+	srv.RetryVMBatch(c, "batch-cancelled")
+
+	if w.Body.Len() != 0 {
+		t.Fatalf("expected empty body for canceled request, got %q", w.Body.String())
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d for canceled request", w.Code, http.StatusOK)
+	}
+}
+
 func TestBatchHandler_SubmitVMBatch_IdempotentByRequestID(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newBatchBehaviorTestServer(t)
-	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
+	vmID := mustCreateBatchDeleteTargetVM(t, client)
 
 	body := mustJSON(t, generated.VMBatchSubmitRequest{
 		Operation: generated.VMBatchOperation("DELETE"),
@@ -325,7 +383,7 @@ func TestBatchHandler_SubmitVMBatch_RateLimitedByPendingParentCount(t *testing.T
 	t.Parallel()
 
 	srv, client := newBatchBehaviorTestServer(t)
-	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
+	vmID := mustCreateBatchDeleteTargetVM(t, client)
 	for i := range maxPendingBatchParentsUser {
 		_, err := client.DomainEvent.Create().
 			SetID("ev-pending-" + uuid.NewString()).
@@ -359,7 +417,7 @@ func TestBatchHandler_SubmitVMBatch_RateLimitedByGlobalRecentSubmitCount(t *test
 	t.Parallel()
 
 	srv, client := newBatchBehaviorTestServer(t)
-	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
+	vmID := mustCreateBatchDeleteTargetVM(t, client)
 
 	for i := range maxGlobalBatchRequestsPerMinute {
 		_, err := client.DomainEvent.Create().
@@ -412,7 +470,7 @@ func TestBatchHandler_SubmitVMBatch_RateLimitedByPendingChildCount(t *testing.T)
 	t.Parallel()
 
 	srv, client := newBatchBehaviorTestServer(t)
-	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
+	vmID := mustCreateBatchDeleteTargetVM(t, client)
 
 	for i := range maxPendingBatchChildrenUser {
 		_, err := client.ApprovalTicket.Create().
@@ -445,7 +503,7 @@ func TestBatchHandler_SubmitVMBatch_RateLimitedByCooldown(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newBatchBehaviorTestServer(t)
-	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
+	vmID := mustCreateBatchDeleteTargetVM(t, client)
 
 	_, err := client.DomainEvent.Create().
 		SetID("ev-cooldown-" + uuid.NewString()).
@@ -479,7 +537,7 @@ func TestBatchHandler_RetryVMBatch_RetriesFailedDeleteChild(t *testing.T) {
 
 	writer := &fakeDeleteAtomicWriter{}
 	srv, client := newBatchBehaviorTestServerWithGateway(t, writer)
-	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
+	vmID := mustCreateBatchDeleteTargetVM(t, client)
 
 	submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
 		Operation: generated.VMBatchOperation("DELETE"),
@@ -547,7 +605,7 @@ func TestBatchHandler_SubmitVMBatchPower_EnqueueFailureFallsBackToFailed(t *test
 	t.Parallel()
 
 	srv, client := newBatchBehaviorTestServer(t)
-	vmID := mustCreateBatchDeleteTargetVM(t, client, "owner-1")
+	vmID := mustCreateBatchDeleteTargetVM(t, client)
 
 	body := mustJSON(t, generated.VMBatchPowerRequest{
 		Operation: generated.VMBatchPowerAction("start"),
@@ -671,8 +729,9 @@ func newBatchBehaviorTestServerWithGateway(t *testing.T, writer *fakeDeleteAtomi
 	}), client
 }
 
-func mustCreateBatchDeleteTargetVM(t *testing.T, client *ent.Client, actor string) string {
+func mustCreateBatchDeleteTargetVM(t *testing.T, client *ent.Client) string {
 	t.Helper()
+	actor := "owner-1"
 
 	systemID := "sys-" + uuid.NewString()
 	serviceID := "svc-" + uuid.NewString()
@@ -851,7 +910,7 @@ func (f *fakeDeleteAtomicWriter) ApproveCreateAndEnqueue(
 	_ map[string]interface{},
 	_ map[string]interface{},
 	_ map[string]interface{},
-) (string, string, error) {
+) (vmID, vmName string, err error) {
 	return "vm-fake", "vm-fake", nil
 }
 

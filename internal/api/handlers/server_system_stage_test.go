@@ -1,7 +1,11 @@
 package handlers
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -29,17 +33,16 @@ func TestStage4Hierarchy_AccessGuardsContract(t *testing.T) {
 	t.Parallel()
 
 	source := mustReadSource(t, serverSystemSourcePath)
-	required := []string{
-		`s.requireSystemRole(c, systemId, "view")`,
-		`s.requireSystemRole(c, systemId, "create")`,
-		`s.requireSystemRole(c, systemId, "update")`,
-		`s.requireSystemRole(c, systemId, "delete")`,
-		`rrb.ResourceTypeEQ("system")`,
-	}
-	for _, fragment := range required {
-		if !strings.Contains(source, fragment) {
-			t.Fatalf("missing Stage 4 hierarchy guard fragment %q in %s", fragment, serverSystemSourcePath)
+	file := mustParseSource(t, serverSystemSourcePath, source)
+
+	requiredActions := []string{"view", "create", "update", "delete"}
+	for _, action := range requiredActions {
+		if !hasRequireSystemRoleAction(file, action) {
+			t.Fatalf("missing Stage 4 hierarchy guard requireSystemRole(..., %q) in %s", action, serverSystemSourcePath)
 		}
+	}
+	if !strings.Contains(source, `rrb.ResourceTypeEQ("system")`) {
+		t.Fatalf("missing Stage 4 hierarchy guard fragment %q in %s", `rrb.ResourceTypeEQ("system")`, serverSystemSourcePath)
 	}
 }
 
@@ -70,4 +73,45 @@ func mustReadSource(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(b)
+}
+
+func mustParseSource(t *testing.T, path, source string) *ast.File {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, source, parser.AllErrors)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	return file
+}
+
+func hasRequireSystemRoleAction(file *ast.File, wantAction string) bool {
+	found := false
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel == nil || sel.Sel.Name != "requireSystemRole" {
+			return true
+		}
+		if len(call.Args) < 3 {
+			return true
+		}
+		actionLit, ok := call.Args[2].(*ast.BasicLit)
+		if !ok || actionLit.Kind != token.STRING {
+			return true
+		}
+		action, err := strconv.Unquote(actionLit.Value)
+		if err != nil {
+			return true
+		}
+		if action == wantAction {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
 }

@@ -21,10 +21,10 @@ We use [BCP 47](https://tools.ietf.org/html/bcp47) language tags:
 
 | Code | Language |
 |------|----------|
-| `zh-CN` | Simplified Chinese (中文简体) |
-| `zh-TW` | Traditional Chinese (中文繁體) |
-| `ja` | Japanese (日本語) |
-| `ko` | Korean (한국어) |
+| `zh-CN` | Simplified Chinese |
+| `zh-TW` | Traditional Chinese |
+| `ja` | Japanese |
+| `ko` | Korean |
 
 ## Contributing Translations
 

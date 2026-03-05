@@ -69,7 +69,7 @@ func TestGetCurrentUser_IncludesPermissions(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/auth/me", http.NoBody)
 	req = req.WithContext(middleware.SetUserContext(req.Context(), user.ID, user.Username, nil))
 	c.Request = req
 

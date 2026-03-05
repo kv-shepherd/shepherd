@@ -20,12 +20,12 @@ func TestErrorHandler_AppErrorIncludesFieldErrors(t *testing.T) {
 	router := gin.New()
 	router.Use(ErrorHandler())
 	router.GET("/test", func(c *gin.Context) {
-		c.Error(apperrors.BadRequest("INVALID_REQUEST", "invalid input").WithFieldErrors([]apperrors.FieldError{
+		_ = c.Error(apperrors.BadRequest("INVALID_REQUEST", "invalid input").WithFieldErrors([]apperrors.FieldError{
 			{Field: "name", Code: "REQUIRED"},
 		}))
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 

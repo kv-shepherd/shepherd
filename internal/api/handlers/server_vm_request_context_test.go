@@ -192,8 +192,8 @@ func TestVMHandler_GetVMRequestContext_OrdersCatalogDeterministically(t *testing
 	}
 
 	var resp generated.VMRequestContext
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode response: %v", err)
+	if decodeErr := json.Unmarshal(w.Body.Bytes(), &resp); decodeErr != nil {
+		t.Fatalf("decode response: %v", decodeErr)
 	}
 	if len(resp.Templates) != 2 || resp.Templates[0].Id != "tpl-a" || resp.Templates[1].Id != "tpl-b" {
 		t.Fatalf("template order mismatch: %+v", resp.Templates)

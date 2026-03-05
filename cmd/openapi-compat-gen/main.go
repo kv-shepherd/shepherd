@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -29,20 +30,20 @@ var blockedKeywords = map[string]struct{}{
 }
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
+	if err := run(os.Args[1:], os.Stdout); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "❌ %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string, stdout, stderr io.Writer) error {
+func run(args []string, stdout io.Writer) error {
 	if len(args) != 2 {
 		return errors.New("usage: openapi-compat-gen <canonical-spec-path> <compat-spec-path>")
 	}
-	inPath := args[0]
-	outPath := args[1]
+	inPath := filepath.Clean(args[0])
+	outPath := filepath.Clean(args[1])
 
-	in, err := os.ReadFile(inPath)
+	in, err := os.ReadFile(inPath) // #nosec G703 -- CLI intentionally accepts user-provided local file paths.
 	if err != nil {
 		return fmt.Errorf("read canonical spec %q: %w", inPath, err)
 	}
@@ -50,14 +51,14 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(outPath, out, 0o644); err != nil {
+	if err := os.WriteFile(outPath, out, 0o600); err != nil { // #nosec G703 -- CLI intentionally writes to a caller-selected local path.
 		return fmt.Errorf("write compat spec %q: %w", outPath, err)
 	}
-	_, _ = fmt.Fprintf(stdout, "✅ Compat spec generated: %s (rewrote %d union-null declarations)\n", outPath, converted)
+	_, _ = fmt.Fprintf(stdout, "✅ Compat spec generated: %q (rewrote %d union-null declarations)\n", outPath, converted) // #nosec G705 -- terminal output is plain text, not HTML.
 	return nil
 }
 
-func generateCompat(in []byte) ([]byte, int, error) {
+func generateCompat(in []byte) (out []byte, converted int, err error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(in, &doc); err != nil {
 		return nil, 0, fmt.Errorf("parse yaml: %w", err)
@@ -70,13 +71,13 @@ func generateCompat(in []byte) ([]byte, int, error) {
 		return nil, 0, fmt.Errorf("top-level yaml must be mapping, got kind=%d", root.Kind)
 	}
 
-	if err := rewriteOpenAPIVersion(root); err != nil {
-		return nil, 0, err
+	if rewriteErr := rewriteOpenAPIVersion(root); rewriteErr != nil {
+		return nil, 0, rewriteErr
 	}
 
-	converted := 0
-	if err := transformNode(root, &converted); err != nil {
-		return nil, 0, err
+	converted = 0
+	if transformErr := transformNode(root, &converted); transformErr != nil {
+		return nil, 0, transformErr
 	}
 
 	var buf bytes.Buffer
@@ -119,6 +120,10 @@ func transformNode(node *yaml.Node, converted *int) error {
 		if node.Alias != nil {
 			return transformNode(node.Alias, converted)
 		}
+	case yaml.ScalarNode:
+		return nil
+	default:
+		return fmt.Errorf("unsupported YAML node kind %d at line %d", node.Kind, node.Line)
 	}
 	return nil
 }

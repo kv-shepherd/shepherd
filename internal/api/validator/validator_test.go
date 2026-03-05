@@ -12,14 +12,14 @@ import (
 type createSystemReq struct {
 	Name        string `json:"name" validate:"required,min=3,max=15"`
 	Description string `json:"description" validate:"max=64"`
-	CpuCores    int    `json:"cpu_cores" validate:"gte=1,lte=96"`
+	CPUCores    int    `json:"cpu_cores" validate:"gte=1,lte=96"`
 }
 
 func TestValidateStruct_Success(t *testing.T) {
 	req := createSystemReq{
 		Name:        "demo-system",
 		Description: "ok",
-		CpuCores:    4,
+		CPUCores:    4,
 	}
 	if err := ValidateStruct(req); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -29,7 +29,7 @@ func TestValidateStruct_Success(t *testing.T) {
 func TestValidateStruct_FieldErrors(t *testing.T) {
 	req := createSystemReq{
 		Name:     "",
-		CpuCores: 0,
+		CPUCores: 0,
 	}
 
 	err := ValidateStruct(req)

@@ -182,7 +182,7 @@ func newSchemaGinContext(t *testing.T, entityType string) (*gin.Context, *httpte
 	t.Helper()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	req := httptest.NewRequest(http.MethodGet, "/schemas/"+entityType, nil)
+	req := httptest.NewRequest(http.MethodGet, "/schemas/"+entityType, http.NoBody)
 	c.Request = req
 	return c, w
 }

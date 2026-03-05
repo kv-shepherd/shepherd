@@ -36,6 +36,10 @@ func (s *Server) ListNotifications(c *gin.Context, params generated.ListNotifica
 
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while counting notifications", zap.Error(err))
+			return
+		}
 		logger.Error("failed to count notifications", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -47,6 +51,10 @@ func (s *Server) ListNotifications(c *gin.Context, params generated.ListNotifica
 		Order(ent.Desc(notification.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while listing notifications", zap.Error(err), zap.Int("page", page))
+			return
+		}
 		logger.Error("failed to list notifications", zap.Error(err), zap.Int("page", page))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -85,6 +93,10 @@ func (s *Server) GetUnreadCount(c *gin.Context) {
 		).
 		Count(ctx)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while counting unread notifications", zap.Error(err))
+			return
+		}
 		logger.Error("failed to count unread notifications", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -94,7 +106,7 @@ func (s *Server) GetUnreadCount(c *gin.Context) {
 }
 
 // MarkNotificationRead handles PATCH /notifications/{notification_id}/read.
-func (s *Server) MarkNotificationRead(c *gin.Context, notificationId generated.NotificationID) {
+func (s *Server) MarkNotificationRead(c *gin.Context, notificationID generated.NotificationID) {
 	ctx := c.Request.Context()
 	userID := middleware.GetUserID(ctx)
 	if userID == "" {
@@ -105,7 +117,7 @@ func (s *Server) MarkNotificationRead(c *gin.Context, notificationId generated.N
 	// Verify notification exists and belongs to user.
 	n, err := s.client.Notification.Query().
 		Where(
-			notification.IDEQ(notificationId),
+			notification.IDEQ(notificationID),
 			notification.HasUserWith(entuser.IDEQ(userID)),
 		).
 		Only(ctx)
@@ -121,7 +133,7 @@ func (s *Server) MarkNotificationRead(c *gin.Context, notificationId generated.N
 
 	if !n.Read {
 		now := time.Now()
-		if _, err := s.client.Notification.UpdateOneID(notificationId).
+		if _, err := s.client.Notification.UpdateOneID(notificationID).
 			SetRead(true).
 			SetReadAt(now).
 			Save(ctx); err != nil {

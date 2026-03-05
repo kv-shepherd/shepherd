@@ -4,6 +4,7 @@
     "clusters.add": "Add Cluster",
     "clusters.api_server": "API Server",
     "clusters.kubevirt_version": "KubeVirt Version",
+    "clusters.enabled_features": "Enabled Features",
     "clusters.enabled": "Enabled",
     "clusters.environment": "Environment",
     "clusters.env_test": "Test",

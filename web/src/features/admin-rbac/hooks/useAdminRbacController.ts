@@ -188,13 +188,18 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
 
     const openEditRoleModal = (role: Role) => {
         setEditingRole(role);
-        roleEditForm.setFieldsValue({
-            display_name: role.display_name,
-            description: role.description,
-            permissions: role.permissions,
-            enabled: role.enabled,
-        });
         setEditRoleOpen(true);
+        // Modal + Form uses destroyOnHidden/preserve=false. Defer hydration to
+        // next tick so form items are mounted before setFieldsValue applies.
+        setTimeout(() => {
+            roleEditForm.resetFields();
+            roleEditForm.setFieldsValue({
+                display_name: role.display_name,
+                description: role.description,
+                permissions: role.permissions,
+                enabled: role.enabled,
+            });
+        }, 0);
     };
 
     const closeEditRoleModal = () => {

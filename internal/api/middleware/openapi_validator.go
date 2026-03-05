@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	libopenapi "github.com/pb33f/libopenapi"
 	validator "github.com/pb33f/libopenapi-validator"
+	validatorcache "github.com/pb33f/libopenapi-validator/cache"
 	validatorconfig "github.com/pb33f/libopenapi-validator/config"
 	validatorerrors "github.com/pb33f/libopenapi-validator/errors"
 	"go.uber.org/zap"
@@ -47,6 +48,7 @@ func NewOpenAPIValidator(basePath string) (gin.HandlerFunc, error) {
 		basePath:              normalizeBasePath(basePath),
 		validateResponse:      gin.Mode() != gin.ReleaseMode,
 		exposeValidationError: gin.Mode() != gin.ReleaseMode,
+		schemaCache:           validatorcache.NewDefaultCache(),
 	}
 
 	return runtime.middleware, nil
@@ -57,10 +59,12 @@ type openAPIRuntimeValidator struct {
 	basePath              string
 	validateResponse      bool
 	exposeValidationError bool
+	schemaCache           validatorcache.SchemaCache
 }
 
 func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
-	requestValidator, err := v.newValidator()
+	requestIgnorePaths := requestStrictIgnorePaths(c.Request, v.basePath)
+	requestValidator, err := v.newValidator(requestIgnorePaths...)
 	if err != nil {
 		logger.Error("OpenAPI validator setup failed",
 			zap.String("method", c.Request.Method),
@@ -102,13 +106,16 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 	c.Writer = buffered
 	c.Next()
 
+	// Client disconnected or request context timed out. Avoid validating or
+	// rewriting a response that the caller has already abandoned.
+	if c.Request != nil && c.Request.Context().Err() != nil {
+		return
+	}
+
 	if v.validateResponse {
-		responseIgnorePaths := []string{}
-		if shouldIgnoreDynamicSchemaResponseBody(c.Request, v.basePath) {
-			// Keep strict validation globally, but allow dynamic JSON Schema payload
-			// only on the canonical /schemas/* response body subtree.
-			responseIgnorePaths = append(responseIgnorePaths, "$.body.schema")
-		}
+		// Keep strict validation globally, but explicitly allow free-form object
+		// subtrees declared by the OpenAPI contract on selected endpoints.
+		responseIgnorePaths := responseStrictIgnorePaths(c.Request, v.basePath)
 
 		responseValidator, err := v.newValidator(responseIgnorePaths...)
 		if err != nil {
@@ -125,6 +132,9 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 			restorePath = applyValidationPath(c.Request, v.basePath)
 			response := buildValidationResponse(c.Request, buffered)
 			responseValid, responseErrs := responseValidator.ValidateHttpResponse(c.Request, response)
+			if response.Body != nil {
+				_ = response.Body.Close()
+			}
 			restorePath()
 			if !responseValid && !allPathMissing(responseErrs) {
 				logger.Error("OpenAPI response validation failed",
@@ -150,6 +160,29 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 	}
 }
 
+func requestStrictIgnorePaths(request *http.Request, basePath string) []string {
+	if request == nil || request.URL == nil {
+		return nil
+	}
+
+	path := normalizeValidationPath(basePath, request.URL.Path)
+
+	// AuthProvider.config is contractually free-form JSON for plugin-specific
+	// settings. Keep strict validation for the rest of the request body.
+	switch request.Method {
+	case http.MethodPost:
+		if path == "/admin/auth-providers" {
+			return []string{"$.body.config.**"}
+		}
+	case http.MethodPatch:
+		if strings.HasPrefix(path, "/admin/auth-providers/") && !strings.Contains(path, "/group-mappings") {
+			return []string{"$.body.config.**"}
+		}
+	}
+
+	return nil
+}
+
 func shouldIgnoreDynamicSchemaResponseBody(request *http.Request, basePath string) bool {
 	if request == nil || request.URL == nil {
 		return false
@@ -159,6 +192,36 @@ func shouldIgnoreDynamicSchemaResponseBody(request *http.Request, basePath strin
 	}
 	path := normalizeValidationPath(basePath, request.URL.Path)
 	return strings.HasPrefix(path, "/schemas/")
+}
+
+func responseStrictIgnorePaths(request *http.Request, basePath string) []string {
+	// Error.params is explicitly declared as free-form (additionalProperties: true).
+	ignorePaths := []string{"$.body.params.**"}
+
+	if request == nil || request.URL == nil {
+		return ignorePaths
+	}
+	path := normalizeValidationPath(basePath, request.URL.Path)
+
+	if shouldIgnoreDynamicSchemaResponseBody(request, basePath) {
+		// Dynamic JSON Schema payload: free-form by design.
+		ignorePaths = append(ignorePaths, "$.body.schema")
+	}
+
+	if strings.HasPrefix(path, "/admin/auth-providers") {
+		// AuthProvider.config is free-form for plugin-specific settings.
+		ignorePaths = append(ignorePaths, "$.body.config.**", "$.body.**.config.**")
+	}
+	if path == "/admin/auth-provider-types" {
+		// AuthProviderType.config_schema is free-form JSON Schema content.
+		ignorePaths = append(ignorePaths, "$.body.**.config_schema.**")
+	}
+	if path == "/approvals" || strings.HasPrefix(path, "/approvals/") {
+		// ApprovalTicket.ticket_payload is contextual and intentionally free-form.
+		ignorePaths = append(ignorePaths, "$.body.**.ticket_payload.**")
+	}
+
+	return ignorePaths
 }
 
 func (v *openAPIRuntimeValidator) newValidator(extraStrictIgnorePaths ...string) (validator.Validator, error) {
@@ -173,6 +236,7 @@ func (v *openAPIRuntimeValidator) newValidator(extraStrictIgnorePaths ...string)
 	openapiValidator, errs := validator.NewValidator(
 		v.document,
 		validatorconfig.WithStrictMode(),
+		validatorconfig.WithSchemaCache(v.schemaCache),
 		validatorconfig.WithStrictIgnoredHeadersExtra(
 			"dnt",
 			"priority",
@@ -356,7 +420,12 @@ func (w *bufferedResponseWriter) Write(data []byte) (int, error) {
 }
 
 func (w *bufferedResponseWriter) WriteString(s string) (int, error) {
-	return w.Write([]byte(s))
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	n, err := w.body.WriteString(s)
+	w.size += n
+	return n, err
 }
 
 func (w *bufferedResponseWriter) Status() int {

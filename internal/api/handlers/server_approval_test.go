@@ -134,7 +134,7 @@ func TestListApprovals_CREATE_TicketPayloadPopulated(t *testing.T) {
 	mustCreateDomainEvent(t, client, eventID, rawPayload)
 
 	ticketID := "ticket-" + uuid.NewString()
-	mustCreateApprovalTicket(t, client, ticketID, eventID, approvalticket.OperationTypeCREATE, approvalticket.StatusPENDING, "user-a")
+	mustCreateApprovalTicket(t, client, ticketID, eventID, approvalticket.OperationTypeCREATE, "user-a")
 
 	c, w := newAuthedGinContext(t, http.MethodGet, "/approvals", "", "admin-1", []string{"approval:view", "platform:admin"})
 	srv.ListApprovals(c, generated.ListApprovalsParams{})
@@ -168,7 +168,7 @@ func TestListApprovals_DELETE_TicketPayloadAndVMTargetEnriched(t *testing.T) {
 	mustCreateDomainEvent(t, client, eventID, rawPayload)
 
 	ticketID := "ticket-" + uuid.NewString()
-	mustCreateApprovalTicket(t, client, ticketID, eventID, approvalticket.OperationTypeDELETE, approvalticket.StatusPENDING, "user-a")
+	mustCreateApprovalTicket(t, client, ticketID, eventID, approvalticket.OperationTypeDELETE, "user-a")
 
 	c, w := newAuthedGinContext(t, http.MethodGet, "/approvals", "", "admin-1", []string{"approval:view", "platform:admin"})
 	srv.ListApprovals(c, generated.ListApprovalsParams{})
@@ -207,7 +207,7 @@ func TestListApprovals_VNC_ACCESS_TicketPayloadPopulated(t *testing.T) {
 	mustCreateDomainEvent(t, client, eventID, rawPayload)
 
 	ticketID := "ticket-" + uuid.NewString()
-	mustCreateApprovalTicket(t, client, ticketID, eventID, approvalticket.OperationTypeVNC_ACCESS, approvalticket.StatusPENDING, "user-vnc")
+	mustCreateApprovalTicket(t, client, ticketID, eventID, approvalticket.OperationTypeVNC_ACCESS, "user-vnc")
 
 	c, w := newAuthedGinContext(t, http.MethodGet, "/approvals", "", "admin-1", []string{"approval:view", "platform:admin"})
 	srv.ListApprovals(c, generated.ListApprovalsParams{})
@@ -241,7 +241,7 @@ func TestListApprovals_MissingDomainEvent_NilPayloadNonFatal(t *testing.T) {
 
 	ticketID := "ticket-" + uuid.NewString()
 	// Use a non-existent event ID to simulate missing DomainEvent.
-	mustCreateApprovalTicket(t, client, ticketID, "ev-does-not-exist", approvalticket.OperationTypeCREATE, approvalticket.StatusPENDING, "user-a")
+	mustCreateApprovalTicket(t, client, ticketID, "ev-does-not-exist", approvalticket.OperationTypeCREATE, "user-a")
 
 	c, w := newAuthedGinContext(t, http.MethodGet, "/approvals", "", "admin-1", []string{"approval:view", "platform:admin"})
 	srv.ListApprovals(c, generated.ListApprovalsParams{})
@@ -270,7 +270,7 @@ func TestListApprovals_MalformedEventPayload_NilPayloadNonFatal(t *testing.T) {
 	mustCreateDomainEvent(t, client, eventID, []byte("not-valid-json{{"))
 
 	ticketID := "ticket-" + uuid.NewString()
-	mustCreateApprovalTicket(t, client, ticketID, eventID, approvalticket.OperationTypeCREATE, approvalticket.StatusPENDING, "user-a")
+	mustCreateApprovalTicket(t, client, ticketID, eventID, approvalticket.OperationTypeCREATE, "user-a")
 
 	c, w := newAuthedGinContext(t, http.MethodGet, "/approvals", "", "admin-1", []string{"approval:view", "platform:admin"})
 	srv.ListApprovals(c, generated.ListApprovalsParams{})
@@ -297,7 +297,7 @@ func TestListApprovals_PaginationReturnsTotalAndPages(t *testing.T) {
 		mustCreateDomainEvent(t, client, eventID, []byte(`{"seed":true}`))
 		ticketID := "ticket-pag-" + uuid.NewString()
 		_ = i
-		mustCreateApprovalTicket(t, client, ticketID, eventID, approvalticket.OperationTypeCREATE, approvalticket.StatusPENDING, "user-pag")
+		mustCreateApprovalTicket(t, client, ticketID, eventID, approvalticket.OperationTypeCREATE, "user-pag")
 	}
 
 	// Request page 1 with perPage=2 → total must be ≥ 3, total_pages ≥ 2.
@@ -349,7 +349,6 @@ func mustCreateApprovalTicket(
 	client *ent.Client,
 	ticketID, eventID string,
 	opType approvalticket.OperationType,
-	status approvalticket.Status,
 	requester string,
 ) {
 	t.Helper()
@@ -357,7 +356,7 @@ func mustCreateApprovalTicket(
 		SetID(ticketID).
 		SetEventID(eventID).
 		SetOperationType(opType).
-		SetStatus(status).
+		SetStatus(approvalticket.StatusPENDING).
 		SetRequester(requester).
 		Save(t.Context())
 	if err != nil {
@@ -373,9 +372,10 @@ func findTicketInList(t *testing.T, body []byte, ticketID string) generated.Appr
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("decode ApprovalTicketList: %v", err)
 	}
-	for _, item := range resp.Items {
+	for i := range resp.Items {
+		item := &resp.Items[i]
 		if item.Id == ticketID {
-			return item
+			return *item
 		}
 	}
 	t.Fatalf("ticket %q not found in list response", ticketID)

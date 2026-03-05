@@ -1,4 +1,4 @@
-package errors
+package errors_test
 
 import (
 	stderrors "errors"
@@ -6,18 +6,20 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 )
 
 func TestAppError_ErrorAndUnwrap(t *testing.T) {
 	root := stderrors.New("root cause")
-	err := Wrap(root, "VM_CREATE_FAILED", "create vm failed", http.StatusBadGateway)
+	err := apperrors.Wrap(root, "VM_CREATE_FAILED", "create vm failed", http.StatusBadGateway)
 
 	require.Equal(t, "VM_CREATE_FAILED: create vm failed: root cause", err.Error())
 	require.ErrorIs(t, err, root)
 }
 
 func TestAppError_WithParams(t *testing.T) {
-	err := New("VM_NOT_FOUND", "vm missing", http.StatusNotFound).WithParams(map[string]interface{}{
+	err := apperrors.New("VM_NOT_FOUND", "vm missing", http.StatusNotFound).WithParams(map[string]interface{}{
 		"vm_id": "vm-1",
 		"scope": "service-a",
 	})
@@ -28,7 +30,7 @@ func TestAppError_WithParams(t *testing.T) {
 }
 
 func TestAppError_WithFieldErrors(t *testing.T) {
-	err := BadRequest("INVALID_REQUEST", "validation failed").WithFieldErrors([]FieldError{
+	err := apperrors.BadRequest("INVALID_REQUEST", "validation failed").WithFieldErrors([]apperrors.FieldError{
 		{Field: "name", Code: "REQUIRED"},
 		{Field: "namespace", Code: "INVALID_FORMAT", Message: "must be RFC-1035"},
 	})
@@ -41,19 +43,19 @@ func TestAppError_WithFieldErrors(t *testing.T) {
 }
 
 func TestAppError_ConstructorsAndTypeCheck(t *testing.T) {
-	notFound := NotFound("SYS_NOT_FOUND", "system missing")
+	notFound := apperrors.NotFound("SYS_NOT_FOUND", "system missing")
 	require.Equal(t, http.StatusNotFound, notFound.HTTPStatus)
 
-	conflict := Conflict("DUPLICATE_NAME", "duplicate")
+	conflict := apperrors.Conflict("DUPLICATE_NAME", "duplicate")
 	require.Equal(t, http.StatusConflict, conflict.HTTPStatus)
 
-	internal := Internal("UNKNOWN", "unknown error")
+	internal := apperrors.Internal("UNKNOWN", "unknown error")
 	require.Equal(t, http.StatusInternalServerError, internal.HTTPStatus)
 
-	got, ok := IsAppError(conflict)
+	got, ok := apperrors.IsAppError(conflict)
 	require.True(t, ok)
 	require.Equal(t, "DUPLICATE_NAME", got.Code)
 
-	_, ok = IsAppError(stderrors.New("plain"))
+	_, ok = apperrors.IsAppError(stderrors.New("plain"))
 	require.False(t, ok)
 }

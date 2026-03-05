@@ -5,13 +5,11 @@
 // types ↔ generated API types.
 package handlers
 
-import "time"
-
 // ---- Value → Value passthrough (no pointers needed with omitzero) ----
 
 // defaultPagination normalizes page/perPage from query params.
 // With omitzero, params are int values (0 = not specified).
-func defaultPagination(page, perPage int) (int, int) {
+func defaultPagination(page, perPage int) (normalizedPage, normalizedPerPage int) {
 	if page <= 0 {
 		page = 1
 	}
@@ -22,14 +20,4 @@ func defaultPagination(page, perPage int) (int, int) {
 		perPage = 100
 	}
 	return page, perPage
-}
-
-// ---- Pointer helpers (still needed for nillable Ent fields) ----
-
-// timeOrZero returns the value or zero time for nillable ent fields.
-func timeOrZero(t *time.Time) time.Time {
-	if t == nil {
-		return time.Time{}
-	}
-	return *t
 }

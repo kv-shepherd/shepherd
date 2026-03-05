@@ -591,7 +591,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List clusters */
+        /**
+         * List clusters
+         * @description List registered clusters. Supports feature-based filtering via `requires`
+         *     query parameter (ADR-0014 Layer 3 / P2-A).
+         */
         get: operations["listClusters"];
         put?: never;
         /** Register a cluster */
@@ -1593,6 +1597,17 @@ export interface components {
              */
             environment?: "test" | "prod";
             kubevirt_version?: string;
+            /**
+             * @description Auto-detected enabled KubeVirt feature gates (ADR-0014).
+             *     Merged from GA static table + explicit CR featureGates.
+             *     Refreshed on each health check cycle. Empty until first HEALTHY check.
+             * @example [
+             *       "LiveMigration",
+             *       "Snapshot",
+             *       "HotplugVolumes"
+             *     ]
+             */
+            enabled_features?: string[];
             /** @description Auto-detected StorageClass list (ADR-0015 §8) */
             storage_classes?: string[];
             default_storage_class?: string;
@@ -2150,6 +2165,11 @@ export interface components {
              * @enum {string}
              */
             action: "start" | "stop" | "restart";
+        };
+        VMPowerAcceptedResponse: {
+            event_id: string;
+            /** @enum {string} */
+            status: "ACCEPTED";
         };
         RateLimitExemptionList: {
             items?: components["schemas"]["RateLimitExemption"][];
@@ -3082,7 +3102,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VM"];
+                    "application/json": components["schemas"]["VMPowerAcceptedResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -3256,6 +3276,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -3281,6 +3302,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -3314,6 +3336,13 @@ export interface operations {
                 page?: components["parameters"]["Page"];
                 /** @description Items per page */
                 per_page?: components["parameters"]["PerPage"];
+                /**
+                 * @description Comma-separated list of required KubeVirt feature gates.
+                 *     Only clusters whose `enabled_features` is a superset of all listed
+                 *     features are returned. Case-insensitive.
+                 *     Example: `?requires=LiveMigration,Snapshot`
+                 */
+                requires?: string;
             };
             header?: never;
             path?: never;
@@ -3321,7 +3350,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Cluster list */
+            /** @description Cluster list (filtered by `requires` if provided) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3354,6 +3383,7 @@ export interface operations {
                     "application/json": components["schemas"]["Cluster"];
                 };
             };
+            400: components["responses"]["BadRequest"];
         };
     };
     listUsers: {

@@ -39,7 +39,7 @@ func (s *Server) Login(c *gin.Context) {
 		return
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+	if compareErr := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); compareErr != nil {
 		logger.Warn("login failed: invalid credentials")
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "INVALID_CREDENTIALS"})
 		return
@@ -141,7 +141,7 @@ func (s *Server) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
+	if compareErr := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); compareErr != nil {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_CURRENT_PASSWORD"})
 		return
 	}

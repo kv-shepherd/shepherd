@@ -316,7 +316,7 @@ func newAuthedGinContext(
 
 	var req *http.Request
 	if strings.TrimSpace(body) == "" {
-		req = httptest.NewRequest(method, target, nil)
+		req = httptest.NewRequest(method, target, http.NoBody)
 	} else {
 		req = httptest.NewRequest(method, target, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")

@@ -197,11 +197,12 @@ func JWTAuthWithConfig(cfg JWTConfig) gin.HandlerFunc {
 		if err != nil {
 			code := "UNAUTHORIZED"
 			msg := "invalid token"
-			if errors.Is(err, jwt.ErrTokenExpired) {
+			switch {
+			case errors.Is(err, jwt.ErrTokenExpired):
 				msg = "token expired"
-			} else if errors.Is(err, jwt.ErrTokenNotValidYet) || errors.Is(err, jwt.ErrTokenUsedBeforeIssued) {
+			case errors.Is(err, jwt.ErrTokenNotValidYet), errors.Is(err, jwt.ErrTokenUsedBeforeIssued):
 				msg = "token not active"
-			} else if errors.Is(err, ErrTokenRevoked) {
+			case errors.Is(err, ErrTokenRevoked):
 				msg = "token revoked"
 			}
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
