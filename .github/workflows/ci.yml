@@ -121,7 +121,7 @@ jobs:
 
       - name: Setup Node.js (live e2e only)
         if: ${{ vars.ENABLE_LIVE_E2E == 'true' }}
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: "22"
           cache: "npm"
@@ -195,7 +195,7 @@ jobs:
         run: bash docs/design/ci/scripts/check_no_legacy_batch1_invocations.sh
 
       - name: Setup Node.js (for OpenAPI TS generation)
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: "22"
           cache: "npm"
