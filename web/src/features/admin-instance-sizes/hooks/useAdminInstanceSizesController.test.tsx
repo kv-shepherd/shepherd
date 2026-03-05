@@ -168,9 +168,13 @@ describe('useAdminInstanceSizesController', () => {
 
     // mutate IS called — invalid spec_text does not block submission.
     expect(createMutate).toHaveBeenCalledTimes(1);
-    expect(createMutate).toHaveBeenCalledWith(expect.objectContaining({
-      spec_overrides: undefined,
-    }));
+    const payload = createMutate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      name: 'm4.large',
+      cpu_cores: 4,
+      memory_gi: 8,
+    });
+    expect(payload).not.toHaveProperty('spec_overrides');
     // No error toast — DynamicSchemaForm owns field validation, not the controller.
     expect(messageErrorMock).not.toHaveBeenCalled();
   });
@@ -224,6 +228,42 @@ describe('useAdminInstanceSizesController', () => {
         cpu_request: 0,
         memory_request_gi: 0,
       }),
+    }));
+  });
+
+  it('hydrates edit form fields after opening edit modal', async () => {
+    useApiMutationMock
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'size-2',
+        name: 'm8.large',
+        display_name: 'M8 Large',
+        description: 'test size',
+        cpu_cores: 8,
+        memory_gi: 16,
+        disk_gb: 100,
+        dedicated_cpu: true,
+        requires_sriov: true,
+        enabled: true,
+        spec_overrides: {},
+      });
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(editFormState.resetFields).toHaveBeenCalled();
+    expect(editFormState.setFieldsValue).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'm8.large',
+      display_name: 'M8 Large',
+      spec_text: '{}',
     }));
   });
 });
