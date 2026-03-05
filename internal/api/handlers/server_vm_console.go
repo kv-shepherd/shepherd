@@ -37,7 +37,7 @@ type vncRequestPayload struct {
 }
 
 // RequestVMConsoleAccess handles POST /vms/{vm_id}/console/request.
-func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmId generated.VMID) {
+func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmID generated.VMID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "vnc:access") {
 		return
@@ -48,13 +48,13 @@ func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmId generated.VMID) {
 		return
 	}
 
-	vm, err := s.client.VM.Get(ctx, vmId)
+	vm, err := s.client.VM.Get(ctx, vmID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get VM for console request", zap.Error(err), zap.String("vm_id", vmId))
+		logger.Error("failed to get VM for console request", zap.Error(err), zap.String("vm_id", vmID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -82,7 +82,7 @@ func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmId generated.VMID) {
 
 	decision := service.EvaluateVNCRequest(
 		env,
-		entvm.Status(vm.Status),
+		vm.Status,
 		hasVNCConsoleAccess(c),
 		hasPending,
 	)
@@ -92,9 +92,9 @@ func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmId generated.VMID) {
 	}
 
 	if !decision.RequireApproval {
-		vncURL, claims, err := s.issueVNCURL(c, actor, vm)
-		if err != nil {
-			logger.Error("failed to issue direct vnc token", zap.Error(err), zap.String("vm_id", vm.ID))
+		vncURL, claims, issueErr := s.issueVNCURL(c, actor, vm)
+		if issueErr != nil {
+			logger.Error("failed to issue direct vnc token", zap.Error(issueErr), zap.String("vm_id", vm.ID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -134,7 +134,7 @@ func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmId generated.VMID) {
 }
 
 // GetVMConsoleStatus handles GET /vms/{vm_id}/console/status.
-func (s *Server) GetVMConsoleStatus(c *gin.Context, vmId generated.VMID) {
+func (s *Server) GetVMConsoleStatus(c *gin.Context, vmID generated.VMID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "vnc:access") {
 		return
@@ -145,13 +145,13 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmId generated.VMID) {
 		return
 	}
 
-	vm, err := s.client.VM.Get(ctx, vmId)
+	vm, err := s.client.VM.Get(ctx, vmID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get VM for console status", zap.Error(err), zap.String("vm_id", vmId))
+		logger.Error("failed to get VM for console status", zap.Error(err), zap.String("vm_id", vmID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -174,15 +174,15 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmId generated.VMID) {
 		c.JSON(http.StatusForbidden, generated.Error{Code: "FORBIDDEN"})
 		return
 	}
-	if entvm.Status(vm.Status) != entvm.StatusRUNNING {
+	if vm.Status != entvm.StatusRUNNING {
 		c.JSON(http.StatusConflict, generated.Error{Code: "VM_NOT_RUNNING"})
 		return
 	}
 
 	if env == namespaceregistry.EnvironmentTest {
-		vncURL, claims, err := s.issueVNCURL(c, actor, vm)
-		if err != nil {
-			logger.Error("failed to issue test-env vnc token", zap.Error(err), zap.String("vm_id", vm.ID))
+		vncURL, claims, issueErr := s.issueVNCURL(c, actor, vm)
+		if issueErr != nil {
+			logger.Error("failed to issue test-env vnc token", zap.Error(issueErr), zap.String("vm_id", vm.ID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -226,6 +226,14 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmId generated.VMID) {
 			TicketId: ticket.ID,
 		})
 		return
+	case approvalticket.StatusAPPROVED, approvalticket.StatusSUCCESS:
+		// Continue below and issue the short-lived VNC URL.
+	default:
+		c.JSON(http.StatusOK, generated.VMConsoleStatusResponse{
+			Status:   generated.VMConsoleStatusPENDINGAPPROVAL,
+			TicketId: ticket.ID,
+		})
+		return
 	}
 
 	vncURL, claims, err := s.issueVNCURL(c, actor, vm)
@@ -251,7 +259,7 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmId generated.VMID) {
 }
 
 // OpenVMVNC handles GET /vms/{vm_id}/vnc.
-func (s *Server) OpenVMVNC(c *gin.Context, vmId generated.VMID) {
+func (s *Server) OpenVMVNC(c *gin.Context, vmID generated.VMID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "vnc:access") {
 		return
@@ -269,9 +277,9 @@ func (s *Server) OpenVMVNC(c *gin.Context, vmId generated.VMID) {
 		return
 	}
 	// Stage 6 baseline: bootstrap credential is one-time and must not persist.
-	defer s.clearVNCBootstrapCookie(c, vmId)
+	defer s.clearVNCBootstrapCookie(c, vmID)
 
-	claims, validateErr := s.vncTokens.ValidateAndConsume(ctx, token, vmId)
+	claims, validateErr := s.vncTokens.ValidateAndConsume(ctx, token, vmID)
 	if validateErr != nil {
 		switch {
 		case errors.Is(validateErr, service.ErrVNCTokenReplayed):
@@ -289,17 +297,17 @@ func (s *Server) OpenVMVNC(c *gin.Context, vmId generated.VMID) {
 		return
 	}
 
-	vm, err := s.client.VM.Get(ctx, vmId)
+	vm, err := s.client.VM.Get(ctx, vmID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get VM for vnc open", zap.Error(err), zap.String("vm_id", vmId))
+		logger.Error("failed to get VM for vnc open", zap.Error(err), zap.String("vm_id", vmID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
-	if entvm.Status(vm.Status) != entvm.StatusRUNNING {
+	if vm.Status != entvm.StatusRUNNING {
 		c.JSON(http.StatusConflict, generated.Error{Code: "VM_NOT_RUNNING"})
 		return
 	}

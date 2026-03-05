@@ -89,24 +89,28 @@ func (s *Server) ListUsers(c *gin.Context, params generated.ListUsersParams) {
 }
 
 // ListSystemMembers handles GET /systems/{system_id}/members.
-func (s *Server) ListSystemMembers(c *gin.Context, systemId generated.SystemID) {
+func (s *Server) ListSystemMembers(c *gin.Context, systemID generated.SystemID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "system:read") {
 		return
 	}
-	if _, ok := s.requireSystemRole(c, systemId, "view"); !ok {
+	if _, ok := s.requireSystemRole(c, systemID, "view"); !ok {
 		return
 	}
 
 	bindings, err := s.client.ResourceRoleBinding.Query().
 		Where(
 			resourcerolebinding.ResourceTypeEQ("system"),
-			resourcerolebinding.ResourceIDEQ(systemId),
+			resourcerolebinding.ResourceIDEQ(systemID),
 		).
 		Order(ent.Asc(resourcerolebinding.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
-		logger.Error("failed to list system members", zap.Error(err), zap.String("system_id", systemId))
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while listing system members", zap.Error(err), zap.String("system_id", systemID))
+			return
+		}
+		logger.Error("failed to list system members", zap.Error(err), zap.String("system_id", systemID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -125,7 +129,11 @@ func (s *Server) ListSystemMembers(c *gin.Context, systemId generated.SystemID) 
 	if len(userIDs) > 0 {
 		users, err := s.client.User.Query().Where(entuser.IDIn(userIDs...)).All(ctx)
 		if err != nil {
-			logger.Error("failed to query users for members", zap.Error(err), zap.String("system_id", systemId))
+			if isRequestContextCanceled(err) {
+				logger.Debug("request canceled while querying users for members", zap.Error(err), zap.String("system_id", systemID))
+				return
+			}
+			logger.Error("failed to query users for members", zap.Error(err), zap.String("system_id", systemID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -143,12 +151,12 @@ func (s *Server) ListSystemMembers(c *gin.Context, systemId generated.SystemID) 
 }
 
 // AddSystemMember handles POST /systems/{system_id}/members.
-func (s *Server) AddSystemMember(c *gin.Context, systemId generated.SystemID) {
+func (s *Server) AddSystemMember(c *gin.Context, systemID generated.SystemID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "rbac:manage") {
 		return
 	}
-	actor, ok := s.requireSystemRole(c, systemId, "manage_members")
+	actor, ok := s.requireSystemRole(c, systemID, "manage_members")
 	if !ok {
 		return
 	}
@@ -180,7 +188,7 @@ func (s *Server) AddSystemMember(c *gin.Context, systemId generated.SystemID) {
 		SetID(id.String()).
 		SetUserID(req.UserId).
 		SetResourceType("system").
-		SetResourceID(systemId).
+		SetResourceID(systemID).
 		SetRole(resourcerolebinding.Role(role)).
 		SetCreatedBy(actor).
 		Save(ctx)
@@ -191,7 +199,7 @@ func (s *Server) AddSystemMember(c *gin.Context, systemId generated.SystemID) {
 		}
 		logger.Error("failed to add system member",
 			zap.Error(err),
-			zap.String("system_id", systemId),
+			zap.String("system_id", systemID),
 			zap.String("user_id", req.UserId),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -199,7 +207,7 @@ func (s *Server) AddSystemMember(c *gin.Context, systemId generated.SystemID) {
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "system.member.add", "system", systemId, actor, map[string]interface{}{
+		_ = s.audit.LogAction(ctx, "system.member.add", "system", systemID, actor, map[string]interface{}{
 			"user_id": req.UserId,
 			"role":    role,
 		})
@@ -209,12 +217,12 @@ func (s *Server) AddSystemMember(c *gin.Context, systemId generated.SystemID) {
 }
 
 // UpdateSystemMemberRole handles PATCH /systems/{system_id}/members/{user_id}.
-func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemId generated.SystemID, userId generated.UserID) {
+func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemID generated.SystemID, userID generated.UserID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "rbac:manage") {
 		return
 	}
-	actor, ok := s.requireSystemRole(c, systemId, "manage_members")
+	actor, ok := s.requireSystemRole(c, systemID, "manage_members")
 	if !ok {
 		return
 	}
@@ -232,9 +240,9 @@ func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemId generated.Syste
 
 	existing, err := s.client.ResourceRoleBinding.Query().
 		Where(
-			resourcerolebinding.UserIDEQ(userId),
+			resourcerolebinding.UserIDEQ(userID),
 			resourcerolebinding.ResourceTypeEQ("system"),
-			resourcerolebinding.ResourceIDEQ(systemId),
+			resourcerolebinding.ResourceIDEQ(systemID),
 		).
 		Only(ctx)
 	if err != nil {
@@ -244,8 +252,8 @@ func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemId generated.Syste
 		}
 		logger.Error("failed to query member for role update",
 			zap.Error(err),
-			zap.String("system_id", systemId),
-			zap.String("user_id", userId),
+			zap.String("system_id", systemID),
+			zap.String("user_id", userID),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -257,23 +265,23 @@ func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemId generated.Syste
 	if err != nil {
 		logger.Error("failed to update member role",
 			zap.Error(err),
-			zap.String("system_id", systemId),
-			zap.String("user_id", userId),
+			zap.String("system_id", systemID),
+			zap.String("user_id", userID),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
-	userEnt, err := s.client.User.Get(ctx, userId)
+	userEnt, err := s.client.User.Get(ctx, userID)
 	if err != nil && !ent.IsNotFound(err) {
-		logger.Error("failed to get user after role update", zap.Error(err), zap.String("user_id", userId))
+		logger.Error("failed to get user after role update", zap.Error(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "system.member.update_role", "system", systemId, actor, map[string]interface{}{
-			"user_id":  userId,
+		_ = s.audit.LogAction(ctx, "system.member.update_role", "system", systemID, actor, map[string]interface{}{
+			"user_id":  userID,
 			"old_role": existing.Role.String(),
 			"new_role": role,
 		})
@@ -283,21 +291,21 @@ func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemId generated.Syste
 }
 
 // DeleteSystemMember handles DELETE /systems/{system_id}/members/{user_id}.
-func (s *Server) DeleteSystemMember(c *gin.Context, systemId generated.SystemID, userId generated.UserID) {
+func (s *Server) DeleteSystemMember(c *gin.Context, systemID generated.SystemID, userID generated.UserID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "rbac:manage") {
 		return
 	}
-	actor, ok := s.requireSystemRole(c, systemId, "manage_members")
+	actor, ok := s.requireSystemRole(c, systemID, "manage_members")
 	if !ok {
 		return
 	}
 
 	member, err := s.client.ResourceRoleBinding.Query().
 		Where(
-			resourcerolebinding.UserIDEQ(userId),
+			resourcerolebinding.UserIDEQ(userID),
 			resourcerolebinding.ResourceTypeEQ("system"),
-			resourcerolebinding.ResourceIDEQ(systemId),
+			resourcerolebinding.ResourceIDEQ(systemID),
 		).
 		Only(ctx)
 	if err != nil {
@@ -307,8 +315,8 @@ func (s *Server) DeleteSystemMember(c *gin.Context, systemId generated.SystemID,
 		}
 		logger.Error("failed to query member for delete",
 			zap.Error(err),
-			zap.String("system_id", systemId),
-			zap.String("user_id", userId),
+			zap.String("system_id", systemID),
+			zap.String("user_id", userID),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -318,12 +326,12 @@ func (s *Server) DeleteSystemMember(c *gin.Context, systemId generated.SystemID,
 		ownerCount, err := s.client.ResourceRoleBinding.Query().
 			Where(
 				resourcerolebinding.ResourceTypeEQ("system"),
-				resourcerolebinding.ResourceIDEQ(systemId),
+				resourcerolebinding.ResourceIDEQ(systemID),
 				resourcerolebinding.RoleEQ(resourcerolebinding.RoleOwner),
 			).
 			Count(ctx)
 		if err != nil {
-			logger.Error("failed to count system owners", zap.Error(err), zap.String("system_id", systemId))
+			logger.Error("failed to count system owners", zap.Error(err), zap.String("system_id", systemID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -339,16 +347,16 @@ func (s *Server) DeleteSystemMember(c *gin.Context, systemId generated.SystemID,
 	if err := s.client.ResourceRoleBinding.DeleteOneID(member.ID).Exec(ctx); err != nil {
 		logger.Error("failed to delete member",
 			zap.Error(err),
-			zap.String("system_id", systemId),
-			zap.String("user_id", userId),
+			zap.String("system_id", systemID),
+			zap.String("user_id", userID),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "system.member.remove", "system", systemId, actor, map[string]interface{}{
-			"user_id": userId,
+		_ = s.audit.LogAction(ctx, "system.member.remove", "system", systemID, actor, map[string]interface{}{
+			"user_id": userID,
 			"role":    member.Role.String(),
 		})
 	}
@@ -369,6 +377,10 @@ func (s *Server) requireSystemRole(c *gin.Context, systemID, action string) (str
 			c.JSON(http.StatusNotFound, generated.Error{Code: "SYSTEM_NOT_FOUND"})
 			return "", false
 		}
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while loading system for member operation", zap.Error(err), zap.String("system_id", systemID))
+			return "", false
+		}
 		logger.Error("failed to get system for member operation", zap.Error(err), zap.String("system_id", systemID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return "", false
@@ -381,6 +393,10 @@ func (s *Server) requireSystemRole(c *gin.Context, systemID, action string) (str
 	checker := middleware.NewResourceRoleChecker(s.client)
 	role, found, err := checker.CheckResourceRole(ctx, actor, "system", systemID)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while checking system role", zap.Error(err), zap.String("system_id", systemID), zap.String("actor", actor))
+			return "", false
+		}
 		logger.Error("failed to check system role",
 			zap.Error(err),
 			zap.String("system_id", systemID),

@@ -698,7 +698,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VM'
+                $ref: '#/components/schemas/VMPowerAcceptedResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
@@ -845,6 +845,8 @@ paths:
       responses:
         '204':
           description: Request approved
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
   /approvals/{ticket_id}/reject:
@@ -863,6 +865,8 @@ paths:
       responses:
         '204':
           description: Request rejected
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
   /approvals/{ticket_id}/cancel:
@@ -886,13 +890,27 @@ paths:
     get:
       tags: [clusters, admin]
       summary: List clusters
+      description: |
+        List registered clusters. Supports feature-based filtering via `requires`
+        query parameter (ADR-0014 Layer 3 / P2-A).
       operationId: listClusters
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
+        - name: requires
+          in: query
+          required: false
+          description: |
+            Comma-separated list of required KubeVirt feature gates.
+            Only clusters whose `enabled_features` is a superset of all listed
+            features are returned. Case-insensitive.
+            Example: `?requires=LiveMigration,Snapshot`
+          schema:
+            type: string
+            example: "LiveMigration,Snapshot"
       responses:
         '200':
-          description: Cluster list
+          description: Cluster list (filtered by `requires` if provided)
           content:
             application/json:
               schema:
@@ -914,6 +932,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Cluster'
+        '400':
+          $ref: '#/components/responses/BadRequest'
   /admin/users:
     get:
       tags: [admin]
@@ -2667,35 +2687,35 @@ components:
 
         cpu_request:
           x-oapi-codegen-extra-tags:
-            validate: "gte=0.5"
+            validate: "omitempty,gte=0.5"
           type: number
           minimum: 0.5
           multipleOf: 0.5
           description: CPU request in cores (overcommit scenario, Stage 5.B)
         cpu_limit:
           x-oapi-codegen-extra-tags:
-            validate: "gte=0.5"
+            validate: "omitempty,gte=0.5"
           type: number
           minimum: 0.5
           multipleOf: 0.5
           description: CPU limit in cores (Stage 5.B)
         memory_request_gi:
           x-oapi-codegen-extra-tags:
-            validate: "gte=0.5"
+            validate: "omitempty,gte=0.5"
           type: number
           minimum: 0.5
           multipleOf: 0.5
           description: Memory request in Gi (Stage 5.B)
         memory_limit_gi:
           x-oapi-codegen-extra-tags:
-            validate: "gte=0.5"
+            validate: "omitempty,gte=0.5"
           type: number
           minimum: 0.5
           multipleOf: 0.5
           description: Memory limit in Gi (Stage 5.B)
         disk_gb:
           x-oapi-codegen-extra-tags:
-            validate: "gte=1"
+            validate: "omitempty,gte=1"
           type: integer
           minimum: 1
           description: Disk size in GB, admin can adjust (Stage 5.B)
@@ -2731,6 +2751,15 @@ components:
           description: Cluster environment type (ADR-0015 §1, §15)
         kubevirt_version:
           type: string
+        enabled_features:
+          type: array
+          items:
+            type: string
+          description: |
+            Auto-detected enabled KubeVirt feature gates (ADR-0014).
+            Merged from GA static table + explicit CR featureGates.
+            Refreshed on each health check cycle. Empty until first HEALTHY check.
+          example: ["LiveMigration", "Snapshot", "HotplugVolumes"]
         storage_classes:
           type: array
           items:
@@ -3906,6 +3935,15 @@ components:
           type: string
           enum: [start, stop, restart]
           description: Power action to execute on the VM
+    VMPowerAcceptedResponse:
+      type: object
+      required: [event_id, status]
+      properties:
+        event_id:
+          type: string
+        status:
+          type: string
+          enum: [ACCEPTED]
     # ── Rate Limit Exemption List ─────────────────────
     RateLimitExemptionList:
       type: object

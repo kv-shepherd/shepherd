@@ -36,6 +36,10 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 	query := s.client.VM.Query()
 	visibility, err := s.resolveNamespaceVisibility(c)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while resolving VM namespace visibility", zap.Error(err))
+			return
+		}
 		logger.Error("failed to resolve VM namespace visibility", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -43,6 +47,10 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 	if visibility.restricted {
 		visibleNamespaces, err := s.listVisibleNamespaceNames(ctx, visibility)
 		if err != nil {
+			if isRequestContextCanceled(err) {
+				logger.Debug("request canceled while listing visible namespaces", zap.Error(err))
+				return
+			}
 			logger.Error("failed to load visible namespaces", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
@@ -77,6 +85,10 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while counting VMs", zap.Error(err))
+			return
+		}
 		logger.Error("failed to count VMs", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -88,6 +100,10 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 		Order(ent.Desc(entvm.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while listing VMs", zap.Error(err), zap.Int("page", page))
+			return
+		}
 		logger.Error("failed to list VMs", zap.Error(err), zap.Int("page", page))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -301,6 +317,19 @@ func (s *Server) CreateVMRequest(c *gin.Context) {
 		s.notifier.OnTicketSubmitted(ctx, output.TicketID, actor, req.Namespace)
 	}
 
+	// P2-B (ADR-0014 Layer 3): Non-blocking capability warning.
+	// After accepting the request, check if the selected instance size requires
+	// hardware features (GPU, SR-IOV, HugePages) that no HEALTHY cluster currently supports.
+	// Emits X-Capability-Warning header. Request is NOT rejected — warning only.
+	if warning := s.resolveCapabilityWarning(ctx, req.InstanceSizeId.String()); warning != "" {
+		c.Header("X-Capability-Warning", warning)
+		logger.Warn("capability warning set on VM request",
+			zap.String("ticket_id", output.TicketID),
+			zap.String("instance_size_id", req.InstanceSizeId.String()),
+			zap.String("warning", warning),
+		)
+	}
+
 	c.JSON(http.StatusAccepted, generated.ApprovalTicketResponse{
 		TicketId: output.TicketID,
 		Status:   generated.ApprovalTicketResponseStatusPENDING,
@@ -308,19 +337,19 @@ func (s *Server) CreateVMRequest(c *gin.Context) {
 }
 
 // GetVM handles GET /vms/{vm_id}.
-func (s *Server) GetVM(c *gin.Context, vmId generated.VMID) {
+func (s *Server) GetVM(c *gin.Context, vmID generated.VMID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "vm:read") {
 		return
 	}
 
-	vm, err := s.client.VM.Get(ctx, vmId)
+	vm, err := s.client.VM.Get(ctx, vmID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get VM", zap.Error(err), zap.String("vm_id", vmId))
+		logger.Error("failed to get VM", zap.Error(err), zap.String("vm_id", vmID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -332,7 +361,7 @@ func (s *Server) GetVM(c *gin.Context, vmId generated.VMID) {
 	}
 	visible, err := s.isNamespaceVisible(ctx, vm.Namespace, visibility)
 	if err != nil {
-		logger.Error("failed to check VM namespace visibility", zap.Error(err), zap.String("vm_id", vmId))
+		logger.Error("failed to check VM namespace visibility", zap.Error(err), zap.String("vm_id", vmID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -363,7 +392,7 @@ func (s *Server) GetVM(c *gin.Context, vmId generated.VMID) {
 // ADR-0015 §5.D: VM deletion requires approval ticket.
 // Flow: confirmation gate → create DomainEvent + ApprovalTicket (operation_type=DELETE) → return 202.
 // Admin approval triggers River job execution via Gateway.approveDelete.
-func (s *Server) DeleteVM(c *gin.Context, vmId generated.VMID, params generated.DeleteVMParams) {
+func (s *Server) DeleteVM(c *gin.Context, vmID generated.VMID, params generated.DeleteVMParams) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "vm:delete") {
 		return
@@ -372,7 +401,7 @@ func (s *Server) DeleteVM(c *gin.Context, vmId generated.VMID, params generated.
 
 	// Build use case input from params.
 	input := usecase.DeleteVMInput{
-		VMID:        vmId,
+		VMID:        vmID,
 		RequestedBy: actor,
 		Confirm:     params.Confirm,
 		ConfirmName: params.ConfirmName,
@@ -392,7 +421,7 @@ func (s *Server) DeleteVM(c *gin.Context, vmId generated.VMID, params generated.
 		// Fallback for non-AppError errors.
 		logger.Error("VM delete request failed",
 			zap.Error(err),
-			zap.String("vm_id", vmId),
+			zap.String("vm_id", vmID),
 			zap.String("actor", actor),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -430,17 +459,17 @@ func (s *Server) DeleteVM(c *gin.Context, vmId generated.VMID, params generated.
 
 // StartVM handles POST /vms/{vm_id}/start.
 // ISSUE-001: Async via River (ADR-0006). Returns 202 Accepted.
-func (s *Server) StartVM(c *gin.Context, vmId generated.VMID) {
+func (s *Server) StartVM(c *gin.Context, vmID generated.VMID) {
 	if !requireGlobalPermission(c, "vm:operate") {
 		return
 	}
-	vm, err := s.client.VM.Get(c.Request.Context(), vmId)
+	vm, err := s.client.VM.Get(c.Request.Context(), vmID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get VM for start", zap.Error(err), zap.String("vm_id", vmId))
+		logger.Error("failed to get VM for start", zap.Error(err), zap.String("vm_id", vmID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -459,58 +488,47 @@ func (s *Server) StartVM(c *gin.Context, vmId generated.VMID) {
 
 // StopVM handles POST /vms/{vm_id}/stop.
 // ISSUE-001: Async via River (ADR-0006). Returns 202 Accepted.
-func (s *Server) StopVM(c *gin.Context, vmId generated.VMID) {
-	if !requireGlobalPermission(c, "vm:operate") {
+func (s *Server) StopVM(c *gin.Context, vmID generated.VMID) {
+	vm := s.mustGetRunningVMForPowerOp(c, vmID, "stop")
+	if vm == nil {
 		return
 	}
-	vm, err := s.client.VM.Get(c.Request.Context(), vmId)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to get VM for stop", zap.Error(err), zap.String("vm_id", vmId))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	if vm.Status != entvm.StatusRUNNING {
-		c.JSON(http.StatusConflict, generated.Error{
-			Code:    "INVALID_STATE_TRANSITION",
-			Message: fmt.Sprintf("cannot stop VM in %s state, must be RUNNING", vm.Status),
-		})
-		return
-	}
-
 	s.enqueueVMPowerOp(c, vm, "stop", domain.EventVMStopRequested)
 }
 
 // RestartVM handles POST /vms/{vm_id}/restart.
 // ISSUE-001: Async via River (ADR-0006). Returns 202 Accepted.
-func (s *Server) RestartVM(c *gin.Context, vmId generated.VMID) {
-	if !requireGlobalPermission(c, "vm:operate") {
+func (s *Server) RestartVM(c *gin.Context, vmID generated.VMID) {
+	vm := s.mustGetRunningVMForPowerOp(c, vmID, "restart")
+	if vm == nil {
 		return
 	}
-	vm, err := s.client.VM.Get(c.Request.Context(), vmId)
+	s.enqueueVMPowerOp(c, vm, "restart", domain.EventVMRestartRequested)
+}
+
+func (s *Server) mustGetRunningVMForPowerOp(c *gin.Context, vmID generated.VMID, op string) *ent.VM {
+	if !requireGlobalPermission(c, "vm:operate") {
+		return nil
+	}
+	vm, err := s.client.VM.Get(c.Request.Context(), vmID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-			return
+			return nil
 		}
-		logger.Error("failed to get VM for restart", zap.Error(err), zap.String("vm_id", vmId))
+		logger.Error(fmt.Sprintf("failed to get VM for %s", op), zap.Error(err), zap.String("vm_id", vmID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
+		return nil
 	}
 
 	if vm.Status != entvm.StatusRUNNING {
 		c.JSON(http.StatusConflict, generated.Error{
 			Code:    "INVALID_STATE_TRANSITION",
-			Message: fmt.Sprintf("cannot restart VM in %s state, must be RUNNING", vm.Status),
+			Message: fmt.Sprintf("cannot %s VM in %s state, must be RUNNING", op, vm.Status),
 		})
-		return
+		return nil
 	}
-
-	s.enqueueVMPowerOp(c, vm, "restart", domain.EventVMRestartRequested)
+	return vm
 }
 
 // enqueueVMPowerOp creates a DomainEvent, enqueues a River job, and returns 202 Accepted.
@@ -597,7 +615,7 @@ func vmToAPI(vm *ent.VM, clusterEnv string) generated.VM {
 // PowerVM handles POST /vms/{vm_id}/power.
 // Unified power-action endpoint — routes to start/stop/restart via the `action` field.
 // Follows oapi-codegen ServerInterface contract (ADR-0021).
-func (s *Server) PowerVM(c *gin.Context, vmId generated.VMID) {
+func (s *Server) PowerVM(c *gin.Context, vmID generated.VMID) {
 	if !requireGlobalPermission(c, "vm:operate") {
 		return
 	}
@@ -607,13 +625,13 @@ func (s *Server) PowerVM(c *gin.Context, vmId generated.VMID) {
 		return
 	}
 
-	vm, err := s.client.VM.Get(c.Request.Context(), vmId)
+	vm, err := s.client.VM.Get(c.Request.Context(), vmID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get VM for power action", zap.Error(err), zap.String("vm_id", vmId))
+		logger.Error("failed to get VM for power action", zap.Error(err), zap.String("vm_id", vmID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}

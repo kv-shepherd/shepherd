@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -16,6 +17,7 @@ import (
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/provider"
 )
 
 // kubeConfig is a minimal struct for parsing kubeconfig YAML.
@@ -42,33 +44,78 @@ func parseAPIServerURL(data []byte) (string, error) {
 }
 
 // ListClusters handles GET /admin/clusters.
+// P2-A (ADR-0014 Layer 3): supports ?requires=Feature1,Feature2 for capability-based filtering.
+// Filtering is done in-memory after DB query: Ent's JSON array column cannot use SQL CONTAINS
+// without a jsonb cast + GIN index, which is not yet provisioned (acceptable at current cluster count).
 func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParams) {
 	if !requireAnyGlobalPermission(c, "cluster:read", "cluster:manage") {
 		return
 	}
 	ctx := c.Request.Context()
 
-	query := s.client.Cluster.Query()
+	// Parse required features from ?requires=Feature1,Feature2 (case-insensitive, comma-separated)
+	var requiredFeatures []string
+	if params.Requires != "" {
+		for _, f := range strings.Split(params.Requires, ",") {
+			if trimmed := strings.TrimSpace(f); trimmed != "" {
+				requiredFeatures = append(requiredFeatures, trimmed)
+			}
+		}
+	}
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
 	offset := (page - 1) * perPage
+	query := s.client.Cluster.Query().Order(ent.Desc(cluster.FieldCreatedAt))
 
-	total, err := query.Clone().Count(ctx)
-	if err != nil {
-		logger.Error("failed to count clusters", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	clusters, err := query.
-		Offset(offset).
-		Limit(perPage).
-		Order(ent.Desc(cluster.FieldCreatedAt)).
-		All(ctx)
-	if err != nil {
-		logger.Error("failed to list clusters", zap.Error(err), zap.Int("page", page))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
+	var (
+		clusters []*ent.Cluster
+		total    int
+		err      error
+	)
+	if len(requiredFeatures) == 0 {
+		total, err = query.Clone().Count(ctx)
+		if err != nil {
+			logger.Error("failed to count clusters", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+		clusters, err = query.
+			Offset(offset).
+			Limit(perPage).
+			All(ctx)
+		if err != nil {
+			logger.Error("failed to list clusters", zap.Error(err), zap.Int("page", page))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+	} else {
+		// Requires-filter semantics: apply feature filtering before pagination so
+		// pagination.total/total_pages reflect the filtered result set.
+		allClusters, allErr := query.All(ctx)
+		if allErr != nil {
+			logger.Error("failed to list clusters with requires filter",
+				zap.Error(allErr),
+				zap.Strings("requires", requiredFeatures),
+			)
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+		filtered := make([]*ent.Cluster, 0, len(allClusters))
+		for _, cl := range allClusters {
+			if provider.HasAllCapabilities(cl.EnabledFeatures, requiredFeatures) {
+				filtered = append(filtered, cl)
+			}
+		}
+		total = len(filtered)
+		if offset >= total {
+			clusters = nil
+		} else {
+			end := offset + perPage
+			if end > total {
+				end = total
+			}
+			clusters = filtered[offset:end]
+		}
 	}
 
 	items := make([]generated.Cluster, 0, len(clusters))
@@ -151,7 +198,7 @@ func (s *Server) CreateCluster(c *gin.Context) {
 }
 
 // UpdateClusterEnvironment handles PUT /admin/clusters/{cluster_id}/environment.
-func (s *Server) UpdateClusterEnvironment(c *gin.Context, clusterId string) {
+func (s *Server) UpdateClusterEnvironment(c *gin.Context, clusterID string) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
 	if !ok {
 		return
@@ -162,7 +209,7 @@ func (s *Server) UpdateClusterEnvironment(c *gin.Context, clusterId string) {
 		return
 	}
 
-	cl, err := s.client.Cluster.UpdateOneID(clusterId).
+	cl, err := s.client.Cluster.UpdateOneID(clusterID).
 		SetEnvironment(cluster.Environment(req.Environment)).
 		Save(ctx)
 	if err != nil {
@@ -336,6 +383,7 @@ func clusterToAPI(cl *ent.Cluster) generated.Cluster {
 		Status:          generated.ClusterStatus(cl.Status),
 		Environment:     generated.ClusterEnvironment(cl.Environment),
 		KubevirtVersion: cl.KubevirtVersion,
+		EnabledFeatures: cl.EnabledFeatures, // P2-A (ADR-0014): expose detected capability features
 		StorageClasses:  cl.StorageClasses,
 		Enabled:         cl.Enabled,
 		CreatedAt:       cl.CreatedAt,

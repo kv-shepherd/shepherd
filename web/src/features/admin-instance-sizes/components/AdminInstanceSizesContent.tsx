@@ -527,6 +527,7 @@ export function AdminInstanceSizesContent() {
                 onOk={() => { void sizes.submitCreate(); }}
                 onCancel={sizes.closeCreateModal}
                 confirmLoading={sizes.createPending}
+                forceRender
                 destroyOnHidden={true}
                 width={720}
                 data-testid="instance-size-create-modal"
@@ -552,6 +553,7 @@ export function AdminInstanceSizesContent() {
                 onOk={() => { void sizes.submitEdit(); }}
                 onCancel={sizes.closeEditModal}
                 confirmLoading={sizes.updatePending}
+                forceRender
                 destroyOnHidden={true}
                 width={720}
                 data-testid="instance-size-edit-modal"

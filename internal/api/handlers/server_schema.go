@@ -49,10 +49,12 @@ var schemaCaches = map[string]*schemaCache{
 func loadSchemaCache(c *schemaCache, entityType string) {
 	c.once.Do(func() {
 		schemaBytes, _ := schema.SchemaFor(entityType)
-		if err := jsonParseSchema(schemaBytes, &c.schema); err != nil {
+		schemaData, err := jsonParseSchema(schemaBytes)
+		if err != nil {
 			c.err = err
 			return
 		}
+		c.schema = schemaData
 
 		maskBytes, _ := schema.MaskFor(entityType)
 		if err := jsonParseMask(maskBytes, &c.mask); err != nil {

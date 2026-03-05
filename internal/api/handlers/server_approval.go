@@ -42,6 +42,10 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while counting approval tickets", zap.Error(err))
+			return
+		}
 		logger.Error("failed to count approval tickets", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -53,6 +57,10 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 		Order(ent.Asc(approvalticket.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while listing approval tickets", zap.Error(err), zap.Int("page", page))
+			return
+		}
 		logger.Error("failed to list approval tickets", zap.Error(err), zap.Int("page", page))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -70,8 +78,8 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 	}
 
 	// Batch-fetch domain events for all tickets.
-	vmInfoMap := make(map[string]vmTargetInfo) // key = event_id
-	eventPayloadMap := make(map[string][]byte) // key = event_id → raw JSON payload
+	vmInfoMap := make(map[string]vmTargetInfo) // keyed by event ID
+	eventPayloadMap := make(map[string][]byte) // keyed by event ID; value is raw JSON payload
 	if len(allEventIDs) > 0 {
 		events, err := s.client.DomainEvent.Query().
 			Where(domainevent.IDIn(allEventIDs...)).
@@ -137,7 +145,7 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 }
 
 // ApproveTicket handles POST /approvals/{ticket_id}/approve.
-func (s *Server) ApproveTicket(c *gin.Context, ticketId generated.TicketID) {
+func (s *Server) ApproveTicket(c *gin.Context, ticketID generated.TicketID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "approval:approve") {
 		return
@@ -164,7 +172,7 @@ func (s *Server) ApproveTicket(c *gin.Context, ticketId generated.TicketID) {
 		DiskGB:          req.DiskGb,
 	}
 
-	if err := s.gateway.Approve(ctx, ticketId, actor, opts); err != nil {
+	if err := s.gateway.Approve(ctx, ticketID, actor, opts); err != nil {
 		if appErr, ok := apperrors.IsAppError(err); ok {
 			c.JSON(appErr.HTTPStatus, generated.Error{
 				Code:    appErr.Code,
@@ -174,7 +182,7 @@ func (s *Server) ApproveTicket(c *gin.Context, ticketId generated.TicketID) {
 		}
 		logger.Error("ticket approval failed",
 			zap.Error(err),
-			zap.String("ticket_id", ticketId),
+			zap.String("ticket_id", ticketID),
 			zap.String("actor", actor),
 		)
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "APPROVAL_FAILED"})
@@ -185,7 +193,7 @@ func (s *Server) ApproveTicket(c *gin.Context, ticketId generated.TicketID) {
 }
 
 // RejectTicket handles POST /approvals/{ticket_id}/reject.
-func (s *Server) RejectTicket(c *gin.Context, ticketId generated.TicketID) {
+func (s *Server) RejectTicket(c *gin.Context, ticketID generated.TicketID) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "approval:approve") {
 		return
@@ -201,7 +209,7 @@ func (s *Server) RejectTicket(c *gin.Context, ticketId generated.TicketID) {
 		return
 	}
 
-	if err := s.gateway.Reject(ctx, ticketId, actor, req.Reason); err != nil {
+	if err := s.gateway.Reject(ctx, ticketID, actor, req.Reason); err != nil {
 		if appErr, ok := apperrors.IsAppError(err); ok {
 			c.JSON(appErr.HTTPStatus, generated.Error{
 				Code:    appErr.Code,
@@ -211,7 +219,7 @@ func (s *Server) RejectTicket(c *gin.Context, ticketId generated.TicketID) {
 		}
 		logger.Error("ticket rejection failed",
 			zap.Error(err),
-			zap.String("ticket_id", ticketId),
+			zap.String("ticket_id", ticketID),
 			zap.String("actor", actor),
 		)
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "REJECT_FAILED"})
@@ -222,7 +230,7 @@ func (s *Server) RejectTicket(c *gin.Context, ticketId generated.TicketID) {
 }
 
 // CancelTicket handles POST /approvals/{ticket_id}/cancel.
-func (s *Server) CancelTicket(c *gin.Context, ticketId generated.TicketID) {
+func (s *Server) CancelTicket(c *gin.Context, ticketID generated.TicketID) {
 	ctx := c.Request.Context()
 	if !requireAnyGlobalPermission(c, "approval:approve", "vm:create", "vm:delete", "vnc:access") {
 		return
@@ -233,7 +241,7 @@ func (s *Server) CancelTicket(c *gin.Context, ticketId generated.TicketID) {
 		return
 	}
 
-	if err := s.gateway.Cancel(ctx, ticketId, actor); err != nil {
+	if err := s.gateway.Cancel(ctx, ticketID, actor); err != nil {
 		if appErr, ok := apperrors.IsAppError(err); ok {
 			c.JSON(appErr.HTTPStatus, generated.Error{
 				Code:    appErr.Code,
@@ -243,7 +251,7 @@ func (s *Server) CancelTicket(c *gin.Context, ticketId generated.TicketID) {
 		}
 		logger.Error("ticket cancellation failed",
 			zap.Error(err),
-			zap.String("ticket_id", ticketId),
+			zap.String("ticket_id", ticketID),
 			zap.String("actor", actor),
 		)
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})

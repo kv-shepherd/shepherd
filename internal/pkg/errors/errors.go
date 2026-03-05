@@ -1,6 +1,8 @@
 // Package errors provides domain-specific error types for KubeVirt Shepherd.
 //
 // Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/pkg/errors
+//
+//revive:disable-next-line:var-naming // Package name is fixed by import path and existing public usage.
 package errors
 
 import (

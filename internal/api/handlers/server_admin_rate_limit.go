@@ -134,53 +134,53 @@ func (s *Server) CreateRateLimitExemption(c *gin.Context) {
 }
 
 // DeleteRateLimitExemption handles DELETE /admin/rate-limits/exemptions/{user_id}.
-func (s *Server) DeleteRateLimitExemption(c *gin.Context, userId string) {
+func (s *Server) DeleteRateLimitExemption(c *gin.Context, userID string) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "rate_limit:manage")
 	if !ok {
 		return
 	}
 
-	userID := strings.TrimSpace(userId)
-	if userID == "" {
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
 		return
 	}
 
-	if err := s.client.RateLimitExemption.DeleteOneID(userID).Exec(ctx); err != nil {
+	if err := s.client.RateLimitExemption.DeleteOneID(trimmedUserID).Exec(ctx); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "RATE_LIMIT_EXEMPTION_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to delete rate-limit exemption", zap.Error(err), zap.String("user_id", userID))
+		logger.Error("failed to delete rate-limit exemption", zap.Error(err), zap.String("user_id", trimmedUserID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "admin.rate_limit.exemption.delete", "user", userID, actor, nil)
+		_ = s.audit.LogAction(ctx, "admin.rate_limit.exemption.delete", "user", trimmedUserID, actor, nil)
 	}
 
 	c.Status(http.StatusNoContent)
 }
 
 // UpdateRateLimitUserOverrides handles PUT /admin/rate-limits/users/{user_id}.
-func (s *Server) UpdateRateLimitUserOverrides(c *gin.Context, userId string) {
+func (s *Server) UpdateRateLimitUserOverrides(c *gin.Context, userID string) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "rate_limit:manage")
 	if !ok {
 		return
 	}
 
-	userID := strings.TrimSpace(userId)
-	if userID == "" {
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
 		return
 	}
-	if _, err := s.client.User.Get(ctx, userID); err != nil {
+	if _, err := s.client.User.Get(ctx, trimmedUserID); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to query user for rate-limit override", zap.Error(err), zap.String("user_id", userID))
+		logger.Error("failed to query user for rate-limit override", zap.Error(err), zap.String("user_id", trimmedUserID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -223,10 +223,10 @@ func (s *Server) UpdateRateLimitUserOverrides(c *gin.Context, userId string) {
 		reason = strings.TrimSpace(*req.Reason)
 	}
 	existing, err := s.client.RateLimitUserOverride.Query().
-		Where(ratelimituseroverride.IDEQ(userID)).
+		Where(ratelimituseroverride.IDEQ(trimmedUserID)).
 		Only(ctx)
 	if err != nil && !ent.IsNotFound(err) {
-		logger.Error("failed to query rate-limit override", zap.Error(err), zap.String("user_id", userID))
+		logger.Error("failed to query rate-limit override", zap.Error(err), zap.String("user_id", trimmedUserID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -234,7 +234,7 @@ func (s *Server) UpdateRateLimitUserOverrides(c *gin.Context, userId string) {
 	var saved *ent.RateLimitUserOverride
 	if ent.IsNotFound(err) {
 		create := s.client.RateLimitUserOverride.Create().
-			SetID(userID).
+			SetID(trimmedUserID).
 			SetUpdatedBy(actor)
 		if req.MaxPendingParents != nil {
 			create = create.SetMaxPendingParents(*req.MaxPendingParents)
@@ -271,13 +271,13 @@ func (s *Server) UpdateRateLimitUserOverrides(c *gin.Context, userId string) {
 		saved, err = update.Save(ctx)
 	}
 	if err != nil {
-		logger.Error("failed to save rate-limit override", zap.Error(err), zap.String("user_id", userID))
+		logger.Error("failed to save rate-limit override", zap.Error(err), zap.String("user_id", trimmedUserID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "admin.rate_limit.override.upsert", "user", userID, actor, map[string]interface{}{
+		_ = s.audit.LogAction(ctx, "admin.rate_limit.override.upsert", "user", trimmedUserID, actor, map[string]interface{}{
 			"max_pending_parents":  saved.MaxPendingParents,
 			"max_pending_children": saved.MaxPendingChildren,
 			"cooldown_seconds":     saved.CooldownSeconds,

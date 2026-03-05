@@ -1804,7 +1804,7 @@ The following features are identified for future versions but are **out of scope
 | 2026-01-24 | Added: Comprehensive audit log INSERT statements for all delete workflows (VM/Service) |
 | 2026-01-24 | Restructured: Renumbered stages to sequential 1-5 (was 0/0.5/1.5/2/3), added navigation links between stages |
 | 2026-01-24 | Added: Platform security configuration flow (RBAC, OIDC/LDAP, IdP group mapping, user login) |
-| 2026-01-24 | Restructured: Merged "补充流程" sections into unified Part 1-4 structure |
+| 2026-01-24 | Restructured: Merged "supplementary flow" sections into unified Part 1-4 structure |
 | 2026-01-24 | Added: Decision for Canonical Interaction Flow Document (Post-Acceptance) |
 | 2026-01-24 | Updated: Chinese appendix now serves as draft for master-flow.md |
 | 2026-01-22 | Added: Complete user flows for System/Service creation and deletion |
@@ -2106,7 +2106,7 @@ CREATE TABLE users (
 -- OIDC/LDAP providers
 CREATE TABLE auth_providers (
     id VARCHAR(36) PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,             -- "企业 SSO", "Azure AD"
+    name VARCHAR(100) NOT NULL,             -- "Enterprise SSO", "Azure AD"
     type VARCHAR(20) NOT NULL,              -- 'oidc', 'ldap'
     priority INT NOT NULL DEFAULT 0,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -2135,7 +2135,7 @@ CREATE TABLE auth_providers (
 -- External approval systems
 CREATE TABLE external_approval_systems (
     id VARCHAR(36) PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,             -- "OA 审批", "ServiceNow"
+    name VARCHAR(100) NOT NULL,             -- "OA Approval", "ServiceNow"
     type VARCHAR(50) NOT NULL,              -- 'webhook', 'servicenow', 'jira'
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     

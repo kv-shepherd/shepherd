@@ -333,6 +333,7 @@ export function AdminRbacContent() {
                 }}
                 onCancel={rbac.closeCreateRoleModal}
                 confirmLoading={rbac.createRolePending}
+                forceRender
                 destroyOnHidden={true}
                 data-testid="rbac-role-create-modal"
             >
@@ -363,6 +364,7 @@ export function AdminRbacContent() {
                 }}
                 onCancel={rbac.closeEditRoleModal}
                 confirmLoading={rbac.updateRolePending}
+                forceRender
                 destroyOnHidden={true}
                 data-testid="rbac-role-edit-modal"
             >

@@ -65,12 +65,12 @@ type instanceSizeCreateRequest struct {
 	Name              string                 `json:"name" binding:"required"`
 	DisplayName       *string                `json:"display_name"`
 	Description       *string                `json:"description"`
-	CpuCores          float64                `json:"cpu_cores" binding:"required,min=0.5"`
+	CPUCores          float64                `json:"cpu_cores" binding:"required,min=0.5"`
 	MemoryGi          float64                `json:"memory_gi" binding:"required,min=0.5"`
 	DiskGb            *int                   `json:"disk_gb"`
-	CpuRequest        *float64               `json:"cpu_request"`
+	CPURequest        *float64               `json:"cpu_request"`
 	MemoryRequestGi   *float64               `json:"memory_request_gi"`
-	DedicatedCpu      *bool                  `json:"dedicated_cpu"`
+	DedicatedCPU      *bool                  `json:"dedicated_cpu"`
 	RequiresGpu       *bool                  `json:"requires_gpu"`
 	RequiresSriov     *bool                  `json:"requires_sriov"`
 	RequiresHugepages *bool                  `json:"requires_hugepages"`
@@ -84,12 +84,12 @@ type instanceSizeUpdateRequest struct {
 	Name              *string                 `json:"name"`
 	DisplayName       *string                 `json:"display_name"`
 	Description       *string                 `json:"description"`
-	CpuCores          *float64                `json:"cpu_cores"`
+	CPUCores          *float64                `json:"cpu_cores"`
 	MemoryGi          *float64                `json:"memory_gi"`
 	DiskGb            *int                    `json:"disk_gb"`
-	CpuRequest        *float64                `json:"cpu_request"`
+	CPURequest        *float64                `json:"cpu_request"`
 	MemoryRequestGi   *float64                `json:"memory_request_gi"`
-	DedicatedCpu      *bool                   `json:"dedicated_cpu"`
+	DedicatedCPU      *bool                   `json:"dedicated_cpu"`
 	RequiresGpu       *bool                   `json:"requires_gpu"`
 	RequiresSriov     *bool                   `json:"requires_sriov"`
 	RequiresHugepages *bool                   `json:"requires_hugepages"`
@@ -130,6 +130,11 @@ type authProviderUpdateRequest struct {
 }
 
 var permissionKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$`)
+
+const (
+	sampleValueTypeUnknown = "unknown"
+	sampleValueTypeArray   = "array"
+)
 
 var permissionCatalog = map[string]string{
 	"approval:approve":             "Approve or reject approval tickets",
@@ -311,7 +316,7 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 }
 
 // UpdateAdminTemplate handles PATCH /admin/templates/{template_id}.
-func (s *Server) UpdateAdminTemplate(c *gin.Context, templateId generated.TemplateID) {
+func (s *Server) UpdateAdminTemplate(c *gin.Context, templateID generated.TemplateID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "template:write", "template:manage")
 	if !ok {
 		return
@@ -332,13 +337,13 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateId generated.Templa
 	//
 	// Fix: always validate against the effective (merged) state. If the request
 	// does not include a field, fall back to the stored value.
-	existingTpl, err := s.client.Template.Get(ctx, templateId)
+	existingTpl, err := s.client.Template.Get(ctx, templateID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "TEMPLATE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get admin template for update validation", zap.Error(err), zap.String("template_id", templateId))
+		logger.Error("failed to get admin template for update validation", zap.Error(err), zap.String("template_id", templateID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -350,12 +355,12 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateId generated.Templa
 	resolvedPVCNamespace := resolveStringPtr(req.PVCNamespace, existingTpl.PvcNamespace)
 
 	// ADR-0036: Validate source_type consistency against the effective state.
-	if err := validateTemplateSource(resolvedSourceType, resolvedImageURL, resolvedPVCName, resolvedPVCNamespace); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_TEMPLATE_SOURCE", Message: err.Error()})
+	if validateErr := validateTemplateSource(resolvedSourceType, resolvedImageURL, resolvedPVCName, resolvedPVCNamespace); validateErr != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_TEMPLATE_SOURCE", Message: validateErr.Error()})
 		return
 	}
 
-	update := s.client.Template.UpdateOneID(templateId)
+	update := s.client.Template.UpdateOneID(templateID)
 	if req.DisplayName != nil {
 		if v := strings.TrimSpace(*req.DisplayName); v == "" {
 			update = update.ClearDisplayName()
@@ -425,7 +430,7 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateId generated.Templa
 			c.JSON(http.StatusNotFound, generated.Error{Code: "TEMPLATE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to update admin template", zap.Error(err), zap.String("template_id", templateId))
+		logger.Error("failed to update admin template", zap.Error(err), zap.String("template_id", templateID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -438,24 +443,24 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateId generated.Templa
 }
 
 // DeleteAdminTemplate handles DELETE /admin/templates/{template_id}.
-func (s *Server) DeleteAdminTemplate(c *gin.Context, templateId generated.TemplateID) {
+func (s *Server) DeleteAdminTemplate(c *gin.Context, templateID generated.TemplateID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "template:write", "template:manage")
 	if !ok {
 		return
 	}
 
-	if err := s.client.Template.DeleteOneID(templateId).Exec(ctx); err != nil {
+	if err := s.client.Template.DeleteOneID(templateID).Exec(ctx); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "TEMPLATE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to delete admin template", zap.Error(err), zap.String("template_id", templateId))
+		logger.Error("failed to delete admin template", zap.Error(err), zap.String("template_id", templateID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "template.delete", "template", templateId, actor, nil)
+		_ = s.audit.LogAction(ctx, "template.delete", "template", templateID, actor, nil)
 	}
 
 	c.Status(http.StatusNoContent)
@@ -506,7 +511,7 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 	create := s.client.InstanceSize.Create().
 		SetID(id.String()).
 		SetName(strings.TrimSpace(req.Name)).
-		SetCPUCores(req.CpuCores).
+		SetCPUCores(req.CPUCores).
 		SetMemoryGi(req.MemoryGi).
 		SetCreatedBy(actor)
 	if req.DisplayName != nil {
@@ -522,14 +527,14 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 	if req.DiskGb != nil {
 		create = create.SetDiskGB(*req.DiskGb)
 	}
-	if req.CpuRequest != nil {
-		create = create.SetCPURequest(*req.CpuRequest)
+	if req.CPURequest != nil {
+		create = create.SetCPURequest(*req.CPURequest)
 	}
 	if req.MemoryRequestGi != nil {
 		create = create.SetMemoryRequestGi(*req.MemoryRequestGi)
 	}
-	if req.DedicatedCpu != nil {
-		create = create.SetDedicatedCPU(*req.DedicatedCpu)
+	if req.DedicatedCPU != nil {
+		create = create.SetDedicatedCPU(*req.DedicatedCPU)
 	}
 	if req.RequiresGpu != nil {
 		create = create.SetRequiresGpu(*req.RequiresGpu)
@@ -556,9 +561,9 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 		}
 		// Detect conflicts between spec_overrides and indexed columns (advisory).
 		if warnings := service.DetectSpecOverridesConflicts(
-			req.CpuCores, req.MemoryGi,
-			req.DedicatedCpu != nil && *req.DedicatedCpu,
-			req.CpuRequest, req.SpecOverrides,
+			req.CPUCores, req.MemoryGi,
+			req.DedicatedCPU != nil && *req.DedicatedCPU,
+			req.CPURequest, req.SpecOverrides,
 		); len(warnings) > 0 {
 			for _, w := range warnings {
 				logger.Warn("instance size spec_overrides conflict",
@@ -595,7 +600,7 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 }
 
 // UpdateAdminInstanceSize handles PATCH /admin/instance-sizes/{instance_size_id}.
-func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generated.InstanceSizeID) {
+func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeID generated.InstanceSizeID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "instance_size:write")
 	if !ok {
 		return
@@ -611,23 +616,23 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generate
 	// Without this, a PATCH that changes only spec_overrides (not dedicated_cpu) would
 	// use dedicatedFlag=false even when the stored record has dedicated_cpu=true,
 	// causing false-positive rejection of a valid partial update.
-	existingSize, err := s.client.InstanceSize.Get(ctx, instanceSizeId)
+	existingSize, err := s.client.InstanceSize.Get(ctx, instanceSizeID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "INSTANCE_SIZE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get admin instance size for update validation", zap.Error(err), zap.String("instance_size_id", instanceSizeId))
+		logger.Error("failed to get admin instance size for update validation", zap.Error(err), zap.String("instance_size_id", instanceSizeID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
-	if err := validateInstanceSizeUpdate(req, existingSize.DedicatedCPU); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
+	if validateErr := validateInstanceSizeUpdate(req, existingSize.DedicatedCPU); validateErr != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: validateErr.Error()})
 		return
 	}
 
-	update := s.client.InstanceSize.UpdateOneID(instanceSizeId)
+	update := s.client.InstanceSize.UpdateOneID(instanceSizeID)
 	if req.Name != nil {
 		v := strings.TrimSpace(*req.Name)
 		if v == "" {
@@ -650,8 +655,8 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generate
 			update = update.SetDescription(v)
 		}
 	}
-	if req.CpuCores != nil {
-		update = update.SetCPUCores(*req.CpuCores)
+	if req.CPUCores != nil {
+		update = update.SetCPUCores(*req.CPUCores)
 	}
 	if req.MemoryGi != nil {
 		update = update.SetMemoryGi(*req.MemoryGi)
@@ -663,11 +668,11 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generate
 			update = update.SetDiskGB(*req.DiskGb)
 		}
 	}
-	if req.CpuRequest != nil {
-		if *req.CpuRequest <= 0 {
+	if req.CPURequest != nil {
+		if *req.CPURequest <= 0 {
 			update = update.ClearCPURequest()
 		} else {
-			update = update.SetCPURequest(*req.CpuRequest)
+			update = update.SetCPURequest(*req.CPURequest)
 		}
 	}
 	if req.MemoryRequestGi != nil {
@@ -677,8 +682,8 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generate
 			update = update.SetMemoryRequestGi(*req.MemoryRequestGi)
 		}
 	}
-	if req.DedicatedCpu != nil {
-		update = update.SetDedicatedCPU(*req.DedicatedCpu)
+	if req.DedicatedCPU != nil {
+		update = update.SetDedicatedCPU(*req.DedicatedCPU)
 	}
 	if req.RequiresGpu != nil {
 		update = update.SetRequiresGpu(*req.RequiresGpu)
@@ -698,10 +703,10 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generate
 	}
 	if req.SpecOverrides != nil {
 		// ADR-0036: Validate spec_overrides paths use spec.* prefix.
-		if err := service.ValidateSpecOverrides(*req.SpecOverrides); err != nil {
+		if validateErr := service.ValidateSpecOverrides(*req.SpecOverrides); validateErr != nil {
 			c.JSON(http.StatusBadRequest, generated.Error{
 				Code:    "INVALID_SPEC_OVERRIDES",
-				Message: err.Error(),
+				Message: validateErr.Error(),
 			})
 			return
 		}
@@ -724,7 +729,7 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generate
 			c.JSON(http.StatusConflict, generated.Error{Code: "INSTANCE_SIZE_NAME_EXISTS"})
 			return
 		}
-		logger.Error("failed to update admin instance size", zap.Error(err), zap.String("instance_size_id", instanceSizeId))
+		logger.Error("failed to update admin instance size", zap.Error(err), zap.String("instance_size_id", instanceSizeID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -737,24 +742,24 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeId generate
 }
 
 // DeleteAdminInstanceSize handles DELETE /admin/instance-sizes/{instance_size_id}.
-func (s *Server) DeleteAdminInstanceSize(c *gin.Context, instanceSizeId generated.InstanceSizeID) {
+func (s *Server) DeleteAdminInstanceSize(c *gin.Context, instanceSizeID generated.InstanceSizeID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "instance_size:write")
 	if !ok {
 		return
 	}
 
-	if err := s.client.InstanceSize.DeleteOneID(instanceSizeId).Exec(ctx); err != nil {
+	if err := s.client.InstanceSize.DeleteOneID(instanceSizeID).Exec(ctx); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "INSTANCE_SIZE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to delete admin instance size", zap.Error(err), zap.String("instance_size_id", instanceSizeId))
+		logger.Error("failed to delete admin instance size", zap.Error(err), zap.String("instance_size_id", instanceSizeID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "instance_size.delete", "instance_size", instanceSizeId, actor, nil)
+		_ = s.audit.LogAction(ctx, "instance_size.delete", "instance_size", instanceSizeID, actor, nil)
 	}
 
 	c.Status(http.StatusNoContent)
@@ -845,7 +850,7 @@ func (s *Server) CreateRole(c *gin.Context) {
 }
 
 // UpdateRole handles PATCH /admin/roles/{role_id}.
-func (s *Server) UpdateRole(c *gin.Context, roleId generated.RoleID) {
+func (s *Server) UpdateRole(c *gin.Context, roleID generated.RoleID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "rbac:manage")
 	if !ok {
 		return
@@ -856,13 +861,13 @@ func (s *Server) UpdateRole(c *gin.Context, roleId generated.RoleID) {
 		return
 	}
 
-	existing, err := s.client.Role.Get(ctx, roleId)
+	existing, err := s.client.Role.Get(ctx, roleID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to query role", zap.Error(err), zap.String("role_id", roleId))
+		logger.Error("failed to query role", zap.Error(err), zap.String("role_id", roleID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -887,9 +892,9 @@ func (s *Server) UpdateRole(c *gin.Context, roleId generated.RoleID) {
 		}
 	}
 	if req.Permissions != nil {
-		permissions, err := normalizePermissionKeys(*req.Permissions)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
+		permissions, normalizeErr := normalizePermissionKeys(*req.Permissions)
+		if normalizeErr != nil {
+			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: normalizeErr.Error()})
 			return
 		}
 		update = update.SetPermissions(permissions)
@@ -900,7 +905,7 @@ func (s *Server) UpdateRole(c *gin.Context, roleId generated.RoleID) {
 
 	r, err := update.Save(ctx)
 	if err != nil {
-		logger.Error("failed to update role", zap.Error(err), zap.String("role_id", roleId))
+		logger.Error("failed to update role", zap.Error(err), zap.String("role_id", roleID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -913,19 +918,19 @@ func (s *Server) UpdateRole(c *gin.Context, roleId generated.RoleID) {
 }
 
 // DeleteRole handles DELETE /admin/roles/{role_id}.
-func (s *Server) DeleteRole(c *gin.Context, roleId generated.RoleID) {
+func (s *Server) DeleteRole(c *gin.Context, roleID generated.RoleID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "rbac:manage")
 	if !ok {
 		return
 	}
 
-	r, err := s.client.Role.Get(ctx, roleId)
+	r, err := s.client.Role.Get(ctx, roleID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to query role for delete", zap.Error(err), zap.String("role_id", roleId))
+		logger.Error("failed to query role for delete", zap.Error(err), zap.String("role_id", roleID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -935,10 +940,10 @@ func (s *Server) DeleteRole(c *gin.Context, roleId generated.RoleID) {
 	}
 
 	bindingCount, err := s.client.RoleBinding.Query().
-		Where(rolebinding.HasRoleWith(role.IDEQ(roleId))).
+		Where(rolebinding.HasRoleWith(role.IDEQ(roleID))).
 		Count(ctx)
 	if err != nil {
-		logger.Error("failed to count role bindings", zap.Error(err), zap.String("role_id", roleId))
+		logger.Error("failed to count role bindings", zap.Error(err), zap.String("role_id", roleID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -947,18 +952,18 @@ func (s *Server) DeleteRole(c *gin.Context, roleId generated.RoleID) {
 		return
 	}
 
-	if err := s.client.Role.DeleteOneID(roleId).Exec(ctx); err != nil {
+	if err := s.client.Role.DeleteOneID(roleID).Exec(ctx); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to delete role", zap.Error(err), zap.String("role_id", roleId))
+		logger.Error("failed to delete role", zap.Error(err), zap.String("role_id", roleID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "rbac.role.delete", "role", roleId, actor, nil)
+		_ = s.audit.LogAction(ctx, "rbac.role.delete", "role", roleID, actor, nil)
 	}
 
 	c.Status(http.StatusNoContent)
@@ -1080,8 +1085,8 @@ func (s *Server) CreateAuthProvider(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "config is required"})
 		return
 	}
-	if err := validateAuthProviderConfig(authType, req.Config); err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
+	if configErr := validateAuthProviderConfig(authType, req.Config); configErr != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: configErr.Error()})
 		return
 	}
 
@@ -1122,7 +1127,7 @@ func (s *Server) CreateAuthProvider(c *gin.Context) {
 }
 
 // UpdateAuthProvider handles PATCH /admin/auth-providers/{provider_id}.
-func (s *Server) UpdateAuthProvider(c *gin.Context, providerId generated.ProviderID) {
+func (s *Server) UpdateAuthProvider(c *gin.Context, providerID generated.ProviderID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:update", "auth_provider:manage")
 	if !ok {
 		return
@@ -1133,7 +1138,7 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerId generated.Provide
 		return
 	}
 
-	update := s.client.AuthProvider.UpdateOneID(providerId)
+	update := s.client.AuthProvider.UpdateOneID(providerID)
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -1143,13 +1148,13 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerId generated.Provide
 		update = update.SetName(name)
 	}
 	if req.Config != nil {
-		existing, err := s.client.AuthProvider.Get(ctx, providerId)
+		existing, err := s.client.AuthProvider.Get(ctx, providerID)
 		if err != nil {
 			if ent.IsNotFound(err) {
 				c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 				return
 			}
-			logger.Error("failed to query auth provider for update validation", zap.Error(err), zap.String("provider_id", providerId))
+			logger.Error("failed to query auth provider for update validation", zap.Error(err), zap.String("provider_id", providerID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -1176,7 +1181,7 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerId generated.Provide
 			c.JSON(http.StatusConflict, generated.Error{Code: "AUTH_PROVIDER_NAME_EXISTS"})
 			return
 		}
-		logger.Error("failed to update auth provider", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to update auth provider", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1189,15 +1194,15 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerId generated.Provide
 }
 
 // DeleteAuthProvider handles DELETE /admin/auth-providers/{provider_id}.
-func (s *Server) DeleteAuthProvider(c *gin.Context, providerId generated.ProviderID) {
+func (s *Server) DeleteAuthProvider(c *gin.Context, providerID generated.ProviderID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:delete", "auth_provider:manage")
 	if !ok {
 		return
 	}
 
-	userCount, err := s.client.User.Query().Where(entuser.AuthProviderIDEQ(providerId)).Count(ctx)
+	userCount, err := s.client.User.Query().Where(entuser.AuthProviderIDEQ(providerID)).Count(ctx)
 	if err != nil {
-		logger.Error("failed to count provider-linked users", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to count provider-linked users", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1206,44 +1211,44 @@ func (s *Server) DeleteAuthProvider(c *gin.Context, providerId generated.Provide
 		return
 	}
 
-	if err := s.client.AuthProvider.DeleteOneID(providerId).Exec(ctx); err != nil {
+	if err := s.client.AuthProvider.DeleteOneID(providerID).Exec(ctx); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to delete auth provider", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to delete auth provider", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "auth_provider.delete", "auth_provider", providerId, actor, nil)
+		_ = s.audit.LogAction(ctx, "auth_provider.delete", "auth_provider", providerID, actor, nil)
 	}
 
 	c.Status(http.StatusNoContent)
 }
 
 // TestAuthProviderConnection handles POST /admin/auth-providers/{provider_id}/test-connection.
-func (s *Server) TestAuthProviderConnection(c *gin.Context, providerId generated.ProviderID) {
+func (s *Server) TestAuthProviderConnection(c *gin.Context, providerID generated.ProviderID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:configure", "auth_provider:manage")
 	if !ok {
 		return
 	}
 
-	provider, err := s.client.AuthProvider.Get(ctx, providerId)
+	provider, err := s.client.AuthProvider.Get(ctx, providerID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get auth provider for test connection", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to get auth provider for test connection", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	okConn, message, err := testAuthProviderConnection(ctx, provider.AuthType, provider.Config)
 	if err != nil {
-		logger.Error("failed to test auth provider connection", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to test auth provider connection", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1259,58 +1264,58 @@ func (s *Server) TestAuthProviderConnection(c *gin.Context, providerId generated
 }
 
 // GetAuthProviderSample handles GET /admin/auth-providers/{provider_id}/sample.
-func (s *Server) GetAuthProviderSample(c *gin.Context, providerId generated.ProviderID) {
+func (s *Server) GetAuthProviderSample(c *gin.Context, providerID generated.ProviderID) {
 	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
 	if !ok {
 		return
 	}
 
-	provider, err := s.client.AuthProvider.Get(ctx, providerId)
+	provider, err := s.client.AuthProvider.Get(ctx, providerID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get auth provider for sample", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to get auth provider for sample", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	syncedGroups, err := s.client.IdPSyncedGroup.Query().
-		Where(idpsyncedgroup.ProviderIDEQ(providerId)).
+		Where(idpsyncedgroup.ProviderIDEQ(providerID)).
 		Order(ent.Asc(idpsyncedgroup.FieldGroupName)).
 		All(ctx)
 	if err != nil {
-		logger.Error("failed to query synced groups for sample", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to query synced groups for sample", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	fields, err := buildAuthProviderSampleFields(ctx, provider.AuthType, provider.Config, syncedGroups)
 	if err != nil {
-		logger.Error("failed to build auth provider sample fields", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to build auth provider sample fields", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 	c.JSON(http.StatusOK, generated.AuthProviderSampleResponse{
-		ProviderId: providerId,
+		ProviderId: providerID,
 		Fields:     fields,
 	})
 }
 
 // SyncAuthProviderGroups handles POST /admin/auth-providers/{provider_id}/sync.
-func (s *Server) SyncAuthProviderGroups(c *gin.Context, providerId generated.ProviderID) {
+func (s *Server) SyncAuthProviderGroups(c *gin.Context, providerID generated.ProviderID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:sync", "auth_provider:manage")
 	if !ok {
 		return
 	}
 
-	if _, err := s.client.AuthProvider.Get(ctx, providerId); err != nil {
+	if _, err := s.client.AuthProvider.Get(ctx, providerID); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get auth provider for group sync", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to get auth provider for group sync", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1334,12 +1339,12 @@ func (s *Server) SyncAuthProviderGroups(c *gin.Context, providerId generated.Pro
 	for _, grp := range groups {
 		existing, err := s.client.IdPSyncedGroup.Query().
 			Where(
-				idpsyncedgroup.ProviderIDEQ(providerId),
+				idpsyncedgroup.ProviderIDEQ(providerID),
 				idpsyncedgroup.ExternalGroupIDEQ(grp),
 			).
 			Only(ctx)
 		if err != nil && !ent.IsNotFound(err) {
-			logger.Error("failed to query synced group", zap.Error(err), zap.String("provider_id", providerId), zap.String("group", grp))
+			logger.Error("failed to query synced group", zap.Error(err), zap.String("provider_id", providerID), zap.String("group", grp))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -1348,14 +1353,14 @@ func (s *Server) SyncAuthProviderGroups(c *gin.Context, providerId generated.Pro
 			id, _ := uuid.NewV7()
 			_, err = s.client.IdPSyncedGroup.Create().
 				SetID(id.String()).
-				SetProviderID(providerId).
+				SetProviderID(providerID).
 				SetExternalGroupID(grp).
 				SetGroupName(grp).
 				SetSourceField(sourceField).
 				SetLastSyncedAt(now).
 				Save(ctx)
 			if err != nil {
-				logger.Error("failed to create synced group", zap.Error(err), zap.String("provider_id", providerId), zap.String("group", grp))
+				logger.Error("failed to create synced group", zap.Error(err), zap.String("provider_id", providerID), zap.String("group", grp))
 				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 				return
 			}
@@ -1367,24 +1372,24 @@ func (s *Server) SyncAuthProviderGroups(c *gin.Context, providerId generated.Pro
 			SetSourceField(sourceField).
 			SetLastSyncedAt(now).
 			Save(ctx); err != nil {
-			logger.Error("failed to update synced group", zap.Error(err), zap.String("provider_id", providerId), zap.String("group", grp))
+			logger.Error("failed to update synced group", zap.Error(err), zap.String("provider_id", providerID), zap.String("group", grp))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
 	}
 
 	syncedGroups, err := s.client.IdPSyncedGroup.Query().
-		Where(idpsyncedgroup.ProviderIDEQ(providerId)).
+		Where(idpsyncedgroup.ProviderIDEQ(providerID)).
 		Order(ent.Asc(idpsyncedgroup.FieldGroupName)).
 		All(ctx)
 	if err != nil {
-		logger.Error("failed to list synced groups after sync", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to list synced groups after sync", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "auth_provider.sync", "auth_provider", providerId, actor, map[string]interface{}{
+		_ = s.audit.LogAction(ctx, "auth_provider.sync", "auth_provider", providerID, actor, map[string]interface{}{
 			"source_field": sourceField,
 			"group_count":  len(groups),
 		})
@@ -1398,41 +1403,41 @@ func (s *Server) SyncAuthProviderGroups(c *gin.Context, providerId generated.Pro
 }
 
 // ListAuthProviderGroupMappings handles GET /admin/auth-providers/{provider_id}/group-mappings.
-func (s *Server) ListAuthProviderGroupMappings(c *gin.Context, providerId generated.ProviderID) {
+func (s *Server) ListAuthProviderGroupMappings(c *gin.Context, providerID generated.ProviderID) {
 	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
 	if !ok {
 		return
 	}
 
-	if _, err := s.client.AuthProvider.Get(ctx, providerId); err != nil {
+	if _, err := s.client.AuthProvider.Get(ctx, providerID); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get auth provider for mapping list", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to get auth provider for mapping list", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	mappings, err := s.client.IdPGroupMapping.Query().
-		Where(idpgroupmapping.ProviderIDEQ(providerId)).
+		Where(idpgroupmapping.ProviderIDEQ(providerID)).
 		Order(ent.Asc(idpgroupmapping.FieldExternalGroupID)).
 		All(ctx)
 	if err != nil {
-		logger.Error("failed to list idp group mappings", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to list idp group mappings", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	roleNameByID, err := s.roleNameMapByMappings(ctx, mappings)
 	if err != nil {
-		logger.Error("failed to resolve role names for mappings", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to resolve role names for mappings", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
-	groupNameByID, err := s.syncedGroupNameMapByProvider(ctx, providerId)
+	groupNameByID, err := s.syncedGroupNameMapByProvider(ctx, providerID)
 	if err != nil {
-		logger.Error("failed to resolve group names for mappings", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to resolve group names for mappings", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1445,18 +1450,18 @@ func (s *Server) ListAuthProviderGroupMappings(c *gin.Context, providerId genera
 }
 
 // CreateAuthProviderGroupMapping handles POST /admin/auth-providers/{provider_id}/group-mappings.
-func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerId generated.ProviderID) {
+func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerID generated.ProviderID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_create", "auth_provider:manage")
 	if !ok {
 		return
 	}
 
-	if _, err := s.client.AuthProvider.Get(ctx, providerId); err != nil {
+	if _, err := s.client.AuthProvider.Get(ctx, providerID); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get auth provider for mapping create", zap.Error(err), zap.String("provider_id", providerId))
+		logger.Error("failed to get auth provider for mapping create", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1494,8 +1499,8 @@ func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerId gener
 	if groupName == "" {
 		groupName = externalGroupID
 	}
-	if err := s.ensureSyncedGroup(ctx, providerId, externalGroupID, groupName); err != nil {
-		logger.Error("failed to ensure synced group before mapping create", zap.Error(err), zap.String("provider_id", providerId), zap.String("group", externalGroupID))
+	if syncErr := s.ensureSyncedGroup(ctx, providerID, externalGroupID, groupName); syncErr != nil {
+		logger.Error("failed to ensure synced group before mapping create", zap.Error(syncErr), zap.String("provider_id", providerID), zap.String("group", externalGroupID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1503,7 +1508,7 @@ func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerId gener
 	id, _ := uuid.NewV7()
 	mapping, err := s.client.IdPGroupMapping.Create().
 		SetID(id.String()).
-		SetProviderID(providerId).
+		SetProviderID(providerID).
 		SetExternalGroupID(externalGroupID).
 		SetRoleID(roleID).
 		SetScopeType(scopeType).
@@ -1516,13 +1521,13 @@ func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerId gener
 			c.JSON(http.StatusConflict, generated.Error{Code: "IDP_GROUP_MAPPING_EXISTS"})
 			return
 		}
-		logger.Error("failed to create idp mapping", zap.Error(err), zap.String("provider_id", providerId), zap.String("group", externalGroupID))
+		logger.Error("failed to create idp mapping", zap.Error(err), zap.String("provider_id", providerID), zap.String("group", externalGroupID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "auth_provider.mapping_create", "auth_provider", providerId, actor, map[string]interface{}{
+		_ = s.audit.LogAction(ctx, "auth_provider.mapping_create", "auth_provider", providerID, actor, map[string]interface{}{
 			"mapping_id": mapping.ID,
 		})
 	}
@@ -1531,7 +1536,7 @@ func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerId gener
 }
 
 // UpdateAuthProviderGroupMapping handles PATCH /admin/auth-providers/{provider_id}/group-mappings/{mapping_id}.
-func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerId generated.ProviderID, mappingId generated.MappingID) {
+func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerID generated.ProviderID, mappingID generated.MappingID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_update", "auth_provider:manage")
 	if !ok {
 		return
@@ -1543,14 +1548,14 @@ func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerId gener
 	}
 
 	mapping, err := s.client.IdPGroupMapping.Query().
-		Where(idpgroupmapping.IDEQ(mappingId), idpgroupmapping.ProviderIDEQ(providerId)).
+		Where(idpgroupmapping.IDEQ(mappingID), idpgroupmapping.ProviderIDEQ(providerID)).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "IDP_GROUP_MAPPING_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to query idp mapping for update", zap.Error(err), zap.String("mapping_id", mappingId))
+		logger.Error("failed to query idp mapping for update", zap.Error(err), zap.String("mapping_id", mappingID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1558,13 +1563,13 @@ func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerId gener
 	update := mapping.Update()
 	roleName := ""
 	if roleID := strings.TrimSpace(req.RoleId); roleID != "" {
-		roleEnt, err := s.client.Role.Get(ctx, roleID)
-		if err != nil {
-			if ent.IsNotFound(err) {
+		roleEnt, roleErr := s.client.Role.Get(ctx, roleID)
+		if roleErr != nil {
+			if ent.IsNotFound(roleErr) {
 				c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_NOT_FOUND"})
 				return
 			}
-			logger.Error("failed to query role for idp mapping update", zap.Error(err), zap.String("role_id", roleID))
+			logger.Error("failed to query role for idp mapping update", zap.Error(roleErr), zap.String("role_id", roleID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -1588,7 +1593,7 @@ func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerId gener
 			c.JSON(http.StatusConflict, generated.Error{Code: "IDP_GROUP_MAPPING_EXISTS"})
 			return
 		}
-		logger.Error("failed to update idp mapping", zap.Error(err), zap.String("mapping_id", mappingId))
+		logger.Error("failed to update idp mapping", zap.Error(err), zap.String("mapping_id", mappingID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1596,13 +1601,13 @@ func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerId gener
 	if roleName == "" {
 		roleName = roleNameByID(ctx, s.client, updated.RoleID)
 	}
-	groupName := syncedGroupNameByExternalID(ctx, s.client, providerId, updated.ExternalGroupID)
+	groupName := syncedGroupNameByExternalID(ctx, s.client, providerID, updated.ExternalGroupID)
 	if groupName == "" {
 		groupName = updated.ExternalGroupID
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "auth_provider.mapping_update", "auth_provider", providerId, actor, map[string]interface{}{
+		_ = s.audit.LogAction(ctx, "auth_provider.mapping_update", "auth_provider", providerID, actor, map[string]interface{}{
 			"mapping_id": updated.ID,
 		})
 	}
@@ -1611,17 +1616,17 @@ func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerId gener
 }
 
 // DeleteAuthProviderGroupMapping handles DELETE /admin/auth-providers/{provider_id}/group-mappings/{mapping_id}.
-func (s *Server) DeleteAuthProviderGroupMapping(c *gin.Context, providerId generated.ProviderID, mappingId generated.MappingID) {
+func (s *Server) DeleteAuthProviderGroupMapping(c *gin.Context, providerID generated.ProviderID, mappingID generated.MappingID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_delete", "auth_provider:manage")
 	if !ok {
 		return
 	}
 
 	count, err := s.client.IdPGroupMapping.Delete().
-		Where(idpgroupmapping.IDEQ(mappingId), idpgroupmapping.ProviderIDEQ(providerId)).
+		Where(idpgroupmapping.IDEQ(mappingID), idpgroupmapping.ProviderIDEQ(providerID)).
 		Exec(ctx)
 	if err != nil {
-		logger.Error("failed to delete idp mapping", zap.Error(err), zap.String("mapping_id", mappingId))
+		logger.Error("failed to delete idp mapping", zap.Error(err), zap.String("mapping_id", mappingID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1631,15 +1636,15 @@ func (s *Server) DeleteAuthProviderGroupMapping(c *gin.Context, providerId gener
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "auth_provider.mapping_delete", "auth_provider", providerId, actor, map[string]interface{}{
-			"mapping_id": mappingId,
+		_ = s.audit.LogAction(ctx, "auth_provider.mapping_delete", "auth_provider", providerID, actor, map[string]interface{}{
+			"mapping_id": mappingID,
 		})
 	}
 
 	c.Status(http.StatusNoContent)
 }
 
-func testAuthProviderConnection(ctx context.Context, authType string, config map[string]interface{}) (bool, string, error) {
+func testAuthProviderConnection(ctx context.Context, authType string, config map[string]interface{}) (ok bool, message string, err error) {
 	adapter := providerregistry.ResolveAuthProviderAdminAdapter(authType)
 	if adapter == nil {
 		return false, "no adapter registered", nil
@@ -1672,7 +1677,7 @@ func buildAuthProviderSampleFields(
 				values:    map[string]struct{}{},
 			}
 			if slot.valueType == "" {
-				slot.valueType = "unknown"
+				slot.valueType = sampleValueTypeUnknown
 			}
 			for _, val := range field.Sample {
 				v := strings.TrimSpace(val)
@@ -1736,8 +1741,8 @@ func addSampleValue(acc map[string]*sampleFieldAccumulator, field string, raw in
 
 	switch typed := raw.(type) {
 	case []interface{}:
-		if entry.valueType == "unknown" {
-			entry.valueType = "array"
+		if entry.valueType == sampleValueTypeUnknown {
+			entry.valueType = sampleValueTypeArray
 		}
 		for _, item := range typed {
 			val := strings.TrimSpace(fmt.Sprint(item))
@@ -1746,8 +1751,8 @@ func addSampleValue(acc map[string]*sampleFieldAccumulator, field string, raw in
 			}
 		}
 	case []string:
-		if entry.valueType == "unknown" {
-			entry.valueType = "array"
+		if entry.valueType == sampleValueTypeUnknown {
+			entry.valueType = sampleValueTypeArray
 		}
 		for _, item := range typed {
 			val := strings.TrimSpace(item)
@@ -1777,9 +1782,9 @@ func detectSampleValueType(raw interface{}) string {
 	case map[string]interface{}:
 		return "object"
 	case []interface{}, []string:
-		return "array"
+		return sampleValueTypeArray
 	default:
-		return "unknown"
+		return sampleValueTypeUnknown
 	}
 }
 
@@ -1954,10 +1959,10 @@ func validateInstanceSizeCreate(req instanceSizeCreateRequest) error {
 	if strings.TrimSpace(req.Name) == "" {
 		return fmt.Errorf("name is required")
 	}
-	if req.CpuCores < 0.5 {
+	if req.CPUCores < 0.5 {
 		return fmt.Errorf("cpu_cores must be >= 0.5")
 	}
-	if !service.IsHalfStep(req.CpuCores) {
+	if !service.IsHalfStep(req.CPUCores) {
 		return fmt.Errorf("cpu_cores must use 0.5-step values (0.5, 1.0, 1.5, ...)")
 	}
 	if req.MemoryGi < 0.5 {
@@ -1969,11 +1974,11 @@ func validateInstanceSizeCreate(req instanceSizeCreateRequest) error {
 	if req.DiskGb != nil && *req.DiskGb < 1 {
 		return fmt.Errorf("disk_gb must be >= 1")
 	}
-	if req.CpuRequest != nil {
-		if *req.CpuRequest < 0.5 {
+	if req.CPURequest != nil {
+		if *req.CPURequest < 0.5 {
 			return fmt.Errorf("cpu_request must be >= 0.5")
 		}
-		if !service.IsHalfStep(*req.CpuRequest) {
+		if !service.IsHalfStep(*req.CPURequest) {
 			return fmt.Errorf("cpu_request must use 0.5-step values (0.5, 1.0, 1.5, ...)")
 		}
 	}
@@ -1985,8 +1990,8 @@ func validateInstanceSizeCreate(req instanceSizeCreateRequest) error {
 			return fmt.Errorf("memory_request_gi must use 0.5-step values (0.5, 1.0, 1.5, ...)")
 		}
 	}
-	dedicated := req.DedicatedCpu != nil && *req.DedicatedCpu
-	if dedicated && req.CpuRequest != nil && *req.CpuRequest != req.CpuCores {
+	dedicated := req.DedicatedCPU != nil && *req.DedicatedCPU
+	if dedicated && req.CPURequest != nil && *req.CPURequest != req.CPUCores {
 		return fmt.Errorf("cpu_request must equal cpu_cores when dedicated_cpu is true")
 	}
 	requiresHugepages := req.RequiresHugepages != nil && *req.RequiresHugepages
@@ -2024,17 +2029,17 @@ func validateInstanceSizeCreate(req instanceSizeCreateRequest) error {
 //
 // existingDedicatedCPU is the current value stored in the database. The effective
 // dedicated_cpu for validation is determined by merging:
-//   - If req.DedicatedCpu is set: use the request value (user is explicitly changing it).
-//   - If req.DedicatedCpu is nil: use the existing DB value (partial update, field unchanged).
+//   - If req.DedicatedCPU is set: use the request value (user is explicitly changing it).
+//   - If req.DedicatedCPU is nil: use the existing DB value (partial update, field unchanged).
 //
 // This prevents false-positive errors where a PATCH only updates spec_overrides
 // while leaving dedicated_cpu unchanged, but the validator would default to false.
 func validateInstanceSizeUpdate(req instanceSizeUpdateRequest, existingDedicatedCPU bool) error {
-	if req.CpuCores != nil {
-		if *req.CpuCores < 0.5 {
+	if req.CPUCores != nil {
+		if *req.CPUCores < 0.5 {
 			return fmt.Errorf("cpu_cores must be >= 0.5")
 		}
-		if !service.IsHalfStep(*req.CpuCores) {
+		if !service.IsHalfStep(*req.CPUCores) {
 			return fmt.Errorf("cpu_cores must use 0.5-step values (0.5, 1.0, 1.5, ...)")
 		}
 	}
@@ -2046,11 +2051,11 @@ func validateInstanceSizeUpdate(req instanceSizeUpdateRequest, existingDedicated
 			return fmt.Errorf("memory_gi must use 0.5-step values (0.5, 1.0, 1.5, ...)")
 		}
 	}
-	if req.CpuRequest != nil {
-		if *req.CpuRequest < 0 {
+	if req.CPURequest != nil {
+		if *req.CPURequest < 0 {
 			return fmt.Errorf("cpu_request must be >= 0")
 		}
-		if *req.CpuRequest > 0 && !service.IsHalfStep(*req.CpuRequest) {
+		if *req.CPURequest > 0 && !service.IsHalfStep(*req.CPURequest) {
 			return fmt.Errorf("cpu_request must use 0.5-step values (0.5, 1.0, 1.5, ...)")
 		}
 	}
@@ -2065,15 +2070,15 @@ func validateInstanceSizeUpdate(req instanceSizeUpdateRequest, existingDedicated
 	if req.DiskGb != nil && *req.DiskGb < 0 {
 		return fmt.Errorf("disk_gb must be >= 0")
 	}
-	if req.CpuCores != nil && req.DedicatedCpu != nil && *req.DedicatedCpu && req.CpuRequest != nil && *req.CpuRequest > 0 && *req.CpuRequest != *req.CpuCores {
+	if req.CPUCores != nil && req.DedicatedCPU != nil && *req.DedicatedCPU && req.CPURequest != nil && *req.CPURequest > 0 && *req.CPURequest != *req.CPUCores {
 		return fmt.Errorf("cpu_request must equal cpu_cores when dedicated_cpu is true")
 	}
 
 	// ADR-0036 constraint: dedicated_cpu indexed field must agree with spec_overrides.
 	// Use the effective dedicated_cpu: request value if provided, else the existing DB value.
 	effectiveDedicated := existingDedicatedCPU
-	if req.DedicatedCpu != nil {
-		effectiveDedicated = *req.DedicatedCpu
+	if req.DedicatedCPU != nil {
+		effectiveDedicated = *req.DedicatedCPU
 	}
 
 	if req.SpecOverrides != nil {
