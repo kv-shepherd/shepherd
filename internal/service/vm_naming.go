@@ -21,7 +21,7 @@ func NewVMNamingService(client *ent.Client) *VMNamingService {
 
 // GenerateVMName generates a unique VM name and increments the service's next_instance_index.
 // This MUST be called within a transaction to ensure atomicity.
-func (s *VMNamingService) GenerateVMName(ctx context.Context, namespace string, serviceID string) (name string, instance string, err error) {
+func (s *VMNamingService) GenerateVMName(ctx context.Context, namespace, serviceID string) (name, instance string, err error) {
 	svcEnt, err := s.client.Service.Get(ctx, serviceID)
 	if err != nil {
 		return "", "", fmt.Errorf("service not found: %s: %w", serviceID, err)

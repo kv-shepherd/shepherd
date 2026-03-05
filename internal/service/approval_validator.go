@@ -191,7 +191,7 @@ func ValidateOvercommit(cpuCores, cpuRequest, memoryGi, memoryRequestGi float64,
 	return nil
 }
 
-var hugepagesPattern = regexp.MustCompile(`hugepages[-_:]?([0-9]+(?:mi|gi))`)
+var hugepagesPattern = regexp.MustCompile(`hugepages[-_:]?(\d+(?:mi|gi))`)
 
 // ExtractRequiredCapabilities derives scheduling requirements from InstanceSize flags/spec_overrides.
 // Returned capability keys are normalized (lowercase) values used by cluster matching:

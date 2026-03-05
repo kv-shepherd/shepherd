@@ -63,3 +63,13 @@ func TestApplication_Shutdown_Nil(t *testing.T) {
 		app.Shutdown()
 	}, "Shutdown on empty Application should not panic")
 }
+
+func TestApplication_Start_NoDependencies(t *testing.T) {
+	t.Parallel()
+
+	app := &Application{}
+	assert.NotPanics(t, func() {
+		err := app.Start(context.Background())
+		require.NoError(t, err)
+	})
+}

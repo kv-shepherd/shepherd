@@ -17,13 +17,13 @@ type AuthProvider interface {
 
 // AuthResult represents an authentication result.
 type AuthResult struct {
-	UserID      string            `json:"user_id"`
-	Username    string            `json:"username"`
-	Email       string            `json:"email,omitempty"`
-	DisplayName string            `json:"display_name,omitempty"`
-	Groups      []string          `json:"groups,omitempty"`
-	ProviderID  string            `json:"provider_id,omitempty"`
-	ExternalID  string            `json:"external_id,omitempty"`
+	UserID      string                 `json:"user_id"`
+	Username    string                 `json:"username"`
+	Email       string                 `json:"email,omitempty"`
+	DisplayName string                 `json:"display_name,omitempty"`
+	Groups      []string               `json:"groups,omitempty"`
+	ProviderID  string                 `json:"provider_id,omitempty"`
+	ExternalID  string                 `json:"external_id,omitempty"`
 	RawClaims   map[string]interface{} `json:"raw_claims,omitempty"`
 }
 

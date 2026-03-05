@@ -35,6 +35,16 @@ const (
 	FieldCreatedBy = "created_by"
 	// FieldTicketID holds the string denoting the ticket_id field in the database.
 	FieldTicketID = "ticket_id"
+	// FieldPollingTier holds the string denoting the polling_tier field in the database.
+	FieldPollingTier = "polling_tier"
+	// FieldPollIntervalSec holds the string denoting the poll_interval_sec field in the database.
+	FieldPollIntervalSec = "poll_interval_sec"
+	// FieldLastK8sRv holds the string denoting the last_k8s_rv field in the database.
+	FieldLastK8sRv = "last_k8s_rv"
+	// FieldLastPolledAt holds the string denoting the last_polled_at field in the database.
+	FieldLastPolledAt = "last_polled_at"
+	// FieldHighTierSince holds the string denoting the high_tier_since field in the database.
+	FieldHighTierSince = "high_tier_since"
 	// EdgeService holds the string denoting the service edge name in mutations.
 	EdgeService = "service"
 	// EdgeRevisions holds the string denoting the revisions edge name in mutations.
@@ -70,6 +80,11 @@ var Columns = []string{
 	FieldHostname,
 	FieldCreatedBy,
 	FieldTicketID,
+	FieldPollingTier,
+	FieldPollIntervalSec,
+	FieldLastK8sRv,
+	FieldLastPolledAt,
+	FieldHighTierSince,
 }
 
 // ForeignKeys holds the SQL foreign-keys that are owned by the "vms"
@@ -108,6 +123,8 @@ var (
 	NamespaceValidator func(string) error
 	// CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	CreatedByValidator func(string) error
+	// DefaultPollIntervalSec holds the default value on creation for the "poll_interval_sec" field.
+	DefaultPollIntervalSec int
 )
 
 // Status defines the type for the "status" enum field.
@@ -141,6 +158,32 @@ func StatusValidator(s Status) error {
 		return nil
 	default:
 		return fmt.Errorf("vm: invalid enum value for status field: %q", s)
+	}
+}
+
+// PollingTier defines the type for the "polling_tier" enum field.
+type PollingTier string
+
+// PollingTierHigh is the default value of the PollingTier enum.
+const DefaultPollingTier = PollingTierHigh
+
+// PollingTier values.
+const (
+	PollingTierHigh PollingTier = "high"
+	PollingTierLow  PollingTier = "low"
+)
+
+func (pt PollingTier) String() string {
+	return string(pt)
+}
+
+// PollingTierValidator is a validator for the "polling_tier" field enum values. It is called by the builders before save.
+func PollingTierValidator(pt PollingTier) error {
+	switch pt {
+	case PollingTierHigh, PollingTierLow:
+		return nil
+	default:
+		return fmt.Errorf("vm: invalid enum value for polling_tier field: %q", pt)
 	}
 }
 
@@ -200,6 +243,31 @@ func ByCreatedBy(opts ...sql.OrderTermOption) OrderOption {
 // ByTicketID orders the results by the ticket_id field.
 func ByTicketID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTicketID, opts...).ToFunc()
+}
+
+// ByPollingTier orders the results by the polling_tier field.
+func ByPollingTier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPollingTier, opts...).ToFunc()
+}
+
+// ByPollIntervalSec orders the results by the poll_interval_sec field.
+func ByPollIntervalSec(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPollIntervalSec, opts...).ToFunc()
+}
+
+// ByLastK8sRv orders the results by the last_k8s_rv field.
+func ByLastK8sRv(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastK8sRv, opts...).ToFunc()
+}
+
+// ByLastPolledAt orders the results by the last_polled_at field.
+func ByLastPolledAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastPolledAt, opts...).ToFunc()
+}
+
+// ByHighTierSince orders the results by the high_tier_since field.
+func ByHighTierSince(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldHighTierSince, opts...).ToFunc()
 }
 
 // ByServiceField orders the results by service field.

@@ -78,11 +78,22 @@ func (p *KubeVirtProviderImpl) ListVMs(ctx context.Context, cluster, namespace s
 	if opts.LabelSelector != "" {
 		listOpts.LabelSelector = opts.LabelSelector
 	}
+	if opts.FieldSelector != "" {
+		listOpts.FieldSelector = opts.FieldSelector
+	}
 	if opts.Limit > 0 {
 		listOpts.Limit = int64(opts.Limit)
 	}
 	if opts.Continue != "" {
 		listOpts.Continue = opts.Continue
+	}
+	// ADR-0038: Route through K8s watch cache when ResourceVersion is available.
+	// Explicitly assign even when empty string (baseline read).
+	listOpts.ResourceVersion = opts.ResourceVersion
+	// Kubernetes API best-practice: when specifying resourceVersion on LIST,
+	// also set resourceVersionMatch for deterministic cache semantics.
+	if opts.ResourceVersion != "" {
+		listOpts.ResourceVersionMatch = k8smetav1.ResourceVersionMatchNotOlderThan
 	}
 
 	vmList, err := client.VM().List(ctx, namespace, listOpts)
@@ -90,11 +101,13 @@ func (p *KubeVirtProviderImpl) ListVMs(ctx context.Context, cluster, namespace s
 		return nil, fmt.Errorf("list vms in %s: %w", namespace, err)
 	}
 
-	// Batch fetch VMIs for status enrichment
-	vmiList, _ := client.VMI().List(ctx, namespace, k8smetav1.ListOptions{})
 	var vmis []kubevirtv1.VirtualMachineInstance
-	if vmiList != nil {
-		vmis = vmiList.Items
+	// Batch fetch VMIs for status enrichment unless caller explicitly skips it.
+	if !opts.SkipVMIEnrichment {
+		vmiList, _ := client.VMI().List(ctx, namespace, k8smetav1.ListOptions{})
+		if vmiList != nil {
+			vmis = vmiList.Items
+		}
 	}
 
 	result, err := p.mapper.MapVMList(vmList.Items, vmis)
@@ -129,8 +142,8 @@ func (p *KubeVirtProviderImpl) CreateVM(ctx context.Context, cluster, namespace 
 	opCtx, cancel := p.withTimeout(ctx)
 	defer cancel()
 
-	if err := validateYAMLResourceHalfSteps([]byte(spec.RenderedYAML)); err != nil {
-		return nil, fmt.Errorf("validate vm yaml resource steps for create: %w", err)
+	if validateErr := validateYAMLResourceHalfSteps([]byte(spec.RenderedYAML)); validateErr != nil {
+		return nil, fmt.Errorf("validate vm yaml resource steps for create: %w", validateErr)
 	}
 
 	// SSA Apply: idempotent, conflict-free, FieldOwner-tracked.
@@ -172,8 +185,8 @@ func (p *KubeVirtProviderImpl) UpdateVM(ctx context.Context, cluster, namespace,
 	opCtx, cancel := p.withTimeout(ctx)
 	defer cancel()
 
-	if err := validateYAMLResourceHalfSteps([]byte(spec.RenderedYAML)); err != nil {
-		return nil, fmt.Errorf("validate vm yaml resource steps for update: %w", err)
+	if validateErr := validateYAMLResourceHalfSteps([]byte(spec.RenderedYAML)); validateErr != nil {
+		return nil, fmt.Errorf("validate vm yaml resource steps for update: %w", validateErr)
 	}
 
 	// Safety check: validate YAML target name matches the `name` parameter.
@@ -301,11 +314,14 @@ func (p *KubeVirtProviderImpl) ValidateSpec(ctx context.Context, cluster, namesp
 		}, nil
 	}
 
-	err = client.SSA().DryRunApplyYAML(ctx, namespace, []byte(spec.RenderedYAML))
-	if err != nil {
+	dryRunErrMsg := ""
+	if applyErr := client.SSA().DryRunApplyYAML(ctx, namespace, []byte(spec.RenderedYAML)); applyErr != nil {
+		dryRunErrMsg = applyErr.Error()
+	}
+	if dryRunErrMsg != "" {
 		return &domain.ValidationResult{
 			Valid:  false,
-			Errors: []string{err.Error()},
+			Errors: []string{dryRunErrMsg},
 		}, nil
 	}
 

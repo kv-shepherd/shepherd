@@ -692,7 +692,7 @@ func TestSpecOverrideSetsExplicitFalseForDedicatedCPU(t *testing.T) {
 
 // testStringContains reports whether substr is a substring of s.
 func testStringContains(s, substr string) bool {
-	if len(substr) == 0 {
+	if substr == "" {
 		return true
 	}
 	if len(s) < len(substr) {

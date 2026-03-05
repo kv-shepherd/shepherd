@@ -152,6 +152,101 @@ func (_u *VMUpdate) ClearTicketID() *VMUpdate {
 	return _u
 }
 
+// SetPollingTier sets the "polling_tier" field.
+func (_u *VMUpdate) SetPollingTier(v vm.PollingTier) *VMUpdate {
+	_u.mutation.SetPollingTier(v)
+	return _u
+}
+
+// SetNillablePollingTier sets the "polling_tier" field if the given value is not nil.
+func (_u *VMUpdate) SetNillablePollingTier(v *vm.PollingTier) *VMUpdate {
+	if v != nil {
+		_u.SetPollingTier(*v)
+	}
+	return _u
+}
+
+// SetPollIntervalSec sets the "poll_interval_sec" field.
+func (_u *VMUpdate) SetPollIntervalSec(v int) *VMUpdate {
+	_u.mutation.ResetPollIntervalSec()
+	_u.mutation.SetPollIntervalSec(v)
+	return _u
+}
+
+// SetNillablePollIntervalSec sets the "poll_interval_sec" field if the given value is not nil.
+func (_u *VMUpdate) SetNillablePollIntervalSec(v *int) *VMUpdate {
+	if v != nil {
+		_u.SetPollIntervalSec(*v)
+	}
+	return _u
+}
+
+// AddPollIntervalSec adds value to the "poll_interval_sec" field.
+func (_u *VMUpdate) AddPollIntervalSec(v int) *VMUpdate {
+	_u.mutation.AddPollIntervalSec(v)
+	return _u
+}
+
+// SetLastK8sRv sets the "last_k8s_rv" field.
+func (_u *VMUpdate) SetLastK8sRv(v string) *VMUpdate {
+	_u.mutation.SetLastK8sRv(v)
+	return _u
+}
+
+// SetNillableLastK8sRv sets the "last_k8s_rv" field if the given value is not nil.
+func (_u *VMUpdate) SetNillableLastK8sRv(v *string) *VMUpdate {
+	if v != nil {
+		_u.SetLastK8sRv(*v)
+	}
+	return _u
+}
+
+// ClearLastK8sRv clears the value of the "last_k8s_rv" field.
+func (_u *VMUpdate) ClearLastK8sRv() *VMUpdate {
+	_u.mutation.ClearLastK8sRv()
+	return _u
+}
+
+// SetLastPolledAt sets the "last_polled_at" field.
+func (_u *VMUpdate) SetLastPolledAt(v time.Time) *VMUpdate {
+	_u.mutation.SetLastPolledAt(v)
+	return _u
+}
+
+// SetNillableLastPolledAt sets the "last_polled_at" field if the given value is not nil.
+func (_u *VMUpdate) SetNillableLastPolledAt(v *time.Time) *VMUpdate {
+	if v != nil {
+		_u.SetLastPolledAt(*v)
+	}
+	return _u
+}
+
+// ClearLastPolledAt clears the value of the "last_polled_at" field.
+func (_u *VMUpdate) ClearLastPolledAt() *VMUpdate {
+	_u.mutation.ClearLastPolledAt()
+	return _u
+}
+
+// SetHighTierSince sets the "high_tier_since" field.
+func (_u *VMUpdate) SetHighTierSince(v time.Time) *VMUpdate {
+	_u.mutation.SetHighTierSince(v)
+	return _u
+}
+
+// SetNillableHighTierSince sets the "high_tier_since" field if the given value is not nil.
+func (_u *VMUpdate) SetNillableHighTierSince(v *time.Time) *VMUpdate {
+	if v != nil {
+		_u.SetHighTierSince(*v)
+	}
+	return _u
+}
+
+// ClearHighTierSince clears the value of the "high_tier_since" field.
+func (_u *VMUpdate) ClearHighTierSince() *VMUpdate {
+	_u.mutation.ClearHighTierSince()
+	return _u
+}
+
 // SetServiceID sets the "service" edge to the Service entity by ID.
 func (_u *VMUpdate) SetServiceID(id string) *VMUpdate {
 	_u.mutation.SetServiceID(id)
@@ -268,6 +363,11 @@ func (_u *VMUpdate) check() error {
 			return &ValidationError{Name: "created_by", err: fmt.Errorf(`ent: validator failed for field "VM.created_by": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PollingTier(); ok {
+		if err := vm.PollingTierValidator(v); err != nil {
+			return &ValidationError{Name: "polling_tier", err: fmt.Errorf(`ent: validator failed for field "VM.polling_tier": %w`, err)}
+		}
+	}
 	if _u.mutation.ServiceCleared() && len(_u.mutation.ServiceIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "VM.service"`)
 	}
@@ -318,6 +418,33 @@ func (_u *VMUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.TicketIDCleared() {
 		_spec.ClearField(vm.FieldTicketID, field.TypeString)
+	}
+	if value, ok := _u.mutation.PollingTier(); ok {
+		_spec.SetField(vm.FieldPollingTier, field.TypeEnum, value)
+	}
+	if value, ok := _u.mutation.PollIntervalSec(); ok {
+		_spec.SetField(vm.FieldPollIntervalSec, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPollIntervalSec(); ok {
+		_spec.AddField(vm.FieldPollIntervalSec, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.LastK8sRv(); ok {
+		_spec.SetField(vm.FieldLastK8sRv, field.TypeString, value)
+	}
+	if _u.mutation.LastK8sRvCleared() {
+		_spec.ClearField(vm.FieldLastK8sRv, field.TypeString)
+	}
+	if value, ok := _u.mutation.LastPolledAt(); ok {
+		_spec.SetField(vm.FieldLastPolledAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastPolledAtCleared() {
+		_spec.ClearField(vm.FieldLastPolledAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.HighTierSince(); ok {
+		_spec.SetField(vm.FieldHighTierSince, field.TypeTime, value)
+	}
+	if _u.mutation.HighTierSinceCleared() {
+		_spec.ClearField(vm.FieldHighTierSince, field.TypeTime)
 	}
 	if _u.mutation.ServiceCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -535,6 +662,101 @@ func (_u *VMUpdateOne) ClearTicketID() *VMUpdateOne {
 	return _u
 }
 
+// SetPollingTier sets the "polling_tier" field.
+func (_u *VMUpdateOne) SetPollingTier(v vm.PollingTier) *VMUpdateOne {
+	_u.mutation.SetPollingTier(v)
+	return _u
+}
+
+// SetNillablePollingTier sets the "polling_tier" field if the given value is not nil.
+func (_u *VMUpdateOne) SetNillablePollingTier(v *vm.PollingTier) *VMUpdateOne {
+	if v != nil {
+		_u.SetPollingTier(*v)
+	}
+	return _u
+}
+
+// SetPollIntervalSec sets the "poll_interval_sec" field.
+func (_u *VMUpdateOne) SetPollIntervalSec(v int) *VMUpdateOne {
+	_u.mutation.ResetPollIntervalSec()
+	_u.mutation.SetPollIntervalSec(v)
+	return _u
+}
+
+// SetNillablePollIntervalSec sets the "poll_interval_sec" field if the given value is not nil.
+func (_u *VMUpdateOne) SetNillablePollIntervalSec(v *int) *VMUpdateOne {
+	if v != nil {
+		_u.SetPollIntervalSec(*v)
+	}
+	return _u
+}
+
+// AddPollIntervalSec adds value to the "poll_interval_sec" field.
+func (_u *VMUpdateOne) AddPollIntervalSec(v int) *VMUpdateOne {
+	_u.mutation.AddPollIntervalSec(v)
+	return _u
+}
+
+// SetLastK8sRv sets the "last_k8s_rv" field.
+func (_u *VMUpdateOne) SetLastK8sRv(v string) *VMUpdateOne {
+	_u.mutation.SetLastK8sRv(v)
+	return _u
+}
+
+// SetNillableLastK8sRv sets the "last_k8s_rv" field if the given value is not nil.
+func (_u *VMUpdateOne) SetNillableLastK8sRv(v *string) *VMUpdateOne {
+	if v != nil {
+		_u.SetLastK8sRv(*v)
+	}
+	return _u
+}
+
+// ClearLastK8sRv clears the value of the "last_k8s_rv" field.
+func (_u *VMUpdateOne) ClearLastK8sRv() *VMUpdateOne {
+	_u.mutation.ClearLastK8sRv()
+	return _u
+}
+
+// SetLastPolledAt sets the "last_polled_at" field.
+func (_u *VMUpdateOne) SetLastPolledAt(v time.Time) *VMUpdateOne {
+	_u.mutation.SetLastPolledAt(v)
+	return _u
+}
+
+// SetNillableLastPolledAt sets the "last_polled_at" field if the given value is not nil.
+func (_u *VMUpdateOne) SetNillableLastPolledAt(v *time.Time) *VMUpdateOne {
+	if v != nil {
+		_u.SetLastPolledAt(*v)
+	}
+	return _u
+}
+
+// ClearLastPolledAt clears the value of the "last_polled_at" field.
+func (_u *VMUpdateOne) ClearLastPolledAt() *VMUpdateOne {
+	_u.mutation.ClearLastPolledAt()
+	return _u
+}
+
+// SetHighTierSince sets the "high_tier_since" field.
+func (_u *VMUpdateOne) SetHighTierSince(v time.Time) *VMUpdateOne {
+	_u.mutation.SetHighTierSince(v)
+	return _u
+}
+
+// SetNillableHighTierSince sets the "high_tier_since" field if the given value is not nil.
+func (_u *VMUpdateOne) SetNillableHighTierSince(v *time.Time) *VMUpdateOne {
+	if v != nil {
+		_u.SetHighTierSince(*v)
+	}
+	return _u
+}
+
+// ClearHighTierSince clears the value of the "high_tier_since" field.
+func (_u *VMUpdateOne) ClearHighTierSince() *VMUpdateOne {
+	_u.mutation.ClearHighTierSince()
+	return _u
+}
+
 // SetServiceID sets the "service" edge to the Service entity by ID.
 func (_u *VMUpdateOne) SetServiceID(id string) *VMUpdateOne {
 	_u.mutation.SetServiceID(id)
@@ -664,6 +886,11 @@ func (_u *VMUpdateOne) check() error {
 			return &ValidationError{Name: "created_by", err: fmt.Errorf(`ent: validator failed for field "VM.created_by": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PollingTier(); ok {
+		if err := vm.PollingTierValidator(v); err != nil {
+			return &ValidationError{Name: "polling_tier", err: fmt.Errorf(`ent: validator failed for field "VM.polling_tier": %w`, err)}
+		}
+	}
 	if _u.mutation.ServiceCleared() && len(_u.mutation.ServiceIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "VM.service"`)
 	}
@@ -731,6 +958,33 @@ func (_u *VMUpdateOne) sqlSave(ctx context.Context) (_node *VM, err error) {
 	}
 	if _u.mutation.TicketIDCleared() {
 		_spec.ClearField(vm.FieldTicketID, field.TypeString)
+	}
+	if value, ok := _u.mutation.PollingTier(); ok {
+		_spec.SetField(vm.FieldPollingTier, field.TypeEnum, value)
+	}
+	if value, ok := _u.mutation.PollIntervalSec(); ok {
+		_spec.SetField(vm.FieldPollIntervalSec, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPollIntervalSec(); ok {
+		_spec.AddField(vm.FieldPollIntervalSec, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.LastK8sRv(); ok {
+		_spec.SetField(vm.FieldLastK8sRv, field.TypeString, value)
+	}
+	if _u.mutation.LastK8sRvCleared() {
+		_spec.ClearField(vm.FieldLastK8sRv, field.TypeString)
+	}
+	if value, ok := _u.mutation.LastPolledAt(); ok {
+		_spec.SetField(vm.FieldLastPolledAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastPolledAtCleared() {
+		_spec.ClearField(vm.FieldLastPolledAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.HighTierSince(); ok {
+		_spec.SetField(vm.FieldHighTierSince, field.TypeTime, value)
+	}
+	if _u.mutation.HighTierSinceCleared() {
+		_spec.ClearField(vm.FieldHighTierSince, field.TypeTime)
 	}
 	if _u.mutation.ServiceCleared() {
 		edge := &sqlgraph.EdgeSpec{

@@ -91,6 +91,15 @@ type ListOptions struct {
 	FieldSelector string
 	Limit         int
 	Continue      string
+
+	// ResourceVersion is the K8s resourceVersion from the previous API response.
+	// ADR-0038: When set, K8s routes the request through the watch cache
+	// instead of reading directly from etcd. Use "" for the first request.
+	ResourceVersion string
+
+	// SkipVMIEnrichment skips the additional VMI list used for status enrichment.
+	// ADR-0038 polling path sets this to true to avoid extra K8s API pressure.
+	SkipVMIEnrichment bool
 }
 
 // CredentialProvider provides cluster credentials (Strategy Pattern).

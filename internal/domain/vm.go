@@ -17,6 +17,11 @@ type VM struct {
 	Spec      VMSpec    `json:"spec"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// ResourceVersion is the K8s metadata.resourceVersion from the last API response.
+	// ADR-0038: Cached to DB (VM.last_k8s_rv) and included in subsequent Get/List
+	// requests to route through the K8s watch cache instead of etcd.
+	ResourceVersion string `json:"-"`
 }
 
 // VMSpec represents the desired state of a VM.

@@ -25,6 +25,7 @@ import (
 	"kv-shepherd.io/shepherd/ent"
 	entmigrate "kv-shepherd.io/shepherd/ent/migrate"
 	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
@@ -69,8 +70,8 @@ func NewDatabaseClients(ctx context.Context, cfg config.DatabaseConfig) (*Databa
 
 	// Set UTC timezone on each new connection (pgxpool best practice)
 	poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
-		_, err := conn.Exec(ctx, "SET timezone = 'UTC'")
-		return err
+		_, execErr := conn.Exec(ctx, "SET timezone = 'UTC'")
+		return execErr
 	}
 
 	// Create shared connection pool
@@ -80,9 +81,9 @@ func NewDatabaseClients(ctx context.Context, cfg config.DatabaseConfig) (*Databa
 	}
 
 	// Verify connection
-	if err := pool.Ping(ctx); err != nil {
+	if pingErr := pool.Ping(ctx); pingErr != nil {
 		pool.Close()
-		return nil, fmt.Errorf("ping database: %w", err)
+		return nil, fmt.Errorf("ping database: %w", pingErr)
 	}
 
 	// Create *sql.DB from pool for Ent ORM (ADR-0012: stdlib.OpenDBFromPool)
@@ -156,10 +157,10 @@ func (c *DatabaseClients) AutoMigrate(ctx context.Context) error {
 // InitRiverClient creates a River client with registered workers.
 // Called after NewDatabaseClients; workers param comes from bootstrap.
 func (c *DatabaseClients) InitRiverClient(workers *river.Workers, cfg config.RiverConfig) error {
+	riverQueues := buildRiverQueues(cfg.MaxWorkers)
+
 	riverClient, err := river.NewClient(riverpgxv5.New(c.Pool), &river.Config{
-		Queues: map[string]river.QueueConfig{
-			river.QueueDefault: {MaxWorkers: cfg.MaxWorkers},
-		},
+		Queues:                      riverQueues,
 		Workers:                     workers,
 		CompletedJobRetentionPeriod: cfg.CompletedJobRetentionPeriod,
 	})
@@ -169,6 +170,19 @@ func (c *DatabaseClients) InitRiverClient(workers *river.Workers, cfg config.Riv
 	c.RiverClient = riverClient
 	logger.Info("River client initialized", zap.Int("max_workers", cfg.MaxWorkers))
 	return nil
+}
+
+func buildRiverQueues(maxWorkers int) map[string]river.QueueConfig {
+	vmOpsWorkers := maxWorkers
+	if vmOpsWorkers < 1 {
+		vmOpsWorkers = 1
+	}
+	return map[string]river.QueueConfig{
+		river.QueueDefault: {MaxWorkers: maxWorkers},
+		"vm_operations":    {MaxWorkers: vmOpsWorkers},
+		// ADR-0038: dedicated queue for adaptive VM status sync polling jobs.
+		jobs.VMStatusSyncJobKind: {MaxWorkers: vmOpsWorkers},
+	}
 }
 
 // GetWorkerPool returns the worker connection pool.

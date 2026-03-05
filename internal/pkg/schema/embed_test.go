@@ -172,7 +172,7 @@ func TestValidateMaskPaths_InvalidPath(t *testing.T) {
 		t.Fatal("expected error for invalid mask path, got nil")
 	}
 	// Should report the invalid path specifically.
-	if got := err.Error(); len(got) == 0 {
+	if got := err.Error(); got == "" {
 		t.Error("expected non-empty error message")
 	}
 	t.Logf("correctly rejected invalid path with error: %v", err)

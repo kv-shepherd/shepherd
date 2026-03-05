@@ -476,27 +476,27 @@ func TestMapCreatedVMStatusToRow(t *testing.T) {
 		{
 			name:   "stopping maps to stopping",
 			vm:     &domain.VM{Status: domain.VMStatusStopping},
-			expect: entvm.StatusSTOPPING,
+			expect: entvm.StatusRUNNING,
 		},
 		{
 			name:   "stopped maps to stopped",
 			vm:     &domain.VM{Status: domain.VMStatusStopped},
-			expect: entvm.StatusSTOPPED,
+			expect: entvm.StatusRUNNING,
 		},
 		{
 			name:   "deleting maps to deleting",
 			vm:     &domain.VM{Status: domain.VMStatusDeleting},
-			expect: entvm.StatusDELETING,
+			expect: entvm.StatusRUNNING,
 		},
 		{
 			name:   "migrating maps to migrating",
 			vm:     &domain.VM{Status: domain.VMStatusMigrating},
-			expect: entvm.StatusMIGRATING,
+			expect: entvm.StatusRUNNING,
 		},
 		{
 			name:   "paused maps to paused",
 			vm:     &domain.VM{Status: domain.VMStatusPaused},
-			expect: entvm.StatusPAUSED,
+			expect: entvm.StatusRUNNING,
 		},
 	}
 

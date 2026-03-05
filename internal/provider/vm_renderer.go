@@ -40,13 +40,15 @@ metadata:
 spec:
   runStrategy: Always
   template:
+    {{- if .Labels}}
     metadata:
-      {{- if .Labels}}
       labels:
         {{- range $k, $v := .Labels}}
         {{$k}}: "{{$v}}"
         {{- end}}
-      {{- end}}
+    {{- else}}
+    metadata: {}
+    {{- end}}
     spec:
       domain:
         cpu:
@@ -357,22 +359,22 @@ func cpuValueToMilli(value interface{}) (int64, error) {
 	case int32:
 		return int64(v) * 1000, nil
 	case uint:
-		return int64(v) * 1000, nil
+		return scaleUintToInt64(uint64(v), 1000, "cpu")
 	case uint64:
-		return int64(v) * 1000, nil
+		return scaleUintToInt64(v, 1000, "cpu")
 	case uint32:
-		return int64(v) * 1000, nil
+		return scaleUintToInt64(uint64(v), 1000, "cpu")
 	default:
 		return 0, fmt.Errorf("unsupported cpu value type %T", value)
 	}
 }
 
 func validateMemoryHalfStep(path string, value interface{}) error {
-	bytes, err := memoryValueToBytes(value)
+	memoryBytes, err := memoryValueToBytes(value)
 	if err != nil {
 		return fmt.Errorf("invalid spec_overrides value for %q: %w", path, err)
 	}
-	if bytes <= 0 || bytes%halfGiStepBytes != 0 {
+	if memoryBytes <= 0 || memoryBytes%halfGiStepBytes != 0 {
 		return fmt.Errorf(
 			"invalid spec_overrides value for %q: memory must use 0.5-step values (512Mi increments), got %v",
 			path, value,
@@ -400,14 +402,22 @@ func memoryValueToBytes(value interface{}) (int64, error) {
 	case int32:
 		return int64(v) * 1024 * 1024, nil
 	case uint:
-		return int64(v) * 1024 * 1024, nil
+		return scaleUintToInt64(uint64(v), 1024*1024, "memory")
 	case uint64:
-		return int64(v) * 1024 * 1024, nil
+		return scaleUintToInt64(v, 1024*1024, "memory")
 	case uint32:
-		return int64(v) * 1024 * 1024, nil
+		return scaleUintToInt64(uint64(v), 1024*1024, "memory")
 	default:
 		return 0, fmt.Errorf("unsupported memory value type %T (use Kubernetes quantity string, e.g. \"1536Mi\")", value)
 	}
+}
+
+func scaleUintToInt64(v, factor uint64, field string) (int64, error) {
+	const maxInt64 = ^uint64(0) >> 1
+	if v > maxInt64/factor {
+		return 0, fmt.Errorf("%s value %d overflows int64 after scaling", field, v)
+	}
+	return int64(v * factor), nil // #nosec G115 -- overflow checked by maxInt64/factor guard above.
 }
 
 // applySpecOverridesToYAML decodes YAML into an unstructured map, applies

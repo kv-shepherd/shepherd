@@ -76,4 +76,3 @@ func TestNotificationCleanupWorkerWork_Uninitialized(t *testing.T) {
 		}
 	})
 }
-

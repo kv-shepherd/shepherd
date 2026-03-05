@@ -16,7 +16,7 @@ func (a *testAuthProviderAdapter) ValidateConfig(config map[string]interface{}) 
 	return nil
 }
 
-func (a *testAuthProviderAdapter) TestConnection(_ context.Context, _ map[string]interface{}) (bool, string, error) {
+func (a *testAuthProviderAdapter) TestConnection(_ context.Context, _ map[string]interface{}) (ok bool, message string, err error) {
 	// Keep CI assertion parser from treating this interface method as an empty Test* function.
 	if a == nil {
 		var t testing.T

@@ -24,7 +24,8 @@ func TestNewApprovalModule_RequiresInfraDependencies(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := NewApprovalModule(tc.infra); err == nil {
+			// vmSvc=nil is valid (DryRun gate is optional; nil means disabled).
+			if _, err := NewApprovalModule(tc.infra, nil); err == nil {
 				t.Fatalf("NewApprovalModule(%s) expected error, got nil", tc.name)
 			}
 		})
@@ -45,6 +46,7 @@ func TestApprovalModule_WiringContract(t *testing.T) {
 		"notification.NewTriggers(",
 		"gateway.SetNotifier(",
 		"usecase.NewApprovalAtomicWriter(",
+		"gateway.SetVMService(", // P1-A: DryRun Pre-flight Gate wiring
 	}
 	for _, fragment := range required {
 		if !strings.Contains(text, fragment) {

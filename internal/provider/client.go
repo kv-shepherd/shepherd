@@ -47,12 +47,32 @@ type VirtualMachineInstanceClient interface {
 	Unpause(ctx context.Context, namespace, name string, opts *kubevirtv1.UnpauseOptions) error
 }
 
+// KubeVirtCRClient provides access to the cluster-scoped KubeVirt CR.
+// Used by CapabilityDetector to fetch enabled feature gates and running version (ADR-0014).
+//
+// The KubeVirt CR is always: namespace="kubevirt", name="kubevirt".
+// Separation from VirtualMachineClient keeps the VM CRUD ACL from CR read ACL.
+type KubeVirtCRClient interface {
+	// GetFeatureGates fetches explicitly configured feature gates from the cluster-level KubeVirt CR.
+	// Source: spec.configuration.developerConfiguration.featureGates ([]string).
+	// Returns nil slice (not error) if DeveloperConfiguration is nil or FeatureGates is empty.
+	// Returns error only on API failure (e.g., permission denied, cluster unreachable).
+	GetFeatureGates(ctx context.Context) ([]string, error)
+
+	// GetVersion fetches the observed running KubeVirt version from the cluster-level KubeVirt CR.
+	// Source: status.observedKubeVirtVersion (set by the KubeVirt operator on successful reconciliation).
+	// Returns empty string (not error) if the field is not yet populated (e.g., operator still deploying).
+	// Returns error only on API failure (e.g., permission denied, cluster unreachable).
+	GetVersion(ctx context.Context) (string, error)
+}
+
 // KubeVirtClusterClient provides kubevirt clients for a specific cluster.
 // Composition root creates the actual implementation using kubecli.
 type KubeVirtClusterClient interface {
 	VM() VirtualMachineClient          // Read + lifecycle (type-safe)
 	VMI() VirtualMachineInstanceClient // VMI read + pause/unpause
 	SSA() DynamicSSAClient             // Write: CreateVM/UpdateVM (Unstructured SSA, ADR-0011)
+	KubeVirt() KubeVirtCRClient        // KubeVirt CR access for capability detection (ADR-0014)
 }
 
 // ClusterClientFactory creates KubeVirtClusterClient for a given cluster name.
