@@ -3,15 +3,15 @@
 // scripts/ci/check_test_assertions.go
 
 /*
-测试断言检查 - CI 强制执行
+Test assertion check - CI enforced
 
-🛑 检查规则：
-1. 测试函数必须包含断言调用
-2. 禁止空测试、虚假覆盖
+Rules:
+1. Test functions must contain assertion calls.
+2. Empty tests and fake coverage are forbidden.
 
-检测模式：
-- 扫描 _test.go 中的 Test* 函数
-- 检查是否包含 assert.*, require.*, t.Error, t.Fatal 等调用
+Detection strategy:
+- Scan Test* functions in _test.go files.
+- Require assertion-like calls (assert.*, require.*, t.Error, t.Fatal, etc.).
 */
 
 package main
@@ -97,16 +97,16 @@ func main() {
 					continue
 				}
 
-				// 只检查 Test* 函数
+				// Only check Test* functions.
 				if !strings.HasPrefix(funcDecl.Name.Name, "Test") {
 					continue
 				}
 
-				// 检查函数体是否包含断言
+				// Ensure test body contains at least one assertion call.
 				if !hasAssertion(funcDecl.Body) {
 					pos := fset.Position(funcDecl.Pos())
 					emptyTests = append(emptyTests, fmt.Sprintf(
-						"%s:%d: %s() 没有断言调用 - 可能是空测试",
+						"%s:%d: %s() has no assertion call (possible empty test)",
 						path, pos.Line, funcDecl.Name.Name,
 					))
 				}
@@ -116,23 +116,23 @@ func main() {
 		})
 
 		if err != nil {
-			fmt.Printf("❌ 遍历目录 %s 失败: %v\n", dir, err)
+			fmt.Printf("ERROR: failed to walk directory %s: %v\n", dir, err)
 		}
 	}
 
 	if len(emptyTests) > 0 {
-		fmt.Println("❌ 发现没有断言的测试函数:")
+		fmt.Println("ERROR: found test functions without assertions:")
 		for _, t := range emptyTests {
 			fmt.Printf("  %s\n", t)
 		}
-		fmt.Println("\n📋 测试必须包含断言，如:")
+		fmt.Println("\nTests must include assertions, for example:")
 		fmt.Println("  assert.NoError(t, err)")
 		fmt.Println("  assert.Equal(t, expected, actual)")
 		fmt.Println("  require.NotNil(t, result)")
 		os.Exit(1)
 	}
 
-	fmt.Println("✅ 测试断言检查通过")
+	fmt.Println("OK: test assertion check passed")
 }
 
 func hasAssertion(body *ast.BlockStmt) bool {
@@ -147,7 +147,7 @@ func hasAssertion(body *ast.BlockStmt) bool {
 			return true
 		}
 
-		// 检查方法调用 (assert.Equal, t.Error, etc.)
+		// Check method calls (assert.Equal, t.Error, etc.).
 		switch fn := call.Fun.(type) {
 		case *ast.SelectorExpr:
 			if assertionCalls[fn.Sel.Name] {

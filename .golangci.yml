@@ -1,18 +1,15 @@
-# golangci-lint configuration for KubeVirt Shepherd
-# See: https://golangci-lint.run/usage/configuration/
+# golangci-lint v2 configuration for KubeVirt Shepherd
+# Migrated from v1.64.8 to v2.10.1 on 2026-03-02.
+# See: https://golangci-lint.run/docs/product/migration-guide/
+
+version: "2"
 
 run:
-  timeout: 5m
   go: "1.25"
+  # timeout is disabled by default in v2; set per-invocation with --timeout if needed
 
 linters:
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
     - bodyclose
     - dupl
     - errname
@@ -20,7 +17,6 @@ linters:
     - exhaustive
     - goconst
     - gocritic
-    - goimports
     - gosec
     - misspell
     - nilerr
@@ -30,49 +26,87 @@ linters:
     - unconvert
     - unparam
     - whitespace
+    # shepherd-arch: custom architecture enforcement (ADR-0039)
+    - shepherd-arch
 
-linters-settings:
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment # too noisy
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-  revive:
+  settings:
+    dupl:
+      threshold: 150
+    exhaustive:
+      default-signifies-exhaustive: true
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        # Performance micro-optimization check with high false-positive/noise rate
+        # for immutable DTO/config values in this codebase.
+        - hugeParam
+    govet:
+      disable:
+        - fieldalignment # too noisy
+      enable-all: true
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: error-return
+        - name: error-strings
+        - name: increment-decrement
+        - name: var-naming
+        - name: unexported-return
+    # shepherd-arch custom linter settings (ADR-0039)
+    custom:
+      shepherd-arch:
+        type: module
+        description: >
+          Architecture enforcement linters for kubevirt-shepherd.
+          Enforces ADR compliance, import boundaries, concurrency rules,
+          and coding conventions defined in docs/adr/.
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
     rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: error-return
-      - name: error-strings
-      - name: increment-decrement
-      - name: var-naming
-      - name: unexported-return
-  exhaustive:
-    default-signifies-exhaustive: true
-  goimports:
-    local-prefixes: kv-shepherd.io/shepherd
-  dupl:
-    threshold: 150
-  goconst:
-    min-len: 3
-    min-occurrences: 3
+      # Allow dot imports in test files for testify
+      - linters:
+          - dupl
+          - goconst
+          - gosec
+        path: _test\.go
+      # Allow naked goroutine in main.go server start (exempt)
+      - path: cmd/server/main\.go
+        text: naked goroutine
+      # Allow naked goroutine in worker pool infrastructure
+      - path: internal/pkg/worker/
+        text: naked goroutine
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 
 issues:
-  exclude-rules:
-    # Allow dot imports in test files for testify
-    - path: _test\.go
-      linters:
-        - dupl
-        - gosec
-        - goconst
-    # Allow naked goroutine in main.go server start (exempt)
-    - path: cmd/server/main\.go
-      text: "naked goroutine"
-    # Allow naked goroutine in worker pool infrastructure
-    - path: internal/pkg/worker/
-      text: "naked goroutine"
   max-issues-per-linter: 50
   max-same-issues: 10
+
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - kv-shepherd.io/shepherd
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

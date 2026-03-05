@@ -3,15 +3,15 @@
 // scripts/ci/check_repository_tests.go
 
 /*
-Repository 测试覆盖检查 - CI 强制执行
+Repository test coverage check - CI enforced
 
-🛑 检查规则：
-1. internal/repository/*.go 中所有导出方法必须有对应测试
-2. 测试方法名格式: TestXxxRepository_MethodName
+Rules:
+1. Every exported method in internal/repository/*.go must have a corresponding test.
+2. Preferred test naming format: TestXxxRepository_MethodName
 
-检测模式：
-- 扫描 repository 包的所有导出方法
-- 检查 _test.go 中是否有对应测试
+Detection strategy:
+- Scan exported methods from repository package files.
+- Check whether matching tests exist in _test.go files.
 */
 
 package main
@@ -38,13 +38,13 @@ func main() {
 	repoDir := "internal/repository"
 
 	if _, err := os.Stat(repoDir); os.IsNotExist(err) {
-		fmt.Println("⚠️ internal/repository/ 目录不存在，跳过检查")
+		fmt.Println("WARN: internal/repository/ does not exist, skipping check")
 		os.Exit(0)
 	}
 
-	// 收集所有导出方法
-	methods := make(map[string]method)     // key: "ReceiverType.MethodName"
-	testMethods := make(map[string]bool)   // 存在的测试
+	// Collect all exported methods.
+	methods := make(map[string]method)   // key: "ReceiverType.MethodName"
+	testMethods := make(map[string]bool) // existing test names
 
 	fset := token.NewFileSet()
 
@@ -67,14 +67,13 @@ func main() {
 			}
 
 			if isTestFile {
-				// 收集测试方法
+				// Collect test function names.
 				if strings.HasPrefix(funcDecl.Name.Name, "Test") {
 					testMethods[funcDecl.Name.Name] = true
 				}
 			} else {
-				// 收集导出方法
+				// Collect exported receiver methods.
 				if funcDecl.Recv != nil && len(funcDecl.Recv.List) > 0 {
-					// 获取接收器类型
 					recvType := getReceiverTypeName(funcDecl.Recv.List[0].Type)
 					if recvType != "" && isExported(funcDecl.Name.Name) {
 						key := recvType + "." + funcDecl.Name.Name
@@ -92,38 +91,37 @@ func main() {
 	})
 
 	if err != nil {
-		fmt.Printf("❌ 遍历目录失败: %v\n", err)
+		fmt.Printf("ERROR: failed to walk repository directory: %v\n", err)
 		os.Exit(1)
 	}
 
-	// 检查每个方法是否有测试
+	// Verify test coverage for each method.
 	var missing []string
 	for key, m := range methods {
-		// 生成预期的测试名
 		expectedTestName := fmt.Sprintf("Test%s_%s", m.receiver, m.name)
-		
-		// 也接受其他格式
+
+		// Also accept alternative test naming patterns.
 		altTestName1 := fmt.Sprintf("Test%s%s", m.receiver, m.name)
 		altTestName2 := fmt.Sprintf("Test_%s_%s", m.receiver, m.name)
 
 		if !testMethods[expectedTestName] && !testMethods[altTestName1] && !testMethods[altTestName2] {
 			missing = append(missing, fmt.Sprintf(
-				"%s:%d: %s 缺少测试 (预期: %s)",
+				"%s:%d: %s is missing test coverage (expected: %s)",
 				m.file, m.line, key, expectedTestName,
 			))
 		}
 	}
 
 	if len(missing) > 0 {
-		fmt.Println("❌ 发现未测试的 Repository 方法:")
+		fmt.Println("ERROR: found untested Repository methods:")
 		for _, m := range missing {
 			fmt.Printf("  %s\n", m)
 		}
-		fmt.Printf("\n共 %d 个方法缺少测试 (总计 %d 个导出方法)\n", len(missing), len(methods))
+		fmt.Printf("\n%d method(s) missing tests (total exported methods: %d)\n", len(missing), len(methods))
 		os.Exit(1)
 	}
 
-	fmt.Printf("✅ Repository 测试覆盖检查通过 (%d 个方法均有测试)\n", len(methods))
+	fmt.Printf("OK: repository test coverage check passed (%d exported method(s) covered)\n", len(methods))
 }
 
 func getReceiverTypeName(expr ast.Expr) string {

@@ -1,0 +1,16 @@
+# .custom-gcl.yml — golangci-lint v2 Module Plugin Build Configuration
+#
+# This file defines how to build a custom golangci-lint binary (./custom-gcl)
+# that includes the shepherd-arch plugin (tools/shepherd-linter).
+#
+# Usage:
+#   ~/go/bin/golangci-lint custom   # builds ./custom-gcl
+#   ./custom-gcl run ./...          # runs all linters including shepherd-arch
+#
+# See: ADR-0039 §3 — golangci-lint v2 configuration
+version: v2.10.1
+plugins:
+  # Local module plugin — uses the monorepo path directly (no remote proxy needed).
+  # The module kv-shepherd.io/shepherd-linter is declared in tools/shepherd-linter/go.mod.
+  - module: 'kv-shepherd.io/shepherd-linter'
+    path: ./tools/shepherd-linter
