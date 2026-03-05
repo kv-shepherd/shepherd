@@ -69,8 +69,8 @@ func NewDatabaseClients(ctx context.Context, cfg config.DatabaseConfig) (*Databa
 
 	// Set UTC timezone on each new connection (pgxpool best practice)
 	poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
-		_, err := conn.Exec(ctx, "SET timezone = 'UTC'")
-		return err
+		_, execErr := conn.Exec(ctx, "SET timezone = 'UTC'")
+		return execErr
 	}
 
 	// Create shared connection pool
@@ -80,9 +80,9 @@ func NewDatabaseClients(ctx context.Context, cfg config.DatabaseConfig) (*Databa
 	}
 
 	// Verify connection
-	if err := pool.Ping(ctx); err != nil {
+	if pingErr := pool.Ping(ctx); pingErr != nil {
 		pool.Close()
-		return nil, fmt.Errorf("ping database: %w", err)
+		return nil, fmt.Errorf("ping database: %w", pingErr)
 	}
 
 	// Create *sql.DB from pool for Ent ORM (ADR-0012: stdlib.OpenDBFromPool)
@@ -156,9 +156,16 @@ func (c *DatabaseClients) AutoMigrate(ctx context.Context) error {
 // InitRiverClient creates a River client with registered workers.
 // Called after NewDatabaseClients; workers param comes from bootstrap.
 func (c *DatabaseClients) InitRiverClient(workers *river.Workers, cfg config.RiverConfig) error {
+	vmOpsWorkers := cfg.MaxWorkers
+	if vmOpsWorkers < 1 {
+		vmOpsWorkers = 1
+	}
 	riverClient, err := river.NewClient(riverpgxv5.New(c.Pool), &river.Config{
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: cfg.MaxWorkers},
+			"vm_operations":    {MaxWorkers: vmOpsWorkers},
+			// ADR-0038: dedicated queue for adaptive VM status sync polling jobs.
+			"vm_status_sync": {MaxWorkers: vmOpsWorkers},
 		},
 		Workers:                     workers,
 		CompletedJobRetentionPeriod: cfg.CompletedJobRetentionPeriod,

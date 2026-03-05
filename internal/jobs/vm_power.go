@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/riverqueue/river"
 	"go.uber.org/zap"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalticket"
@@ -16,6 +18,12 @@ import (
 	"kv-shepherd.io/shepherd/internal/governance/audit"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	"kv-shepherd.io/shepherd/internal/service"
+)
+
+const (
+	powerOpStart   = "start"
+	powerOpStop    = "stop"
+	powerOpRestart = "restart"
 )
 
 // ---------------------------------------------------------------------------
@@ -83,28 +91,19 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	// Step 2: Parse payload.
 	var payload domain.VMPowerPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
+			SetStatus(domainevent.StatusFAILED).
+			Save(ctx); saveErr != nil {
+			logger.Error("failed to persist FAILED status for malformed power payload",
+				zap.String("event_id", eventID), zap.Error(saveErr))
+		}
 		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
 		return river.JobCancel(fmt.Errorf("unmarshal power payload for event %s: %w", eventID, err))
 	}
 
 	// Use operation from Args (authoritative) over payload (informational).
 	operation := job.Args.Operation
-
-	// Step 3: Execute K8s power operation (outside transaction per ADR-0012).
-	var execErr error
-	switch operation {
-	case "start":
-		execErr = w.vmService.StartVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
-	case "stop":
-		execErr = w.vmService.StopVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
-	case "restart":
-		execErr = w.vmService.RestartVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
-	default:
-		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
-		return river.JobCancel(fmt.Errorf("unknown power operation: %s", operation))
-	}
-
-	if execErr != nil {
+	markFailed := func(err error, cancel bool) error {
 		// K8s operation failed — persist FAILED status (best-effort).
 		if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
 			SetStatus(domainevent.StatusFAILED).
@@ -115,7 +114,58 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 
 		logAuditVMOp(ctx, w.auditLogger, operation+"_failed", payload.VMName, payload.Actor, eventID)
 		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
-		return fmt.Errorf("execute k8s %s for event %s: %w", operation, eventID, execErr)
+
+		if cancel {
+			return river.JobCancel(err)
+		}
+		return err
+	}
+
+	// Step 3: Execute K8s power operation (outside transaction per ADR-0012).
+	var execErr error
+	switch operation {
+	case powerOpStart:
+		execErr = w.vmService.StartVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
+	case powerOpStop:
+		execErr = w.vmService.StopVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
+	case powerOpRestart:
+		execErr = w.vmService.RestartVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
+	default:
+		if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
+			SetStatus(domainevent.StatusFAILED).
+			Save(ctx); saveErr != nil {
+			logger.Error("failed to persist FAILED status for unknown power operation",
+				zap.String("event_id", eventID), zap.Error(saveErr))
+		}
+		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
+		return river.JobCancel(fmt.Errorf("unknown power operation: %s", operation))
+	}
+
+	// Idempotent conflict handling (phase-4 checklist): start/stop may race with
+	// stale status reads and return "already running/stopped". Treat these as
+	// successful no-op transitions instead of job failure.
+	if isIdempotentPowerConflict(operation, execErr) {
+		logger.Warn("VM power operation treated as idempotent no-op",
+			zap.String("event_id", eventID),
+			zap.String("operation", operation),
+			zap.String("vm_name", payload.VMName),
+			zap.Error(execErr),
+		)
+		execErr = nil
+	}
+
+	if isTerminalPowerError(operation, execErr) {
+		logger.Warn("VM power operation failed with terminal error, cancelling retries",
+			zap.String("event_id", eventID),
+			zap.String("operation", operation),
+			zap.String("vm_name", payload.VMName),
+			zap.Error(execErr),
+		)
+		return markFailed(fmt.Errorf("execute k8s %s for event %s: %w", operation, eventID, execErr), true)
+	}
+
+	if execErr != nil {
+		return markFailed(fmt.Errorf("execute k8s %s for event %s: %w", operation, eventID, execErr), false)
 	}
 
 	// Step 4: Update VM status in DB based on operation.
@@ -153,13 +203,78 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 // operationToStatus maps a power operation to the expected VM status after execution.
 func operationToStatus(operation string) vm.Status {
 	switch operation {
-	case "start":
+	case powerOpStart:
 		return vm.StatusRUNNING
-	case "stop":
+	case powerOpStop:
 		return vm.StatusSTOPPED
-	case "restart":
+	case powerOpRestart:
 		return vm.StatusRUNNING
 	default:
 		return vm.StatusUNKNOWN
 	}
+}
+
+// isIdempotentPowerConflict reports whether a provider error is a benign
+// idempotency conflict for start/stop operations.
+func isIdempotentPowerConflict(operation string, err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	switch operation {
+	case powerOpStart:
+		return strings.Contains(msg, "already running") ||
+			strings.Contains(msg, "does not support manual start requests")
+	case powerOpStop:
+		return strings.Contains(msg, "already stopped") ||
+			strings.Contains(msg, "not running") ||
+			strings.Contains(msg, "does not support manual stop requests")
+	default:
+		return false
+	}
+}
+
+// isTerminalPowerError reports whether a provider error is deterministic and
+// should not be retried by River.
+func isTerminalPowerError(operation string, err error) bool {
+	if isPowerTargetNotFound(err) {
+		return true
+	}
+	// Restart on a non-running VM is a deterministic invalid-state conflict.
+	// Retrying does not help and only adds noisy retries/errors in logs.
+	if operation == powerOpRestart && isRestartStateConflict(err) {
+		return true
+	}
+	return false
+}
+
+// isPowerTargetNotFound reports whether a power-op target VM is missing on K8s.
+func isPowerTargetNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if k8serrors.IsNotFound(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	if !strings.Contains(msg, "not found") {
+		return false
+	}
+	return strings.Contains(msg, "virtualmachine") || strings.Contains(msg, " vm ")
+}
+
+// isRestartStateConflict reports whether restart failed because the VM is not
+// in a restartable running state.
+func isRestartStateConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "does not support manual restart requests") {
+		return true
+	}
+	if strings.Contains(msg, "vm is not running") {
+		return true
+	}
+	return strings.Contains(msg, "virtualmachine") && strings.Contains(msg, "not running")
 }

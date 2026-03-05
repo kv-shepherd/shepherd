@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/riverqueue/river"
+
 	"kv-shepherd.io/shepherd/internal/jobs"
 )
 

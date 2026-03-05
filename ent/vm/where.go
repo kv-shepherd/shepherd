@@ -110,6 +110,26 @@ func TicketID(v string) predicate.VM {
 	return predicate.VM(sql.FieldEQ(FieldTicketID, v))
 }
 
+// PollIntervalSec applies equality check predicate on the "poll_interval_sec" field. It's identical to PollIntervalSecEQ.
+func PollIntervalSec(v int) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldPollIntervalSec, v))
+}
+
+// LastK8sRv applies equality check predicate on the "last_k8s_rv" field. It's identical to LastK8sRvEQ.
+func LastK8sRv(v string) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldLastK8sRv, v))
+}
+
+// LastPolledAt applies equality check predicate on the "last_polled_at" field. It's identical to LastPolledAtEQ.
+func LastPolledAt(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldLastPolledAt, v))
+}
+
+// HighTierSince applies equality check predicate on the "high_tier_since" field. It's identical to HighTierSinceEQ.
+func HighTierSince(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldHighTierSince, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.VM {
 	return predicate.VM(sql.FieldEQ(FieldCreatedAt, v))
@@ -693,6 +713,241 @@ func TicketIDEqualFold(v string) predicate.VM {
 // TicketIDContainsFold applies the ContainsFold predicate on the "ticket_id" field.
 func TicketIDContainsFold(v string) predicate.VM {
 	return predicate.VM(sql.FieldContainsFold(FieldTicketID, v))
+}
+
+// PollingTierEQ applies the EQ predicate on the "polling_tier" field.
+func PollingTierEQ(v PollingTier) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldPollingTier, v))
+}
+
+// PollingTierNEQ applies the NEQ predicate on the "polling_tier" field.
+func PollingTierNEQ(v PollingTier) predicate.VM {
+	return predicate.VM(sql.FieldNEQ(FieldPollingTier, v))
+}
+
+// PollingTierIn applies the In predicate on the "polling_tier" field.
+func PollingTierIn(vs ...PollingTier) predicate.VM {
+	return predicate.VM(sql.FieldIn(FieldPollingTier, vs...))
+}
+
+// PollingTierNotIn applies the NotIn predicate on the "polling_tier" field.
+func PollingTierNotIn(vs ...PollingTier) predicate.VM {
+	return predicate.VM(sql.FieldNotIn(FieldPollingTier, vs...))
+}
+
+// PollIntervalSecEQ applies the EQ predicate on the "poll_interval_sec" field.
+func PollIntervalSecEQ(v int) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldPollIntervalSec, v))
+}
+
+// PollIntervalSecNEQ applies the NEQ predicate on the "poll_interval_sec" field.
+func PollIntervalSecNEQ(v int) predicate.VM {
+	return predicate.VM(sql.FieldNEQ(FieldPollIntervalSec, v))
+}
+
+// PollIntervalSecIn applies the In predicate on the "poll_interval_sec" field.
+func PollIntervalSecIn(vs ...int) predicate.VM {
+	return predicate.VM(sql.FieldIn(FieldPollIntervalSec, vs...))
+}
+
+// PollIntervalSecNotIn applies the NotIn predicate on the "poll_interval_sec" field.
+func PollIntervalSecNotIn(vs ...int) predicate.VM {
+	return predicate.VM(sql.FieldNotIn(FieldPollIntervalSec, vs...))
+}
+
+// PollIntervalSecGT applies the GT predicate on the "poll_interval_sec" field.
+func PollIntervalSecGT(v int) predicate.VM {
+	return predicate.VM(sql.FieldGT(FieldPollIntervalSec, v))
+}
+
+// PollIntervalSecGTE applies the GTE predicate on the "poll_interval_sec" field.
+func PollIntervalSecGTE(v int) predicate.VM {
+	return predicate.VM(sql.FieldGTE(FieldPollIntervalSec, v))
+}
+
+// PollIntervalSecLT applies the LT predicate on the "poll_interval_sec" field.
+func PollIntervalSecLT(v int) predicate.VM {
+	return predicate.VM(sql.FieldLT(FieldPollIntervalSec, v))
+}
+
+// PollIntervalSecLTE applies the LTE predicate on the "poll_interval_sec" field.
+func PollIntervalSecLTE(v int) predicate.VM {
+	return predicate.VM(sql.FieldLTE(FieldPollIntervalSec, v))
+}
+
+// LastK8sRvEQ applies the EQ predicate on the "last_k8s_rv" field.
+func LastK8sRvEQ(v string) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldLastK8sRv, v))
+}
+
+// LastK8sRvNEQ applies the NEQ predicate on the "last_k8s_rv" field.
+func LastK8sRvNEQ(v string) predicate.VM {
+	return predicate.VM(sql.FieldNEQ(FieldLastK8sRv, v))
+}
+
+// LastK8sRvIn applies the In predicate on the "last_k8s_rv" field.
+func LastK8sRvIn(vs ...string) predicate.VM {
+	return predicate.VM(sql.FieldIn(FieldLastK8sRv, vs...))
+}
+
+// LastK8sRvNotIn applies the NotIn predicate on the "last_k8s_rv" field.
+func LastK8sRvNotIn(vs ...string) predicate.VM {
+	return predicate.VM(sql.FieldNotIn(FieldLastK8sRv, vs...))
+}
+
+// LastK8sRvGT applies the GT predicate on the "last_k8s_rv" field.
+func LastK8sRvGT(v string) predicate.VM {
+	return predicate.VM(sql.FieldGT(FieldLastK8sRv, v))
+}
+
+// LastK8sRvGTE applies the GTE predicate on the "last_k8s_rv" field.
+func LastK8sRvGTE(v string) predicate.VM {
+	return predicate.VM(sql.FieldGTE(FieldLastK8sRv, v))
+}
+
+// LastK8sRvLT applies the LT predicate on the "last_k8s_rv" field.
+func LastK8sRvLT(v string) predicate.VM {
+	return predicate.VM(sql.FieldLT(FieldLastK8sRv, v))
+}
+
+// LastK8sRvLTE applies the LTE predicate on the "last_k8s_rv" field.
+func LastK8sRvLTE(v string) predicate.VM {
+	return predicate.VM(sql.FieldLTE(FieldLastK8sRv, v))
+}
+
+// LastK8sRvContains applies the Contains predicate on the "last_k8s_rv" field.
+func LastK8sRvContains(v string) predicate.VM {
+	return predicate.VM(sql.FieldContains(FieldLastK8sRv, v))
+}
+
+// LastK8sRvHasPrefix applies the HasPrefix predicate on the "last_k8s_rv" field.
+func LastK8sRvHasPrefix(v string) predicate.VM {
+	return predicate.VM(sql.FieldHasPrefix(FieldLastK8sRv, v))
+}
+
+// LastK8sRvHasSuffix applies the HasSuffix predicate on the "last_k8s_rv" field.
+func LastK8sRvHasSuffix(v string) predicate.VM {
+	return predicate.VM(sql.FieldHasSuffix(FieldLastK8sRv, v))
+}
+
+// LastK8sRvIsNil applies the IsNil predicate on the "last_k8s_rv" field.
+func LastK8sRvIsNil() predicate.VM {
+	return predicate.VM(sql.FieldIsNull(FieldLastK8sRv))
+}
+
+// LastK8sRvNotNil applies the NotNil predicate on the "last_k8s_rv" field.
+func LastK8sRvNotNil() predicate.VM {
+	return predicate.VM(sql.FieldNotNull(FieldLastK8sRv))
+}
+
+// LastK8sRvEqualFold applies the EqualFold predicate on the "last_k8s_rv" field.
+func LastK8sRvEqualFold(v string) predicate.VM {
+	return predicate.VM(sql.FieldEqualFold(FieldLastK8sRv, v))
+}
+
+// LastK8sRvContainsFold applies the ContainsFold predicate on the "last_k8s_rv" field.
+func LastK8sRvContainsFold(v string) predicate.VM {
+	return predicate.VM(sql.FieldContainsFold(FieldLastK8sRv, v))
+}
+
+// LastPolledAtEQ applies the EQ predicate on the "last_polled_at" field.
+func LastPolledAtEQ(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldLastPolledAt, v))
+}
+
+// LastPolledAtNEQ applies the NEQ predicate on the "last_polled_at" field.
+func LastPolledAtNEQ(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldNEQ(FieldLastPolledAt, v))
+}
+
+// LastPolledAtIn applies the In predicate on the "last_polled_at" field.
+func LastPolledAtIn(vs ...time.Time) predicate.VM {
+	return predicate.VM(sql.FieldIn(FieldLastPolledAt, vs...))
+}
+
+// LastPolledAtNotIn applies the NotIn predicate on the "last_polled_at" field.
+func LastPolledAtNotIn(vs ...time.Time) predicate.VM {
+	return predicate.VM(sql.FieldNotIn(FieldLastPolledAt, vs...))
+}
+
+// LastPolledAtGT applies the GT predicate on the "last_polled_at" field.
+func LastPolledAtGT(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldGT(FieldLastPolledAt, v))
+}
+
+// LastPolledAtGTE applies the GTE predicate on the "last_polled_at" field.
+func LastPolledAtGTE(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldGTE(FieldLastPolledAt, v))
+}
+
+// LastPolledAtLT applies the LT predicate on the "last_polled_at" field.
+func LastPolledAtLT(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldLT(FieldLastPolledAt, v))
+}
+
+// LastPolledAtLTE applies the LTE predicate on the "last_polled_at" field.
+func LastPolledAtLTE(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldLTE(FieldLastPolledAt, v))
+}
+
+// LastPolledAtIsNil applies the IsNil predicate on the "last_polled_at" field.
+func LastPolledAtIsNil() predicate.VM {
+	return predicate.VM(sql.FieldIsNull(FieldLastPolledAt))
+}
+
+// LastPolledAtNotNil applies the NotNil predicate on the "last_polled_at" field.
+func LastPolledAtNotNil() predicate.VM {
+	return predicate.VM(sql.FieldNotNull(FieldLastPolledAt))
+}
+
+// HighTierSinceEQ applies the EQ predicate on the "high_tier_since" field.
+func HighTierSinceEQ(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldHighTierSince, v))
+}
+
+// HighTierSinceNEQ applies the NEQ predicate on the "high_tier_since" field.
+func HighTierSinceNEQ(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldNEQ(FieldHighTierSince, v))
+}
+
+// HighTierSinceIn applies the In predicate on the "high_tier_since" field.
+func HighTierSinceIn(vs ...time.Time) predicate.VM {
+	return predicate.VM(sql.FieldIn(FieldHighTierSince, vs...))
+}
+
+// HighTierSinceNotIn applies the NotIn predicate on the "high_tier_since" field.
+func HighTierSinceNotIn(vs ...time.Time) predicate.VM {
+	return predicate.VM(sql.FieldNotIn(FieldHighTierSince, vs...))
+}
+
+// HighTierSinceGT applies the GT predicate on the "high_tier_since" field.
+func HighTierSinceGT(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldGT(FieldHighTierSince, v))
+}
+
+// HighTierSinceGTE applies the GTE predicate on the "high_tier_since" field.
+func HighTierSinceGTE(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldGTE(FieldHighTierSince, v))
+}
+
+// HighTierSinceLT applies the LT predicate on the "high_tier_since" field.
+func HighTierSinceLT(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldLT(FieldHighTierSince, v))
+}
+
+// HighTierSinceLTE applies the LTE predicate on the "high_tier_since" field.
+func HighTierSinceLTE(v time.Time) predicate.VM {
+	return predicate.VM(sql.FieldLTE(FieldHighTierSince, v))
+}
+
+// HighTierSinceIsNil applies the IsNil predicate on the "high_tier_since" field.
+func HighTierSinceIsNil() predicate.VM {
+	return predicate.VM(sql.FieldIsNull(FieldHighTierSince))
+}
+
+// HighTierSinceNotNil applies the NotNil predicate on the "high_tier_since" field.
+func HighTierSinceNotNil() predicate.VM {
+	return predicate.VM(sql.FieldNotNull(FieldHighTierSince))
 }
 
 // HasService applies the HasEdge predicate on the "service" edge.

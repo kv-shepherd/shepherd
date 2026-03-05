@@ -7,6 +7,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/handlers"
 	"kv-shepherd.io/shepherd/internal/governance/approval"
 	"kv-shepherd.io/shepherd/internal/notification"
+	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/usecase"
 )
 
@@ -24,7 +25,10 @@ type ApprovalModule struct {
 //  2. BuiltinApprovalProvider wraps Gateway — implements provider.ApprovalProvider.
 //  3. ApprovalProviderRouter is created with the builtin provider as the default.
 //     V2+ external providers can be registered on the router after this point.
-func NewApprovalModule(infra *Infrastructure) (*ApprovalModule, error) {
+//
+// P1-A: vmSvc may be nil (backward compatible). When non-nil, DryRun Pre-flight Gate
+// is enabled in Gateway.approveCreate (ADR-0006 Addendum).
+func NewApprovalModule(infra *Infrastructure, vmSvc *service.VMService) (*ApprovalModule, error) {
 	if infra == nil || infra.EntClient == nil || infra.Pool == nil || infra.RiverClient == nil {
 		return nil, fmt.Errorf("approval module requires ent client, pgx pool, and river client")
 	}
@@ -36,6 +40,12 @@ func NewApprovalModule(infra *Infrastructure) (*ApprovalModule, error) {
 	inboxSender := notification.NewInboxSender(infra.EntClient)
 	notifier := notification.NewTriggers(inboxSender, infra.EntClient)
 	gateway.SetNotifier(notifier)
+
+	// P1-A: Wire vmService for DryRun Pre-flight Gate (ADR-0006 Addendum).
+	// vmSvc is nil-safe: if nil, DryRun gate is skipped (backward compatible).
+	if vmSvc != nil {
+		gateway.SetVMService(vmSvc)
+	}
 
 	// Stage 2.E: wire the provider router over the gateway.
 	// V1: only the built-in provider is registered; the router always selects it.

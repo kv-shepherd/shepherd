@@ -130,6 +130,76 @@ func (_c *VMCreate) SetNillableTicketID(v *string) *VMCreate {
 	return _c
 }
 
+// SetPollingTier sets the "polling_tier" field.
+func (_c *VMCreate) SetPollingTier(v vm.PollingTier) *VMCreate {
+	_c.mutation.SetPollingTier(v)
+	return _c
+}
+
+// SetNillablePollingTier sets the "polling_tier" field if the given value is not nil.
+func (_c *VMCreate) SetNillablePollingTier(v *vm.PollingTier) *VMCreate {
+	if v != nil {
+		_c.SetPollingTier(*v)
+	}
+	return _c
+}
+
+// SetPollIntervalSec sets the "poll_interval_sec" field.
+func (_c *VMCreate) SetPollIntervalSec(v int) *VMCreate {
+	_c.mutation.SetPollIntervalSec(v)
+	return _c
+}
+
+// SetNillablePollIntervalSec sets the "poll_interval_sec" field if the given value is not nil.
+func (_c *VMCreate) SetNillablePollIntervalSec(v *int) *VMCreate {
+	if v != nil {
+		_c.SetPollIntervalSec(*v)
+	}
+	return _c
+}
+
+// SetLastK8sRv sets the "last_k8s_rv" field.
+func (_c *VMCreate) SetLastK8sRv(v string) *VMCreate {
+	_c.mutation.SetLastK8sRv(v)
+	return _c
+}
+
+// SetNillableLastK8sRv sets the "last_k8s_rv" field if the given value is not nil.
+func (_c *VMCreate) SetNillableLastK8sRv(v *string) *VMCreate {
+	if v != nil {
+		_c.SetLastK8sRv(*v)
+	}
+	return _c
+}
+
+// SetLastPolledAt sets the "last_polled_at" field.
+func (_c *VMCreate) SetLastPolledAt(v time.Time) *VMCreate {
+	_c.mutation.SetLastPolledAt(v)
+	return _c
+}
+
+// SetNillableLastPolledAt sets the "last_polled_at" field if the given value is not nil.
+func (_c *VMCreate) SetNillableLastPolledAt(v *time.Time) *VMCreate {
+	if v != nil {
+		_c.SetLastPolledAt(*v)
+	}
+	return _c
+}
+
+// SetHighTierSince sets the "high_tier_since" field.
+func (_c *VMCreate) SetHighTierSince(v time.Time) *VMCreate {
+	_c.mutation.SetHighTierSince(v)
+	return _c
+}
+
+// SetNillableHighTierSince sets the "high_tier_since" field if the given value is not nil.
+func (_c *VMCreate) SetNillableHighTierSince(v *time.Time) *VMCreate {
+	if v != nil {
+		_c.SetHighTierSince(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *VMCreate) SetID(v string) *VMCreate {
 	_c.mutation.SetID(v)
@@ -209,6 +279,14 @@ func (_c *VMCreate) defaults() {
 		v := vm.DefaultStatus
 		_c.mutation.SetStatus(v)
 	}
+	if _, ok := _c.mutation.PollingTier(); !ok {
+		v := vm.DefaultPollingTier
+		_c.mutation.SetPollingTier(v)
+	}
+	if _, ok := _c.mutation.PollIntervalSec(); !ok {
+		v := vm.DefaultPollIntervalSec
+		_c.mutation.SetPollIntervalSec(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -258,6 +336,17 @@ func (_c *VMCreate) check() error {
 		if err := vm.CreatedByValidator(v); err != nil {
 			return &ValidationError{Name: "created_by", err: fmt.Errorf(`ent: validator failed for field "VM.created_by": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.PollingTier(); !ok {
+		return &ValidationError{Name: "polling_tier", err: errors.New(`ent: missing required field "VM.polling_tier"`)}
+	}
+	if v, ok := _c.mutation.PollingTier(); ok {
+		if err := vm.PollingTierValidator(v); err != nil {
+			return &ValidationError{Name: "polling_tier", err: fmt.Errorf(`ent: validator failed for field "VM.polling_tier": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.PollIntervalSec(); !ok {
+		return &ValidationError{Name: "poll_interval_sec", err: errors.New(`ent: missing required field "VM.poll_interval_sec"`)}
 	}
 	if len(_c.mutation.ServiceIDs()) == 0 {
 		return &ValidationError{Name: "service", err: errors.New(`ent: missing required edge "VM.service"`)}
@@ -336,6 +425,26 @@ func (_c *VMCreate) createSpec() (*VM, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TicketID(); ok {
 		_spec.SetField(vm.FieldTicketID, field.TypeString, value)
 		_node.TicketID = value
+	}
+	if value, ok := _c.mutation.PollingTier(); ok {
+		_spec.SetField(vm.FieldPollingTier, field.TypeEnum, value)
+		_node.PollingTier = value
+	}
+	if value, ok := _c.mutation.PollIntervalSec(); ok {
+		_spec.SetField(vm.FieldPollIntervalSec, field.TypeInt, value)
+		_node.PollIntervalSec = value
+	}
+	if value, ok := _c.mutation.LastK8sRv(); ok {
+		_spec.SetField(vm.FieldLastK8sRv, field.TypeString, value)
+		_node.LastK8sRv = &value
+	}
+	if value, ok := _c.mutation.LastPolledAt(); ok {
+		_spec.SetField(vm.FieldLastPolledAt, field.TypeTime, value)
+		_node.LastPolledAt = &value
+	}
+	if value, ok := _c.mutation.HighTierSince(); ok {
+		_spec.SetField(vm.FieldHighTierSince, field.TypeTime, value)
+		_node.HighTierSince = &value
 	}
 	if nodes := _c.mutation.ServiceIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

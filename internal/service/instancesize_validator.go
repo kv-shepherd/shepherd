@@ -105,16 +105,14 @@ func DetectSpecOverridesConflicts(
 				}
 			}
 		}
-	} else {
+	} else if HasDedicatedCPUInSpecOverrides(overrides) {
 		// Reverse direction: spec_overrides sets dedicatedCpuPlacement=true without
 		// the indexed dedicated_cpu flag. This creates a data inconsistency where
 		// the scheduler index disagrees with the KubeVirt spec that is actually applied.
-		if HasDedicatedCPUInSpecOverrides(overrides) {
-			warnings = append(warnings,
-				"spec_overrides sets dedicatedCpuPlacement=true but indexed dedicated_cpu field is false; "+
-					"set dedicated_cpu=true so the value is indexed for scheduling and approval queries",
-			)
-		}
+		warnings = append(warnings,
+			"spec_overrides sets dedicatedCpuPlacement=true but indexed dedicated_cpu field is false; "+
+				"set dedicated_cpu=true so the value is indexed for scheduling and approval queries",
+		)
 	}
 
 	return warnings
@@ -219,8 +217,7 @@ func extractNestedBool(m map[string]interface{}, path []string) *bool {
 		b := boolFromRaw(val)
 		return &b
 	}
-	switch nested := val.(type) {
-	case map[string]interface{}:
+	if nested, ok := val.(map[string]interface{}); ok {
 		return extractNestedBool(nested, path[1:])
 	}
 	return nil

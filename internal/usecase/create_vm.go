@@ -255,7 +255,7 @@ func withTx(ctx context.Context, client *ent.Client, fn func(tx *ent.Tx) error) 
 	}()
 	if err := fn(tx); err != nil {
 		if rerr := tx.Rollback(); rerr != nil {
-			return fmt.Errorf("%w: rolling back: %v", err, rerr)
+			return fmt.Errorf("%w: rolling back: %w", err, rerr)
 		}
 		return err
 	}

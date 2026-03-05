@@ -79,8 +79,8 @@ func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*D
 	if err != nil {
 		return nil, err
 	}
-	if err := validateDeleteConfirmationByEnvironment(vm.Name, nsEnv, input.Confirm, input.ConfirmName); err != nil {
-		return nil, err
+	if validateErr := validateDeleteConfirmationByEnvironment(vm.Name, nsEnv, input.Confirm, input.ConfirmName); validateErr != nil {
+		return nil, validateErr
 	}
 
 	// Step 3: State guard — only STOPPED or FAILED VMs can be deleted.

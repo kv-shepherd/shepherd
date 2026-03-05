@@ -108,7 +108,7 @@ The proposal is feasible only as a **non-authoritative acceleration layer** over
 
 10. **ADR-0031 execution rule**
    - Listener loops, reconnect loops, and stream fan-out tasks under `internal/` MUST use project worker pool APIs.
-   - Naked `go` statements remain forbidden and enforced by CI (`check_naked_goroutine.go`).
+   - Naked `go` statements remain forbidden and enforced by CI (`shepherd-arch/nakedgoroutine`).
 
 ### Consequences
 

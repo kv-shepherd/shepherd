@@ -3,6 +3,7 @@ package approval
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -11,6 +12,8 @@ import (
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/provider"
+	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
@@ -38,7 +41,7 @@ func (f *fakeAtomicWriter) ApproveCreateAndEnqueue(
 	_ map[string]interface{},
 	_ map[string]interface{},
 	memoizedSpec map[string]interface{},
-) (string, string, error) {
+) (vmID, vmName string, err error) {
 	f.called = true
 	f.ticketID = ticketID
 	f.eventID = eventID
@@ -54,6 +57,32 @@ func (f *fakeAtomicWriter) ApproveCreateAndEnqueue(
 
 func (f *fakeAtomicWriter) ApproveDeleteAndEnqueue(_ context.Context, _, _, _, _ string) error {
 	return nil
+}
+
+type dryRunProviderStub struct {
+	*provider.MockProvider
+	result *domain.ValidationResult
+	err    error
+	calls  int
+}
+
+func newDryRunProviderStub(result *domain.ValidationResult, err error) *dryRunProviderStub {
+	return &dryRunProviderStub{
+		MockProvider: provider.NewMockProvider(),
+		result:       result,
+		err:          err,
+	}
+}
+
+func (s *dryRunProviderStub) ValidateSpec(_ context.Context, _, _ string, _ *domain.VMSpec) (*domain.ValidationResult, error) {
+	s.calls++
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.result != nil {
+		return s.result, nil
+	}
+	return &domain.ValidationResult{Valid: true}, nil
 }
 
 // asInt converts a JSON-decoded number (typically float64 or int) to int for assertions.
@@ -410,9 +439,9 @@ func TestGatewayCancel_RequesterTransitionsTicketAndEvent(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // createOverrideTestData sets up common entities for override tests.
-func createOverrideTestData(t *testing.T, client *ent.Client, suffix string) (ticketID, eventID string) {
+func createOverrideTestData(t *testing.T, client *ent.Client, suffix string) (ticketID string) {
 	t.Helper()
-	eventID = "event-override-" + suffix
+	eventID := "event-override-" + suffix
 	ticketID = "ticket-override-" + suffix
 	payload := domain.VMCreationPayload{
 		RequesterID:    "user-1",
@@ -466,13 +495,13 @@ func createOverrideTestData(t *testing.T, client *ent.Client, suffix string) (ti
 	if err != nil {
 		t.Fatalf("create ticket: %v", err)
 	}
-	return ticketID, eventID
+	return ticketID
 }
 
 func TestGatewayApproveCreate_EnableOverrideAllZeros_ReturnsError(t *testing.T) {
 	t.Parallel()
 	client := testutil.OpenEntPostgres(t, "gateway_override_all_zeros")
-	ticketID, _ := createOverrideTestData(t, client, "all-zeros")
+	ticketID := createOverrideTestData(t, client, "all-zeros")
 
 	writer := &fakeAtomicWriter{}
 	gw := NewGateway(client, nil, writer)
@@ -498,7 +527,7 @@ func TestGatewayApproveCreate_EnableOverrideAllZeros_ReturnsError(t *testing.T) 
 func TestGatewayApproveCreate_EnableOverrideWithValues_WritesModifiedSpec(t *testing.T) {
 	t.Parallel()
 	client := testutil.OpenEntPostgres(t, "gateway_override_with_values")
-	ticketID, _ := createOverrideTestData(t, client, "with-values")
+	ticketID := createOverrideTestData(t, client, "with-values")
 
 	writer := &fakeAtomicWriter{}
 	gw := NewGateway(client, nil, writer)
@@ -559,7 +588,7 @@ func TestGatewayApproveCreate_EnableOverrideWithValues_WritesModifiedSpec(t *tes
 func TestGatewayApproveCreate_EnableOverrideDiskOnly_WorksWithoutCPUMemory(t *testing.T) {
 	t.Parallel()
 	client := testutil.OpenEntPostgres(t, "gateway_override_disk_only")
-	ticketID, _ := createOverrideTestData(t, client, "disk-only")
+	ticketID := createOverrideTestData(t, client, "disk-only")
 
 	writer := &fakeAtomicWriter{}
 	gw := NewGateway(client, nil, writer)
@@ -586,5 +615,260 @@ func TestGatewayApproveCreate_EnableOverrideDiskOnly_WorksWithoutCPUMemory(t *te
 	}
 	if val, ok := ms["enable_override"].(bool); !ok || !val {
 		t.Fatalf("modifiedSpec[enable_override] = %v, want true", ms["enable_override"])
+	}
+}
+
+// --------------------------------------------------------------------------
+// DryRun Pre-flight Gate Tests (ADR-0006 Addendum / P1-A)
+// --------------------------------------------------------------------------
+
+// Since service.VMService wraps provider.InfrastructureProvider, this unit test
+// verifies the dry-run gate behavior through the nil-service path:
+// when vmService is nil, the pre-flight gate is skipped and approval proceeds.
+// Integration coverage for real VMService wiring is validated elsewhere.
+
+func TestGatewayApproveCreate_DryRunGate_SkippedWhenVMServiceNil(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_dryrun_gate_skip")
+	ticketID := createOverrideTestData(t, client, "dryrun-skip")
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	gw.validator = nil
+	// vmService is nil by default — gate should be skipped, approval proceeds normally
+
+	opts := ApproveOpts{
+		ClusterID: "cluster-1",
+	}
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", opts); err != nil {
+		t.Fatalf("Approve() error = %v; expected success when vmService is nil (gate skipped)", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer should have been called when DryRun gate is skipped")
+	}
+}
+
+func TestGatewayApproveCreate_DryRunGate_ValidSpecCallsAtomicWriter(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_dryrun_gate_valid")
+	ticketID := createOverrideTestData(t, client, "dryrun-valid")
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	gw.validator = nil
+	stubProvider := newDryRunProviderStub(&domain.ValidationResult{Valid: true}, nil)
+	gw.SetVMService(service.NewVMService(stubProvider))
+
+	opts := ApproveOpts{ClusterID: "cluster-1"}
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", opts); err != nil {
+		t.Fatalf("Approve() error = %v; expected success when DryRun gate passes", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer should have been called when DryRun gate passes")
+	}
+	if stubProvider.calls != 1 {
+		t.Fatalf("ValidateSpec calls = %d, want 1", stubProvider.calls)
+	}
+}
+
+func TestGatewayApproveCreate_DryRunGate_InvalidSpecBlocksEnqueue(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_dryrun_gate_invalid")
+	ticketID := createOverrideTestData(t, client, "dryrun-invalid")
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	gw.validator = nil
+	stubProvider := newDryRunProviderStub(&domain.ValidationResult{
+		Valid:  false,
+		Errors: []string{"cpu limit exceeds quota"},
+	}, nil)
+	gw.SetVMService(service.NewVMService(stubProvider))
+
+	opts := ApproveOpts{ClusterID: "cluster-1"}
+	err := gw.Approve(context.Background(), ticketID, "admin-1", opts)
+	if err == nil {
+		t.Fatal("Approve() expected error when DryRun gate rejects spec, got nil")
+	}
+	if !strings.Contains(err.Error(), "vm spec rejected by cluster") {
+		t.Fatalf("Approve() error = %v, want dryrun rejection context", err)
+	}
+	if writer.called {
+		t.Fatal("atomic writer must NOT be called when DryRun gate rejects spec")
+	}
+	if stubProvider.calls != 1 {
+		t.Fatalf("ValidateSpec calls = %d, want 1", stubProvider.calls)
+	}
+}
+
+func TestGatewayApproveCreate_DryRunGate_ProviderErrorBlocksEnqueue(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_dryrun_gate_error")
+	ticketID := createOverrideTestData(t, client, "dryrun-error")
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	gw.validator = nil
+	stubProvider := newDryRunProviderStub(nil, fmt.Errorf("apiserver unreachable"))
+	gw.SetVMService(service.NewVMService(stubProvider))
+
+	opts := ApproveOpts{ClusterID: "cluster-1"}
+	err := gw.Approve(context.Background(), ticketID, "admin-1", opts)
+	if err == nil {
+		t.Fatal("Approve() expected error when DryRun gate provider fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "pre-flight dryrun gate") {
+		t.Fatalf("Approve() error = %v, want pre-flight dryrun gate context", err)
+	}
+	if writer.called {
+		t.Fatal("atomic writer must NOT be called when DryRun gate provider fails")
+	}
+	if stubProvider.calls != 1 {
+		t.Fatalf("ValidateSpec calls = %d, want 1", stubProvider.calls)
+	}
+}
+
+func TestGatewaySetVMService_IsChainable(t *testing.T) {
+	t.Parallel()
+	// Verify SetVMService returns *Gateway for chaining.
+	gw := NewGateway(nil, nil, nil)
+	returned := gw.SetVMService(nil)
+	if returned != gw {
+		t.Fatal("SetVMService() should return the same Gateway for method chaining")
+	}
+}
+
+func TestBuildDryRunSpec_AppliesOverrideValues(t *testing.T) {
+	t.Parallel()
+
+	// Create minimal Ent Template and InstanceSize stubs for spec building.
+	tmpl := &ent.Template{
+		ID:       "tpl-test",
+		ImageURL: "quay.io/containerdisks/ubuntu:22.04",
+	}
+	size := &ent.InstanceSize{
+		ID:       "size-test",
+		CPUCores: 2.0,
+		MemoryGi: 4.0,
+		DiskGB:   50,
+	}
+	payload := &vmCreatePayload{ServiceID: "svc-1", Namespace: "team-a"}
+	gw := &Gateway{}
+
+	t.Run("base_values_without_override", func(t *testing.T) {
+		t.Parallel()
+		spec, err := gw.buildDryRunSpec(payload, tmpl, size, ApproveOpts{})
+		if err != nil {
+			t.Fatalf("buildDryRunSpec() error = %v", err)
+		}
+		if spec.CPU != 2.0 {
+			t.Errorf("spec.CPU = %f, want 2.0", spec.CPU)
+		}
+		if spec.MemoryGi != 4.0 {
+			t.Errorf("spec.MemoryGi = %f, want 4.0", spec.MemoryGi)
+		}
+		if spec.DiskGB != 50 {
+			t.Errorf("spec.DiskGB = %d, want 50", spec.DiskGB)
+		}
+		if spec.Image != "quay.io/containerdisks/ubuntu:22.04" {
+			t.Errorf("spec.Image = %q, want quay.io/containerdisks/ubuntu:22.04", spec.Image)
+		}
+		// DryRun name must use "dryrun-" prefix
+		if !strings.HasPrefix(spec.Name, "dryrun-") {
+			t.Errorf("spec.Name = %q, want prefix 'dryrun-'", spec.Name)
+		}
+	})
+
+	t.Run("admin_resource_override_applied", func(t *testing.T) {
+		t.Parallel()
+		opts := ApproveOpts{
+			EnableOverride:  true,
+			CPULimit:        8.0,
+			MemoryLimitGi:   16.0,
+			CPURequest:      4.0,
+			MemoryRequestGi: 8.0,
+			DiskGB:          200,
+		}
+		spec, err := gw.buildDryRunSpec(payload, tmpl, size, opts)
+		if err != nil {
+			t.Fatalf("buildDryRunSpec() with override error = %v", err)
+		}
+		if spec.CPU != 8.0 {
+			t.Errorf("spec.CPU = %f, want 8.0 (override)", spec.CPU)
+		}
+		if spec.MemoryGi != 16.0 {
+			t.Errorf("spec.MemoryGi = %f, want 16.0 (override)", spec.MemoryGi)
+		}
+		if spec.DiskGB != 200 {
+			t.Errorf("spec.DiskGB = %d, want 200 (override)", spec.DiskGB)
+		}
+	})
+
+	t.Run("disk_only_override", func(t *testing.T) {
+		t.Parallel()
+		opts := ApproveOpts{DiskGB: 100}
+		spec, err := gw.buildDryRunSpec(payload, tmpl, size, opts)
+		if err != nil {
+			t.Fatalf("buildDryRunSpec() disk-only override error = %v", err)
+		}
+		if spec.DiskGB != 100 {
+			t.Errorf("spec.DiskGB = %d, want 100 (disk-only override)", spec.DiskGB)
+		}
+		// CPU/Memory unchanged
+		if spec.CPU != 2.0 {
+			t.Errorf("spec.CPU = %f, want 2.0 (unchanged)", spec.CPU)
+		}
+	})
+}
+
+func TestResolveTemplateImageForDryRun(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		tmpl      *ent.Template
+		wantImage string
+		wantErr   bool
+	}{
+		{
+			name:      "image_url",
+			tmpl:      &ent.Template{ID: "t1", ImageURL: "quay.io/ubuntu:22.04"},
+			wantImage: "quay.io/ubuntu:22.04",
+		},
+		{
+			name:      "pvc_name_only",
+			tmpl:      &ent.Template{ID: "t2", PvcName: "golden-image"},
+			wantImage: "pvc:golden-image",
+		},
+		{
+			name:      "pvc_name_with_namespace",
+			tmpl:      &ent.Template{ID: "t3", PvcName: "golden-image", PvcNamespace: "images"},
+			wantImage: "pvc:images/golden-image",
+		},
+		{
+			name:    "no_image_source",
+			tmpl:    &ent.Template{ID: "t4"},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := resolveTemplateImageForDryRun(tc.tmpl)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("resolveTemplateImageForDryRun() expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveTemplateImageForDryRun() error = %v", err)
+			}
+			if got != tc.wantImage {
+				t.Errorf("resolveTemplateImageForDryRun() = %q, want %q", got, tc.wantImage)
+			}
+		})
 	}
 }

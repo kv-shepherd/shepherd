@@ -206,7 +206,7 @@ func (m *VNCTokenManager) Issue(subject, vmID, clusterID, namespace string) (tok
 }
 
 // ValidateAndConsume validates token signature+claims and consumes single-use token.
-func (m *VNCTokenManager) ValidateAndConsume(ctx context.Context, token string, expectedVMID string) (*VNCJWTClaims, error) {
+func (m *VNCTokenManager) ValidateAndConsume(ctx context.Context, token, expectedVMID string) (*VNCJWTClaims, error) {
 	if len(m.signingKey) == 0 {
 		return nil, ErrVNCTokenSigningKeyMissing
 	}

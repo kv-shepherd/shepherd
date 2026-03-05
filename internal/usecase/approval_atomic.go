@@ -42,6 +42,7 @@ func NewApprovalAtomicWriter(pool *pgxpool.Pool, riverClient *river.Client[pgx.T
 // 2) marks event PROCESSING,
 // 3) allocates VM instance/index + inserts VM row,
 // 4) inserts River vm_create job via InsertTx.
+// 5) inserts River vm_status_sync bootstrap job via InsertTx.
 func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	ctx context.Context,
 	ticketID, eventID, approver, clusterID, storageClass, serviceID, namespace, requesterID string,
@@ -52,8 +53,8 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	if w.pool == nil || w.riverClient == nil || w.queries == nil {
 		return "", "", fmt.Errorf("approval atomic writer is not initialized")
 	}
-	if err := w.validateCreateInput(ticketID, eventID, approver, clusterID, serviceID, namespace, requesterID); err != nil {
-		return "", "", err
+	if validateErr := w.validateCreateInput(ticketID, eventID, approver, clusterID, serviceID, namespace, requesterID); validateErr != nil {
+		return "", "", validateErr
 	}
 
 	tx, err := w.pool.Begin(ctx)
@@ -135,6 +136,21 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 		EventID: eventID,
 	}, nil); err != nil {
 		return "", "", fmt.Errorf("enqueue vm_create for event %s: %w", eventID, err)
+	}
+	// Bootstrap the VM status sync polling chain (ADR-0038).
+	// This is the initial insert — runs immediately (no ScheduledAt).
+	// Subsequent polls are self-scheduled by VMStatusSyncWorker.scheduleNext().
+	if _, err := w.riverClient.InsertTx(ctx, tx, jobs.VMStatusSyncArgs{
+		EventID: eventID,
+	}, &river.InsertOpts{
+		Queue:       "vm_status_sync",
+		MaxAttempts: 3,
+		UniqueOpts: river.UniqueOpts{
+			ByArgs:  true,
+			ByQueue: true,
+		},
+	}); err != nil {
+		return "", "", fmt.Errorf("enqueue vm_status_sync for event %s: %w", eventID, err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {

@@ -1,91 +1,200 @@
 package provider
 
 import (
-	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"context"
+	"strings"
+	"time"
+
+	semver "github.com/Masterminds/semver/v3"
 )
 
 // ClusterCapabilities represents detected capabilities for a cluster (ADR-0014).
+//
+// Stored as JSON in Cluster.enabled_features ([]string).
+// EnabledFeatures is the merged result of:
+//  1. GA features guaranteed available at KubeVirtVersion (static table, no API call needed)
+//  2. Explicit feature gates in kubevirt CR spec.configuration.developerConfiguration.featureGates
+//
+// This is the canonical structure for capability queries — prefer over raw []string from DB.
 type ClusterCapabilities struct {
-	KubeVirtVersion string            `json:"kubevirt_version"`
-	Features        map[string]bool   `json:"features"`
-	Hardware        map[string]bool   `json:"hardware_capabilities"`
+	KubeVirtVersion string    `json:"kubevirt_version"`
+	EnabledFeatures []string  `json:"enabled_features"` // merged, lowercase-normalized keys
+	DetectedAt      time.Time `json:"detected_at"`
 }
 
-// CapabilityDetector detects cluster capabilities during health checks.
-type CapabilityDetector struct{}
-
-// NewCapabilityDetector creates a new CapabilityDetector.
-func NewCapabilityDetector() *CapabilityDetector {
-	return &CapabilityDetector{}
-}
-
-// DetectCapabilities detects capabilities for a cluster.
-// Called during health check cycle (piggybacks on existing connection).
-func (d *CapabilityDetector) DetectCapabilities(clusterName string, health *ClusterHealth) *ClusterCapabilities {
-	caps := &ClusterCapabilities{
-		KubeVirtVersion: health.KubeVirtVersion,
-		Features:        make(map[string]bool),
-		Hardware:        make(map[string]bool),
-	}
-
-	// Static GA table: features that are GA by version
-	if health.KubeVirtVersion != "" {
-		applyGAFeatures(caps, health.KubeVirtVersion)
-	}
-
-	return caps
-}
-
-// HasCapability checks if a cluster has a specific capability.
-func (caps *ClusterCapabilities) HasCapability(name string) bool {
-	if v, ok := caps.Features[name]; ok {
-		return v
-	}
-	if v, ok := caps.Hardware[name]; ok {
-		return v
+// HasFeature returns true if the cluster has the specified feature enabled.
+// Case-insensitive match against EnabledFeatures.
+func (c *ClusterCapabilities) HasFeature(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	for _, f := range c.EnabledFeatures {
+		if strings.EqualFold(f, lower) {
+			return true
+		}
 	}
 	return false
 }
 
-// HasAllCapabilities checks if a cluster has all required capabilities.
-// Used by FilterCompatibleClusters (ADR-0018: requirements from InstanceSize).
-func (caps *ClusterCapabilities) HasAllCapabilities(required []string) bool {
+// HasAllFeatures returns true when ALL required features are present.
+// Used by ListCompatibleClusters (ADR-0014 Layer 3).
+func (c *ClusterCapabilities) HasAllFeatures(required []string) bool {
 	for _, req := range required {
-		if !caps.HasCapability(req) {
+		if !c.HasFeature(req) {
 			return false
 		}
 	}
 	return true
 }
 
-// applyGAFeatures applies features that became GA by a specific KubeVirt version.
-func applyGAFeatures(caps *ClusterCapabilities, version string) {
-	// KubeVirt GA features by version (static table)
-	// These features are always available in the specified version and later
-	gaFeatures := map[string]string{
-		"LiveMigration":        "1.0.0",
-		"Snapshot":             "1.1.0",
-		"HotplugVolumes":       "1.1.0",
-		"VMExport":             "1.2.0",
-		"ExpandDisks":          "1.2.0",
-		"VMLiveUpdateFeatures": "1.3.0",
+// CapabilityDetector detects cluster capabilities during health checks (ADR-0014).
+//
+// Detection strategy (2 sources merged):
+//  1. GA features: inferred from KubeVirtVersion via static table — no K8s API call
+//  2. Explicit featureGates: read from kubevirt CR via KubeVirtCRClient.GetFeatureGates()
+//
+// Called once per health check cycle per cluster (piggybacks on existing connection).
+// Results are persisted to Cluster.enabled_features by lifecycle.go (P1-C).
+type CapabilityDetector struct{}
+
+// NewCapabilityDetector creates a new CapabilityDetector (stateless, safe to share).
+func NewCapabilityDetector() *CapabilityDetector {
+	return &CapabilityDetector{}
+}
+
+// Detect fetches live capability data from the cluster.
+//
+// Strategy (2 sources, merged):
+//  1. GA features: inferred from Status.ObservedKubeVirtVersion via static table (no VM API calls).
+//  2. Explicit featureGates: read from KubeVirt CR spec.configuration.developerConfiguration.featureGates.
+//
+// Both are fetched from a single KubeVirt CR GET (the adapter layer caches the CR
+// object via sync.Once, so GetVersion() and GetFeatureGates() share one GET).
+//
+// Graceful degradation:
+//   - If the CR GET fails (RBAC / unreachable), both version and gates degrade gracefully.
+//   - Version falls back to "" → GA table returns nil.
+//   - Gates fall back to nil → GA-only detection.
+//   - Operator note: grant 'get kubevirts' on the 'kubevirt' namespace for full detection.
+//
+// Cost: exactly 1 KubeVirt CR GET per health check cycle per cluster
+// (sync.Once in kubecli_adapter.go ensures the second call reuses the cached CR).
+func (d *CapabilityDetector) Detect(ctx context.Context, client KubeVirtClusterClient) (*ClusterCapabilities, error) {
+	// Source 1: Observed running version → GA feature table (zero VM API calls).
+	// Non-fatal: if this fails (e.g., RBAC), version stays empty and GA table returns nil.
+	version, err := client.KubeVirt().GetVersion(ctx)
+	if err != nil {
+		// Log-worthy but not blocking — degrade to no GA features.
+		version = ""
+	}
+	gaFeatures := gaFeaturesForVersion(version)
+
+	// Source 2: Explicitly configured feature gates from KubeVirt CR spec.
+	// Non-fatal: if this fails (e.g., RBAC), we still return GA features.
+	explicitGates, err := client.KubeVirt().GetFeatureGates(ctx)
+	if err != nil {
+		// Log-worthy but not blocking — capability detection degrades gracefully.
+		// Caller (lifecycle.go via health_checker.go) receives partial result and stores what we have.
+		explicitGates = nil
 	}
 
-	for feature, minVersion := range gaFeatures {
-		if versionGTE(version, minVersion) {
-			caps.Features[feature] = true
+	merged := mergeUniqueFeatures(gaFeatures, explicitGates)
+
+	return &ClusterCapabilities{
+		KubeVirtVersion: version,
+		EnabledFeatures: merged,
+		DetectedAt:      time.Now(),
+	}, nil
+}
+
+// HasAllCapabilities is a package-level helper for filtering clusters by feature set.
+// Operates on raw []string from DB (Cluster.enabled_features), avoiding ClusterCapabilities allocation.
+// Used by ListCompatibleClusters API handler (ADR-0014 Layer 3 / P2-A).
+func HasAllCapabilities(clusterFeatures, required []string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	featureSet := make(map[string]struct{}, len(clusterFeatures))
+	for _, f := range clusterFeatures {
+		featureSet[strings.ToLower(strings.TrimSpace(f))] = struct{}{}
+	}
+	for _, req := range required {
+		lower := strings.ToLower(strings.TrimSpace(req))
+		if _, ok := featureSet[lower]; !ok {
+			return false
 		}
 	}
+	return true
 }
 
-// versionGTE returns true if version >= minVersion (simplified semver comparison).
-func versionGTE(version, minVersion string) bool {
-	// Simplified: compare version strings lexicographically
-	// Production code should use semver library
-	return version >= minVersion
+// gaEntry maps a minimum KubeVirt version to the features that became GA at that version.
+// Pre-parsed at package init time with semver.MustNewVersion for zero-allocation
+// runtime comparisons. Panic on invalid version strings is intentional — these are
+// compile-time constants maintained by us, not user input.
+type gaEntry struct {
+	minVersion *semver.Version
+	features   []string
 }
 
-// defaultListOpts returns default list options for health check queries.
-func defaultListOpts() k8smetav1.ListOptions {
-	return k8smetav1.ListOptions{Limit: 1}
+// gaTable is the GA graduation table (cumulative — each row adds features).
+//
+// Source: https://kubevirt.io/user-guide/cluster_admin/activating_feature_gates/
+//
+//	(GA = feature no longer needs to be in developerConfiguration.featureGates)
+//
+// Maintenance: Update this table when new features graduate to GA.
+// Cadence: ~1 KubeVirt minor release per 2-3 months (check release notes).
+var gaTable = []gaEntry{
+	{semver.MustParse("1.0.0"), []string{"LiveMigration"}},
+	{semver.MustParse("1.1.0"), []string{"Snapshot", "HotplugVolumes"}},
+	{semver.MustParse("1.2.0"), []string{"VMExport", "ExpandDisks"}},
+	{semver.MustParse("1.3.0"), []string{"VMLiveUpdateFeatures"}},
+}
+
+// gaFeaturesForVersion returns features that became GA (always-on by default) at a given version.
+// Uses github.com/Masterminds/semver/v3 for correct semantic version comparison
+// (handles pre-release, partial versions like "1.7", and v-prefix).
+//
+// Returns nil on empty or unparseable version string (graceful degradation).
+func gaFeaturesForVersion(version string) []string {
+	v := strings.TrimSpace(version)
+	if v == "" {
+		return nil
+	}
+
+	parsed, err := semver.NewVersion(v)
+	if err != nil {
+		// Unparseable version from KubeVirt CR — degrade gracefully, return no GA features.
+		// This should not happen in practice (KubeVirt always reports valid semver).
+		return nil
+	}
+
+	var result []string
+	for _, entry := range gaTable {
+		if !parsed.LessThan(entry.minVersion) { // parsed >= entry.minVersion
+			result = append(result, entry.features...)
+		}
+	}
+	return result
+}
+
+// mergeUniqueFeatures merges two []string slices, deduplicating case-insensitively.
+// Preserves original casing of the first occurrence.
+// Iterates each source slice directly — no intermediate temporary slice allocation.
+func mergeUniqueFeatures(a, b []string) []string {
+	seen := make(map[string]struct{}, len(a)+len(b))
+	result := make([]string, 0, len(a)+len(b))
+	for _, src := range [2][]string{a, b} {
+		for _, v := range src {
+			trimmed := strings.TrimSpace(v)
+			if trimmed == "" {
+				continue
+			}
+			lower := strings.ToLower(trimmed)
+			if _, ok := seen[lower]; ok {
+				continue
+			}
+			seen[lower] = struct{}{}
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

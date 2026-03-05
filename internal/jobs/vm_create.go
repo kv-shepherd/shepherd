@@ -121,10 +121,10 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 
 	// Step 2: Parse payload.
 	var payload domain.VMCreationPayload
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+	if decodeErr := json.Unmarshal(event.Payload, &payload); decodeErr != nil {
 		_, _ = w.entClient.DomainEvent.UpdateOneID(eventID).SetStatus(domainevent.StatusFAILED).Save(ctx)
 		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
-		return river.JobCancel(fmt.Errorf("unmarshal payload for event %s: %w", eventID, err))
+		return river.JobCancel(fmt.Errorf("unmarshal payload for event %s: %w", eventID, decodeErr))
 	}
 	markFailed := func(cause error, cancel bool) error {
 		if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
@@ -160,9 +160,9 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 	if clusterID == "" {
 		return markFailed(fmt.Errorf("event %s has no selected cluster", eventID), true)
 	}
-	if err := w.ensureNamespaceClusterEnvironment(ctx, clusterID, namespace); err != nil {
+	if validateErr := w.ensureNamespaceClusterEnvironment(ctx, clusterID, namespace); validateErr != nil {
 		return markFailed(
-			fmt.Errorf("event %s namespace/cluster environment validation failed: %w", eventID, err),
+			fmt.Errorf("event %s namespace/cluster environment validation failed: %w", eventID, validateErr),
 			true,
 		)
 	}
@@ -258,7 +258,7 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 	}
 
 	var createdVMName string
-	targetVMStatus := vm.StatusRUNNING
+	var targetVMStatus vm.Status
 	if createdVM != nil {
 		createdVMName = createdVM.Name
 		targetVMStatus = mapCreatedVMStatusToRow(createdVM)
@@ -384,25 +384,12 @@ func mapCreatedVMStatusToRow(created *domain.VM) vm.Status {
 		return vm.StatusRUNNING
 	}
 
-	// Stage 5.C requires worker-completed rows to leave CREATING.
-	// For transient provider values we promote to RUNNING and rely on later status sync for reconciliation.
+	// Stage 5.C in master-flow mandates CREATING -> RUNNING|FAILED.
+	// For create-time provider statuses other than explicit FAILED, we persist RUNNING
+	// and rely on vm_status_sync (ADR-0038) for later reconciliation.
 	switch created.Status {
 	case domain.VMStatusFailed:
 		return vm.StatusFAILED
-	case domain.VMStatusStopping:
-		return vm.StatusSTOPPING
-	case domain.VMStatusStopped:
-		return vm.StatusSTOPPED
-	case domain.VMStatusDeleting:
-		return vm.StatusDELETING
-	case domain.VMStatusMigrating:
-		return vm.StatusMIGRATING
-	case domain.VMStatusPaused:
-		return vm.StatusPAUSED
-	case domain.VMStatusRunning:
-		return vm.StatusRUNNING
-	case domain.VMStatusCreating, domain.VMStatusPending, domain.VMStatusUnknown:
-		return vm.StatusRUNNING
 	default:
 		return vm.StatusRUNNING
 	}
@@ -753,6 +740,9 @@ func toMap(raw interface{}) (map[string]interface{}, bool) {
 }
 
 func toInt(raw interface{}) (int, bool) {
+	maxInt := int(^uint(0) >> 1)
+	minInt := -maxInt - 1
+
 	switch v := raw.(type) {
 	case int:
 		return v, true
@@ -763,17 +753,29 @@ func toInt(raw interface{}) (int, bool) {
 	case int32:
 		return int(v), true
 	case int64:
+		if v > int64(maxInt) || v < int64(minInt) {
+			return 0, false
+		}
 		return int(v), true
 	case uint:
-		return int(v), true
+		if uint64(v) > uint64(maxInt) {
+			return 0, false
+		}
+		return int(v), true // #nosec G115 -- guarded by maxInt bound check above.
 	case uint8:
 		return int(v), true
 	case uint16:
 		return int(v), true
 	case uint32:
-		return int(v), true
+		if uint64(v) > uint64(maxInt) {
+			return 0, false
+		}
+		return int(v), true // #nosec G115 -- guarded by maxInt bound check above.
 	case uint64:
-		return int(v), true
+		if v > uint64(maxInt) {
+			return 0, false
+		}
+		return int(v), true // #nosec G115 -- guarded by maxInt bound check above.
 	case float32:
 		return int(v), true
 	case float64:

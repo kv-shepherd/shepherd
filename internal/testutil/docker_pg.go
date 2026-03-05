@@ -16,13 +16,15 @@
 package testutil
 
 import (
+	"context"
 	"fmt"
-	"math/rand/v2"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -51,27 +53,31 @@ func MustStartDockerPG(m *testing.M) {
 // runWithDockerPG executes the test suite and returns the process exit code.
 // This keeps cleanup in deferred functions, and the caller can os.Exit(code).
 func runWithDockerPG(m *testing.M) int {
+	cmdCtx := context.Background()
+
 	// If a DSN is already provided (CI / developer with local PG), use it.
 	if os.Getenv("TEST_DATABASE_URL") != "" || os.Getenv("DATABASE_URL") != "" {
 		return m.Run()
 	}
 
 	// Verify Docker is available before attempting container start.
-	if err := exec.Command("docker", "info").Run(); err != nil {
+	if err := exec.CommandContext(cmdCtx, "docker", "info").Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: Docker is not available and no TEST_DATABASE_URL is set.\n"+
 			"  Either install Docker, or set TEST_DATABASE_URL to an existing PostgreSQL 18 DSN.\n"+
 			"  Error: %v\n", err)
 		return 1
 	}
 
-	name := fmt.Sprintf("shepherd-test-pg-%d-%d", time.Now().Unix(), rand.Int32N(9999))
+	name := fmt.Sprintf("shepherd-test-pg-%d-%s", time.Now().Unix(), uuid.NewString()[:8])
 
 	// Always clean up the container before returning to the caller.
 	defer func() {
-		_ = exec.Command("docker", "rm", "-f", name).Run()
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = exec.CommandContext(cleanupCtx, "docker", "rm", "-f", name).Run()
 	}()
 
-	port, err := startPGContainer(name)
+	port, err := startPGContainer(cmdCtx, name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: failed to start PostgreSQL container: %v\n", err)
 		return 1
@@ -92,7 +98,7 @@ func runWithDockerPG(m *testing.M) int {
 
 // startPGContainer launches the container, resolves its mapped port, and waits
 // until the health-check reports "healthy".  Returns the mapped host port.
-func startPGContainer(name string) (string, error) {
+func startPGContainer(ctx context.Context, name string) (string, error) {
 	// Start container with a random host port and built-in health-check.
 	runArgs := []string{
 		"run", "-d",
@@ -108,19 +114,19 @@ func startPGContainer(name string) (string, error) {
 		dockerPGImage,
 	}
 
-	out, err := exec.Command("docker", runArgs...).CombinedOutput()
+	out, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("docker run failed: %w\noutput: %s", err, strings.TrimSpace(string(out)))
 	}
 
 	// Resolve the randomly assigned host port.
-	port, err := resolveDockerPort(name)
+	port, err := resolveDockerPort(ctx, name)
 	if err != nil {
 		return "", err
 	}
 
 	// Wait for the container to become healthy.
-	if err := waitHealthy(name); err != nil {
+	if err := waitHealthy(ctx, name); err != nil {
 		return "", err
 	}
 
@@ -128,10 +134,10 @@ func startPGContainer(name string) (string, error) {
 }
 
 // resolveDockerPort polls `docker port` until a mapping is returned.
-func resolveDockerPort(name string) (string, error) {
+func resolveDockerPort(ctx context.Context, name string) (string, error) {
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		out, err := exec.Command("docker", "port", name, "5432/tcp").Output()
+		out, err := exec.CommandContext(ctx, "docker", "port", name, "5432/tcp").Output()
 		if err == nil {
 			// Output format: "0.0.0.0:54321\n" or "127.0.0.1:54321\n"
 			line := strings.TrimSpace(string(out))
@@ -148,10 +154,11 @@ func resolveDockerPort(name string) (string, error) {
 }
 
 // waitHealthy polls the container health status until healthy or timeout.
-func waitHealthy(name string) error {
+func waitHealthy(ctx context.Context, name string) error {
 	deadline := time.Now().Add(dockerPGHealthWait)
 	for time.Now().Before(deadline) {
-		out, err := exec.Command(
+		out, err := exec.CommandContext(
+			ctx,
 			"docker", "inspect",
 			"-f", "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}",
 			name,
@@ -162,13 +169,13 @@ func waitHealthy(name string) error {
 			case "healthy":
 				return nil
 			case "unhealthy":
-				logs, _ := exec.Command("docker", "logs", "--tail", "20", name).CombinedOutput()
+				logs, _ := exec.CommandContext(ctx, "docker", "logs", "--tail", "20", name).CombinedOutput()
 				return fmt.Errorf("PostgreSQL container %q became unhealthy\nlogs:\n%s", name, logs)
 			}
 		}
 		time.Sleep(time.Second)
 	}
-	logs, _ := exec.Command("docker", "logs", "--tail", "20", name).CombinedOutput()
+	logs, _ := exec.CommandContext(ctx, "docker", "logs", "--tail", "20", name).CombinedOutput()
 	return fmt.Errorf("timed out (%s) waiting for PostgreSQL container %q to become healthy\nlogs:\n%s",
 		dockerPGHealthWait, name, logs)
 }
@@ -181,7 +188,7 @@ func SkipIfNoPG(t *testing.T) {
 	if os.Getenv("TEST_DATABASE_URL") != "" || os.Getenv("DATABASE_URL") != "" {
 		return
 	}
-	if exec.Command("docker", "info").Run() == nil {
+	if exec.CommandContext(context.Background(), "docker", "info").Run() == nil {
 		return // Docker available; container will be started by TestMain
 	}
 	t.Skip("skipping: no TEST_DATABASE_URL and Docker unavailable")

@@ -42,9 +42,9 @@ func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure
 
 	// Dev-mode: auto-create Ent tables + River queue tables.
 	if cfg.Database.AutoMigrate {
-		if err := db.AutoMigrate(ctx); err != nil {
+		if migrateErr := db.AutoMigrate(ctx); migrateErr != nil {
 			db.Close()
-			return nil, fmt.Errorf("auto-migrate: %w", err)
+			return nil, fmt.Errorf("auto-migrate: %w", migrateErr)
 		}
 	}
 
@@ -58,12 +58,13 @@ func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure
 	}
 
 	entClient := db.EntClient
-	clusterFactory := provider.NewClusterClientFactoryFromKubeconfigLoader(newClusterKubeconfigLoader(entClient))
+	vmClusterFactory := provider.NewClusterClientFactoryFromKubeconfigLoader(newClusterKubeconfigLoader(entClient, true))
+	healthClusterFactory := provider.NewClusterClientFactoryFromKubeconfigLoader(newClusterKubeconfigLoader(entClient, false))
 	vmProvider := provider.NewKubeVirtProvider(
-		clusterFactory,
+		vmClusterFactory,
 		cfg.K8s.OperationTimeout,
 	)
-	healthChecker := provider.NewClusterHealthChecker(clusterFactory, 60*time.Second)
+	healthChecker := provider.NewClusterHealthChecker(healthClusterFactory, 60*time.Second)
 
 	return &Infrastructure{
 		Config:      cfg,
@@ -78,7 +79,7 @@ func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure
 	}, nil
 }
 
-func newClusterKubeconfigLoader(client *ent.Client) provider.KubeconfigLoader {
+func newClusterKubeconfigLoader(client *ent.Client, requireHealthy bool) provider.KubeconfigLoader {
 	return func(clusterID string) ([]byte, error) {
 		if client == nil {
 			return nil, fmt.Errorf("ent client is not initialized")
@@ -101,7 +102,7 @@ func newClusterKubeconfigLoader(client *ent.Client) provider.KubeconfigLoader {
 		if !cl.Enabled {
 			return nil, fmt.Errorf("cluster %s is disabled", clusterID)
 		}
-		if cl.Status != cluster.StatusHEALTHY {
+		if requireHealthy && cl.Status != cluster.StatusHEALTHY {
 			return nil, fmt.Errorf("cluster %s is not healthy (status: %s)", clusterID, cl.Status)
 		}
 		if len(cl.EncryptedKubeconfig) == 0 {

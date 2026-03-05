@@ -33,9 +33,12 @@ import (
 	"sync"
 
 	"go.uber.org/zap"
+
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	"kv-shepherd.io/shepherd/internal/provider"
 )
+
+const builtinProviderType = "builtin-default"
 
 // ─── Built-in Provider (V1) ───────────────────────────────────────────────────
 
@@ -64,7 +67,7 @@ func NewBuiltinApprovalProvider(gw *Gateway) *BuiltinApprovalProvider {
 
 // Type returns the canonical identifier for this provider.
 // "builtin-default" matches the label in master-flow.md §Stage 2.E.
-func (p *BuiltinApprovalProvider) Type() string { return "builtin-default" }
+func (p *BuiltinApprovalProvider) Type() string { return builtinProviderType }
 
 // SubmitForApproval creates a PENDING ticket and routes to the Gateway's built-in
 // approval queue.  In V1 this is a no-op because ticket creation happens upstream
@@ -148,8 +151,8 @@ func (r *ApprovalProviderRouter) Register(p provider.ApprovalProvider) error {
 	if key == "" {
 		return fmt.Errorf("approval router: provider.Type() must not be empty")
 	}
-	if key == "builtin-default" {
-		return fmt.Errorf("approval router: \"builtin-default\" is reserved for the built-in provider")
+	if key == builtinProviderType {
+		return fmt.Errorf("approval router: %q is reserved for the built-in provider", builtinProviderType)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -170,7 +173,7 @@ func (r *ApprovalProviderRouter) Register(p provider.ApprovalProvider) error {
 // If the type is unknown, the built-in provider is returned as a safe fallback.
 func (r *ApprovalProviderRouter) Resolve(providerType string) provider.ApprovalProvider {
 	key := strings.TrimSpace(strings.ToLower(providerType))
-	if key == "" || key == "builtin-default" {
+	if key == "" || key == builtinProviderType {
 		return r.builtin
 	}
 	r.mu.RLock()
@@ -189,7 +192,7 @@ func (r *ApprovalProviderRouter) Resolve(providerType string) provider.ApprovalP
 // Uses the built-in provider (V1), or an external provider if registered (V2+).
 func (r *ApprovalProviderRouter) SubmitForApproval(ctx context.Context, req *provider.ApprovalRequest) (*provider.ApprovalResponse, error) {
 	// V1: always builtin.  V2+: providerType would come from policy/config.
-	p := r.Resolve("builtin-default")
+	p := r.Resolve(builtinProviderType)
 	resp, err := p.SubmitForApproval(ctx, req)
 	if err != nil {
 		// Stage 2.E fallback: provider error → route to built-in queue.

@@ -8,6 +8,8 @@ import (
 
 // IdPSyncedGroup holds the schema definition for the IdPSyncedGroup entity.
 // master-flow Stage 2.C: Groups synced from external identity providers.
+//
+//revive:disable-next-line:var-naming // Ent schema type name is coupled to generated runtime references.
 type IdPSyncedGroup struct {
 	ent.Schema
 }

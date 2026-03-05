@@ -827,6 +827,11 @@ var (
 		{Name: "hostname", Type: field.TypeString, Nullable: true},
 		{Name: "created_by", Type: field.TypeString},
 		{Name: "ticket_id", Type: field.TypeString, Nullable: true},
+		{Name: "polling_tier", Type: field.TypeEnum, Enums: []string{"high", "low"}, Default: "high"},
+		{Name: "poll_interval_sec", Type: field.TypeInt, Default: 15},
+		{Name: "last_k8s_rv", Type: field.TypeString, Nullable: true},
+		{Name: "last_polled_at", Type: field.TypeTime, Nullable: true},
+		{Name: "high_tier_since", Type: field.TypeTime, Nullable: true},
 		{Name: "service_vms", Type: field.TypeString},
 	}
 	// VmsTable holds the schema information for the "vms" table.
@@ -837,7 +842,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "vms_services_vms",
-				Columns:    []*schema.Column{VmsColumns[11]},
+				Columns:    []*schema.Column{VmsColumns[16]},
 				RefColumns: []*schema.Column{ServicesColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -857,6 +862,11 @@ var (
 				Name:    "vm_cluster_id",
 				Unique:  false,
 				Columns: []*schema.Column{VmsColumns[6]},
+			},
+			{
+				Name:    "vm_polling_tier",
+				Unique:  false,
+				Columns: []*schema.Column{VmsColumns[11]},
 			},
 		},
 	}

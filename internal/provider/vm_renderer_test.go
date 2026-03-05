@@ -71,6 +71,13 @@ func TestRenderVMSpecToYAML_HalfCoreAndHalfGi(t *testing.T) {
 	if !strings.Contains(yaml, `memory: "512Mi"`) {
 		t.Errorf("expected memory=512Mi for 0.5Gi, got:\n%s", yaml)
 	}
+	// KubeVirt admission requires spec.template.metadata to be an object, not null.
+	if strings.Contains(yaml, "metadata: null") {
+		t.Errorf("expected template metadata object, got null:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "template:\n    metadata: {}") {
+		t.Errorf("expected empty template metadata object when labels are absent, got:\n%s", yaml)
+	}
 }
 
 func TestRenderVMSpecToYAML_OneAndHalfGi(t *testing.T) {

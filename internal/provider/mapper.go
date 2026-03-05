@@ -32,10 +32,11 @@ func (m *KubeVirtMapper) MapVM(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.Vi
 	spec := mapVMSpec(vm)
 
 	result := &domain.VM{
-		Name:      vm.Name,
-		Namespace: vm.Namespace,
-		Status:    status,
-		Spec:      spec,
+		Name:            vm.Name,
+		Namespace:       vm.Namespace,
+		Status:          status,
+		Spec:            spec,
+		ResourceVersion: vm.ResourceVersion, // ADR-0038: capture for watch-cache routing
 	}
 
 	// Extract creation timestamp
@@ -98,6 +99,8 @@ func mapVMStatus(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineIn
 			return domain.VMStatusRunning
 		case kubevirtv1.VirtualMachineStatusStopped:
 			return domain.VMStatusStopped
+		case kubevirtv1.VirtualMachineStatusStarting:
+			return domain.VMStatusCreating
 		case kubevirtv1.VirtualMachineStatusStopping:
 			return domain.VMStatusStopping
 		case kubevirtv1.VirtualMachineStatusProvisioning:
@@ -108,6 +111,19 @@ func mapVMStatus(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineIn
 			return domain.VMStatusMigrating
 		case kubevirtv1.VirtualMachineStatusPaused:
 			return domain.VMStatusPaused
+		case kubevirtv1.VirtualMachineStatusWaitingForVolumeBinding,
+			kubevirtv1.VirtualMachineStatusWaitingForReceiver:
+			return domain.VMStatusPending
+		case kubevirtv1.VirtualMachineStatusCrashLoopBackOff,
+			kubevirtv1.VirtualMachineStatusUnschedulable,
+			kubevirtv1.VirtualMachineStatusErrImagePull,
+			kubevirtv1.VirtualMachineStatusImagePullBackOff,
+			kubevirtv1.VirtualMachineStatusDataVolumeError:
+			return domain.VMStatusFailed
+		case kubevirtv1.VirtualMachineStatusUnknown:
+			return domain.VMStatusUnknown
+		default:
+			// Fall back to VMI phase and RunStrategy mapping below.
 		}
 	}
 
@@ -120,6 +136,8 @@ func mapVMStatus(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineIn
 			return domain.VMStatusCreating
 		case kubevirtv1.Failed:
 			return domain.VMStatusFailed
+		default:
+			// Fall back to VM-level strategy/status below.
 		}
 	}
 
@@ -135,6 +153,8 @@ func mapVMStatus(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineIn
 			kubevirtv1.RunStrategyOnce:
 			// These strategies don't definitively indicate stopped status.
 			// Fall through to unknown — actual running state comes from VMI/PrintableStatus above.
+		default:
+			// Unknown/new strategy values fall back to unknown.
 		}
 	}
 
