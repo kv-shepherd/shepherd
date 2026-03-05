@@ -160,9 +160,9 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 	if clusterID == "" {
 		return markFailed(fmt.Errorf("event %s has no selected cluster", eventID), true)
 	}
-	if validateErr := w.ensureNamespaceClusterEnvironment(ctx, clusterID, namespace); validateErr != nil {
+	if err := w.ensureNamespaceClusterEnvironment(ctx, clusterID, namespace); err != nil {
 		return markFailed(
-			fmt.Errorf("event %s namespace/cluster environment validation failed: %w", eventID, validateErr),
+			fmt.Errorf("event %s namespace/cluster environment validation failed: %w", eventID, err),
 			true,
 		)
 	}
