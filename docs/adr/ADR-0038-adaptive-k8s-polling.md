@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"
+status: "accepted"
 date: 2026-03-02
 deciders: ["@jindyzhao"]
 consulted: ["@jindyzhao"]
@@ -10,8 +10,25 @@ informed: ["@jindyzhao"]
 # ADR-0038: Adaptive K8s VM Status Polling with State-Machine-Driven Backoff
 
 > **Review Period**: Until 2026-03-04 (48-hour minimum)<br>
+> **Accepted On**: 2026-03-05<br>
 > **Discussion**: [Issue #TBD](https://github.com/kv-shepherd/shepherd/issues/)<br>
 > **Related**: `ADR-0006-unified-async-model.md`, `ADR-0008-postgresql-stability.md`, `ADR-0014-capability-detection.md`
+
+> ### 📌 Implementation Progress Notes (2026-03-03)
+>
+> **Status**: Accepted on 2026-03-05. Phase 1-3 implementation closed.
+>
+> | Phase | Work | Status | PR/Commit |
+> |-------|------|--------|-----------|
+> | Phase 1 | Ent Schema: added `polling_tier`, `poll_interval_sec`, `last_k8s_rv`, `last_polled_at`, `high_tier_since` to `vm.go` | ✅ **Done** | `ent/schema/vm.go` |
+> | Phase 1 | Ent codegen: `go generate ./ent/...` — all new fields generated correctly | ✅ **Done** | `ent/vm.go`, `ent/vm_update.go` |
+> | Phase 1 | Atlas migration SQL: `migrations/atlas/20260303_adr0038_vm_polling_fields.sql` | ✅ **Done** | ready for `atlas migrate apply` |
+> | Phase 1 | Atlas follow-up SQL: `migrations/atlas/20260304_adr0038_high_tier_since.sql` | ✅ **Done** | precise high-tier transition clock |
+> | Phase 2 | River Worker refactor: read `polling_tier`/`poll_interval_sec` → compute `ScheduledAt` | ✅ **Done** | `internal/jobs/vm_status_sync.go` |
+> | Phase 3 | CI gate: `k8spollingrv` analyzer enforcing ResourceVersion requirement | ✅ **Done** | `tools/shepherd-linter/analyzer/k8spollingrv/` |
+>
+> **Note**: Accepted on 2026-03-05 after 48h review window.
+> Phase 1 schema changes are backward-compatible (additive-only, all new columns have safe defaults).
 
 ---
 
@@ -81,6 +98,7 @@ vm.polling_tier       ENUM('high', 'low')   NOT NULL DEFAULT 'high'
 vm.poll_interval_sec  INTEGER               NOT NULL DEFAULT 15
 vm.last_k8s_rv        TEXT                  NULLABLE  -- K8s resourceVersion
 vm.last_polled_at     TIMESTAMPTZ           NULLABLE
+vm.high_tier_since    TIMESTAMPTZ           NULLABLE  -- high-tier entry timestamp
 ```
 
 > Do **NOT** create a separate polling-state table. Colocate with the VM record to avoid join overhead on hot paths.
@@ -136,9 +154,9 @@ Current: low-frequency
 * Architecture review confirms polling tier transitions are correctly driven by VM `status` field semantics.
 * Code review confirms all K8s List/Get calls in the polling subsystem carry `ResourceVersion`.
 * Code review confirms `last_k8s_rv` is persisted after every successful poll (including on 304 Not Modified responses).
-* DB schema review confirms `polling_tier`, `poll_interval_sec`, `last_k8s_rv`, `last_polled_at` fields are added via Atlas migration.
+* DB schema review confirms `polling_tier`, `poll_interval_sec`, `last_k8s_rv`, `last_polled_at`, `high_tier_since` fields are added via Atlas migration.
 * Load test: with 1,000 stable VMs at 30-minute interval → ~0.5 req/s to K8s; with 100 transitional VMs at 15s interval → ~6.7 req/s. Total within acceptable bounds for governance platform scale.
-* CI gate: `check_k8s_polling_rv.go` verifies that all K8s List calls in `internal/provider/` pass `ResourceVersion` from DB field (not empty string except on explicit baseline reset).
+* CI gate: `k8spollingrv` analyzer verifies that polling-path K8s option structs include `ResourceVersion`.
 
 ---
 
@@ -193,9 +211,9 @@ Use K8s watch API to receive real-time VM state change events, eliminating polli
 
 ### Implementation Notes
 
-* **Phase 1**: Add DB schema fields (`polling_tier`, `poll_interval_sec`, `last_k8s_rv`, `last_polled_at`) via Atlas migration.
+* **Phase 1**: Add DB schema fields (`polling_tier`, `poll_interval_sec`, `last_k8s_rv`, `last_polled_at`, `high_tier_since`) via Atlas migration.
 * **Phase 2**: Refactor the existing polling River Worker to read `polling_tier` and schedule next job with computed `ScheduledAt`.
-* **Phase 3**: Add CI gate `check_k8s_polling_rv.go` to enforce ResourceVersion requirement.
+* **Phase 3**: Add `k8spollingrv` analyzer in `shepherd-linter` to enforce ResourceVersion requirement.
 * **Revisit trigger**: If K8s API Server p99 latency from Shepherd exceeds 50ms under normal load, revisit tier intervals.
 
 ---
@@ -205,3 +223,5 @@ Use K8s watch API to receive real-time VM state change events, eliminating polli
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-03-02 | @jindyzhao | Initial draft |
+| 2026-03-05 | @jindyzhao | Status changed to `accepted`; Phase 2/3 marked complete |
+| 2026-03-04 | @jindyzhao | Added `high_tier_since` follow-up for precise auto-downgrade timing |

@@ -1,185 +1,138 @@
 # Design Note: ADR-0038 — Adaptive K8s VM Status Polling
 
-> **Status**: Pending ADR-0038 acceptance (Review period: Until 2026-03-04)  
+> **Status**: Implementation Complete (Phases 1-3). ADR accepted on 2026-03-05.  
 > **ADR**: [ADR-0038](../../adr/ADR-0038-adaptive-k8s-polling.md)  
 > **Author**: @jindyzhao  
-> **Date**: 2026-03-02
+> **Created**: 2026-03-02  
+> **Last Updated**: 2026-03-05 (accepted + ResourceVersion 410 handling completed)
 
 This note captures concrete implementation details and impact analysis for ADR-0038.
-It will be merged into the relevant design specs after the ADR is accepted.
 
 ---
 
-## Impacted Components
+## Implementation Progress
 
-### 1. Database Schema (Atlas Migration required)
+| Phase | Description | Status | Date |
+|-------|-------------|--------|------|
+| Phase 1 | DB Schema (Ent + Atlas migration) | ✅ Complete | 2026-03-03 |
+| Phase 2 | River Worker (VMStatusSyncWorker) | ✅ Complete | 2026-03-03 |
+| Phase 3 | CI Gate (k8spollingrv Analyzer) | ✅ Complete | 2026-03-03 |
+
+---
+
+## Phase 1: Database Schema
+
+**Files changed**:
+- `ent/schema/vm.go` — 5 new fields + 1 index
+- `migrations/atlas/20260303_adr0038_vm_polling_fields.sql` — Atlas migration
+- `migrations/atlas/20260304_adr0038_high_tier_since.sql` — follow-up migration for precise high-tier timing
 
 New fields on the `vms` table:
 
 ```sql
--- Atlas migration (auto-generated from Ent schema change)
 ALTER TABLE vms
   ADD COLUMN polling_tier       VARCHAR(10)  NOT NULL DEFAULT 'high',
   ADD COLUMN poll_interval_sec  INTEGER      NOT NULL DEFAULT 15,
   ADD COLUMN last_k8s_rv        TEXT         NULL,
-  ADD COLUMN last_polled_at     TIMESTAMPTZ  NULL;
+  ADD COLUMN last_polled_at     TIMESTAMPTZ  NULL,
+  ADD COLUMN high_tier_since    TIMESTAMPTZ  NULL;
 
 CREATE INDEX idx_vms_polling_tier ON vms (polling_tier);
 ```
 
-**Ent schema addition** (`ent/schema/vm.go`):
-```go
-field.Enum("polling_tier").
-    Values("high", "low").
-    Default("high").
-    Comment("Polling frequency tier driven by VM lifecycle state"),
-
-field.Int("poll_interval_sec").
-    Default(15).
-    Comment("Seconds between K8s status polls; 15 for transitional, 1800 for stable"),
-
-field.String("last_k8s_rv").
-    Optional().
-    Nillable().
-    Comment("Last K8s resourceVersion observed; used to route List through watch cache"),
-
-field.Time("last_polled_at").
-    Optional().
-    Nillable().
-    Comment("Timestamp of last K8s status poll"),
-```
-
-### 2. River Worker Changes (`internal/worker/vm_polling_worker.go`)
-
-**Current model** (inferred): A fixed-interval cron-like job polls all VMs at the same rate.
-
-**New model**: Self-rescheduling River job per VM with dynamic `ScheduledAt`:
-
-```go
-type VMPollingJobArgs struct {
-    VMID int `json:"vm_id"`
-}
-
-func (VMPollingJobArgs) Kind() string { return "vm_polling" }
-
-type VMPollingWorker struct {
-    db         *ent.Client
-    k8sAdapter provider.KubeVirtAdapter
-    river      *river.Client[pgx.Tx]
-}
-
-func (w *VMPollingWorker) Work(ctx context.Context, job *river.Job[VMPollingJobArgs]) error {
-    vm, err := w.db.VM.Get(ctx, job.Args.VMID)
-    if err != nil {
-        return err
-    }
-
-    // K8s Get with ResourceVersion for cache routing
-    listOpts := metav1.GetOptions{}
-    if vm.LastK8sRv != nil {
-        listOpts.ResourceVersion = *vm.LastK8sRv
-    }
-
-    k8sVM, rv, err := w.k8sAdapter.GetVMWithRV(ctx, vm.ClusterName, vm.Namespace, vm.Name, listOpts)
-    if err != nil {
-        // Handle 410 Gone: reset ResourceVersion and retry
-        if isGoneError(err) {
-            return w.resetRVAndRetry(ctx, vm)
-        }
-        return err
-    }
-
-    // Determine new tier based on observed K8s state
-    newTier, newIntervalSec := determineTier(k8sVM.Status.Phase, vm, job)
-
-    // Persist updated state
-    _, err = w.db.VM.UpdateOne(vm).
-        SetPollingTier(newTier).
-        SetPollIntervalSec(newIntervalSec).
-        SetLastK8sRv(rv).
-        SetLastPolledAt(time.Now()).
-        Save(ctx)
-    if err != nil {
-        return err
-    }
-
-    // Self-reschedule
-    _, err = w.river.Insert(ctx, VMPollingJobArgs{VMID: vm.ID}, &river.InsertOpts{
-        ScheduledAt: time.Now().Add(time.Duration(newIntervalSec) * time.Second),
-    })
-    return err
-}
-
-func determineTier(phase string, vm *ent.VM, job *river.Job[VMPollingJobArgs]) (string, int) {
-    transitionalStates := map[string]bool{
-        "Creating": true, "Deleting": true, "Updating": true, "Migrating": true,
-    }
-
-    if !transitionalStates[phase] {
-        return "low", 1800 // 30 minutes for stable state
-    }
-
-    // Auto-downgrade: stuck in transitional for > 30 minutes
-    if time.Since(job.CreatedAt) > 30*time.Minute {
-        return "low", 1800
-    }
-
-    return "high", 15
-}
-```
-
-### 3. K8s Provider Interface Change (`internal/provider/`)
-
-New method required on `KubeVirtAdapter`:
-
-```go
-// GetVMWithRV returns the VM and its current ResourceVersion.
-// The listOpts.ResourceVersion should be populated from DB if available.
-GetVMWithRV(ctx context.Context, clusterName, namespace, name string, opts metav1.GetOptions) (*VMStatus, string, error)
-```
-
-### 4. Upgrade Trigger from Change Operations
-
-When a user-initiated change (Power On, Power Off, Delete, etc.) is submitted via River:
-
-```go
-// In the River Job that initiates the state change (e.g., VMPowerOnJob):
-// After submitting the K8s operation, upgrade polling if currently low-frequency.
-if vm.PollingTier == "low" {
-    _, _ = riverClient.Insert(ctx, VMPollingJobArgs{VMID: vm.ID}, &river.InsertOpts{
-        ScheduledAt: time.Now().Add(15 * time.Second), // Immediate high-frequency
-    })
-    // Cancel or deprioritize existing low-frequency job if possible
-}
-```
+**Ent schema** (`ent/schema/vm.go`):
+- `polling_tier` — ENUM("high", "low"), default "high"
+- `poll_interval_sec` — INT, default 15
+- `last_k8s_rv` — STRING, Optional/Nillable
+- `last_polled_at` — TIME, Optional/Nillable
+- `high_tier_since` — TIME, Optional/Nillable (high-tier entry timestamp)
+- Index: `polling_tier` (bulk tier queries by River Worker)
 
 ---
 
-## New CI Gate (Post-ADR-0038 Acceptance)
+## Phase 2: River Worker
 
-**File**: `docs/design/ci/scripts/check_k8s_polling_rv.go`
+**Files created/changed**:
+- `internal/jobs/vm_status_sync.go` — VMStatusSyncWorker
+- `internal/jobs/vm_status_sync_test.go` — Tests (tier mapping, interval, status conversion)
+- `internal/app/modules/vm.go` — Worker registration
+- `internal/domain/vm.go` — Added `ResourceVersion` field to domain.VM
+- `internal/provider/mapper.go` — Populates `ResourceVersion` from K8s VM metadata
+- `internal/provider/interface.go` — Added `ResourceVersion` to `ListOptions`
+- `internal/provider/kubevirt.go` — Passes `ResourceVersion` in `ListVMs`
+
+### Worker Design
+
+**Self-rescheduling River job per VM** with dynamic `ScheduledAt`:
 
 ```go
-// Verifies that all K8s List/Get calls in internal/provider/ 
-// that are used for VM status polling pass ResourceVersion from a DB field,
-// not a hardcoded empty string (except on explicit baseline reset).
+type VMStatusSyncArgs struct {
+    EventID string `json:"event_id"`
+}
+
+// Job kind: "vm_status_sync"
+// Queue: "vm_status_sync"
+// MaxAttempts: 3
+// UniqueOpts: ByArgs + ByQueue (prevents duplicate scheduling)
 ```
+
+**Execution flow**:
+1. Resolve VM row from DB via EventID (EventID -> ApprovalTicket -> VM)
+2. Call K8s ListVMs via VMService (`metadata.name` fieldSelector + ResourceVersion from DB)
+3. Map K8s status → DB status; determine new tier
+4. Auto-downgrade check: transitional VMs stuck >30min → low tier
+5. Persist: status, last_k8s_rv, last_polled_at, polling_tier, poll_interval_sec
+6. Schedule next poll: `ScheduledAt = now + poll_interval_sec`
+
+### Tier Constants (ADR-0038 §Polling frequency tiers)
+
+| Tier | Interval | VM States |
+|------|----------|-----------|
+| high | 15 seconds | CREATING, DELETING, STOPPING, MIGRATING, PENDING |
+| low | 1800 seconds (30min) | RUNNING, STOPPED, FAILED, PAUSED, UNKNOWN |
+
+### Auto-downgrade
+
+A VM stuck in high-frequency polling for >30 minutes is automatically downgraded to
+low-frequency. This prevents zombie high-frequency loops from consuming K8s API budget.
+
+### Graceful Degradation
+
+- **VM deleted from DB**: poll chain cancelled (`river.JobCancel`)
+- **VM has no cluster_id**: skip poll, reschedule at low frequency
+- **K8s unreachable**: log warning, retry at same interval (transient)
+- **River insert error**: return worker error so River retry path retries scheduling
 
 ---
 
-## Pending Changes Block (to be added to master-flow.md after ADR acceptance)
+## Phase 3: CI Gate
 
-```markdown
-<!-- PENDING: ADR-0038 (under review until 2026-03-04) -->
-> ⚠️ **Pending Change**: VM status polling will be refactored to use
-> state-machine-driven adaptive intervals after ADR-0038 acceptance.
-> See docs/design/notes/ADR-0038-adaptive-k8s-polling.md for details.
-```
+**Files created/changed**:
+- `tools/shepherd-linter/analyzer/k8spollingrv/analyzer.go` — Analyzer
+- `tools/shepherd-linter/analyzer/k8spollingrv/analyzer_test.go` — Tests
+- `tools/shepherd-linter/analyzer/k8spollingrv/testdata/` — Test fixtures
+- `tools/shepherd-linter/plugin.go` — Registered as Batch 3 analyzer
+
+### Detection Rules
+
+The `k8spollingrv` analyzer flags `metav1.ListOptions{}` and `metav1.GetOptions{}` struct
+literals that do NOT set the `ResourceVersion` field, but **only** in polling-related files
+(filename contains: `status_sync`, `polling`, `poll_`, `_poll`, `sync_status`).
+
+This conservative scope prevents false positives on non-polling code (e.g., API handlers,
+idempotency checks) while ensuring the critical polling path always uses cached ResourceVersion.
 
 ---
 
-## Open Questions
+## Open Questions (from ADR-0038 review)
 
-1. **Deduplication**: If a low-frequency polling job is already scheduled for a VM and a change operation triggers an early high-frequency poll, how do we cancel the scheduled low-frequency job? (River supports cancellation by Job ID — need to store it in DB.)
-2. **Cluster-level rate limiting**: RFC-0015 (`per-cluster-concurrency`) defines per-cluster concurrency limits. How does this interact with the polling tier? (Hypothesis: polling jobs count against the per-cluster concurrency budget.)
-3. **ResourceVersion 410 Gone handling**: etcd compacts history periodically, causing ResourceVersion to expire. The `isGoneError` handler above resets to baseline. Need to ensure this is observable (Prometheus counter).
+1. **Deduplication**: River UniqueOpts (ByArgs + ByQueue) prevents duplicate scheduling for the
+   same VM. No need to store Job ID in DB.
+
+2. **Cluster-level rate limiting**: RFC-0015 per-cluster concurrency applies. Polling jobs use
+   the `vm_status_sync` queue, separate from `vm_operations`, so they don't compete with
+   user-initiated operations.
+
+3. **ResourceVersion 410 Gone handling**: Implemented in `VMStatusSyncWorker`.
+   On `IsResourceExpired/IsGone`, worker clears `last_k8s_rv` and reschedules the next poll
+   with baseline `resourceVersion=""` to re-establish cache state.
