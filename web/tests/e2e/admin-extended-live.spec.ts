@@ -35,33 +35,53 @@
  * Environment variables:
  *   E2E_USERNAME  – admin username (default: e2e-admin)
  *   E2E_PASSWORD  – admin password (default: e2e-admin-123)
+ *   E2E_NEW_PASSWORD – password used when force_password_change=true
  */
 
-import { expect, test, type Page, type Response } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page, type Response } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
-import { urlPathEndsWith, urlPathIncludes, selectAntOption, getAntModal } from './lib/helpers';
+import {
+    getAntModal,
+    getApiTokenWithForcePasswordSupport,
+    loginWithForcePasswordSupport,
+    selectAntOption,
+    urlPathEndsWith,
+    urlPathIncludes,
+} from './lib/helpers';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const e2eUsername = process.env.E2E_USERNAME ?? 'e2e-admin';
 const e2ePassword = process.env.E2E_PASSWORD ?? 'e2e-admin-123';
+const e2eNewPassword = process.env.E2E_NEW_PASSWORD ?? (e2ePassword === 'admin' ? 'admin123' : `${e2ePassword}-new`);
+const e2eKubeconfigB64 = process.env.E2E_KUBECONFIG_B64 ?? 'dGVzdC1rdWJlY29uZmlnLWJhc2U2NA==';
+let activePassword = e2ePassword;
+let seededRateLimitUserID = '';
+
+interface ApiList<T> {
+    items?: T[];
+}
+
+async function getAdminAuthHeaders(request: APIRequestContext): Promise<{ Authorization: string }> {
+    const auth = await getApiTokenWithForcePasswordSupport(request, {
+        username: e2eUsername,
+        primaryPassword: e2ePassword,
+        secondaryPassword: e2eNewPassword,
+        currentPasswordHint: activePassword,
+    });
+    activePassword = auth.password;
+    return { Authorization: `Bearer ${auth.token}` };
+}
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
 async function login(page: Page): Promise<void> {
-    await page.goto('/login');
-    await expect(page.getByRole('heading', { name: 'KubeVirt Shepherd' })).toBeVisible();
-    await page.getByPlaceholder('Username').fill(e2eUsername);
-    await page.getByPlaceholder('Password').fill(e2ePassword);
-    // operationId: login
-    const loginRespPromise = page.waitForResponse(
-        (r) => urlPathEndsWith(r.url(), '/api/v1/auth/login') && r.request().method() === 'POST'
-    );
-    await page.getByRole('button', { name: 'Login' }).click();
-    const loginResp = await loginRespPromise;
-    expect(loginResp.status()).toBe(200);
-    await validateApiResponse('LoginResponse', loginResp);
-    await expect(page).toHaveURL(/\/dashboard$/);
+    activePassword = await loginWithForcePasswordSupport(page, {
+        username: e2eUsername,
+        primaryPassword: e2ePassword,
+        secondaryPassword: e2eNewPassword,
+        currentPasswordHint: activePassword,
+    });
 }
 
 async function expectSchema(
@@ -76,9 +96,104 @@ async function expectSchema(
     return { body, resp };
 }
 
+async function seedRateLimitStatusUser(request: APIRequestContext, headers: { Authorization: string }): Promise<string> {
+    const meResp = await request.get('/api/v1/auth/me', { headers });
+    expect(meResp.status(), 'GET /api/v1/auth/me must return 200 in setup').toBe(200);
+    const me = await validateApiResponse('UserInfo', meResp) as { id?: string };
+    const userID = me.id ?? '';
+    expect(userID, 'Auth user id is required for rate-limit seed').toBeTruthy();
+
+    // Rate-limit status rows are built from batch tickets/exemptions/overrides.
+    // Seed via explicit override upsert so this row is deterministic.
+    const overrideResp = await request.put(`/api/v1/admin/rate-limits/users/${userID}`, {
+        headers,
+        data: {
+            max_pending_parents: 8,
+            reason: `admin-extended rate-limit seed ${Date.now()}`,
+        },
+    });
+    expect(overrideResp.status(), 'PUT /admin/rate-limits/users/{id} must return 200 in setup').toBe(200);
+    await validateApiResponse('RateLimitUserOverride', overrideResp);
+
+    await expect.poll(async () => {
+        const statusResp = await request.get('/api/v1/admin/rate-limits/status', { headers });
+        expect(statusResp.status(), 'GET /admin/rate-limits/status must return 200 in setup').toBe(200);
+        const statusBody = await validateApiResponse('RateLimitStatusList', statusResp) as {
+            items?: Array<{ user_id?: string }>;
+        };
+        return statusBody.items?.find((item) => item.user_id === userID)?.user_id ?? '';
+    }, {
+        timeout: 20_000,
+        intervals: [300, 500, 700, 1_000],
+        message: `Rate-limit seed did not produce status row for user ${userID}`,
+    }).toBe(userID);
+
+    return userID;
+}
+
 // ── Test suite ────────────────────────────────────────────────────────────────
 
 test.describe('admin-extended live (contract-enforced, no mock, no skip)', () => {
+    test.beforeAll(async ({ request }) => {
+        // API-first setup (explicit, fail-fast): ensure one provider and one cluster exist.
+        const headers = await getAdminAuthHeaders(request);
+
+        const authResp = await request.get('/api/v1/admin/auth-providers', { headers });
+        expect(authResp.status(), 'GET /api/v1/admin/auth-providers must return 200 in setup').toBe(200);
+        const authData = await validateApiResponse('AuthProviderList', authResp) as ApiList<{ id?: string }>;
+        if ((authData.items ?? []).length === 0) {
+            const typeResp = await request.get('/api/v1/admin/auth-provider-types', { headers });
+            expect(typeResp.status(), 'GET /api/v1/admin/auth-provider-types must return 200 in setup').toBe(200);
+            const typeData = await validateApiResponse('AuthProviderTypeList', typeResp) as ApiList<{ type?: string }>;
+            const authType =
+                typeData.items?.find((item) => item.type === 'oidc')?.type ??
+                typeData.items?.find((item) => item.type === 'generic')?.type ??
+                typeData.items?.[0]?.type ??
+                'generic';
+            const createAuthResp = await request.post('/api/v1/admin/auth-providers', {
+                headers,
+                data: {
+                    name: `setup-auth-${Date.now().toString(36).slice(-5)}`,
+                    auth_type: authType,
+                    config: { test_endpoint: 'https://idp.example.com/healthz' },
+                    enabled: true,
+                },
+            });
+            if (createAuthResp.status() !== 201) {
+                const bodyText = await createAuthResp.text();
+                throw new Error(
+                    `Seed setup failed: POST /api/v1/admin/auth-providers returned ${createAuthResp.status()}.\n` +
+                    `Response body: ${bodyText}`
+                );
+            }
+            await validateApiResponse('AuthProvider', createAuthResp);
+        }
+
+        const clusterResp = await request.get('/api/v1/admin/clusters', { headers });
+        expect(clusterResp.status(), 'GET /api/v1/admin/clusters must return 200 in setup').toBe(200);
+        const clusterData = await validateApiResponse('ClusterList', clusterResp) as ApiList<{ id?: string }>;
+        if ((clusterData.items ?? []).length === 0) {
+            const createClusterResp = await request.post('/api/v1/admin/clusters', {
+                headers,
+                data: {
+                    name: `setup-cluster-${Date.now().toString(36).slice(-5)}`,
+                    kubeconfig: e2eKubeconfigB64,
+                },
+            });
+            if (createClusterResp.status() !== 201) {
+                const bodyText = await createClusterResp.text();
+                throw new Error(
+                    `Seed setup failed: POST /api/v1/admin/clusters returned ${createClusterResp.status()}.\n` +
+                    `Response body: ${bodyText}\n` +
+                    'If kubeconfig validation fails, set E2E_KUBECONFIG_B64 to a valid base64 kubeconfig.'
+                );
+            }
+            await validateApiResponse('Cluster', createClusterResp);
+        }
+
+        seededRateLimitUserID = await seedRateLimitStatusUser(request, headers);
+    });
+
     test.beforeEach(async ({ page }) => {
         await login(page);
     });
@@ -91,14 +206,16 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('listPermissions – GET /admin/permissions conforms to PermissionList schema', async ({ request }) => {
         // operationId: listPermissions
         // The frontend page is static — test the API endpoint directly.
-        const loginResp = await request.post('/api/v1/auth/login', {
-            data: { username: e2eUsername, password: e2ePassword },
+        const auth = await getApiTokenWithForcePasswordSupport(request, {
+            username: e2eUsername,
+            primaryPassword: e2ePassword,
+            secondaryPassword: e2eNewPassword,
+            currentPasswordHint: activePassword,
         });
-        expect(loginResp.ok(), 'API login failed').toBeTruthy();
-        const { token } = await loginResp.json() as { token: string };
+        activePassword = auth.password;
 
         const resp = await request.get('/api/v1/admin/permissions', {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${auth.token}` },
         });
         expect(resp.status(), `GET /admin/permissions returned ${resp.status()}`).toBe(200);
         const body = await resp.json();
@@ -135,9 +252,11 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         const updateRespPromise = page.waitForResponse(
             (r) => urlPathIncludes(r.url(), `/api/v1/admin/roles/${roleID}`) && r.request().method() === 'PATCH'
         );
+        await expect(page.getByTestId(`rbac-role-action-edit-${roleID}`)).toBeVisible();
         await page.getByTestId(`rbac-role-action-edit-${roleID}`).click();
         const editModal = getAntModal(page, 'rbac-role-edit-modal');
         await expect(editModal).toBeVisible();
+        await editModal.getByRole('textbox').first().fill(`${roleName}-upd`);
         await editModal.locator('textarea').first().fill('Updated by live e2e test');
         await editModal.getByRole('button', { name: 'OK' }).click();
 
@@ -281,9 +400,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         const createModal = getAntModal(page, 'template-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(tplName);
-        // Fill minimal JSON since frontend enforces JSON parsing for spec_text
-        const specEditor = createModal.locator('textarea').last();
-        await specEditor.fill('{}');
+        await createModal.getByLabel(/container image url/i).fill('quay.io/containerdisks/ubuntu:22.04');
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'Template', 201);
@@ -297,7 +414,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         await page.getByTestId(`template-action-edit-${tplID}`).click();
         const editModal = getAntModal(page, 'template-edit-modal');
         await expect(editModal).toBeVisible();
-        await editModal.locator('textarea').first().fill('Updated by live e2e test');
+        await editModal.locator('textarea').first().fill('Updated template description by live e2e test');
         await editModal.getByRole('button', { name: 'OK' }).click();
 
         await expectSchema(updateRespPromise, 'Template', 200);
@@ -327,9 +444,9 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         const createModal = getAntModal(page, 'instance-size-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(sizeName);
-        // Fill CPU and memory fields (Ant Design InputNumber uses role="spinbutton")
-        await createModal.getByRole('spinbutton').nth(1).fill('2');  // cpu_cores
-        await createModal.getByRole('spinbutton').nth(2).fill('4');    // memory_gi
+        // Use native field IDs to avoid picking wrong Antd spinbutton nodes.
+        await createModal.locator('#cpu_cores').fill('2');
+        await createModal.locator('#memory_gi').fill('4');
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'InstanceSize', 201);
@@ -343,7 +460,9 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         await page.getByTestId(`instance-size-action-edit-${sizeID}`).click();
         const editModal = getAntModal(page, 'instance-size-edit-modal');
         await expect(editModal).toBeVisible();
-        await editModal.getByRole('spinbutton').nth(1).fill('4');  // cpu_cores
+        // Wait until edit form hydration finishes (destroyOnHidden + setFieldsValue timing).
+        await expect(editModal.locator('#memory_gi')).toHaveValue(/4(?:\\.0)?/);
+        await editModal.locator('#cpu_cores').fill('4');
         await editModal.getByRole('button', { name: 'OK' }).click();
 
         await expectSchema(updateRespPromise, 'InstanceSize', 200);
@@ -381,7 +500,8 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         await page.getByTestId(`auth-provider-action-edit-${providerID}`).click();
         const editModal = getAntModal(page, 'auth-provider-edit-modal');
         await expect(editModal).toBeVisible();
-        await editModal.locator('textarea').first().fill('{"issuer":"https://updated-idp.example.com"}');
+        await editModal.getByLabel(/\*?\s*name/i).fill(`upd-auth-${Date.now().toString(36).slice(-5)}`);
+        await editModal.getByLabel(/provider config/i).fill('{"test_endpoint":"https://idp.example.com/healthz"}');
         await editModal.getByRole('button', { name: 'OK' }).click();
 
         await expectSchema(updateRespPromise, 'AuthProvider', 200);
@@ -541,24 +661,19 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
     test('createRateLimitExemption + deleteRateLimitExemption – full lifecycle', async ({ page }) => {
         // operationId: createRateLimitExemption, deleteRateLimitExemption
-        // Get first user to exempt (use validateApiResponse for single-read safety)
-        const usersRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'GET'
-        );
+        expect(seededRateLimitUserID, 'Rate-limit seed user is missing').toBeTruthy();
         await page.goto('/admin/users');
         await expect(page.getByTestId('admin-users-page')).toBeVisible();
-        const usersBody = await validateApiResponse('UserList', await usersRespPromise) as { items?: Array<{ id?: string }> };
-        const userID = usersBody.items?.[0]?.id ?? '';
-        expect(userID, 'No users found for rate limit exemption test').toBeTruthy();
-        // Rate limit exemptions are managed at the bottom of the /admin/users page in the current UI
+        const userID = seededRateLimitUserID;
+        const exemptBtn = page.getByTestId(`ratelimit-action-exempt-${userID}`);
+        await expect(exemptBtn, `No rate-limit exemption action found for seeded user ${userID}`).toBeVisible();
 
         // ── POST /admin/rate-limits/exemptions ────────────────────────────────────
         const createRespPromise = page.waitForResponse(
             (r) => urlPathEndsWith(r.url(), '/api/v1/admin/rate-limits/exemptions') && r.request().method() === 'POST'
         );
 
-        // Ensure we bypass the generic `rate-limit-exemption-create-button` which sets '' and instead select a specific table row
-        await page.getByTestId(`ratelimit-action-exempt-${userID}`).click();
+        await exemptBtn.click();
 
         const createModal = getAntModal(page, 'rate-limit-exemption-create-modal');
         await expect(createModal).toBeVisible();
@@ -581,26 +696,21 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
 
     test('updateRateLimitUserOverrides – PUT /admin/rate-limits/users/{id} conforms to RateLimitUserOverride schema', async ({ page }) => {
         // operationId: updateRateLimitUserOverrides
-        // Get first user (use validateApiResponse for single-read safety)
-        const usersRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'GET'
-        );
+        expect(seededRateLimitUserID, 'Rate-limit seed user is missing').toBeTruthy();
         await page.goto('/admin/users');
         await expect(page.getByTestId('admin-users-page')).toBeVisible();
-        const usersBody = await validateApiResponse('UserList', await usersRespPromise) as { items?: Array<{ id?: string }> };
-        const userID = usersBody.items?.[0]?.id ?? '';
-        expect(userID, 'No users found for rate limit override test').toBeTruthy();
-
-        // Navigate to rate limit override for this user
-        // Rate limit overrides are managed at the bottom of the /admin/users page in the current UI
+        const userID = seededRateLimitUserID;
+        const overrideBtn = page.getByTestId(`rate-limit-user-action-edit-${userID}`);
+        await expect(overrideBtn, `No rate-limit override action found for seeded user ${userID}`).toBeVisible();
 
         const updateRespPromise = page.waitForResponse(
             (r) => urlPathIncludes(r.url(), `/api/v1/admin/rate-limits/users/${userID}`) && r.request().method() === 'PUT'
         );
-        await page.getByTestId(`rate-limit-user-action-edit-${userID}`).click();
+        await overrideBtn.click();
         const editModal = getAntModal(page, 'rate-limit-user-edit-modal');
         await expect(editModal).toBeVisible();
-        await editModal.locator('input[type="number"]').first().fill('100');
+        await editModal.getByRole('spinbutton', { name: /max parent batches/i }).fill('100');
+        await editModal.getByRole('textbox', { name: /reason/i }).fill('Updated by live e2e test');
         await editModal.getByRole('button', { name: 'OK' }).click();
 
         await expectSchema(updateRespPromise, 'RateLimitUserOverride', 200);

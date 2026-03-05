@@ -16,7 +16,8 @@
  * Reference: https://playwright.dev/docs/best-practices
  */
 
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { validateResponse } from './schema-validator';
 
 // ── URL Path Matching (query-param safe) ─────────────────────────────────────
 
@@ -91,8 +92,11 @@ export async function selectAntOption(
     optionFilter?: string | RegExp,
     timeout = 5000
 ): Promise<void> {
+    const trigger = combobox.first();
+    await expect(trigger).toBeVisible({ timeout });
+
     // Step 1: Click to open dropdown
-    await combobox.click();
+    await trigger.click();
 
     // Step 2: Wait for any OLD dropdown leave-animations to finish.
     // Ant Design adds `.ant-slide-up-leave` during close animation.
@@ -102,25 +106,76 @@ export async function selectAntOption(
         page.locator('.ant-select-dropdown.ant-slide-up-leave')
     ).toHaveCount(0, { timeout });
 
-    // Step 3: Locate the ACTIVE dropdown (exclude any lingering leave-animations).
-    // Use Playwright visibility filtering instead of CSS :visible pseudo selectors.
+    // Step 3: Locate the active dropdown.
     const dropdown = page
         .locator('.ant-select-dropdown:not(.ant-slide-up-leave):not(.ant-slide-up-leave-active)')
         .filter({ visible: true })
         .last();
     await expect(dropdown).toBeVisible({ timeout });
 
-    // Step 4: Find the target option within the active dropdown
-    let option: Locator;
-    if (optionFilter) {
-        option = dropdown.locator('.ant-select-item-option').filter({ hasText: optionFilter }).first();
-    } else {
-        option = dropdown.locator('.ant-select-item-option').first();
+    const optionCandidates = dropdown.locator('[role="option"], .ant-select-item-option');
+    const visibleOptions = optionCandidates.filter({ visible: true });
+
+    // Step 4: Wait for options to be ready. Async option loading is common in
+    // Ant Design Select and should not fail immediately.
+    const readiness = { value: 'pending' as 'pending' | 'ready' | 'no-data' };
+    await expect
+        .poll(async () => {
+            const visibleOptionCount = await visibleOptions.count();
+            if (visibleOptionCount > 0) {
+                readiness.value = 'ready';
+                return readiness.value;
+            }
+            const noDataVisible = await dropdown
+                .getByText(/^(no data|not found|no options)$/i)
+                .first()
+                .isVisible()
+                .catch(() => false);
+            if (noDataVisible) {
+                readiness.value = 'no-data';
+                return readiness.value;
+            }
+            readiness.value = 'pending';
+            return readiness.value;
+        }, { timeout })
+        .not.toBe('pending');
+
+    if (readiness.value === 'no-data') {
+        throw new Error(
+            'Ant Select has no selectable options ("No data"/"Not Found"). ' +
+            'For approval flow this usually means no HEALTHY+enabled cluster is available.'
+        );
     }
 
-    // Step 5: Wait for option to be visible and stable before clicking
+    // Step 5: Find the target option within the active dropdown
+    let option: Locator;
+    if (optionFilter) {
+        option = visibleOptions.filter({ hasText: optionFilter }).first();
+    } else {
+        option = visibleOptions.first();
+    }
+
+    // Step 6: Wait for option to be visible and stable before clicking
+    const matchCount = await option.count();
+    if (matchCount === 0) {
+        const available = (await visibleOptions.allTextContents())
+            .map((text) => text.trim())
+            .filter(Boolean)
+            .join(' | ');
+        throw new Error(
+            `Ant Select option not found for filter ${String(optionFilter)}. ` +
+            `Available options: ${available || '(none)'}`
+        );
+    }
+
     await expect(option).toBeVisible({ timeout });
     await option.click();
+
+    // Multi-select dropdowns may remain open after selecting one item and can block modal buttons.
+    // Press Escape once to close the dropdown explicitly when it is still visible.
+    if (await dropdown.isVisible().catch(() => false)) {
+        await page.keyboard.press('Escape');
+    }
 }
 
 // ── Ant Design Modal Locator Helper ──────────────────────────────────────────
@@ -166,4 +221,269 @@ export async function selectAntOption(
  */
 export function getAntModal(page: Page, testId: string): Locator {
     return page.getByTestId(testId).locator('.ant-modal-wrap');
+}
+
+/**
+ * Issue a same-origin fetch using the JWT persisted by the app in localStorage.
+ * Useful in E2E tests when we need deterministic API triggering from page context.
+ */
+export async function fetchStatusWithStoredToken(
+    page: Page,
+    path: string,
+    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE' = 'GET'
+): Promise<number> {
+    return page.evaluate(async ({ path: requestPath, method: requestMethod }) => {
+        let token = '';
+        try {
+            const raw = window.localStorage.getItem('shepherd-auth');
+            const parsed = raw ? JSON.parse(raw) : null;
+            token = typeof parsed?.state?.token === 'string' ? parsed.state.token : '';
+        } catch {
+            token = '';
+        }
+
+        const headers: Record<string, string> = {};
+        if (token) {
+            headers.Authorization = `Bearer ${token}`;
+        }
+
+        const resp = await fetch(requestPath, {
+            method: requestMethod,
+            headers,
+        });
+        return resp.status;
+    }, { path, method });
+}
+
+interface LoginResponsePayload {
+    token?: string;
+    force_password_change?: boolean;
+}
+
+interface AuthFlowOptions {
+    username: string;
+    primaryPassword: string;
+    secondaryPassword?: string;
+    currentPasswordHint?: string;
+}
+
+interface BatchRateLimitSetupOptions extends AuthFlowOptions {
+    reasonPrefix?: string;
+    maxPendingParents?: number;
+    maxPendingChildren?: number;
+    cooldownSeconds?: number;
+}
+
+function uniqueCandidates(values: Array<string | undefined>): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const value of values) {
+        const v = (value ?? '').trim();
+        if (!v || seen.has(v)) continue;
+        seen.add(v);
+        out.push(v);
+    }
+    return out;
+}
+
+function resolveNextPassword(current: string, preferred?: string): string {
+    const candidate = (preferred ?? '').trim();
+    if (candidate && candidate !== current) {
+        return candidate;
+    }
+    if (current === 'admin') {
+        return 'admin123';
+    }
+    return `${current}-new`;
+}
+
+async function submitUILogin(page: Page, username: string, password: string) {
+    await page.goto('/login');
+    await expect(page.getByRole('heading', { name: /shepherd/i })).toBeVisible();
+    await page.locator('#login_username').fill(username);
+    await page.locator('#login_password').fill(password);
+
+    const loginRespPromise = page.waitForResponse(
+        (r) => urlPathEndsWith(r.url(), '/api/v1/auth/login') && r.request().method() === 'POST'
+    );
+    await page.getByRole('button', { name: 'Login' }).click();
+    return loginRespPromise;
+}
+
+async function completeForcedPasswordChangeUI(page: Page, currentPassword: string, newPassword: string): Promise<void> {
+    await expect(page).toHaveURL(/\/auth\/change-password(?:\?.*)?$/);
+    await expect(page.locator('#change-password_current_password')).toBeVisible();
+    await page.locator('#change-password_current_password').fill(currentPassword);
+    await page.locator('#change-password_new_password').fill(newPassword);
+    await page.locator('#change-password_confirm_password').fill(newPassword);
+    const submitButton = page.getByRole('button', { name: /change password/i }).first();
+    await expect(submitButton).toBeVisible();
+    await expect(submitButton).toBeEnabled();
+
+    const changeRespPromise = page.waitForResponse(
+        (r) => urlPathEndsWith(r.url(), '/api/v1/auth/change-password') && r.request().method() === 'POST'
+    );
+    await submitButton.click();
+    const changeResp = await changeRespPromise;
+    expect(changeResp.status(), `POST /auth/change-password returned ${changeResp.status()}`).toBe(204);
+    // In live runs, first-time compile of /dashboard can take several seconds.
+    await expect(page).toHaveURL(/\/dashboard$/, { timeout: 45_000 });
+}
+
+/**
+ * UI login helper that supports first-login forced password change and password fallback.
+ *
+ * Returns the password that is valid after login flow completes.
+ */
+export async function loginWithForcePasswordSupport(
+    page: Page,
+    options: AuthFlowOptions
+): Promise<string> {
+    const candidates = uniqueCandidates([
+        options.currentPasswordHint,
+        options.primaryPassword,
+        options.secondaryPassword,
+    ]);
+    let lastStatus = 0;
+
+    for (const password of candidates) {
+        const loginResp = await submitUILogin(page, options.username, password);
+        lastStatus = loginResp.status();
+        if (lastStatus === 401) {
+            continue;
+        }
+
+        expect(lastStatus, `POST /auth/login returned unexpected status ${lastStatus}`).toBe(200);
+        const loginBody = await loginResp.json() as LoginResponsePayload;
+        validateResponse('LoginResponse', loginBody);
+
+        if (!loginBody.force_password_change) {
+            // In live runs, first-time compile of /dashboard can take several seconds.
+            await expect(page).toHaveURL(/\/dashboard$/, { timeout: 45_000 });
+            return password;
+        }
+
+        const nextPassword = resolveNextPassword(password, options.secondaryPassword);
+        await completeForcedPasswordChangeUI(page, password, nextPassword);
+        return nextPassword;
+    }
+
+    throw new Error(
+        `Unable to log in user "${options.username}" with candidate passwords; ` +
+        `last status: ${lastStatus}`
+    );
+}
+
+/**
+ * API login helper with the same semantics as UI login helper:
+ * fallback candidate passwords + auto handling force_password_change.
+ */
+export async function getApiTokenWithForcePasswordSupport(
+    request: APIRequestContext,
+    options: AuthFlowOptions
+): Promise<{ token: string; password: string }> {
+    const candidates = uniqueCandidates([
+        options.currentPasswordHint,
+        options.primaryPassword,
+        options.secondaryPassword,
+    ]);
+    let lastStatus = 0;
+
+    for (const password of candidates) {
+        const loginResp = await request.post('/api/v1/auth/login', {
+            data: { username: options.username, password },
+        });
+        lastStatus = loginResp.status();
+        if (lastStatus === 401) {
+            continue;
+        }
+
+        expect(lastStatus, `POST /auth/login returned unexpected status ${lastStatus}`).toBe(200);
+        const loginBody = await loginResp.json() as LoginResponsePayload;
+        validateResponse('LoginResponse', loginBody);
+        const token = loginBody.token ?? '';
+        expect(token, 'LoginResponse.token is required').toBeTruthy();
+
+        if (!loginBody.force_password_change) {
+            return { token, password };
+        }
+
+        const nextPassword = resolveNextPassword(password, options.secondaryPassword);
+        const changeResp = await request.post('/api/v1/auth/change-password', {
+            headers: { Authorization: `Bearer ${token}` },
+            data: {
+                old_password: password,
+                new_password: nextPassword,
+            },
+        });
+        expect(changeResp.status(), `POST /auth/change-password returned ${changeResp.status()}`).toBe(204);
+
+        const reloginResp = await request.post('/api/v1/auth/login', {
+            data: { username: options.username, password: nextPassword },
+        });
+        expect(reloginResp.status(), `POST /auth/login after password change returned ${reloginResp.status()}`).toBe(200);
+        const reloginBody = await reloginResp.json() as LoginResponsePayload;
+        validateResponse('LoginResponse', reloginBody);
+        expect(reloginBody.force_password_change, 'force_password_change should be false after password change').not.toBeTruthy();
+        const reloginToken = reloginBody.token ?? '';
+        expect(reloginToken, 'LoginResponse.token is required after password change').toBeTruthy();
+        return { token: reloginToken, password: nextPassword };
+    }
+
+    throw new Error(
+        `Unable to log in user "${options.username}" via API with candidate passwords; ` +
+        `last status: ${lastStatus}`
+    );
+}
+
+/**
+ * Ensure batch-submit happy-path tests are deterministic by setting explicit
+ * per-user batch policy through admin APIs (API-first setup, no assertion weakening).
+ */
+export async function ensureBatchSubmitPolicyForUser(
+    request: APIRequestContext,
+    options: BatchRateLimitSetupOptions
+): Promise<{ password: string; userID: string }> {
+    const auth = await getApiTokenWithForcePasswordSupport(request, options);
+    const headers = { Authorization: `Bearer ${auth.token}` };
+
+    const meResp = await request.get('/api/v1/auth/me', { headers });
+    expect(meResp.status(), `GET /auth/me returned ${meResp.status()}`).toBe(200);
+    const meBody = await meResp.json() as { id?: string };
+    validateResponse('UserInfo', meBody);
+    const userID = (meBody.id ?? '').trim();
+    expect(userID, 'Authenticated user id is required for batch policy setup').toBeTruthy();
+
+    const reasonPrefix = (options.reasonPrefix ?? 'live-e2e batch policy setup').trim();
+    const reason = `${reasonPrefix} ${Date.now()}`;
+
+    const exemptionResp = await request.post('/api/v1/admin/rate-limits/exemptions', {
+        headers,
+        data: {
+            user_id: userID,
+            reason,
+        },
+    });
+    expect(
+        exemptionResp.status(),
+        `POST /admin/rate-limits/exemptions returned ${exemptionResp.status()}`
+    ).toBe(200);
+    validateResponse('RateLimitExemption', await exemptionResp.json());
+
+    const overrideResp = await request.put(`/api/v1/admin/rate-limits/users/${userID}`, {
+        headers,
+        data: {
+            max_pending_parents: options.maxPendingParents ?? 128,
+            max_pending_children: options.maxPendingChildren ?? 4096,
+            cooldown_seconds: options.cooldownSeconds ?? 0,
+            reason,
+        },
+    });
+    expect(
+        overrideResp.status(),
+        `PUT /admin/rate-limits/users/{user_id} returned ${overrideResp.status()}`
+    ).toBe(200);
+    validateResponse('RateLimitUserOverride', await overrideResp.json());
+
+    return { password: auth.password, userID };
 }
