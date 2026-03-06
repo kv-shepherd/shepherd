@@ -28,6 +28,7 @@
 | [RFC-0016](./RFC-0016-key-rotation.md) | Secret Key Rotation | Proposed | P2 | Compliance or operator request |
 | [RFC-0017](./RFC-0017-external-secret-provider.md) | External Secret Provider | Deferred | P2 | Enterprise KMS/Vault requirement |
 | [RFC-0018](./RFC-0018-external-notification.md) | External Notification Channels | Deferred | P2 | V1 complete; Email/Webhook/Slack requested |
+| [RFC-0019](./RFC-0019-kubevirt-instancetype-adapter.md) | KubeVirt Instancetype Adapter | Deferred | P2 | Instancetype/Preference import-export or cross-cluster migration needed |
 
 > **Notes**:
 > - ¹ Soft archiving (`archived_at` field) is implemented in Phase 4; this RFC covers physical archiving to separate tables
