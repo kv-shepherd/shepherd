@@ -49,6 +49,7 @@
 | [ADR-0037](./ADR-0037-openapi-validation-architecture-and-enforcement-policy.md) | OpenAPI Validation Architecture and Enforcement Policy | **Accepted** | - |
 | [ADR-0040](./ADR-0040-catalog-scope-for-template-and-instancesize.md) | Catalog Scope for Template and InstanceSize | **Proposed** | - |
 | [ADR-0041](./ADR-0041-power-operation-approval-requirement-service.md) | Power Operation Approval Requirement Service | **Proposed** | - |
+| [ADR-0042](./ADR-0042-cluster-policy-governance-model.md) | Explicit Cluster Policy Governance Model | **Proposed** | - |
 
 > ℹ️ **ADR-0037 Sync Notes**:
 >
