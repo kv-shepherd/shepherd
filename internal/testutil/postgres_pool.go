@@ -32,15 +32,15 @@ func OpenPGXPool(t *testing.T, prefix string) *pgxpool.Pool {
 	}
 	t.Cleanup(adminPool.Close)
 
-	if err := adminPool.Ping(ctx); err != nil {
-		t.Fatalf("ping postgres: %v", err)
+	if pingErr := waitForPostgresReady(ctx, adminPool.Ping); pingErr != nil {
+		t.Fatalf("ping postgres: %v", pingErr)
 	}
 
-	if _, err := adminPool.Exec(ctx, fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)); err != nil {
-		t.Fatalf("create test schema %q: %v", schema, err)
+	if _, execErr := adminPool.Exec(ctx, fmt.Sprintf(`CREATE SCHEMA %q`, schema)); execErr != nil {
+		t.Fatalf("create test schema %q: %v", schema, execErr)
 	}
 	t.Cleanup(func() {
-		_, _ = adminPool.Exec(ctx, fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schema))
+		_, _ = adminPool.Exec(ctx, fmt.Sprintf(`DROP SCHEMA IF EXISTS %q CASCADE`, schema))
 	})
 
 	schemaDSN, err := dsnWithSearchPath(dsn, schema)
@@ -54,8 +54,8 @@ func OpenPGXPool(t *testing.T, prefix string) *pgxpool.Pool {
 	}
 	t.Cleanup(testPool.Close)
 
-	if err := testPool.Ping(ctx); err != nil {
-		t.Fatalf("ping postgres test pool: %v", err)
+	if pingErr := waitForPostgresReady(ctx, testPool.Ping); pingErr != nil {
+		t.Fatalf("ping postgres test pool: %v", pingErr)
 	}
 
 	return testPool

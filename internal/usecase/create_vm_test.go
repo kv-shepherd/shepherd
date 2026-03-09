@@ -3,6 +3,8 @@ package usecase
 import (
 	"testing"
 
+	"github.com/google/uuid"
+
 	"kv-shepherd.io/shepherd/internal/domain"
 )
 
@@ -88,5 +90,17 @@ func TestSameCreateResource(t *testing.T) {
 				t.Fatalf("sameCreateResource mismatch: got %v want %v", got, tc.expect)
 			}
 		})
+	}
+}
+
+func TestGenerateID_ReturnsValidUUID(t *testing.T) {
+	t.Parallel()
+
+	got := generateID()
+	if got == "" {
+		t.Fatal("generateID() returned empty string")
+	}
+	if _, err := uuid.Parse(got); err != nil {
+		t.Fatalf("generateID() = %q, want valid UUID: %v", got, err)
 	}
 }

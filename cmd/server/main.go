@@ -33,10 +33,14 @@ func run() error {
 	}
 
 	// Initialize logger
-	if err := logger.Init(cfg.Log.Level, cfg.Log.Format); err != nil {
-		return fmt.Errorf("init logger: %w", err)
+	if initErr := logger.Init(cfg.Log.Level, cfg.Log.Format); initErr != nil {
+		return fmt.Errorf("init logger: %w", initErr)
 	}
-	defer logger.Sync()
+	defer func() {
+		if syncErr := logger.Sync(); syncErr != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "warn: logger sync failed: %v\n", syncErr)
+		}
+	}()
 
 	logger.Info("Starting KubeVirt Shepherd",
 		zap.Int("port", cfg.Server.Port),
@@ -68,7 +72,7 @@ func run() error {
 
 	// Graceful shutdown
 	errCh := make(chan error, 1)
-	go func() { //nolint:naked-goroutine // main server goroutine is exempt
+	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 		}

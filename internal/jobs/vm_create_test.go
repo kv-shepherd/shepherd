@@ -248,6 +248,25 @@ func TestExtractTemplateCloudInitFromSnapshot(t *testing.T) {
 	}
 }
 
+func TestResolveEffectiveSelectionIDs_DefaultsToPayload(t *testing.T) {
+	t.Parallel()
+
+	templateID, instanceSizeID := resolveEffectiveSelectionIDs(
+		domain.VMCreationPayload{
+			TemplateID:     "tpl-1",
+			InstanceSizeID: "size-1",
+		},
+		nil,
+	)
+
+	if templateID != "tpl-1" {
+		t.Fatalf("templateID = %q, want tpl-1", templateID)
+	}
+	if instanceSizeID != "size-1" {
+		t.Fatalf("instanceSizeID = %q, want size-1", instanceSizeID)
+	}
+}
+
 func TestResolveEffectiveSelectionIDs(t *testing.T) {
 	payload := domain.VMCreationPayload{
 		TemplateID:     "tpl-A",
