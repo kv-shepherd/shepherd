@@ -7,10 +7,13 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	kubevirtv1 "kubevirt.io/api/core/v1"
+	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 
 	"kv-shepherd.io/shepherd/internal/domain"
 )
@@ -328,6 +331,211 @@ func (p *KubeVirtProviderImpl) ValidateSpec(ctx context.Context, cluster, namesp
 	return &domain.ValidationResult{Valid: true}, nil
 }
 
+// GetDataVolume retrieves a CDI DataVolume for provisioning observability.
+func (p *KubeVirtProviderImpl) GetDataVolume(ctx context.Context, cluster, namespace, name string) (*domain.DataVolume, error) {
+	client, err := p.clientFactory(cluster)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	dv, err := client.DataVolume().Get(opCtx, namespace, name, k8smetav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get datavolume %s/%s: %w", namespace, name, err)
+	}
+
+	conditions := make([]domain.ProvisioningCondition, 0, len(dv.Status.Conditions))
+	for _, cond := range dv.Status.Conditions {
+		conditions = append(conditions, domain.ProvisioningCondition{
+			Type:               string(cond.Type),
+			Status:             string(cond.Status),
+			Reason:             cond.Reason,
+			Message:            cond.Message,
+			LastTransitionTime: cond.LastTransitionTime.Time,
+		})
+	}
+
+	return &domain.DataVolume{
+		Name:         dv.Name,
+		Namespace:    dv.Namespace,
+		UID:          string(dv.UID),
+		ClaimName:    dv.Status.ClaimName,
+		Phase:        string(dv.Status.Phase),
+		Progress:     string(dv.Status.Progress),
+		RestartCount: dv.Status.RestartCount,
+		Conditions:   conditions,
+	}, nil
+}
+
+// GetPersistentVolumeClaim retrieves a PVC backing a CDI DataVolume.
+func (p *KubeVirtProviderImpl) GetPersistentVolumeClaim(ctx context.Context, cluster, namespace, name string) (*domain.PersistentVolumeClaim, error) {
+	client, err := p.clientFactory(cluster)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	pvc, err := client.PVC().Get(opCtx, namespace, name, k8smetav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get pvc %s/%s: %w", namespace, name, err)
+	}
+
+	return &domain.PersistentVolumeClaim{
+		Name:                  pvc.Name,
+		Namespace:             pvc.Namespace,
+		Phase:                 string(pvc.Status.Phase),
+		StorageClassName:      stringValue(pvc.Spec.StorageClassName),
+		VolumeMode:            pvcVolumeMode(pvc.Spec.VolumeMode),
+		RequestedStorageBytes: quantityValueBytes(pvc.Spec.Resources.Requests.Storage()),
+		CapacityBytes:         quantityValueBytes(pvc.Status.Capacity.Storage()),
+		CloneType:             strings.TrimSpace(pvc.Annotations["cdi.kubevirt.io/cloneType"]),
+		ClonePhase:            strings.TrimSpace(pvc.Annotations["cdi.kubevirt.io/clonePhase"]),
+		CloneFallbackReason:   strings.TrimSpace(pvc.Annotations["cdi.kubevirt.io/cloneFallbackReason"]),
+	}, nil
+}
+
+// GetStorageClass retrieves a cluster-scoped StorageClass for clone-expansion preflight.
+func (p *KubeVirtProviderImpl) GetStorageClass(ctx context.Context, cluster, name string) (*domain.StorageClass, error) {
+	client, err := p.clientFactory(cluster)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	storageClass, err := client.StorageClass().Get(opCtx, name, k8smetav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get storageclass %s: %w", name, err)
+	}
+
+	allowExpansion := false
+	if storageClass.AllowVolumeExpansion != nil {
+		allowExpansion = *storageClass.AllowVolumeExpansion
+	}
+
+	return &domain.StorageClass{
+		Name:                 storageClass.Name,
+		AllowVolumeExpansion: allowExpansion,
+	}, nil
+}
+
+// GetStorageProfile retrieves the CDI StorageProfile for a target storage class.
+func (p *KubeVirtProviderImpl) GetStorageProfile(ctx context.Context, cluster, name string) (*domain.StorageProfile, error) {
+	client, err := p.clientFactory(cluster)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	storageProfile, err := client.StorageProfile().Get(opCtx, name, k8smetav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get storageprofile %s: %w", name, err)
+	}
+
+	return mapStorageProfile(storageProfile), nil
+}
+
+// ListEventsForObject lists best-effort Kubernetes Events for the referenced object.
+func (p *KubeVirtProviderImpl) ListEventsForObject(ctx context.Context, cluster string, ref domain.ObjectReference) ([]domain.ProvisioningEvent, error) {
+	client, err := p.clientFactory(cluster)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+	if strings.TrimSpace(ref.Namespace) == "" {
+		return nil, fmt.Errorf("event lookup requires namespace")
+	}
+	if strings.TrimSpace(ref.Kind) == "" || strings.TrimSpace(ref.Name) == "" {
+		return nil, fmt.Errorf("event lookup requires kind and name")
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	selectors := []string{
+		"involvedObject.kind=" + ref.Kind,
+		"involvedObject.name=" + ref.Name,
+	}
+	if ref.UID != "" {
+		selectors = append(selectors, "involvedObject.uid="+ref.UID)
+	}
+
+	list, err := client.Events().List(opCtx, ref.Namespace, k8smetav1.ListOptions{
+		FieldSelector: strings.Join(selectors, ","),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list events for %s/%s %s: %w", ref.Namespace, ref.Kind, ref.Name, err)
+	}
+
+	items := make([]domain.ProvisioningEvent, 0, len(list.Items))
+	for i := range list.Items {
+		ev := &list.Items[i]
+		items = append(items, domain.ProvisioningEvent{
+			Type:          ev.Type,
+			Reason:        ev.Reason,
+			Message:       ev.Message,
+			Count:         ev.Count,
+			FirstObserved: firstObservedTime(*ev),
+			LastObserved:  lastObservedTime(*ev),
+		})
+	}
+	return items, nil
+}
+
+func pvcVolumeMode(mode *corev1.PersistentVolumeMode) string {
+	if mode == nil {
+		return ""
+	}
+	return string(*mode)
+}
+
+func mapStorageProfile(storageProfile *cdiv1beta1.StorageProfile) *domain.StorageProfile {
+	if storageProfile == nil {
+		return &domain.StorageProfile{}
+	}
+
+	return &domain.StorageProfile{
+		Name:              storageProfile.Name,
+		CloneStrategy:     storageProfileCloneStrategy(storageProfile),
+		DefaultVolumeMode: storageProfileDefaultVolumeMode(storageProfile),
+	}
+}
+
+func storageProfileCloneStrategy(storageProfile *cdiv1beta1.StorageProfile) string {
+	if storageProfile == nil {
+		return ""
+	}
+	if storageProfile.Status.CloneStrategy != nil {
+		return string(*storageProfile.Status.CloneStrategy)
+	}
+	if storageProfile.Spec.CloneStrategy != nil {
+		return string(*storageProfile.Spec.CloneStrategy)
+	}
+	return ""
+}
+
+func storageProfileDefaultVolumeMode(storageProfile *cdiv1beta1.StorageProfile) string {
+	if storageProfile == nil {
+		return ""
+	}
+
+	claimPropertySets := storageProfile.Status.ClaimPropertySets
+	if len(claimPropertySets) == 0 {
+		claimPropertySets = storageProfile.Spec.ClaimPropertySets
+	}
+	if len(claimPropertySets) == 0 || claimPropertySets[0].VolumeMode == nil {
+		return ""
+	}
+
+	return string(*claimPropertySets[0].VolumeMode)
+}
+
 // extractNameFromYAML extracts metadata.name from YAML bytes for safety validation.
 // Used by UpdateVM to ensure the YAML target matches the function parameter.
 func extractNameFromYAML(yamlData []byte) (string, error) {
@@ -378,4 +586,38 @@ func validateNestedPathHalfStep(
 		return nil
 	}
 	return validateFn(path, value)
+}
+
+func firstObservedTime(ev corev1.Event) time.Time {
+	if !ev.FirstTimestamp.IsZero() {
+		return ev.FirstTimestamp.Time
+	}
+	if !ev.EventTime.IsZero() {
+		return ev.EventTime.Time
+	}
+	return ev.CreationTimestamp.Time
+}
+
+func lastObservedTime(ev corev1.Event) time.Time {
+	if !ev.LastTimestamp.IsZero() {
+		return ev.LastTimestamp.Time
+	}
+	if !ev.EventTime.IsZero() {
+		return ev.EventTime.Time
+	}
+	return ev.CreationTimestamp.Time
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func quantityValueBytes(q *resource.Quantity) int64 {
+	if q == nil {
+		return 0
+	}
+	return q.Value()
 }
