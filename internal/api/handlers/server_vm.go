@@ -45,13 +45,13 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 		return
 	}
 	if visibility.restricted {
-		visibleNamespaces, err := s.listVisibleNamespaceNames(ctx, visibility)
-		if err != nil {
-			if isRequestContextCanceled(err) {
-				logger.Debug("request canceled while listing visible namespaces", zap.Error(err))
+		visibleNamespaces, listErr := s.listVisibleNamespaceNames(ctx, visibility)
+		if listErr != nil {
+			if isRequestContextCanceled(listErr) {
+				logger.Debug("request canceled while listing visible namespaces", zap.Error(listErr))
 				return
 			}
-			logger.Error("failed to load visible namespaces", zap.Error(err))
+			logger.Error("failed to load visible namespaces", zap.Error(listErr))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}

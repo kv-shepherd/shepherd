@@ -11,10 +11,11 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/jackc/pgx/v5/stdlib" // Register pgx as the database/sql driver for Ent PostgreSQL tests.
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
+
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/enttest"
 )
@@ -42,16 +43,16 @@ func OpenEntPostgres(t *testing.T, prefix string) *ent.Client {
 	}
 	t.Cleanup(func() { _ = adminDB.Close() })
 
-	if err := adminDB.PingContext(context.Background()); err != nil {
-		t.Fatalf("ping postgres: %v", err)
+	if pingErr := waitForPostgresReady(context.Background(), adminDB.PingContext); pingErr != nil {
+		t.Fatalf("ping postgres: %v", pingErr)
 	}
 
-	if _, err := adminDB.ExecContext(context.Background(), fmt.Sprintf(`CREATE SCHEMA "%s"`, schema)); err != nil {
-		t.Fatalf("create test schema %q: %v", schema, err)
+	if _, execErr := adminDB.ExecContext(context.Background(), fmt.Sprintf(`CREATE SCHEMA %q`, schema)); execErr != nil {
+		t.Fatalf("create test schema %q: %v", schema, execErr)
 	}
 
 	t.Cleanup(func() {
-		_, _ = adminDB.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schema))
+		_, _ = adminDB.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA IF EXISTS %q CASCADE`, schema))
 	})
 
 	schemaDSN, err := dsnWithSearchPath(dsn, schema)
@@ -64,6 +65,9 @@ func OpenEntPostgres(t *testing.T, prefix string) *ent.Client {
 		t.Fatalf("open postgres test connection: %v", err)
 	}
 	t.Cleanup(func() { _ = testDB.Close() })
+	if pingErr := waitForPostgresReady(context.Background(), testDB.PingContext); pingErr != nil {
+		t.Fatalf("ping postgres test connection: %v", pingErr)
+	}
 
 	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, testDB))))
 	t.Cleanup(func() { _ = client.Close() })

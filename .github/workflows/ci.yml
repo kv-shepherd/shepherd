@@ -186,7 +186,7 @@ jobs:
       # Keep this job focused on strict workflow gates to avoid duplicate lint execution.
 
       - name: Run shepherd-linter unit tests
-        run: cd tools/shepherd-linter && go test ./...
+        run: make test-shepherd-linter
 
       - name: Check no new go run scripts (ADR-0039 §6)
         run: bash docs/design/ci/scripts/check_no_new_run_scripts.sh

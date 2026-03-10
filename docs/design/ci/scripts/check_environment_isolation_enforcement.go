@@ -5,60 +5,94 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
+	"regexp"
 )
 
 type fileRequirement struct {
-	path      string
-	fragments []string
+	path          string
+	patternGroups [][]string
 }
 
 func main() {
 	requirements := []fileRequirement{
 		{
 			path: "internal/governance/approval/gateway.go",
-			fragments: []string{
-				"ValidateApproval(ctx, opts.ClusterID, effectiveInstanceSizeID, payload.Namespace)",
+			patternGroups: [][]string{
+				{
+					`(?s)ValidateApproval\(ctx,.*payload\.Namespace`,
+					`(?s)EvaluateClusterPlacement\(ctx,.*Namespace:\s*payload\.Namespace`,
+				},
 			},
 		},
 		{
 			path: "internal/service/approval_validator.go",
-			fragments: []string{
-				"Where(namespaceregistry.NameEQ(strings.TrimSpace(namespace))).",
-				"validateNamespaceClusterEnvironment(string(ns.Environment), string(cl.Environment))",
-				"NAMESPACE_CLUSTER_ENV_MISMATCH",
+			patternGroups: [][]string{
+				{
+					regexp.QuoteMeta("Where(namespaceregistry.NameEQ(strings.TrimSpace(namespace)))."),
+					regexp.QuoteMeta("Where(namespaceregistry.NameEQ(strings.TrimSpace(input.Namespace)))."),
+				},
+				{
+					regexp.QuoteMeta("validateNamespaceClusterEnvironment(string(ns.Environment), string(cl.Environment))"),
+				},
+				{
+					regexp.QuoteMeta("NAMESPACE_CLUSTER_ENV_MISMATCH"),
+				},
 			},
 		},
 		{
 			path: "internal/jobs/vm_create.go",
-			fragments: []string{
-				"if err := w.ensureNamespaceClusterEnvironment(ctx, clusterID, namespace); err != nil {",
-				"func (w *VMCreateWorker) ensureNamespaceClusterEnvironment(",
-				"Where(namespaceregistry.NameEQ(nsName)).",
-				"validateNamespaceClusterEnvironment(string(ns.Environment), string(cl.Environment))",
+			patternGroups: [][]string{
+				{
+					`ensureNamespaceClusterEnvironment\(ctx,\s*clusterID,\s*namespace\)`,
+				},
+				{
+					regexp.QuoteMeta("func (w *VMCreateWorker) ensureNamespaceClusterEnvironment("),
+				},
+				{
+					regexp.QuoteMeta("Where(namespaceregistry.NameEQ(nsName))."),
+				},
+				{
+					regexp.QuoteMeta("validateNamespaceClusterEnvironment(string(ns.Environment), string(cl.Environment))"),
+				},
 			},
 		},
 		{
 			path: "internal/api/handlers/environment_visibility.go",
-			fragments: []string{
-				"func (s *Server) resolveNamespaceVisibility(",
-				"rolebinding.HasUserWith(entuser.IDEQ(actor))",
-				"rb.AllowedEnvironments",
+			patternGroups: [][]string{
+				{
+					regexp.QuoteMeta("func (s *Server) resolveNamespaceVisibility("),
+				},
+				{
+					regexp.QuoteMeta("rolebinding.HasUserWith(entuser.IDEQ(actor))"),
+				},
+				{
+					regexp.QuoteMeta("rb.AllowedEnvironments"),
+				},
 			},
 		},
 		{
 			path: "internal/api/handlers/server_namespace.go",
-			fragments: []string{
-				"visibility, err := s.resolveNamespaceVisibility(c)",
-				"query = query.Where(namespaceregistry.EnvironmentIn(visibility.envs...))",
+			patternGroups: [][]string{
+				{
+					`resolveNamespaceVisibility\(c\)`,
+				},
+				{
+					`EnvironmentIn\(visibility\.envs\.\.\.\)`,
+				},
 			},
 		},
 		{
 			path: "internal/api/handlers/server_vm.go",
-			fragments: []string{
-				"visibility, err := s.resolveNamespaceVisibility(c)",
-				"visibleNamespaces, err := s.listVisibleNamespaceNames(ctx, visibility)",
-				"visible, err := s.isNamespaceVisible(ctx, req.Namespace, visibility)",
+			patternGroups: [][]string{
+				{
+					`resolveNamespaceVisibility\(c\)`,
+				},
+				{
+					`listVisibleNamespaceNames\(ctx,\s*visibility\)`,
+				},
+				{
+					`isNamespaceVisible\(ctx,\s*req\.Namespace,\s*visibility\)`,
+				},
 			},
 		},
 	}
@@ -71,9 +105,22 @@ func main() {
 			continue
 		}
 		text := string(src)
-		for _, fragment := range req.fragments {
-			if !strings.Contains(text, fragment) {
-				violations = append(violations, fmt.Sprintf("%s: missing %q", req.path, fragment))
+		for _, patternGroup := range req.patternGroups {
+			matched := false
+			for _, pattern := range patternGroup {
+				groupMatch, matchErr := regexp.MatchString(pattern, text)
+				if matchErr != nil {
+					violations = append(violations, fmt.Sprintf("%s: invalid pattern %q: %v", req.path, pattern, matchErr))
+					matched = true
+					break
+				}
+				if groupMatch {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				violations = append(violations, fmt.Sprintf("%s: missing any acceptable pattern in %q", req.path, patternGroup))
 			}
 		}
 	}

@@ -44,6 +44,11 @@ func TestValidateDeleteConfirmationByEnvironment(t *testing.T) {
 			confirmName: "vm-01",
 		},
 		{
+			name:        "prod env trims confirm_name whitespace",
+			environment: namespaceregistry.EnvironmentProd,
+			confirmName: "  vm-01  ",
+		},
+		{
 			name:        "unsupported environment rejected",
 			environment: namespaceregistry.Environment("staging"),
 			confirm:     true,
