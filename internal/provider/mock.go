@@ -5,19 +5,32 @@ import (
 	"fmt"
 	"sync"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	"kv-shepherd.io/shepherd/internal/domain"
 )
 
 // MockProvider implements InfrastructureProvider for testing without a K8s cluster.
 type MockProvider struct {
-	vms map[string]*domain.VM // key: namespace/name
-	mu  sync.RWMutex
+	vms             map[string]*domain.VM                    // key: namespace/name
+	dataVolumes     map[string]*domain.DataVolume            // key: namespace/name
+	pvcs            map[string]*domain.PersistentVolumeClaim // key: namespace/name
+	storageClasses  map[string]*domain.StorageClass          // key: name
+	storageProfiles map[string]*domain.StorageProfile        // key: name
+	events          map[string][]domain.ProvisioningEvent    // key: namespace/kind/name
+	mu              sync.RWMutex
 }
 
 // NewMockProvider creates a new MockProvider.
 func NewMockProvider() *MockProvider {
 	return &MockProvider{
-		vms: make(map[string]*domain.VM),
+		vms:             make(map[string]*domain.VM),
+		dataVolumes:     make(map[string]*domain.DataVolume),
+		pvcs:            make(map[string]*domain.PersistentVolumeClaim),
+		storageClasses:  make(map[string]*domain.StorageClass),
+		storageProfiles: make(map[string]*domain.StorageProfile),
+		events:          make(map[string][]domain.ProvisioningEvent),
 	}
 }
 
@@ -36,6 +49,11 @@ func (p *MockProvider) Reset() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.vms = make(map[string]*domain.VM)
+	p.dataVolumes = make(map[string]*domain.DataVolume)
+	p.pvcs = make(map[string]*domain.PersistentVolumeClaim)
+	p.storageClasses = make(map[string]*domain.StorageClass)
+	p.storageProfiles = make(map[string]*domain.StorageProfile)
+	p.events = make(map[string][]domain.ProvisioningEvent)
 }
 
 func (p *MockProvider) Name() string { return "mock" }
@@ -133,6 +151,105 @@ func (p *MockProvider) ValidateSpec(_ context.Context, _, _ string, _ *domain.VM
 	return &domain.ValidationResult{Valid: true}, nil
 }
 
+func (p *MockProvider) SeedDataVolumes(items []*domain.DataVolume) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		p.dataVolumes[item.Namespace+"/"+item.Name] = item
+	}
+}
+
+func (p *MockProvider) SeedPVCs(items []*domain.PersistentVolumeClaim) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		p.pvcs[item.Namespace+"/"+item.Name] = item
+	}
+}
+
+func (p *MockProvider) SeedStorageClasses(items []*domain.StorageClass) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		p.storageClasses[item.Name] = item
+	}
+}
+
+func (p *MockProvider) SeedStorageProfiles(items []*domain.StorageProfile) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		p.storageProfiles[item.Name] = item
+	}
+}
+
+func (p *MockProvider) SeedEvents(ref domain.ObjectReference, items []domain.ProvisioningEvent) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.events[eventKey(ref)] = append([]domain.ProvisioningEvent(nil), items...)
+}
+
+func (p *MockProvider) GetDataVolume(_ context.Context, _, namespace, name string) (*domain.DataVolume, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	item, ok := p.dataVolumes[namespace+"/"+name]
+	if !ok {
+		return nil, apierrors.NewNotFound(schema.GroupResource{Group: "cdi.kubevirt.io", Resource: "datavolumes"}, name)
+	}
+	return item, nil
+}
+
+func (p *MockProvider) GetPersistentVolumeClaim(_ context.Context, _, namespace, name string) (*domain.PersistentVolumeClaim, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	item, ok := p.pvcs[namespace+"/"+name]
+	if !ok {
+		return nil, apierrors.NewNotFound(schema.GroupResource{Group: "", Resource: "persistentvolumeclaims"}, name)
+	}
+	return item, nil
+}
+
+func (p *MockProvider) GetStorageClass(_ context.Context, _, name string) (*domain.StorageClass, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	item, ok := p.storageClasses[name]
+	if !ok {
+		return nil, apierrors.NewNotFound(schema.GroupResource{Group: "storage.k8s.io", Resource: "storageclasses"}, name)
+	}
+	return item, nil
+}
+
+func (p *MockProvider) GetStorageProfile(_ context.Context, _, name string) (*domain.StorageProfile, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	item, ok := p.storageProfiles[name]
+	if !ok {
+		return nil, apierrors.NewNotFound(schema.GroupResource{Group: "cdi.kubevirt.io", Resource: "storageprofiles"}, name)
+	}
+	return item, nil
+}
+
+func (p *MockProvider) ListEventsForObject(_ context.Context, _ string, ref domain.ObjectReference) ([]domain.ProvisioningEvent, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	items := p.events[eventKey(ref)]
+	out := make([]domain.ProvisioningEvent, len(items))
+	copy(out, items)
+	return out, nil
+}
+
 func (p *MockProvider) setStatus(namespace, name string, status domain.VMStatus) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -143,4 +260,8 @@ func (p *MockProvider) setStatus(namespace, name string, status domain.VMStatus)
 	}
 	vm.Status = status
 	return nil
+}
+
+func eventKey(ref domain.ObjectReference) string {
+	return ref.Namespace + "/" + ref.Kind + "/" + ref.Name
 }

@@ -6,11 +6,14 @@ import (
 	"strings"
 	"sync"
 
+	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/clientcmd"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
+	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
 // KubeconfigLoader resolves cluster kubeconfig bytes by cluster ID/name.
@@ -97,6 +100,26 @@ func (c *kubevirtClusterClient) VMI() VirtualMachineInstanceClient {
 	return &kubevirtVMIClient{client: c.client}
 }
 
+func (c *kubevirtClusterClient) DataVolume() DataVolumeClient {
+	return &kubevirtDataVolumeClient{client: c.client}
+}
+
+func (c *kubevirtClusterClient) StorageProfile() StorageProfileClient {
+	return &kubevirtStorageProfileClient{client: c.client}
+}
+
+func (c *kubevirtClusterClient) PVC() PersistentVolumeClaimClient {
+	return &kubevirtPVCClient{client: c.client}
+}
+
+func (c *kubevirtClusterClient) StorageClass() StorageClassClient {
+	return &kubevirtStorageClassClient{client: c.client}
+}
+
+func (c *kubevirtClusterClient) Events() EventClient {
+	return &kubevirtEventClient{client: c.client}
+}
+
 // SSA returns the DynamicSSAClient for Server-Side Apply operations (ADR-0011).
 func (c *kubevirtClusterClient) SSA() DynamicSSAClient {
 	return c.ssaClient
@@ -151,6 +174,50 @@ func (c *kubevirtVMIClient) Pause(ctx context.Context, namespace, name string, o
 
 func (c *kubevirtVMIClient) Unpause(ctx context.Context, namespace, name string, opts *kubevirtv1.UnpauseOptions) error {
 	return c.client.VirtualMachineInstance(namespace).Unpause(ctx, name, opts)
+}
+
+type kubevirtDataVolumeClient struct {
+	client kubecli.KubevirtClient
+}
+
+func (c *kubevirtDataVolumeClient) Get(ctx context.Context, namespace, name string, opts k8smetav1.GetOptions) (*cdiv1beta1.DataVolume, error) {
+	return c.client.CdiClient().CdiV1beta1().DataVolumes(namespace).Get(ctx, name, opts)
+}
+
+func (c *kubevirtDataVolumeClient) List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*cdiv1beta1.DataVolumeList, error) {
+	return c.client.CdiClient().CdiV1beta1().DataVolumes(namespace).List(ctx, opts)
+}
+
+type kubevirtStorageProfileClient struct {
+	client kubecli.KubevirtClient
+}
+
+func (c *kubevirtStorageProfileClient) Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*cdiv1beta1.StorageProfile, error) {
+	return c.client.CdiClient().CdiV1beta1().StorageProfiles().Get(ctx, name, opts)
+}
+
+type kubevirtPVCClient struct {
+	client kubecli.KubevirtClient
+}
+
+func (c *kubevirtPVCClient) Get(ctx context.Context, namespace, name string, opts k8smetav1.GetOptions) (*corev1.PersistentVolumeClaim, error) {
+	return c.client.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, name, opts)
+}
+
+type kubevirtStorageClassClient struct {
+	client kubecli.KubevirtClient
+}
+
+func (c *kubevirtStorageClassClient) Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*storagev1.StorageClass, error) {
+	return c.client.StorageV1().StorageClasses().Get(ctx, name, opts)
+}
+
+type kubevirtEventClient struct {
+	client kubecli.KubevirtClient
+}
+
+func (c *kubevirtEventClient) List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*corev1.EventList, error) {
+	return c.client.CoreV1().Events(namespace).List(ctx, opts)
 }
 
 // KubeVirt returns a KubeVirtCRClient that can read the cluster-level KubeVirt CR.

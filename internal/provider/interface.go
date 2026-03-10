@@ -36,6 +36,15 @@ type InfrastructureProvider interface {
 	ValidateSpec(ctx context.Context, cluster, namespace string, spec *domain.VMSpec) (*domain.ValidationResult, error)
 }
 
+// ProvisioningQueryProvider exposes CDI/PVC/event read paths used for boot-disk observability.
+type ProvisioningQueryProvider interface {
+	GetDataVolume(ctx context.Context, cluster, namespace, name string) (*domain.DataVolume, error)
+	GetPersistentVolumeClaim(ctx context.Context, cluster, namespace, name string) (*domain.PersistentVolumeClaim, error)
+	GetStorageClass(ctx context.Context, cluster, name string) (*domain.StorageClass, error)
+	GetStorageProfile(ctx context.Context, cluster, name string) (*domain.StorageProfile, error)
+	ListEventsForObject(ctx context.Context, cluster string, ref domain.ObjectReference) ([]domain.ProvisioningEvent, error)
+}
+
 // SnapshotProvider provides snapshot capabilities (RFC-0013).
 type SnapshotProvider interface {
 	CreateSnapshot(ctx context.Context, cluster, namespace, vmName, snapshotName string) (*domain.Snapshot, error)
