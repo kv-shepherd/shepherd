@@ -16,8 +16,8 @@
 package testutil
 
 import (
+	"context"
 	"fmt"
-	"math/rand/v2"
 	"os"
 	"os/exec"
 	"strings"
@@ -31,6 +31,7 @@ const (
 	dockerPGPassword   = "shepherd"
 	dockerPGDB         = "shepherd_test"
 	dockerPGHealthWait = 90 * time.Second
+	dockerCmdTimeout   = 30 * time.Second
 )
 
 // MustStartDockerPG ensures a PostgreSQL 18 instance is available for the
@@ -57,18 +58,18 @@ func runWithDockerPG(m *testing.M) int {
 	}
 
 	// Verify Docker is available before attempting container start.
-	if err := exec.Command("docker", "info").Run(); err != nil {
+	if err := runDockerCommand("info"); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: Docker is not available and no TEST_DATABASE_URL is set.\n"+
 			"  Either install Docker, or set TEST_DATABASE_URL to an existing PostgreSQL 18 DSN.\n"+
 			"  Error: %v\n", err)
 		return 1
 	}
 
-	name := fmt.Sprintf("shepherd-test-pg-%d-%d", time.Now().Unix(), rand.Int32N(9999))
+	name := fmt.Sprintf("shepherd-test-pg-%d", time.Now().UnixNano())
 
 	// Always clean up the container before returning to the caller.
 	defer func() {
-		_ = exec.Command("docker", "rm", "-f", name).Run()
+		_ = runDockerCommand("rm", "-f", name)
 	}()
 
 	port, err := startPGContainer(name)
@@ -108,7 +109,7 @@ func startPGContainer(name string) (string, error) {
 		dockerPGImage,
 	}
 
-	out, err := exec.Command("docker", runArgs...).CombinedOutput()
+	out, err := combinedOutputDockerCommand(runArgs...)
 	if err != nil {
 		return "", fmt.Errorf("docker run failed: %w\noutput: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -131,7 +132,7 @@ func startPGContainer(name string) (string, error) {
 func resolveDockerPort(name string) (string, error) {
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		out, err := exec.Command("docker", "port", name, "5432/tcp").Output()
+		out, err := outputDockerCommand("port", name, "5432/tcp")
 		if err == nil {
 			// Output format: "0.0.0.0:54321\n" or "127.0.0.1:54321\n"
 			line := strings.TrimSpace(string(out))
@@ -151,24 +152,24 @@ func resolveDockerPort(name string) (string, error) {
 func waitHealthy(name string) error {
 	deadline := time.Now().Add(dockerPGHealthWait)
 	for time.Now().Before(deadline) {
-		out, err := exec.Command(
-			"docker", "inspect",
+		out, err := outputDockerCommand(
+			"inspect",
 			"-f", "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}",
 			name,
-		).Output()
+		)
 		if err == nil {
 			status := strings.TrimSpace(string(out))
 			switch status {
 			case "healthy":
 				return nil
 			case "unhealthy":
-				logs, _ := exec.Command("docker", "logs", "--tail", "20", name).CombinedOutput()
+				logs, _ := combinedOutputDockerCommand("logs", "--tail", "20", name)
 				return fmt.Errorf("PostgreSQL container %q became unhealthy\nlogs:\n%s", name, logs)
 			}
 		}
 		time.Sleep(time.Second)
 	}
-	logs, _ := exec.Command("docker", "logs", "--tail", "20", name).CombinedOutput()
+	logs, _ := combinedOutputDockerCommand("logs", "--tail", "20", name)
 	return fmt.Errorf("timed out (%s) waiting for PostgreSQL container %q to become healthy\nlogs:\n%s",
 		dockerPGHealthWait, name, logs)
 }
@@ -181,8 +182,26 @@ func SkipIfNoPG(t *testing.T) {
 	if os.Getenv("TEST_DATABASE_URL") != "" || os.Getenv("DATABASE_URL") != "" {
 		return
 	}
-	if exec.Command("docker", "info").Run() == nil {
+	if runDockerCommand("info") == nil {
 		return // Docker available; container will be started by TestMain
 	}
 	t.Skip("skipping: no TEST_DATABASE_URL and Docker unavailable")
+}
+
+func runDockerCommand(args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), dockerCmdTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, "docker", args...).Run()
+}
+
+func outputDockerCommand(args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dockerCmdTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, "docker", args...).Output()
+}
+
+func combinedOutputDockerCommand(args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dockerCmdTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, "docker", args...).CombinedOutput()
 }

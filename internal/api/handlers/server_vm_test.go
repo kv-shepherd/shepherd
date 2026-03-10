@@ -81,6 +81,27 @@ func TestVmToAPI_Environment_Empty_WhenClusterEnvBlank(t *testing.T) {
 	}
 }
 
+func TestVmToAPI_PreservesCoreFields(t *testing.T) {
+	t.Parallel()
+
+	vm := minimalEntVM(t)
+	vm.ClusterID = "cluster-core"
+	got := vmToAPI(vm, "prod")
+
+	if got.Id != vm.ID {
+		t.Fatalf("id = %q, want %q", got.Id, vm.ID)
+	}
+	if got.Name != vm.Name {
+		t.Fatalf("name = %q, want %q", got.Name, vm.Name)
+	}
+	if got.Namespace != vm.Namespace {
+		t.Fatalf("namespace = %q, want %q", got.Namespace, vm.Namespace)
+	}
+	if got.ClusterId != vm.ClusterID {
+		t.Fatalf("cluster_id = %q, want %q", got.ClusterId, vm.ClusterID)
+	}
+}
+
 // ---- Integration: ListVMs ----------------------------------------------------------------
 
 func TestListVMs_PopulatesEnvironmentFromCluster(t *testing.T) {
