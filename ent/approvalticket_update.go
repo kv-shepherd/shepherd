@@ -186,6 +186,18 @@ func (_u *ApprovalTicketUpdate) ClearInstanceSizeSnapshot() *ApprovalTicketUpdat
 	return _u
 }
 
+// SetPlacementEvaluation sets the "placement_evaluation" field.
+func (_u *ApprovalTicketUpdate) SetPlacementEvaluation(v map[string]interface{}) *ApprovalTicketUpdate {
+	_u.mutation.SetPlacementEvaluation(v)
+	return _u
+}
+
+// ClearPlacementEvaluation clears the value of the "placement_evaluation" field.
+func (_u *ApprovalTicketUpdate) ClearPlacementEvaluation() *ApprovalTicketUpdate {
+	_u.mutation.ClearPlacementEvaluation()
+	return _u
+}
+
 // SetModifiedSpec sets the "modified_spec" field.
 func (_u *ApprovalTicketUpdate) SetModifiedSpec(v map[string]interface{}) *ApprovalTicketUpdate {
 	_u.mutation.SetModifiedSpec(v)
@@ -336,6 +348,12 @@ func (_u *ApprovalTicketUpdate) sqlSave(ctx context.Context) (_node int, err err
 	}
 	if _u.mutation.InstanceSizeSnapshotCleared() {
 		_spec.ClearField(approvalticket.FieldInstanceSizeSnapshot, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.PlacementEvaluation(); ok {
+		_spec.SetField(approvalticket.FieldPlacementEvaluation, field.TypeJSON, value)
+	}
+	if _u.mutation.PlacementEvaluationCleared() {
+		_spec.ClearField(approvalticket.FieldPlacementEvaluation, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.ModifiedSpec(); ok {
 		_spec.SetField(approvalticket.FieldModifiedSpec, field.TypeJSON, value)
@@ -527,6 +545,18 @@ func (_u *ApprovalTicketUpdateOne) ClearInstanceSizeSnapshot() *ApprovalTicketUp
 	return _u
 }
 
+// SetPlacementEvaluation sets the "placement_evaluation" field.
+func (_u *ApprovalTicketUpdateOne) SetPlacementEvaluation(v map[string]interface{}) *ApprovalTicketUpdateOne {
+	_u.mutation.SetPlacementEvaluation(v)
+	return _u
+}
+
+// ClearPlacementEvaluation clears the value of the "placement_evaluation" field.
+func (_u *ApprovalTicketUpdateOne) ClearPlacementEvaluation() *ApprovalTicketUpdateOne {
+	_u.mutation.ClearPlacementEvaluation()
+	return _u
+}
+
 // SetModifiedSpec sets the "modified_spec" field.
 func (_u *ApprovalTicketUpdateOne) SetModifiedSpec(v map[string]interface{}) *ApprovalTicketUpdateOne {
 	_u.mutation.SetModifiedSpec(v)
@@ -707,6 +737,12 @@ func (_u *ApprovalTicketUpdateOne) sqlSave(ctx context.Context) (_node *Approval
 	}
 	if _u.mutation.InstanceSizeSnapshotCleared() {
 		_spec.ClearField(approvalticket.FieldInstanceSizeSnapshot, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.PlacementEvaluation(); ok {
+		_spec.SetField(approvalticket.FieldPlacementEvaluation, field.TypeJSON, value)
+	}
+	if _u.mutation.PlacementEvaluationCleared() {
+		_spec.ClearField(approvalticket.FieldPlacementEvaluation, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.ModifiedSpec(); ok {
 		_spec.SetField(approvalticket.FieldModifiedSpec, field.TypeJSON, value)

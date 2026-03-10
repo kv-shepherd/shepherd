@@ -9,8 +9,13 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalticket"
+	"kv-shepherd.io/shepherd/ent/auditlog"
+	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	entnamespaceregistry "kv-shepherd.io/shepherd/ent/namespaceregistry"
 	"kv-shepherd.io/shepherd/internal/domain"
+	"kv-shepherd.io/shepherd/internal/governance/audit"
+	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/service"
@@ -29,6 +34,7 @@ type fakeAtomicWriter struct {
 	serviceID    string
 	namespace    string
 	requesterID  string
+	placement    map[string]interface{}
 	modifiedSpec map[string]interface{}
 	powerOp      string
 }
@@ -42,6 +48,7 @@ func (f *fakeAtomicWriter) ApproveCreateAndEnqueue(
 	ticketID, eventID, approver, clusterID, storageClass, serviceID, namespace, requesterID string,
 	_ map[string]interface{},
 	_ map[string]interface{},
+	placementEvaluation map[string]interface{},
 	memoizedSpec map[string]interface{},
 ) (vmID, vmName string, err error) {
 	f.called = true
@@ -53,6 +60,7 @@ func (f *fakeAtomicWriter) ApproveCreateAndEnqueue(
 	f.serviceID = serviceID
 	f.namespace = namespace
 	f.requesterID = requesterID
+	f.placement = placementEvaluation
 	f.modifiedSpec = memoizedSpec
 	return "vm-1", "vm-name", nil
 }
@@ -144,7 +152,7 @@ func TestGatewayApproveCreate_CallsAtomicWriterWithResolvedIDs(t *testing.T) {
 	_, err = client.Template.Create().
 		SetID("tpl-override").
 		SetName("tpl").
-		SetSourceType("image").
+		SetSourceType("containerdisk").
 		SetImageURL("quay.io/containerdisks/ubuntu:22.04").
 		SetCreatedBy("seed").
 		Save(context.Background())
@@ -200,6 +208,9 @@ func TestGatewayApproveCreate_CallsAtomicWriterWithResolvedIDs(t *testing.T) {
 	if writer.serviceID != "svc-1" || writer.namespace != "team-a" || writer.requesterID != requester {
 		t.Fatalf("writer payload mismatch: %+v", writer)
 	}
+	if writer.placement != nil {
+		t.Fatalf("placement evaluation should be nil when validator is disabled: %#v", writer.placement)
+	}
 }
 
 func TestGatewayApproveCreate_RequiresClusterSelection(t *testing.T) {
@@ -238,6 +249,140 @@ func TestGatewayApproveCreate_RequiresClusterSelection(t *testing.T) {
 	gw := NewGateway(client, nil, &fakeAtomicWriter{})
 	if err := gw.Approve(context.Background(), ticketID, "admin-1", ApproveOpts{}); err == nil {
 		t.Fatal("Approve() expected error when cluster id is empty, got nil")
+	}
+}
+
+func TestGatewayApproveCreate_PersistsPlacementEvaluationToAuditAndAtomicWriter(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_behavior_placement_snapshot")
+	ctx := context.Background()
+
+	eventID := "event-placement"
+	ticketID := "ticket-placement"
+	requester := "user-1"
+	payload := domain.VMCreationPayload{
+		RequesterID:    requester,
+		ServiceID:      "svc-1",
+		TemplateID:     "tpl-1",
+		InstanceSizeID: "size-1",
+		Namespace:      "prod-a",
+	}
+	payloadRaw, err := payload.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	_, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("svc-1").
+		SetPayload(payloadRaw).
+		SetCreatedBy(requester).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	_, err = client.ApprovalTicket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester(requester).
+		SetStatus(approvalticket.StatusPENDING).
+		SetOperationType(approvalticket.OperationTypeCREATE).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+	_, err = client.Cluster.Create().
+		SetID("cluster-1").
+		SetName("cluster-a").
+		SetAPIServerURL("https://cluster.invalid").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetEnvironment(entcluster.EnvironmentProd).
+		SetDefaultStorageClass("gold-sc").
+		SetCreatedBy("seed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+	_, err = client.ClusterPolicy.Create().
+		SetID("policy-1").
+		SetClusterID("cluster-1").
+		SetAllowCPUOvercommit(true).
+		SetAllowMemoryOvercommit(true).
+		SetAllowDedicatedCPU(true).
+		SetAllowGpu(true).
+		SetAllowSriov(true).
+		SetAllowHugepages(true).
+		SetAllowCdiClone(true).
+		SetAllowedStorageClasses([]string{"gold-sc"}).
+		SetCreatedBy("seed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster policy: %v", err)
+	}
+	_, err = client.NamespaceRegistry.Create().
+		SetID("ns-1").
+		SetName("prod-a").
+		SetEnvironment(entnamespaceregistry.EnvironmentProd).
+		SetEnabled(true).
+		SetCreatedBy("seed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create namespace: %v", err)
+	}
+	_, err = client.Template.Create().
+		SetID("tpl-1").
+		SetName("tpl").
+		SetSourceType(service.TemplateSourceCDIImageImport).
+		SetImageURL("docker://quay.io/containerdisks/ubuntu:22.04").
+		SetCatalogScope("prod").
+		SetCreatedBy("seed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	_, err = client.InstanceSize.Create().
+		SetID("size-1").
+		SetName("size").
+		SetCPUCores(2).
+		SetMemoryGi(2).
+		SetCatalogScope("prod").
+		SetCreatedBy("seed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create instance size: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, audit.NewLogger(client), writer)
+
+	if approveErr := gw.Approve(ctx, ticketID, "admin-1", ApproveOpts{ClusterID: "cluster-1"}); approveErr != nil {
+		t.Fatalf("Approve() error = %v", approveErr)
+	}
+	if writer.placement == nil {
+		t.Fatal("placement evaluation snapshot is nil")
+	}
+	if writer.placement["selected_cluster_id"] != "cluster-1" {
+		t.Fatalf("placement selected_cluster_id = %v, want cluster-1", writer.placement["selected_cluster_id"])
+	}
+	if writer.placement["effective_storage_class"] != "gold-sc" {
+		t.Fatalf("placement effective_storage_class = %v, want gold-sc", writer.placement["effective_storage_class"])
+	}
+	logEntry, err := client.AuditLog.Query().
+		Where(auditlog.ResourceIDEQ(ticketID), auditlog.ActionEQ("approval.approved")).
+		Only(ctx)
+	if err != nil {
+		t.Fatalf("load audit log: %v", err)
+	}
+	rawPlacement, ok := logEntry.Details["placement_evaluation"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("audit placement_evaluation = %#v, want object", logEntry.Details["placement_evaluation"])
+	}
+	if rawPlacement["selected_cluster_id"] != "cluster-1" {
+		t.Fatalf("audit selected_cluster_id = %v, want cluster-1", rawPlacement["selected_cluster_id"])
 	}
 }
 
@@ -311,7 +456,7 @@ func TestGatewayApprovePower_DelegatesToAtomicWriter(t *testing.T) {
 		VMID:      "vm-1",
 		VMName:    "vm-1",
 		ClusterID: "cluster-a",
-		Namespace: "team-a",
+		Namespace: "team-prod",
 		Operation: "restart",
 		Actor:     "user-1",
 	})
@@ -347,7 +492,7 @@ func TestGatewayApprovePower_DelegatesToAtomicWriter(t *testing.T) {
 		t.Fatalf("writer approver = %s, want admin-1", writer.approver)
 	}
 	if writer.powerOp != "restart" {
-		t.Fatalf("writer operation = %s, want restart", writer.powerOp)
+		t.Fatalf("writer powerOp = %q, want %q", writer.powerOp, "restart")
 	}
 }
 
@@ -530,7 +675,7 @@ func createOverrideTestData(t *testing.T, client *ent.Client, suffix string) (ti
 	_, err = client.Template.Create().
 		SetID("tpl-override-" + suffix).
 		SetName("tpl-override-" + suffix).
-		SetSourceType("image").
+		SetSourceType("containerdisk").
 		SetImageURL("quay.io/containerdisks/ubuntu:22.04").
 		SetCreatedBy("seed").
 		Save(context.Background())
@@ -541,6 +686,66 @@ func createOverrideTestData(t *testing.T, client *ent.Client, suffix string) (ti
 		SetID("size-override-" + suffix).
 		SetName("size-override-" + suffix).
 		SetCPUCores(4).
+		SetMemoryGi(4).
+		SetCreatedBy("seed").
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create instance size: %v", err)
+	}
+	_, err = client.ApprovalTicket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(approvalticket.StatusPENDING).
+		SetOperationType(approvalticket.OperationTypeCREATE).
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+	return ticketID
+}
+
+func createClonePreflightTestData(t *testing.T, client *ent.Client, suffix string) (ticketID string) {
+	t.Helper()
+	eventID := "event-clone-preflight-" + suffix
+	ticketID = "ticket-clone-preflight-" + suffix
+	payload := domain.VMCreationPayload{
+		RequesterID:    "user-1",
+		ServiceID:      "svc-clone-" + suffix,
+		TemplateID:     "tpl-clone-" + suffix,
+		InstanceSizeID: "size-clone-" + suffix,
+		Namespace:      "team-a",
+	}
+	payloadRaw, err := payload.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	_, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID(payload.ServiceID).
+		SetPayload(payloadRaw).
+		SetCreatedBy("user-1").
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	_, err = client.Template.Create().
+		SetID(payload.TemplateID).
+		SetName("tpl-clone-" + suffix).
+		SetSourceType("cdi_pvc_clone").
+		SetPvcName("ubuntu-golden").
+		SetPvcNamespace("golden-images").
+		SetCreatedBy("seed").
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	_, err = client.InstanceSize.Create().
+		SetID(payload.InstanceSizeID).
+		SetName("size-clone-" + suffix).
+		SetCPUCores(2).
 		SetMemoryGi(4).
 		SetCreatedBy("seed").
 		Save(context.Background())
@@ -710,6 +915,151 @@ func TestGatewayApproveCreate_DryRunGate_SkippedWhenVMServiceNil(t *testing.T) {
 	}
 }
 
+func TestGatewayApproveCreate_CloneSourcePreflight_BlocksMissingSourcePVC(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_clone_preflight_missing_source")
+	ticketID := createClonePreflightTestData(t, client, "missing")
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	gw.validator = nil
+	gw.SetVMService(service.NewVMService(provider.NewMockProvider()))
+
+	err := gw.Approve(context.Background(), ticketID, "admin-1", ApproveOpts{ClusterID: "cluster-1", StorageClass: "fast-sc"})
+	if err == nil {
+		t.Fatal("Approve() expected clone source preflight error, got nil")
+	}
+	if writer.called {
+		t.Fatal("atomic writer must NOT be called when clone source preflight fails")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("Approve() error = %T, want wrapped AppError", err)
+	}
+	if appErr.Code != "PVC_CLONE_SOURCE_NOT_FOUND" {
+		t.Fatalf("AppError.Code = %q, want %q", appErr.Code, "PVC_CLONE_SOURCE_NOT_FOUND")
+	}
+}
+
+func TestGatewayApproveCreate_CloneSourcePreflight_BlocksTargetDiskSmallerThanSource(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_clone_preflight_target_too_small")
+	ticketID := createClonePreflightTestData(t, client, "target-too-small")
+	if _, err := client.InstanceSize.UpdateOneID("size-clone-target-too-small").SetDiskGB(20).Save(context.Background()); err != nil {
+		t.Fatalf("set instance size disk_gb: %v", err)
+	}
+
+	mock := provider.NewMockProvider()
+	mock.SeedPVCs([]*domain.PersistentVolumeClaim{{
+		Name:                  "ubuntu-golden",
+		Namespace:             "golden-images",
+		Phase:                 "Bound",
+		RequestedStorageBytes: 40 * 1024 * 1024 * 1024,
+	}})
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	gw.validator = nil
+	gw.SetVMService(service.NewVMService(mock))
+
+	err := gw.Approve(context.Background(), ticketID, "admin-1", ApproveOpts{ClusterID: "cluster-1", StorageClass: "fast-sc"})
+	if err == nil {
+		t.Fatal("Approve() expected clone target size preflight error, got nil")
+	}
+	if writer.called {
+		t.Fatal("atomic writer must NOT be called when clone target size preflight fails")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("Approve() error = %T, want wrapped AppError", err)
+	}
+	if appErr.Code != "PVC_CLONE_TARGET_TOO_SMALL" {
+		t.Fatalf("AppError.Code = %q, want %q", appErr.Code, "PVC_CLONE_TARGET_TOO_SMALL")
+	}
+}
+
+func TestGatewayApproveCreate_CloneSourcePreflight_BlocksExpansionOnNonExpandableStorageClass(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_clone_preflight_expansion_unsupported")
+	ticketID := createClonePreflightTestData(t, client, "expansion-unsupported")
+	if _, err := client.InstanceSize.UpdateOneID("size-clone-expansion-unsupported").SetDiskGB(40).Save(context.Background()); err != nil {
+		t.Fatalf("set instance size disk_gb: %v", err)
+	}
+
+	mock := provider.NewMockProvider()
+	mock.SeedPVCs([]*domain.PersistentVolumeClaim{{
+		Name:                  "ubuntu-golden",
+		Namespace:             "golden-images",
+		Phase:                 "Bound",
+		RequestedStorageBytes: 20 * 1024 * 1024 * 1024,
+	}})
+	mock.SeedStorageClasses([]*domain.StorageClass{{
+		Name:                 "slow-sc",
+		AllowVolumeExpansion: false,
+	}})
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	gw.validator = nil
+	gw.SetVMService(service.NewVMService(mock))
+
+	err := gw.Approve(context.Background(), ticketID, "admin-1", ApproveOpts{ClusterID: "cluster-1", StorageClass: "slow-sc"})
+	if err == nil {
+		t.Fatal("Approve() expected clone expansion storage class error, got nil")
+	}
+	if writer.called {
+		t.Fatal("atomic writer must NOT be called when clone expansion preflight fails")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("Approve() error = %T, want wrapped AppError", err)
+	}
+	if appErr.Code != "PVC_CLONE_TARGET_EXPANSION_UNSUPPORTED" {
+		t.Fatalf("AppError.Code = %q, want %q", appErr.Code, "PVC_CLONE_TARGET_EXPANSION_UNSUPPORTED")
+	}
+}
+
+func TestGatewayApproveCreate_CloneSourcePreflight_BlocksMissingTargetStorageClass(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_clone_preflight_missing_target_storage_class")
+	ticketID := createClonePreflightTestData(t, client, "missing-target-sc")
+	if _, err := client.InstanceSize.UpdateOneID("size-clone-missing-target-sc").SetDiskGB(20).Save(context.Background()); err != nil {
+		t.Fatalf("set instance size disk_gb: %v", err)
+	}
+
+	mock := provider.NewMockProvider()
+	mock.SeedPVCs([]*domain.PersistentVolumeClaim{{
+		Name:                  "ubuntu-golden",
+		Namespace:             "golden-images",
+		Phase:                 "Bound",
+		RequestedStorageBytes: 20 * 1024 * 1024 * 1024,
+	}})
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	gw.validator = nil
+	gw.SetVMService(service.NewVMService(mock))
+
+	err := gw.Approve(context.Background(), ticketID, "admin-1", ApproveOpts{ClusterID: "cluster-1", StorageClass: "missing-sc"})
+	if err == nil {
+		t.Fatal("Approve() expected missing target storage class error, got nil")
+	}
+	if writer.called {
+		t.Fatal("atomic writer must NOT be called when clone target storage class preflight fails")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("Approve() error = %T, want wrapped AppError", err)
+	}
+	if appErr.Code != "PVC_CLONE_TARGET_STORAGE_CLASS_NOT_FOUND" {
+		t.Fatalf("AppError.Code = %q, want %q", appErr.Code, "PVC_CLONE_TARGET_STORAGE_CLASS_NOT_FOUND")
+	}
+}
+
 func TestGatewayApproveCreate_DryRunGate_ValidSpecCallsAtomicWriter(t *testing.T) {
 	t.Parallel()
 	client := testutil.OpenEntPostgres(t, "gateway_dryrun_gate_valid")
@@ -805,8 +1155,9 @@ func TestBuildDryRunSpec_AppliesOverrideValues(t *testing.T) {
 
 	// Create minimal Ent Template and InstanceSize stubs for spec building.
 	tmpl := &ent.Template{
-		ID:       "tpl-test",
-		ImageURL: "quay.io/containerdisks/ubuntu:22.04",
+		ID:         "tpl-test",
+		SourceType: "containerdisk",
+		ImageURL:   "quay.io/containerdisks/ubuntu:22.04",
 	}
 	size := &ent.InstanceSize{
 		ID:       "size-test",
@@ -894,22 +1245,27 @@ func TestResolveTemplateImageForDryRun(t *testing.T) {
 	}{
 		{
 			name:      "image_url",
-			tmpl:      &ent.Template{ID: "t1", ImageURL: "quay.io/ubuntu:22.04"},
+			tmpl:      &ent.Template{ID: "t1", SourceType: "containerdisk", ImageURL: "quay.io/ubuntu:22.04"},
 			wantImage: "quay.io/ubuntu:22.04",
 		},
 		{
 			name:      "pvc_name_only",
-			tmpl:      &ent.Template{ID: "t2", PvcName: "golden-image"},
-			wantImage: "pvc:golden-image",
+			tmpl:      &ent.Template{ID: "t2", SourceType: "cdi_pvc_clone", PvcName: "golden-image"},
+			wantImage: "clone-pvc:golden-image",
 		},
 		{
 			name:      "pvc_name_with_namespace",
-			tmpl:      &ent.Template{ID: "t3", PvcName: "golden-image", PvcNamespace: "images"},
-			wantImage: "pvc:images/golden-image",
+			tmpl:      &ent.Template{ID: "t3", SourceType: "cdi_pvc_clone", PvcName: "golden-image", PvcNamespace: "images"},
+			wantImage: "clone-pvc:images/golden-image",
+		},
+		{
+			name:      "cdi_image_import",
+			tmpl:      &ent.Template{ID: "t4", SourceType: "cdi_image_import", ImageURL: "quay.io/ubuntu:22.04"},
+			wantImage: "import-image:docker://quay.io/ubuntu:22.04",
 		},
 		{
 			name:    "no_image_source",
-			tmpl:    &ent.Template{ID: "t4"},
+			tmpl:    &ent.Template{ID: "t5"},
 			wantErr: true,
 		},
 	}

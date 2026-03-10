@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 )
 
 // ClusterCreate is the builder for creating a Cluster entity.
@@ -200,6 +201,25 @@ func (_c *ClusterCreate) SetNillableEnabled(v *bool) *ClusterCreate {
 func (_c *ClusterCreate) SetID(v string) *ClusterCreate {
 	_c.mutation.SetID(v)
 	return _c
+}
+
+// SetPolicyID sets the "policy" edge to the ClusterPolicy entity by ID.
+func (_c *ClusterCreate) SetPolicyID(id string) *ClusterCreate {
+	_c.mutation.SetPolicyID(id)
+	return _c
+}
+
+// SetNillablePolicyID sets the "policy" edge to the ClusterPolicy entity by ID if the given value is not nil.
+func (_c *ClusterCreate) SetNillablePolicyID(id *string) *ClusterCreate {
+	if id != nil {
+		_c = _c.SetPolicyID(*id)
+	}
+	return _c
+}
+
+// SetPolicy sets the "policy" edge to the ClusterPolicy entity.
+func (_c *ClusterCreate) SetPolicy(v *ClusterPolicy) *ClusterCreate {
+	return _c.SetPolicyID(v.ID)
 }
 
 // Mutation returns the ClusterMutation object of the builder.
@@ -411,6 +431,22 @@ func (_c *ClusterCreate) createSpec() (*Cluster, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Enabled(); ok {
 		_spec.SetField(cluster.FieldEnabled, field.TypeBool, value)
 		_node.Enabled = value
+	}
+	if nodes := _c.mutation.PolicyIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   cluster.PolicyTable,
+			Columns: []string{cluster.PolicyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(clusterpolicy.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }

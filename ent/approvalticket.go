@@ -44,6 +44,8 @@ type ApprovalTicket struct {
 	TemplateSnapshot map[string]interface{} `json:"template_snapshot,omitempty"`
 	// InstanceSizeSnapshot holds the value of the "instance_size_snapshot" field.
 	InstanceSizeSnapshot map[string]interface{} `json:"instance_size_snapshot,omitempty"`
+	// PlacementEvaluation holds the value of the "placement_evaluation" field.
+	PlacementEvaluation map[string]interface{} `json:"placement_evaluation,omitempty"`
 	// ModifiedSpec holds the value of the "modified_spec" field.
 	ModifiedSpec map[string]interface{} `json:"modified_spec,omitempty"`
 	// ParentTicketID holds the value of the "parent_ticket_id" field.
@@ -56,7 +58,7 @@ func (*ApprovalTicket) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case approvalticket.FieldTemplateSnapshot, approvalticket.FieldInstanceSizeSnapshot, approvalticket.FieldModifiedSpec:
+		case approvalticket.FieldTemplateSnapshot, approvalticket.FieldInstanceSizeSnapshot, approvalticket.FieldPlacementEvaluation, approvalticket.FieldModifiedSpec:
 			values[i] = new([]byte)
 		case approvalticket.FieldID, approvalticket.FieldEventID, approvalticket.FieldOperationType, approvalticket.FieldStatus, approvalticket.FieldRequester, approvalticket.FieldApprover, approvalticket.FieldReason, approvalticket.FieldRejectReason, approvalticket.FieldSelectedClusterID, approvalticket.FieldSelectedStorageClass, approvalticket.FieldParentTicketID:
 			values[i] = new(sql.NullString)
@@ -165,6 +167,14 @@ func (_m *ApprovalTicket) assignValues(columns []string, values []any) error {
 					return fmt.Errorf("unmarshal field instance_size_snapshot: %w", err)
 				}
 			}
+		case approvalticket.FieldPlacementEvaluation:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field placement_evaluation", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.PlacementEvaluation); err != nil {
+					return fmt.Errorf("unmarshal field placement_evaluation: %w", err)
+				}
+			}
 		case approvalticket.FieldModifiedSpec:
 			if value, ok := values[i].(*[]byte); !ok {
 				return fmt.Errorf("unexpected type %T for field modified_spec", values[i])
@@ -253,6 +263,9 @@ func (_m *ApprovalTicket) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("instance_size_snapshot=")
 	builder.WriteString(fmt.Sprintf("%v", _m.InstanceSizeSnapshot))
+	builder.WriteString(", ")
+	builder.WriteString("placement_evaluation=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PlacementEvaluation))
 	builder.WriteString(", ")
 	builder.WriteString("modified_spec=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ModifiedSpec))

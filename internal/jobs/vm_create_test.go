@@ -33,7 +33,27 @@ func TestExtractTemplateImage(t *testing.T) {
 					"pvc_name": "centos-base",
 				},
 			},
-			expectImage: "pvc:centos-base",
+			expectImage: "clone-pvc:centos-base",
+		},
+		{
+			name: "legacy direct pvc volume rejected",
+			spec: map[string]interface{}{
+				"spec": map[string]interface{}{
+					"template": map[string]interface{}{
+						"spec": map[string]interface{}{
+							"volumes": []interface{}{
+								map[string]interface{}{
+									"name": "rootdisk",
+									"persistentVolumeClaim": map[string]interface{}{
+										"claimName": "shared-rootdisk",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectErr: true,
 		},
 		{
 			name: "volumes containerDisk fallback",
@@ -91,23 +111,34 @@ func TestExtractTemplateImageFromEnt(t *testing.T) {
 		{
 			name: "image url preferred",
 			tpl: &ent.Template{
-				ID:       "tpl-1",
-				ImageURL: "quay.io/containerdisks/ubuntu:22.04",
+				ID:         "tpl-1",
+				SourceType: "containerdisk",
+				ImageURL:   "quay.io/containerdisks/ubuntu:22.04",
 			},
 			wantImage: "quay.io/containerdisks/ubuntu:22.04",
 		},
 		{
 			name: "pvc fallback",
 			tpl: &ent.Template{
-				ID:      "tpl-2",
-				PvcName: "golden-pvc",
+				ID:         "tpl-2",
+				SourceType: "cdi_pvc_clone",
+				PvcName:    "golden-pvc",
 			},
-			wantImage: "pvc:golden-pvc",
+			wantImage: "clone-pvc:golden-pvc",
+		},
+		{
+			name: "cdi image import source",
+			tpl: &ent.Template{
+				ID:         "tpl-3",
+				SourceType: "cdi_image_import",
+				ImageURL:   "quay.io/containerdisks/fedora:40",
+			},
+			wantImage: "import-image:docker://quay.io/containerdisks/fedora:40",
 		},
 		{
 			name: "missing source rejected",
 			tpl: &ent.Template{
-				ID: "tpl-3",
+				ID: "tpl-4",
 			},
 			wantErr: true,
 		},
@@ -142,7 +173,7 @@ func TestExtractTemplateImageFromSnapshot(t *testing.T) {
 		{
 			name: "adr0036 image source",
 			snapshot: map[string]interface{}{
-				"source_type": "image",
+				"source_type": "containerdisk",
 				"image_url":   "quay.io/containerdisks/fedora:40",
 			},
 			wantImage: "quay.io/containerdisks/fedora:40",
@@ -150,19 +181,27 @@ func TestExtractTemplateImageFromSnapshot(t *testing.T) {
 		{
 			name: "adr0036 pvc source",
 			snapshot: map[string]interface{}{
-				"source_type": "pvc",
+				"source_type": "cdi_pvc_clone",
 				"pvc_name":    "fedora-golden",
 			},
-			wantImage: "pvc:fedora-golden",
+			wantImage: "clone-pvc:fedora-golden",
 		},
 		{
 			name: "adr0036 pvc source with namespace",
 			snapshot: map[string]interface{}{
-				"source_type":   "pvc",
+				"source_type":   "cdi_pvc_clone",
 				"pvc_name":      "fedora-golden",
 				"pvc_namespace": "golden-images",
 			},
-			wantImage: "pvc:golden-images/fedora-golden",
+			wantImage: "clone-pvc:golden-images/fedora-golden",
+		},
+		{
+			name: "adr0036 cdi image import source",
+			snapshot: map[string]interface{}{
+				"source_type": "cdi_image_import",
+				"image_url":   "docker://quay.io/containerdisks/fedora:40",
+			},
+			wantImage: "import-image:docker://quay.io/containerdisks/fedora:40",
 		},
 		{
 			name: "legacy spec fallback",
@@ -228,7 +267,7 @@ func TestExtractTemplateCloudInitFromSnapshot(t *testing.T) {
 		{
 			name: "snapshot missing cloud_init",
 			snapshot: map[string]interface{}{
-				"source_type": "image",
+				"source_type": "containerdisk",
 			},
 			wantValue: "",
 			wantFound: false,

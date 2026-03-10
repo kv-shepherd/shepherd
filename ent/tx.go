@@ -24,6 +24,8 @@ type Tx struct {
 	BatchApprovalTicket *BatchApprovalTicketClient
 	// Cluster is the client for interacting with the Cluster builders.
 	Cluster *ClusterClient
+	// ClusterPolicy is the client for interacting with the ClusterPolicy builders.
+	ClusterPolicy *ClusterPolicyClient
 	// DomainEvent is the client for interacting with the DomainEvent builders.
 	DomainEvent *DomainEventClient
 	// ExternalApprovalSystem is the client for interacting with the ExternalApprovalSystem builders.
@@ -201,6 +203,7 @@ func (tx *Tx) init() {
 	tx.AuthProvider = NewAuthProviderClient(tx.config)
 	tx.BatchApprovalTicket = NewBatchApprovalTicketClient(tx.config)
 	tx.Cluster = NewClusterClient(tx.config)
+	tx.ClusterPolicy = NewClusterPolicyClient(tx.config)
 	tx.DomainEvent = NewDomainEventClient(tx.config)
 	tx.ExternalApprovalSystem = NewExternalApprovalSystemClient(tx.config)
 	tx.IdPGroupMapping = NewIdPGroupMappingClient(tx.config)

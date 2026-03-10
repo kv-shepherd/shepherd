@@ -20,7 +20,10 @@ import {
     Col,
     Badge,
     Popover,
+    Descriptions,
+    Space,
 } from 'antd';
+import type { DescriptionsProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
     ReloadOutlined,
@@ -37,6 +40,24 @@ const { Title, Text } = Typography;
 
 type AuditLog = components['schemas']['AuditLog'];
 type AuditLogList = components['schemas']['AuditLogList'];
+
+type AuditLogFilters = {
+    action: string;
+    approval_decision: string;
+    actor: string;
+    placement_advisory_code: string;
+    placement_reason_code: string;
+    resource_type: string;
+    resource_id: string;
+};
+
+type PlacementEvaluationSummary = {
+    selectedClusterName?: string;
+    selectedClusterId?: string;
+    eligible?: boolean;
+    reasonCode?: string;
+    advisoryCode?: string;
+};
 
 const ACTION_COLORS: Record<string, string> = {
     CREATE: 'green',
@@ -60,13 +81,85 @@ function actionSuffix(action?: string): string {
     return tokens.at(-1) ?? normalized;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return undefined;
+    }
+    return value as Record<string, unknown>;
+}
+
+function readStringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
+    if (!record) {
+        return undefined;
+    }
+    const value = record[key];
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed || undefined;
+}
+
+function readBooleanField(record: Record<string, unknown> | undefined, key: string): boolean | undefined {
+    if (!record) {
+        return undefined;
+    }
+    const value = record[key];
+    return typeof value === 'boolean' ? value : undefined;
+}
+
+function readApprovalDecision(details: Record<string, unknown> | undefined): string | undefined {
+    return readStringField(details, 'decision');
+}
+
+function readPlacementEvaluation(details: Record<string, unknown> | undefined): PlacementEvaluationSummary | undefined {
+    const placement = asRecord(details?.placement_evaluation);
+    if (!placement) {
+        return undefined;
+    }
+    return {
+        selectedClusterName: readStringField(placement, 'selected_cluster_name'),
+        selectedClusterId: readStringField(placement, 'selected_cluster_id'),
+        eligible: readBooleanField(placement, 'eligible'),
+        reasonCode: readStringField(placement, 'reason_code'),
+        advisoryCode: readStringField(placement, 'advisory_code'),
+    };
+}
+
+function placementStatusTagColor(summary: PlacementEvaluationSummary): string {
+    if (summary.eligible === true) {
+        return 'success';
+    }
+    if (summary.eligible === false) {
+        return 'error';
+    }
+    return 'default';
+}
+
+export function buildAuditLogQuery(page: number, pageSize: number, filters: AuditLogFilters) {
+    return {
+        page,
+        per_page: pageSize,
+        ...(filters.action ? { action: filters.action } : {}),
+        ...(filters.approval_decision ? { approval_decision: filters.approval_decision } : {}),
+        ...(filters.actor ? { actor: filters.actor } : {}),
+        ...(filters.placement_advisory_code ? { placement_advisory_code: filters.placement_advisory_code } : {}),
+        ...(filters.placement_reason_code ? { placement_reason_code: filters.placement_reason_code } : {}),
+        ...(filters.resource_type ? { resource_type: filters.resource_type } : {}),
+        ...(filters.resource_id ? { resource_id: filters.resource_id } : {}),
+    };
+}
+
 export default function AuditLogPage() {
     const { t } = useTranslation(['admin', 'common']);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [filters, setFilters] = useState({
         action: '',
+        approval_decision: '',
         actor: '',
+        placement_advisory_code: '',
+        placement_reason_code: '',
         resource_type: '',
         resource_id: '',
     });
@@ -84,6 +177,19 @@ export default function AuditLogPage() {
         { label: t('audit.resource_option.role'), value: 'role' },
         { label: t('audit.resource_option.auth_provider'), value: 'auth_provider' },
     ];
+    const approvalDecisionOptions = [
+        { label: t('audit.decision_option.all'), value: '' },
+        { label: t('audit.decision_option.approved'), value: 'approved' },
+        { label: t('audit.decision_option.rejected'), value: 'rejected' },
+        { label: t('audit.decision_option.validation_failed'), value: 'validation_failed' },
+        { label: t('audit.decision_option.power_approved'), value: 'power_approved' },
+        { label: t('audit.decision_option.delete_approved'), value: 'delete_approved' },
+        { label: t('audit.decision_option.vnc_access_approved'), value: 'vnc_access_approved' },
+        { label: t('audit.decision_option.batch_approved'), value: 'batch_approved' },
+        { label: t('audit.decision_option.batch_rejected'), value: 'batch_rejected' },
+        { label: t('audit.decision_option.cancelled'), value: 'cancelled' },
+        { label: t('audit.decision_option.batch_cancelled'), value: 'batch_cancelled' },
+    ];
 
     // Fetch audit logs via typed api client (ADR-0021 contract-first).
     // JWT token is automatically attached by the api client middleware.
@@ -92,14 +198,7 @@ export default function AuditLogPage() {
         () =>
             api.GET('/audit-logs', {
                 params: {
-                    query: {
-                        page,
-                        per_page: pageSize,
-                        ...(filters.action ? { action: filters.action } : {}),
-                        ...(filters.actor ? { actor: filters.actor } : {}),
-                        ...(filters.resource_type ? { resource_type: filters.resource_type } : {}),
-                        ...(filters.resource_id ? { resource_id: filters.resource_id } : {}),
-                    },
+                    query: buildAuditLogQuery(page, pageSize, filters),
                 },
             })
     );
@@ -121,6 +220,19 @@ export default function AuditLogPage() {
                         {label}
                     </Tag>
                 );
+            },
+        },
+        {
+            title: t('audit.decision', { defaultValue: 'Decision' }),
+            dataIndex: 'details',
+            key: 'decision',
+            width: 160,
+            render: (details: Record<string, unknown>) => {
+                const decision = readApprovalDecision(details);
+                if (!decision) {
+                    return <Text type="secondary">—</Text>;
+                }
+                return <Tag color="blue">{decision}</Tag>;
             },
         },
         {
@@ -151,18 +263,111 @@ export default function AuditLogPage() {
             ),
         },
         {
+            title: t('audit.placement', { defaultValue: 'Placement' }),
+            dataIndex: 'details',
+            key: 'placement',
+            width: 280,
+            render: (details: Record<string, unknown>) => {
+                const summary = readPlacementEvaluation(details);
+                if (!summary) {
+                    return <Text type="secondary">—</Text>;
+                }
+                return (
+                    <Space direction="vertical" size={2}>
+                        <Space wrap size={4}>
+                            <Tag color={placementStatusTagColor(summary)}>
+                                {summary.eligible === true
+                                    ? t('audit.placement.eligible', { defaultValue: 'Eligible' })
+                                    : summary.eligible === false
+                                        ? t('audit.placement.denied', { defaultValue: 'Denied' })
+                                        : '—'}
+                            </Tag>
+                            {summary.reasonCode && (
+                                <Tag color="red">{summary.reasonCode}</Tag>
+                            )}
+                            {summary.advisoryCode && (
+                                <Tag color="orange">{summary.advisoryCode}</Tag>
+                            )}
+                        </Space>
+                        {(summary.selectedClusterName || summary.selectedClusterId) && (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                {t('audit.placement.cluster', { defaultValue: 'Cluster' })}: {summary.selectedClusterName ?? summary.selectedClusterId}
+                            </Text>
+                        )}
+                    </Space>
+                );
+            },
+        },
+        {
             title: t('audit.details'),
             dataIndex: 'details',
             key: 'details',
             ellipsis: true,
             render: (details: Record<string, unknown>) => {
                 if (!details || Object.keys(details).length === 0) return <Text type="secondary">—</Text>;
+                const decision = readApprovalDecision(details);
+                const placement = readPlacementEvaluation(details);
+                const descriptionItems: NonNullable<DescriptionsProps['items']> = [];
+                if (decision) {
+                    descriptionItems.push({
+                        key: 'decision',
+                        label: t('audit.decision', { defaultValue: 'Decision' }),
+                        children: <Tag color="blue">{decision}</Tag>,
+                    });
+                }
+                if (placement?.selectedClusterName || placement?.selectedClusterId) {
+                    descriptionItems.push({
+                        key: 'cluster',
+                        label: t('audit.placement.cluster', { defaultValue: 'Cluster' }),
+                        children: placement?.selectedClusterName ?? placement?.selectedClusterId,
+                    });
+                }
+                if (placement?.eligible !== undefined) {
+                    descriptionItems.push({
+                        key: 'eligible',
+                        label: t('audit.placement', { defaultValue: 'Placement' }),
+                        children: (
+                            <Tag color={placementStatusTagColor(placement)}>
+                                {placement.eligible
+                                    ? t('audit.placement.eligible', { defaultValue: 'Eligible' })
+                                    : t('audit.placement.denied', { defaultValue: 'Denied' })}
+                            </Tag>
+                        ),
+                    });
+                }
+                if (placement?.reasonCode) {
+                    descriptionItems.push({
+                        key: 'reason',
+                        label: t('audit.placement.reason', { defaultValue: 'Reason Code' }),
+                        children: <Tag color="red">{placement.reasonCode}</Tag>,
+                    });
+                }
+                if (placement?.advisoryCode) {
+                    descriptionItems.push({
+                        key: 'advisory',
+                        label: t('audit.placement.advisory', { defaultValue: 'Advisory Code' }),
+                        children: <Tag color="orange">{placement.advisoryCode}</Tag>,
+                    });
+                }
                 return (
                     <Popover
                         content={
-                            <pre style={{ maxWidth: 400, maxHeight: 300, overflow: 'auto', fontSize: 12 }}>
-                                {JSON.stringify(details, null, 2)}
-                            </pre>
+                            <div style={{ maxWidth: 420 }}>
+                                {descriptionItems.length > 0 && (
+                                    <Descriptions
+                                        size="small"
+                                        column={1}
+                                        items={descriptionItems}
+                                        style={{ marginBottom: 12 }}
+                                    />
+                                )}
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {t('audit.details.raw_json', { defaultValue: 'Raw JSON' })}
+                                </Text>
+                                <pre style={{ maxWidth: 400, maxHeight: 300, overflow: 'auto', fontSize: 12, marginTop: 8 }}>
+                                    {JSON.stringify(details, null, 2)}
+                                </pre>
+                            </div>
                         }
                         title={t('audit.details')}
                         trigger="click"
@@ -203,7 +408,7 @@ export default function AuditLogPage() {
             {/* Filters */}
             <Card style={{ marginBottom: 16, borderRadius: 12 }}>
                 <Row gutter={16}>
-                    <Col xs={24} sm={6}>
+                    <Col xs={24} sm={12} lg={6}>
                         <Select
                             style={{ width: '100%' }}
                             placeholder={t('audit.filter.resource_type')}
@@ -213,7 +418,7 @@ export default function AuditLogPage() {
                             allowClear
                         />
                     </Col>
-                    <Col xs={24} sm={6}>
+                    <Col xs={24} sm={12} lg={6}>
                         <Input
                             placeholder={t('audit.filter.action')}
                             value={filters.action}
@@ -222,7 +427,17 @@ export default function AuditLogPage() {
                             allowClear
                         />
                     </Col>
-                    <Col xs={24} sm={6}>
+                    <Col xs={24} sm={12} lg={6}>
+                        <Select
+                            style={{ width: '100%' }}
+                            placeholder={t('audit.filter.approval_decision')}
+                            value={filters.approval_decision || undefined}
+                            onChange={(val) => setFilters((f) => ({ ...f, approval_decision: val || '' }))}
+                            options={approvalDecisionOptions}
+                            allowClear
+                        />
+                    </Col>
+                    <Col xs={24} sm={12} lg={6}>
                         <Input
                             placeholder={t('audit.filter.actor')}
                             value={filters.actor}
@@ -231,7 +446,25 @@ export default function AuditLogPage() {
                             allowClear
                         />
                     </Col>
-                    <Col xs={24} sm={6}>
+                    <Col xs={24} sm={12} lg={6}>
+                        <Input
+                            placeholder={t('audit.filter.placement_advisory_code')}
+                            value={filters.placement_advisory_code}
+                            onChange={(e) => setFilters((f) => ({ ...f, placement_advisory_code: e.target.value }))}
+                            prefix={<SearchOutlined />}
+                            allowClear
+                        />
+                    </Col>
+                    <Col xs={24} sm={12} lg={6}>
+                        <Input
+                            placeholder={t('audit.filter.placement_reason_code')}
+                            value={filters.placement_reason_code}
+                            onChange={(e) => setFilters((f) => ({ ...f, placement_reason_code: e.target.value }))}
+                            prefix={<SearchOutlined />}
+                            allowClear
+                        />
+                    </Col>
+                    <Col xs={24} sm={12} lg={6}>
                         <Button
                             type="primary"
                             icon={<SearchOutlined />}

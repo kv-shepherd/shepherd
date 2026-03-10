@@ -50,7 +50,7 @@ func main() {
 	checkFragments(&violations, frontendTemplateHookTestPath, []string{
 		"useAdminTemplatesController",
 		"submits create payload with cloud_init YAML directly",
-		"clears image_url when source_type is pvc",
+		"clears image_url when source_type is cdi_pvc_clone",
 		"cloud_init",
 	})
 	checkFragments(&violations, frontendInstanceSizeHookTestPath, []string{

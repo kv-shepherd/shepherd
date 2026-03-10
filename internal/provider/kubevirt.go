@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -536,6 +537,90 @@ func storageProfileDefaultVolumeMode(storageProfile *cdiv1beta1.StorageProfile) 
 	return string(*claimPropertySets[0].VolumeMode)
 }
 
+// ListPodsUsingPVC returns non-terminal pods that currently reference the source PVC.
+func (p *KubeVirtProviderImpl) ListPodsUsingPVC(
+	ctx context.Context,
+	cluster, namespace, claimName string,
+) ([]domain.ObjectReference, error) {
+	client, err := p.clientFactory(cluster)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+	if strings.TrimSpace(namespace) == "" {
+		return nil, fmt.Errorf("pod lookup requires namespace")
+	}
+	if strings.TrimSpace(claimName) == "" {
+		return nil, fmt.Errorf("pod lookup requires claim name")
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	list, err := client.Pods().List(opCtx, namespace, k8smetav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods in namespace %s: %w", namespace, err)
+	}
+
+	items := make([]domain.ObjectReference, 0)
+	for i := range list.Items {
+		pod := &list.Items[i]
+		if isTerminalPodPhase(pod.Status.Phase) && pod.DeletionTimestamp == nil {
+			continue
+		}
+		if !podUsesPVC(pod, claimName) {
+			continue
+		}
+		items = append(items, domain.ObjectReference{
+			Kind:      "Pod",
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+			UID:       string(pod.UID),
+		})
+	}
+	return items, nil
+}
+
+// CanClonePVCSource checks whether the current cluster credential can create the
+// CDI clone source subresource in the source namespace.
+func (p *KubeVirtProviderImpl) CanClonePVCSource(
+	ctx context.Context,
+	cluster, namespace string,
+) (allowed bool, reason string, err error) {
+	client, err := p.clientFactory(cluster)
+	if err != nil {
+		return false, "", fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+	if strings.TrimSpace(namespace) == "" {
+		return false, "", fmt.Errorf("clone source access review requires namespace")
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	review, err := client.Authorization().CreateSelfSubjectAccessReview(opCtx, &authorizationv1.SelfSubjectAccessReview{
+		Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+			ResourceAttributes: &authorizationv1.ResourceAttributes{
+				Namespace: namespace,
+				Verb:      "create",
+				Group:     "cdi.kubevirt.io",
+				Resource:  "datavolumes/source",
+			},
+		},
+	}, k8smetav1.CreateOptions{})
+	if err != nil {
+		return false, "", fmt.Errorf("create self subject access review for namespace %s: %w", namespace, err)
+	}
+
+	reason = strings.TrimSpace(review.Status.Reason)
+	if evalErr := strings.TrimSpace(review.Status.EvaluationError); evalErr != "" {
+		if reason != "" {
+			reason += "; "
+		}
+		reason += evalErr
+	}
+	return review.Status.Allowed, reason, nil
+}
+
 // extractNameFromYAML extracts metadata.name from YAML bytes for safety validation.
 // Used by UpdateVM to ensure the YAML target matches the function parameter.
 func extractNameFromYAML(yamlData []byte) (string, error) {
@@ -606,6 +691,27 @@ func lastObservedTime(ev corev1.Event) time.Time {
 		return ev.EventTime.Time
 	}
 	return ev.CreationTimestamp.Time
+}
+
+func podUsesPVC(pod *corev1.Pod, claimName string) bool {
+	if pod == nil {
+		return false
+	}
+	want := strings.TrimSpace(claimName)
+	if want == "" {
+		return false
+	}
+	for i := range pod.Spec.Volumes {
+		volume := &pod.Spec.Volumes[i]
+		if volume.PersistentVolumeClaim != nil && volume.PersistentVolumeClaim.ClaimName == want {
+			return true
+		}
+	}
+	return false
+}
+
+func isTerminalPodPhase(phase corev1.PodPhase) bool {
+	return phase == corev1.PodSucceeded || phase == corev1.PodFailed
 }
 
 func stringValue(value *string) string {

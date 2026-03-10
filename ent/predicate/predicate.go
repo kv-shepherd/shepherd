@@ -24,6 +24,9 @@ type BatchApprovalTicket func(*sql.Selector)
 // Cluster is the predicate function for cluster builders.
 type Cluster func(*sql.Selector)
 
+// ClusterPolicy is the predicate function for clusterpolicy builders.
+type ClusterPolicy func(*sql.Selector)
+
 // DomainEvent is the predicate function for domainevent builders.
 type DomainEvent func(*sql.Selector)
 

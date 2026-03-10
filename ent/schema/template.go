@@ -32,22 +32,25 @@ func (Template) Fields() []ent.Field {
 			Optional(),
 		field.String("description").
 			Optional(),
-		// source_type distinguishes ContainerDisk (image) from DataVolume (pvc) boot sources.
-		// ADR-0036: Two boot source modes; mutually exclusive.
+		// source_type identifies the VM boot source provisioning mode.
+		// Canonical values: "containerdisk", "cdi_image_import", "cdi_pvc_clone".
+		// Empty means not yet configured.
+		// ADR-0036: Boot source modes are mutually exclusive.
 		field.String("source_type").
-			Optional(). // "image" | "pvc"; empty means not yet configured
+			Optional().
 			Default(""),
-		// image_url is the container registry URL for ContainerDisk-based templates.
-		// Used when source_type == "image". Example: "quay.io/containerdisks/ubuntu:22.04"
+		// image_url is the container registry URL for containerdisk or CDI image import.
+		// Used when source_type is "containerdisk" or "cdi_image_import".
+		// Example: "quay.io/containerdisks/ubuntu:22.04"
 		field.String("image_url").
 			Optional(),
-		// pvc_name is the DataVolume / PersistentVolumeClaim name for PVC-based templates.
-		// Used when source_type == "pvc". Example: "ubuntu-22.04-base"
+		// pvc_name is the source PVC name for CDI clone-based templates.
+		// Used when source_type == "cdi_pvc_clone". Example: "ubuntu-22.04-golden"
 		field.String("pvc_name").
 			Optional(),
-		// pvc_namespace is the Kubernetes namespace where the PVC/DataVolume is located.
-		// Used when source_type == "pvc". Required together with pvc_name.
-		// ADR-0036: Namespace is needed so the VM creation worker can reference the correct PVC.
+		// pvc_namespace is the Kubernetes namespace of the source PVC for CDI clone.
+		// Used when source_type == "cdi_pvc_clone". Required together with pvc_name.
+		// The VM creation worker renders this into dataVolumeTemplates.spec.source.pvc.namespace.
 		field.String("pvc_namespace").
 			Optional(),
 		// cloud_init stores raw cloud-init YAML configuration (userdata).
@@ -58,6 +61,10 @@ func (Template) Fields() []ent.Field {
 			Optional(), // e.g. "linux", "windows"
 		field.String("os_version").
 			Optional(), // e.g. "ubuntu-22.04"
+		field.Enum("catalog_scope").
+			Values("unclassified", "test", "prod", "all").
+			Default("unclassified").
+			Comment("Catalog visibility scope only. Not scheduling environment."),
 		field.Bool("enabled").
 			Default(true),
 		field.String("created_by").
@@ -71,5 +78,6 @@ func (Template) Indexes() []ent.Index {
 		index.Fields("name").Unique(),
 		index.Fields("enabled"),
 		index.Fields("source_type"),
+		index.Fields("catalog_scope"),
 	}
 }

@@ -54,6 +54,8 @@ func (ApprovalTicket) Fields() []ent.Field {
 			Optional(), // Full template config at approval time (immutable)
 		field.JSON("instance_size_snapshot", map[string]interface{}{}).
 			Optional(), // InstanceSize config at approval time (ADR-0018)
+		field.JSON("placement_evaluation", map[string]interface{}{}).
+			Optional(), // Selected cluster evaluation snapshot (capability + policy verdict)
 		field.JSON("modified_spec", map[string]interface{}{}).
 			Optional(), // Admin modifications (full replacement, not diff)
 		// Batch support

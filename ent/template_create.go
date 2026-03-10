@@ -180,6 +180,20 @@ func (_c *TemplateCreate) SetNillableOsVersion(v *string) *TemplateCreate {
 	return _c
 }
 
+// SetCatalogScope sets the "catalog_scope" field.
+func (_c *TemplateCreate) SetCatalogScope(v template.CatalogScope) *TemplateCreate {
+	_c.mutation.SetCatalogScope(v)
+	return _c
+}
+
+// SetNillableCatalogScope sets the "catalog_scope" field if the given value is not nil.
+func (_c *TemplateCreate) SetNillableCatalogScope(v *template.CatalogScope) *TemplateCreate {
+	if v != nil {
+		_c.SetCatalogScope(*v)
+	}
+	return _c
+}
+
 // SetEnabled sets the "enabled" field.
 func (_c *TemplateCreate) SetEnabled(v bool) *TemplateCreate {
 	_c.mutation.SetEnabled(v)
@@ -253,6 +267,10 @@ func (_c *TemplateCreate) defaults() {
 		v := template.DefaultSourceType
 		_c.mutation.SetSourceType(v)
 	}
+	if _, ok := _c.mutation.CatalogScope(); !ok {
+		v := template.DefaultCatalogScope
+		_c.mutation.SetCatalogScope(v)
+	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		v := template.DefaultEnabled
 		_c.mutation.SetEnabled(v)
@@ -273,6 +291,14 @@ func (_c *TemplateCreate) check() error {
 	if v, ok := _c.mutation.Name(); ok {
 		if err := template.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Template.name": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.CatalogScope(); !ok {
+		return &ValidationError{Name: "catalog_scope", err: errors.New(`ent: missing required field "Template.catalog_scope"`)}
+	}
+	if v, ok := _c.mutation.CatalogScope(); ok {
+		if err := template.CatalogScopeValidator(v); err != nil {
+			return &ValidationError{Name: "catalog_scope", err: fmt.Errorf(`ent: validator failed for field "Template.catalog_scope": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
@@ -368,6 +394,10 @@ func (_c *TemplateCreate) createSpec() (*Template, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.OsVersion(); ok {
 		_spec.SetField(template.FieldOsVersion, field.TypeString, value)
 		_node.OsVersion = value
+	}
+	if value, ok := _c.mutation.CatalogScope(); ok {
+		_spec.SetField(template.FieldCatalogScope, field.TypeEnum, value)
+		_node.CatalogScope = value
 	}
 	if value, ok := _c.mutation.Enabled(); ok {
 		_spec.SetField(template.FieldEnabled, field.TypeBool, value)

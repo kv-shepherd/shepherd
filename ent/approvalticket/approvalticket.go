@@ -40,6 +40,8 @@ const (
 	FieldTemplateSnapshot = "template_snapshot"
 	// FieldInstanceSizeSnapshot holds the string denoting the instance_size_snapshot field in the database.
 	FieldInstanceSizeSnapshot = "instance_size_snapshot"
+	// FieldPlacementEvaluation holds the string denoting the placement_evaluation field in the database.
+	FieldPlacementEvaluation = "placement_evaluation"
 	// FieldModifiedSpec holds the string denoting the modified_spec field in the database.
 	FieldModifiedSpec = "modified_spec"
 	// FieldParentTicketID holds the string denoting the parent_ticket_id field in the database.
@@ -64,6 +66,7 @@ var Columns = []string{
 	FieldSelectedStorageClass,
 	FieldTemplateSnapshot,
 	FieldInstanceSizeSnapshot,
+	FieldPlacementEvaluation,
 	FieldModifiedSpec,
 	FieldParentTicketID,
 }

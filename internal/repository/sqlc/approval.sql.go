@@ -60,11 +60,12 @@ SET
     END,
     template_snapshot = COALESCE($4::jsonb, template_snapshot),
     instance_size_snapshot = COALESCE($5::jsonb, instance_size_snapshot),
-    modified_spec = COALESCE($6::jsonb, modified_spec),
+    placement_evaluation = COALESCE($6::jsonb, placement_evaluation),
+    modified_spec = COALESCE($7::jsonb, modified_spec),
     updated_at = NOW()
 WHERE
-    id = $7
-    AND event_id = $8
+    id = $8
+    AND event_id = $9
     AND status = 'PENDING'
     AND operation_type = 'CREATE'
 `
@@ -75,6 +76,7 @@ type ApproveCreateTicketParams struct {
 	SelectedStorageClass string      `db:"selected_storage_class" json:"selected_storage_class"`
 	TemplateSnapshot     []byte      `db:"template_snapshot" json:"template_snapshot"`
 	InstanceSizeSnapshot []byte      `db:"instance_size_snapshot" json:"instance_size_snapshot"`
+	PlacementEvaluation  []byte      `db:"placement_evaluation" json:"placement_evaluation"`
 	ModifiedSpec         []byte      `db:"modified_spec" json:"modified_spec"`
 	ID                   string      `db:"id" json:"id"`
 	EventID              string      `db:"event_id" json:"event_id"`
@@ -87,6 +89,7 @@ func (q *Queries) ApproveCreateTicket(ctx context.Context, arg ApproveCreateTick
 		arg.SelectedStorageClass,
 		arg.TemplateSnapshot,
 		arg.InstanceSizeSnapshot,
+		arg.PlacementEvaluation,
 		arg.ModifiedSpec,
 		arg.ID,
 		arg.EventID,

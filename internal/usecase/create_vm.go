@@ -18,6 +18,7 @@ import (
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
@@ -83,15 +84,43 @@ func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*C
 	}
 
 	// Validate template exists
-	_, err := uc.templateSvc.GetByID(ctx, input.TemplateID)
+	tpl, err := uc.templateSvc.GetByID(ctx, input.TemplateID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid template: %w", err)
 	}
+	if !tpl.Enabled {
+		return nil, apperrors.BadRequest("TEMPLATE_DISABLED", "selected template is disabled")
+	}
+	if !service.IsUserRequestableTemplateSource(tpl.SourceType, tpl.ImageURL, tpl.PvcName) {
+		return nil, apperrors.BadRequest(
+			"TEMPLATE_SOURCE_NOT_REQUESTABLE",
+			"selected template boot source is not available in the standard VM request flow",
+		)
+	}
 
 	// Validate instance size exists
-	_, err = uc.instanceSizeSvc.GetByID(ctx, input.InstanceSizeID)
+	size, err := uc.instanceSizeSvc.GetByID(ctx, input.InstanceSizeID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid instance size: %w", err)
+	}
+	if !size.Enabled {
+		return nil, apperrors.BadRequest("INSTANCE_SIZE_DISABLED", "selected instance size is disabled")
+	}
+	namespaceEnv, err := uc.resolveNamespaceEnvironment(ctx, input.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	if !service.CatalogScopeMatchesEnvironment(string(tpl.CatalogScope), namespaceEnv) {
+		return nil, apperrors.BadRequest(
+			"CATALOG_SCOPE_MISMATCH",
+			fmt.Sprintf("template catalog_scope %q does not match namespace environment %q", tpl.CatalogScope, namespaceEnv),
+		)
+	}
+	if !service.CatalogScopeMatchesEnvironment(string(size.CatalogScope), namespaceEnv) {
+		return nil, apperrors.BadRequest(
+			"CATALOG_SCOPE_MISMATCH",
+			fmt.Sprintf("instance size catalog_scope %q does not match namespace environment %q", size.CatalogScope, namespaceEnv),
+		)
 	}
 
 	// Duplicate pending guard (master-flow.md Stage 5.A):
@@ -239,6 +268,33 @@ func sameCreateResource(existing domain.VMCreationPayload, input CreateVMInput) 
 		strings.TrimSpace(existing.TemplateID) == strings.TrimSpace(input.TemplateID) &&
 		strings.TrimSpace(existing.InstanceSizeID) == strings.TrimSpace(input.InstanceSizeID) &&
 		strings.TrimSpace(existing.Namespace) == strings.TrimSpace(input.Namespace)
+}
+
+func (uc *CreateVMUseCase) resolveNamespaceEnvironment(
+	ctx context.Context,
+	namespace string,
+) (namespaceregistry.Environment, error) {
+	name := strings.TrimSpace(namespace)
+	if name == "" {
+		return "", apperrors.BadRequest("NAMESPACE_REQUIRED", "namespace is required")
+	}
+
+	ns, err := uc.entClient.NamespaceRegistry.Query().
+		Where(
+			namespaceregistry.NameEQ(name),
+			namespaceregistry.EnabledEQ(true),
+		).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return "", apperrors.BadRequest(
+				"NAMESPACE_NOT_FOUND",
+				fmt.Sprintf("namespace %q is not registered or disabled", name),
+			)
+		}
+		return "", fmt.Errorf("query namespace registry for %q: %w", name, err)
+	}
+	return ns.Environment, nil
 }
 
 // withTx executes a function within a transaction.

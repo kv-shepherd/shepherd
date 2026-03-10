@@ -17,6 +17,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/authprovider"
 	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
 	"kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
 	"kv-shepherd.io/shepherd/ent/idpgroupmapping"
@@ -55,6 +56,7 @@ const (
 	TypeAuthProvider           = "AuthProvider"
 	TypeBatchApprovalTicket    = "BatchApprovalTicket"
 	TypeCluster                = "Cluster"
+	TypeClusterPolicy          = "ClusterPolicy"
 	TypeDomainEvent            = "DomainEvent"
 	TypeExternalApprovalSystem = "ExternalApprovalSystem"
 	TypeIdPGroupMapping        = "IdPGroupMapping"
@@ -972,6 +974,7 @@ type ApprovalTicketMutation struct {
 	selected_storage_class *string
 	template_snapshot      *map[string]interface{}
 	instance_size_snapshot *map[string]interface{}
+	placement_evaluation   *map[string]interface{}
 	modified_spec          *map[string]interface{}
 	parent_ticket_id       *string
 	clearedFields          map[string]struct{}
@@ -1643,6 +1646,55 @@ func (m *ApprovalTicketMutation) ResetInstanceSizeSnapshot() {
 	delete(m.clearedFields, approvalticket.FieldInstanceSizeSnapshot)
 }
 
+// SetPlacementEvaluation sets the "placement_evaluation" field.
+func (m *ApprovalTicketMutation) SetPlacementEvaluation(value map[string]interface{}) {
+	m.placement_evaluation = &value
+}
+
+// PlacementEvaluation returns the value of the "placement_evaluation" field in the mutation.
+func (m *ApprovalTicketMutation) PlacementEvaluation() (r map[string]interface{}, exists bool) {
+	v := m.placement_evaluation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlacementEvaluation returns the old "placement_evaluation" field's value of the ApprovalTicket entity.
+// If the ApprovalTicket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ApprovalTicketMutation) OldPlacementEvaluation(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlacementEvaluation is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlacementEvaluation requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlacementEvaluation: %w", err)
+	}
+	return oldValue.PlacementEvaluation, nil
+}
+
+// ClearPlacementEvaluation clears the value of the "placement_evaluation" field.
+func (m *ApprovalTicketMutation) ClearPlacementEvaluation() {
+	m.placement_evaluation = nil
+	m.clearedFields[approvalticket.FieldPlacementEvaluation] = struct{}{}
+}
+
+// PlacementEvaluationCleared returns if the "placement_evaluation" field was cleared in this mutation.
+func (m *ApprovalTicketMutation) PlacementEvaluationCleared() bool {
+	_, ok := m.clearedFields[approvalticket.FieldPlacementEvaluation]
+	return ok
+}
+
+// ResetPlacementEvaluation resets all changes to the "placement_evaluation" field.
+func (m *ApprovalTicketMutation) ResetPlacementEvaluation() {
+	m.placement_evaluation = nil
+	delete(m.clearedFields, approvalticket.FieldPlacementEvaluation)
+}
+
 // SetModifiedSpec sets the "modified_spec" field.
 func (m *ApprovalTicketMutation) SetModifiedSpec(value map[string]interface{}) {
 	m.modified_spec = &value
@@ -1775,7 +1827,7 @@ func (m *ApprovalTicketMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ApprovalTicketMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 16)
 	if m.created_at != nil {
 		fields = append(fields, approvalticket.FieldCreatedAt)
 	}
@@ -1814,6 +1866,9 @@ func (m *ApprovalTicketMutation) Fields() []string {
 	}
 	if m.instance_size_snapshot != nil {
 		fields = append(fields, approvalticket.FieldInstanceSizeSnapshot)
+	}
+	if m.placement_evaluation != nil {
+		fields = append(fields, approvalticket.FieldPlacementEvaluation)
 	}
 	if m.modified_spec != nil {
 		fields = append(fields, approvalticket.FieldModifiedSpec)
@@ -1855,6 +1910,8 @@ func (m *ApprovalTicketMutation) Field(name string) (ent.Value, bool) {
 		return m.TemplateSnapshot()
 	case approvalticket.FieldInstanceSizeSnapshot:
 		return m.InstanceSizeSnapshot()
+	case approvalticket.FieldPlacementEvaluation:
+		return m.PlacementEvaluation()
 	case approvalticket.FieldModifiedSpec:
 		return m.ModifiedSpec()
 	case approvalticket.FieldParentTicketID:
@@ -1894,6 +1951,8 @@ func (m *ApprovalTicketMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldTemplateSnapshot(ctx)
 	case approvalticket.FieldInstanceSizeSnapshot:
 		return m.OldInstanceSizeSnapshot(ctx)
+	case approvalticket.FieldPlacementEvaluation:
+		return m.OldPlacementEvaluation(ctx)
 	case approvalticket.FieldModifiedSpec:
 		return m.OldModifiedSpec(ctx)
 	case approvalticket.FieldParentTicketID:
@@ -1998,6 +2057,13 @@ func (m *ApprovalTicketMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetInstanceSizeSnapshot(v)
 		return nil
+	case approvalticket.FieldPlacementEvaluation:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlacementEvaluation(v)
+		return nil
 	case approvalticket.FieldModifiedSpec:
 		v, ok := value.(map[string]interface{})
 		if !ok {
@@ -2063,6 +2129,9 @@ func (m *ApprovalTicketMutation) ClearedFields() []string {
 	if m.FieldCleared(approvalticket.FieldInstanceSizeSnapshot) {
 		fields = append(fields, approvalticket.FieldInstanceSizeSnapshot)
 	}
+	if m.FieldCleared(approvalticket.FieldPlacementEvaluation) {
+		fields = append(fields, approvalticket.FieldPlacementEvaluation)
+	}
 	if m.FieldCleared(approvalticket.FieldModifiedSpec) {
 		fields = append(fields, approvalticket.FieldModifiedSpec)
 	}
@@ -2103,6 +2172,9 @@ func (m *ApprovalTicketMutation) ClearField(name string) error {
 		return nil
 	case approvalticket.FieldInstanceSizeSnapshot:
 		m.ClearInstanceSizeSnapshot()
+		return nil
+	case approvalticket.FieldPlacementEvaluation:
+		m.ClearPlacementEvaluation()
 		return nil
 	case approvalticket.FieldModifiedSpec:
 		m.ClearModifiedSpec()
@@ -2156,6 +2228,9 @@ func (m *ApprovalTicketMutation) ResetField(name string) error {
 		return nil
 	case approvalticket.FieldInstanceSizeSnapshot:
 		m.ResetInstanceSizeSnapshot()
+		return nil
+	case approvalticket.FieldPlacementEvaluation:
+		m.ResetPlacementEvaluation()
 		return nil
 	case approvalticket.FieldModifiedSpec:
 		m.ResetModifiedSpec()
@@ -4731,6 +4806,8 @@ type ClusterMutation struct {
 	storage_classes_updated_at *time.Time
 	enabled                    *bool
 	clearedFields              map[string]struct{}
+	policy                     *string
+	clearedpolicy              bool
 	done                       bool
 	oldValue                   func(context.Context) (*Cluster, error)
 	predicates                 []predicate.Cluster
@@ -5539,6 +5616,45 @@ func (m *ClusterMutation) ResetEnabled() {
 	m.enabled = nil
 }
 
+// SetPolicyID sets the "policy" edge to the ClusterPolicy entity by id.
+func (m *ClusterMutation) SetPolicyID(id string) {
+	m.policy = &id
+}
+
+// ClearPolicy clears the "policy" edge to the ClusterPolicy entity.
+func (m *ClusterMutation) ClearPolicy() {
+	m.clearedpolicy = true
+}
+
+// PolicyCleared reports if the "policy" edge to the ClusterPolicy entity was cleared.
+func (m *ClusterMutation) PolicyCleared() bool {
+	return m.clearedpolicy
+}
+
+// PolicyID returns the "policy" edge ID in the mutation.
+func (m *ClusterMutation) PolicyID() (id string, exists bool) {
+	if m.policy != nil {
+		return *m.policy, true
+	}
+	return
+}
+
+// PolicyIDs returns the "policy" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// PolicyID instead. It exists only for internal usage by the builders.
+func (m *ClusterMutation) PolicyIDs() (ids []string) {
+	if id := m.policy; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetPolicy resets all changes to the "policy" edge.
+func (m *ClusterMutation) ResetPolicy() {
+	m.policy = nil
+	m.clearedpolicy = false
+}
+
 // Where appends a list predicates to the ClusterMutation builder.
 func (m *ClusterMutation) Where(ps ...predicate.Cluster) {
 	m.predicates = append(m.predicates, ps...)
@@ -5972,19 +6088,28 @@ func (m *ClusterMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *ClusterMutation) AddedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
+	if m.policy != nil {
+		edges = append(edges, cluster.EdgePolicy)
+	}
 	return edges
 }
 
 // AddedIDs returns all IDs (to other nodes) that were added for the given edge
 // name in this mutation.
 func (m *ClusterMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case cluster.EdgePolicy:
+		if id := m.policy; id != nil {
+			return []ent.Value{*id}
+		}
+	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *ClusterMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
 	return edges
 }
 
@@ -5996,26 +6121,1315 @@ func (m *ClusterMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *ClusterMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 1)
+	if m.clearedpolicy {
+		edges = append(edges, cluster.EdgePolicy)
+	}
 	return edges
 }
 
 // EdgeCleared returns a boolean which indicates if the edge with the given name
 // was cleared in this mutation.
 func (m *ClusterMutation) EdgeCleared(name string) bool {
+	switch name {
+	case cluster.EdgePolicy:
+		return m.clearedpolicy
+	}
 	return false
 }
 
 // ClearEdge clears the value of the edge with the given name. It returns an error
 // if that edge is not defined in the schema.
 func (m *ClusterMutation) ClearEdge(name string) error {
+	switch name {
+	case cluster.EdgePolicy:
+		m.ClearPolicy()
+		return nil
+	}
 	return fmt.Errorf("unknown Cluster unique edge %s", name)
 }
 
 // ResetEdge resets all changes to the edge with the given name in this mutation.
 // It returns an error if the edge is not defined in the schema.
 func (m *ClusterMutation) ResetEdge(name string) error {
+	switch name {
+	case cluster.EdgePolicy:
+		m.ResetPolicy()
+		return nil
+	}
 	return fmt.Errorf("unknown Cluster edge %s", name)
+}
+
+// ClusterPolicyMutation represents an operation that mutates the ClusterPolicy nodes in the graph.
+type ClusterPolicyMutation struct {
+	config
+	op                                    Op
+	typ                                   string
+	id                                    *string
+	created_at                            *time.Time
+	updated_at                            *time.Time
+	allow_cpu_overcommit                  *bool
+	allow_memory_overcommit               *bool
+	allow_dedicated_cpu                   *bool
+	allow_gpu                             *bool
+	allow_sriov                           *bool
+	allow_hugepages                       *bool
+	allowed_hugepages_sizes               *[]string
+	appendallowed_hugepages_sizes         []string
+	allow_cdi_clone                       *bool
+	allowed_clone_source_namespaces       *[]string
+	appendallowed_clone_source_namespaces []string
+	allowed_storage_classes               *[]string
+	appendallowed_storage_classes         []string
+	created_by                            *string
+	updated_by                            *string
+	clearedFields                         map[string]struct{}
+	cluster                               *string
+	clearedcluster                        bool
+	done                                  bool
+	oldValue                              func(context.Context) (*ClusterPolicy, error)
+	predicates                            []predicate.ClusterPolicy
+}
+
+var _ ent.Mutation = (*ClusterPolicyMutation)(nil)
+
+// clusterpolicyOption allows management of the mutation configuration using functional options.
+type clusterpolicyOption func(*ClusterPolicyMutation)
+
+// newClusterPolicyMutation creates new mutation for the ClusterPolicy entity.
+func newClusterPolicyMutation(c config, op Op, opts ...clusterpolicyOption) *ClusterPolicyMutation {
+	m := &ClusterPolicyMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeClusterPolicy,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withClusterPolicyID sets the ID field of the mutation.
+func withClusterPolicyID(id string) clusterpolicyOption {
+	return func(m *ClusterPolicyMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ClusterPolicy
+		)
+		m.oldValue = func(ctx context.Context) (*ClusterPolicy, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ClusterPolicy.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withClusterPolicy sets the old ClusterPolicy of the mutation.
+func withClusterPolicy(node *ClusterPolicy) clusterpolicyOption {
+	return func(m *ClusterPolicyMutation) {
+		m.oldValue = func(context.Context) (*ClusterPolicy, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ClusterPolicyMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ClusterPolicyMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of ClusterPolicy entities.
+func (m *ClusterPolicyMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ClusterPolicyMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ClusterPolicyMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ClusterPolicy.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *ClusterPolicyMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *ClusterPolicyMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *ClusterPolicyMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *ClusterPolicyMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *ClusterPolicyMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *ClusterPolicyMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetClusterID sets the "cluster_id" field.
+func (m *ClusterPolicyMutation) SetClusterID(s string) {
+	m.cluster = &s
+}
+
+// ClusterID returns the value of the "cluster_id" field in the mutation.
+func (m *ClusterPolicyMutation) ClusterID() (r string, exists bool) {
+	v := m.cluster
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClusterID returns the old "cluster_id" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldClusterID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClusterID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClusterID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClusterID: %w", err)
+	}
+	return oldValue.ClusterID, nil
+}
+
+// ResetClusterID resets all changes to the "cluster_id" field.
+func (m *ClusterPolicyMutation) ResetClusterID() {
+	m.cluster = nil
+}
+
+// SetAllowCPUOvercommit sets the "allow_cpu_overcommit" field.
+func (m *ClusterPolicyMutation) SetAllowCPUOvercommit(b bool) {
+	m.allow_cpu_overcommit = &b
+}
+
+// AllowCPUOvercommit returns the value of the "allow_cpu_overcommit" field in the mutation.
+func (m *ClusterPolicyMutation) AllowCPUOvercommit() (r bool, exists bool) {
+	v := m.allow_cpu_overcommit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowCPUOvercommit returns the old "allow_cpu_overcommit" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldAllowCPUOvercommit(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowCPUOvercommit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowCPUOvercommit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowCPUOvercommit: %w", err)
+	}
+	return oldValue.AllowCPUOvercommit, nil
+}
+
+// ResetAllowCPUOvercommit resets all changes to the "allow_cpu_overcommit" field.
+func (m *ClusterPolicyMutation) ResetAllowCPUOvercommit() {
+	m.allow_cpu_overcommit = nil
+}
+
+// SetAllowMemoryOvercommit sets the "allow_memory_overcommit" field.
+func (m *ClusterPolicyMutation) SetAllowMemoryOvercommit(b bool) {
+	m.allow_memory_overcommit = &b
+}
+
+// AllowMemoryOvercommit returns the value of the "allow_memory_overcommit" field in the mutation.
+func (m *ClusterPolicyMutation) AllowMemoryOvercommit() (r bool, exists bool) {
+	v := m.allow_memory_overcommit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowMemoryOvercommit returns the old "allow_memory_overcommit" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldAllowMemoryOvercommit(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowMemoryOvercommit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowMemoryOvercommit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowMemoryOvercommit: %w", err)
+	}
+	return oldValue.AllowMemoryOvercommit, nil
+}
+
+// ResetAllowMemoryOvercommit resets all changes to the "allow_memory_overcommit" field.
+func (m *ClusterPolicyMutation) ResetAllowMemoryOvercommit() {
+	m.allow_memory_overcommit = nil
+}
+
+// SetAllowDedicatedCPU sets the "allow_dedicated_cpu" field.
+func (m *ClusterPolicyMutation) SetAllowDedicatedCPU(b bool) {
+	m.allow_dedicated_cpu = &b
+}
+
+// AllowDedicatedCPU returns the value of the "allow_dedicated_cpu" field in the mutation.
+func (m *ClusterPolicyMutation) AllowDedicatedCPU() (r bool, exists bool) {
+	v := m.allow_dedicated_cpu
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowDedicatedCPU returns the old "allow_dedicated_cpu" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldAllowDedicatedCPU(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowDedicatedCPU is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowDedicatedCPU requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowDedicatedCPU: %w", err)
+	}
+	return oldValue.AllowDedicatedCPU, nil
+}
+
+// ResetAllowDedicatedCPU resets all changes to the "allow_dedicated_cpu" field.
+func (m *ClusterPolicyMutation) ResetAllowDedicatedCPU() {
+	m.allow_dedicated_cpu = nil
+}
+
+// SetAllowGpu sets the "allow_gpu" field.
+func (m *ClusterPolicyMutation) SetAllowGpu(b bool) {
+	m.allow_gpu = &b
+}
+
+// AllowGpu returns the value of the "allow_gpu" field in the mutation.
+func (m *ClusterPolicyMutation) AllowGpu() (r bool, exists bool) {
+	v := m.allow_gpu
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowGpu returns the old "allow_gpu" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldAllowGpu(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowGpu is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowGpu requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowGpu: %w", err)
+	}
+	return oldValue.AllowGpu, nil
+}
+
+// ResetAllowGpu resets all changes to the "allow_gpu" field.
+func (m *ClusterPolicyMutation) ResetAllowGpu() {
+	m.allow_gpu = nil
+}
+
+// SetAllowSriov sets the "allow_sriov" field.
+func (m *ClusterPolicyMutation) SetAllowSriov(b bool) {
+	m.allow_sriov = &b
+}
+
+// AllowSriov returns the value of the "allow_sriov" field in the mutation.
+func (m *ClusterPolicyMutation) AllowSriov() (r bool, exists bool) {
+	v := m.allow_sriov
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowSriov returns the old "allow_sriov" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldAllowSriov(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowSriov is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowSriov requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowSriov: %w", err)
+	}
+	return oldValue.AllowSriov, nil
+}
+
+// ResetAllowSriov resets all changes to the "allow_sriov" field.
+func (m *ClusterPolicyMutation) ResetAllowSriov() {
+	m.allow_sriov = nil
+}
+
+// SetAllowHugepages sets the "allow_hugepages" field.
+func (m *ClusterPolicyMutation) SetAllowHugepages(b bool) {
+	m.allow_hugepages = &b
+}
+
+// AllowHugepages returns the value of the "allow_hugepages" field in the mutation.
+func (m *ClusterPolicyMutation) AllowHugepages() (r bool, exists bool) {
+	v := m.allow_hugepages
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowHugepages returns the old "allow_hugepages" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldAllowHugepages(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowHugepages is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowHugepages requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowHugepages: %w", err)
+	}
+	return oldValue.AllowHugepages, nil
+}
+
+// ResetAllowHugepages resets all changes to the "allow_hugepages" field.
+func (m *ClusterPolicyMutation) ResetAllowHugepages() {
+	m.allow_hugepages = nil
+}
+
+// SetAllowedHugepagesSizes sets the "allowed_hugepages_sizes" field.
+func (m *ClusterPolicyMutation) SetAllowedHugepagesSizes(s []string) {
+	m.allowed_hugepages_sizes = &s
+	m.appendallowed_hugepages_sizes = nil
+}
+
+// AllowedHugepagesSizes returns the value of the "allowed_hugepages_sizes" field in the mutation.
+func (m *ClusterPolicyMutation) AllowedHugepagesSizes() (r []string, exists bool) {
+	v := m.allowed_hugepages_sizes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowedHugepagesSizes returns the old "allowed_hugepages_sizes" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldAllowedHugepagesSizes(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowedHugepagesSizes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowedHugepagesSizes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowedHugepagesSizes: %w", err)
+	}
+	return oldValue.AllowedHugepagesSizes, nil
+}
+
+// AppendAllowedHugepagesSizes adds s to the "allowed_hugepages_sizes" field.
+func (m *ClusterPolicyMutation) AppendAllowedHugepagesSizes(s []string) {
+	m.appendallowed_hugepages_sizes = append(m.appendallowed_hugepages_sizes, s...)
+}
+
+// AppendedAllowedHugepagesSizes returns the list of values that were appended to the "allowed_hugepages_sizes" field in this mutation.
+func (m *ClusterPolicyMutation) AppendedAllowedHugepagesSizes() ([]string, bool) {
+	if len(m.appendallowed_hugepages_sizes) == 0 {
+		return nil, false
+	}
+	return m.appendallowed_hugepages_sizes, true
+}
+
+// ClearAllowedHugepagesSizes clears the value of the "allowed_hugepages_sizes" field.
+func (m *ClusterPolicyMutation) ClearAllowedHugepagesSizes() {
+	m.allowed_hugepages_sizes = nil
+	m.appendallowed_hugepages_sizes = nil
+	m.clearedFields[clusterpolicy.FieldAllowedHugepagesSizes] = struct{}{}
+}
+
+// AllowedHugepagesSizesCleared returns if the "allowed_hugepages_sizes" field was cleared in this mutation.
+func (m *ClusterPolicyMutation) AllowedHugepagesSizesCleared() bool {
+	_, ok := m.clearedFields[clusterpolicy.FieldAllowedHugepagesSizes]
+	return ok
+}
+
+// ResetAllowedHugepagesSizes resets all changes to the "allowed_hugepages_sizes" field.
+func (m *ClusterPolicyMutation) ResetAllowedHugepagesSizes() {
+	m.allowed_hugepages_sizes = nil
+	m.appendallowed_hugepages_sizes = nil
+	delete(m.clearedFields, clusterpolicy.FieldAllowedHugepagesSizes)
+}
+
+// SetAllowCdiClone sets the "allow_cdi_clone" field.
+func (m *ClusterPolicyMutation) SetAllowCdiClone(b bool) {
+	m.allow_cdi_clone = &b
+}
+
+// AllowCdiClone returns the value of the "allow_cdi_clone" field in the mutation.
+func (m *ClusterPolicyMutation) AllowCdiClone() (r bool, exists bool) {
+	v := m.allow_cdi_clone
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowCdiClone returns the old "allow_cdi_clone" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldAllowCdiClone(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowCdiClone is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowCdiClone requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowCdiClone: %w", err)
+	}
+	return oldValue.AllowCdiClone, nil
+}
+
+// ResetAllowCdiClone resets all changes to the "allow_cdi_clone" field.
+func (m *ClusterPolicyMutation) ResetAllowCdiClone() {
+	m.allow_cdi_clone = nil
+}
+
+// SetAllowedCloneSourceNamespaces sets the "allowed_clone_source_namespaces" field.
+func (m *ClusterPolicyMutation) SetAllowedCloneSourceNamespaces(s []string) {
+	m.allowed_clone_source_namespaces = &s
+	m.appendallowed_clone_source_namespaces = nil
+}
+
+// AllowedCloneSourceNamespaces returns the value of the "allowed_clone_source_namespaces" field in the mutation.
+func (m *ClusterPolicyMutation) AllowedCloneSourceNamespaces() (r []string, exists bool) {
+	v := m.allowed_clone_source_namespaces
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowedCloneSourceNamespaces returns the old "allowed_clone_source_namespaces" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldAllowedCloneSourceNamespaces(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowedCloneSourceNamespaces is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowedCloneSourceNamespaces requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowedCloneSourceNamespaces: %w", err)
+	}
+	return oldValue.AllowedCloneSourceNamespaces, nil
+}
+
+// AppendAllowedCloneSourceNamespaces adds s to the "allowed_clone_source_namespaces" field.
+func (m *ClusterPolicyMutation) AppendAllowedCloneSourceNamespaces(s []string) {
+	m.appendallowed_clone_source_namespaces = append(m.appendallowed_clone_source_namespaces, s...)
+}
+
+// AppendedAllowedCloneSourceNamespaces returns the list of values that were appended to the "allowed_clone_source_namespaces" field in this mutation.
+func (m *ClusterPolicyMutation) AppendedAllowedCloneSourceNamespaces() ([]string, bool) {
+	if len(m.appendallowed_clone_source_namespaces) == 0 {
+		return nil, false
+	}
+	return m.appendallowed_clone_source_namespaces, true
+}
+
+// ClearAllowedCloneSourceNamespaces clears the value of the "allowed_clone_source_namespaces" field.
+func (m *ClusterPolicyMutation) ClearAllowedCloneSourceNamespaces() {
+	m.allowed_clone_source_namespaces = nil
+	m.appendallowed_clone_source_namespaces = nil
+	m.clearedFields[clusterpolicy.FieldAllowedCloneSourceNamespaces] = struct{}{}
+}
+
+// AllowedCloneSourceNamespacesCleared returns if the "allowed_clone_source_namespaces" field was cleared in this mutation.
+func (m *ClusterPolicyMutation) AllowedCloneSourceNamespacesCleared() bool {
+	_, ok := m.clearedFields[clusterpolicy.FieldAllowedCloneSourceNamespaces]
+	return ok
+}
+
+// ResetAllowedCloneSourceNamespaces resets all changes to the "allowed_clone_source_namespaces" field.
+func (m *ClusterPolicyMutation) ResetAllowedCloneSourceNamespaces() {
+	m.allowed_clone_source_namespaces = nil
+	m.appendallowed_clone_source_namespaces = nil
+	delete(m.clearedFields, clusterpolicy.FieldAllowedCloneSourceNamespaces)
+}
+
+// SetAllowedStorageClasses sets the "allowed_storage_classes" field.
+func (m *ClusterPolicyMutation) SetAllowedStorageClasses(s []string) {
+	m.allowed_storage_classes = &s
+	m.appendallowed_storage_classes = nil
+}
+
+// AllowedStorageClasses returns the value of the "allowed_storage_classes" field in the mutation.
+func (m *ClusterPolicyMutation) AllowedStorageClasses() (r []string, exists bool) {
+	v := m.allowed_storage_classes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowedStorageClasses returns the old "allowed_storage_classes" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldAllowedStorageClasses(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowedStorageClasses is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowedStorageClasses requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowedStorageClasses: %w", err)
+	}
+	return oldValue.AllowedStorageClasses, nil
+}
+
+// AppendAllowedStorageClasses adds s to the "allowed_storage_classes" field.
+func (m *ClusterPolicyMutation) AppendAllowedStorageClasses(s []string) {
+	m.appendallowed_storage_classes = append(m.appendallowed_storage_classes, s...)
+}
+
+// AppendedAllowedStorageClasses returns the list of values that were appended to the "allowed_storage_classes" field in this mutation.
+func (m *ClusterPolicyMutation) AppendedAllowedStorageClasses() ([]string, bool) {
+	if len(m.appendallowed_storage_classes) == 0 {
+		return nil, false
+	}
+	return m.appendallowed_storage_classes, true
+}
+
+// ClearAllowedStorageClasses clears the value of the "allowed_storage_classes" field.
+func (m *ClusterPolicyMutation) ClearAllowedStorageClasses() {
+	m.allowed_storage_classes = nil
+	m.appendallowed_storage_classes = nil
+	m.clearedFields[clusterpolicy.FieldAllowedStorageClasses] = struct{}{}
+}
+
+// AllowedStorageClassesCleared returns if the "allowed_storage_classes" field was cleared in this mutation.
+func (m *ClusterPolicyMutation) AllowedStorageClassesCleared() bool {
+	_, ok := m.clearedFields[clusterpolicy.FieldAllowedStorageClasses]
+	return ok
+}
+
+// ResetAllowedStorageClasses resets all changes to the "allowed_storage_classes" field.
+func (m *ClusterPolicyMutation) ResetAllowedStorageClasses() {
+	m.allowed_storage_classes = nil
+	m.appendallowed_storage_classes = nil
+	delete(m.clearedFields, clusterpolicy.FieldAllowedStorageClasses)
+}
+
+// SetCreatedBy sets the "created_by" field.
+func (m *ClusterPolicyMutation) SetCreatedBy(s string) {
+	m.created_by = &s
+}
+
+// CreatedBy returns the value of the "created_by" field in the mutation.
+func (m *ClusterPolicyMutation) CreatedBy() (r string, exists bool) {
+	v := m.created_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedBy returns the old "created_by" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldCreatedBy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedBy: %w", err)
+	}
+	return oldValue.CreatedBy, nil
+}
+
+// ResetCreatedBy resets all changes to the "created_by" field.
+func (m *ClusterPolicyMutation) ResetCreatedBy() {
+	m.created_by = nil
+}
+
+// SetUpdatedBy sets the "updated_by" field.
+func (m *ClusterPolicyMutation) SetUpdatedBy(s string) {
+	m.updated_by = &s
+}
+
+// UpdatedBy returns the value of the "updated_by" field in the mutation.
+func (m *ClusterPolicyMutation) UpdatedBy() (r string, exists bool) {
+	v := m.updated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedBy returns the old "updated_by" field's value of the ClusterPolicy entity.
+// If the ClusterPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ClusterPolicyMutation) OldUpdatedBy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedBy: %w", err)
+	}
+	return oldValue.UpdatedBy, nil
+}
+
+// ClearUpdatedBy clears the value of the "updated_by" field.
+func (m *ClusterPolicyMutation) ClearUpdatedBy() {
+	m.updated_by = nil
+	m.clearedFields[clusterpolicy.FieldUpdatedBy] = struct{}{}
+}
+
+// UpdatedByCleared returns if the "updated_by" field was cleared in this mutation.
+func (m *ClusterPolicyMutation) UpdatedByCleared() bool {
+	_, ok := m.clearedFields[clusterpolicy.FieldUpdatedBy]
+	return ok
+}
+
+// ResetUpdatedBy resets all changes to the "updated_by" field.
+func (m *ClusterPolicyMutation) ResetUpdatedBy() {
+	m.updated_by = nil
+	delete(m.clearedFields, clusterpolicy.FieldUpdatedBy)
+}
+
+// ClearCluster clears the "cluster" edge to the Cluster entity.
+func (m *ClusterPolicyMutation) ClearCluster() {
+	m.clearedcluster = true
+	m.clearedFields[clusterpolicy.FieldClusterID] = struct{}{}
+}
+
+// ClusterCleared reports if the "cluster" edge to the Cluster entity was cleared.
+func (m *ClusterPolicyMutation) ClusterCleared() bool {
+	return m.clearedcluster
+}
+
+// ClusterIDs returns the "cluster" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ClusterID instead. It exists only for internal usage by the builders.
+func (m *ClusterPolicyMutation) ClusterIDs() (ids []string) {
+	if id := m.cluster; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetCluster resets all changes to the "cluster" edge.
+func (m *ClusterPolicyMutation) ResetCluster() {
+	m.cluster = nil
+	m.clearedcluster = false
+}
+
+// Where appends a list predicates to the ClusterPolicyMutation builder.
+func (m *ClusterPolicyMutation) Where(ps ...predicate.ClusterPolicy) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ClusterPolicyMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ClusterPolicyMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ClusterPolicy, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ClusterPolicyMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ClusterPolicyMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ClusterPolicy).
+func (m *ClusterPolicyMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ClusterPolicyMutation) Fields() []string {
+	fields := make([]string, 0, 15)
+	if m.created_at != nil {
+		fields = append(fields, clusterpolicy.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, clusterpolicy.FieldUpdatedAt)
+	}
+	if m.cluster != nil {
+		fields = append(fields, clusterpolicy.FieldClusterID)
+	}
+	if m.allow_cpu_overcommit != nil {
+		fields = append(fields, clusterpolicy.FieldAllowCPUOvercommit)
+	}
+	if m.allow_memory_overcommit != nil {
+		fields = append(fields, clusterpolicy.FieldAllowMemoryOvercommit)
+	}
+	if m.allow_dedicated_cpu != nil {
+		fields = append(fields, clusterpolicy.FieldAllowDedicatedCPU)
+	}
+	if m.allow_gpu != nil {
+		fields = append(fields, clusterpolicy.FieldAllowGpu)
+	}
+	if m.allow_sriov != nil {
+		fields = append(fields, clusterpolicy.FieldAllowSriov)
+	}
+	if m.allow_hugepages != nil {
+		fields = append(fields, clusterpolicy.FieldAllowHugepages)
+	}
+	if m.allowed_hugepages_sizes != nil {
+		fields = append(fields, clusterpolicy.FieldAllowedHugepagesSizes)
+	}
+	if m.allow_cdi_clone != nil {
+		fields = append(fields, clusterpolicy.FieldAllowCdiClone)
+	}
+	if m.allowed_clone_source_namespaces != nil {
+		fields = append(fields, clusterpolicy.FieldAllowedCloneSourceNamespaces)
+	}
+	if m.allowed_storage_classes != nil {
+		fields = append(fields, clusterpolicy.FieldAllowedStorageClasses)
+	}
+	if m.created_by != nil {
+		fields = append(fields, clusterpolicy.FieldCreatedBy)
+	}
+	if m.updated_by != nil {
+		fields = append(fields, clusterpolicy.FieldUpdatedBy)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ClusterPolicyMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case clusterpolicy.FieldCreatedAt:
+		return m.CreatedAt()
+	case clusterpolicy.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case clusterpolicy.FieldClusterID:
+		return m.ClusterID()
+	case clusterpolicy.FieldAllowCPUOvercommit:
+		return m.AllowCPUOvercommit()
+	case clusterpolicy.FieldAllowMemoryOvercommit:
+		return m.AllowMemoryOvercommit()
+	case clusterpolicy.FieldAllowDedicatedCPU:
+		return m.AllowDedicatedCPU()
+	case clusterpolicy.FieldAllowGpu:
+		return m.AllowGpu()
+	case clusterpolicy.FieldAllowSriov:
+		return m.AllowSriov()
+	case clusterpolicy.FieldAllowHugepages:
+		return m.AllowHugepages()
+	case clusterpolicy.FieldAllowedHugepagesSizes:
+		return m.AllowedHugepagesSizes()
+	case clusterpolicy.FieldAllowCdiClone:
+		return m.AllowCdiClone()
+	case clusterpolicy.FieldAllowedCloneSourceNamespaces:
+		return m.AllowedCloneSourceNamespaces()
+	case clusterpolicy.FieldAllowedStorageClasses:
+		return m.AllowedStorageClasses()
+	case clusterpolicy.FieldCreatedBy:
+		return m.CreatedBy()
+	case clusterpolicy.FieldUpdatedBy:
+		return m.UpdatedBy()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ClusterPolicyMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case clusterpolicy.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case clusterpolicy.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case clusterpolicy.FieldClusterID:
+		return m.OldClusterID(ctx)
+	case clusterpolicy.FieldAllowCPUOvercommit:
+		return m.OldAllowCPUOvercommit(ctx)
+	case clusterpolicy.FieldAllowMemoryOvercommit:
+		return m.OldAllowMemoryOvercommit(ctx)
+	case clusterpolicy.FieldAllowDedicatedCPU:
+		return m.OldAllowDedicatedCPU(ctx)
+	case clusterpolicy.FieldAllowGpu:
+		return m.OldAllowGpu(ctx)
+	case clusterpolicy.FieldAllowSriov:
+		return m.OldAllowSriov(ctx)
+	case clusterpolicy.FieldAllowHugepages:
+		return m.OldAllowHugepages(ctx)
+	case clusterpolicy.FieldAllowedHugepagesSizes:
+		return m.OldAllowedHugepagesSizes(ctx)
+	case clusterpolicy.FieldAllowCdiClone:
+		return m.OldAllowCdiClone(ctx)
+	case clusterpolicy.FieldAllowedCloneSourceNamespaces:
+		return m.OldAllowedCloneSourceNamespaces(ctx)
+	case clusterpolicy.FieldAllowedStorageClasses:
+		return m.OldAllowedStorageClasses(ctx)
+	case clusterpolicy.FieldCreatedBy:
+		return m.OldCreatedBy(ctx)
+	case clusterpolicy.FieldUpdatedBy:
+		return m.OldUpdatedBy(ctx)
+	}
+	return nil, fmt.Errorf("unknown ClusterPolicy field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ClusterPolicyMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case clusterpolicy.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case clusterpolicy.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case clusterpolicy.FieldClusterID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClusterID(v)
+		return nil
+	case clusterpolicy.FieldAllowCPUOvercommit:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowCPUOvercommit(v)
+		return nil
+	case clusterpolicy.FieldAllowMemoryOvercommit:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowMemoryOvercommit(v)
+		return nil
+	case clusterpolicy.FieldAllowDedicatedCPU:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowDedicatedCPU(v)
+		return nil
+	case clusterpolicy.FieldAllowGpu:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowGpu(v)
+		return nil
+	case clusterpolicy.FieldAllowSriov:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowSriov(v)
+		return nil
+	case clusterpolicy.FieldAllowHugepages:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowHugepages(v)
+		return nil
+	case clusterpolicy.FieldAllowedHugepagesSizes:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowedHugepagesSizes(v)
+		return nil
+	case clusterpolicy.FieldAllowCdiClone:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowCdiClone(v)
+		return nil
+	case clusterpolicy.FieldAllowedCloneSourceNamespaces:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowedCloneSourceNamespaces(v)
+		return nil
+	case clusterpolicy.FieldAllowedStorageClasses:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowedStorageClasses(v)
+		return nil
+	case clusterpolicy.FieldCreatedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedBy(v)
+		return nil
+	case clusterpolicy.FieldUpdatedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ClusterPolicy field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ClusterPolicyMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ClusterPolicyMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ClusterPolicyMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown ClusterPolicy numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ClusterPolicyMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(clusterpolicy.FieldAllowedHugepagesSizes) {
+		fields = append(fields, clusterpolicy.FieldAllowedHugepagesSizes)
+	}
+	if m.FieldCleared(clusterpolicy.FieldAllowedCloneSourceNamespaces) {
+		fields = append(fields, clusterpolicy.FieldAllowedCloneSourceNamespaces)
+	}
+	if m.FieldCleared(clusterpolicy.FieldAllowedStorageClasses) {
+		fields = append(fields, clusterpolicy.FieldAllowedStorageClasses)
+	}
+	if m.FieldCleared(clusterpolicy.FieldUpdatedBy) {
+		fields = append(fields, clusterpolicy.FieldUpdatedBy)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ClusterPolicyMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ClusterPolicyMutation) ClearField(name string) error {
+	switch name {
+	case clusterpolicy.FieldAllowedHugepagesSizes:
+		m.ClearAllowedHugepagesSizes()
+		return nil
+	case clusterpolicy.FieldAllowedCloneSourceNamespaces:
+		m.ClearAllowedCloneSourceNamespaces()
+		return nil
+	case clusterpolicy.FieldAllowedStorageClasses:
+		m.ClearAllowedStorageClasses()
+		return nil
+	case clusterpolicy.FieldUpdatedBy:
+		m.ClearUpdatedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown ClusterPolicy nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ClusterPolicyMutation) ResetField(name string) error {
+	switch name {
+	case clusterpolicy.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case clusterpolicy.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case clusterpolicy.FieldClusterID:
+		m.ResetClusterID()
+		return nil
+	case clusterpolicy.FieldAllowCPUOvercommit:
+		m.ResetAllowCPUOvercommit()
+		return nil
+	case clusterpolicy.FieldAllowMemoryOvercommit:
+		m.ResetAllowMemoryOvercommit()
+		return nil
+	case clusterpolicy.FieldAllowDedicatedCPU:
+		m.ResetAllowDedicatedCPU()
+		return nil
+	case clusterpolicy.FieldAllowGpu:
+		m.ResetAllowGpu()
+		return nil
+	case clusterpolicy.FieldAllowSriov:
+		m.ResetAllowSriov()
+		return nil
+	case clusterpolicy.FieldAllowHugepages:
+		m.ResetAllowHugepages()
+		return nil
+	case clusterpolicy.FieldAllowedHugepagesSizes:
+		m.ResetAllowedHugepagesSizes()
+		return nil
+	case clusterpolicy.FieldAllowCdiClone:
+		m.ResetAllowCdiClone()
+		return nil
+	case clusterpolicy.FieldAllowedCloneSourceNamespaces:
+		m.ResetAllowedCloneSourceNamespaces()
+		return nil
+	case clusterpolicy.FieldAllowedStorageClasses:
+		m.ResetAllowedStorageClasses()
+		return nil
+	case clusterpolicy.FieldCreatedBy:
+		m.ResetCreatedBy()
+		return nil
+	case clusterpolicy.FieldUpdatedBy:
+		m.ResetUpdatedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown ClusterPolicy field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ClusterPolicyMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.cluster != nil {
+		edges = append(edges, clusterpolicy.EdgeCluster)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ClusterPolicyMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case clusterpolicy.EdgeCluster:
+		if id := m.cluster; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ClusterPolicyMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ClusterPolicyMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ClusterPolicyMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedcluster {
+		edges = append(edges, clusterpolicy.EdgeCluster)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ClusterPolicyMutation) EdgeCleared(name string) bool {
+	switch name {
+	case clusterpolicy.EdgeCluster:
+		return m.clearedcluster
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ClusterPolicyMutation) ClearEdge(name string) error {
+	switch name {
+	case clusterpolicy.EdgeCluster:
+		m.ClearCluster()
+		return nil
+	}
+	return fmt.Errorf("unknown ClusterPolicy unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ClusterPolicyMutation) ResetEdge(name string) error {
+	switch name {
+	case clusterpolicy.EdgeCluster:
+		m.ResetCluster()
+		return nil
+	}
+	return fmt.Errorf("unknown ClusterPolicy edge %s", name)
 }
 
 // DomainEventMutation represents an operation that mutates the DomainEvent nodes in the graph.
@@ -9044,6 +10458,7 @@ type InstanceSizeMutation struct {
 	requires_hugepages   *bool
 	hugepages_size       *string
 	spec_overrides       *map[string]interface{}
+	catalog_scope        *instancesize.CatalogScope
 	sort_order           *int
 	addsort_order        *int
 	enabled              *bool
@@ -9928,6 +11343,42 @@ func (m *InstanceSizeMutation) ResetSpecOverrides() {
 	delete(m.clearedFields, instancesize.FieldSpecOverrides)
 }
 
+// SetCatalogScope sets the "catalog_scope" field.
+func (m *InstanceSizeMutation) SetCatalogScope(is instancesize.CatalogScope) {
+	m.catalog_scope = &is
+}
+
+// CatalogScope returns the value of the "catalog_scope" field in the mutation.
+func (m *InstanceSizeMutation) CatalogScope() (r instancesize.CatalogScope, exists bool) {
+	v := m.catalog_scope
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCatalogScope returns the old "catalog_scope" field's value of the InstanceSize entity.
+// If the InstanceSize object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InstanceSizeMutation) OldCatalogScope(ctx context.Context) (v instancesize.CatalogScope, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCatalogScope is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCatalogScope requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCatalogScope: %w", err)
+	}
+	return oldValue.CatalogScope, nil
+}
+
+// ResetCatalogScope resets all changes to the "catalog_scope" field.
+func (m *InstanceSizeMutation) ResetCatalogScope() {
+	m.catalog_scope = nil
+}
+
 // SetSortOrder sets the "sort_order" field.
 func (m *InstanceSizeMutation) SetSortOrder(i int) {
 	m.sort_order = &i
@@ -10090,7 +11541,7 @@ func (m *InstanceSizeMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InstanceSizeMutation) Fields() []string {
-	fields := make([]string, 0, 19)
+	fields := make([]string, 0, 20)
 	if m.created_at != nil {
 		fields = append(fields, instancesize.FieldCreatedAt)
 	}
@@ -10138,6 +11589,9 @@ func (m *InstanceSizeMutation) Fields() []string {
 	}
 	if m.spec_overrides != nil {
 		fields = append(fields, instancesize.FieldSpecOverrides)
+	}
+	if m.catalog_scope != nil {
+		fields = append(fields, instancesize.FieldCatalogScope)
 	}
 	if m.sort_order != nil {
 		fields = append(fields, instancesize.FieldSortOrder)
@@ -10188,6 +11642,8 @@ func (m *InstanceSizeMutation) Field(name string) (ent.Value, bool) {
 		return m.HugepagesSize()
 	case instancesize.FieldSpecOverrides:
 		return m.SpecOverrides()
+	case instancesize.FieldCatalogScope:
+		return m.CatalogScope()
 	case instancesize.FieldSortOrder:
 		return m.SortOrder()
 	case instancesize.FieldEnabled:
@@ -10235,6 +11691,8 @@ func (m *InstanceSizeMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldHugepagesSize(ctx)
 	case instancesize.FieldSpecOverrides:
 		return m.OldSpecOverrides(ctx)
+	case instancesize.FieldCatalogScope:
+		return m.OldCatalogScope(ctx)
 	case instancesize.FieldSortOrder:
 		return m.OldSortOrder(ctx)
 	case instancesize.FieldEnabled:
@@ -10361,6 +11819,13 @@ func (m *InstanceSizeMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSpecOverrides(v)
+		return nil
+	case instancesize.FieldCatalogScope:
+		v, ok := value.(instancesize.CatalogScope)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCatalogScope(v)
 		return nil
 	case instancesize.FieldSortOrder:
 		v, ok := value.(int)
@@ -10599,6 +12064,9 @@ func (m *InstanceSizeMutation) ResetField(name string) error {
 		return nil
 	case instancesize.FieldSpecOverrides:
 		m.ResetSpecOverrides()
+		return nil
+	case instancesize.FieldCatalogScope:
+		m.ResetCatalogScope()
 		return nil
 	case instancesize.FieldSortOrder:
 		m.ResetSortOrder()
@@ -18792,6 +20260,7 @@ type TemplateMutation struct {
 	cloud_init    *string
 	os_family     *string
 	os_version    *string
+	catalog_scope *template.CatalogScope
 	enabled       *bool
 	created_by    *string
 	clearedFields map[string]struct{}
@@ -19453,6 +20922,42 @@ func (m *TemplateMutation) ResetOsVersion() {
 	delete(m.clearedFields, template.FieldOsVersion)
 }
 
+// SetCatalogScope sets the "catalog_scope" field.
+func (m *TemplateMutation) SetCatalogScope(ts template.CatalogScope) {
+	m.catalog_scope = &ts
+}
+
+// CatalogScope returns the value of the "catalog_scope" field in the mutation.
+func (m *TemplateMutation) CatalogScope() (r template.CatalogScope, exists bool) {
+	v := m.catalog_scope
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCatalogScope returns the old "catalog_scope" field's value of the Template entity.
+// If the Template object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TemplateMutation) OldCatalogScope(ctx context.Context) (v template.CatalogScope, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCatalogScope is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCatalogScope requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCatalogScope: %w", err)
+	}
+	return oldValue.CatalogScope, nil
+}
+
+// ResetCatalogScope resets all changes to the "catalog_scope" field.
+func (m *TemplateMutation) ResetCatalogScope() {
+	m.catalog_scope = nil
+}
+
 // SetEnabled sets the "enabled" field.
 func (m *TemplateMutation) SetEnabled(b bool) {
 	m.enabled = &b
@@ -19559,7 +21064,7 @@ func (m *TemplateMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TemplateMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 15)
 	if m.created_at != nil {
 		fields = append(fields, template.FieldCreatedAt)
 	}
@@ -19595,6 +21100,9 @@ func (m *TemplateMutation) Fields() []string {
 	}
 	if m.os_version != nil {
 		fields = append(fields, template.FieldOsVersion)
+	}
+	if m.catalog_scope != nil {
+		fields = append(fields, template.FieldCatalogScope)
 	}
 	if m.enabled != nil {
 		fields = append(fields, template.FieldEnabled)
@@ -19634,6 +21142,8 @@ func (m *TemplateMutation) Field(name string) (ent.Value, bool) {
 		return m.OsFamily()
 	case template.FieldOsVersion:
 		return m.OsVersion()
+	case template.FieldCatalogScope:
+		return m.CatalogScope()
 	case template.FieldEnabled:
 		return m.Enabled()
 	case template.FieldCreatedBy:
@@ -19671,6 +21181,8 @@ func (m *TemplateMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldOsFamily(ctx)
 	case template.FieldOsVersion:
 		return m.OldOsVersion(ctx)
+	case template.FieldCatalogScope:
+		return m.OldCatalogScope(ctx)
 	case template.FieldEnabled:
 		return m.OldEnabled(ctx)
 	case template.FieldCreatedBy:
@@ -19767,6 +21279,13 @@ func (m *TemplateMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetOsVersion(v)
+		return nil
+	case template.FieldCatalogScope:
+		v, ok := value.(template.CatalogScope)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCatalogScope(v)
 		return nil
 	case template.FieldEnabled:
 		v, ok := value.(bool)
@@ -19923,6 +21442,9 @@ func (m *TemplateMutation) ResetField(name string) error {
 		return nil
 	case template.FieldOsVersion:
 		m.ResetOsVersion()
+		return nil
+	case template.FieldCatalogScope:
+		m.ResetCatalogScope()
 		return nil
 	case template.FieldEnabled:
 		m.ResetEnabled()

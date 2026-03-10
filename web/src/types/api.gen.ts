@@ -209,6 +209,10 @@ export interface paths {
          * Get VM request context for current user
          * @description Returns user-visible context required by VM request wizard.
          *     Context is computed using current RBAC/environment visibility rules.
+         *     When `namespace`, `template_id`, and `instance_size_id` are all supplied,
+         *     the response may also include a sanitized placement hint summary. The
+         *     hint is intended for end-user guidance and does not expose cluster
+         *     identities or raw policy messages.
          */
         get: operations["getVMRequestContext"];
         put?: never;
@@ -1154,6 +1158,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/clusters/{cluster_id}/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get cluster policy */
+        get: operations["getClusterPolicy"];
+        /** Create or replace cluster policy */
+        put: operations["upsertClusterPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications": {
         parameters: {
             query?: never;
@@ -1392,6 +1414,42 @@ export interface components {
              * @enum {string}
              */
             environment?: "test" | "prod";
+            provisioning?: components["schemas"]["ProvisioningStatus"];
+        };
+        ProvisioningCondition: {
+            type?: string;
+            status?: string;
+            reason?: string;
+            message?: string;
+            /** Format: date-time */
+            last_transition_time?: string;
+        };
+        ProvisioningEvent: {
+            type?: string;
+            reason?: string;
+            message?: string;
+            count?: number;
+            /** Format: date-time */
+            first_observed?: string;
+            /** Format: date-time */
+            last_observed?: string;
+        };
+        ProvisioningStatus: {
+            root_data_volume_name?: string;
+            claim_name?: string;
+            phase?: string;
+            progress?: string;
+            restart_count?: number;
+            pvc_phase?: string;
+            /** @description CDI clone execution type observed on the root PVC, for example `copy` when host-assisted fallback is used. */
+            clone_type?: string;
+            /** @description CDI clone phase annotation observed on the root PVC. */
+            clone_phase?: string;
+            /** @description CDI fallback reason observed on the root PVC when efficient clone prerequisites were not met. */
+            clone_fallback_reason?: string;
+            failure_message?: string;
+            conditions?: components["schemas"]["ProvisioningCondition"][];
+            recent_events?: components["schemas"]["ProvisioningEvent"][];
         };
         VMCreateRequest: {
             /** Format: uuid */
@@ -1408,6 +1466,29 @@ export interface components {
             templates: components["schemas"]["Template"][];
             instance_sizes: components["schemas"]["InstanceSize"][];
             namespaces: string[];
+            placement_hint?: components["schemas"]["VMPlacementHint"];
+        };
+        VMPlacementHint: {
+            /** @enum {string} */
+            status: "AVAILABLE" | "UNAVAILABLE";
+            compatible_cluster_count: number;
+            evaluated_cluster_count: number;
+            /** @enum {string} */
+            primary_reason_code?: "NoCandidateClusters" | "ClusterUnavailable" | "CapabilityMismatch" | "PolicyNotConfigured" | "PolicyDenied" | "RequestInvalid" | "Other";
+            reason_counts?: components["schemas"]["VMPlacementHintReasonCount"][];
+            /** @enum {string} */
+            primary_advisory_code?: "HostAssistedCloneLikely" | "Other";
+            advisory_counts?: components["schemas"]["VMPlacementHintAdvisoryCount"][];
+        };
+        VMPlacementHintReasonCount: {
+            /** @enum {string} */
+            code: "NoCandidateClusters" | "ClusterUnavailable" | "CapabilityMismatch" | "PolicyNotConfigured" | "PolicyDenied" | "RequestInvalid" | "Other";
+            count: number;
+        };
+        VMPlacementHintAdvisoryCount: {
+            /** @enum {string} */
+            code: "HostAssistedCloneLikely" | "Other";
+            count: number;
         };
         VMList: {
             items?: components["schemas"]["VM"][];
@@ -1474,6 +1555,7 @@ export interface components {
             resource_name?: string;
             last_error?: string;
             attempt_count?: number;
+            provisioning?: components["schemas"]["ProvisioningStatus"];
         };
         VMBatchStatusResponse: {
             batch_id: string;
@@ -1550,6 +1632,8 @@ export interface components {
             ticket_payload?: {
                 [key: string]: unknown;
             } | null;
+            provisioning?: components["schemas"]["ProvisioningStatus"];
+            placement_evaluation?: components["schemas"]["PlacementEvaluation"];
             /** Format: date-time */
             created_at?: string;
         };
@@ -1611,9 +1695,60 @@ export interface components {
             /** @description Auto-detected StorageClass list (ADR-0015 §8) */
             storage_classes?: string[];
             default_storage_class?: string;
+            /** @description Whether an explicit ClusterPolicy row exists for this cluster */
+            policy_configured?: boolean;
+            policy_summary?: components["schemas"]["ClusterPolicySummary"];
+            compatibility?: components["schemas"]["ClusterCompatibility"];
             enabled?: boolean;
             /** Format: date-time */
             created_at?: string;
+        };
+        ClusterPolicySummary: {
+            /**
+             * @description Operator-facing summary of cluster governance posture.
+             *     `MISSING` means no explicit ClusterPolicy exists.
+             *     `OPEN` means a policy exists but adds no deny/scope guardrails.
+             *     `GUARDED` means one or more deny/scope guardrails are configured.
+             * @enum {string}
+             */
+            mode: "MISSING" | "OPEN" | "GUARDED";
+            /** @description Machine-readable controls that are explicitly denied by policy. */
+            denied_controls?: ("cpu_overcommit" | "memory_overcommit" | "dedicated_cpu" | "gpu" | "sriov" | "hugepages" | "cdi_clone")[];
+            /** @description Machine-readable controls that are constrained by allowlists. */
+            scoped_controls?: ("hugepages_sizes" | "clone_source_namespaces" | "storage_classes")[];
+            allowed_storage_class_count?: number;
+            allowed_clone_source_namespace_count?: number;
+            allowed_hugepages_size_count?: number;
+        };
+        ClusterCompatibility: {
+            /** @description Whether the cluster is compatible with the supplied CREATE placement context. */
+            eligible: boolean;
+            /** @description Machine-readable incompatibility code. Omitted when the cluster is eligible. */
+            reason_code?: string;
+            /** @description Human-readable incompatibility reason. Omitted when the cluster is eligible. */
+            reason_message?: string;
+            /** @description Machine-readable advisory code for compatible placements that may use a slower fallback path. */
+            advisory_code?: string;
+            /** @description Human-readable advisory message for compatible placements that may use a slower fallback path. */
+            advisory_message?: string;
+        };
+        PlacementEvaluation: {
+            selected_cluster_id: string;
+            selected_cluster_name?: string;
+            /** @enum {string} */
+            selected_cluster_environment?: "test" | "prod";
+            requested_storage_class?: string;
+            effective_storage_class?: string;
+            eligible: boolean;
+            reason_code?: string;
+            reason_message?: string;
+            advisory_code?: string;
+            advisory_message?: string;
+            override?: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            evaluated_at: string;
         };
         ClusterCreateRequest: {
             name: string;
@@ -1633,6 +1768,38 @@ export interface components {
             /** @enum {string} */
             environment: "test" | "prod";
         };
+        ClusterPolicy: {
+            id: string;
+            cluster_id: string;
+            allow_cpu_overcommit: boolean;
+            allow_memory_overcommit: boolean;
+            allow_dedicated_cpu: boolean;
+            allow_gpu: boolean;
+            allow_sriov: boolean;
+            allow_hugepages: boolean;
+            allowed_hugepages_sizes?: string[];
+            allow_cdi_clone: boolean;
+            allowed_clone_source_namespaces?: string[];
+            allowed_storage_classes?: string[];
+            created_by: string;
+            updated_by?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ClusterPolicyUpsertRequest: {
+            allow_cpu_overcommit: boolean;
+            allow_memory_overcommit: boolean;
+            allow_dedicated_cpu: boolean;
+            allow_gpu: boolean;
+            allow_sriov: boolean;
+            allow_hugepages: boolean;
+            allowed_hugepages_sizes?: string[];
+            allow_cdi_clone: boolean;
+            allowed_clone_source_namespaces?: string[];
+            allowed_storage_classes?: string[];
+        };
         ClusterList: {
             items?: components["schemas"]["Cluster"][];
             pagination?: components["schemas"]["Pagination"];
@@ -1643,15 +1810,20 @@ export interface components {
             display_name?: string;
             description?: string;
             /**
-             * @description Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+             * @description Catalog visibility scope only. Not scheduling environment.
              * @enum {string}
              */
-            source_type?: "image" | "pvc";
-            /** @description Container registry URL for ContainerDisk mode, e.g. quay.io/containerdisks/ubuntu:22.04 */
+            catalog_scope?: "unclassified" | "test" | "prod" | "all";
+            /**
+             * @description Canonical boot source type. `containerdisk` boots directly from a KubeVirt containerDisk image, `cdi_image_import` creates a VM-owned DataVolume from an image import source, and `cdi_pvc_clone` clones a source PVC via CDI. Legacy aliases `image` and `pvc` are accepted temporarily for backward compatibility.
+             * @enum {string}
+             */
+            source_type?: "containerdisk" | "cdi_image_import" | "cdi_pvc_clone";
+            /** @description Image / import source URL. Used by `containerdisk` and `cdi_image_import`. For CDI image import, plain registry references are canonicalized to `docker://...` by the server. */
             image_url?: string;
-            /** @description PVC/DataVolume name for PVC mode */
+            /** @description Source PVC name for CDI PVC clone mode */
             pvc_name?: string;
-            /** @description Kubernetes namespace where the PVC/DataVolume is located (required when source_type is 'pvc') */
+            /** @description Kubernetes namespace where the source PVC is located (required when source_type is 'cdi_pvc_clone') */
             pvc_namespace?: string;
             /** @description Cloud-init userdata YAML (applied at VM boot) */
             cloud_init?: string;
@@ -1666,15 +1838,20 @@ export interface components {
             display_name?: string;
             description?: string;
             /**
-             * @description Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+             * @description Catalog visibility scope only. Not scheduling environment.
              * @enum {string}
              */
-            source_type?: "image" | "pvc";
-            /** @description Required when source_type is 'image' */
+            catalog_scope?: "unclassified" | "test" | "prod" | "all";
+            /**
+             * @description Canonical boot source type. Legacy aliases `image` and `pvc` are accepted temporarily for backward compatibility.
+             * @enum {string}
+             */
+            source_type?: "containerdisk" | "cdi_image_import" | "cdi_pvc_clone";
+            /** @description Required when source_type is 'containerdisk' or 'cdi_image_import' */
             image_url?: string;
-            /** @description Required when source_type is 'pvc' */
+            /** @description Source PVC name. Required when source_type is 'cdi_pvc_clone' */
             pvc_name?: string;
-            /** @description Kubernetes namespace where the PVC/DataVolume is located. Required when source_type is 'pvc'. */
+            /** @description Kubernetes namespace where the source PVC is located. Required when source_type is 'cdi_pvc_clone'. */
             pvc_namespace?: string;
             /** @description Cloud-init userdata YAML */
             cloud_init?: string;
@@ -1686,10 +1863,12 @@ export interface components {
             display_name?: string;
             description?: string;
             /** @enum {string} */
-            source_type?: "image" | "pvc";
+            catalog_scope?: "unclassified" | "test" | "prod" | "all";
+            /** @enum {string} */
+            source_type?: "containerdisk" | "cdi_image_import" | "cdi_pvc_clone";
             image_url?: string;
             pvc_name?: string;
-            /** @description Kubernetes namespace where the PVC/DataVolume is located */
+            /** @description Kubernetes namespace where the source PVC is located */
             pvc_namespace?: string;
             cloud_init?: string;
             os_family?: string;
@@ -1705,6 +1884,11 @@ export interface components {
             name: string;
             display_name?: string;
             description?: string;
+            /**
+             * @description Catalog visibility scope only. Not scheduling environment.
+             * @enum {string}
+             */
+            catalog_scope?: "unclassified" | "test" | "prod" | "all";
             cpu_cores: number;
             memory_gi: number;
             disk_gb?: number;
@@ -1713,6 +1897,7 @@ export interface components {
             requires_sriov?: boolean;
             requires_hugepages?: boolean;
             hugepages_size?: string;
+            /** @description KubeVirt spec path overrides (admin-only). Only populated in admin catalog endpoints; omitted from user-facing responses. */
             spec_overrides?: {
                 [key: string]: unknown;
             };
@@ -1724,6 +1909,11 @@ export interface components {
             name: string;
             display_name?: string;
             description?: string;
+            /**
+             * @description Catalog visibility scope only. Not scheduling environment.
+             * @enum {string}
+             */
+            catalog_scope?: "unclassified" | "test" | "prod" | "all";
             cpu_cores: number;
             memory_gi: number;
             disk_gb?: number;
@@ -1744,6 +1934,8 @@ export interface components {
             name?: string;
             display_name?: string;
             description?: string;
+            /** @enum {string} */
+            catalog_scope?: "unclassified" | "test" | "prod" | "all";
             cpu_cores?: number;
             memory_gi?: number;
             disk_gb?: number;
@@ -2754,7 +2946,14 @@ export interface operations {
     };
     getVMRequestContext: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional selected namespace for placement hint evaluation. */
+                namespace?: string;
+                /** @description Optional selected template for placement hint evaluation. */
+                template_id?: string;
+                /** @description Optional selected instance size for placement hint evaluation. */
+                instance_size_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3035,7 +3234,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["VMPowerAcceptedResponse"];
+                };
             };
             404: components["responses"]["NotFound"];
         };
@@ -3056,7 +3257,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["VMPowerAcceptedResponse"];
+                };
             };
             404: components["responses"]["NotFound"];
         };
@@ -3077,7 +3280,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["VMPowerAcceptedResponse"];
+                };
             };
             404: components["responses"]["NotFound"];
         };
@@ -3203,6 +3408,14 @@ export interface operations {
                 /** @description Items per page */
                 per_page?: components["parameters"]["PerPage"];
                 status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
+                /** @description Filter by approval operation type. */
+                operation_type?: "CREATE" | "DELETE" | "POWER" | "VNC_ACCESS";
+                /** @description Filter by the cluster selected during CREATE approval. */
+                selected_cluster_id?: string;
+                /** @description Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets. */
+                placement_advisory_code?: string;
+                /** @description Filter by whether a placement evaluation snapshot exists on the ticket. */
+                placement_snapshot?: "present" | "missing";
             };
             header?: never;
             path?: never;
@@ -3344,6 +3557,24 @@ export interface operations {
                  *     Example: `?requires=LiveMigration,Snapshot`
                  */
                 requires?: string;
+                /** @description Filter clusters compatible with a CREATE request targeting this namespace. */
+                namespace?: string;
+                /** @description Filter clusters compatible with a CREATE request using this template. */
+                template_id?: string;
+                /** @description Filter clusters compatible with a CREATE request using this instance size. */
+                instance_size_id?: string;
+                /** @description Optional storage class selected by approver when evaluating cluster policy compatibility. */
+                selected_storage_class?: string;
+                /** @description Optional override CPU request in cores for compatibility evaluation. */
+                cpu_request?: number;
+                /** @description Optional override CPU limit in cores for compatibility evaluation. */
+                cpu_limit?: number;
+                /** @description Optional override memory request in Gi for compatibility evaluation. */
+                memory_request_gi?: number;
+                /** @description Optional override memory limit in Gi for compatibility evaluation. */
+                memory_limit_gi?: number;
+                /** @description When true, keep incompatible clusters in the result and annotate them with compatibility reasons instead of filtering them out. */
+                include_incompatible?: boolean;
             };
             header?: never;
             path?: never;
@@ -3351,7 +3582,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Cluster list (filtered by `requires` if provided) */
+            /** @description Cluster list (filtered by feature requirements and optional CREATE placement compatibility context) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4565,6 +4796,56 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    getClusterPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cluster_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cluster policy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClusterPolicy"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    upsertClusterPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cluster_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClusterPolicyUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Cluster policy updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClusterPolicy"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
     listNotifications: {
         parameters: {
             query?: {
@@ -4664,6 +4945,12 @@ export interface operations {
                 actor?: string;
                 resource_type?: string;
                 resource_id?: string;
+                /** @description Filter approval audit entries by details.decision (for example approved, rejected, validation_failed) */
+                approval_decision?: string;
+                /** @description Filter approval audit entries by details.placement_evaluation.reason_code */
+                placement_reason_code?: string;
+                /** @description Filter approval audit entries by details.placement_evaluation.advisory_code */
+                placement_advisory_code?: string;
             };
             header?: never;
             path?: never;

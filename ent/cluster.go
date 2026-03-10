@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 )
 
 // Cluster is the model entity for the Cluster schema.
@@ -49,8 +50,31 @@ type Cluster struct {
 	// Last StorageClass detection timestamp
 	StorageClassesUpdatedAt *time.Time `json:"storage_classes_updated_at,omitempty"`
 	// Enabled holds the value of the "enabled" field.
-	Enabled      bool `json:"enabled,omitempty"`
+	Enabled bool `json:"enabled,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the ClusterQuery when eager-loading is set.
+	Edges        ClusterEdges `json:"edges"`
 	selectValues sql.SelectValues
+}
+
+// ClusterEdges holds the relations/edges for other nodes in the graph.
+type ClusterEdges struct {
+	// Policy holds the value of the policy edge.
+	Policy *ClusterPolicy `json:"policy,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [1]bool
+}
+
+// PolicyOrErr returns the Policy value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e ClusterEdges) PolicyOrErr() (*ClusterPolicy, error) {
+	if e.Policy != nil {
+		return e.Policy, nil
+	} else if e.loadedTypes[0] {
+		return nil, &NotFoundError{label: clusterpolicy.Label}
+	}
+	return nil, &NotLoadedError{edge: "policy"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -199,6 +223,11 @@ func (_m *Cluster) assignValues(columns []string, values []any) error {
 // This includes values selected through modifiers, order, etc.
 func (_m *Cluster) Value(name string) (ent.Value, error) {
 	return _m.selectValues.Get(name)
+}
+
+// QueryPolicy queries the "policy" edge of the Cluster entity.
+func (_m *Cluster) QueryPolicy() *ClusterPolicyQuery {
+	return NewClusterClient(_m.config).QueryPolicy(_m)
 }
 
 // Update returns a builder for updating this Cluster.

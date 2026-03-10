@@ -1,13 +1,13 @@
 'use client';
 
 import {
+    Alert,
     Badge,
     Button,
     Card,
     Descriptions,
     Form,
     Input,
-    InputNumber,
     Modal,
     Popconfirm,
     Select,
@@ -31,8 +31,10 @@ import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
 
 import { useAdminApprovalsController } from '../hooks/useAdminApprovalsController';
+import { UnitInputNumber } from '@/components/form/UnitInputNumber';
 import {
     getPriorityTier,
+    OPERATION_FILTER_OPTIONS,
     OP_TYPE_CONFIG,
     STATUS_BADGES,
     STATUS_COLORS,
@@ -49,6 +51,19 @@ function toStr(value: unknown): string {
     if (value === null || value === undefined) return '—';
     if (typeof value === 'string') return value || '—';
     return String(value);
+}
+
+function getProvisioningPhaseTagColor(phase?: string): string {
+    if (!phase) return 'default';
+    if (phase === 'Succeeded' || phase === 'Ready') return 'green';
+    if (phase === 'Failed') return 'red';
+    return 'blue';
+}
+
+function getCloneTypeTagColor(cloneType?: string): string {
+    if (!cloneType) return 'default';
+    if (cloneType === 'copy') return 'orange';
+    return 'geekblue';
 }
 
 export function AdminApprovalsContent() {
@@ -99,6 +114,65 @@ export function AdminApprovalsContent() {
                     );
                 }
                 return <Text type="secondary">—</Text>;
+            },
+        },
+        {
+            title: t('selected_cluster', 'Selected Cluster'),
+            key: 'selected_cluster',
+            width: 180,
+            render: (_, record) => {
+                const placement = record.placement_evaluation;
+                if (!placement?.selected_cluster_id) {
+                    return <Text type="secondary">—</Text>;
+                }
+                const displayName = placement.selected_cluster_name || placement.selected_cluster_id;
+                return (
+                    <Space direction="vertical" size={0}>
+                        <Text strong>{displayName}</Text>
+                        {placement.advisory_code && (
+                            <Text type="warning" style={{ fontSize: 12 }}>
+                                {placement.advisory_code}
+                            </Text>
+                        )}
+                        {placement.selected_cluster_name && placement.selected_cluster_name !== placement.selected_cluster_id && (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                {placement.selected_cluster_id}
+                            </Text>
+                        )}
+                    </Space>
+                );
+            },
+        },
+        {
+            title: t('approve_modal.provisioning.title', 'Provisioning Status'),
+            key: 'provisioning',
+            width: 190,
+            render: (_, record) => {
+                if (record.operation_type !== 'CREATE' || !record.provisioning) {
+                    return <Text type="secondary">—</Text>;
+                }
+                const provisioning = record.provisioning;
+                return (
+                    <Space direction="vertical" size={2} data-testid={`approval-provisioning-summary-${record.id}`}>
+                        <Tag color={getProvisioningPhaseTagColor(provisioning.phase)}>
+                            {provisioning.phase || '—'}
+                        </Tag>
+                        {provisioning.clone_type === 'copy' && (
+                            <Tag color={getCloneTypeTagColor(provisioning.clone_type)}>
+                                {t('approve_modal.provisioning.clone_type_copy', 'Host-assisted copy')}
+                            </Tag>
+                        )}
+                        {provisioning.failure_message ? (
+                            <Text type="danger" style={{ fontSize: 12 }}>
+                                {provisioning.failure_message}
+                            </Text>
+                        ) : provisioning.progress ? (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                {provisioning.progress}
+                            </Text>
+                        ) : null}
+                    </Space>
+                );
             },
         },
         {
@@ -214,6 +288,45 @@ export function AdminApprovalsContent() {
                     </Button>
                 </Space>
             </div>
+            <Card style={{ borderRadius: 12, marginBottom: 16 }}>
+                <Space wrap size={12}>
+                    <Select
+                        value={approvals.operationFilter}
+                        onChange={(value) => approvals.changeOperationFilter(value as 'ALL' | ApprovalTicket['operation_type'])}
+                        options={OPERATION_FILTER_OPTIONS.map((option) => ({
+                            label: t(option.i18nKey),
+                            value: option.key,
+                        }))}
+                        style={{ minWidth: 180 }}
+                        placeholder={t('filter.operation_label', 'Operation')}
+                    />
+                    <Select
+                        value={approvals.placementSnapshotFilter}
+                        onChange={(value) => approvals.changePlacementSnapshotFilter(value as 'ALL' | 'present' | 'missing')}
+                        options={[
+                            { label: t('filter.placement_all', 'All placement states'), value: 'ALL' },
+                            { label: t('filter.placement_present', 'Placement captured'), value: 'present' },
+                            { label: t('filter.placement_missing', 'Placement missing'), value: 'missing' },
+                        ]}
+                        style={{ minWidth: 200 }}
+                        placeholder={t('filter.placement_label', 'Placement snapshot')}
+                    />
+                    <Input
+                        allowClear
+                        value={approvals.selectedClusterFilter}
+                        onChange={(event) => approvals.changeSelectedClusterFilter(event.target.value)}
+                        placeholder={t('filter.selected_cluster', 'Filter by cluster ID')}
+                        style={{ width: 240 }}
+                    />
+                    <Input
+                        allowClear
+                        value={approvals.placementAdvisoryFilter}
+                        onChange={(event) => approvals.changePlacementAdvisoryFilter(event.target.value)}
+                        placeholder={t('filter.placement_advisory', 'Filter by placement advisory')}
+                        style={{ width: 260 }}
+                    />
+                </Space>
+            </Card>
 
             <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
                 {/* ADR-0015 §11: Priority tier highlighting styles */}
@@ -267,8 +380,9 @@ export function AdminApprovalsContent() {
                 data-testid="approve-modal"
             >
                 <Form form={approvals.approveForm} layout="vertical" name="approve-form">
-                    {approvals.approveModal?.operation_type !== 'DELETE' ? (() => {
+                    {approvals.approveModal?.operation_type === 'CREATE' ? (() => {
                         const payload = approvals.approveModal?.ticket_payload as Record<string, unknown> | undefined;
+                        const provisioning = approvals.approveModal?.provisioning;
                         return (
                             <>
                                 {payload && (
@@ -287,6 +401,61 @@ export function AdminApprovalsContent() {
                                         </Descriptions.Item>
                                     </Descriptions>
                                 )}
+                                {provisioning && (
+                                    <Card
+                                        size="small"
+                                        title={t('approve_modal.provisioning.title', 'Provisioning Status')}
+                                        style={{ marginBottom: 16 }}
+                                        data-testid="approval-provisioning-card"
+                                    >
+                                        <Descriptions bordered size="small" column={1}>
+                                            <Descriptions.Item label={t('approve_modal.provisioning.phase', 'Phase')}>
+                                                <Tag color={getProvisioningPhaseTagColor(provisioning.phase)} data-testid="approval-provisioning-phase">
+                                                    {provisioning.phase || '—'}
+                                                </Tag>
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label={t('approve_modal.provisioning.progress', 'Progress')}>
+                                                {provisioning.progress || '—'}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label={t('approve_modal.provisioning.root_claim', 'Root Claim')}>
+                                                {provisioning.claim_name || '—'}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label={t('approve_modal.provisioning.pvc_phase', 'PVC Phase')}>
+                                                {provisioning.pvc_phase || '—'}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label={t('approve_modal.provisioning.clone_type', 'Clone Type')}>
+                                                {provisioning.clone_type ? (
+                                                    <Tag color={getCloneTypeTagColor(provisioning.clone_type)} data-testid="approval-provisioning-clone-type">
+                                                        {provisioning.clone_type === 'copy'
+                                                            ? t('approve_modal.provisioning.clone_type_copy', 'Host-assisted copy')
+                                                            : provisioning.clone_type}
+                                                    </Tag>
+                                                ) : '—'}
+                                            </Descriptions.Item>
+                                            <Descriptions.Item label={t('approve_modal.provisioning.clone_phase', 'Clone Phase')}>
+                                                {provisioning.clone_phase || '—'}
+                                            </Descriptions.Item>
+                                        </Descriptions>
+                                        {provisioning.clone_fallback_reason && (
+                                            <Alert
+                                                type="warning"
+                                                showIcon
+                                                style={{ marginTop: 12 }}
+                                                message={t('approve_modal.provisioning.clone_fallback_reason', 'Clone fallback reason')}
+                                                description={provisioning.clone_fallback_reason}
+                                            />
+                                        )}
+                                        {provisioning.failure_message && (
+                                            <Alert
+                                                type="error"
+                                                showIcon
+                                                style={{ marginTop: 12 }}
+                                                message={t('approve_modal.provisioning.failure_message', 'Provisioning failure')}
+                                                description={provisioning.failure_message}
+                                            />
+                                        )}
+                                    </Card>
+                                )}
                                 <Form.Item
                                     name="selected_cluster_id"
                                     label={t('approve_modal.cluster')}
@@ -294,24 +463,53 @@ export function AdminApprovalsContent() {
                                 >
                                     <Select
                                         placeholder={t('approve_modal.cluster')}
-                                        options={approvals.clustersData?.items
-                                            ?.filter((cluster: Cluster) => cluster.status === 'HEALTHY' && cluster.enabled !== false)
-                                            .map((cluster: Cluster) => ({
+                                        options={approvals.clustersData?.items?.map((cluster: Cluster) => {
+                                            const compatible = cluster.compatibility?.eligible !== false;
+                                            const disabled = cluster.enabled === false || !compatible;
+                                            return {
                                                 label: (
-                                                    <Space>
-                                                        <Text strong>{cluster.display_name || cluster.name}</Text>
-                                                        {cluster.kubevirt_version && <Tag color="blue">KV {cluster.kubevirt_version}</Tag>}
-                                                    </Space>
+                                                    <div>
+                                                        <Space wrap>
+                                                            <Text strong>{cluster.display_name || cluster.name}</Text>
+                                                            {cluster.kubevirt_version && <Tag color="blue">KV {cluster.kubevirt_version}</Tag>}
+                                                            {!compatible && (
+                                                                <Tag color="red">
+                                                                    {t('approve_modal.cluster_incompatible', 'Incompatible')}
+                                                                </Tag>
+                                                            )}
+                                                            {compatible && cluster.compatibility?.advisory_code && (
+                                                                <Tag color="orange">
+                                                                    {t('approve_modal.cluster_advisory', 'Clone fallback likely')}
+                                                                </Tag>
+                                                            )}
+                                                        </Space>
+                                                        {compatible && cluster.compatibility?.advisory_message && (
+                                                            <div style={{ marginTop: 4 }}>
+                                                                <Text type="warning" style={{ fontSize: 12 }}>
+                                                                    {cluster.compatibility.advisory_message}
+                                                                </Text>
+                                                            </div>
+                                                        )}
+                                                        {!compatible && cluster.compatibility?.reason_message && (
+                                                            <div style={{ marginTop: 4 }}>
+                                                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                                                    {cluster.compatibility.reason_message}
+                                                                </Text>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 ),
                                                 value: cluster.id,
-                                            }))}
+                                                disabled,
+                                            };
+                                        })}
                                     />
                                 </Form.Item>
                                 <Form.Item name="selected_storage_class" label={t('approve_modal.storage_class')}>
                                     <Input placeholder="e.g. rook-ceph-block" />
                                 </Form.Item>
                                 <Form.Item name="disk_gb" label={t('approve_modal.disk_gb')}>
-                                    <InputNumber min={1} max={500} addonAfter="GB" style={{ width: '100%' }} />
+                                    <UnitInputNumber min={1} max={500} unit="GB" />
                                 </Form.Item>
                                 <Form.Item name="enable_override" valuePropName="checked" label={t('approve_modal.enable_override')}>
                                     <Switch />
@@ -339,7 +537,7 @@ export function AdminApprovalsContent() {
                                                                 })
                                                             ]}
                                                         >
-                                                            <InputNumber min={0.5} step={0.5} precision={1} addonAfter={t('approve_modal.cores')} style={{ width: '100%' }} />
+                                                            <UnitInputNumber min={0.5} step={0.5} precision={1} unit={t('approve_modal.cores')} />
                                                         </Form.Item>
                                                         <Form.Item
                                                             name="cpu_limit"
@@ -358,15 +556,15 @@ export function AdminApprovalsContent() {
                                                                 })
                                                             ]}
                                                         >
-                                                            <InputNumber min={0.5} step={0.5} precision={1} addonAfter={t('approve_modal.cores')} style={{ width: '100%' }} />
+                                                            <UnitInputNumber min={0.5} step={0.5} precision={1} unit={t('approve_modal.cores')} />
                                                         </Form.Item>
                                                     </Space>
                                                     <Space style={{ width: '100%' }}>
                                                         <Form.Item name="memory_request_gi" label={t('approve_modal.memory_request')} style={{ marginBottom: 0, flex: 1 }}>
-                                                            <InputNumber min={0.5} step={0.5} precision={1} addonAfter="Gi" style={{ width: '100%' }} />
+                                                            <UnitInputNumber min={0.5} step={0.5} precision={1} unit="Gi" />
                                                         </Form.Item>
                                                         <Form.Item name="memory_limit_gi" label={t('approve_modal.memory_limit')} style={{ marginBottom: 0, flex: 1 }}>
-                                                            <InputNumber min={0.5} step={0.5} precision={1} addonAfter="Gi" style={{ width: '100%' }} />
+                                                            <UnitInputNumber min={0.5} step={0.5} precision={1} unit="Gi" />
                                                         </Form.Item>
                                                     </Space>
                                                 </Space>

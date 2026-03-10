@@ -81,6 +81,18 @@ func (f ClusterFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, err
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ClusterMutation", m)
 }
 
+// The ClusterPolicyFunc type is an adapter to allow the use of ordinary
+// function as ClusterPolicy mutator.
+type ClusterPolicyFunc func(context.Context, *ent.ClusterPolicyMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ClusterPolicyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ClusterPolicyMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ClusterPolicyMutation", m)
+}
+
 // The DomainEventFunc type is an adapter to allow the use of ordinary
 // function as DomainEvent mutator.
 type DomainEventFunc func(context.Context, *ent.DomainEventMutation) (ent.Value, error)

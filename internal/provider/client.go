@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -76,6 +77,20 @@ type EventClient interface {
 	List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*corev1.EventList, error)
 }
 
+// PodClient abstracts namespace-scoped Pod reads used for PVC clone preflight checks.
+type PodClient interface {
+	List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*corev1.PodList, error)
+}
+
+// AuthorizationClient abstracts access reviews needed for CDI clone RBAC preflight.
+type AuthorizationClient interface {
+	CreateSelfSubjectAccessReview(
+		ctx context.Context,
+		review *authorizationv1.SelfSubjectAccessReview,
+		opts k8smetav1.CreateOptions,
+	) (*authorizationv1.SelfSubjectAccessReview, error)
+}
+
 // KubeVirtCRClient provides access to the cluster-scoped KubeVirt CR.
 // Used by CapabilityDetector to fetch enabled feature gates and running version (ADR-0014).
 //
@@ -102,11 +117,13 @@ type KubeVirtClusterClient interface {
 	VMI() VirtualMachineInstanceClient // VMI read + pause/unpause
 	DataVolume() DataVolumeClient      // CDI DataVolume reads for provisioning observability
 	StorageProfile() StorageProfileClient
-	PVC() PersistentVolumeClaimClient // PVC reads for provisioning observability
-	StorageClass() StorageClassClient // StorageClass reads for clone expansion preflight
-	Events() EventClient              // CoreV1 Events for best-effort failure summaries
-	SSA() DynamicSSAClient            // Write: CreateVM/UpdateVM (Unstructured SSA, ADR-0011)
-	KubeVirt() KubeVirtCRClient       // KubeVirt CR access for capability detection (ADR-0014)
+	PVC() PersistentVolumeClaimClient   // PVC reads for provisioning observability
+	StorageClass() StorageClassClient   // StorageClass reads for clone expansion preflight
+	Events() EventClient                // CoreV1 Events for best-effort failure summaries
+	Pods() PodClient                    // CoreV1 Pods for PVC clone in-use preflight
+	Authorization() AuthorizationClient // SAR for CDI clone source RBAC preflight
+	SSA() DynamicSSAClient              // Write: CreateVM/UpdateVM (Unstructured SSA, ADR-0011)
+	KubeVirt() KubeVirtCRClient         // KubeVirt CR access for capability detection (ADR-0014)
 }
 
 // ClusterClientFactory creates KubeVirtClusterClient for a given cluster name.

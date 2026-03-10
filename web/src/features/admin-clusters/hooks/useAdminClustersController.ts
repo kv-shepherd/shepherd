@@ -2,12 +2,18 @@
 
 import { Form, message } from 'antd';
 import type { TFunction } from 'i18next';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
 
-import type { Cluster, ClusterCreateRequest, ClusterList } from '../types';
+import type {
+    Cluster,
+    ClusterCreateRequest,
+    ClusterList,
+    ClusterPolicy,
+    ClusterPolicyUpsertRequest,
+} from '../types';
 
 interface UseAdminClustersControllerArgs {
     t: TFunction;
@@ -17,10 +23,15 @@ export function useAdminClustersController({ t }: UseAdminClustersControllerArgs
     const [messageApi, messageContextHolder] = message.useMessage();
     const [createOpen, setCreateOpen] = useState(false);
     const [envModalOpen, setEnvModalOpen] = useState(false);
+    const [policyModalOpen, setPolicyModalOpen] = useState(false);
+    const [policyLoading, setPolicyLoading] = useState(false);
     const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+    const [selectedClusterName, setSelectedClusterName] = useState<string>('');
     const [selectedClusterEnv, setSelectedClusterEnv] = useState<'test' | 'prod'>('test');
+    const selectedClusterIdRef = useRef('');
     const [form] = Form.useForm<ClusterCreateRequest>();
     const [envForm] = Form.useForm<{ environment: 'test' | 'prod' }>();
+    const [policyForm] = Form.useForm<ClusterPolicyUpsertRequest>();
 
     const clusterListQuery = useApiGet<ClusterList>(
         ['admin-clusters'],
@@ -46,6 +57,21 @@ export function useAdminClustersController({ t }: UseAdminClustersControllerArgs
         ({ clusterId, environment }) => api.PUT('/admin/clusters/{cluster_id}/environment', {
             params: { path: { cluster_id: clusterId } },
             body: { environment },
+        }),
+        {
+            invalidateKeys: [['admin-clusters']],
+            onSuccess: () => messageApi.success(t('common:message.success')),
+            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+        }
+    );
+
+    const upsertPolicyMutation = useApiMutation<
+        { clusterId: string; body: ClusterPolicyUpsertRequest },
+        ClusterPolicy
+    >(
+        ({ clusterId, body }) => api.PUT('/admin/clusters/{cluster_id}/policy', {
+            params: { path: { cluster_id: clusterId } },
+            body,
         }),
         {
             invalidateKeys: [['admin-clusters']],
@@ -91,6 +117,51 @@ export function useAdminClustersController({ t }: UseAdminClustersControllerArgs
         closeEnvModal();
     };
 
+    const openPolicyModal = async (cluster: Cluster) => {
+        selectedClusterIdRef.current = cluster.id;
+        setSelectedClusterId(cluster.id);
+        setSelectedClusterName(cluster.display_name ?? cluster.name ?? cluster.id);
+        setPolicyModalOpen(true);
+        setPolicyLoading(true);
+
+        const { data, error, response } = await api.GET('/admin/clusters/{cluster_id}/policy', {
+            params: { path: { cluster_id: cluster.id } },
+        });
+
+        if (error) {
+            if (response.status === 404) {
+                policyForm.setFieldsValue(defaultClusterPolicyFormValues());
+                setPolicyLoading(false);
+                return;
+            }
+            messageApi.error(error.message || t('common:message.error'));
+            closePolicyModal();
+            setPolicyLoading(false);
+            return;
+        }
+
+        policyForm.setFieldsValue(clusterPolicyToFormValues(data));
+        setPolicyLoading(false);
+    };
+
+    const closePolicyModal = () => {
+        setPolicyModalOpen(false);
+        setPolicyLoading(false);
+        selectedClusterIdRef.current = '';
+        setSelectedClusterId('');
+        setSelectedClusterName('');
+        policyForm.resetFields();
+    };
+
+    const submitPolicyUpdate = async () => {
+        const values = await policyForm.validateFields();
+        await upsertPolicyMutation.mutateAsync({
+            clusterId: selectedClusterIdRef.current,
+            body: normalizePolicyFormValues(values),
+        });
+        closePolicyModal();
+    };
+
     return {
         messageContextHolder,
         createOpen,
@@ -106,10 +177,57 @@ export function useAdminClustersController({ t }: UseAdminClustersControllerArgs
         updateEnvironmentPending: updateEnvironmentMutation.isPending,
         envModalOpen,
         selectedClusterId,
+        selectedClusterName,
         selectedClusterEnv,
         envForm,
         openEnvModal,
         closeEnvModal,
         submitEnvUpdate,
+        policyModalOpen,
+        policyLoading,
+        policyForm,
+        openPolicyModal,
+        closePolicyModal,
+        submitPolicyUpdate,
+        upsertPolicyPending: upsertPolicyMutation.isPending,
+    };
+}
+
+function defaultClusterPolicyFormValues(): ClusterPolicyUpsertRequest {
+    return {
+        allow_cpu_overcommit: true,
+        allow_memory_overcommit: true,
+        allow_dedicated_cpu: true,
+        allow_gpu: true,
+        allow_sriov: true,
+        allow_hugepages: true,
+        allowed_hugepages_sizes: [],
+        allow_cdi_clone: true,
+        allowed_clone_source_namespaces: [],
+        allowed_storage_classes: [],
+    };
+}
+
+function clusterPolicyToFormValues(policy: ClusterPolicy): ClusterPolicyUpsertRequest {
+    return {
+        allow_cpu_overcommit: policy.allow_cpu_overcommit,
+        allow_memory_overcommit: policy.allow_memory_overcommit,
+        allow_dedicated_cpu: policy.allow_dedicated_cpu,
+        allow_gpu: policy.allow_gpu,
+        allow_sriov: policy.allow_sriov,
+        allow_hugepages: policy.allow_hugepages,
+        allowed_hugepages_sizes: policy.allowed_hugepages_sizes ?? [],
+        allow_cdi_clone: policy.allow_cdi_clone,
+        allowed_clone_source_namespaces: policy.allowed_clone_source_namespaces ?? [],
+        allowed_storage_classes: policy.allowed_storage_classes ?? [],
+    };
+}
+
+function normalizePolicyFormValues(values: ClusterPolicyUpsertRequest): ClusterPolicyUpsertRequest {
+    return {
+        ...values,
+        allowed_hugepages_sizes: values.allowed_hugepages_sizes ?? [],
+        allowed_clone_source_namespaces: values.allowed_clone_source_namespaces ?? [],
+        allowed_storage_classes: values.allowed_storage_classes ?? [],
     };
 }

@@ -18,6 +18,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/authprovider"
 	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
 	"kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
 	"kv-shepherd.io/shepherd/ent/idpgroupmapping"
@@ -104,6 +105,7 @@ func checkColumn(t, c string) error {
 			authprovider.Table:           authprovider.ValidColumn,
 			batchapprovalticket.Table:    batchapprovalticket.ValidColumn,
 			cluster.Table:                cluster.ValidColumn,
+			clusterpolicy.Table:          clusterpolicy.ValidColumn,
 			domainevent.Table:            domainevent.ValidColumn,
 			externalapprovalsystem.Table: externalapprovalsystem.ValidColumn,
 			idpgroupmapping.Table:        idpgroupmapping.ValidColumn,

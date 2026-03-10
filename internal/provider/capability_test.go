@@ -253,6 +253,8 @@ func (s *stubClusterClient) StorageProfile() StorageProfileClient { return nil }
 func (s *stubClusterClient) PVC() PersistentVolumeClaimClient     { return nil }
 func (s *stubClusterClient) StorageClass() StorageClassClient     { return nil }
 func (s *stubClusterClient) Events() EventClient                  { return nil }
+func (s *stubClusterClient) Pods() PodClient                      { return nil }
+func (s *stubClusterClient) Authorization() AuthorizationClient   { return nil }
 func (s *stubClusterClient) SSA() DynamicSSAClient                { return nil }
 func (s *stubClusterClient) KubeVirt() KubeVirtCRClient           { return s.kvCR }
 

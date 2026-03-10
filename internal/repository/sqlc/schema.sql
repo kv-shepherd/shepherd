@@ -49,6 +49,7 @@ CREATE TABLE approval_tickets (
     selected_storage_class text,
     template_snapshot jsonb,
     instance_size_snapshot jsonb,
+    placement_evaluation jsonb,
     modified_spec jsonb,
     parent_ticket_id text
 );

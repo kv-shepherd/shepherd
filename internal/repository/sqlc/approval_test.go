@@ -50,6 +50,7 @@ func TestQueries_ApproveCreateTicket(t *testing.T) {
 
 	templateSnapshot := []byte(`{"name":"tpl-v3"}`)
 	instanceSizeSnapshot := []byte(`{"cpu_cores":4,"memory_gi":8}`)
+	placementEvaluation := []byte(`{"selected_cluster_id":"cluster-a","eligible":true}`)
 	modifiedSpec := []byte(`{"cpu":4}`)
 
 	rows, err := q.ApproveCreateTicket(ctx, ApproveCreateTicketParams{
@@ -58,6 +59,7 @@ func TestQueries_ApproveCreateTicket(t *testing.T) {
 		SelectedStorageClass: "fast",
 		TemplateSnapshot:     templateSnapshot,
 		InstanceSizeSnapshot: instanceSizeSnapshot,
+		PlacementEvaluation:  placementEvaluation,
 		ModifiedSpec:         modifiedSpec,
 		ID:                   ticketID,
 		EventID:              eventID,
@@ -72,11 +74,12 @@ func TestQueries_ApproveCreateTicket(t *testing.T) {
 		storageClass pgtype.Text
 		gotTemplate  []byte
 		gotSize      []byte
+		gotPlacement []byte
 		gotModified  []byte
 	)
 	require.NoError(t, pool.QueryRow(
 		ctx,
-		`SELECT status, approver, selected_cluster_id, selected_storage_class, template_snapshot, instance_size_snapshot, modified_spec
+		`SELECT status, approver, selected_cluster_id, selected_storage_class, template_snapshot, instance_size_snapshot, placement_evaluation, modified_spec
          FROM approval_tickets WHERE id=$1`,
 		ticketID,
 	).Scan(
@@ -86,6 +89,7 @@ func TestQueries_ApproveCreateTicket(t *testing.T) {
 		&storageClass,
 		&gotTemplate,
 		&gotSize,
+		&gotPlacement,
 		&gotModified,
 	))
 
@@ -98,6 +102,7 @@ func TestQueries_ApproveCreateTicket(t *testing.T) {
 	require.Equal(t, "fast", storageClass.String)
 	assertJSONEqual(t, templateSnapshot, gotTemplate)
 	assertJSONEqual(t, instanceSizeSnapshot, gotSize)
+	assertJSONEqual(t, placementEvaluation, gotPlacement)
 	assertJSONEqual(t, modifiedSpec, gotModified)
 
 	rows, err = q.ApproveCreateTicket(ctx, ApproveCreateTicketParams{

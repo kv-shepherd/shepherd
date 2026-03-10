@@ -32,6 +32,7 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
+import { UnitInputNumber } from '@/components/form/UnitInputNumber';
 import { useAdminInstanceSizesController } from '../hooks/useAdminInstanceSizesController';
 import { formatMemory, type InstanceSize } from '../types';
 import {
@@ -176,7 +177,7 @@ function InstanceSizeFormFields({
             </Divider>
 
             <Form.Item name="cpu_cores" label={t('instanceSizes.cpu')} rules={[{ required: true }]}>
-                <InputNumber min={0.5} step={0.5} precision={1} style={{ width: '100%' }} addonAfter={t('instanceSizes.cores')} />
+                <UnitInputNumber min={0.5} step={0.5} precision={1} unit={t('instanceSizes.cores')} />
             </Form.Item>
 
             <Form.Item name="dedicated_cpu" valuePropName="checked">
@@ -196,7 +197,7 @@ function InstanceSizeFormFields({
                         <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
                             <Space style={{ width: '100%' }} direction="vertical">
                                 <Form.Item name="cpu_request" label={t('instanceSizes.cpu_request')} style={{ margin: 0 }}>
-                                    <InputNumber min={0.5} step={0.5} precision={1} style={{ width: '100%' }} addonAfter={t('instanceSizes.cores')} />
+                                    <UnitInputNumber min={0.5} step={0.5} precision={1} unit={t('instanceSizes.cores')} />
                                 </Form.Item>
                                 <Text type="secondary" style={{ fontSize: 12 }}>
                                     {t('instanceSizes.overcommit_ratio_hint')}
@@ -208,7 +209,7 @@ function InstanceSizeFormFields({
             </Form.Item>
 
             <Form.Item name="memory_gi" label={t('instanceSizes.memory')} rules={[{ required: true }]}>
-                <InputNumber min={0.5} step={0.5} precision={1} style={{ width: '100%' }} addonAfter="Gi" />
+                <UnitInputNumber min={0.5} step={0.5} precision={1} unit="Gi" />
             </Form.Item>
 
             {/* Memory Overcommit: conditional reveal */}
@@ -223,7 +224,7 @@ function InstanceSizeFormFields({
                     getFieldValue('memory_overcommit_enabled') ? (
                         <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
                             <Form.Item name="memory_request_gi" label={t('instanceSizes.memory_request')} style={{ margin: 0 }}>
-                                <InputNumber min={0.5} step={0.5} precision={1} style={{ width: '100%' }} addonAfter="Gi" />
+                                <UnitInputNumber min={0.5} step={0.5} precision={1} unit="Gi" />
                             </Form.Item>
                         </Card>
                     ) : null
@@ -231,7 +232,7 @@ function InstanceSizeFormFields({
             </Form.Item>
 
             <Form.Item name="disk_gb" label={t('instanceSizes.disk')}>
-                <InputNumber min={1} style={{ width: '100%' }} addonAfter="GB" />
+                <UnitInputNumber min={1} unit="GB" />
             </Form.Item>
 
             <Form.Item name="requires_sriov" label={t('instanceSizes.sriov')} valuePropName="checked">

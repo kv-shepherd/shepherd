@@ -759,6 +759,16 @@ func InstanceSizeSnapshotNotNil() predicate.ApprovalTicket {
 	return predicate.ApprovalTicket(sql.FieldNotNull(FieldInstanceSizeSnapshot))
 }
 
+// PlacementEvaluationIsNil applies the IsNil predicate on the "placement_evaluation" field.
+func PlacementEvaluationIsNil() predicate.ApprovalTicket {
+	return predicate.ApprovalTicket(sql.FieldIsNull(FieldPlacementEvaluation))
+}
+
+// PlacementEvaluationNotNil applies the NotNil predicate on the "placement_evaluation" field.
+func PlacementEvaluationNotNil() predicate.ApprovalTicket {
+	return predicate.ApprovalTicket(sql.FieldNotNull(FieldPlacementEvaluation))
+}
+
 // ModifiedSpecIsNil applies the IsNil predicate on the "modified_spec" field.
 func ModifiedSpecIsNil() predicate.ApprovalTicket {
 	return predicate.ApprovalTicket(sql.FieldIsNull(FieldModifiedSpec))

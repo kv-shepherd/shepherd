@@ -109,7 +109,7 @@ func TestMarshalJSONOrNull_NestedSnapshot(t *testing.T) {
 	t.Parallel()
 
 	payload := map[string]interface{}{
-		"source_type": "image",
+		"source_type": "containerdisk",
 		"image_url":   "quay.io/containerdisks/ubuntu:22.04",
 		"spec_overrides": map[string]interface{}{
 			"spec.template.spec.domain.cpu.cores": float64(4),

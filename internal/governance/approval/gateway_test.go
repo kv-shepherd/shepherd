@@ -61,7 +61,7 @@ func TestBuildTemplateSnapshot(t *testing.T) {
 		Name:         "ubuntu",
 		DisplayName:  "Ubuntu",
 		Description:  "Ubuntu template",
-		SourceType:   "pvc",
+		SourceType:   "cdi_pvc_clone",
 		PvcName:      "ubuntu-base",
 		PvcNamespace: "golden-images",
 		CloudInit:    "#cloud-config\nusers:\n  - name: admin",
@@ -75,7 +75,7 @@ func TestBuildTemplateSnapshot(t *testing.T) {
 	if snapshot["id"] != "tpl-1" {
 		t.Fatalf("snapshot id mismatch: got %v", snapshot["id"])
 	}
-	if snapshot["source_type"] != "pvc" {
+	if snapshot["source_type"] != "cdi_pvc_clone" {
 		t.Fatalf("snapshot source type mismatch: got %v", snapshot["source_type"])
 	}
 	if snapshot["pvc_name"] != "ubuntu-base" {
