@@ -605,7 +605,7 @@ func TestBatchHandler_SubmitVMBatchPower_EnqueueFailureFallsBackToFailed(t *test
 	t.Parallel()
 
 	srv, client := newBatchBehaviorTestServer(t)
-	vmID := mustCreateBatchDeleteTargetVM(t, client)
+	vmID := mustCreateBatchPowerTargetVM(t, client, namespaceregistry.EnvironmentTest)
 
 	body := mustJSON(t, generated.VMBatchPowerRequest{
 		Operation: generated.VMBatchPowerAction("start"),
@@ -711,6 +711,60 @@ func TestBatchHandler_RetryVMBatch_PowerChildEnqueueFailure(t *testing.T) {
 	}
 }
 
+func TestBatchHandler_SubmitVMBatchPower_ProdBatchStaysPendingApproval(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newBatchBehaviorTestServer(t)
+	vmID := mustCreateBatchPowerTargetVM(t, client, namespaceregistry.EnvironmentProd)
+
+	body := mustJSON(t, generated.VMBatchPowerRequest{
+		Operation: generated.VMBatchPowerAction("start"),
+		Items: []generated.VMBatchPowerItem{
+			{VmId: vmID},
+		},
+	})
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/batch/power", body, "owner-1", []string{"platform:admin"})
+	srv.SubmitVMBatchPower(c)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	var resp generated.VMBatchSubmitResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Status != generated.VMBatchParentStatusPENDINGAPPROVAL {
+		t.Fatalf("status = %q, want %q", resp.Status, generated.VMBatchParentStatusPENDINGAPPROVAL)
+	}
+
+	parent, err := client.ApprovalTicket.Get(t.Context(), resp.BatchId)
+	if err != nil {
+		t.Fatalf("query parent ticket: %v", err)
+	}
+	if parent.OperationType != approvalticket.OperationTypePOWER {
+		t.Fatalf("parent operation_type = %q, want %q", parent.OperationType, approvalticket.OperationTypePOWER)
+	}
+	if parent.Status != approvalticket.StatusPENDING {
+		t.Fatalf("parent status = %q, want %q", parent.Status, approvalticket.StatusPENDING)
+	}
+
+	children, err := client.ApprovalTicket.Query().
+		Where(approvalticket.ParentTicketIDEQ(resp.BatchId)).
+		All(t.Context())
+	if err != nil {
+		t.Fatalf("query child tickets: %v", err)
+	}
+	if len(children) != 1 {
+		t.Fatalf("child ticket count = %d, want 1", len(children))
+	}
+	if children[0].OperationType != approvalticket.OperationTypePOWER {
+		t.Fatalf("child operation_type = %q, want %q", children[0].OperationType, approvalticket.OperationTypePOWER)
+	}
+	if children[0].Status != approvalticket.StatusPENDING {
+		t.Fatalf("child status = %q, want %q", children[0].Status, approvalticket.StatusPENDING)
+	}
+}
+
 func newBatchBehaviorTestServer(t *testing.T) (*Server, *ent.Client) {
 	t.Helper()
 	_ = logger.Init("error", "json")
@@ -755,6 +809,44 @@ func mustCreateBatchDeleteTargetVM(t *testing.T, client *ent.Client) string {
 	return vmID
 }
 
+func mustCreateBatchPowerTargetVM(t *testing.T, client *ent.Client, env namespaceregistry.Environment) string {
+	t.Helper()
+	actor := "owner-1"
+
+	systemID := "sys-" + uuid.NewString()
+	serviceID := "svc-" + uuid.NewString()
+	vmID := "vm-" + uuid.NewString()
+	namespace := "team-test"
+	if env == namespaceregistry.EnvironmentProd {
+		namespace = "team-prod"
+	}
+
+	sys := mustCreateSystem(t, client, systemID, "shop"+systemID[len(systemID)-4:], actor)
+	svc := mustCreateService(t, client, serviceID, "redis"+serviceID[len(serviceID)-4:], sys.ID, "svc")
+	if _, err := client.NamespaceRegistry.Create().
+		SetID("ns-" + uuid.NewString()).
+		SetName(namespace).
+		SetEnvironment(env).
+		SetCreatedBy(actor).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create namespace registry: %v", err)
+	}
+	_, err := client.VM.Create().
+		SetID(vmID).
+		SetName("vmname" + vmID[len(vmID)-4:]).
+		SetInstance("01").
+		SetNamespace(namespace).
+		SetClusterID("cluster-a").
+		SetStatus("RUNNING").
+		SetCreatedBy(actor).
+		SetServiceID(svc.ID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create vm: %v", err)
+	}
+	return vmID
+}
+
 func mustSeedPowerBatchForRetry(t *testing.T, client *ent.Client, actor, operation string) (batchID, childID string) {
 	t.Helper()
 
@@ -780,7 +872,7 @@ func mustSeedPowerBatchForRetry(t *testing.T, client *ent.Client, actor, operati
 		SetEventID(parentEventID).
 		SetRequester(actor).
 		SetStatus(approvalticket.StatusPENDING).
-		SetOperationType(approvalticket.OperationTypeCREATE).
+		SetOperationType(approvalticket.OperationTypePOWER).
 		SetReason("power batch").
 		Save(t.Context()); err != nil {
 		t.Fatalf("create parent ticket: %v", err)
@@ -810,7 +902,7 @@ func mustSeedPowerBatchForRetry(t *testing.T, client *ent.Client, actor, operati
 		SetEventID(childEventID).
 		SetRequester(actor).
 		SetStatus(approvalticket.StatusFAILED).
-		SetOperationType(approvalticket.OperationTypeCREATE).
+		SetOperationType(approvalticket.OperationTypePOWER).
 		SetParentTicketID(batchID).
 		SetRejectReason("seed failure").
 		Save(t.Context()); err != nil {
@@ -916,5 +1008,9 @@ func (f *fakeDeleteAtomicWriter) ApproveCreateAndEnqueue(
 
 func (f *fakeDeleteAtomicWriter) ApproveDeleteAndEnqueue(_ context.Context, _, _, _, _ string) error {
 	f.deleteCalls++
+	return nil
+}
+
+func (f *fakeDeleteAtomicWriter) ApprovePowerAndEnqueue(_ context.Context, _, _, _, _ string) error {
 	return nil
 }

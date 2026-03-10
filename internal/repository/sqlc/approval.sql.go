@@ -124,6 +124,33 @@ func (q *Queries) ApproveDeleteTicket(ctx context.Context, arg ApproveDeleteTick
 	return result.RowsAffected(), nil
 }
 
+const approvePowerTicket = `-- name: ApprovePowerTicket :execrows
+UPDATE approval_tickets
+SET
+    status = 'APPROVED',
+    approver = $1,
+    updated_at = NOW()
+WHERE
+    id = $2
+    AND event_id = $3
+    AND status = 'PENDING'
+    AND operation_type = 'POWER'
+`
+
+type ApprovePowerTicketParams struct {
+	Approver pgtype.Text `db:"approver" json:"approver"`
+	ID       string      `db:"id" json:"id"`
+	EventID  string      `db:"event_id" json:"event_id"`
+}
+
+func (q *Queries) ApprovePowerTicket(ctx context.Context, arg ApprovePowerTicketParams) (int64, error) {
+	result, err := q.db.Exec(ctx, approvePowerTicket, arg.Approver, arg.ID, arg.EventID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertVM = `-- name: InsertVM :exec
 INSERT INTO vms (
     id,

@@ -3,7 +3,6 @@ package service
 import (
 	"time"
 
-	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 )
 
@@ -19,30 +18,27 @@ type VNCDecision struct {
 	RejectCode      string
 }
 
-// EvaluateVNCRequest applies the Stage 6 interaction policy:
+// EvaluateVNCRequest applies the Stage 6 interaction policy after the caller
+// has already resolved whether VNC access requires approval.
+//
 // 1. requires vnc:access permission
 // 2. VM must be RUNNING
-// 3. test env -> direct token issuance
-// 4. prod env -> approval required; reject duplicate pending requests
-func EvaluateVNCRequest(env namespaceregistry.Environment, vmStatus entvm.Status, hasPermission, hasPendingRequest bool) VNCDecision {
+// 3. no approval required -> direct token issuance
+// 4. approval required -> reject duplicate pending requests
+func EvaluateVNCRequest(vmStatus entvm.Status, hasPermission, hasPendingRequest, requireApproval bool) VNCDecision {
 	if !hasPermission {
 		return VNCDecision{RejectCode: "FORBIDDEN"}
 	}
 	if vmStatus != entvm.StatusRUNNING {
 		return VNCDecision{RejectCode: "VM_NOT_RUNNING"}
 	}
-
-	switch env {
-	case namespaceregistry.EnvironmentTest:
-		return VNCDecision{Allowed: true, RequireApproval: false}
-	case namespaceregistry.EnvironmentProd:
+	if requireApproval {
 		if hasPendingRequest {
 			return VNCDecision{RejectCode: "DUPLICATE_PENDING_VNC_REQUEST"}
 		}
 		return VNCDecision{Allowed: true, RequireApproval: true}
-	default:
-		return VNCDecision{RejectCode: "UNSUPPORTED_NAMESPACE_ENVIRONMENT"}
 	}
+	return VNCDecision{Allowed: true, RequireApproval: false}
 }
 
 // VNCTokenClaims is the canonical token claim shape used by Stage 6 policy tests.

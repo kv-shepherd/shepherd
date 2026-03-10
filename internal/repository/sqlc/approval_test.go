@@ -136,6 +136,32 @@ func TestQueries_ApproveDeleteTicket(t *testing.T) {
 	require.Equal(t, "admin-delete", approver.String)
 }
 
+func TestQueries_ApprovePowerTicket(t *testing.T) {
+	ctx := context.Background()
+	q, pool := newSQLCTestQueries(t, "approve_power_ticket")
+
+	ticketID := "ticket-power-1"
+	eventID := "event-power-1"
+	seedApprovalTicket(ctx, t, pool, ticketID, eventID, "POWER", "PENDING")
+
+	rows, err := q.ApprovePowerTicket(ctx, ApprovePowerTicketParams{
+		Approver: pgtype.Text{String: "admin-power", Valid: true},
+		ID:       ticketID,
+		EventID:  eventID,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, rows)
+
+	var (
+		status   string
+		approver pgtype.Text
+	)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status, approver FROM approval_tickets WHERE id=$1`, ticketID).Scan(&status, &approver))
+	require.Equal(t, "APPROVED", status)
+	require.True(t, approver.Valid)
+	require.Equal(t, "admin-power", approver.String)
+}
+
 func TestQueries_InsertVM(t *testing.T) {
 	ctx := context.Background()
 	q, pool := newSQLCTestQueries(t, "insert_vm")

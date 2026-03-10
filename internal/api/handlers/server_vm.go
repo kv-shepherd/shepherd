@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/approvalpolicy"
+	"kv-shepherd.io/shepherd/ent/approvalticket"
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/instancesize"
@@ -483,7 +486,7 @@ func (s *Server) StartVM(c *gin.Context, vmID generated.VMID) {
 		return
 	}
 
-	s.enqueueVMPowerOp(c, vm, "start", domain.EventVMStartRequested)
+	s.handleVMPower(c, vm, "start", domain.EventVMStartRequested)
 }
 
 // StopVM handles POST /vms/{vm_id}/stop.
@@ -493,7 +496,7 @@ func (s *Server) StopVM(c *gin.Context, vmID generated.VMID) {
 	if vm == nil {
 		return
 	}
-	s.enqueueVMPowerOp(c, vm, "stop", domain.EventVMStopRequested)
+	s.handleVMPower(c, vm, "stop", domain.EventVMStopRequested)
 }
 
 // RestartVM handles POST /vms/{vm_id}/restart.
@@ -503,7 +506,7 @@ func (s *Server) RestartVM(c *gin.Context, vmID generated.VMID) {
 	if vm == nil {
 		return
 	}
-	s.enqueueVMPowerOp(c, vm, "restart", domain.EventVMRestartRequested)
+	s.handleVMPower(c, vm, "restart", domain.EventVMRestartRequested)
 }
 
 func (s *Server) mustGetRunningVMForPowerOp(c *gin.Context, vmID generated.VMID, op string) *ent.VM {
@@ -529,6 +532,162 @@ func (s *Server) mustGetRunningVMForPowerOp(c *gin.Context, vmID generated.VMID,
 		return nil
 	}
 	return vm
+}
+
+func (s *Server) handleVMPower(c *gin.Context, vm *ent.VM, operation string, eventType domain.EventType) {
+	ctx := c.Request.Context()
+
+	needsApproval, err := s.requiresPowerApproval(ctx, vm.Namespace, operation)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusBadRequest, generated.Error{
+				Code:    "NAMESPACE_NOT_REGISTERED",
+				Message: "namespace is not registered in namespace_registry",
+			})
+			return
+		}
+		logger.Error("failed to evaluate power approval requirement",
+			zap.Error(err),
+			zap.String("vm_id", vm.ID),
+			zap.String("namespace", vm.Namespace),
+			zap.String("operation", operation),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if !needsApproval {
+		s.enqueueVMPowerOp(c, vm, operation, eventType)
+		return
+	}
+
+	actor := middleware.GetUserID(ctx)
+	ticketID, eventID, err := s.createVMPowerApprovalRequest(ctx, vm, actor, operation, eventType)
+	if err != nil {
+		logger.Error("failed to create power approval request",
+			zap.Error(err),
+			zap.String("vm_id", vm.ID),
+			zap.String("operation", operation),
+			zap.String("actor", actor),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if s.approvalRouter != nil {
+		if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &provider.ApprovalRequest{
+			EventID:   ticketID,
+			Requester: actor,
+			Action:    "power_" + operation,
+		}); routerErr != nil {
+			logger.Warn("approval router SubmitForApproval failed for power ticket (already PENDING in DB)",
+				zap.String("ticket_id", ticketID),
+				zap.Error(routerErr),
+			)
+		}
+	}
+	if s.notifier != nil {
+		s.notifier.OnTicketSubmitted(ctx, ticketID, actor, "")
+	}
+	if s.audit != nil {
+		_ = s.audit.LogAction(ctx, "vm."+operation+"_requested", "vm", vm.ID, actor, map[string]interface{}{
+			"ticket_id": ticketID,
+			"event_id":  eventID,
+			"mode":      "approval_required",
+		})
+	}
+
+	c.JSON(http.StatusAccepted, generated.VMPowerAcceptedResponse{
+		EventId:  eventID,
+		TicketId: ticketID,
+		Status:   generated.VMPowerAcceptedResponseStatus("PENDING_APPROVAL"),
+	})
+}
+
+func (s *Server) requiresPowerApproval(ctx context.Context, namespace, operation string) (bool, error) {
+	env, err := s.resolveNamespaceEnvironment(ctx, namespace)
+	if err != nil {
+		return false, err
+	}
+	if s.approvalReqs == nil {
+		return false, nil
+	}
+	return s.approvalReqs.RequiresApproval(ctx, powerOperationToPolicyOperation(operation), env)
+}
+
+func (s *Server) createVMPowerApprovalRequest(
+	ctx context.Context,
+	vm *ent.VM,
+	actor string,
+	operation string,
+	eventType domain.EventType,
+) (ticketID, eventID string, err error) {
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	eventUUID, err := uuid.NewV7()
+	if err != nil {
+		return "", "", fmt.Errorf("generate event id: %w", err)
+	}
+	ticketUUID, err := uuid.NewV7()
+	if err != nil {
+		return "", "", fmt.Errorf("generate ticket id: %w", err)
+	}
+
+	payloadBytes, err := json.Marshal(domain.VMPowerPayload{
+		VMID:      vm.ID,
+		VMName:    vm.Name,
+		ClusterID: vm.ClusterID,
+		Namespace: vm.Namespace,
+		Operation: operation,
+		Actor:     actor,
+	})
+	if err != nil {
+		return "", "", err
+	}
+
+	if _, err := tx.DomainEvent.Create().
+		SetID(eventUUID.String()).
+		SetEventType(string(eventType)).
+		SetAggregateType("vm").
+		SetAggregateID(vm.ID).
+		SetPayload(payloadBytes).
+		SetStatus(domainevent.StatusPENDING).
+		SetCreatedBy(actor).
+		Save(ctx); err != nil {
+		return "", "", err
+	}
+
+	if _, err := tx.ApprovalTicket.Create().
+		SetID(ticketUUID.String()).
+		SetEventID(eventUUID.String()).
+		SetOperationType(approvalticket.OperationTypePOWER).
+		SetStatus(approvalticket.StatusPENDING).
+		SetRequester(actor).
+		SetReason("vm " + operation + " request").
+		Save(ctx); err != nil {
+		return "", "", err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", "", err
+	}
+	return ticketUUID.String(), eventUUID.String(), nil
+}
+
+func powerOperationToPolicyOperation(operation string) approvalpolicy.Operation {
+	switch operation {
+	case "start":
+		return approvalpolicy.OperationSTART_VM
+	case "stop":
+		return approvalpolicy.OperationSTOP_VM
+	case "restart":
+		return approvalpolicy.OperationRESTART_VM
+	default:
+		return approvalpolicy.OperationSTART_VM
+	}
 }
 
 // enqueueVMPowerOp creates a DomainEvent, enqueues a River job, and returns 202 Accepted.
@@ -583,7 +742,10 @@ func (s *Server) enqueueVMPowerOp(c *gin.Context, vm *ent.VM, operation string, 
 		_ = s.audit.LogAction(ctx, "vm."+operation+"_requested", "vm", vm.ID, actor, nil)
 	}
 
-	c.JSON(http.StatusAccepted, gin.H{"event_id": eventID.String(), "status": "ACCEPTED"})
+	c.JSON(http.StatusAccepted, generated.VMPowerAcceptedResponse{
+		EventId: eventID.String(),
+		Status:  generated.VMPowerAcceptedResponseStatus("ACCEPTED"),
+	})
 }
 
 // ---- Converter ----
@@ -646,7 +808,7 @@ func (s *Server) PowerVM(c *gin.Context, vmID generated.VMID) {
 			})
 			return
 		}
-		s.enqueueVMPowerOp(c, vm, "start", domain.EventVMStartRequested)
+		s.handleVMPower(c, vm, "start", domain.EventVMStartRequested)
 	case generated.Stop:
 		if vm.Status != entvm.StatusRUNNING {
 			c.JSON(http.StatusConflict, generated.Error{
@@ -655,7 +817,7 @@ func (s *Server) PowerVM(c *gin.Context, vmID generated.VMID) {
 			})
 			return
 		}
-		s.enqueueVMPowerOp(c, vm, "stop", domain.EventVMStopRequested)
+		s.handleVMPower(c, vm, "stop", domain.EventVMStopRequested)
 	case generated.Restart:
 		if vm.Status != entvm.StatusRUNNING {
 			c.JSON(http.StatusConflict, generated.Error{
@@ -664,7 +826,7 @@ func (s *Server) PowerVM(c *gin.Context, vmID generated.VMID) {
 			})
 			return
 		}
-		s.enqueueVMPowerOp(c, vm, "restart", domain.EventVMRestartRequested)
+		s.handleVMPower(c, vm, "restart", domain.EventVMRestartRequested)
 	default:
 		c.JSON(http.StatusBadRequest, generated.Error{
 			Code:    "INVALID_POWER_ACTION",

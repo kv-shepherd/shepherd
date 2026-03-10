@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/approvalpolicy"
 	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
@@ -79,12 +80,18 @@ func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmID generated.VMID) {
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	requiresApproval, err := s.requiresVNCApproval(ctx, env)
+	if err != nil {
+		logger.Error("failed to evaluate vnc approval requirement", zap.Error(err), zap.String("vm_id", vm.ID), zap.String("namespace", vm.Namespace))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 
 	decision := service.EvaluateVNCRequest(
-		env,
 		vm.Status,
 		hasVNCConsoleAccess(c),
 		hasPending,
+		requiresApproval,
 	)
 	if decision.RejectCode != "" {
 		writeVNCReject(c, decision.RejectCode)
@@ -179,10 +186,17 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmID generated.VMID) {
 		return
 	}
 
-	if env == namespaceregistry.EnvironmentTest {
+	requiresApproval, err := s.requiresVNCApproval(ctx, env)
+	if err != nil {
+		logger.Error("failed to evaluate vnc approval requirement", zap.Error(err), zap.String("vm_id", vm.ID), zap.String("namespace", vm.Namespace))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if !requiresApproval {
 		vncURL, claims, issueErr := s.issueVNCURL(c, actor, vm)
 		if issueErr != nil {
-			logger.Error("failed to issue test-env vnc token", zap.Error(issueErr), zap.String("vm_id", vm.ID))
+			logger.Error("failed to issue direct vnc token", zap.Error(issueErr), zap.String("vm_id", vm.ID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -256,6 +270,13 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmID generated.VMID) {
 		TicketId: ticket.ID,
 		VncUrl:   vncURL,
 	})
+}
+
+func (s *Server) requiresVNCApproval(ctx context.Context, env namespaceregistry.Environment) (bool, error) {
+	if s.approvalReqs == nil {
+		return env == namespaceregistry.EnvironmentProd, nil
+	}
+	return s.approvalReqs.RequiresApproval(ctx, approvalpolicy.OperationVNC_ACCESS, env)
 }
 
 // OpenVMVNC handles GET /vms/{vm_id}/vnc.

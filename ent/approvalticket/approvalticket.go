@@ -101,6 +101,7 @@ const DefaultOperationType = OperationTypeCREATE
 const (
 	OperationTypeCREATE     OperationType = "CREATE"
 	OperationTypeDELETE     OperationType = "DELETE"
+	OperationTypePOWER      OperationType = "POWER"
 	OperationTypeVNC_ACCESS OperationType = "VNC_ACCESS"
 )
 
@@ -111,7 +112,7 @@ func (ot OperationType) String() string {
 // OperationTypeValidator is a validator for the "operation_type" field enum values. It is called by the builders before save.
 func OperationTypeValidator(ot OperationType) error {
 	switch ot {
-	case OperationTypeCREATE, OperationTypeDELETE, OperationTypeVNC_ACCESS:
+	case OperationTypeCREATE, OperationTypeDELETE, OperationTypePOWER, OperationTypeVNC_ACCESS:
 		return nil
 	default:
 		return fmt.Errorf("approvalticket: invalid enum value for operation_type field: %q", ot)

@@ -25,10 +25,14 @@ type ApprovalPolicy struct {
 	Name string `json:"name,omitempty"`
 	// Description holds the value of the "description" field.
 	Description string `json:"description,omitempty"`
-	// Action holds the value of the "action" field.
-	Action approvalpolicy.Action `json:"action,omitempty"`
-	// NamespacePattern holds the value of the "namespace_pattern" field.
-	NamespacePattern string `json:"namespace_pattern,omitempty"`
+	// EnvironmentType holds the value of the "environment_type" field.
+	EnvironmentType approvalpolicy.EnvironmentType `json:"environment_type,omitempty"`
+	// Operation holds the value of the "operation" field.
+	Operation approvalpolicy.Operation `json:"operation,omitempty"`
+	// RequiresApproval holds the value of the "requires_approval" field.
+	RequiresApproval bool `json:"requires_approval,omitempty"`
+	// Priority holds the value of the "priority" field.
+	Priority int `json:"priority,omitempty"`
 	// Enabled holds the value of the "enabled" field.
 	Enabled bool `json:"enabled,omitempty"`
 	// CreatedBy holds the value of the "created_by" field.
@@ -41,9 +45,11 @@ func (*ApprovalPolicy) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case approvalpolicy.FieldEnabled:
+		case approvalpolicy.FieldRequiresApproval, approvalpolicy.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case approvalpolicy.FieldID, approvalpolicy.FieldName, approvalpolicy.FieldDescription, approvalpolicy.FieldAction, approvalpolicy.FieldNamespacePattern, approvalpolicy.FieldCreatedBy:
+		case approvalpolicy.FieldPriority:
+			values[i] = new(sql.NullInt64)
+		case approvalpolicy.FieldID, approvalpolicy.FieldName, approvalpolicy.FieldDescription, approvalpolicy.FieldEnvironmentType, approvalpolicy.FieldOperation, approvalpolicy.FieldCreatedBy:
 			values[i] = new(sql.NullString)
 		case approvalpolicy.FieldCreatedAt, approvalpolicy.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -92,17 +98,29 @@ func (_m *ApprovalPolicy) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Description = value.String
 			}
-		case approvalpolicy.FieldAction:
+		case approvalpolicy.FieldEnvironmentType:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field action", values[i])
+				return fmt.Errorf("unexpected type %T for field environment_type", values[i])
 			} else if value.Valid {
-				_m.Action = approvalpolicy.Action(value.String)
+				_m.EnvironmentType = approvalpolicy.EnvironmentType(value.String)
 			}
-		case approvalpolicy.FieldNamespacePattern:
+		case approvalpolicy.FieldOperation:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field namespace_pattern", values[i])
+				return fmt.Errorf("unexpected type %T for field operation", values[i])
 			} else if value.Valid {
-				_m.NamespacePattern = value.String
+				_m.Operation = approvalpolicy.Operation(value.String)
+			}
+		case approvalpolicy.FieldRequiresApproval:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field requires_approval", values[i])
+			} else if value.Valid {
+				_m.RequiresApproval = value.Bool
+			}
+		case approvalpolicy.FieldPriority:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field priority", values[i])
+			} else if value.Valid {
+				_m.Priority = int(value.Int64)
 			}
 		case approvalpolicy.FieldEnabled:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -164,11 +182,17 @@ func (_m *ApprovalPolicy) String() string {
 	builder.WriteString("description=")
 	builder.WriteString(_m.Description)
 	builder.WriteString(", ")
-	builder.WriteString("action=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Action))
+	builder.WriteString("environment_type=")
+	builder.WriteString(fmt.Sprintf("%v", _m.EnvironmentType))
 	builder.WriteString(", ")
-	builder.WriteString("namespace_pattern=")
-	builder.WriteString(_m.NamespacePattern)
+	builder.WriteString("operation=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Operation))
+	builder.WriteString(", ")
+	builder.WriteString("requires_approval=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RequiresApproval))
+	builder.WriteString(", ")
+	builder.WriteString("priority=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Priority))
 	builder.WriteString(", ")
 	builder.WriteString("enabled=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Enabled))

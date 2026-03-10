@@ -32,6 +32,7 @@ type Server struct {
 	jwtCfg         middleware.JWTConfig
 	audit          *audit.Logger
 	vmService      *service.VMService
+	approvalReqs   *service.ApprovalRequirementService
 	vncTokens      *service.VNCTokenManager
 	createVMUC     *usecase.CreateVMUseCase
 	deleteVMUC     *usecase.DeleteVMUseCase
@@ -49,6 +50,7 @@ type ServerDeps struct {
 	JWTCfg         middleware.JWTConfig
 	Audit          *audit.Logger
 	VMService      *service.VMService
+	ApprovalReqs   *service.ApprovalRequirementService
 	VNCTokens      *service.VNCTokenManager
 	CreateVMUC     *usecase.CreateVMUseCase
 	DeleteVMUC     *usecase.DeleteVMUseCase
@@ -68,6 +70,10 @@ func NewServer(deps ServerDeps) *Server {
 		}
 		vncTokens = service.NewVNCTokenManager(deps.JWTCfg.SigningKey, deps.JWTCfg.Issuer, service.DefaultVNCTokenTTL, replay)
 	}
+	approvalReqs := deps.ApprovalReqs
+	if approvalReqs == nil && deps.EntClient != nil {
+		approvalReqs = service.NewApprovalRequirementService(deps.EntClient)
+	}
 
 	return &Server{
 		client:         deps.EntClient,
@@ -75,6 +81,7 @@ func NewServer(deps ServerDeps) *Server {
 		jwtCfg:         deps.JWTCfg,
 		audit:          deps.Audit,
 		vmService:      deps.VMService,
+		approvalReqs:   approvalReqs,
 		vncTokens:      vncTokens,
 		createVMUC:     deps.CreateVMUC,
 		deleteVMUC:     deps.DeleteVMUC,

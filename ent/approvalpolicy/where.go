@@ -84,9 +84,14 @@ func Description(v string) predicate.ApprovalPolicy {
 	return predicate.ApprovalPolicy(sql.FieldEQ(FieldDescription, v))
 }
 
-// NamespacePattern applies equality check predicate on the "namespace_pattern" field. It's identical to NamespacePatternEQ.
-func NamespacePattern(v string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldEQ(FieldNamespacePattern, v))
+// RequiresApproval applies equality check predicate on the "requires_approval" field. It's identical to RequiresApprovalEQ.
+func RequiresApproval(v bool) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldEQ(FieldRequiresApproval, v))
+}
+
+// Priority applies equality check predicate on the "priority" field. It's identical to PriorityEQ.
+func Priority(v int) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldEQ(FieldPriority, v))
 }
 
 // Enabled applies equality check predicate on the "enabled" field. It's identical to EnabledEQ.
@@ -319,99 +324,94 @@ func DescriptionContainsFold(v string) predicate.ApprovalPolicy {
 	return predicate.ApprovalPolicy(sql.FieldContainsFold(FieldDescription, v))
 }
 
-// ActionEQ applies the EQ predicate on the "action" field.
-func ActionEQ(v Action) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldEQ(FieldAction, v))
+// EnvironmentTypeEQ applies the EQ predicate on the "environment_type" field.
+func EnvironmentTypeEQ(v EnvironmentType) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldEQ(FieldEnvironmentType, v))
 }
 
-// ActionNEQ applies the NEQ predicate on the "action" field.
-func ActionNEQ(v Action) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldNEQ(FieldAction, v))
+// EnvironmentTypeNEQ applies the NEQ predicate on the "environment_type" field.
+func EnvironmentTypeNEQ(v EnvironmentType) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldNEQ(FieldEnvironmentType, v))
 }
 
-// ActionIn applies the In predicate on the "action" field.
-func ActionIn(vs ...Action) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldIn(FieldAction, vs...))
+// EnvironmentTypeIn applies the In predicate on the "environment_type" field.
+func EnvironmentTypeIn(vs ...EnvironmentType) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldIn(FieldEnvironmentType, vs...))
 }
 
-// ActionNotIn applies the NotIn predicate on the "action" field.
-func ActionNotIn(vs ...Action) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldNotIn(FieldAction, vs...))
+// EnvironmentTypeNotIn applies the NotIn predicate on the "environment_type" field.
+func EnvironmentTypeNotIn(vs ...EnvironmentType) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldNotIn(FieldEnvironmentType, vs...))
 }
 
-// NamespacePatternEQ applies the EQ predicate on the "namespace_pattern" field.
-func NamespacePatternEQ(v string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldEQ(FieldNamespacePattern, v))
+// OperationEQ applies the EQ predicate on the "operation" field.
+func OperationEQ(v Operation) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldEQ(FieldOperation, v))
 }
 
-// NamespacePatternNEQ applies the NEQ predicate on the "namespace_pattern" field.
-func NamespacePatternNEQ(v string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldNEQ(FieldNamespacePattern, v))
+// OperationNEQ applies the NEQ predicate on the "operation" field.
+func OperationNEQ(v Operation) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldNEQ(FieldOperation, v))
 }
 
-// NamespacePatternIn applies the In predicate on the "namespace_pattern" field.
-func NamespacePatternIn(vs ...string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldIn(FieldNamespacePattern, vs...))
+// OperationIn applies the In predicate on the "operation" field.
+func OperationIn(vs ...Operation) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldIn(FieldOperation, vs...))
 }
 
-// NamespacePatternNotIn applies the NotIn predicate on the "namespace_pattern" field.
-func NamespacePatternNotIn(vs ...string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldNotIn(FieldNamespacePattern, vs...))
+// OperationNotIn applies the NotIn predicate on the "operation" field.
+func OperationNotIn(vs ...Operation) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldNotIn(FieldOperation, vs...))
 }
 
-// NamespacePatternGT applies the GT predicate on the "namespace_pattern" field.
-func NamespacePatternGT(v string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldGT(FieldNamespacePattern, v))
+// RequiresApprovalEQ applies the EQ predicate on the "requires_approval" field.
+func RequiresApprovalEQ(v bool) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldEQ(FieldRequiresApproval, v))
 }
 
-// NamespacePatternGTE applies the GTE predicate on the "namespace_pattern" field.
-func NamespacePatternGTE(v string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldGTE(FieldNamespacePattern, v))
+// RequiresApprovalNEQ applies the NEQ predicate on the "requires_approval" field.
+func RequiresApprovalNEQ(v bool) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldNEQ(FieldRequiresApproval, v))
 }
 
-// NamespacePatternLT applies the LT predicate on the "namespace_pattern" field.
-func NamespacePatternLT(v string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldLT(FieldNamespacePattern, v))
+// PriorityEQ applies the EQ predicate on the "priority" field.
+func PriorityEQ(v int) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldEQ(FieldPriority, v))
 }
 
-// NamespacePatternLTE applies the LTE predicate on the "namespace_pattern" field.
-func NamespacePatternLTE(v string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldLTE(FieldNamespacePattern, v))
+// PriorityNEQ applies the NEQ predicate on the "priority" field.
+func PriorityNEQ(v int) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldNEQ(FieldPriority, v))
 }
 
-// NamespacePatternContains applies the Contains predicate on the "namespace_pattern" field.
-func NamespacePatternContains(v string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldContains(FieldNamespacePattern, v))
+// PriorityIn applies the In predicate on the "priority" field.
+func PriorityIn(vs ...int) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldIn(FieldPriority, vs...))
 }
 
-// NamespacePatternHasPrefix applies the HasPrefix predicate on the "namespace_pattern" field.
-func NamespacePatternHasPrefix(v string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldHasPrefix(FieldNamespacePattern, v))
+// PriorityNotIn applies the NotIn predicate on the "priority" field.
+func PriorityNotIn(vs ...int) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldNotIn(FieldPriority, vs...))
 }
 
-// NamespacePatternHasSuffix applies the HasSuffix predicate on the "namespace_pattern" field.
-func NamespacePatternHasSuffix(v string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldHasSuffix(FieldNamespacePattern, v))
+// PriorityGT applies the GT predicate on the "priority" field.
+func PriorityGT(v int) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldGT(FieldPriority, v))
 }
 
-// NamespacePatternIsNil applies the IsNil predicate on the "namespace_pattern" field.
-func NamespacePatternIsNil() predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldIsNull(FieldNamespacePattern))
+// PriorityGTE applies the GTE predicate on the "priority" field.
+func PriorityGTE(v int) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldGTE(FieldPriority, v))
 }
 
-// NamespacePatternNotNil applies the NotNil predicate on the "namespace_pattern" field.
-func NamespacePatternNotNil() predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldNotNull(FieldNamespacePattern))
+// PriorityLT applies the LT predicate on the "priority" field.
+func PriorityLT(v int) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldLT(FieldPriority, v))
 }
 
-// NamespacePatternEqualFold applies the EqualFold predicate on the "namespace_pattern" field.
-func NamespacePatternEqualFold(v string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldEqualFold(FieldNamespacePattern, v))
-}
-
-// NamespacePatternContainsFold applies the ContainsFold predicate on the "namespace_pattern" field.
-func NamespacePatternContainsFold(v string) predicate.ApprovalPolicy {
-	return predicate.ApprovalPolicy(sql.FieldContainsFold(FieldNamespacePattern, v))
+// PriorityLTE applies the LTE predicate on the "priority" field.
+func PriorityLTE(v int) predicate.ApprovalPolicy {
+	return predicate.ApprovalPolicy(sql.FieldLTE(FieldPriority, v))
 }
 
 // EnabledEQ applies the EQ predicate on the "enabled" field.

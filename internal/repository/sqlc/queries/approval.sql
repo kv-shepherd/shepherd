@@ -30,6 +30,18 @@ WHERE
     AND status = 'PENDING'
     AND operation_type = 'DELETE';
 
+-- name: ApprovePowerTicket :execrows
+UPDATE approval_tickets
+SET
+    status = 'APPROVED',
+    approver = sqlc.arg(approver),
+    updated_at = NOW()
+WHERE
+    id = sqlc.arg(id)
+    AND event_id = sqlc.arg(event_id)
+    AND status = 'PENDING'
+    AND operation_type = 'POWER';
+
 -- name: SetDomainEventStatus :execrows
 UPDATE domain_events
 SET status = $2

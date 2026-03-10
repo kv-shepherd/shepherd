@@ -28,6 +28,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/governance/approval"
 	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/provider"
 )
 
 const (
@@ -43,11 +44,12 @@ const (
 var errBatchNotFound = errors.New("batch not found")
 
 type preparedBatchChild struct {
-	eventType     domain.EventType
-	aggregateID   string
-	payload       []byte
-	operationType approvalticket.OperationType
-	reason        string
+	eventType        domain.EventType
+	aggregateID      string
+	payload          []byte
+	operationType    approvalticket.OperationType
+	reason           string
+	requiresApproval bool
 }
 
 type batchValidationError struct {
@@ -465,6 +467,13 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_BATCH_ITEMS", Message: err.Error()})
 		return
 	}
+	batchRequiresApproval := false
+	for _, child := range children {
+		if child.requiresApproval {
+			batchRequiresApproval = true
+			break
+		}
+	}
 
 	parentID := generateIDV7()
 	parentPayload := domain.BatchVMRequestPayload{
@@ -502,7 +511,12 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 		SetAggregateType("batch").
 		SetAggregateID(parentID).
 		SetPayload(parentPayloadBytes).
-		SetStatus(domainevent.StatusPROCESSING).
+		SetStatus(func() domainevent.Status {
+			if batchRequiresApproval {
+				return domainevent.StatusPENDING
+			}
+			return domainevent.StatusPROCESSING
+		}()).
 		SetCreatedBy(actor).
 		Save(ctx)
 	if err != nil {
@@ -519,8 +533,13 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 	if _, err := tx.ApprovalTicket.Create().
 		SetID(parentID).
 		SetEventID(parentEventID).
-		SetOperationType(approvalticket.OperationTypeCREATE).
-		SetStatus(approvalticket.StatusEXECUTING).
+		SetOperationType(approvalticket.OperationTypePOWER).
+		SetStatus(func() approvalticket.Status {
+			if batchRequiresApproval {
+				return approvalticket.StatusPENDING
+			}
+			return approvalticket.StatusEXECUTING
+		}()).
 		SetRequester(actor).
 		SetReason(parentReason).
 		Save(ctx); err != nil {
@@ -535,7 +554,12 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 		SetBatchType(batchapprovalticket.BatchTypeBATCH_POWER).
 		SetChildCount(len(children)).
 		SetPendingCount(len(children)).
-		SetStatus(batchapprovalticket.StatusIN_PROGRESS).
+		SetStatus(func() batchapprovalticket.Status {
+			if batchRequiresApproval {
+				return batchapprovalticket.StatusPENDING_APPROVAL
+			}
+			return batchapprovalticket.StatusIN_PROGRESS
+		}()).
 		SetCreatedBy(actor).
 		SetReason(parentReason).
 		SetNillableRequestID(nillableTrimmed(req.RequestId)).
@@ -568,8 +592,13 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 		if _, err := tx.ApprovalTicket.Create().
 			SetID(generateIDV7()).
 			SetEventID(childEventID).
-			SetOperationType(approvalticket.OperationTypeCREATE).
-			SetStatus(approvalticket.StatusEXECUTING).
+			SetOperationType(approvalticket.OperationTypePOWER).
+			SetStatus(func() approvalticket.Status {
+				if batchRequiresApproval {
+					return approvalticket.StatusPENDING
+				}
+				return approvalticket.StatusEXECUTING
+			}()).
 			SetRequester(actor).
 			SetReason(child.reason).
 			SetParentTicketID(parentID).
@@ -588,19 +617,37 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 		return
 	}
 
-	for _, eventID := range childEventIDs {
-		if err := s.enqueueBatchPowerJob(ctx, eventID, strings.ToLower(jobOperation)); err != nil {
-			logger.Warn("failed to enqueue power-batch child job",
-				zap.String("event_id", eventID),
-				zap.String("batch_id", parentID),
-				zap.Error(err),
-			)
-			_, _ = s.client.ApprovalTicket.Update().
-				Where(approvalticket.EventIDEQ(eventID)).
-				SetStatus(approvalticket.StatusFAILED).
-				SetRejectReason("enqueue vm_power job failed").
-				Save(ctx)
-			_, _ = s.client.DomainEvent.UpdateOneID(eventID).SetStatus(domainevent.StatusFAILED).Save(ctx)
+	if batchRequiresApproval {
+		if s.approvalRouter != nil {
+			if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &provider.ApprovalRequest{
+				EventID:   parentID,
+				Requester: actor,
+				Action:    "batch_power_" + strings.ToLower(jobOperation),
+			}); routerErr != nil {
+				logger.Warn("approval router SubmitForApproval failed for power batch ticket (already PENDING in DB)",
+					zap.String("ticket_id", parentID),
+					zap.Error(routerErr),
+				)
+			}
+		}
+		if s.notifier != nil {
+			s.notifier.OnTicketSubmitted(ctx, parentID, actor, "")
+		}
+	} else {
+		for _, eventID := range childEventIDs {
+			if err := s.enqueueBatchPowerJob(ctx, eventID, strings.ToLower(jobOperation)); err != nil {
+				logger.Warn("failed to enqueue power-batch child job",
+					zap.String("event_id", eventID),
+					zap.String("batch_id", parentID),
+					zap.Error(err),
+				)
+				_, _ = s.client.ApprovalTicket.Update().
+					Where(approvalticket.EventIDEQ(eventID)).
+					SetStatus(approvalticket.StatusFAILED).
+					SetRejectReason("enqueue vm_power job failed").
+					Save(ctx)
+				_, _ = s.client.DomainEvent.UpdateOneID(eventID).SetStatus(domainevent.StatusFAILED).Save(ctx)
+			}
 		}
 	}
 
@@ -612,7 +659,9 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 	}
 
 	status := generated.VMBatchParentStatusINPROGRESS
-	if view, _, err := s.loadBatchView(ctx, parentID); err == nil {
+	if batchRequiresApproval {
+		status = generated.VMBatchParentStatusPENDINGAPPROVAL
+	} else if view, _, err := s.loadBatchView(ctx, parentID); err == nil {
 		status = view.Status
 	}
 	c.JSON(http.StatusAccepted, generated.VMBatchSubmitResponse{
@@ -1133,6 +1182,19 @@ func (s *Server) prepareBatchPowerChildren(
 		if itemReason == "" {
 			itemReason = fmt.Sprintf("batch power item #%d", idx+1)
 		}
+		requiresApproval, err := s.requiresPowerApproval(ctx, vmObj.Namespace, strings.ToLower(jobOperation))
+		if err != nil {
+			if ent.IsNotFound(err) {
+				return nil, &batchValidationError{
+					status: http.StatusBadRequest,
+					body: generated.Error{
+						Code:    "NAMESPACE_NOT_REGISTERED",
+						Message: fmt.Sprintf("vm namespace %q is not registered in namespace_registry", vmObj.Namespace),
+					},
+				}
+			}
+			return nil, err
+		}
 
 		payload := domain.VMPowerPayload{
 			VMID:      vmObj.ID,
@@ -1147,11 +1209,12 @@ func (s *Server) prepareBatchPowerChildren(
 			return nil, err
 		}
 		children = append(children, preparedBatchChild{
-			eventType:     childEventType,
-			aggregateID:   vmObj.ID,
-			payload:       payloadBytes,
-			operationType: approvalticket.OperationTypeCREATE,
-			reason:        itemReason,
+			eventType:        childEventType,
+			aggregateID:      vmObj.ID,
+			payload:          payloadBytes,
+			operationType:    approvalticket.OperationTypePOWER,
+			reason:           itemReason,
+			requiresApproval: requiresApproval,
 		})
 	}
 

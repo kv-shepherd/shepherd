@@ -29,11 +29,24 @@ func (ApprovalPolicy) Fields() []ent.Field {
 			NotEmpty(),
 		field.String("description").
 			Optional(),
-		field.Enum("action").
-			Values("VM_CREATE", "VM_DELETE", "VM_MODIFY").
-			Default("VM_CREATE"),
-		field.String("namespace_pattern").
-			Optional(), // Regex pattern to match namespaces requiring approval
+		field.Enum("environment_type").
+			Values("test", "prod", "all").
+			Default("all"),
+		field.Enum("operation").
+			Values(
+				"CREATE_VM",
+				"MODIFY_VM",
+				"DELETE_VM",
+				"START_VM",
+				"STOP_VM",
+				"RESTART_VM",
+				"VNC_ACCESS",
+			).
+			Default("CREATE_VM"),
+		field.Bool("requires_approval").
+			Default(true),
+		field.Int("priority").
+			Default(100),
 		field.Bool("enabled").
 			Default(true),
 		field.String("created_by").
@@ -44,6 +57,6 @@ func (ApprovalPolicy) Fields() []ent.Field {
 // Indexes of the ApprovalPolicy.
 func (ApprovalPolicy) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("action", "enabled"),
+		index.Fields("operation", "environment_type", "enabled", "priority"),
 	}
 }
