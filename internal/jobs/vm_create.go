@@ -166,6 +166,13 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 			true,
 		)
 	}
+	selectedCluster, err := w.entClient.Cluster.Get(ctx, clusterID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return markFailed(fmt.Errorf("selected cluster %s not found", clusterID), true)
+		}
+		return fmt.Errorf("query selected cluster %s: %w", clusterID, err)
+	}
 
 	// Step 4: Build effective spec.
 	effectiveTemplateID, effectiveInstanceSizeID := resolveEffectiveSelectionIDs(payload, ticket.ModifiedSpec)
@@ -210,7 +217,8 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		}
 		return fmt.Errorf("query template %s: %w", effectiveTemplateID, err)
 	}
-	// ADR-0036: Template.spec replaced by semantic fields (source_type, image_url, pvc_name).
+	// ADR-0036: Template uses canonical boot source types (containerdisk, cdi_image_import,
+	// cdi_pvc_clone) with semantic fields (source_type, image_url, pvc_name, pvc_namespace).
 	// Use snapshot override if available (populated at approval time), otherwise live values.
 	var image string
 	if len(ticket.TemplateSnapshot) > 0 {
@@ -229,18 +237,22 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 	}
 
 	spec := &domain.VMSpec{
-		Name:      vmName,
-		CPU:       cpu,
-		MemoryGi:  memoryGi,
-		DiskGB:    diskGB,
-		Image:     image,
-		CloudInit: cloudInit,
+		Name:         vmName,
+		CPU:          cpu,
+		MemoryGi:     memoryGi,
+		DiskGB:       diskGB,
+		Image:        image,
+		StorageClass: strings.TrimSpace(ticket.SelectedStorageClass),
+		CloudInit:    cloudInit,
 		Labels: map[string]string{
 			"shepherd.io/service-id":  payload.ServiceID,
 			"shepherd.io/template-id": effectiveTemplateID,
 			"shepherd.io/event-id":    eventID,
 		},
 		SpecOverrides: specOverrides,
+	}
+	if spec.StorageClass == "" {
+		spec.StorageClass = strings.TrimSpace(selectedCluster.DefaultStorageClass)
 	}
 	applyModifiedSpecOverrides(spec, ticket.ModifiedSpec)
 	if spec.CPU <= 0 || spec.MemoryGi <= 0 || strings.TrimSpace(spec.Name) == "" || strings.TrimSpace(spec.Image) == "" {
@@ -562,7 +574,10 @@ func extractTemplateImage(templateSpec map[string]interface{}) (string, error) {
 		"source.pvc_name",
 		"source.pvc.name",
 	); pvc != "" {
-		return "pvc:" + pvc, nil
+		if ns := lookupStringValue(templateSpec, "image_source.pvc_namespace", "image_source.pvc.namespace", "source.pvc_namespace", "source.pvc.namespace"); ns != "" {
+			return "clone-pvc:" + ns + "/" + pvc, nil
+		}
+		return "clone-pvc:" + pvc, nil
 	}
 
 	for _, path := range []string{
@@ -574,7 +589,11 @@ func extractTemplateImage(templateSpec map[string]interface{}) (string, error) {
 		if !ok {
 			continue
 		}
-		if image := extractImageFromVolumes(raw); image != "" {
+		image, err := extractImageFromVolumes(raw)
+		if err != nil {
+			return "", err
+		}
+		if image != "" {
 			return image, nil
 		}
 	}
@@ -584,37 +603,30 @@ func extractTemplateImage(templateSpec map[string]interface{}) (string, error) {
 
 // extractTemplateImageFromEnt resolves the boot image from an Ent Template object.
 // ADR-0036: Template no longer stores spec JSONB; image_url and pvc_name are explicit fields.
-// PVC image format: "pvc:namespace/name" when pvc_namespace is set, "pvc:name" otherwise (legacy).
 func extractTemplateImageFromEnt(tpl *ent.Template) (string, error) {
-	if tpl.ImageURL != "" {
-		return tpl.ImageURL, nil
+	image, err := service.ResolveTemplateBootTransport(tpl.SourceType, tpl.ImageURL, tpl.PvcName, tpl.PvcNamespace)
+	if err != nil {
+		return "", fmt.Errorf("template %s: %w", tpl.ID, err)
 	}
-	if tpl.PvcName != "" {
-		if tpl.PvcNamespace != "" {
-			return "pvc:" + tpl.PvcNamespace + "/" + tpl.PvcName, nil
-		}
-		return "pvc:" + tpl.PvcName, nil
-	}
-	return "", fmt.Errorf("template %s has no image_url or pvc_name configured", tpl.ID)
+	return image, nil
 }
 
 // extractTemplateImageFromSnapshot resolves the boot image from a template snapshot map
-// stored at approval time. Snapshot keys use the ADR-0036 semantic format:
-// source_type, image_url, pvc_name, pvc_namespace. Falls back to legacy spec-map lookup.
+// stored at approval time. Snapshot keys use the ADR-0036 canonical taxonomy:
+// source_type (containerdisk | cdi_image_import | cdi_pvc_clone), image_url, pvc_name,
+// pvc_namespace. Falls back to legacy spec-map lookup for pre-taxonomy snapshots.
 func extractTemplateImageFromSnapshot(snapshot map[string]interface{}) (string, error) {
 	// ADR-0036 format (new snapshots)
 	sourceType := lookupStringValue(snapshot, "source_type")
-	switch sourceType {
-	case "image":
-		if url := lookupStringValue(snapshot, "image_url"); url != "" {
-			return url, nil
-		}
-	case "pvc":
-		if pvc := lookupStringValue(snapshot, "pvc_name"); pvc != "" {
-			if ns := lookupStringValue(snapshot, "pvc_namespace"); ns != "" {
-				return "pvc:" + ns + "/" + pvc, nil
-			}
-			return "pvc:" + pvc, nil
+	if sourceType != "" || lookupStringValue(snapshot, "image_url") != "" || lookupStringValue(snapshot, "pvc_name") != "" {
+		image, err := service.ResolveTemplateBootTransport(
+			sourceType,
+			lookupStringValue(snapshot, "image_url"),
+			lookupStringValue(snapshot, "pvc_name"),
+			lookupStringValue(snapshot, "pvc_namespace"),
+		)
+		if err == nil {
+			return image, nil
 		}
 	}
 
@@ -636,10 +648,10 @@ func extractTemplateCloudInitFromSnapshot(snapshot map[string]interface{}) (stri
 	return toString(raw), true
 }
 
-func extractImageFromVolumes(raw interface{}) string {
+func extractImageFromVolumes(raw interface{}) (string, error) {
 	items, ok := raw.([]interface{})
 	if !ok {
-		return ""
+		return "", nil
 	}
 	for _, item := range items {
 		volume, ok := item.(map[string]interface{})
@@ -648,16 +660,16 @@ func extractImageFromVolumes(raw interface{}) string {
 		}
 		if containerDisk, ok := volume["containerDisk"].(map[string]interface{}); ok {
 			if image := strings.TrimSpace(toString(containerDisk["image"])); image != "" {
-				return image
+				return image, nil
 			}
 		}
 		if pvc, ok := volume["persistentVolumeClaim"].(map[string]interface{}); ok {
 			if claimName := strings.TrimSpace(toString(pvc["claimName"])); claimName != "" {
-				return "pvc:" + claimName
+				return "", fmt.Errorf("unsupported legacy direct PVC rootdisk reference %q", claimName)
 			}
 		}
 	}
-	return ""
+	return "", nil
 }
 
 func lookupStringValue(values map[string]interface{}, paths ...string) string {

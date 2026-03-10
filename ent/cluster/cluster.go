@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 const (
@@ -46,8 +47,17 @@ const (
 	FieldStorageClassesUpdatedAt = "storage_classes_updated_at"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
+	// EdgePolicy holds the string denoting the policy edge name in mutations.
+	EdgePolicy = "policy"
 	// Table holds the table name of the cluster in the database.
 	Table = "clusters"
+	// PolicyTable is the table that holds the policy relation/edge.
+	PolicyTable = "cluster_policies"
+	// PolicyInverseTable is the table name for the ClusterPolicy entity.
+	// It exists in this package in order to avoid circular dependency with the "clusterpolicy" package.
+	PolicyInverseTable = "cluster_policies"
+	// PolicyColumn is the table column denoting the policy relation/edge.
+	PolicyColumn = "cluster_id"
 )
 
 // Columns holds all SQL columns for cluster fields.
@@ -223,4 +233,18 @@ func ByStorageClassesUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByEnabled orders the results by the enabled field.
 func ByEnabled(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldEnabled, opts...).ToFunc()
+}
+
+// ByPolicyField orders the results by policy field.
+func ByPolicyField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newPolicyStep(), sql.OrderByField(field, opts...))
+	}
+}
+func newPolicyStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(PolicyInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2O, false, PolicyTable, PolicyColumn),
+	)
 }

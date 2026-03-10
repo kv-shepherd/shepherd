@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	entsql "entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -13,11 +15,15 @@ import (
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/auditlog"
 	"kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 	"kv-shepherd.io/shepherd/ent/instancesize"
+	"kv-shepherd.io/shepherd/ent/predicate"
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
 	"kv-shepherd.io/shepherd/internal/api/generated"
+	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	"kv-shepherd.io/shepherd/internal/provider"
+	"kv-shepherd.io/shepherd/internal/service"
 )
 
 // kubeConfig is a minimal struct for parsing kubeconfig YAML.
@@ -44,7 +50,8 @@ func parseAPIServerURL(data []byte) (string, error) {
 }
 
 // ListClusters handles GET /admin/clusters.
-// P2-A (ADR-0014 Layer 3): supports ?requires=Feature1,Feature2 for capability-based filtering.
+// Supports coarse feature filtering via ?requires=Feature1,Feature2 and optional
+// CREATE-placement compatibility filtering when request context query params are supplied.
 // Filtering is done in-memory after DB query: Ent's JSON array column cannot use SQL CONTAINS
 // without a jsonb cast + GIN index, which is not yet provisioned (acceptable at current cluster count).
 func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParams) {
@@ -66,13 +73,16 @@ func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParam
 	page, perPage := defaultPagination(params.Page, params.PerPage)
 	offset := (page - 1) * perPage
 	query := s.client.Cluster.Query().Order(ent.Desc(cluster.FieldCreatedAt))
+	compatibilityInput, hasCompatibilityFilter := buildClusterCompatibilityFilter(params)
+	includeIncompatible := params.IncludeIncompatible
+	compatibilityByClusterID := make(map[string]generated.ClusterCompatibility)
 
 	var (
 		clusters []*ent.Cluster
 		total    int
 		err      error
 	)
-	if len(requiredFeatures) == 0 {
+	if len(requiredFeatures) == 0 && !hasCompatibilityFilter {
 		total, err = query.Clone().Count(ctx)
 		if err != nil {
 			logger.Error("failed to count clusters", zap.Error(err))
@@ -89,7 +99,7 @@ func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParam
 			return
 		}
 	} else {
-		// Requires-filter semantics: apply feature filtering before pagination so
+		// Filter semantics: apply all compatibility/capability filtering before pagination so
 		// pagination.total/total_pages reflect the filtered result set.
 		allClusters, allErr := query.All(ctx)
 		if allErr != nil {
@@ -106,6 +116,40 @@ func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParam
 				filtered = append(filtered, cl)
 			}
 		}
+		if hasCompatibilityFilter {
+			validator := service.NewApprovalValidator(s.client).SetVMService(s.vmService)
+			results, evalErr := validator.EvaluateClusterCompatibility(ctx, filtered, compatibilityInput)
+			if evalErr != nil {
+				if appErr, ok := apperrors.IsAppError(evalErr); ok {
+					c.JSON(http.StatusBadRequest, generated.Error{
+						Code:    appErr.Code,
+						Message: appErr.Message,
+						Params:  appErr.Params,
+					})
+					return
+				}
+				logger.Error("failed to evaluate cluster compatibility filter", zap.Error(evalErr))
+				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+				return
+			}
+			nextFiltered := make([]*ent.Cluster, 0, len(results))
+			for _, result := range results {
+				if result.Cluster == nil {
+					continue
+				}
+				compatibilityByClusterID[result.Cluster.ID] = generated.ClusterCompatibility{
+					Eligible:        result.Eligible,
+					ReasonCode:      result.ReasonCode,
+					ReasonMessage:   result.ReasonMessage,
+					AdvisoryCode:    result.AdvisoryCode,
+					AdvisoryMessage: result.AdvisoryMessage,
+				}
+				if includeIncompatible || result.Eligible {
+					nextFiltered = append(nextFiltered, result.Cluster)
+				}
+			}
+			filtered = nextFiltered
+		}
 		total = len(filtered)
 		if offset >= total {
 			clusters = nil
@@ -119,8 +163,31 @@ func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParam
 	}
 
 	items := make([]generated.Cluster, 0, len(clusters))
+	policyByClusterID := make(map[string]*ent.ClusterPolicy, len(clusters))
+	if len(clusters) > 0 {
+		clusterIDs := make([]string, 0, len(clusters))
+		for _, cl := range clusters {
+			if cl != nil && cl.ID != "" {
+				clusterIDs = append(clusterIDs, cl.ID)
+			}
+		}
+		if len(clusterIDs) > 0 {
+			policies, policyErr := s.client.ClusterPolicy.Query().
+				Where(clusterpolicy.ClusterIDIn(clusterIDs...)).
+				All(ctx)
+			if policyErr != nil {
+				logger.Warn("failed to list cluster policy state", zap.Error(policyErr))
+			} else {
+				for _, policy := range policies {
+					if policy != nil && policy.ClusterID != "" {
+						policyByClusterID[policy.ClusterID] = policy
+					}
+				}
+			}
+		}
+	}
 	for _, cl := range clusters {
-		items = append(items, clusterToAPI(cl))
+		items = append(items, clusterToAPI(cl, policyByClusterID[cl.ID], compatibilityByClusterID[cl.ID]))
 	}
 
 	totalPages := (total + perPage - 1) / perPage
@@ -194,7 +261,7 @@ func (s *Server) CreateCluster(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusCreated, clusterToAPI(cl))
+	c.JSON(http.StatusCreated, clusterToAPI(cl, nil, generated.ClusterCompatibility{}))
 }
 
 // UpdateClusterEnvironment handles PUT /admin/clusters/{cluster_id}/environment.
@@ -228,7 +295,92 @@ func (s *Server) UpdateClusterEnvironment(c *gin.Context, clusterID string) {
 		})
 	}
 
-	c.JSON(http.StatusOK, clusterToAPI(cl))
+	c.JSON(http.StatusOK, clusterToAPI(cl, nil, generated.ClusterCompatibility{}))
+}
+
+// GetClusterPolicy handles GET /admin/clusters/{cluster_id}/policy.
+func (s *Server) GetClusterPolicy(c *gin.Context, clusterID string) {
+	if !requireAnyGlobalPermission(c, "cluster:read", "cluster:manage") {
+		return
+	}
+	ctx := c.Request.Context()
+
+	if _, err := s.client.Cluster.Get(ctx, clusterID); err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "CLUSTER_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to load cluster for policy read", zap.Error(err), zap.String("cluster_id", clusterID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	policy, err := s.client.ClusterPolicy.Query().
+		Where(clusterpolicy.ClusterIDEQ(clusterID)).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "CLUSTER_POLICY_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to load cluster policy", zap.Error(err), zap.String("cluster_id", clusterID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	c.JSON(http.StatusOK, clusterPolicyToAPI(policy))
+}
+
+// UpsertClusterPolicy handles PUT /admin/clusters/{cluster_id}/policy.
+func (s *Server) UpsertClusterPolicy(c *gin.Context, clusterID string) {
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	if !ok {
+		return
+	}
+
+	var req generated.ClusterPolicyUpsertRequest
+	if !bindAndValidateJSON(c, &req) {
+		return
+	}
+
+	svc := service.NewClusterPolicyService(s.client)
+	policy, err := svc.Upsert(ctx, clusterID, service.ClusterPolicyInput{
+		AllowCPUOvercommit:           req.AllowCpuOvercommit,
+		AllowMemoryOvercommit:        req.AllowMemoryOvercommit,
+		AllowDedicatedCPU:            req.AllowDedicatedCpu,
+		AllowGPU:                     req.AllowGpu,
+		AllowSRIOV:                   req.AllowSriov,
+		AllowHugepages:               req.AllowHugepages,
+		AllowedHugepagesSizes:        req.AllowedHugepagesSizes,
+		AllowCDIClone:                req.AllowCdiClone,
+		AllowedCloneSourceNamespaces: req.AllowedCloneSourceNamespaces,
+		AllowedStorageClasses:        req.AllowedStorageClasses,
+	}, actor)
+	if err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			status := appErr.HTTPStatus
+			if appErr.Code == "CLUSTER_NOT_FOUND" {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, generated.Error{Code: appErr.Code, Message: appErr.Message})
+			return
+		}
+		logger.Error("failed to upsert cluster policy",
+			zap.Error(err),
+			zap.String("cluster_id", clusterID),
+			zap.String("actor", actor),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if s.audit != nil {
+		_ = s.audit.LogAction(ctx, "cluster.upsert_policy", "cluster_policy", policy.ID, actor, map[string]interface{}{
+			"cluster_id": clusterID,
+		})
+	}
+
+	c.JSON(http.StatusOK, clusterPolicyToAPI(policy))
 }
 
 // ListTemplates handles GET /templates.
@@ -237,32 +389,55 @@ func (s *Server) ListTemplates(c *gin.Context, params generated.ListTemplatesPar
 		return
 	}
 	ctx := c.Request.Context()
+	visibility, err := s.resolveNamespaceVisibility(c)
+	if err != nil {
+		logger.Error("failed to resolve template visibility", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 
 	query := s.client.Template.Query().
 		Where(enttemplate.EnabledEQ(true))
+	visibleScopes := visibleTemplateCatalogScopes(visibility)
+	if len(visibleScopes) == 0 {
+		page, perPage := defaultPagination(params.Page, params.PerPage)
+		c.JSON(http.StatusOK, generated.TemplateList{
+			Items: []generated.Template{},
+			Pagination: generated.Pagination{
+				Page:       page,
+				PerPage:    perPage,
+				Total:      0,
+				TotalPages: 0,
+			},
+		})
+		return
+	}
+	query = query.Where(enttemplate.CatalogScopeIn(visibleScopes...))
+
+	templates, err := query.
+		Order(ent.Asc(enttemplate.FieldName)).
+		All(ctx)
+	if err != nil {
+		logger.Error("failed to list templates", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	filtered := filterUserRequestableTemplates(templates)
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
 	offset := (page - 1) * perPage
-
-	total, err := query.Clone().Count(ctx)
-	if err != nil {
-		logger.Error("failed to count templates", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
+	total := len(filtered)
+	if offset > total {
+		offset = total
+	}
+	end := offset + perPage
+	if end > total {
+		end = total
 	}
 
-	templates, err := query.
-		Offset(offset).
-		Limit(perPage).
-		All(ctx)
-	if err != nil {
-		logger.Error("failed to list templates", zap.Error(err), zap.Int("page", page))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	items := make([]generated.Template, 0, len(templates))
-	for _, t := range templates {
+	items := make([]generated.Template, 0, end-offset)
+	for _, t := range filtered[offset:end] {
 		items = append(items, templateToAPI(t))
 	}
 
@@ -284,9 +459,23 @@ func (s *Server) ListInstanceSizes(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
+	visibility, err := s.resolveNamespaceVisibility(c)
+	if err != nil {
+		logger.Error("failed to resolve instance size visibility", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	visibleScopes := visibleInstanceSizeCatalogScopes(visibility)
+	if len(visibleScopes) == 0 {
+		c.JSON(http.StatusOK, generated.InstanceSizeList{Items: []generated.InstanceSize{}})
+		return
+	}
 
 	sizes, err := s.client.InstanceSize.Query().
-		Where(instancesize.EnabledEQ(true)).
+		Where(
+			instancesize.EnabledEQ(true),
+			instancesize.CatalogScopeIn(visibleScopes...),
+		).
 		Order(ent.Asc(instancesize.FieldSortOrder)).
 		All(ctx)
 	if err != nil {
@@ -297,7 +486,7 @@ func (s *Server) ListInstanceSizes(c *gin.Context) {
 
 	items := make([]generated.InstanceSize, 0, len(sizes))
 	for _, sz := range sizes {
-		items = append(items, instanceSizeToAPI(sz))
+		items = append(items, instanceSizeToPublicAPI(sz))
 	}
 
 	c.JSON(http.StatusOK, generated.InstanceSizeList{
@@ -325,6 +514,38 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 	}
 	if params.ResourceId != "" {
 		query = query.Where(auditlog.ResourceIDEQ(params.ResourceId))
+	}
+	if decision := strings.TrimSpace(params.ApprovalDecision); decision != "" {
+		query = query.Where(
+			auditlog.ResourceTypeEQ("approval_ticket"),
+			predicate.AuditLog(func(s *entsql.Selector) {
+				s.Where(sqljson.ValueEQ(auditlog.FieldDetails, decision, sqljson.Path("decision")))
+			}),
+		)
+	}
+	if reasonCode := strings.TrimSpace(params.PlacementReasonCode); reasonCode != "" {
+		query = query.Where(
+			auditlog.ResourceTypeEQ("approval_ticket"),
+			predicate.AuditLog(func(s *entsql.Selector) {
+				s.Where(sqljson.ValueEQ(
+					auditlog.FieldDetails,
+					reasonCode,
+					sqljson.Path("placement_evaluation", "reason_code"),
+				))
+			}),
+		)
+	}
+	if advisoryCode := strings.TrimSpace(params.PlacementAdvisoryCode); advisoryCode != "" {
+		query = query.Where(
+			auditlog.ResourceTypeEQ("approval_ticket"),
+			predicate.AuditLog(func(s *entsql.Selector) {
+				s.Where(sqljson.ValueEQ(
+					auditlog.FieldDetails,
+					advisoryCode,
+					sqljson.Path("placement_evaluation", "advisory_code"),
+				))
+			}),
+		)
 	}
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
@@ -356,6 +577,7 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 			Actor:        l.Actor,
 			ResourceType: l.ResourceType,
 			ResourceId:   l.ResourceID,
+			Details:      l.Details,
 			CreatedAt:    l.CreatedAt,
 		})
 	}
@@ -374,19 +596,125 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 
 // ---- Converters ----
 
-func clusterToAPI(cl *ent.Cluster) generated.Cluster {
+func clusterToAPI(cl *ent.Cluster, policy *ent.ClusterPolicy, compatibility generated.ClusterCompatibility) generated.Cluster {
 	return generated.Cluster{
-		Id:              cl.ID,
-		Name:            cl.Name,
-		DisplayName:     cl.DisplayName,
-		ApiServerUrl:    cl.APIServerURL,
-		Status:          generated.ClusterStatus(cl.Status),
-		Environment:     generated.ClusterEnvironment(cl.Environment),
-		KubevirtVersion: cl.KubevirtVersion,
-		EnabledFeatures: cl.EnabledFeatures, // P2-A (ADR-0014): expose detected capability features
-		StorageClasses:  cl.StorageClasses,
-		Enabled:         cl.Enabled,
-		CreatedAt:       cl.CreatedAt,
+		Id:                  cl.ID,
+		Name:                cl.Name,
+		DisplayName:         cl.DisplayName,
+		ApiServerUrl:        cl.APIServerURL,
+		Status:              generated.ClusterStatus(cl.Status),
+		Environment:         generated.ClusterEnvironment(cl.Environment),
+		KubevirtVersion:     cl.KubevirtVersion,
+		EnabledFeatures:     cl.EnabledFeatures, // P2-A (ADR-0014): expose detected capability features
+		StorageClasses:      cl.StorageClasses,
+		DefaultStorageClass: cl.DefaultStorageClass,
+		PolicyConfigured:    policy != nil,
+		PolicySummary:       buildClusterPolicySummary(policy),
+		Compatibility:       compatibility,
+		Enabled:             cl.Enabled,
+		CreatedAt:           cl.CreatedAt,
+	}
+}
+
+func buildClusterPolicySummary(policy *ent.ClusterPolicy) generated.ClusterPolicySummary {
+	if policy == nil {
+		return generated.ClusterPolicySummary{Mode: generated.MISSING}
+	}
+
+	deniedControls := make([]generated.ClusterPolicySummaryDeniedControls, 0, 7)
+	if !policy.AllowCPUOvercommit {
+		deniedControls = append(deniedControls, generated.CpuOvercommit)
+	}
+	if !policy.AllowMemoryOvercommit {
+		deniedControls = append(deniedControls, generated.MemoryOvercommit)
+	}
+	if !policy.AllowDedicatedCPU {
+		deniedControls = append(deniedControls, generated.DedicatedCpu)
+	}
+	if !policy.AllowGpu {
+		deniedControls = append(deniedControls, generated.Gpu)
+	}
+	if !policy.AllowSriov {
+		deniedControls = append(deniedControls, generated.Sriov)
+	}
+	if !policy.AllowHugepages {
+		deniedControls = append(deniedControls, generated.Hugepages)
+	}
+	if !policy.AllowCdiClone {
+		deniedControls = append(deniedControls, generated.CdiClone)
+	}
+
+	scopedControls := make([]generated.ClusterPolicySummaryScopedControls, 0, 3)
+	if len(policy.AllowedHugepagesSizes) > 0 {
+		scopedControls = append(scopedControls, generated.HugepagesSizes)
+	}
+	if len(policy.AllowedCloneSourceNamespaces) > 0 {
+		scopedControls = append(scopedControls, generated.CloneSourceNamespaces)
+	}
+	if len(policy.AllowedStorageClasses) > 0 {
+		scopedControls = append(scopedControls, generated.StorageClasses)
+	}
+
+	mode := generated.OPEN
+	if len(deniedControls) > 0 || len(scopedControls) > 0 {
+		mode = generated.GUARDED
+	}
+
+	return generated.ClusterPolicySummary{
+		Mode:                             mode,
+		DeniedControls:                   deniedControls,
+		ScopedControls:                   scopedControls,
+		AllowedStorageClassCount:         len(policy.AllowedStorageClasses),
+		AllowedCloneSourceNamespaceCount: len(policy.AllowedCloneSourceNamespaces),
+		AllowedHugepagesSizeCount:        len(policy.AllowedHugepagesSizes),
+	}
+}
+
+func buildClusterCompatibilityFilter(params generated.ListClustersParams) (service.ApprovalValidationInput, bool) {
+	input := service.ApprovalValidationInput{
+		TemplateID:     strings.TrimSpace(params.TemplateId),
+		InstanceSizeID: strings.TrimSpace(params.InstanceSizeId),
+		Namespace:      strings.TrimSpace(params.Namespace),
+		StorageClass:   strings.TrimSpace(params.SelectedStorageClass),
+	}
+
+	if params.CpuRequest != 0 || params.CpuLimit != 0 || params.MemoryRequestGi != 0 || params.MemoryLimitGi != 0 {
+		override := service.ApprovalResourceOverride{
+			CPURequest:      float64(params.CpuRequest),
+			CPULimit:        float64(params.CpuLimit),
+			MemoryRequestGi: float64(params.MemoryRequestGi),
+			MemoryLimitGi:   float64(params.MemoryLimitGi),
+		}
+		input.Override = &override
+	}
+
+	hasFilter := input.TemplateID != "" ||
+		input.InstanceSizeID != "" ||
+		input.Namespace != "" ||
+		input.StorageClass != "" ||
+		input.Override != nil
+
+	return input, hasFilter
+}
+
+func clusterPolicyToAPI(policy *ent.ClusterPolicy) generated.ClusterPolicy {
+	return generated.ClusterPolicy{
+		Id:                           policy.ID,
+		ClusterId:                    policy.ClusterID,
+		AllowCpuOvercommit:           policy.AllowCPUOvercommit,
+		AllowMemoryOvercommit:        policy.AllowMemoryOvercommit,
+		AllowDedicatedCpu:            policy.AllowDedicatedCPU,
+		AllowGpu:                     policy.AllowGpu,
+		AllowSriov:                   policy.AllowSriov,
+		AllowHugepages:               policy.AllowHugepages,
+		AllowedHugepagesSizes:        policy.AllowedHugepagesSizes,
+		AllowCdiClone:                policy.AllowCdiClone,
+		AllowedCloneSourceNamespaces: policy.AllowedCloneSourceNamespaces,
+		AllowedStorageClasses:        policy.AllowedStorageClasses,
+		CreatedBy:                    policy.CreatedBy,
+		UpdatedBy:                    policy.UpdatedBy,
+		CreatedAt:                    policy.CreatedAt,
+		UpdatedAt:                    policy.UpdatedAt,
 	}
 }
 
@@ -396,7 +724,10 @@ func templateToAPI(t *ent.Template) generated.Template {
 		Name:         t.Name,
 		DisplayName:  t.DisplayName,
 		Description:  t.Description,
-		SourceType:   generated.TemplateSourceType(t.SourceType),
+		CatalogScope: generated.TemplateCatalogScope(t.CatalogScope),
+		SourceType: generated.TemplateSourceType(
+			service.EffectiveTemplateSourceType(t.SourceType, t.ImageURL, t.PvcName),
+		),
 		ImageUrl:     t.ImageURL,
 		PvcName:      t.PvcName,
 		PvcNamespace: t.PvcNamespace,
@@ -407,12 +738,27 @@ func templateToAPI(t *ent.Template) generated.Template {
 	}
 }
 
+func filterUserRequestableTemplates(templates []*ent.Template) []*ent.Template {
+	if len(templates) == 0 {
+		return templates
+	}
+	filtered := make([]*ent.Template, 0, len(templates))
+	for _, tpl := range templates {
+		if !service.IsUserRequestableTemplateSource(tpl.SourceType, tpl.ImageURL, tpl.PvcName) {
+			continue
+		}
+		filtered = append(filtered, tpl)
+	}
+	return filtered
+}
+
 func instanceSizeToAPI(sz *ent.InstanceSize) generated.InstanceSize {
 	return generated.InstanceSize{
 		Id:                sz.ID,
 		Name:              sz.Name,
 		DisplayName:       sz.DisplayName,
 		Description:       sz.Description,
+		CatalogScope:      generated.InstanceSizeCatalogScope(sz.CatalogScope),
 		CpuCores:          float32(sz.CPUCores),
 		MemoryGi:          float32(sz.MemoryGi),
 		DiskGb:            sz.DiskGB,
@@ -423,5 +769,29 @@ func instanceSizeToAPI(sz *ent.InstanceSize) generated.InstanceSize {
 		HugepagesSize:     sz.HugepagesSize,
 		SpecOverrides:     sz.SpecOverrides,
 		Enabled:           sz.Enabled,
+	}
+}
+
+// instanceSizeToPublicAPI converts an InstanceSize for user-facing endpoints.
+// It is identical to instanceSizeToAPI but strips fields that are admin-only
+// internals (spec_overrides). The generated InstanceSize type uses
+// omitempty+omitzero, so a nil SpecOverrides is omitted from JSON output.
+func instanceSizeToPublicAPI(sz *ent.InstanceSize) generated.InstanceSize {
+	return generated.InstanceSize{
+		Id:                sz.ID,
+		Name:              sz.Name,
+		DisplayName:       sz.DisplayName,
+		Description:       sz.Description,
+		CatalogScope:      generated.InstanceSizeCatalogScope(sz.CatalogScope),
+		CpuCores:          float32(sz.CPUCores),
+		MemoryGi:          float32(sz.MemoryGi),
+		DiskGb:            sz.DiskGB,
+		DedicatedCpu:      sz.DedicatedCPU,
+		RequiresGpu:       sz.RequiresGpu,
+		RequiresSriov:     sz.RequiresSriov,
+		RequiresHugepages: sz.RequiresHugepages,
+		HugepagesSize:     sz.HugepagesSize,
+		// SpecOverrides intentionally omitted: admin-only internal detail.
+		Enabled: sz.Enabled,
 	}
 }

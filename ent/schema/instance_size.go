@@ -59,9 +59,15 @@ func (InstanceSize) Fields() []ent.Field {
 			Default(false),
 		field.String("hugepages_size").
 			Optional(),
-		// Full KubeVirt extension fields (JSON Path -> Value), backend stores without semantic merge.
+		// spec_overrides: full KubeVirt extension fields (JSON Path -> Value).
+		// Admin-only: omitted from user-facing API responses to avoid leaking
+		// internal infrastructure tuning details. See instanceSizeToPublicAPI().
 		field.JSON("spec_overrides", map[string]interface{}{}).
 			Optional(),
+		field.Enum("catalog_scope").
+			Values("unclassified", "test", "prod", "all").
+			Default("unclassified").
+			Comment("Catalog visibility scope only. Not scheduling environment."),
 		field.Int("sort_order").
 			Default(0), // Display ordering
 		field.Bool("enabled").
@@ -80,5 +86,6 @@ func (InstanceSize) Indexes() []ent.Index {
 		index.Fields("requires_sriov"),
 		index.Fields("requires_hugepages", "hugepages_size"),
 		index.Fields("dedicated_cpu"),
+		index.Fields("catalog_scope"),
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -26,7 +28,13 @@ import (
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	"kv-shepherd.io/shepherd/internal/provider"
+	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/usecase"
+)
+
+const (
+	placementReasonCodeClusterPolicyDenied = "CLUSTER_POLICY_DENIED"
+	placementAdvisoryCodeHostAssistedClone = "PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY"
 )
 
 // ListVMs handles GET /vms.
@@ -143,7 +151,7 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 	items := make([]generated.VM, 0, len(vms))
 	for _, vm := range vms {
 		env := clusterEnvMap[vm.ClusterID]
-		items = append(items, vmToAPI(vm, env))
+		items = append(items, vmToAPI(vm, env, nil))
 	}
 
 	totalPages := (total + perPage - 1) / perPage
@@ -160,7 +168,7 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 
 // GetVMRequestContext handles GET /vms/request-context.
 // Returns user-visible wizard context to avoid client-side fan-out and drift.
-func (s *Server) GetVMRequestContext(c *gin.Context) {
+func (s *Server) GetVMRequestContext(c *gin.Context, params generated.GetVMRequestContextParams) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "vm:create") {
 		return
@@ -196,24 +204,43 @@ func (s *Server) GetVMRequestContext(c *gin.Context) {
 		}
 	}
 
-	templates, err := s.client.Template.Query().
-		Where(enttemplate.EnabledEQ(true)).
-		Order(ent.Asc(enttemplate.FieldName)).
-		All(ctx)
-	if err != nil {
-		logger.Error("failed to list request-context templates", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
+	templateScopes := visibleTemplateCatalogScopes(visibility)
+	var templates []*ent.Template
+	if len(templateScopes) == 0 {
+		templates = []*ent.Template{}
+	} else {
+		templates, err = s.client.Template.Query().
+			Where(
+				enttemplate.EnabledEQ(true),
+				enttemplate.CatalogScopeIn(templateScopes...),
+			).
+			Order(ent.Asc(enttemplate.FieldName)).
+			All(ctx)
+		if err != nil {
+			logger.Error("failed to list request-context templates", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
 	}
+	templates = filterUserRequestableTemplates(templates)
 
-	sizes, err := s.client.InstanceSize.Query().
-		Where(instancesize.EnabledEQ(true)).
-		Order(ent.Asc(instancesize.FieldSortOrder)).
-		All(ctx)
-	if err != nil {
-		logger.Error("failed to list request-context instance sizes", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
+	sizeScopes := visibleInstanceSizeCatalogScopes(visibility)
+	var sizes []*ent.InstanceSize
+	if len(sizeScopes) == 0 {
+		sizes = []*ent.InstanceSize{}
+	} else {
+		sizes, err = s.client.InstanceSize.Query().
+			Where(
+				instancesize.EnabledEQ(true),
+				instancesize.CatalogScopeIn(sizeScopes...),
+			).
+			Order(ent.Asc(instancesize.FieldSortOrder)).
+			All(ctx)
+		if err != nil {
+			logger.Error("failed to list request-context instance sizes", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
 	}
 
 	templateItems := make([]generated.Template, 0, len(templates))
@@ -223,14 +250,258 @@ func (s *Server) GetVMRequestContext(c *gin.Context) {
 
 	sizeItems := make([]generated.InstanceSize, 0, len(sizes))
 	for _, sz := range sizes {
-		sizeItems = append(sizeItems, instanceSizeToAPI(sz))
+		sizeItems = append(sizeItems, instanceSizeToPublicAPI(sz))
 	}
 
-	c.JSON(http.StatusOK, generated.VMRequestContext{
+	resp := generated.VMRequestContext{
 		Namespaces:    namespaces,
 		Templates:     templateItems,
 		InstanceSizes: sizeItems,
+	}
+	if shouldEvaluateUserPlacementHint(params) {
+		hint, hintErr := s.buildUserPlacementHint(ctx, visibility, namespaces, templates, sizes, params)
+		if hintErr != nil {
+			if appErr, ok := apperrors.IsAppError(hintErr); ok {
+				c.JSON(appErr.HTTPStatus, generated.Error{
+					Code:    appErr.Code,
+					Message: appErr.Message,
+					Params:  appErr.Params,
+				})
+				return
+			}
+			logger.Error("failed to evaluate VM request placement hint", zap.Error(hintErr))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+		resp.PlacementHint = *hint
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+func shouldEvaluateUserPlacementHint(params generated.GetVMRequestContextParams) bool {
+	return params.Namespace != "" && params.TemplateId != uuid.Nil && params.InstanceSizeId != uuid.Nil
+}
+
+func (s *Server) buildUserPlacementHint(
+	ctx context.Context,
+	visibility namespaceVisibility,
+	visibleNamespaces []string,
+	visibleTemplates []*ent.Template,
+	visibleSizes []*ent.InstanceSize,
+	params generated.GetVMRequestContextParams,
+) (*generated.VMPlacementHint, error) {
+	namespaceName := params.Namespace
+	templateID := params.TemplateId.String()
+	instanceSizeID := params.InstanceSizeId.String()
+
+	if !stringSliceContains(visibleNamespaces, namespaceName) {
+		return nil, apperrors.BadRequest(apperrors.CodeValidationFailed, "selected request context items are not available")
+	}
+	if !hasVisibleTemplate(visibleTemplates, templateID) || !hasVisibleInstanceSize(visibleSizes, instanceSizeID) {
+		return nil, apperrors.BadRequest(apperrors.CodeValidationFailed, "selected request context items are not available")
+	}
+
+	namespaceEntity, err := s.client.NamespaceRegistry.Query().
+		Where(namespaceregistry.NameEQ(namespaceName)).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, apperrors.BadRequest(apperrors.CodeValidationFailed, "selected request context items are not available")
+		}
+		return nil, fmt.Errorf("query namespace for placement hint: %w", err)
+	}
+
+	clusterQuery := s.client.Cluster.Query().
+		Where(
+			entcluster.EnabledEQ(true),
+			entcluster.EnvironmentEQ(entcluster.Environment(namespaceEntity.Environment)),
+		)
+	if visibility.restricted && len(visibility.envs) > 0 {
+		allowedClusterEnvs := make([]entcluster.Environment, 0, len(visibility.envs))
+		for _, env := range visibility.envs {
+			allowedClusterEnvs = append(allowedClusterEnvs, entcluster.Environment(env))
+		}
+		clusterQuery = clusterQuery.Where(entcluster.EnvironmentIn(allowedClusterEnvs...))
+	}
+
+	clusters, err := clusterQuery.
+		Order(ent.Asc(entcluster.FieldName)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query clusters for placement hint: %w", err)
+	}
+	if len(clusters) == 0 {
+		return &generated.VMPlacementHint{
+			Status:                 generated.UNAVAILABLE,
+			CompatibleClusterCount: 0,
+			EvaluatedClusterCount:  0,
+			PrimaryReasonCode:      generated.VMPlacementHintPrimaryReasonCodeNoCandidateClusters,
+		}, nil
+	}
+
+	validator := service.NewApprovalValidator(s.client).SetVMService(s.vmService)
+	results, err := validator.EvaluateClusterCompatibility(ctx, clusters, service.ApprovalValidationInput{
+		Namespace:      namespaceName,
+		TemplateID:     templateID,
+		InstanceSizeID: instanceSizeID,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return userPlacementHintFromResults(results), nil
+}
+
+func userPlacementHintFromResults(results []service.ClusterCompatibilityResult) *generated.VMPlacementHint {
+	compatible := 0
+	reasonCounts := make(map[generated.VMPlacementHintReasonCountCode]int)
+	advisoryCounts := make(map[generated.VMPlacementHintAdvisoryCountCode]int)
+	for _, result := range results {
+		if result.Eligible {
+			compatible++
+			if result.AdvisoryCode != "" || result.AdvisoryMessage != "" {
+				advisory := normalizeUserPlacementAdvisory(result.AdvisoryCode, result.AdvisoryMessage)
+				advisoryCounts[advisory]++
+			}
+			continue
+		}
+		reason := normalizeUserPlacementReason(result.ReasonCode, result.ReasonMessage)
+		reasonCounts[reason]++
+	}
+
+	status := generated.UNAVAILABLE
+	if compatible > 0 {
+		status = generated.AVAILABLE
+	}
+
+	items := make([]generated.VMPlacementHintReasonCount, 0, len(reasonCounts))
+	var (
+		primaryReason generated.VMPlacementHintPrimaryReasonCode
+		primaryCount  int
+	)
+	for code, count := range reasonCounts {
+		items = append(items, generated.VMPlacementHintReasonCount{
+			Code:  code,
+			Count: count,
+		})
+		candidatePrimary := generated.VMPlacementHintPrimaryReasonCode(code)
+		if count > primaryCount || (count == primaryCount && string(candidatePrimary) < string(primaryReason)) {
+			primaryReason = candidatePrimary
+			primaryCount = count
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Count == items[j].Count {
+			return string(items[i].Code) < string(items[j].Code)
+		}
+		return items[i].Count > items[j].Count
+	})
+
+	advisories := make([]generated.VMPlacementHintAdvisoryCount, 0, len(advisoryCounts))
+	var (
+		primaryAdvisory      generated.VMPlacementHintPrimaryAdvisoryCode
+		primaryAdvisoryCount int
+	)
+	for code, count := range advisoryCounts {
+		advisories = append(advisories, generated.VMPlacementHintAdvisoryCount{
+			Code:  code,
+			Count: count,
+		})
+		candidatePrimary := generated.VMPlacementHintPrimaryAdvisoryCode(code)
+		if count > primaryAdvisoryCount || (count == primaryAdvisoryCount && string(candidatePrimary) < string(primaryAdvisory)) {
+			primaryAdvisory = candidatePrimary
+			primaryAdvisoryCount = count
+		}
+	}
+	sort.Slice(advisories, func(i, j int) bool {
+		if advisories[i].Count == advisories[j].Count {
+			return string(advisories[i].Code) < string(advisories[j].Code)
+		}
+		return advisories[i].Count > advisories[j].Count
+	})
+
+	hint := &generated.VMPlacementHint{
+		Status:                 status,
+		CompatibleClusterCount: compatible,
+		EvaluatedClusterCount:  len(results),
+		ReasonCounts:           items,
+		AdvisoryCounts:         advisories,
+	}
+	if primaryCount > 0 {
+		hint.PrimaryReasonCode = primaryReason
+	}
+	if primaryAdvisoryCount > 0 {
+		hint.PrimaryAdvisoryCode = primaryAdvisory
+	}
+	return hint
+}
+
+func normalizeUserPlacementReason(rawCode, rawMessage string) generated.VMPlacementHintReasonCountCode {
+	switch rawCode {
+	case "CLUSTER_POLICY_NOT_CONFIGURED":
+		return generated.VMPlacementHintReasonCountCodePolicyNotConfigured
+	case placementReasonCodeClusterPolicyDenied:
+		return generated.VMPlacementHintReasonCountCodePolicyDenied
+	case "OVERCOMMIT_INVALID", "DEDICATED_CPU_OVERCOMMIT_CONFLICT":
+		return generated.VMPlacementHintReasonCountCodeRequestInvalid
+	}
+
+	message := strings.ToLower(strings.TrimSpace(rawMessage))
+	switch {
+	case strings.Contains(message, "missing required capabilities"):
+		return generated.VMPlacementHintReasonCountCodeCapabilityMismatch
+	case strings.Contains(message, "not healthy"):
+		return generated.VMPlacementHintReasonCountCodeClusterUnavailable
+	case strings.Contains(message, "requires guaranteed qos"):
+		return generated.VMPlacementHintReasonCountCodeRequestInvalid
+	case message != "":
+		return generated.VMPlacementHintReasonCountCodeOther
+	default:
+		return generated.VMPlacementHintReasonCountCodeOther
+	}
+}
+
+func normalizeUserPlacementAdvisory(rawCode, rawMessage string) generated.VMPlacementHintAdvisoryCountCode {
+	if rawCode == placementAdvisoryCodeHostAssistedClone {
+		return generated.VMPlacementHintAdvisoryCountCodeHostAssistedCloneLikely
+	}
+
+	message := strings.ToLower(strings.TrimSpace(rawMessage))
+	switch {
+	case strings.Contains(message, "host-assisted copy"), strings.Contains(message, "host assisted copy"):
+		return generated.VMPlacementHintAdvisoryCountCodeHostAssistedCloneLikely
+	case message != "":
+		return generated.VMPlacementHintAdvisoryCountCodeOther
+	default:
+		return generated.VMPlacementHintAdvisoryCountCodeOther
+	}
+}
+
+func hasVisibleTemplate(items []*ent.Template, templateID string) bool {
+	for _, item := range items {
+		if item != nil && item.ID == templateID {
+			return true
+		}
+	}
+	return false
+}
+
+func hasVisibleInstanceSize(items []*ent.InstanceSize, sizeID string) bool {
+	for _, item := range items {
+		if item != nil && item.ID == sizeID {
+			return true
+		}
+	}
+	return false
+}
+
+func stringSliceContains(items []string, candidate string) bool {
+	for _, item := range items {
+		if item == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 // CreateVMRequest handles POST /vms/request (requires approval).
@@ -388,7 +659,7 @@ func (s *Server) GetVM(c *gin.Context, vmID generated.VMID) {
 		}
 	}
 
-	c.JSON(http.StatusOK, vmToAPI(vm, clusterEnv))
+	c.JSON(http.StatusOK, vmToAPI(vm, clusterEnv, s.loadVMProvisioning(ctx, vm)))
 }
 
 // DeleteVM handles DELETE /vms/{vm_id}.
@@ -753,7 +1024,7 @@ func (s *Server) enqueueVMPowerOp(c *gin.Context, vm *ent.VM, operation string, 
 // vmToAPI converts an Ent VM entity to the generated API VM type.
 // clusterEnv is the environment string ("test" or "prod") from the associated Cluster;
 // pass an empty string when the cluster is not yet assigned.
-func vmToAPI(vm *ent.VM, clusterEnv string) generated.VM {
+func vmToAPI(vm *ent.VM, clusterEnv string, provisioning *generated.ProvisioningStatus) generated.VM {
 	apiVM := generated.VM{
 		Id:        vm.ID,
 		Name:      vm.Name,
@@ -771,6 +1042,7 @@ func vmToAPI(vm *ent.VM, clusterEnv string) generated.VM {
 	if clusterEnv != "" {
 		apiVM.Environment = generated.VMEnvironment(clusterEnv)
 	}
+	apiVM.Provisioning = provisioning
 	return apiVM
 }
 

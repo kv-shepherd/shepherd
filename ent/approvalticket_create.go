@@ -170,6 +170,12 @@ func (_c *ApprovalTicketCreate) SetInstanceSizeSnapshot(v map[string]interface{}
 	return _c
 }
 
+// SetPlacementEvaluation sets the "placement_evaluation" field.
+func (_c *ApprovalTicketCreate) SetPlacementEvaluation(v map[string]interface{}) *ApprovalTicketCreate {
+	_c.mutation.SetPlacementEvaluation(v)
+	return _c
+}
+
 // SetModifiedSpec sets the "modified_spec" field.
 func (_c *ApprovalTicketCreate) SetModifiedSpec(v map[string]interface{}) *ApprovalTicketCreate {
 	_c.mutation.SetModifiedSpec(v)
@@ -375,6 +381,10 @@ func (_c *ApprovalTicketCreate) createSpec() (*ApprovalTicket, *sqlgraph.CreateS
 	if value, ok := _c.mutation.InstanceSizeSnapshot(); ok {
 		_spec.SetField(approvalticket.FieldInstanceSizeSnapshot, field.TypeJSON, value)
 		_node.InstanceSizeSnapshot = value
+	}
+	if value, ok := _c.mutation.PlacementEvaluation(); ok {
+		_spec.SetField(approvalticket.FieldPlacementEvaluation, field.TypeJSON, value)
+		_node.PlacementEvaluation = value
 	}
 	if value, ok := _c.mutation.ModifiedSpec(); ok {
 		_spec.SetField(approvalticket.FieldModifiedSpec, field.TypeJSON, value)

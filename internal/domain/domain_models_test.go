@@ -6,6 +6,27 @@ import (
 	"testing"
 )
 
+func TestVMSpecJSON_ExcludesRenderedYAML(t *testing.T) {
+	t.Parallel()
+
+	raw, err := json.Marshal(VMSpec{
+		Name:         "vm-a",
+		CPU:          2,
+		MemoryGi:     4,
+		StorageClass: "gold-sc",
+		RenderedYAML: "kind: VirtualMachine",
+	})
+	if err != nil {
+		t.Fatalf("Marshal(VMSpec) error = %v", err)
+	}
+	if strings.Contains(string(raw), "RenderedYAML") || strings.Contains(string(raw), "rendered_yaml") {
+		t.Fatalf("Marshal(VMSpec) = %s, want RenderedYAML omitted", string(raw))
+	}
+	if !strings.Contains(string(raw), `"storage_class":"gold-sc"`) {
+		t.Fatalf("Marshal(VMSpec) = %s, want storage_class present", string(raw))
+	}
+}
+
 func TestProvisioningTypesJSON_ExposeVolumeModeAndStorageProfileFields(t *testing.T) {
 	t.Parallel()
 

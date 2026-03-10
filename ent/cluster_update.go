@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 	"kv-shepherd.io/shepherd/ent/predicate"
 )
 
@@ -261,9 +262,34 @@ func (_u *ClusterUpdate) SetNillableEnabled(v *bool) *ClusterUpdate {
 	return _u
 }
 
+// SetPolicyID sets the "policy" edge to the ClusterPolicy entity by ID.
+func (_u *ClusterUpdate) SetPolicyID(id string) *ClusterUpdate {
+	_u.mutation.SetPolicyID(id)
+	return _u
+}
+
+// SetNillablePolicyID sets the "policy" edge to the ClusterPolicy entity by ID if the given value is not nil.
+func (_u *ClusterUpdate) SetNillablePolicyID(id *string) *ClusterUpdate {
+	if id != nil {
+		_u = _u.SetPolicyID(*id)
+	}
+	return _u
+}
+
+// SetPolicy sets the "policy" edge to the ClusterPolicy entity.
+func (_u *ClusterUpdate) SetPolicy(v *ClusterPolicy) *ClusterUpdate {
+	return _u.SetPolicyID(v.ID)
+}
+
 // Mutation returns the ClusterMutation object of the builder.
 func (_u *ClusterUpdate) Mutation() *ClusterMutation {
 	return _u.mutation
+}
+
+// ClearPolicy clears the "policy" edge to the ClusterPolicy entity.
+func (_u *ClusterUpdate) ClearPolicy() *ClusterUpdate {
+	_u.mutation.ClearPolicy()
+	return _u
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -419,6 +445,35 @@ func (_u *ClusterUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(cluster.FieldEnabled, field.TypeBool, value)
+	}
+	if _u.mutation.PolicyCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   cluster.PolicyTable,
+			Columns: []string{cluster.PolicyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(clusterpolicy.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.PolicyIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   cluster.PolicyTable,
+			Columns: []string{cluster.PolicyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(clusterpolicy.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -672,9 +727,34 @@ func (_u *ClusterUpdateOne) SetNillableEnabled(v *bool) *ClusterUpdateOne {
 	return _u
 }
 
+// SetPolicyID sets the "policy" edge to the ClusterPolicy entity by ID.
+func (_u *ClusterUpdateOne) SetPolicyID(id string) *ClusterUpdateOne {
+	_u.mutation.SetPolicyID(id)
+	return _u
+}
+
+// SetNillablePolicyID sets the "policy" edge to the ClusterPolicy entity by ID if the given value is not nil.
+func (_u *ClusterUpdateOne) SetNillablePolicyID(id *string) *ClusterUpdateOne {
+	if id != nil {
+		_u = _u.SetPolicyID(*id)
+	}
+	return _u
+}
+
+// SetPolicy sets the "policy" edge to the ClusterPolicy entity.
+func (_u *ClusterUpdateOne) SetPolicy(v *ClusterPolicy) *ClusterUpdateOne {
+	return _u.SetPolicyID(v.ID)
+}
+
 // Mutation returns the ClusterMutation object of the builder.
 func (_u *ClusterUpdateOne) Mutation() *ClusterMutation {
 	return _u.mutation
+}
+
+// ClearPolicy clears the "policy" edge to the ClusterPolicy entity.
+func (_u *ClusterUpdateOne) ClearPolicy() *ClusterUpdateOne {
+	_u.mutation.ClearPolicy()
+	return _u
 }
 
 // Where appends a list predicates to the ClusterUpdate builder.
@@ -860,6 +940,35 @@ func (_u *ClusterUpdateOne) sqlSave(ctx context.Context) (_node *Cluster, err er
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(cluster.FieldEnabled, field.TypeBool, value)
+	}
+	if _u.mutation.PolicyCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   cluster.PolicyTable,
+			Columns: []string{cluster.PolicyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(clusterpolicy.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.PolicyIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   cluster.PolicyTable,
+			Columns: []string{cluster.PolicyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(clusterpolicy.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &Cluster{config: _u.config}
 	_spec.Assign = _node.assignValues

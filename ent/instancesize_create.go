@@ -212,6 +212,20 @@ func (_c *InstanceSizeCreate) SetSpecOverrides(v map[string]interface{}) *Instan
 	return _c
 }
 
+// SetCatalogScope sets the "catalog_scope" field.
+func (_c *InstanceSizeCreate) SetCatalogScope(v instancesize.CatalogScope) *InstanceSizeCreate {
+	_c.mutation.SetCatalogScope(v)
+	return _c
+}
+
+// SetNillableCatalogScope sets the "catalog_scope" field if the given value is not nil.
+func (_c *InstanceSizeCreate) SetNillableCatalogScope(v *instancesize.CatalogScope) *InstanceSizeCreate {
+	if v != nil {
+		_c.SetCatalogScope(*v)
+	}
+	return _c
+}
+
 // SetSortOrder sets the "sort_order" field.
 func (_c *InstanceSizeCreate) SetSortOrder(v int) *InstanceSizeCreate {
 	_c.mutation.SetSortOrder(v)
@@ -311,6 +325,10 @@ func (_c *InstanceSizeCreate) defaults() {
 		v := instancesize.DefaultRequiresHugepages
 		_c.mutation.SetRequiresHugepages(v)
 	}
+	if _, ok := _c.mutation.CatalogScope(); !ok {
+		v := instancesize.DefaultCatalogScope
+		_c.mutation.SetCatalogScope(v)
+	}
 	if _, ok := _c.mutation.SortOrder(); !ok {
 		v := instancesize.DefaultSortOrder
 		_c.mutation.SetSortOrder(v)
@@ -379,6 +397,14 @@ func (_c *InstanceSizeCreate) check() error {
 	}
 	if _, ok := _c.mutation.RequiresHugepages(); !ok {
 		return &ValidationError{Name: "requires_hugepages", err: errors.New(`ent: missing required field "InstanceSize.requires_hugepages"`)}
+	}
+	if _, ok := _c.mutation.CatalogScope(); !ok {
+		return &ValidationError{Name: "catalog_scope", err: errors.New(`ent: missing required field "InstanceSize.catalog_scope"`)}
+	}
+	if v, ok := _c.mutation.CatalogScope(); ok {
+		if err := instancesize.CatalogScopeValidator(v); err != nil {
+			return &ValidationError{Name: "catalog_scope", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.catalog_scope": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.SortOrder(); !ok {
 		return &ValidationError{Name: "sort_order", err: errors.New(`ent: missing required field "InstanceSize.sort_order"`)}
@@ -492,6 +518,10 @@ func (_c *InstanceSizeCreate) createSpec() (*InstanceSize, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.SpecOverrides(); ok {
 		_spec.SetField(instancesize.FieldSpecOverrides, field.TypeJSON, value)
 		_node.SpecOverrides = value
+	}
+	if value, ok := _c.mutation.CatalogScope(); ok {
+		_spec.SetField(instancesize.FieldCatalogScope, field.TypeEnum, value)
+		_node.CatalogScope = value
 	}
 	if value, ok := _c.mutation.SortOrder(); ok {
 		_spec.SetField(instancesize.FieldSortOrder, field.TypeInt, value)

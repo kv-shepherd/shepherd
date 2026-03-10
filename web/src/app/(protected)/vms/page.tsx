@@ -231,6 +231,8 @@ export default function VMsPage() {
                 sizesData={vm.sizesData}
                 selectedTemplate={vm.selectedTemplate}
                 selectedSize={vm.selectedSize}
+                placementHint={vm.placementHint}
+                placementHintLoading={vm.placementHintLoading}
                 serviceIdValue={vm.serviceIdValue}
                 namespaceValue={vm.namespaceValue}
                 namespaceOptions={vm.namespaceOptions}

@@ -21,6 +21,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/authprovider"
 	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
 	"kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
 	"kv-shepherd.io/shepherd/ent/idpgroupmapping"
@@ -60,6 +61,8 @@ type Client struct {
 	BatchApprovalTicket *BatchApprovalTicketClient
 	// Cluster is the client for interacting with the Cluster builders.
 	Cluster *ClusterClient
+	// ClusterPolicy is the client for interacting with the ClusterPolicy builders.
+	ClusterPolicy *ClusterPolicyClient
 	// DomainEvent is the client for interacting with the DomainEvent builders.
 	DomainEvent *DomainEventClient
 	// ExternalApprovalSystem is the client for interacting with the ExternalApprovalSystem builders.
@@ -117,6 +120,7 @@ func (c *Client) init() {
 	c.AuthProvider = NewAuthProviderClient(c.config)
 	c.BatchApprovalTicket = NewBatchApprovalTicketClient(c.config)
 	c.Cluster = NewClusterClient(c.config)
+	c.ClusterPolicy = NewClusterPolicyClient(c.config)
 	c.DomainEvent = NewDomainEventClient(c.config)
 	c.ExternalApprovalSystem = NewExternalApprovalSystemClient(c.config)
 	c.IdPGroupMapping = NewIdPGroupMappingClient(c.config)
@@ -235,6 +239,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AuthProvider:           NewAuthProviderClient(cfg),
 		BatchApprovalTicket:    NewBatchApprovalTicketClient(cfg),
 		Cluster:                NewClusterClient(cfg),
+		ClusterPolicy:          NewClusterPolicyClient(cfg),
 		DomainEvent:            NewDomainEventClient(cfg),
 		ExternalApprovalSystem: NewExternalApprovalSystemClient(cfg),
 		IdPGroupMapping:        NewIdPGroupMappingClient(cfg),
@@ -280,6 +285,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AuthProvider:           NewAuthProviderClient(cfg),
 		BatchApprovalTicket:    NewBatchApprovalTicketClient(cfg),
 		Cluster:                NewClusterClient(cfg),
+		ClusterPolicy:          NewClusterPolicyClient(cfg),
 		DomainEvent:            NewDomainEventClient(cfg),
 		ExternalApprovalSystem: NewExternalApprovalSystemClient(cfg),
 		IdPGroupMapping:        NewIdPGroupMappingClient(cfg),
@@ -330,9 +336,9 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.ApprovalPolicy, c.ApprovalTicket, c.AuditLog, c.AuthProvider,
-		c.BatchApprovalTicket, c.Cluster, c.DomainEvent, c.ExternalApprovalSystem,
-		c.IdPGroupMapping, c.IdPSyncedGroup, c.InstanceSize, c.NamespaceRegistry,
-		c.Notification, c.PendingAdoption, c.RateLimitExemption,
+		c.BatchApprovalTicket, c.Cluster, c.ClusterPolicy, c.DomainEvent,
+		c.ExternalApprovalSystem, c.IdPGroupMapping, c.IdPSyncedGroup, c.InstanceSize,
+		c.NamespaceRegistry, c.Notification, c.PendingAdoption, c.RateLimitExemption,
 		c.RateLimitUserOverride, c.ResourceRoleBinding, c.Role, c.RoleBinding,
 		c.Service, c.System, c.SystemSecret, c.Template, c.User, c.VM, c.VMRevision,
 	} {
@@ -345,9 +351,9 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.ApprovalPolicy, c.ApprovalTicket, c.AuditLog, c.AuthProvider,
-		c.BatchApprovalTicket, c.Cluster, c.DomainEvent, c.ExternalApprovalSystem,
-		c.IdPGroupMapping, c.IdPSyncedGroup, c.InstanceSize, c.NamespaceRegistry,
-		c.Notification, c.PendingAdoption, c.RateLimitExemption,
+		c.BatchApprovalTicket, c.Cluster, c.ClusterPolicy, c.DomainEvent,
+		c.ExternalApprovalSystem, c.IdPGroupMapping, c.IdPSyncedGroup, c.InstanceSize,
+		c.NamespaceRegistry, c.Notification, c.PendingAdoption, c.RateLimitExemption,
 		c.RateLimitUserOverride, c.ResourceRoleBinding, c.Role, c.RoleBinding,
 		c.Service, c.System, c.SystemSecret, c.Template, c.User, c.VM, c.VMRevision,
 	} {
@@ -370,6 +376,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.BatchApprovalTicket.mutate(ctx, m)
 	case *ClusterMutation:
 		return c.Cluster.mutate(ctx, m)
+	case *ClusterPolicyMutation:
+		return c.ClusterPolicy.mutate(ctx, m)
 	case *DomainEventMutation:
 		return c.DomainEvent.mutate(ctx, m)
 	case *ExternalApprovalSystemMutation:
@@ -1188,6 +1196,22 @@ func (c *ClusterClient) GetX(ctx context.Context, id string) *Cluster {
 	return obj
 }
 
+// QueryPolicy queries the policy edge of a Cluster.
+func (c *ClusterClient) QueryPolicy(_m *Cluster) *ClusterPolicyQuery {
+	query := (&ClusterPolicyClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(cluster.Table, cluster.FieldID, id),
+			sqlgraph.To(clusterpolicy.Table, clusterpolicy.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, cluster.PolicyTable, cluster.PolicyColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *ClusterClient) Hooks() []Hook {
 	return c.hooks.Cluster
@@ -1210,6 +1234,155 @@ func (c *ClusterClient) mutate(ctx context.Context, m *ClusterMutation) (Value, 
 		return (&ClusterDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Cluster mutation op: %q", m.Op())
+	}
+}
+
+// ClusterPolicyClient is a client for the ClusterPolicy schema.
+type ClusterPolicyClient struct {
+	config
+}
+
+// NewClusterPolicyClient returns a client for the ClusterPolicy from the given config.
+func NewClusterPolicyClient(c config) *ClusterPolicyClient {
+	return &ClusterPolicyClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `clusterpolicy.Hooks(f(g(h())))`.
+func (c *ClusterPolicyClient) Use(hooks ...Hook) {
+	c.hooks.ClusterPolicy = append(c.hooks.ClusterPolicy, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `clusterpolicy.Intercept(f(g(h())))`.
+func (c *ClusterPolicyClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ClusterPolicy = append(c.inters.ClusterPolicy, interceptors...)
+}
+
+// Create returns a builder for creating a ClusterPolicy entity.
+func (c *ClusterPolicyClient) Create() *ClusterPolicyCreate {
+	mutation := newClusterPolicyMutation(c.config, OpCreate)
+	return &ClusterPolicyCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ClusterPolicy entities.
+func (c *ClusterPolicyClient) CreateBulk(builders ...*ClusterPolicyCreate) *ClusterPolicyCreateBulk {
+	return &ClusterPolicyCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ClusterPolicyClient) MapCreateBulk(slice any, setFunc func(*ClusterPolicyCreate, int)) *ClusterPolicyCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ClusterPolicyCreateBulk{err: fmt.Errorf("calling to ClusterPolicyClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ClusterPolicyCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ClusterPolicyCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ClusterPolicy.
+func (c *ClusterPolicyClient) Update() *ClusterPolicyUpdate {
+	mutation := newClusterPolicyMutation(c.config, OpUpdate)
+	return &ClusterPolicyUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ClusterPolicyClient) UpdateOne(_m *ClusterPolicy) *ClusterPolicyUpdateOne {
+	mutation := newClusterPolicyMutation(c.config, OpUpdateOne, withClusterPolicy(_m))
+	return &ClusterPolicyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ClusterPolicyClient) UpdateOneID(id string) *ClusterPolicyUpdateOne {
+	mutation := newClusterPolicyMutation(c.config, OpUpdateOne, withClusterPolicyID(id))
+	return &ClusterPolicyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ClusterPolicy.
+func (c *ClusterPolicyClient) Delete() *ClusterPolicyDelete {
+	mutation := newClusterPolicyMutation(c.config, OpDelete)
+	return &ClusterPolicyDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ClusterPolicyClient) DeleteOne(_m *ClusterPolicy) *ClusterPolicyDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ClusterPolicyClient) DeleteOneID(id string) *ClusterPolicyDeleteOne {
+	builder := c.Delete().Where(clusterpolicy.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ClusterPolicyDeleteOne{builder}
+}
+
+// Query returns a query builder for ClusterPolicy.
+func (c *ClusterPolicyClient) Query() *ClusterPolicyQuery {
+	return &ClusterPolicyQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeClusterPolicy},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ClusterPolicy entity by its id.
+func (c *ClusterPolicyClient) Get(ctx context.Context, id string) (*ClusterPolicy, error) {
+	return c.Query().Where(clusterpolicy.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ClusterPolicyClient) GetX(ctx context.Context, id string) *ClusterPolicy {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryCluster queries the cluster edge of a ClusterPolicy.
+func (c *ClusterPolicyClient) QueryCluster(_m *ClusterPolicy) *ClusterQuery {
+	query := (&ClusterClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(clusterpolicy.Table, clusterpolicy.FieldID, id),
+			sqlgraph.To(cluster.Table, cluster.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, true, clusterpolicy.ClusterTable, clusterpolicy.ClusterColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *ClusterPolicyClient) Hooks() []Hook {
+	return c.hooks.ClusterPolicy
+}
+
+// Interceptors returns the client interceptors.
+func (c *ClusterPolicyClient) Interceptors() []Interceptor {
+	return c.inters.ClusterPolicy
+}
+
+func (c *ClusterPolicyClient) mutate(ctx context.Context, m *ClusterPolicyMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ClusterPolicyCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ClusterPolicyUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ClusterPolicyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ClusterPolicyDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ClusterPolicy mutation op: %q", m.Op())
 	}
 }
 
@@ -4069,16 +4242,16 @@ func (c *VMRevisionClient) mutate(ctx context.Context, m *VMRevisionMutation) (V
 type (
 	hooks struct {
 		ApprovalPolicy, ApprovalTicket, AuditLog, AuthProvider, BatchApprovalTicket,
-		Cluster, DomainEvent, ExternalApprovalSystem, IdPGroupMapping, IdPSyncedGroup,
-		InstanceSize, NamespaceRegistry, Notification, PendingAdoption,
+		Cluster, ClusterPolicy, DomainEvent, ExternalApprovalSystem, IdPGroupMapping,
+		IdPSyncedGroup, InstanceSize, NamespaceRegistry, Notification, PendingAdoption,
 		RateLimitExemption, RateLimitUserOverride, ResourceRoleBinding, Role,
 		RoleBinding, Service, System, SystemSecret, Template, User, VM,
 		VMRevision []ent.Hook
 	}
 	inters struct {
 		ApprovalPolicy, ApprovalTicket, AuditLog, AuthProvider, BatchApprovalTicket,
-		Cluster, DomainEvent, ExternalApprovalSystem, IdPGroupMapping, IdPSyncedGroup,
-		InstanceSize, NamespaceRegistry, Notification, PendingAdoption,
+		Cluster, ClusterPolicy, DomainEvent, ExternalApprovalSystem, IdPGroupMapping,
+		IdPSyncedGroup, InstanceSize, NamespaceRegistry, Notification, PendingAdoption,
 		RateLimitExemption, RateLimitUserOverride, ResourceRoleBinding, Role,
 		RoleBinding, Service, System, SystemSecret, Template, User, VM,
 		VMRevision []ent.Interceptor

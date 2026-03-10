@@ -11,14 +11,19 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	"kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	enttemplate "kv-shepherd.io/shepherd/ent/template"
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalticket"
+	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/approval"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/provider"
+	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
@@ -213,6 +218,118 @@ func TestBatchHandler_GetVMBatch_HidesOtherUsersBatch(t *testing.T) {
 		t.Fatalf("status = %d, want %d body=%s", getW.Code, http.StatusNotFound, getW.Body.String())
 	}
 	assertErrorCode(t, getW.Body.Bytes(), "BATCH_NOT_FOUND")
+}
+
+func TestBatchHandler_GetVMBatch_CreateChildIncludesProvisioningWhenVMExists(t *testing.T) {
+	t.Parallel()
+
+	baseSrv, client := newBatchBehaviorTestServer(t)
+	serviceID, templateID, sizeID := mustCreateBatchCreatePrerequisites(t, client, "requester-1", "team-prod")
+
+	submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
+		Operation: generated.VMBatchOperation("CREATE"),
+		Items: []generated.VMBatchChildItem{
+			{
+				ServiceId:      serviceID,
+				TemplateId:     templateID,
+				InstanceSizeId: sizeID,
+				Namespace:      "team-prod",
+				Reason:         "create one",
+			},
+		},
+	})
+
+	submitCtx, submitW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/vms/batch",
+		submitBody,
+		"requester-1",
+		[]string{"platform:admin"},
+	)
+	baseSrv.SubmitVMBatch(submitCtx)
+	if submitW.Code != http.StatusAccepted {
+		t.Fatalf("submit status = %d, want %d body=%s", submitW.Code, http.StatusAccepted, submitW.Body.String())
+	}
+
+	var submitResp generated.VMBatchSubmitResponse
+	if err := json.Unmarshal(submitW.Body.Bytes(), &submitResp); err != nil {
+		t.Fatalf("decode submit response: %v", err)
+	}
+
+	children, err := client.ApprovalTicket.Query().
+		Where(approvalticket.ParentTicketIDEQ(submitResp.BatchId)).
+		All(t.Context())
+	if err != nil {
+		t.Fatalf("query child tickets: %v", err)
+	}
+	if len(children) != 1 {
+		t.Fatalf("child ticket count = %d, want 1", len(children))
+	}
+	child := children[0]
+
+	vmID := "vm-" + uuid.NewString()
+	vmName := "vm" + vmID[len(vmID)-4:]
+	dvUID := "dv-" + uuid.NewString()
+	svcID := mustCreateServiceForVM(t, client, "requester-1")
+	if _, err := client.VM.Create().
+		SetID(vmID).
+		SetName(vmName).
+		SetInstance("01").
+		SetNamespace("team-prod").
+		SetStatus(entvm.StatusPENDING).
+		SetCreatedBy("requester-1").
+		SetClusterID("cluster-a").
+		SetTicketID(child.ID).
+		SetServiceID(svcID).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create vm: %v", err)
+	}
+
+	mock := provider.NewMockProvider()
+	mock.SeedDataVolumes([]*domain.DataVolume{
+		{
+			Name:         vmName + "-rootdisk",
+			Namespace:    "team-prod",
+			UID:          dvUID,
+			ClaimName:    vmName + "-rootdisk",
+			Phase:        "CloneInProgress",
+			Progress:     "33.0%",
+			RestartCount: 0,
+		},
+	})
+	mock.SeedPVCs([]*domain.PersistentVolumeClaim{
+		{
+			Name:      vmName + "-rootdisk",
+			Namespace: "team-prod",
+			Phase:     "Bound",
+		},
+	})
+
+	srv := NewServer(ServerDeps{
+		EntClient: client,
+		VMService: service.NewVMService(mock),
+	})
+
+	getCtx, getW := newAuthedGinContext(t, http.MethodGet, "/vms/batch/"+submitResp.BatchId, "", "requester-1", []string{"vm:read", "platform:admin"})
+	srv.GetVMBatch(getCtx, submitResp.BatchId)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want %d body=%s", getW.Code, http.StatusOK, getW.Body.String())
+	}
+
+	var resp generated.VMBatchStatusResponse
+	if err := json.Unmarshal(getW.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode get response: %v", err)
+	}
+	if len(resp.Children) != 1 {
+		t.Fatalf("children len = %d, want 1", len(resp.Children))
+	}
+	if resp.Children[0].Provisioning == nil {
+		t.Fatal("child provisioning = nil, want non-nil")
+	}
+	if resp.Children[0].Provisioning.Phase != "CloneInProgress" {
+		t.Fatalf("child provisioning phase = %q, want %q", resp.Children[0].Provisioning.Phase, "CloneInProgress")
+	}
 }
 
 func TestBatchHandler_SubmitCreate_ForbiddenWhenNamespaceInvisible(t *testing.T) {
@@ -942,8 +1059,9 @@ func mustCreateBatchCreatePrerequisites(
 	_, err := client.Template.Create().
 		SetID(templateRawID).
 		SetName("tpl-" + templateRawID[len(templateRawID)-4:]).
-		SetSourceType("image").
+		SetSourceType("containerdisk").
 		SetImageURL("quay.io/containerdisks/ubuntu:22.04").
+		SetCatalogScope(enttemplate.CatalogScopeProd).
 		SetCreatedBy(actor).
 		Save(t.Context())
 	if err != nil {
@@ -954,6 +1072,7 @@ func mustCreateBatchCreatePrerequisites(
 		SetName("size-" + sizeRawID[len(sizeRawID)-4:]).
 		SetCPUCores(2).
 		SetMemoryGi(2).
+		SetCatalogScope(instancesize.CatalogScopeProd).
 		SetCreatedBy(actor).
 		Save(t.Context())
 	if err != nil {
@@ -999,6 +1118,7 @@ type fakeDeleteAtomicWriter struct {
 func (f *fakeDeleteAtomicWriter) ApproveCreateAndEnqueue(
 	_ context.Context,
 	_, _, _, _, _, _, _, _ string,
+	_ map[string]interface{},
 	_ map[string]interface{},
 	_ map[string]interface{},
 	_ map[string]interface{},

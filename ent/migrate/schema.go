@@ -51,6 +51,7 @@ var (
 		{Name: "selected_storage_class", Type: field.TypeString, Nullable: true},
 		{Name: "template_snapshot", Type: field.TypeJSON, Nullable: true},
 		{Name: "instance_size_snapshot", Type: field.TypeJSON, Nullable: true},
+		{Name: "placement_evaluation", Type: field.TypeJSON, Nullable: true},
 		{Name: "modified_spec", Type: field.TypeJSON, Nullable: true},
 		{Name: "parent_ticket_id", Type: field.TypeString, Nullable: true},
 	}
@@ -78,7 +79,7 @@ var (
 			{
 				Name:    "approvalticket_parent_ticket_id",
 				Unique:  false,
-				Columns: []*schema.Column{ApprovalTicketsColumns[15]},
+				Columns: []*schema.Column{ApprovalTicketsColumns[16]},
 			},
 		},
 	}
@@ -227,6 +228,46 @@ var (
 			},
 		},
 	}
+	// ClusterPoliciesColumns holds the columns for the "cluster_policies" table.
+	ClusterPoliciesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "allow_cpu_overcommit", Type: field.TypeBool, Default: true},
+		{Name: "allow_memory_overcommit", Type: field.TypeBool, Default: true},
+		{Name: "allow_dedicated_cpu", Type: field.TypeBool, Default: true},
+		{Name: "allow_gpu", Type: field.TypeBool, Default: true},
+		{Name: "allow_sriov", Type: field.TypeBool, Default: true},
+		{Name: "allow_hugepages", Type: field.TypeBool, Default: true},
+		{Name: "allowed_hugepages_sizes", Type: field.TypeJSON, Nullable: true},
+		{Name: "allow_cdi_clone", Type: field.TypeBool, Default: true},
+		{Name: "allowed_clone_source_namespaces", Type: field.TypeJSON, Nullable: true},
+		{Name: "allowed_storage_classes", Type: field.TypeJSON, Nullable: true},
+		{Name: "created_by", Type: field.TypeString},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "cluster_id", Type: field.TypeString, Unique: true},
+	}
+	// ClusterPoliciesTable holds the schema information for the "cluster_policies" table.
+	ClusterPoliciesTable = &schema.Table{
+		Name:       "cluster_policies",
+		Columns:    ClusterPoliciesColumns,
+		PrimaryKey: []*schema.Column{ClusterPoliciesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "cluster_policies_clusters_policy",
+				Columns:    []*schema.Column{ClusterPoliciesColumns[15]},
+				RefColumns: []*schema.Column{ClustersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "clusterpolicy_cluster_id",
+				Unique:  true,
+				Columns: []*schema.Column{ClusterPoliciesColumns[15]},
+			},
+		},
+	}
 	// DomainEventsColumns holds the columns for the "domain_events" table.
 	DomainEventsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
@@ -366,6 +407,7 @@ var (
 		{Name: "requires_hugepages", Type: field.TypeBool, Default: false},
 		{Name: "hugepages_size", Type: field.TypeString, Nullable: true},
 		{Name: "spec_overrides", Type: field.TypeJSON, Nullable: true},
+		{Name: "catalog_scope", Type: field.TypeEnum, Enums: []string{"unclassified", "test", "prod", "all"}, Default: "unclassified"},
 		{Name: "sort_order", Type: field.TypeInt, Default: 0},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "created_by", Type: field.TypeString},
@@ -384,7 +426,7 @@ var (
 			{
 				Name:    "instancesize_enabled_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{InstanceSizesColumns[18], InstanceSizesColumns[17]},
+				Columns: []*schema.Column{InstanceSizesColumns[19], InstanceSizesColumns[18]},
 			},
 			{
 				Name:    "instancesize_requires_gpu",
@@ -405,6 +447,11 @@ var (
 				Name:    "instancesize_dedicated_cpu",
 				Unique:  false,
 				Columns: []*schema.Column{InstanceSizesColumns[11]},
+			},
+			{
+				Name:    "instancesize_catalog_scope",
+				Unique:  false,
+				Columns: []*schema.Column{InstanceSizesColumns[17]},
 			},
 		},
 	}
@@ -752,6 +799,7 @@ var (
 		{Name: "cloud_init", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "os_family", Type: field.TypeString, Nullable: true},
 		{Name: "os_version", Type: field.TypeString, Nullable: true},
+		{Name: "catalog_scope", Type: field.TypeEnum, Enums: []string{"unclassified", "test", "prod", "all"}, Default: "unclassified"},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "created_by", Type: field.TypeString},
 	}
@@ -769,12 +817,17 @@ var (
 			{
 				Name:    "template_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{TemplatesColumns[13]},
+				Columns: []*schema.Column{TemplatesColumns[14]},
 			},
 			{
 				Name:    "template_source_type",
 				Unique:  false,
 				Columns: []*schema.Column{TemplatesColumns[6]},
+			},
+			{
+				Name:    "template_catalog_scope",
+				Unique:  false,
+				Columns: []*schema.Column{TemplatesColumns[13]},
 			},
 		},
 	}
@@ -911,6 +964,7 @@ var (
 		AuthProvidersTable,
 		BatchApprovalTicketsTable,
 		ClustersTable,
+		ClusterPoliciesTable,
 		DomainEventsTable,
 		ExternalApprovalSystemsTable,
 		IDPgroupMappingsTable,
@@ -935,6 +989,7 @@ var (
 )
 
 func init() {
+	ClusterPoliciesTable.ForeignKeys[0].RefTable = ClustersTable
 	NotificationsTable.ForeignKeys[0].RefTable = UsersTable
 	RoleBindingsTable.ForeignKeys[0].RefTable = RolesTable
 	RoleBindingsTable.ForeignKeys[1].RefTable = UsersTable

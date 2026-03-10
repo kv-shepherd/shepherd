@@ -41,6 +41,8 @@ type Template struct {
 	OsFamily string `json:"os_family,omitempty"`
 	// OsVersion holds the value of the "os_version" field.
 	OsVersion string `json:"os_version,omitempty"`
+	// Catalog visibility scope only. Not scheduling environment.
+	CatalogScope template.CatalogScope `json:"catalog_scope,omitempty"`
 	// Enabled holds the value of the "enabled" field.
 	Enabled bool `json:"enabled,omitempty"`
 	// CreatedBy holds the value of the "created_by" field.
@@ -55,7 +57,7 @@ func (*Template) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case template.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case template.FieldID, template.FieldName, template.FieldDisplayName, template.FieldDescription, template.FieldSourceType, template.FieldImageURL, template.FieldPvcName, template.FieldPvcNamespace, template.FieldCloudInit, template.FieldOsFamily, template.FieldOsVersion, template.FieldCreatedBy:
+		case template.FieldID, template.FieldName, template.FieldDisplayName, template.FieldDescription, template.FieldSourceType, template.FieldImageURL, template.FieldPvcName, template.FieldPvcNamespace, template.FieldCloudInit, template.FieldOsFamily, template.FieldOsVersion, template.FieldCatalogScope, template.FieldCreatedBy:
 			values[i] = new(sql.NullString)
 		case template.FieldCreatedAt, template.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -152,6 +154,12 @@ func (_m *Template) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.OsVersion = value.String
 			}
+		case template.FieldCatalogScope:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field catalog_scope", values[i])
+			} else if value.Valid {
+				_m.CatalogScope = template.CatalogScope(value.String)
+			}
 		case template.FieldEnabled:
 			if value, ok := values[i].(*sql.NullBool); !ok {
 				return fmt.Errorf("unexpected type %T for field enabled", values[i])
@@ -235,6 +243,9 @@ func (_m *Template) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("os_version=")
 	builder.WriteString(_m.OsVersion)
+	builder.WriteString(", ")
+	builder.WriteString("catalog_scope=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CatalogScope))
 	builder.WriteString(", ")
 	builder.WriteString("enabled=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Enabled))

@@ -9,6 +9,7 @@ import {
     Modal,
     Select,
     Space,
+    Switch,
     Table,
     Tag,
     Typography,
@@ -16,6 +17,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { ClusterOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 
 import { useAdminClustersController } from '../hooks/useAdminClustersController';
@@ -121,12 +123,61 @@ export function AdminClustersContent() {
             },
         },
         {
+            title: t('clusters.policy_summary', 'Policy Summary'),
+            key: 'policy_summary',
+            width: 260,
+            render: (_, record: Cluster) => {
+                const summary = record.policy_summary;
+                if (!summary) {
+                    return <Text type="secondary">—</Text>;
+                }
+                const mode = summary.mode ?? 'MISSING';
+                const detailTags = summarizePolicyDetails(summary, t);
+                return (
+                    <Space direction="vertical" size={4}>
+                        <Tag color={policyModeColor(mode)}>
+                            {t(`clusters.policy_mode.${mode.toLowerCase()}`, mode)}
+                        </Tag>
+                        {detailTags.length > 0 ? (
+                            <Space size={[0, 4]} wrap>
+                                {detailTags.map((tag) => (
+                                    <Tag key={tag.key} color={tag.color} style={{ marginBottom: 2 }}>
+                                        {tag.label}
+                                    </Tag>
+                                ))}
+                            </Space>
+                        ) : (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                {mode === 'OPEN'
+                                    ? t('clusters.policy_mode.open_hint', 'No explicit deny or allowlist guardrails')
+                                    : t('clusters.policy_mode.missing_hint', 'No ClusterPolicy configured')}
+                            </Text>
+                        )}
+                    </Space>
+                );
+            },
+        },
+        {
             title: t('common:table.created_at'),
             dataIndex: 'created_at',
             key: 'created_at',
             width: 160,
             render: (date: string) => (
                 <Text type="secondary">{date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '—'}</Text>
+            ),
+        },
+        {
+            title: t('common:table.actions', 'Actions'),
+            key: 'actions',
+            width: 160,
+            render: (_, record: Cluster) => (
+                <Button
+                    size="small"
+                    data-testid={`cluster-action-edit-policy-${record.id}`}
+                    onClick={() => { void clusters.openPolicyModal(record); }}
+                >
+                    {t('clusters.edit_policy', 'Edit Policy')}
+                </Button>
             ),
         },
 
@@ -242,6 +293,169 @@ export function AdminClustersContent() {
                     </Form.Item>
                 </Form>
             </Modal>
+            <Modal
+                title={t('clusters.edit_policy_title', { cluster: clusters.selectedClusterName || clusters.selectedClusterId, defaultValue: 'Edit Policy: {{cluster}}' })}
+                open={clusters.policyModalOpen}
+                onOk={() => { void clusters.submitPolicyUpdate(); }}
+                onCancel={clusters.closePolicyModal}
+                confirmLoading={clusters.upsertPolicyPending}
+                okButtonProps={{ disabled: clusters.policyLoading }}
+                destroyOnHidden={true}
+                data-testid="cluster-policy-modal"
+            >
+                <Form form={clusters.policyForm} layout="vertical" preserve={false}>
+                    <Form.Item
+                        name="allow_cpu_overcommit"
+                        label={t('clusters.policy.allow_cpu_overcommit', 'Allow CPU overcommit')}
+                        valuePropName="checked"
+                    >
+                        <Switch disabled={clusters.policyLoading} />
+                    </Form.Item>
+                    <Form.Item
+                        name="allow_memory_overcommit"
+                        label={t('clusters.policy.allow_memory_overcommit', 'Allow memory overcommit')}
+                        valuePropName="checked"
+                    >
+                        <Switch disabled={clusters.policyLoading} />
+                    </Form.Item>
+                    <Form.Item
+                        name="allow_dedicated_cpu"
+                        label={t('clusters.policy.allow_dedicated_cpu', 'Allow dedicated CPU')}
+                        valuePropName="checked"
+                    >
+                        <Switch disabled={clusters.policyLoading} />
+                    </Form.Item>
+                    <Form.Item
+                        name="allow_gpu"
+                        label={t('clusters.policy.allow_gpu', 'Allow GPU')}
+                        valuePropName="checked"
+                    >
+                        <Switch disabled={clusters.policyLoading} />
+                    </Form.Item>
+                    <Form.Item
+                        name="allow_sriov"
+                        label={t('clusters.policy.allow_sriov', 'Allow SR-IOV')}
+                        valuePropName="checked"
+                    >
+                        <Switch disabled={clusters.policyLoading} />
+                    </Form.Item>
+                    <Form.Item
+                        name="allow_hugepages"
+                        label={t('clusters.policy.allow_hugepages', 'Allow hugepages')}
+                        valuePropName="checked"
+                    >
+                        <Switch disabled={clusters.policyLoading} />
+                    </Form.Item>
+                    <Form.Item
+                        name="allow_cdi_clone"
+                        label={t('clusters.policy.allow_cdi_clone', 'Allow CDI clone')}
+                        valuePropName="checked"
+                    >
+                        <Switch disabled={clusters.policyLoading} />
+                    </Form.Item>
+                    <Form.Item
+                        name="allowed_hugepages_sizes"
+                        label={t('clusters.policy.allowed_hugepages_sizes', 'Allowed hugepages sizes')}
+                        extra={t('clusters.policy.tags_help', 'Leave empty to allow all. Press Enter after each value.')}
+                    >
+                        <Select
+                            mode="tags"
+                            tokenSeparators={[',']}
+                            disabled={clusters.policyLoading}
+                            placeholder={t('clusters.policy.allowed_hugepages_sizes_placeholder', 'e.g. 2Mi, 1Gi')}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="allowed_clone_source_namespaces"
+                        label={t('clusters.policy.allowed_clone_source_namespaces', 'Allowed clone source namespaces')}
+                        extra={t('clusters.policy.tags_help', 'Leave empty to allow all. Press Enter after each value.')}
+                    >
+                        <Select
+                            mode="tags"
+                            tokenSeparators={[',']}
+                            disabled={clusters.policyLoading}
+                            placeholder={t('clusters.policy.allowed_clone_source_namespaces_placeholder', 'e.g. golden-images')}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="allowed_storage_classes"
+                        label={t('clusters.policy.allowed_storage_classes', 'Allowed storage classes')}
+                        extra={t('clusters.policy.tags_help', 'Leave empty to allow all. Press Enter after each value.')}
+                    >
+                        <Select
+                            mode="tags"
+                            tokenSeparators={[',']}
+                            disabled={clusters.policyLoading}
+                            placeholder={t('clusters.policy.allowed_storage_classes_placeholder', 'e.g. rook-ceph-block')}
+                        />
+                    </Form.Item>
+                </Form>
+            </Modal>
         </div>
     );
+}
+
+function policyModeColor(mode: string): string {
+    switch (mode) {
+        case 'OPEN':
+            return 'green';
+        case 'GUARDED':
+            return 'orange';
+        default:
+            return 'red';
+    }
+}
+
+function summarizePolicyDetails(
+    summary: Cluster['policy_summary'],
+    t: TFunction
+): Array<{ key: string; label: string; color: string }> {
+    if (!summary) {
+        return [];
+    }
+    const items: Array<{ key: string; label: string; color: string }> = [];
+    const deniedControls = summary.denied_controls ?? [];
+    const scopedControls = summary.scoped_controls ?? [];
+
+    for (const control of deniedControls.slice(0, 2)) {
+        items.push({
+            key: `deny-${control}`,
+            label: t(`clusters.policy_control.${control}`, control),
+            color: 'red',
+        });
+    }
+    for (const control of scopedControls.slice(0, 2)) {
+        items.push({
+            key: `scope-${control}`,
+            label: scopedControlLabel(summary, control, t),
+            color: 'gold',
+        });
+    }
+    return items;
+}
+
+function scopedControlLabel(
+    summary: Cluster['policy_summary'],
+    control: string,
+    t: TFunction
+): string {
+    switch (control) {
+        case 'storage_classes':
+            return t('clusters.policy_scope.storage_classes', {
+                count: summary?.allowed_storage_class_count ?? 0,
+                defaultValue: 'Storage classes ({{count}})',
+            });
+        case 'clone_source_namespaces':
+            return t('clusters.policy_scope.clone_source_namespaces', {
+                count: summary?.allowed_clone_source_namespace_count ?? 0,
+                defaultValue: 'Clone namespaces ({{count}})',
+            });
+        case 'hugepages_sizes':
+            return t('clusters.policy_scope.hugepages_sizes', {
+                count: summary?.allowed_hugepages_size_count ?? 0,
+                defaultValue: 'Hugepages sizes ({{count}})',
+            });
+        default:
+            return t(`clusters.policy_control.${control}`, control);
+    }
 }

@@ -50,9 +50,22 @@ func (l *Logger) LogAction(ctx context.Context, action, resourceType, resourceID
 
 // LogApproval records an approval decision.
 func (l *Logger) LogApproval(ctx context.Context, ticketID, decision, actor string) error {
-	return l.LogAction(ctx, "approval."+decision, "approval_ticket", ticketID, actor, map[string]interface{}{
+	return l.LogApprovalWithDetails(ctx, ticketID, decision, actor, nil)
+}
+
+// LogApprovalWithDetails records an approval decision with additional details.
+func (l *Logger) LogApprovalWithDetails(
+	ctx context.Context,
+	ticketID, decision, actor string,
+	details map[string]interface{},
+) error {
+	payload := map[string]interface{}{
 		"decision": decision,
-	})
+	}
+	for key, value := range details {
+		payload[key] = value
+	}
+	return l.LogAction(ctx, "approval."+decision, "approval_ticket", ticketID, actor, payload)
 }
 
 // LogVMOperation records a VM operation.

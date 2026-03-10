@@ -93,6 +93,31 @@ const (
 	ClusterEnvironmentUpdateEnvironmentTest ClusterEnvironmentUpdateEnvironment = "test"
 )
 
+// Defines values for ClusterPolicySummaryDeniedControls.
+const (
+	CdiClone         ClusterPolicySummaryDeniedControls = "cdi_clone"
+	CpuOvercommit    ClusterPolicySummaryDeniedControls = "cpu_overcommit"
+	DedicatedCpu     ClusterPolicySummaryDeniedControls = "dedicated_cpu"
+	Gpu              ClusterPolicySummaryDeniedControls = "gpu"
+	Hugepages        ClusterPolicySummaryDeniedControls = "hugepages"
+	MemoryOvercommit ClusterPolicySummaryDeniedControls = "memory_overcommit"
+	Sriov            ClusterPolicySummaryDeniedControls = "sriov"
+)
+
+// Defines values for ClusterPolicySummaryMode.
+const (
+	GUARDED ClusterPolicySummaryMode = "GUARDED"
+	MISSING ClusterPolicySummaryMode = "MISSING"
+	OPEN    ClusterPolicySummaryMode = "OPEN"
+)
+
+// Defines values for ClusterPolicySummaryScopedControls.
+const (
+	CloneSourceNamespaces ClusterPolicySummaryScopedControls = "clone_source_namespaces"
+	HugepagesSizes        ClusterPolicySummaryScopedControls = "hugepages_sizes"
+	StorageClasses        ClusterPolicySummaryScopedControls = "storage_classes"
+)
+
 // Defines values for DeleteVMResponseStatus.
 const (
 	DeleteVMResponseStatusPENDING DeleteVMResponseStatus = "PENDING"
@@ -142,6 +167,30 @@ const (
 	IdPGroupMappingUpdateRequestAllowedEnvironmentsTest IdPGroupMappingUpdateRequestAllowedEnvironments = "test"
 )
 
+// Defines values for InstanceSizeCatalogScope.
+const (
+	InstanceSizeCatalogScopeAll          InstanceSizeCatalogScope = "all"
+	InstanceSizeCatalogScopeProd         InstanceSizeCatalogScope = "prod"
+	InstanceSizeCatalogScopeTest         InstanceSizeCatalogScope = "test"
+	InstanceSizeCatalogScopeUnclassified InstanceSizeCatalogScope = "unclassified"
+)
+
+// Defines values for InstanceSizeCreateRequestCatalogScope.
+const (
+	InstanceSizeCreateRequestCatalogScopeAll          InstanceSizeCreateRequestCatalogScope = "all"
+	InstanceSizeCreateRequestCatalogScopeProd         InstanceSizeCreateRequestCatalogScope = "prod"
+	InstanceSizeCreateRequestCatalogScopeTest         InstanceSizeCreateRequestCatalogScope = "test"
+	InstanceSizeCreateRequestCatalogScopeUnclassified InstanceSizeCreateRequestCatalogScope = "unclassified"
+)
+
+// Defines values for InstanceSizeUpdateRequestCatalogScope.
+const (
+	InstanceSizeUpdateRequestCatalogScopeAll          InstanceSizeUpdateRequestCatalogScope = "all"
+	InstanceSizeUpdateRequestCatalogScopeProd         InstanceSizeUpdateRequestCatalogScope = "prod"
+	InstanceSizeUpdateRequestCatalogScopeTest         InstanceSizeUpdateRequestCatalogScope = "test"
+	InstanceSizeUpdateRequestCatalogScopeUnclassified InstanceSizeUpdateRequestCatalogScope = "unclassified"
+)
+
 // Defines values for NamespaceCreateRequestEnvironment.
 const (
 	NamespaceCreateRequestEnvironmentProd NamespaceCreateRequestEnvironment = "prod"
@@ -160,6 +209,12 @@ const (
 	APPROVALPENDING   NotificationType = "APPROVAL_PENDING"
 	APPROVALREJECTED  NotificationType = "APPROVAL_REJECTED"
 	VMSTATUSCHANGE    NotificationType = "VM_STATUS_CHANGE"
+)
+
+// Defines values for PlacementEvaluationSelectedClusterEnvironment.
+const (
+	PlacementEvaluationSelectedClusterEnvironmentProd PlacementEvaluationSelectedClusterEnvironment = "prod"
+	PlacementEvaluationSelectedClusterEnvironmentTest PlacementEvaluationSelectedClusterEnvironment = "test"
 )
 
 // Defines values for SystemMemberRole.
@@ -186,22 +241,49 @@ const (
 	Viewer SystemMemberRoleUpdateRequestRole = "viewer"
 )
 
+// Defines values for TemplateCatalogScope.
+const (
+	TemplateCatalogScopeAll          TemplateCatalogScope = "all"
+	TemplateCatalogScopeProd         TemplateCatalogScope = "prod"
+	TemplateCatalogScopeTest         TemplateCatalogScope = "test"
+	TemplateCatalogScopeUnclassified TemplateCatalogScope = "unclassified"
+)
+
 // Defines values for TemplateSourceType.
 const (
-	TemplateSourceTypeImage TemplateSourceType = "image"
-	TemplateSourceTypePvc   TemplateSourceType = "pvc"
+	TemplateSourceTypeCdiImageImport TemplateSourceType = "cdi_image_import"
+	TemplateSourceTypeCdiPvcClone    TemplateSourceType = "cdi_pvc_clone"
+	TemplateSourceTypeContainerdisk  TemplateSourceType = "containerdisk"
+)
+
+// Defines values for TemplateCreateRequestCatalogScope.
+const (
+	TemplateCreateRequestCatalogScopeAll          TemplateCreateRequestCatalogScope = "all"
+	TemplateCreateRequestCatalogScopeProd         TemplateCreateRequestCatalogScope = "prod"
+	TemplateCreateRequestCatalogScopeTest         TemplateCreateRequestCatalogScope = "test"
+	TemplateCreateRequestCatalogScopeUnclassified TemplateCreateRequestCatalogScope = "unclassified"
 )
 
 // Defines values for TemplateCreateRequestSourceType.
 const (
-	TemplateCreateRequestSourceTypeImage TemplateCreateRequestSourceType = "image"
-	TemplateCreateRequestSourceTypePvc   TemplateCreateRequestSourceType = "pvc"
+	TemplateCreateRequestSourceTypeCdiImageImport TemplateCreateRequestSourceType = "cdi_image_import"
+	TemplateCreateRequestSourceTypeCdiPvcClone    TemplateCreateRequestSourceType = "cdi_pvc_clone"
+	TemplateCreateRequestSourceTypeContainerdisk  TemplateCreateRequestSourceType = "containerdisk"
+)
+
+// Defines values for TemplateUpdateRequestCatalogScope.
+const (
+	TemplateUpdateRequestCatalogScopeAll          TemplateUpdateRequestCatalogScope = "all"
+	TemplateUpdateRequestCatalogScopeProd         TemplateUpdateRequestCatalogScope = "prod"
+	TemplateUpdateRequestCatalogScopeTest         TemplateUpdateRequestCatalogScope = "test"
+	TemplateUpdateRequestCatalogScopeUnclassified TemplateUpdateRequestCatalogScope = "unclassified"
 )
 
 // Defines values for TemplateUpdateRequestSourceType.
 const (
-	Image TemplateUpdateRequestSourceType = "image"
-	Pvc   TemplateUpdateRequestSourceType = "pvc"
+	CdiImageImport TemplateUpdateRequestSourceType = "cdi_image_import"
+	CdiPvcClone    TemplateUpdateRequestSourceType = "cdi_pvc_clone"
+	Containerdisk  TemplateUpdateRequestSourceType = "containerdisk"
 )
 
 // Defines values for VMEnvironment.
@@ -247,9 +329,9 @@ const (
 
 // Defines values for VMBatchOperation.
 const (
-	CREATE VMBatchOperation = "CREATE"
-	DELETE VMBatchOperation = "DELETE"
-	POWER  VMBatchOperation = "POWER"
+	VMBatchOperationCREATE VMBatchOperation = "CREATE"
+	VMBatchOperationDELETE VMBatchOperation = "DELETE"
+	VMBatchOperationPOWER  VMBatchOperation = "POWER"
 )
 
 // Defines values for VMBatchParentStatus.
@@ -284,6 +366,46 @@ const (
 	VMConsoleStatusREJECTED        VMConsoleStatus = "REJECTED"
 )
 
+// Defines values for VMPlacementHintPrimaryAdvisoryCode.
+const (
+	VMPlacementHintPrimaryAdvisoryCodeHostAssistedCloneLikely VMPlacementHintPrimaryAdvisoryCode = "HostAssistedCloneLikely"
+	VMPlacementHintPrimaryAdvisoryCodeOther                   VMPlacementHintPrimaryAdvisoryCode = "Other"
+)
+
+// Defines values for VMPlacementHintPrimaryReasonCode.
+const (
+	VMPlacementHintPrimaryReasonCodeCapabilityMismatch  VMPlacementHintPrimaryReasonCode = "CapabilityMismatch"
+	VMPlacementHintPrimaryReasonCodeClusterUnavailable  VMPlacementHintPrimaryReasonCode = "ClusterUnavailable"
+	VMPlacementHintPrimaryReasonCodeNoCandidateClusters VMPlacementHintPrimaryReasonCode = "NoCandidateClusters"
+	VMPlacementHintPrimaryReasonCodeOther               VMPlacementHintPrimaryReasonCode = "Other"
+	VMPlacementHintPrimaryReasonCodePolicyDenied        VMPlacementHintPrimaryReasonCode = "PolicyDenied"
+	VMPlacementHintPrimaryReasonCodePolicyNotConfigured VMPlacementHintPrimaryReasonCode = "PolicyNotConfigured"
+	VMPlacementHintPrimaryReasonCodeRequestInvalid      VMPlacementHintPrimaryReasonCode = "RequestInvalid"
+)
+
+// Defines values for VMPlacementHintStatus.
+const (
+	AVAILABLE   VMPlacementHintStatus = "AVAILABLE"
+	UNAVAILABLE VMPlacementHintStatus = "UNAVAILABLE"
+)
+
+// Defines values for VMPlacementHintAdvisoryCountCode.
+const (
+	VMPlacementHintAdvisoryCountCodeHostAssistedCloneLikely VMPlacementHintAdvisoryCountCode = "HostAssistedCloneLikely"
+	VMPlacementHintAdvisoryCountCodeOther                   VMPlacementHintAdvisoryCountCode = "Other"
+)
+
+// Defines values for VMPlacementHintReasonCountCode.
+const (
+	VMPlacementHintReasonCountCodeCapabilityMismatch  VMPlacementHintReasonCountCode = "CapabilityMismatch"
+	VMPlacementHintReasonCountCodeClusterUnavailable  VMPlacementHintReasonCountCode = "ClusterUnavailable"
+	VMPlacementHintReasonCountCodeNoCandidateClusters VMPlacementHintReasonCountCode = "NoCandidateClusters"
+	VMPlacementHintReasonCountCodeOther               VMPlacementHintReasonCountCode = "Other"
+	VMPlacementHintReasonCountCodePolicyDenied        VMPlacementHintReasonCountCode = "PolicyDenied"
+	VMPlacementHintReasonCountCodePolicyNotConfigured VMPlacementHintReasonCountCode = "PolicyNotConfigured"
+	VMPlacementHintReasonCountCodeRequestInvalid      VMPlacementHintReasonCountCode = "RequestInvalid"
+)
+
 // Defines values for VMPowerAcceptedResponseStatus.
 const (
 	ACCEPTED        VMPowerAcceptedResponseStatus = "ACCEPTED"
@@ -310,8 +432,8 @@ const (
 
 // Defines values for ListNamespacesParamsEnvironment.
 const (
-	ListNamespacesParamsEnvironmentProd ListNamespacesParamsEnvironment = "prod"
-	ListNamespacesParamsEnvironmentTest ListNamespacesParamsEnvironment = "test"
+	Prod ListNamespacesParamsEnvironment = "prod"
+	Test ListNamespacesParamsEnvironment = "test"
 )
 
 // Defines values for ListApprovalsParamsStatus.
@@ -323,6 +445,20 @@ const (
 	PENDING   ListApprovalsParamsStatus = "PENDING"
 	REJECTED  ListApprovalsParamsStatus = "REJECTED"
 	SUCCESS   ListApprovalsParamsStatus = "SUCCESS"
+)
+
+// Defines values for ListApprovalsParamsOperationType.
+const (
+	ListApprovalsParamsOperationTypeCREATE    ListApprovalsParamsOperationType = "CREATE"
+	ListApprovalsParamsOperationTypeDELETE    ListApprovalsParamsOperationType = "DELETE"
+	ListApprovalsParamsOperationTypePOWER     ListApprovalsParamsOperationType = "POWER"
+	ListApprovalsParamsOperationTypeVNCACCESS ListApprovalsParamsOperationType = "VNC_ACCESS"
+)
+
+// Defines values for ListApprovalsParamsPlacementSnapshot.
+const (
+	Missing ListApprovalsParamsPlacementSnapshot = "missing"
+	Present ListApprovalsParamsPlacementSnapshot = "present"
 )
 
 // Defines values for GetDynamicSchemaParamsEntityType.
@@ -383,11 +519,13 @@ type ApprovalTicket struct {
 	Id        string    `json:"id"`
 
 	// OperationType Type of operation this ticket represents (ADR-0015)
-	OperationType ApprovalTicketOperationType `json:"operation_type,omitempty,omitzero"`
-	Reason        string                      `json:"reason,omitempty,omitzero"`
-	RejectReason  string                      `json:"reject_reason,omitempty,omitzero"`
-	Requester     string                      `json:"requester"`
-	Status        ApprovalTicketStatus        `json:"status"`
+	OperationType       ApprovalTicketOperationType `json:"operation_type,omitempty,omitzero"`
+	PlacementEvaluation *PlacementEvaluation        `json:"placement_evaluation,omitempty"`
+	Provisioning        *ProvisioningStatus         `json:"provisioning,omitempty"`
+	Reason              string                      `json:"reason,omitempty,omitzero"`
+	RejectReason        string                      `json:"reject_reason,omitempty,omitzero"`
+	Requester           string                      `json:"requester"`
+	Status              ApprovalTicketStatus        `json:"status"`
 
 	// TargetVmId For DELETE tickets, the VM being deleted
 	TargetVmId string `json:"target_vm_id,omitempty,omitzero"`
@@ -537,11 +675,12 @@ type ChangePasswordRequest struct {
 
 // Cluster defines model for Cluster.
 type Cluster struct {
-	ApiServerUrl        string    `json:"api_server_url"`
-	CreatedAt           time.Time `json:"created_at,omitempty,omitzero"`
-	DefaultStorageClass string    `json:"default_storage_class,omitempty,omitzero"`
-	DisplayName         string    `json:"display_name,omitempty,omitzero"`
-	Enabled             bool      `json:"enabled,omitempty,omitzero"`
+	ApiServerUrl        string               `json:"api_server_url"`
+	Compatibility       ClusterCompatibility `json:"compatibility,omitempty,omitzero"`
+	CreatedAt           time.Time            `json:"created_at,omitempty,omitzero"`
+	DefaultStorageClass string               `json:"default_storage_class,omitempty,omitzero"`
+	DisplayName         string               `json:"display_name,omitempty,omitzero"`
+	Enabled             bool                 `json:"enabled,omitempty,omitzero"`
 
 	// EnabledFeatures Auto-detected enabled KubeVirt feature gates (ADR-0014).
 	// Merged from GA static table + explicit CR featureGates.
@@ -553,7 +692,11 @@ type Cluster struct {
 	Id              string             `json:"id"`
 	KubevirtVersion string             `json:"kubevirt_version,omitempty,omitzero"`
 	Name            string             `json:"name"`
-	Status          ClusterStatus      `json:"status"`
+
+	// PolicyConfigured Whether an explicit ClusterPolicy row exists for this cluster
+	PolicyConfigured bool                 `json:"policy_configured,omitempty,omitzero"`
+	PolicySummary    ClusterPolicySummary `json:"policy_summary,omitempty,omitzero"`
+	Status           ClusterStatus        `json:"status"`
 
 	// StorageClasses Auto-detected StorageClass list (ADR-0015 §8)
 	StorageClasses []string `json:"storage_classes,omitempty,omitzero"`
@@ -564,6 +707,24 @@ type ClusterEnvironment string
 
 // ClusterStatus defines model for Cluster.Status.
 type ClusterStatus string
+
+// ClusterCompatibility defines model for ClusterCompatibility.
+type ClusterCompatibility struct {
+	// AdvisoryCode Machine-readable advisory code for compatible placements that may use a slower fallback path.
+	AdvisoryCode string `json:"advisory_code,omitempty,omitzero"`
+
+	// AdvisoryMessage Human-readable advisory message for compatible placements that may use a slower fallback path.
+	AdvisoryMessage string `json:"advisory_message,omitempty,omitzero"`
+
+	// Eligible Whether the cluster is compatible with the supplied CREATE placement context.
+	Eligible bool `json:"eligible"`
+
+	// ReasonCode Machine-readable incompatibility code. Omitted when the cluster is eligible.
+	ReasonCode string `json:"reason_code,omitempty,omitzero"`
+
+	// ReasonMessage Human-readable incompatibility reason. Omitted when the cluster is eligible.
+	ReasonMessage string `json:"reason_message,omitempty,omitzero"`
+}
 
 // ClusterCreateRequest defines model for ClusterCreateRequest.
 type ClusterCreateRequest struct {
@@ -590,6 +751,71 @@ type ClusterEnvironmentUpdateEnvironment string
 type ClusterList struct {
 	Items      []Cluster  `json:"items,omitempty,omitzero"`
 	Pagination Pagination `json:"pagination,omitempty,omitzero"`
+}
+
+// ClusterPolicy defines model for ClusterPolicy.
+type ClusterPolicy struct {
+	AllowCdiClone                bool      `json:"allow_cdi_clone"`
+	AllowCpuOvercommit           bool      `json:"allow_cpu_overcommit"`
+	AllowDedicatedCpu            bool      `json:"allow_dedicated_cpu"`
+	AllowGpu                     bool      `json:"allow_gpu"`
+	AllowHugepages               bool      `json:"allow_hugepages"`
+	AllowMemoryOvercommit        bool      `json:"allow_memory_overcommit"`
+	AllowSriov                   bool      `json:"allow_sriov"`
+	AllowedCloneSourceNamespaces []string  `json:"allowed_clone_source_namespaces,omitempty,omitzero"`
+	AllowedHugepagesSizes        []string  `json:"allowed_hugepages_sizes,omitempty,omitzero"`
+	AllowedStorageClasses        []string  `json:"allowed_storage_classes,omitempty,omitzero"`
+	ClusterId                    string    `json:"cluster_id"`
+	CreatedAt                    time.Time `json:"created_at"`
+	CreatedBy                    string    `json:"created_by"`
+	Id                           string    `json:"id"`
+	UpdatedAt                    time.Time `json:"updated_at"`
+	UpdatedBy                    string    `json:"updated_by,omitempty,omitzero"`
+}
+
+// ClusterPolicySummary defines model for ClusterPolicySummary.
+type ClusterPolicySummary struct {
+	AllowedCloneSourceNamespaceCount int `json:"allowed_clone_source_namespace_count,omitempty,omitzero"`
+	AllowedHugepagesSizeCount        int `json:"allowed_hugepages_size_count,omitempty,omitzero"`
+	AllowedStorageClassCount         int `json:"allowed_storage_class_count,omitempty,omitzero"`
+
+	// DeniedControls Machine-readable controls that are explicitly denied by policy.
+	DeniedControls []ClusterPolicySummaryDeniedControls `json:"denied_controls,omitempty,omitzero"`
+
+	// Mode Operator-facing summary of cluster governance posture.
+	// `MISSING` means no explicit ClusterPolicy exists.
+	// `OPEN` means a policy exists but adds no deny/scope guardrails.
+	// `GUARDED` means one or more deny/scope guardrails are configured.
+	Mode ClusterPolicySummaryMode `json:"mode"`
+
+	// ScopedControls Machine-readable controls that are constrained by allowlists.
+	ScopedControls []ClusterPolicySummaryScopedControls `json:"scoped_controls,omitempty,omitzero"`
+}
+
+// ClusterPolicySummaryDeniedControls defines model for ClusterPolicySummary.DeniedControls.
+type ClusterPolicySummaryDeniedControls string
+
+// ClusterPolicySummaryMode Operator-facing summary of cluster governance posture.
+// `MISSING` means no explicit ClusterPolicy exists.
+// `OPEN` means a policy exists but adds no deny/scope guardrails.
+// `GUARDED` means one or more deny/scope guardrails are configured.
+type ClusterPolicySummaryMode string
+
+// ClusterPolicySummaryScopedControls defines model for ClusterPolicySummary.ScopedControls.
+type ClusterPolicySummaryScopedControls string
+
+// ClusterPolicyUpsertRequest defines model for ClusterPolicyUpsertRequest.
+type ClusterPolicyUpsertRequest struct {
+	AllowCdiClone                bool     `json:"allow_cdi_clone"`
+	AllowCpuOvercommit           bool     `json:"allow_cpu_overcommit"`
+	AllowDedicatedCpu            bool     `json:"allow_dedicated_cpu"`
+	AllowGpu                     bool     `json:"allow_gpu"`
+	AllowHugepages               bool     `json:"allow_hugepages"`
+	AllowMemoryOvercommit        bool     `json:"allow_memory_overcommit"`
+	AllowSriov                   bool     `json:"allow_sriov"`
+	AllowedCloneSourceNamespaces []string `json:"allowed_clone_source_namespaces,omitempty,omitzero"`
+	AllowedHugepagesSizes        []string `json:"allowed_hugepages_sizes,omitempty,omitzero"`
+	AllowedStorageClasses        []string `json:"allowed_storage_classes,omitempty,omitzero"`
 }
 
 // DeleteVMResponse defines model for DeleteVMResponse.
@@ -760,42 +986,54 @@ type IdPSyncedGroup struct {
 
 // InstanceSize defines model for InstanceSize.
 type InstanceSize struct {
-	CpuCores          float32                `json:"cpu_cores"`
-	CreatedAt         time.Time              `json:"created_at,omitempty,omitzero"`
-	DedicatedCpu      bool                   `json:"dedicated_cpu,omitempty,omitzero"`
-	Description       string                 `json:"description,omitempty,omitzero"`
-	DiskGb            int                    `json:"disk_gb,omitempty,omitzero"`
-	DisplayName       string                 `json:"display_name,omitempty,omitzero"`
-	Enabled           bool                   `json:"enabled,omitempty,omitzero"`
-	HugepagesSize     string                 `json:"hugepages_size,omitempty,omitzero"`
-	Id                string                 `json:"id"`
-	MemoryGi          float32                `json:"memory_gi"`
-	Name              string                 `json:"name"`
-	RequiresGpu       bool                   `json:"requires_gpu,omitempty,omitzero"`
-	RequiresHugepages bool                   `json:"requires_hugepages,omitempty,omitzero"`
-	RequiresSriov     bool                   `json:"requires_sriov,omitempty,omitzero"`
-	SpecOverrides     map[string]interface{} `json:"spec_overrides,omitempty,omitzero"`
+	// CatalogScope Catalog visibility scope only. Not scheduling environment.
+	CatalogScope      InstanceSizeCatalogScope `json:"catalog_scope,omitempty,omitzero"`
+	CpuCores          float32                  `json:"cpu_cores"`
+	CreatedAt         time.Time                `json:"created_at,omitempty,omitzero"`
+	DedicatedCpu      bool                     `json:"dedicated_cpu,omitempty,omitzero"`
+	Description       string                   `json:"description,omitempty,omitzero"`
+	DiskGb            int                      `json:"disk_gb,omitempty,omitzero"`
+	DisplayName       string                   `json:"display_name,omitempty,omitzero"`
+	Enabled           bool                     `json:"enabled,omitempty,omitzero"`
+	HugepagesSize     string                   `json:"hugepages_size,omitempty,omitzero"`
+	Id                string                   `json:"id"`
+	MemoryGi          float32                  `json:"memory_gi"`
+	Name              string                   `json:"name"`
+	RequiresGpu       bool                     `json:"requires_gpu,omitempty,omitzero"`
+	RequiresHugepages bool                     `json:"requires_hugepages,omitempty,omitzero"`
+	RequiresSriov     bool                     `json:"requires_sriov,omitempty,omitzero"`
+
+	// SpecOverrides KubeVirt spec path overrides (admin-only). Only populated in admin catalog endpoints; omitted from user-facing responses.
+	SpecOverrides map[string]interface{} `json:"spec_overrides,omitempty,omitzero"`
 }
+
+// InstanceSizeCatalogScope Catalog visibility scope only. Not scheduling environment.
+type InstanceSizeCatalogScope string
 
 // InstanceSizeCreateRequest defines model for InstanceSizeCreateRequest.
 type InstanceSizeCreateRequest struct {
-	CpuCores          float32                `json:"cpu_cores" validate:"required,gte=0.5"`
-	CpuRequest        float32                `json:"cpu_request,omitempty,omitzero" validate:"gte=0.5"`
-	DedicatedCpu      bool                   `json:"dedicated_cpu,omitempty,omitzero"`
-	Description       string                 `json:"description,omitempty,omitzero"`
-	DiskGb            int                    `json:"disk_gb,omitempty,omitzero" validate:"gte=1"`
-	DisplayName       string                 `json:"display_name,omitempty,omitzero"`
-	Enabled           bool                   `json:"enabled,omitempty,omitzero"`
-	HugepagesSize     string                 `json:"hugepages_size,omitempty,omitzero"`
-	MemoryGi          float32                `json:"memory_gi" validate:"required,gte=0.5"`
-	MemoryRequestGi   float32                `json:"memory_request_gi,omitempty,omitzero" validate:"gte=0.5"`
-	Name              string                 `json:"name" validate:"required"`
-	RequiresGpu       bool                   `json:"requires_gpu,omitempty,omitzero"`
-	RequiresHugepages bool                   `json:"requires_hugepages,omitempty,omitzero"`
-	RequiresSriov     bool                   `json:"requires_sriov,omitempty,omitzero"`
-	SortOrder         int                    `json:"sort_order,omitempty,omitzero"`
-	SpecOverrides     map[string]interface{} `json:"spec_overrides,omitempty,omitzero"`
+	// CatalogScope Catalog visibility scope only. Not scheduling environment.
+	CatalogScope      InstanceSizeCreateRequestCatalogScope `json:"catalog_scope,omitempty,omitzero"`
+	CpuCores          float32                               `json:"cpu_cores" validate:"required,gte=0.5"`
+	CpuRequest        float32                               `json:"cpu_request,omitempty,omitzero" validate:"gte=0.5"`
+	DedicatedCpu      bool                                  `json:"dedicated_cpu,omitempty,omitzero"`
+	Description       string                                `json:"description,omitempty,omitzero"`
+	DiskGb            int                                   `json:"disk_gb,omitempty,omitzero" validate:"gte=1"`
+	DisplayName       string                                `json:"display_name,omitempty,omitzero"`
+	Enabled           bool                                  `json:"enabled,omitempty,omitzero"`
+	HugepagesSize     string                                `json:"hugepages_size,omitempty,omitzero"`
+	MemoryGi          float32                               `json:"memory_gi" validate:"required,gte=0.5"`
+	MemoryRequestGi   float32                               `json:"memory_request_gi,omitempty,omitzero" validate:"gte=0.5"`
+	Name              string                                `json:"name" validate:"required"`
+	RequiresGpu       bool                                  `json:"requires_gpu,omitempty,omitzero"`
+	RequiresHugepages bool                                  `json:"requires_hugepages,omitempty,omitzero"`
+	RequiresSriov     bool                                  `json:"requires_sriov,omitempty,omitzero"`
+	SortOrder         int                                   `json:"sort_order,omitempty,omitzero"`
+	SpecOverrides     map[string]interface{}                `json:"spec_overrides,omitempty,omitzero"`
 }
+
+// InstanceSizeCreateRequestCatalogScope Catalog visibility scope only. Not scheduling environment.
+type InstanceSizeCreateRequestCatalogScope string
 
 // InstanceSizeList defines model for InstanceSizeList.
 type InstanceSizeList struct {
@@ -805,7 +1043,8 @@ type InstanceSizeList struct {
 
 // InstanceSizeUpdateRequest defines model for InstanceSizeUpdateRequest.
 type InstanceSizeUpdateRequest struct {
-	CpuCores float32 `json:"cpu_cores,omitempty,omitzero" validate:"gte=0.5"`
+	CatalogScope InstanceSizeUpdateRequestCatalogScope `json:"catalog_scope,omitempty,omitzero"`
+	CpuCores     float32                               `json:"cpu_cores,omitempty,omitzero" validate:"gte=0.5"`
 
 	// CpuRequest CPU request in cores. Set `0` to clear override and fall back to cpu_cores.
 	CpuRequest    float32 `json:"cpu_request,omitempty,omitzero" validate:"gte=0"`
@@ -826,6 +1065,9 @@ type InstanceSizeUpdateRequest struct {
 	SortOrder         int                    `json:"sort_order,omitempty,omitzero"`
 	SpecOverrides     map[string]interface{} `json:"spec_overrides,omitempty,omitzero"`
 }
+
+// InstanceSizeUpdateRequestCatalogScope defines model for InstanceSizeUpdateRequest.CatalogScope.
+type InstanceSizeUpdateRequestCatalogScope string
 
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
@@ -945,6 +1187,66 @@ type Permission struct {
 type PermissionList struct {
 	Items      []Permission `json:"items,omitempty,omitzero"`
 	Pagination Pagination   `json:"pagination,omitempty,omitzero"`
+}
+
+// PlacementEvaluation defines model for PlacementEvaluation.
+type PlacementEvaluation struct {
+	AdvisoryCode               string                                        `json:"advisory_code,omitempty,omitzero"`
+	AdvisoryMessage            string                                        `json:"advisory_message,omitempty,omitzero"`
+	EffectiveStorageClass      string                                        `json:"effective_storage_class,omitempty,omitzero"`
+	Eligible                   bool                                          `json:"eligible"`
+	EvaluatedAt                time.Time                                     `json:"evaluated_at"`
+	Override                   map[string]interface{}                        `json:"override,omitempty,omitzero"`
+	ReasonCode                 string                                        `json:"reason_code,omitempty,omitzero"`
+	ReasonMessage              string                                        `json:"reason_message,omitempty,omitzero"`
+	RequestedStorageClass      string                                        `json:"requested_storage_class,omitempty,omitzero"`
+	SelectedClusterEnvironment PlacementEvaluationSelectedClusterEnvironment `json:"selected_cluster_environment,omitempty,omitzero"`
+	SelectedClusterId          string                                        `json:"selected_cluster_id"`
+	SelectedClusterName        string                                        `json:"selected_cluster_name,omitempty,omitzero"`
+}
+
+// PlacementEvaluationSelectedClusterEnvironment defines model for PlacementEvaluation.SelectedClusterEnvironment.
+type PlacementEvaluationSelectedClusterEnvironment string
+
+// ProvisioningCondition defines model for ProvisioningCondition.
+type ProvisioningCondition struct {
+	LastTransitionTime time.Time `json:"last_transition_time,omitempty,omitzero"`
+	Message            string    `json:"message,omitempty,omitzero"`
+	Reason             string    `json:"reason,omitempty,omitzero"`
+	Status             string    `json:"status,omitempty,omitzero"`
+	Type               string    `json:"type,omitempty,omitzero"`
+}
+
+// ProvisioningEvent defines model for ProvisioningEvent.
+type ProvisioningEvent struct {
+	Count         int       `json:"count,omitempty,omitzero"`
+	FirstObserved time.Time `json:"first_observed,omitempty,omitzero"`
+	LastObserved  time.Time `json:"last_observed,omitempty,omitzero"`
+	Message       string    `json:"message,omitempty,omitzero"`
+	Reason        string    `json:"reason,omitempty,omitzero"`
+	Type          string    `json:"type,omitempty,omitzero"`
+}
+
+// ProvisioningStatus defines model for ProvisioningStatus.
+type ProvisioningStatus struct {
+	ClaimName string `json:"claim_name,omitempty,omitzero"`
+
+	// CloneFallbackReason CDI fallback reason observed on the root PVC when efficient clone prerequisites were not met.
+	CloneFallbackReason string `json:"clone_fallback_reason,omitempty,omitzero"`
+
+	// ClonePhase CDI clone phase annotation observed on the root PVC.
+	ClonePhase string `json:"clone_phase,omitempty,omitzero"`
+
+	// CloneType CDI clone execution type observed on the root PVC, for example `copy` when host-assisted fallback is used.
+	CloneType          string                  `json:"clone_type,omitempty,omitzero"`
+	Conditions         []ProvisioningCondition `json:"conditions,omitempty,omitzero"`
+	FailureMessage     string                  `json:"failure_message,omitempty,omitzero"`
+	Phase              string                  `json:"phase,omitempty,omitzero"`
+	Progress           string                  `json:"progress,omitempty,omitzero"`
+	PvcPhase           string                  `json:"pvc_phase,omitempty,omitzero"`
+	RecentEvents       []ProvisioningEvent     `json:"recent_events,omitempty,omitzero"`
+	RestartCount       int                     `json:"restart_count,omitempty,omitzero"`
+	RootDataVolumeName string                  `json:"root_data_volume_name,omitempty,omitzero"`
 }
 
 // RateLimitExemption defines model for RateLimitExemption.
@@ -1155,6 +1457,9 @@ type SystemUpdateRequest struct {
 
 // Template defines model for Template.
 type Template struct {
+	// CatalogScope Catalog visibility scope only. Not scheduling environment.
+	CatalogScope TemplateCatalogScope `json:"catalog_scope,omitempty,omitzero"`
+
 	// CloudInit Cloud-init userdata YAML (applied at VM boot)
 	CloudInit   string    `json:"cloud_init,omitempty,omitzero"`
 	CreatedAt   time.Time `json:"created_at,omitempty,omitzero"`
@@ -1163,50 +1468,59 @@ type Template struct {
 	Enabled     bool      `json:"enabled,omitempty,omitzero"`
 	Id          string    `json:"id"`
 
-	// ImageUrl Container registry URL for ContainerDisk mode, e.g. quay.io/containerdisks/ubuntu:22.04
+	// ImageUrl Image / import source URL. Used by `containerdisk` and `cdi_image_import`. For CDI image import, plain registry references are canonicalized to `docker://...` by the server.
 	ImageUrl  string `json:"image_url,omitempty,omitzero"`
 	Name      string `json:"name"`
 	OsFamily  string `json:"os_family,omitempty,omitzero"`
 	OsVersion string `json:"os_version,omitempty,omitzero"`
 
-	// PvcName PVC/DataVolume name for PVC mode
+	// PvcName Source PVC name for CDI PVC clone mode
 	PvcName string `json:"pvc_name,omitempty,omitzero"`
 
-	// PvcNamespace Kubernetes namespace where the PVC/DataVolume is located (required when source_type is 'pvc')
+	// PvcNamespace Kubernetes namespace where the source PVC is located (required when source_type is 'cdi_pvc_clone')
 	PvcNamespace string `json:"pvc_namespace,omitempty,omitzero"`
 
-	// SourceType Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+	// SourceType Canonical boot source type. `containerdisk` boots directly from a KubeVirt containerDisk image, `cdi_image_import` creates a VM-owned DataVolume from an image import source, and `cdi_pvc_clone` clones a source PVC via CDI. Legacy aliases `image` and `pvc` are accepted temporarily for backward compatibility.
 	SourceType TemplateSourceType `json:"source_type,omitempty,omitzero"`
 }
 
-// TemplateSourceType Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+// TemplateCatalogScope Catalog visibility scope only. Not scheduling environment.
+type TemplateCatalogScope string
+
+// TemplateSourceType Canonical boot source type. `containerdisk` boots directly from a KubeVirt containerDisk image, `cdi_image_import` creates a VM-owned DataVolume from an image import source, and `cdi_pvc_clone` clones a source PVC via CDI. Legacy aliases `image` and `pvc` are accepted temporarily for backward compatibility.
 type TemplateSourceType string
 
 // TemplateCreateRequest defines model for TemplateCreateRequest.
 type TemplateCreateRequest struct {
+	// CatalogScope Catalog visibility scope only. Not scheduling environment.
+	CatalogScope TemplateCreateRequestCatalogScope `json:"catalog_scope,omitempty,omitzero"`
+
 	// CloudInit Cloud-init userdata YAML
 	CloudInit   string `json:"cloud_init,omitempty,omitzero"`
 	Description string `json:"description,omitempty,omitzero"`
 	DisplayName string `json:"display_name,omitempty,omitzero"`
 	Enabled     bool   `json:"enabled,omitempty,omitzero"`
 
-	// ImageUrl Required when source_type is 'image'
+	// ImageUrl Required when source_type is 'containerdisk' or 'cdi_image_import'
 	ImageUrl  string `json:"image_url,omitempty,omitzero"`
 	Name      string `json:"name" validate:"required"`
 	OsFamily  string `json:"os_family,omitempty,omitzero"`
 	OsVersion string `json:"os_version,omitempty,omitzero"`
 
-	// PvcName Required when source_type is 'pvc'
+	// PvcName Source PVC name. Required when source_type is 'cdi_pvc_clone'
 	PvcName string `json:"pvc_name,omitempty,omitzero"`
 
-	// PvcNamespace Kubernetes namespace where the PVC/DataVolume is located. Required when source_type is 'pvc'.
+	// PvcNamespace Kubernetes namespace where the source PVC is located. Required when source_type is 'cdi_pvc_clone'.
 	PvcNamespace string `json:"pvc_namespace,omitempty,omitzero"`
 
-	// SourceType Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
-	SourceType TemplateCreateRequestSourceType `json:"source_type,omitempty,omitzero" validate:"oneof=image pvc"`
+	// SourceType Canonical boot source type. Legacy aliases `image` and `pvc` are accepted temporarily for backward compatibility.
+	SourceType TemplateCreateRequestSourceType `json:"source_type,omitempty,omitzero" validate:"oneof=containerdisk cdi_image_import cdi_pvc_clone"`
 }
 
-// TemplateCreateRequestSourceType Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+// TemplateCreateRequestCatalogScope Catalog visibility scope only. Not scheduling environment.
+type TemplateCreateRequestCatalogScope string
+
+// TemplateCreateRequestSourceType Canonical boot source type. Legacy aliases `image` and `pvc` are accepted temporarily for backward compatibility.
 type TemplateCreateRequestSourceType string
 
 // TemplateList defines model for TemplateList.
@@ -1217,19 +1531,23 @@ type TemplateList struct {
 
 // TemplateUpdateRequest defines model for TemplateUpdateRequest.
 type TemplateUpdateRequest struct {
-	CloudInit   string `json:"cloud_init,omitempty,omitzero"`
-	Description string `json:"description,omitempty,omitzero"`
-	DisplayName string `json:"display_name,omitempty,omitzero"`
-	Enabled     bool   `json:"enabled,omitempty,omitzero"`
-	ImageUrl    string `json:"image_url,omitempty,omitzero"`
-	OsFamily    string `json:"os_family,omitempty,omitzero"`
-	OsVersion   string `json:"os_version,omitempty,omitzero"`
-	PvcName     string `json:"pvc_name,omitempty,omitzero"`
+	CatalogScope TemplateUpdateRequestCatalogScope `json:"catalog_scope,omitempty,omitzero"`
+	CloudInit    string                            `json:"cloud_init,omitempty,omitzero"`
+	Description  string                            `json:"description,omitempty,omitzero"`
+	DisplayName  string                            `json:"display_name,omitempty,omitzero"`
+	Enabled      bool                              `json:"enabled,omitempty,omitzero"`
+	ImageUrl     string                            `json:"image_url,omitempty,omitzero"`
+	OsFamily     string                            `json:"os_family,omitempty,omitzero"`
+	OsVersion    string                            `json:"os_version,omitempty,omitzero"`
+	PvcName      string                            `json:"pvc_name,omitempty,omitzero"`
 
-	// PvcNamespace Kubernetes namespace where the PVC/DataVolume is located
+	// PvcNamespace Kubernetes namespace where the source PVC is located
 	PvcNamespace string                          `json:"pvc_namespace,omitempty,omitzero"`
-	SourceType   TemplateUpdateRequestSourceType `json:"source_type,omitempty,omitzero" validate:"oneof=image pvc"`
+	SourceType   TemplateUpdateRequestSourceType `json:"source_type,omitempty,omitzero" validate:"oneof=containerdisk cdi_image_import cdi_pvc_clone"`
 }
+
+// TemplateUpdateRequestCatalogScope defines model for TemplateUpdateRequest.CatalogScope.
+type TemplateUpdateRequestCatalogScope string
 
 // TemplateUpdateRequestSourceType defines model for TemplateUpdateRequest.SourceType.
 type TemplateUpdateRequestSourceType string
@@ -1293,15 +1611,16 @@ type VM struct {
 	CreatedBy string    `json:"created_by,omitempty,omitzero"`
 
 	// Environment Inherited from cluster environment (ADR-0015 §15)
-	Environment VMEnvironment `json:"environment,omitempty,omitzero"`
-	Hostname    string        `json:"hostname,omitempty,omitzero"`
-	Id          string        `json:"id"`
-	Instance    string        `json:"instance,omitempty,omitzero"`
-	Name        string        `json:"name"`
-	Namespace   string        `json:"namespace"`
-	ServiceId   string        `json:"service_id,omitempty,omitzero"`
-	Status      VMStatus      `json:"status"`
-	TicketId    string        `json:"ticket_id,omitempty,omitzero"`
+	Environment  VMEnvironment       `json:"environment,omitempty,omitzero"`
+	Hostname     string              `json:"hostname,omitempty,omitzero"`
+	Id           string              `json:"id"`
+	Instance     string              `json:"instance,omitempty,omitzero"`
+	Name         string              `json:"name"`
+	Namespace    string              `json:"namespace"`
+	Provisioning *ProvisioningStatus `json:"provisioning,omitempty"`
+	ServiceId    string              `json:"service_id,omitempty,omitzero"`
+	Status       VMStatus            `json:"status"`
+	TicketId     string              `json:"ticket_id,omitempty,omitzero"`
 }
 
 // VMEnvironment Inherited from cluster environment (ADR-0015 §15)
@@ -1344,6 +1663,7 @@ type VMBatchChildStatus struct {
 	AttemptCount int                      `json:"attempt_count,omitempty,omitzero"`
 	EventId      string                   `json:"event_id"`
 	LastError    string                   `json:"last_error,omitempty,omitzero"`
+	Provisioning *ProvisioningStatus      `json:"provisioning,omitempty"`
 	ResourceId   string                   `json:"resource_id,omitempty,omitzero"`
 	ResourceName string                   `json:"resource_name,omitempty,omitzero"`
 	Status       VMBatchChildStatusStatus `json:"status"`
@@ -1471,6 +1791,44 @@ type VMList struct {
 	Pagination Pagination `json:"pagination,omitempty,omitzero"`
 }
 
+// VMPlacementHint defines model for VMPlacementHint.
+type VMPlacementHint struct {
+	AdvisoryCounts         []VMPlacementHintAdvisoryCount     `json:"advisory_counts,omitempty,omitzero"`
+	CompatibleClusterCount int                                `json:"compatible_cluster_count"`
+	EvaluatedClusterCount  int                                `json:"evaluated_cluster_count"`
+	PrimaryAdvisoryCode    VMPlacementHintPrimaryAdvisoryCode `json:"primary_advisory_code,omitempty,omitzero"`
+	PrimaryReasonCode      VMPlacementHintPrimaryReasonCode   `json:"primary_reason_code,omitempty,omitzero"`
+	ReasonCounts           []VMPlacementHintReasonCount       `json:"reason_counts,omitempty,omitzero"`
+	Status                 VMPlacementHintStatus              `json:"status"`
+}
+
+// VMPlacementHintPrimaryAdvisoryCode defines model for VMPlacementHint.PrimaryAdvisoryCode.
+type VMPlacementHintPrimaryAdvisoryCode string
+
+// VMPlacementHintPrimaryReasonCode defines model for VMPlacementHint.PrimaryReasonCode.
+type VMPlacementHintPrimaryReasonCode string
+
+// VMPlacementHintStatus defines model for VMPlacementHint.Status.
+type VMPlacementHintStatus string
+
+// VMPlacementHintAdvisoryCount defines model for VMPlacementHintAdvisoryCount.
+type VMPlacementHintAdvisoryCount struct {
+	Code  VMPlacementHintAdvisoryCountCode `json:"code"`
+	Count int                              `json:"count"`
+}
+
+// VMPlacementHintAdvisoryCountCode defines model for VMPlacementHintAdvisoryCount.Code.
+type VMPlacementHintAdvisoryCountCode string
+
+// VMPlacementHintReasonCount defines model for VMPlacementHintReasonCount.
+type VMPlacementHintReasonCount struct {
+	Code  VMPlacementHintReasonCountCode `json:"code"`
+	Count int                            `json:"count"`
+}
+
+// VMPlacementHintReasonCountCode defines model for VMPlacementHintReasonCount.Code.
+type VMPlacementHintReasonCountCode string
+
 // VMPowerAcceptedResponse defines model for VMPowerAcceptedResponse.
 type VMPowerAcceptedResponse struct {
 	EventId  string                        `json:"event_id"`
@@ -1492,9 +1850,10 @@ type VMPowerRequestAction string
 
 // VMRequestContext defines model for VMRequestContext.
 type VMRequestContext struct {
-	InstanceSizes []InstanceSize `json:"instance_sizes"`
-	Namespaces    []string       `json:"namespaces"`
-	Templates     []Template     `json:"templates"`
+	InstanceSizes []InstanceSize  `json:"instance_sizes"`
+	Namespaces    []string        `json:"namespaces"`
+	PlacementHint VMPlacementHint `json:"placement_hint,omitempty,omitzero"`
+	Templates     []Template      `json:"templates"`
 }
 
 // VMVNCSessionResponse defines model for VMVNCSessionResponse.
@@ -1600,6 +1959,33 @@ type ListClustersParams struct {
 	// features are returned. Case-insensitive.
 	// Example: `?requires=LiveMigration,Snapshot`
 	Requires string `form:"requires,omitempty" json:"requires,omitempty,omitzero"`
+
+	// Namespace Filter clusters compatible with a CREATE request targeting this namespace.
+	Namespace string `form:"namespace,omitempty" json:"namespace,omitempty,omitzero"`
+
+	// TemplateId Filter clusters compatible with a CREATE request using this template.
+	TemplateId string `form:"template_id,omitempty" json:"template_id,omitempty,omitzero"`
+
+	// InstanceSizeId Filter clusters compatible with a CREATE request using this instance size.
+	InstanceSizeId string `form:"instance_size_id,omitempty" json:"instance_size_id,omitempty,omitzero"`
+
+	// SelectedStorageClass Optional storage class selected by approver when evaluating cluster policy compatibility.
+	SelectedStorageClass string `form:"selected_storage_class,omitempty" json:"selected_storage_class,omitempty,omitzero"`
+
+	// CpuRequest Optional override CPU request in cores for compatibility evaluation.
+	CpuRequest float32 `form:"cpu_request,omitempty" json:"cpu_request,omitempty,omitzero"`
+
+	// CpuLimit Optional override CPU limit in cores for compatibility evaluation.
+	CpuLimit float32 `form:"cpu_limit,omitempty" json:"cpu_limit,omitempty,omitzero"`
+
+	// MemoryRequestGi Optional override memory request in Gi for compatibility evaluation.
+	MemoryRequestGi float32 `form:"memory_request_gi,omitempty" json:"memory_request_gi,omitempty,omitzero"`
+
+	// MemoryLimitGi Optional override memory limit in Gi for compatibility evaluation.
+	MemoryLimitGi float32 `form:"memory_limit_gi,omitempty" json:"memory_limit_gi,omitempty,omitzero"`
+
+	// IncludeIncompatible When true, keep incompatible clusters in the result and annotate them with compatibility reasons instead of filtering them out.
+	IncludeIncompatible bool `form:"include_incompatible,omitempty" json:"include_incompatible,omitempty,omitzero"`
 }
 
 // ListNamespacesParams defines parameters for ListNamespaces.
@@ -1659,10 +2045,28 @@ type ListApprovalsParams struct {
 	// PerPage Items per page
 	PerPage PerPage                   `form:"per_page,omitempty" json:"per_page,omitempty,omitzero"`
 	Status  ListApprovalsParamsStatus `form:"status,omitempty" json:"status,omitempty,omitzero"`
+
+	// OperationType Filter by approval operation type.
+	OperationType ListApprovalsParamsOperationType `form:"operation_type,omitempty" json:"operation_type,omitempty,omitzero"`
+
+	// SelectedClusterId Filter by the cluster selected during CREATE approval.
+	SelectedClusterId string `form:"selected_cluster_id,omitempty" json:"selected_cluster_id,omitempty,omitzero"`
+
+	// PlacementAdvisoryCode Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets.
+	PlacementAdvisoryCode string `form:"placement_advisory_code,omitempty" json:"placement_advisory_code,omitempty,omitzero"`
+
+	// PlacementSnapshot Filter by whether a placement evaluation snapshot exists on the ticket.
+	PlacementSnapshot ListApprovalsParamsPlacementSnapshot `form:"placement_snapshot,omitempty" json:"placement_snapshot,omitempty,omitzero"`
 }
 
 // ListApprovalsParamsStatus defines parameters for ListApprovals.
 type ListApprovalsParamsStatus string
+
+// ListApprovalsParamsOperationType defines parameters for ListApprovals.
+type ListApprovalsParamsOperationType string
+
+// ListApprovalsParamsPlacementSnapshot defines parameters for ListApprovals.
+type ListApprovalsParamsPlacementSnapshot string
 
 // ListAuditLogsParams defines parameters for ListAuditLogs.
 type ListAuditLogsParams struct {
@@ -1675,6 +2079,15 @@ type ListAuditLogsParams struct {
 	Actor        string  `form:"actor,omitempty" json:"actor,omitempty,omitzero"`
 	ResourceType string  `form:"resource_type,omitempty" json:"resource_type,omitempty,omitzero"`
 	ResourceId   string  `form:"resource_id,omitempty" json:"resource_id,omitempty,omitzero"`
+
+	// ApprovalDecision Filter approval audit entries by details.decision (for example approved, rejected, validation_failed)
+	ApprovalDecision string `form:"approval_decision,omitempty" json:"approval_decision,omitempty,omitzero"`
+
+	// PlacementReasonCode Filter approval audit entries by details.placement_evaluation.reason_code
+	PlacementReasonCode string `form:"placement_reason_code,omitempty" json:"placement_reason_code,omitempty,omitzero"`
+
+	// PlacementAdvisoryCode Filter approval audit entries by details.placement_evaluation.advisory_code
+	PlacementAdvisoryCode string `form:"placement_advisory_code,omitempty" json:"placement_advisory_code,omitempty,omitzero"`
 }
 
 // ListNotificationsParams defines parameters for ListNotifications.
@@ -1779,6 +2192,18 @@ type ListVMBatchesParams struct {
 // ListVMBatchesParamsSortOrder defines parameters for ListVMBatches.
 type ListVMBatchesParamsSortOrder string
 
+// GetVMRequestContextParams defines parameters for GetVMRequestContext.
+type GetVMRequestContextParams struct {
+	// Namespace Optional selected namespace for placement hint evaluation.
+	Namespace string `form:"namespace,omitempty" json:"namespace,omitempty,omitzero"`
+
+	// TemplateId Optional selected template for placement hint evaluation.
+	TemplateId openapi_types.UUID `form:"template_id,omitempty" json:"template_id,omitempty,omitzero"`
+
+	// InstanceSizeId Optional selected instance size for placement hint evaluation.
+	InstanceSizeId openapi_types.UUID `form:"instance_size_id,omitempty" json:"instance_size_id,omitempty,omitzero"`
+}
+
 // DeleteVMParams defines parameters for DeleteVM.
 type DeleteVMParams struct {
 	// Confirm Simple deletion confirmation flag (ADR-0015 §13)
@@ -1809,6 +2234,9 @@ type CreateClusterJSONRequestBody = ClusterCreateRequest
 
 // UpdateClusterEnvironmentJSONRequestBody defines body for UpdateClusterEnvironment for application/json ContentType.
 type UpdateClusterEnvironmentJSONRequestBody = ClusterEnvironmentUpdate
+
+// UpsertClusterPolicyJSONRequestBody defines body for UpsertClusterPolicy for application/json ContentType.
+type UpsertClusterPolicyJSONRequestBody = ClusterPolicyUpsertRequest
 
 // CreateAdminInstanceSizeJSONRequestBody defines body for CreateAdminInstanceSize for application/json ContentType.
 type CreateAdminInstanceSizeJSONRequestBody = InstanceSizeCreateRequest
@@ -2007,6 +2435,12 @@ type ServerInterface interface {
 	// Update cluster environment
 	// (PUT /admin/clusters/{cluster_id}/environment)
 	UpdateClusterEnvironment(c *gin.Context, clusterId string)
+	// Get cluster policy
+	// (GET /admin/clusters/{cluster_id}/policy)
+	GetClusterPolicy(c *gin.Context, clusterId string)
+	// Create or replace cluster policy
+	// (PUT /admin/clusters/{cluster_id}/policy)
+	UpsertClusterPolicy(c *gin.Context, clusterId string)
 	// List instance sizes for admin management
 	// (GET /admin/instance-sizes)
 	ListAdminInstanceSizes(c *gin.Context)
@@ -2219,7 +2653,7 @@ type ServerInterface interface {
 	CreateVMRequest(c *gin.Context)
 	// Get VM request context for current user
 	// (GET /vms/request-context)
-	GetVMRequestContext(c *gin.Context)
+	GetVMRequestContext(c *gin.Context, params GetVMRequestContextParams)
 	// Delete VM
 	// (DELETE /vms/{vm_id})
 	DeleteVM(c *gin.Context, vmId VMID, params DeleteVMParams)
@@ -2589,6 +3023,78 @@ func (siw *ServerInterfaceWrapper) ListClusters(c *gin.Context) {
 		return
 	}
 
+	// ------------- Optional query parameter "namespace" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "namespace", c.Request.URL.Query(), &params.Namespace)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter namespace: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "template_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "template_id", c.Request.URL.Query(), &params.TemplateId)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter template_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "instance_size_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "instance_size_id", c.Request.URL.Query(), &params.InstanceSizeId)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter instance_size_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "selected_storage_class" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "selected_storage_class", c.Request.URL.Query(), &params.SelectedStorageClass)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter selected_storage_class: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "cpu_request" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "cpu_request", c.Request.URL.Query(), &params.CpuRequest)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cpu_request: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "cpu_limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "cpu_limit", c.Request.URL.Query(), &params.CpuLimit)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cpu_limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "memory_request_gi" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "memory_request_gi", c.Request.URL.Query(), &params.MemoryRequestGi)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter memory_request_gi: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "memory_limit_gi" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "memory_limit_gi", c.Request.URL.Query(), &params.MemoryLimitGi)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter memory_limit_gi: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "include_incompatible" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "include_incompatible", c.Request.URL.Query(), &params.IncludeIncompatible)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter include_incompatible: %w", err), http.StatusBadRequest)
+		return
+	}
+
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
 		if c.IsAborted() {
@@ -2638,6 +3144,58 @@ func (siw *ServerInterfaceWrapper) UpdateClusterEnvironment(c *gin.Context) {
 	}
 
 	siw.Handler.UpdateClusterEnvironment(c, clusterId)
+}
+
+// GetClusterPolicy operation middleware
+func (siw *ServerInterfaceWrapper) GetClusterPolicy(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "cluster_id" -------------
+	var clusterId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "cluster_id", c.Param("cluster_id"), &clusterId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cluster_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetClusterPolicy(c, clusterId)
+}
+
+// UpsertClusterPolicy operation middleware
+func (siw *ServerInterfaceWrapper) UpsertClusterPolicy(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "cluster_id" -------------
+	var clusterId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "cluster_id", c.Param("cluster_id"), &clusterId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cluster_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpsertClusterPolicy(c, clusterId)
 }
 
 // ListAdminInstanceSizes operation middleware
@@ -3419,6 +3977,38 @@ func (siw *ServerInterfaceWrapper) ListApprovals(c *gin.Context) {
 		return
 	}
 
+	// ------------- Optional query parameter "operation_type" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "operation_type", c.Request.URL.Query(), &params.OperationType)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operation_type: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "selected_cluster_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "selected_cluster_id", c.Request.URL.Query(), &params.SelectedClusterId)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter selected_cluster_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "placement_advisory_code" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "placement_advisory_code", c.Request.URL.Query(), &params.PlacementAdvisoryCode)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter placement_advisory_code: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "placement_snapshot" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "placement_snapshot", c.Request.URL.Query(), &params.PlacementSnapshot)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter placement_snapshot: %w", err), http.StatusBadRequest)
+		return
+	}
+
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
 		if c.IsAborted() {
@@ -3577,6 +4167,30 @@ func (siw *ServerInterfaceWrapper) ListAuditLogs(c *gin.Context) {
 	err = runtime.BindQueryParameter("form", true, false, "resource_id", c.Request.URL.Query(), &params.ResourceId)
 	if err != nil {
 		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter resource_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "approval_decision" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "approval_decision", c.Request.URL.Query(), &params.ApprovalDecision)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter approval_decision: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "placement_reason_code" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "placement_reason_code", c.Request.URL.Query(), &params.PlacementReasonCode)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter placement_reason_code: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "placement_advisory_code" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "placement_advisory_code", c.Request.URL.Query(), &params.PlacementAdvisoryCode)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter placement_advisory_code: %w", err), http.StatusBadRequest)
 		return
 	}
 
@@ -4552,7 +5166,36 @@ func (siw *ServerInterfaceWrapper) CreateVMRequest(c *gin.Context) {
 // GetVMRequestContext operation middleware
 func (siw *ServerInterfaceWrapper) GetVMRequestContext(c *gin.Context) {
 
+	var err error
+
 	c.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetVMRequestContextParams
+
+	// ------------- Optional query parameter "namespace" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "namespace", c.Request.URL.Query(), &params.Namespace)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter namespace: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "template_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "template_id", c.Request.URL.Query(), &params.TemplateId)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter template_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "instance_size_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "instance_size_id", c.Request.URL.Query(), &params.InstanceSizeId)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter instance_size_id: %w", err), http.StatusBadRequest)
+		return
+	}
 
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
@@ -4561,7 +5204,7 @@ func (siw *ServerInterfaceWrapper) GetVMRequestContext(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.GetVMRequestContext(c)
+	siw.Handler.GetVMRequestContext(c, params)
 }
 
 // DeleteVM operation middleware
@@ -4859,6 +5502,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/admin/clusters", wrapper.ListClusters)
 	router.POST(options.BaseURL+"/admin/clusters", wrapper.CreateCluster)
 	router.PUT(options.BaseURL+"/admin/clusters/:cluster_id/environment", wrapper.UpdateClusterEnvironment)
+	router.GET(options.BaseURL+"/admin/clusters/:cluster_id/policy", wrapper.GetClusterPolicy)
+	router.PUT(options.BaseURL+"/admin/clusters/:cluster_id/policy", wrapper.UpsertClusterPolicy)
 	router.GET(options.BaseURL+"/admin/instance-sizes", wrapper.ListAdminInstanceSizes)
 	router.POST(options.BaseURL+"/admin/instance-sizes", wrapper.CreateAdminInstanceSize)
 	router.DELETE(options.BaseURL+"/admin/instance-sizes/:instance_size_id", wrapper.DeleteAdminInstanceSize)
@@ -4944,202 +5589,243 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"KicORhY+kqQ43758+38BAAD//yIusmfMWgEA",
+	"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",
+	"+v7l+/8fAAD//z2cKnPGkAEA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

@@ -48,6 +48,7 @@ type AtomicApprovalWriter interface {
 		ticketID, eventID, approver, clusterID, storageClass, serviceID, namespace, requesterID string,
 		templateSnapshot map[string]interface{},
 		instanceSizeSnapshot map[string]interface{},
+		placementEvaluation map[string]interface{},
 		modifiedSpec map[string]interface{},
 	) (vmID, vmName string, err error)
 	ApproveDeleteAndEnqueue(ctx context.Context, ticketID, eventID, approver, vmID string) error
@@ -86,6 +87,9 @@ func (g *Gateway) SetNotifier(notifier *notification.Triggers) {
 // Returns g for method chaining.
 func (g *Gateway) SetVMService(svc *service.VMService) *Gateway {
 	g.vmService = svc
+	if g.validator != nil {
+		g.validator.SetVMService(svc)
+	}
 	return g
 }
 
@@ -200,9 +204,42 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 		return fmt.Errorf("effective instance size id is empty for ticket %s", ticketID)
 	}
 
+	var placementEvaluation map[string]interface{}
 	if g.validator != nil {
-		if validateErr := g.validator.ValidateApproval(ctx, opts.ClusterID, effectiveInstanceSizeID, payload.Namespace); validateErr != nil {
-			return fmt.Errorf("approval validation failed for ticket %s: %w", ticketID, validateErr)
+		var override *service.ApprovalResourceOverride
+		if opts.EnableOverride {
+			overrideValue := service.ApprovalResourceOverride{
+				CPURequest:      opts.CPURequest,
+				CPULimit:        opts.CPULimit,
+				MemoryRequestGi: opts.MemoryRequestGi,
+				MemoryLimitGi:   opts.MemoryLimitGi,
+				DiskGB:          opts.DiskGB,
+			}
+			override = &overrideValue
+		}
+		evaluation, evalErr := g.validator.EvaluateClusterPlacement(ctx, service.ApprovalValidationInput{
+			ClusterID:      opts.ClusterID,
+			TemplateID:     effectiveTemplateID,
+			InstanceSizeID: effectiveInstanceSizeID,
+			Namespace:      payload.Namespace,
+			StorageClass:   opts.StorageClass,
+			Override:       override,
+		})
+		if evalErr != nil {
+			return fmt.Errorf("approval validation failed for ticket %s: %w", ticketID, evalErr)
+		}
+		placementEvaluation = buildPlacementEvaluationSnapshot(evaluation, opts)
+		if evaluation != nil && !evaluation.Eligible {
+			if g.auditLogger != nil {
+				_ = g.auditLogger.LogApprovalWithDetails(ctx, ticketID, "validation_failed", approver, map[string]interface{}{
+					"placement_evaluation": placementEvaluation,
+				})
+			}
+			return fmt.Errorf(
+				"approval validation failed for ticket %s: %w",
+				ticketID,
+				apperrors.BadRequest(evaluation.ReasonCode, evaluation.ReasonMessage),
+			)
 		}
 	}
 
@@ -216,6 +253,37 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 	instanceSizeEntity, err := g.client.InstanceSize.Get(ctx, effectiveInstanceSizeID)
 	if err != nil {
 		return fmt.Errorf("get instance size %s for ticket %s: %w", effectiveInstanceSizeID, ticketID, err)
+	}
+	targetDiskGB := instanceSizeEntity.DiskGB
+	if opts.EnableOverride && opts.DiskGB > 0 {
+		targetDiskGB = opts.DiskGB
+	}
+	effectiveSourceType := service.EffectiveTemplateSourceType(
+		templateEntity.SourceType,
+		templateEntity.ImageURL,
+		templateEntity.PvcName,
+	)
+	if g.vmService != nil && effectiveSourceType == service.TemplateSourceCDIPVCClone {
+		targetStorageClass := strings.TrimSpace(opts.StorageClass)
+		if targetStorageClass == "" {
+			selectedCluster, clusterErr := g.client.Cluster.Get(ctx, opts.ClusterID)
+			if clusterErr != nil {
+				return fmt.Errorf("get cluster %s for ticket %s: %w", opts.ClusterID, ticketID, clusterErr)
+			}
+			targetStorageClass = strings.TrimSpace(selectedCluster.DefaultStorageClass)
+		}
+
+		if preflightErr := g.vmService.ValidatePVCCloneSource(
+			ctx,
+			opts.ClusterID,
+			payload.Namespace,
+			templateEntity.PvcNamespace,
+			templateEntity.PvcName,
+			targetDiskGB,
+			targetStorageClass,
+		); preflightErr != nil {
+			return fmt.Errorf("source pvc preflight failed for ticket %s: %w", ticketID, preflightErr)
+		}
 	}
 
 	// ── DryRun Pre-flight Gate (ADR-0006 Addendum) ──────────────────────────────
@@ -311,6 +379,7 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 		payload.RequesterID,
 		templateSnapshot,
 		instanceSizeSnapshot,
+		placementEvaluation,
 		modifiedSpec,
 	)
 	if err != nil {
@@ -319,7 +388,9 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 
 	// Audit log (best-effort, outside transaction).
 	if g.auditLogger != nil {
-		_ = g.auditLogger.LogApproval(ctx, ticketID, "approved", approver)
+		_ = g.auditLogger.LogApprovalWithDetails(ctx, ticketID, "approved", approver, map[string]interface{}{
+			"placement_evaluation": placementEvaluation,
+		})
 	}
 
 	// Notification trigger: APPROVAL_COMPLETED → notify requester (master-flow.md Stage 5.F).
@@ -337,6 +408,64 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 	)
 
 	return nil
+}
+
+func buildPlacementEvaluationSnapshot(
+	evaluation *service.ClusterCompatibilityResult,
+	opts ApproveOpts,
+) map[string]interface{} {
+	if evaluation == nil || evaluation.Cluster == nil {
+		return nil
+	}
+	clusterEntity := evaluation.Cluster
+	effectiveStorageClass := strings.TrimSpace(opts.StorageClass)
+	if effectiveStorageClass == "" {
+		effectiveStorageClass = strings.TrimSpace(clusterEntity.DefaultStorageClass)
+	}
+
+	snapshot := map[string]interface{}{
+		"selected_cluster_id":          clusterEntity.ID,
+		"selected_cluster_name":        clusterEntity.Name,
+		"selected_cluster_environment": string(clusterEntity.Environment),
+		"requested_storage_class":      strings.TrimSpace(opts.StorageClass),
+		"effective_storage_class":      effectiveStorageClass,
+		"eligible":                     evaluation.Eligible,
+		"evaluated_at":                 time.Now().UTC().Format(time.RFC3339),
+	}
+	if evaluation.ReasonCode != "" {
+		snapshot["reason_code"] = evaluation.ReasonCode
+	}
+	if evaluation.ReasonMessage != "" {
+		snapshot["reason_message"] = evaluation.ReasonMessage
+	}
+	if evaluation.AdvisoryCode != "" {
+		snapshot["advisory_code"] = evaluation.AdvisoryCode
+	}
+	if evaluation.AdvisoryMessage != "" {
+		snapshot["advisory_message"] = evaluation.AdvisoryMessage
+	}
+	if opts.EnableOverride {
+		override := map[string]interface{}{
+			"enabled": true,
+		}
+		if opts.CPURequest > 0 {
+			override["cpu_request"] = opts.CPURequest
+		}
+		if opts.CPULimit > 0 {
+			override["cpu_limit"] = opts.CPULimit
+		}
+		if opts.MemoryRequestGi > 0 {
+			override["memory_request_gi"] = opts.MemoryRequestGi
+		}
+		if opts.MemoryLimitGi > 0 {
+			override["memory_limit_gi"] = opts.MemoryLimitGi
+		}
+		if opts.DiskGB > 0 {
+			override["disk_gb"] = opts.DiskGB
+		}
+		snapshot["override"] = override
+	}
+	return snapshot
 }
 
 // approveDelete handles approval of DELETE tickets.
@@ -936,7 +1065,7 @@ func buildTemplateSnapshot(tpl *ent.Template) map[string]interface{} {
 		"name":          tpl.Name,
 		"display_name":  tpl.DisplayName,
 		"description":   tpl.Description,
-		"source_type":   tpl.SourceType,
+		"source_type":   service.EffectiveTemplateSourceType(tpl.SourceType, tpl.ImageURL, tpl.PvcName),
 		"image_url":     tpl.ImageURL,
 		"pvc_name":      tpl.PvcName,
 		"pvc_namespace": tpl.PvcNamespace,
@@ -1015,6 +1144,7 @@ func (g *Gateway) buildDryRunSpec(
 		MemoryGi:        size.MemoryGi,
 		DiskGB:          size.DiskGB,
 		Image:           image,
+		StorageClass:    strings.TrimSpace(opts.StorageClass),
 		CloudInit:       tmpl.CloudInit,
 		SpecOverrides:   cloneMap(size.SpecOverrides),
 		CPURequest:      size.CPURequest,
@@ -1048,14 +1178,9 @@ func (g *Gateway) buildDryRunSpec(
 // resolveTemplateImageForDryRun extracts the boot image string from an Ent Template.
 // Mirrors VMCreateWorker.extractTemplateImageFromEnt (ADR-0036 semantic template fields).
 func resolveTemplateImageForDryRun(tpl *ent.Template) (string, error) {
-	if tpl.ImageURL != "" {
-		return tpl.ImageURL, nil
+	image, err := service.ResolveTemplateBootTransport(tpl.SourceType, tpl.ImageURL, tpl.PvcName, tpl.PvcNamespace)
+	if err != nil {
+		return "", fmt.Errorf("template %s: %w", tpl.ID, err)
 	}
-	if tpl.PvcName != "" {
-		if tpl.PvcNamespace != "" {
-			return "pvc:" + tpl.PvcNamespace + "/" + tpl.PvcName, nil
-		}
-		return "pvc:" + tpl.PvcName, nil
-	}
-	return "", fmt.Errorf("template %s has no image_url or pvc_name configured", tpl.ID)
+	return image, nil
 }

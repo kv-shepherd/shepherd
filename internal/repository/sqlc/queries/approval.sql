@@ -10,6 +10,7 @@ SET
     END,
     template_snapshot = COALESCE(sqlc.narg(template_snapshot)::jsonb, template_snapshot),
     instance_size_snapshot = COALESCE(sqlc.narg(instance_size_snapshot)::jsonb, instance_size_snapshot),
+    placement_evaluation = COALESCE(sqlc.narg(placement_evaluation)::jsonb, placement_evaluation),
     modified_spec = COALESCE(sqlc.narg(modified_spec)::jsonb, modified_spec),
     updated_at = NOW()
 WHERE

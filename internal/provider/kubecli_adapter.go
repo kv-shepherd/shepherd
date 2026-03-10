@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -120,6 +121,14 @@ func (c *kubevirtClusterClient) Events() EventClient {
 	return &kubevirtEventClient{client: c.client}
 }
 
+func (c *kubevirtClusterClient) Pods() PodClient {
+	return &kubevirtPodClient{client: c.client}
+}
+
+func (c *kubevirtClusterClient) Authorization() AuthorizationClient {
+	return &kubevirtAuthorizationClient{client: c.client}
+}
+
 // SSA returns the DynamicSSAClient for Server-Side Apply operations (ADR-0011).
 func (c *kubevirtClusterClient) SSA() DynamicSSAClient {
 	return c.ssaClient
@@ -218,6 +227,26 @@ type kubevirtEventClient struct {
 
 func (c *kubevirtEventClient) List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*corev1.EventList, error) {
 	return c.client.CoreV1().Events(namespace).List(ctx, opts)
+}
+
+type kubevirtPodClient struct {
+	client kubecli.KubevirtClient
+}
+
+func (c *kubevirtPodClient) List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*corev1.PodList, error) {
+	return c.client.CoreV1().Pods(namespace).List(ctx, opts)
+}
+
+type kubevirtAuthorizationClient struct {
+	client kubecli.KubevirtClient
+}
+
+func (c *kubevirtAuthorizationClient) CreateSelfSubjectAccessReview(
+	ctx context.Context,
+	review *authorizationv1.SelfSubjectAccessReview,
+	opts k8smetav1.CreateOptions,
+) (*authorizationv1.SelfSubjectAccessReview, error) {
+	return c.client.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, review, opts)
 }
 
 // KubeVirt returns a KubeVirtCRClient that can read the cluster-level KubeVirt CR.

@@ -39,6 +39,49 @@ metadata:
   {{- end}}
 spec:
   runStrategy: Always
+  {{- if .HasRootDataVolume}}
+  dataVolumeTemplates:
+    - metadata:
+        name: "{{.RootDataVolumeName}}"
+      spec:
+        {{- if .IsClonePVC}}
+        source:
+          pvc:
+            {{- if .SourcePVCNamespace}}
+            namespace: "{{.SourcePVCNamespace}}"
+            {{- end}}
+            name: "{{.SourcePVCName}}"
+        {{- if or .RootDataVolumeStorageClass .RootDataVolumeSize}}
+        storage:
+          {{- if .RootDataVolumeStorageClass}}
+          storageClassName: "{{.RootDataVolumeStorageClass}}"
+          {{- end}}
+          {{- if .RootDataVolumeSize}}
+          resources:
+            requests:
+              storage: "{{.RootDataVolumeSize}}"
+          {{- end}}
+        {{- else}}
+        storage: {}
+        {{- end}}
+        {{- else if .IsImportImage}}
+        source:
+          {{- if eq .ImportSourceKind "registry"}}
+          registry:
+            url: "{{.ImportSourceURL}}"
+          {{- else if eq .ImportSourceKind "http"}}
+          http:
+            url: "{{.ImportSourceURL}}"
+        {{- end}}
+        storage:
+          {{- if .RootDataVolumeStorageClass}}
+          storageClassName: "{{.RootDataVolumeStorageClass}}"
+          {{- end}}
+          resources:
+            requests:
+              storage: "{{.RootDataVolumeSize}}"
+        {{- end}}
+  {{- end}}
   template:
     {{- if .Labels}}
     metadata:
@@ -65,7 +108,7 @@ spec:
             - name: rootdisk
               disk:
                 bus: virtio
-            {{- if gt .DiskGB 0}}
+            {{- if gt .DataDiskGB 0}}
             - name: datadisk
               disk:
                 bus: virtio
@@ -76,19 +119,19 @@ spec:
                 bus: virtio
             {{- end}}
       volumes:
-        {{- if .IsPVC}}
+        {{- if .HasRootDataVolume}}
         - name: rootdisk
-          persistentVolumeClaim:
-            claimName: "{{.PVCClaimName}}"
+          dataVolume:
+            name: "{{.RootDataVolumeName}}"
         {{- else}}
         - name: rootdisk
           containerDisk:
             image: "{{.Image}}"
         {{- end}}
-        {{- if gt .DiskGB 0}}
+        {{- if gt .DataDiskGB 0}}
         - name: datadisk
           emptyDisk:
-            capacity: "{{.DiskGB}}Gi"
+            capacity: "{{.DataDiskGB}}Gi"
         {{- end}}
         {{- if .CloudInit}}
         - name: cloudinitdisk
@@ -99,19 +142,27 @@ spec:
 
 // vmTemplateData holds pre-computed values for the VM YAML template.
 type vmTemplateData struct {
-	Name          string
-	Namespace     string
-	Labels        map[string]string
-	CPUCores      int    // integer core count for spec.domain.cpu.cores
-	CPULimit      string // K8s quantity string for limits (e.g. "2" or "500m")
-	CPURequest    string // K8s quantity string for requests
-	MemoryLimit   string // K8s Gi/Mi string (e.g. "8Gi" or "512Mi")
-	MemoryRequest string // K8s Gi/Mi string
-	DiskGB        int
-	Image         string
-	CloudInit     string
-	IsPVC         bool
-	PVCClaimName  string
+	Name                       string
+	Namespace                  string
+	Labels                     map[string]string
+	CPUCores                   int    // integer core count for spec.domain.cpu.cores
+	CPULimit                   string // K8s quantity string for limits (e.g. "2" or "500m")
+	CPURequest                 string // K8s quantity string for requests
+	MemoryLimit                string // K8s Gi/Mi string (e.g. "8Gi" or "512Mi")
+	MemoryRequest              string // K8s Gi/Mi string
+	DataDiskGB                 int
+	Image                      string
+	CloudInit                  string
+	HasRootDataVolume          bool
+	IsClonePVC                 bool
+	IsImportImage              bool
+	SourcePVCName              string
+	SourcePVCNamespace         string
+	ImportSourceKind           string
+	ImportSourceURL            string
+	RootDataVolumeName         string
+	RootDataVolumeSize         string
+	RootDataVolumeStorageClass string
 }
 
 // RenderVMSpecToYAML converts a VMRenderInput into a KubeVirt VirtualMachine YAML string.
@@ -161,17 +212,55 @@ func RenderVMSpecToYAML(namespace string, spec *VMRenderInput) (string, error) {
 	}
 
 	// Determine image source type.
-	isPVC := false
-	pvcClaimName := ""
+	hasRootDataVolume := false
+	isClonePVC := false
+	isImportImage := false
+	sourcePVCName := ""
+	sourcePVCNamespace := ""
+	importSourceKind := ""
+	importSourceURL := ""
+	rootDataVolumeName := ""
+	rootDataVolumeSize := ""
+	rootDataVolumeStorageClass := strings.TrimSpace(spec.StorageClass)
+	dataDiskGB := spec.DiskGB
 	image := spec.Image
-	if strings.HasPrefix(spec.Image, "pvc:") {
-		isPVC = true
-		pvcClaimName = strings.TrimPrefix(spec.Image, "pvc:")
-		// Handle "pvc:namespace/name" format — extract just the name part.
-		if idx := strings.LastIndex(pvcClaimName, "/"); idx >= 0 {
-			pvcClaimName = pvcClaimName[idx+1:]
+	switch {
+	case strings.HasPrefix(spec.Image, "clone-pvc:"):
+		hasRootDataVolume = true
+		isClonePVC = true
+		sourceRef := strings.TrimPrefix(spec.Image, "clone-pvc:")
+		if idx := strings.LastIndex(sourceRef, "/"); idx >= 0 {
+			sourcePVCNamespace = sourceRef[:idx]
+			sourcePVCName = sourceRef[idx+1:]
+		} else {
+			sourcePVCName = sourceRef
 		}
-		image = "" // not used for PVC
+		if sourcePVCName == "" {
+			return "", fmt.Errorf("render vm yaml: clone-pvc image source requires pvc name")
+		}
+		rootDataVolumeName = spec.Name + "-rootdisk"
+		if spec.DiskGB > 0 {
+			rootDataVolumeSize = fmt.Sprintf("%dGi", spec.DiskGB)
+		}
+		dataDiskGB = 0
+		image = "" // not used for clone-pvc
+	case strings.HasPrefix(spec.Image, "import-image:"):
+		hasRootDataVolume = true
+		isImportImage = true
+		var err error
+		importSourceKind, importSourceURL, err = parseImportImageSource(strings.TrimPrefix(spec.Image, "import-image:"))
+		if err != nil {
+			return "", fmt.Errorf("render vm yaml: %w", err)
+		}
+		if spec.DiskGB <= 0 {
+			return "", fmt.Errorf("render vm yaml: disk_gb must be > 0 for import-image boot source")
+		}
+		rootDataVolumeName = spec.Name + "-rootdisk"
+		rootDataVolumeSize = fmt.Sprintf("%dGi", spec.DiskGB)
+		dataDiskGB = 0
+		image = "" // not used for import-image
+	case strings.HasPrefix(spec.Image, "pvc:"):
+		return "", fmt.Errorf("render vm yaml: direct existing PVC boot is unsupported; use clone-pvc transport instead")
 	}
 
 	// Compute CPU strings.
@@ -189,19 +278,27 @@ func RenderVMSpecToYAML(namespace string, spec *VMRenderInput) (string, error) {
 	}
 
 	data := vmTemplateData{
-		Name:          spec.Name,
-		Namespace:     namespace,
-		Labels:        spec.Labels,
-		CPUCores:      cpuCoresForTopology(cpuLimitCores),
-		CPULimit:      formatCPU(cpuLimitCores),
-		CPURequest:    formatCPU(cpuRequestCores),
-		MemoryLimit:   memoryLimit,
-		MemoryRequest: memoryRequest,
-		DiskGB:        spec.DiskGB,
-		Image:         image,
-		CloudInit:     spec.CloudInit,
-		IsPVC:         isPVC,
-		PVCClaimName:  pvcClaimName,
+		Name:                       spec.Name,
+		Namespace:                  namespace,
+		Labels:                     spec.Labels,
+		CPUCores:                   cpuCoresForTopology(cpuLimitCores),
+		CPULimit:                   formatCPU(cpuLimitCores),
+		CPURequest:                 formatCPU(cpuRequestCores),
+		MemoryLimit:                memoryLimit,
+		MemoryRequest:              memoryRequest,
+		DataDiskGB:                 dataDiskGB,
+		Image:                      image,
+		CloudInit:                  spec.CloudInit,
+		HasRootDataVolume:          hasRootDataVolume,
+		IsClonePVC:                 isClonePVC,
+		IsImportImage:              isImportImage,
+		SourcePVCName:              sourcePVCName,
+		SourcePVCNamespace:         sourcePVCNamespace,
+		ImportSourceKind:           importSourceKind,
+		ImportSourceURL:            importSourceURL,
+		RootDataVolumeName:         rootDataVolumeName,
+		RootDataVolumeSize:         rootDataVolumeSize,
+		RootDataVolumeStorageClass: rootDataVolumeStorageClass,
 	}
 
 	tmpl, err := template.New("vm").Parse(vmYAMLTemplate)
@@ -230,6 +327,22 @@ func RenderVMSpecToYAML(namespace string, spec *VMRenderInput) (string, error) {
 
 	// Apply SpecOverrides as deep-merge patches into the rendered YAML.
 	return applySpecOverridesToYAML(buf.Bytes(), spec.SpecOverrides)
+}
+
+func parseImportImageSource(raw string) (kind, url string, err error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", "", fmt.Errorf("import-image transport requires a non-empty source")
+	}
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.HasPrefix(lower, "docker://"):
+		return "registry", trimmed, nil
+	case strings.HasPrefix(lower, "http://"), strings.HasPrefix(lower, "https://"):
+		return "http", trimmed, nil
+	default:
+		return "", "", fmt.Errorf("unsupported import-image source %q", trimmed)
+	}
 }
 
 // validateOverridePaths ensures all SpecOverrides keys use the "spec.*" prefix,
@@ -474,13 +587,20 @@ func applySpecOverridesToYAML(yamlData []byte, overrides map[string]interface{})
 // Resource granularity: All CPU/Memory values must be in 0.5-step increments.
 // Non-standard values (0.7, 1.2, etc.) are rejected at render time.
 type VMRenderInput struct {
-	Name      string
-	CPUCores  float64 // CPU limit in cores (0.5 step: 0.5, 1.0, 1.5, ...)
-	MemoryGi  float64 // Memory limit in Gi (0.5 step: 0.5, 1.0, 1.5, ...)
-	DiskGB    int
-	Image     string
-	CloudInit string
-	Labels    map[string]string
+	Name     string
+	CPUCores float64 // CPU limit in cores (0.5 step: 0.5, 1.0, 1.5, ...)
+	MemoryGi float64 // Memory limit in Gi (0.5 step: 0.5, 1.0, 1.5, ...)
+	DiskGB   int     // Desired root disk size for CDI-backed boot sources.
+	// Image accepts one of:
+	//   - container disk image reference: "quay.io/containerdisks/ubuntu:22.04"
+	//   - CDI registry/http import: "import-image:<docker://...|https://...>"
+	//   - CDI clone source PVC: "clone-pvc:<claim>" or "clone-pvc:<namespace>/<claim>"
+	//
+	// Direct existing PVC transport ("pvc:<claim>") is intentionally unsupported.
+	Image        string
+	StorageClass string
+	CloudInit    string
+	Labels       map[string]string
 	// CPURequest is for overcommit: CPU request in cores (must be <= CPUCores).
 	CPURequest float64
 	// MemoryRequestGi is for overcommit: Memory request in Gi (must be <= MemoryGi).

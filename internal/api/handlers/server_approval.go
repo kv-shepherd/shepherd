@@ -3,13 +3,18 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
+	entsql "entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	"kv-shepherd.io/shepherd/ent/predicate"
+	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/governance/approval"
@@ -35,6 +40,30 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 	// Filter by status (omitzero: empty string = not specified).
 	if params.Status != "" {
 		query = query.Where(approvalticket.StatusEQ(approvalticket.Status(params.Status)))
+	}
+	if params.OperationType != "" {
+		query = query.Where(approvalticket.OperationTypeEQ(approvalticket.OperationType(params.OperationType)))
+	}
+	if params.SelectedClusterId != "" {
+		query = query.Where(approvalticket.SelectedClusterIDEQ(params.SelectedClusterId))
+	}
+	if params.PlacementAdvisoryCode != "" {
+		query = query.Where(
+			predicate.ApprovalTicket(func(s *entsql.Selector) {
+				s.Where(sqljson.ValueEQ(
+					approvalticket.FieldPlacementEvaluation,
+					params.PlacementAdvisoryCode,
+					sqljson.Path("advisory_code"),
+				))
+			}),
+		)
+	}
+	switch params.PlacementSnapshot {
+	case "":
+	case generated.Present:
+		query = query.Where(approvalticket.PlacementEvaluationNotNil())
+	case generated.Missing:
+		query = query.Where(approvalticket.PlacementEvaluationIsNil())
 	}
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
@@ -70,10 +99,14 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 	// DELETE tickets: extract target VM info; all tickets: include raw payload.
 	allEventIDs := make([]string, 0, len(tickets))
 	deleteEventIDSet := make(map[string]struct{})
+	createTicketIDs := make([]string, 0)
 	for _, t := range tickets {
 		allEventIDs = append(allEventIDs, t.EventID)
 		if t.OperationType == approvalticket.OperationTypeDELETE {
 			deleteEventIDSet[t.EventID] = struct{}{}
+		}
+		if t.OperationType == approvalticket.OperationTypeCREATE {
+			createTicketIDs = append(createTicketIDs, t.ID)
 		}
 	}
 
@@ -109,6 +142,23 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 		}
 	}
 
+	createVMByTicketID := make(map[string]*ent.VM)
+	if len(createTicketIDs) > 0 {
+		vms, err := s.client.VM.Query().
+			Where(entvm.TicketIDIn(createTicketIDs...)).
+			All(ctx)
+		if err != nil {
+			logger.Warn("failed to fetch VMs for create approval tickets", zap.Error(err))
+		} else {
+			for _, vm := range vms {
+				if vm == nil || vm.TicketID == "" {
+					continue
+				}
+				createVMByTicketID[vm.TicketID] = vm
+			}
+		}
+	}
+
 	items := make([]generated.ApprovalTicket, 0, len(tickets))
 	for _, t := range tickets {
 		// Deserialize raw event payload into map for ticket_payload field.
@@ -121,7 +171,11 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 				)
 			}
 		}
-		item := ticketToAPI(t, payloadMap)
+		var provisioning *generated.ProvisioningStatus
+		if t.OperationType == approvalticket.OperationTypeCREATE {
+			provisioning = s.loadVMProvisioning(ctx, createVMByTicketID[t.ID])
+		}
+		item := ticketToAPI(t, payloadMap, provisioning)
 		// Enrich DELETE tickets with target VM info.
 		if t.OperationType == approvalticket.OperationTypeDELETE {
 			if info, ok := vmInfoMap[t.EventID]; ok {
@@ -265,17 +319,73 @@ func (s *Server) CancelTicket(c *gin.Context, ticketID generated.TicketID) {
 
 // ticketToAPI converts an Ent ApprovalTicket to the generated API type.
 // ticketPayload is the deserialized DomainEvent payload (may be nil for older/missing events).
-func ticketToAPI(t *ent.ApprovalTicket, ticketPayload map[string]interface{}) generated.ApprovalTicket {
-	return generated.ApprovalTicket{
-		Id:            t.ID,
-		EventId:       t.EventID,
-		OperationType: generated.ApprovalTicketOperationType(t.OperationType),
-		Requester:     t.Requester,
-		Status:        generated.ApprovalTicketStatus(t.Status),
-		Approver:      t.Approver,
-		Reason:        t.Reason,
-		RejectReason:  t.RejectReason,
-		TicketPayload: ticketPayload,
-		CreatedAt:     t.CreatedAt,
+func ticketToAPI(
+	t *ent.ApprovalTicket,
+	ticketPayload map[string]interface{},
+	provisioning *generated.ProvisioningStatus,
+) generated.ApprovalTicket {
+	var placementEvaluation *generated.PlacementEvaluation
+	if len(t.PlacementEvaluation) > 0 {
+		placementEvaluation = placementEvaluationToAPI(t.PlacementEvaluation)
 	}
+	return generated.ApprovalTicket{
+		Id:                  t.ID,
+		EventId:             t.EventID,
+		OperationType:       generated.ApprovalTicketOperationType(t.OperationType),
+		Requester:           t.Requester,
+		Status:              generated.ApprovalTicketStatus(t.Status),
+		Approver:            t.Approver,
+		Reason:              t.Reason,
+		RejectReason:        t.RejectReason,
+		TicketPayload:       ticketPayload,
+		Provisioning:        provisioning,
+		PlacementEvaluation: placementEvaluation,
+		CreatedAt:           t.CreatedAt,
+	}
+}
+
+func placementEvaluationToAPI(snapshot map[string]interface{}) *generated.PlacementEvaluation {
+	if len(snapshot) == 0 {
+		return nil
+	}
+	result := &generated.PlacementEvaluation{}
+	if value, ok := snapshot["selected_cluster_id"].(string); ok {
+		result.SelectedClusterId = value
+	}
+	if value, ok := snapshot["selected_cluster_name"].(string); ok {
+		result.SelectedClusterName = value
+	}
+	if value, ok := snapshot["selected_cluster_environment"].(string); ok {
+		result.SelectedClusterEnvironment = generated.PlacementEvaluationSelectedClusterEnvironment(value)
+	}
+	if value, ok := snapshot["requested_storage_class"].(string); ok {
+		result.RequestedStorageClass = value
+	}
+	if value, ok := snapshot["effective_storage_class"].(string); ok {
+		result.EffectiveStorageClass = value
+	}
+	if value, ok := snapshot["eligible"].(bool); ok {
+		result.Eligible = value
+	}
+	if value, ok := snapshot["reason_code"].(string); ok {
+		result.ReasonCode = value
+	}
+	if value, ok := snapshot["reason_message"].(string); ok {
+		result.ReasonMessage = value
+	}
+	if value, ok := snapshot["advisory_code"].(string); ok {
+		result.AdvisoryCode = value
+	}
+	if value, ok := snapshot["advisory_message"].(string); ok {
+		result.AdvisoryMessage = value
+	}
+	if value, ok := snapshot["override"].(map[string]interface{}); ok {
+		result.Override = value
+	}
+	if value, ok := snapshot["evaluated_at"].(string); ok {
+		if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+			result.EvaluatedAt = parsed
+		}
+	}
+	return result
 }

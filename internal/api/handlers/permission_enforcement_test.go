@@ -46,7 +46,7 @@ func TestPermissionEnforcement_GetVMRequestContext_RequiresVMCreate(t *testing.T
 	srv := NewServer(ServerDeps{})
 	c, w := newAuthedGinContext(t, http.MethodGet, "/vms/request-context", "", "user-a", []string{"vm:read"})
 
-	srv.GetVMRequestContext(c)
+	srv.GetVMRequestContext(c, generated.GetVMRequestContextParams{})
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
 	}
