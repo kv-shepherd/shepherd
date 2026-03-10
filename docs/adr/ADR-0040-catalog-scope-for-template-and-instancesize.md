@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-03-06
 deciders: ["@jindyzhao"]
 consulted: []
@@ -9,6 +9,7 @@ informed: []
 # ADR-0040: Catalog Scope for Template and InstanceSize
 
 > **Review Period**: Until 2026-03-08 (48-hour minimum)<br>
+> **Accepted On**: 2026-03-10<br>
 > **Amends**: `ADR-0036-template-instancesize-boundary-enforcement.md`, `ADR-0018-instance-size-abstraction.md`<br>
 > **Relates To**: `ADR-0015-governance-model-v2.md#7-environment-aware-approval-policies`, `ADR-0015-governance-model-v2.md#15-namespace-cluster-binding-and-environment-type-clarification`
 
@@ -49,7 +50,7 @@ The Python production system solved this with a `permission_group` field and lat
 * ✅ Good, because `unclassified` is safe by default and does not leak into user request flows
 * ✅ Good, because cluster compatibility remains a separate validation concern instead of being hidden inside a visibility field
 * 🟡 Neutral, because administrators must classify catalog items before they appear to end users
-* ❌ Bad, because existing experimental data must be backfilled or manually reviewed before exposure; mitigation: backfill to `unclassified` and hide from regular users until reviewed
+* ❌ Bad, because catalog maintainers must still review and classify seeded or experimental entries before exposing them to end users; mitigation: keep `unclassified` hidden from regular request flows until reviewed
 
 ### Confirmation
 
@@ -165,3 +166,4 @@ Revisit if the project later needs per-cluster catalog allowlists or multi-dimen
 |------|--------|--------|
 | 2026-03-06 | @jindyzhao | Initial draft |
 | 2026-03-06 | @jindyzhao | Reworked around `catalog_scope`, zero-trust defaults, and separation from environment type |
+| 2026-03-10 | @jindyzhao | Status promoted to accepted after review period and implementation merge |

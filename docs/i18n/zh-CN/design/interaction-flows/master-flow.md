@@ -1,9 +1,9 @@
 # 规范交互流程 (Master Flow)
 
 > **Status**: Stable (ADR-0017, ADR-0018 Accepted)  
-> **版本**: 1.2
+> **版本**: 1.3
 > **创建日期**: 2026-01-28  
-> **最后更新**: 2026-02-06
+> **最后更新**: 2026-03-06
 > **语言**: 中文 (翻译版本)  
 > **规范版本**: [English Canonical Version](../../../../design/interaction-flows/master-flow.md)
 >
@@ -942,12 +942,15 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │                                                                                              │
 │  ┌─ 步骤 3: 配置 Template ─────────────────────────────────────────────────────────────────────┐ │
 │  │                                                                                          │ │
-│  │  模板定义 VM 的操作系统基础配置:                                                            │ │
-│  │  - OS 镜像来源 (DataVolume / PVC 引用)                                                    │ │
+│  │  模板定义 VM 的启动盘基础配置:                                                              │ │
+│  │  - `containerdisk` 临时根盘                                                                │ │
+│  │  - `cdi_image_import` 通过 CDI 导入的持久化根盘                                            │ │
+│  │  - `cdi_pvc_clone` 通过 CDI 从源 PVC 克隆的持久化根盘                                      │ │
 │  │  - cloud-init 配置 (管理员可自定义)                                                        │ │
 │  │  - 字段可见性控制 (quick_fields / advanced_fields)                                        │ │
 │  │                                                                                          │ │
 │  │  💡 注意: 硬件能力要求 (GPU/SR-IOV/Hugepages) 已移至 InstanceSize 配置                     │ │
+│  │  💡 直接从已有 PVC 启动 VM 不是受支持的产品模式                                             │ │
 │  │  💡 系统初始化时会预填充常用模板 (从 seed data 导入到 PostgreSQL)                           │ │
 │  │                                                                                          │ │
 │  │  ┌──────────────────────────────────────────────────────────────────────────────────┐   │ │
@@ -958,15 +961,20 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  │  │  状态:         [active ▼]                                                          │   │ │
 │  │  │                                                                                    │   │ │
 │  │  │  ── 镜像来源 ──────────────────────────────────────────────────────────────────   │   │ │
-│  │  │  类型:         (●) containerdisk   ( ) pvc                                         │   │ │
+│  │  │  类型:         (●) containerdisk   ( ) cdi_image_import   ( ) cdi_pvc_clone      │   │ │
 │  │  │                                                                                    │   │ │
 │  │  │  ┌─ containerdisk 模式 ──────────────────────────────────────────────────────┐    │   │ │
 │  │  │  │  镜像地址:   [docker.io/kubevirt/centos:7                    ]             │    │   │ │
 │  │  │  └────────────────────────────────────────────────────────────────────────────┘    │   │ │
 │  │  │                                                                                    │   │ │
-│  │  │  ┌─ pvc 模式 (切换后显示) ─────────────────────────────────────────────────────┐   │   │ │
-│  │  │  │  Namespace:  [default           ]                                          │   │   │ │
-│  │  │  │  PVC 名称:   [centos7-base-disk ]                                          │   │   │ │
+│  │  │  ┌─ cdi_image_import 模式 ────────────────────────────────────────────────────┐   │   │ │
+│  │  │  │  镜像地址:   [quay.io/containerdisks/centos:stream9         ]              │   │   │ │
+│  │  │  │  来源:       [registry ▼]                                                   │   │   │ │
+│  │  │  └────────────────────────────────────────────────────────────────────────────┘   │   │ │
+│  │  │                                                                                    │   │ │
+│  │  │  ┌─ cdi_pvc_clone 模式 ───────────────────────────────────────────────────────┐   │   │ │
+│  │  │  │  Namespace:  [golden-images      ]                                         │   │   │ │
+│  │  │  │  PVC 名称:   [centos9-base-root  ]                                         │   │   │ │
 │  │  │  └────────────────────────────────────────────────────────────────────────────┘   │   │ │
 │  │  │                                                                                    │   │ │
 │  │  │  ── cloud-init 配置 (YAML) ───────────────────────────────────────────────────   │   │ │
@@ -1044,8 +1052,13 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  │  存储到 PostgreSQL (后端不理解内容，只存储 JSON):                                          │ │
 │  │  {                                                                                       │ │
 │  │      "name": "gpu-workstation",                                                          │ │
-│  │      "cpu_overcommit": { "enabled": true, "request": "4", "limit": "8" },                │ │
-│  │      "mem_overcommit": { "enabled": true, "request": "16Gi", "limit": "32Gi" },          │ │
+│  │      "cpu_cores": 8,                                                                      │ │
+│  │      "cpu_request": 4,                    👈 request < cores 时表示超卖                   │ │
+│  │      "memory_gi": 32,                                                                     │ │
+│  │      "memory_request_gi": 16,           👈 request < limit 时表示超卖                    │ │
+│  │      "dedicated_cpu": true,                                                               │ │
+│  │      "requires_hugepages": true,                                                          │ │
+│  │      "hugepages_size": "2Mi",                                                             │ │
 │  │      "spec_overrides": {                                                                 │ │
 │  │          "spec.template.spec.domain.cpu.cores": 8,                                       │ │
 │  │          "spec.template.spec.domain.resources.requests.memory": "32Gi",                  │ │
@@ -1446,7 +1459,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 ## Part 3: VM 生命周期流程
 
 > **说明**: 本节描述 VM 的完整生命周期：创建请求 → 审批 → 执行 → 运行 → 删除
-
+>
 ### Purpose
 
 描述 VM 从提交申请到审批、执行、运行、删除的端到端交互预期。
@@ -1506,6 +1519,8 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │  平台管理员:                                                                                  │
+│                                                                                              │
+│  当前基线: 集群选择先做 capability 匹配，再执行显式 cluster policy 校验，然后才继续审批或执行。 │
 │                                                                                              │
 │  系统根据 InstanceSize.spec_overrides 提取资源需求，匹配集群能力:                              │
 │                                                                                              │
@@ -1579,7 +1594,12 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  1. 生成 VM 名称: prod-shop-shop-redis-01                                                    │
 │                                                                                              │
 │  2. 合并生成最终 YAML:                                                                        │
-│     Template (基础模板) + InstanceSize.spec_overrides + 用户参数 (disk_gb)                    │
+│     Template 启动盘定义 + InstanceSize.spec_overrides + 用户参数 (disk_gb)                    │
+│                                                                                              │
+│     启动盘渲染约定:                                                                           │
+│     - `containerdisk`    -> `volumes[].containerDisk`                                        │
+│     - `cdi_image_import` -> `dataVolumeTemplates` + `volumes[].dataVolume`                   │
+│     - `cdi_pvc_clone`    -> `dataVolumeTemplates` + `volumes[].dataVolume`                   │
 │                                                                                              │
 │  3. 渲染输出:                                                                                 │
 │     apiVersion: kubevirt.io/v1                                                               │

@@ -1,9 +1,9 @@
 # Master Interaction Flow
 
 > **Status**: Stable (ADR-0017, ADR-0018 Accepted)  
-> **Version**: 1.2
+> **Version**: 1.3
 > **Created**: 2026-01-28  
-> **Last Updated**: 2026-02-06
+> **Last Updated**: 2026-03-06
 > **Language**: English (Canonical Version)  
 > **Source**: Extracted from ADR-0018 Appendix
 >
@@ -947,12 +947,15 @@ external systems are integrated as provider plugins without changing approval st
 │                                                                                              │
 │  ┌─ Step 3: Configure Template ──────────────────────────────────────────────────────────────┐ │
 │  │                                                                                          │
-│  │  Template defines base VM OS configuration:                                              │
-│  │  - OS image source (DataVolume / PVC reference)                                          │
+│  │  Template defines base VM boot configuration:                                            │
+│  │  - `containerdisk` ephemeral root disk                                                   │
+│  │  - `cdi_image_import` persistent root disk imported by CDI                               │
+│  │  - `cdi_pvc_clone` persistent root disk cloned from source PVC via CDI                   │
 │  │  - cloud-init config (admin customizable)                                                │
 │  │  - field visibility control (quick_fields / advanced_fields)                             │
 │  │                                                                                          │
 │  │  💡 Hardware capability requirements (GPU/SR-IOV/Hugepages) moved to InstanceSize         │
+│  │  💡 Direct existing-PVC boot is not a supported product mode                              │
 │  │  💡 Seed data preloads common templates into PostgreSQL                                  │
 │  │                                                                                          │
 │  │  ┌──────────────────────────────────────────────────────────────────────────────────┐   │
@@ -963,15 +966,20 @@ external systems are integrated as provider plugins without changing approval st
 │  │  │  Status:       [active ▼]                                                           │   │
 │  │  │                                                                                    │   │
 │  │  │  ── Image Source ────────────────────────────────────────────────────────────     │   │
-│  │  │  Type:         (●) containerdisk   ( ) pvc                                          │   │
+│  │  │  Type:         (●) containerdisk   ( ) cdi_image_import   ( ) cdi_pvc_clone        │   │
 │  │  │                                                                                    │   │
 │  │  │  ┌─ containerdisk mode ───────────────────────────────────────────────────────┐    │   │
 │  │  │  │  Image:     [docker.io/kubevirt/centos:7                    ]                │    │   │
 │  │  │  └────────────────────────────────────────────────────────────────────────────┘    │   │
 │  │  │                                                                                    │   │
-│  │  │  ┌─ pvc mode (after toggle) ───────────────────────────────────────────────────┐   │   │
-│  │  │  │  Namespace:  [default           ]                                           │   │   │
-│  │  │  │  PVC Name:   [centos7-base-disk ]                                           │   │   │
+│  │  │  ┌─ cdi_image_import mode ─────────────────────────────────────────────────────┐   │   │
+│  │  │  │  Image:     [quay.io/containerdisks/centos:stream9         ]               │   │   │
+│  │  │  │  Source:    [registry ▼]                                                    │   │   │
+│  │  │  └────────────────────────────────────────────────────────────────────────────┘   │   │
+│  │  │                                                                                    │   │
+│  │  │  ┌─ cdi_pvc_clone mode ────────────────────────────────────────────────────────┐   │   │
+│  │  │  │  Namespace:  [golden-images      ]                                           │   │   │
+│  │  │  │  PVC Name:   [centos9-base-root  ]                                           │   │   │
 │  │  │  └────────────────────────────────────────────────────────────────────────────┘   │   │
 │  │  │                                                                                    │   │
 │  │  │  ── cloud-init config (YAML) ─────────────────────────────────────────────────   │   │
@@ -1049,8 +1057,13 @@ external systems are integrated as provider plugins without changing approval st
 │  │  Store in PostgreSQL (backend does not interpret, stores JSON):                          │
 │  │  {                                                                                       │
 │  │      "name": "gpu-workstation",                                                      │
-│  │      "cpu_overcommit": { "enabled": true, "request": "4", "limit": "8" },      │
-│  │      "mem_overcommit": { "enabled": true, "request": "16Gi", "limit": "32Gi" },│
+│  │      "cpu_cores": 8,                                                                  │
+│  │      "cpu_request": 4,                     👈 overcommit when request < cores         │
+│  │      "memory_gi": 32,                                                                 │
+│  │      "memory_request_gi": 16,            👈 overcommit when request < limit          │
+│  │      "dedicated_cpu": true,                                                        │
+│  │      "requires_hugepages": true,                                                    │
+│  │      "hugepages_size": "2Mi",                                                       │
 │  │      "spec_overrides": {                                                               │
 │  │          "spec.template.spec.domain.cpu.cores": 8,                                     │
 │  │          "spec.template.spec.domain.resources.requests.memory": "32Gi",              │
@@ -1573,6 +1586,9 @@ execution, and runtime outcomes.
 │                                                                                              │
 │  Platform admin:                                                                             │
 │                                                                                              │
+│  Current baseline: cluster selection first matches capability, then enforces explicit        │
+│  cluster-policy constraints before approval/execution continues.                             │
+│                                                                                              │
 │  System extracts resource requirements from InstanceSize.spec_overrides and matches clusters:
 │                                                                                              │
 │  1. Extract requirements:                                                                    │
@@ -1646,7 +1662,12 @@ execution, and runtime outcomes.
 │  1. Generate VM name: prod-shop-shop-redis-01                                                │
 │                                                                                              │
 │  2. Merge final YAML:                                                                        │
-│     Template (base) + InstanceSize.spec_overrides + user params (disk_gb)                    │
+│     Template boot source + InstanceSize.spec_overrides + user params (disk_gb)               │
+│                                                                                              │
+│     Boot-source rendering contract:                                                          │
+│     - `containerdisk`    -> `volumes[].containerDisk`                                        │
+│     - `cdi_image_import` -> `dataVolumeTemplates` + `volumes[].dataVolume`                   │
+│     - `cdi_pvc_clone`    -> `dataVolumeTemplates` + `volumes[].dataVolume`                   │
 │                                                                                              │
 │  3. Render output:                                                                           │
 │     apiVersion: kubevirt.io/v1                                                               │

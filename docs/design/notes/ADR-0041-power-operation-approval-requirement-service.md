@@ -1,17 +1,17 @@
 # Design Note: ADR-0041 — Power Operation Approval Requirement Service
 
-> **Status**: Proposed  
+> **Status**: Active (ADR-0041 accepted 2026-03-10)  
 > **Related ADR**: [ADR-0041](../../adr/ADR-0041-power-operation-approval-requirement-service.md)  
 > **Owner**: @jindyzhao  
-> **Date**: 2026-03-06
+> **Created**: 2026-03-06  
+> **Last Updated**: 2026-03-10
 
 ## Summary
 
-ADR-0041 proposes a dedicated `ApprovalRequirementService` so VM
+ADR-0041 establishes a dedicated `ApprovalRequirementService` so VM
 start/stop/restart requests can be evaluated against the accepted `test` / `prod`
 approval matrix before any power job is enqueued. This note captures the
-proposed schema, handler flow, and rollout impacts while the ADR remains under
-review.
+accepted schema, handler flow, and current implementation shape.
 
 ## Scope
 
@@ -24,7 +24,7 @@ review.
 - Out of scope: external approval provider implementation details
 - Out of scope: namespace-name regex routing
 
-## Pending Changes (Not Yet Normative)
+## Accepted Scope
 
 - Affected docs:
   - `docs/adr/ADR-0041-power-operation-approval-requirement-service.md`
@@ -89,23 +89,15 @@ Evaluation contract:
 Specific power actions remain in the event payload or request payload, not in a
 growing approval-ticket enum.
 
-## Migration / Rollout
+## Rollout Notes
 
-- Data migration:
-  - replace or supersede experimental `namespace_pattern` fields with typed
-    `environment_type` and `operation`
-  - seed baseline rules for `test` and `prod`
-  - add `POWER` to `approval_tickets.operation_type`
-- Compatibility notes:
-  - existing VNC policy logic should remain functional during the transition;
-    cut over only after the shared service is in place
-  - direct power execution should remain the fallback path only when the rule
-    explicitly says approval is not required
-- Rollout order:
-  1. schema migration and seed data
-  2. `ApprovalRequirementService`
-  3. power-handler integration
-  4. optional VNC migration onto the same service
+- This project is still pre-launch, so no legacy compatibility layer is
+  retained for older `ApprovalPolicy` shapes.
+- Canonical behavior is:
+  1. `ApprovalPolicy` is keyed by `environment_type + operation`
+  2. `ApprovalTicket.operation_type` includes `POWER`
+  3. single and batch power operations use the shared approval requirement path
+  4. VNC approval decisions reuse the same requirement service
 
 ## Open Questions
 

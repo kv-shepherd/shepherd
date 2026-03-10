@@ -1,17 +1,18 @@
 # Design Note: ADR-0040 — Catalog Scope for Template and InstanceSize
 
-> **Status**: Proposed  
+> **Status**: Active (ADR-0040 accepted 2026-03-10)  
 > **Related ADR**: [ADR-0040](../../adr/ADR-0040-catalog-scope-for-template-and-instancesize.md)  
 > **Owner**: @jindyzhao  
-> **Date**: 2026-03-06
+> **Created**: 2026-03-06  
+> **Last Updated**: 2026-03-10
 
 ## Summary
 
-ADR-0040 proposes a dedicated `catalog_scope` classification on `Template` and
-`InstanceSize` so user-facing request flows can filter catalog entries by the
-selected namespace environment type without overloading the platform meaning of
-`environment`. This note captures the proposed schema, API, validation, and
-migration impacts while the ADR remains under review.
+ADR-0040 establishes a dedicated `catalog_scope` classification on `Template`
+and `InstanceSize` so user-facing request flows can filter catalog entries by
+the selected namespace environment type without overloading the platform meaning
+of `environment`. This note captures the accepted schema, API, validation, and
+pre-launch rollout impacts.
 
 ## Scope
 
@@ -23,7 +24,7 @@ migration impacts while the ADR remains under review.
 - Out of scope: cluster policy governance for overcommit and hardware controls
 - Out of scope: per-cluster catalog allowlists
 
-## Pending Changes (Not Yet Normative)
+## Accepted Scope
 
 - Affected docs:
   - `docs/adr/ADR-0040-catalog-scope-for-template-and-instancesize.md`
@@ -70,7 +71,7 @@ scheduling, approval, or capability signal.
 ### Request Context
 
 `GetVMRequestContext` should stop returning all enabled templates and instance
-sizes. The proposed filtering rules are:
+sizes. The accepted filtering rules are:
 
 - allowed scopes for `test`: `test`, `all`
 - allowed scopes for `prod`: `prod`, `all`
@@ -87,21 +88,15 @@ requests.
 Admin-facing list and detail APIs should continue to expose all scopes,
 including `unclassified`, so catalog maintainers can review and classify items.
 
-## Migration / Rollout
+## Rollout Notes
 
-- Data migration:
-  - add `catalog_scope` to `templates` and `instance_sizes`
-  - backfill existing rows to `unclassified`
-  - do not use `NULL = all`; zero-trust default is intentional
-- Compatibility notes:
-  - user-facing APIs should treat missing field values from pre-migration data
-    as non-visible until backfill is complete
-  - admin APIs may need a temporary filter or badge for `unclassified` cleanup
-- Rollout order:
-  1. schema migration
-  2. admin API + UI exposure
-  3. request-context filtering
-  4. create-request enforcement
+- This project is still pre-launch, so no historical data migration or runtime
+  compatibility layer is required.
+- Canonical behavior is:
+  1. schema carries explicit `catalog_scope`
+  2. admin API + UI expose and validate it directly
+  3. request-context filters hide `unclassified` from regular users
+  4. create-request validation rejects stale or forged mismatched selections
 
 ## Open Questions
 
