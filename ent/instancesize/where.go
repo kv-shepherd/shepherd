@@ -804,6 +804,26 @@ func SpecOverridesNotNil() predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldNotNull(FieldSpecOverrides))
 }
 
+// CatalogScopeEQ applies the EQ predicate on the "catalog_scope" field.
+func CatalogScopeEQ(v CatalogScope) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldEQ(FieldCatalogScope, v))
+}
+
+// CatalogScopeNEQ applies the NEQ predicate on the "catalog_scope" field.
+func CatalogScopeNEQ(v CatalogScope) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldNEQ(FieldCatalogScope, v))
+}
+
+// CatalogScopeIn applies the In predicate on the "catalog_scope" field.
+func CatalogScopeIn(vs ...CatalogScope) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldIn(FieldCatalogScope, vs...))
+}
+
+// CatalogScopeNotIn applies the NotIn predicate on the "catalog_scope" field.
+func CatalogScopeNotIn(vs ...CatalogScope) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldNotIn(FieldCatalogScope, vs...))
+}
+
 // SortOrderEQ applies the EQ predicate on the "sort_order" field.
 func SortOrderEQ(v int) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldEQ(FieldSortOrder, v))

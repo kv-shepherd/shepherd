@@ -25,6 +25,7 @@ import type {
     VMBatchSubmitResponse,
     VMConsoleRequestResponse,
     VMCreateRequest,
+    VMPlacementHint,
     VMList,
     VMRequestContext,
     VMVNCSessionResponse,
@@ -146,6 +147,26 @@ export function useVMManagementController({ t }: UseVMManagementControllerArgs) 
         ['vm-request-context'],
         () => api.GET('/vms/request-context'),
         { enabled: wizardOpen }
+    );
+    const trimmedNamespaceValue = typeof namespaceValue === 'string' ? namespaceValue.trim() : '';
+    const placementHintQuery = useApiGet<VMRequestContext>(
+        ['vm-request-context', 'placement-hint', trimmedNamespaceValue, selectedTemplateId, selectedSizeId],
+        () => api.GET('/vms/request-context', {
+            params: {
+                query: {
+                    namespace: trimmedNamespaceValue,
+                    template_id: selectedTemplateId,
+                    instance_size_id: selectedSizeId,
+                },
+            },
+        }),
+        {
+            enabled: wizardOpen &&
+                !requestContextQuery.isError &&
+                Boolean(trimmedNamespaceValue) &&
+                Boolean(selectedTemplateId) &&
+                Boolean(selectedSizeId),
+        }
     );
 
     // Backward-compatible fallback for environments where request-context is unavailable.
@@ -654,6 +675,8 @@ export function useVMManagementController({ t }: UseVMManagementControllerArgs) 
         selectedSystemId,
         selectedTemplate,
         selectedSize,
+        placementHint: placementHintQuery.data?.placement_hint as VMPlacementHint | undefined,
+        placementHintLoading: placementHintQuery.isLoading,
         namespaceValue,
         reasonValue,
         serviceIdValue,

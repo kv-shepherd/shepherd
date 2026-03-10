@@ -93,7 +93,7 @@ describe('useAdminTemplatesController', () => {
       name: 'ubuntu-base',
       display_name: 'Ubuntu Base',
       enabled: true,
-      source_type: 'image',
+      source_type: 'cdi_image_import',
       image_url: 'docker.io/kubevirt/ubuntu:22.04',
       cloud_init: yamlCloudInit,
     });
@@ -105,12 +105,12 @@ describe('useAdminTemplatesController', () => {
     });
 
     // cloud_init is passed verbatim — it is YAML text, not parsed JSON.
-    // source_type='image' → pvc_name and pvc_namespace are cleared (undefined).
+    // non-clone source types clear PVC fields.
     expect(createMutate).toHaveBeenCalledWith({
       name: 'ubuntu-base',
       display_name: 'Ubuntu Base',
       enabled: true,
-      source_type: 'image',
+      source_type: 'cdi_image_import',
       image_url: 'docker.io/kubevirt/ubuntu:22.04',
       cloud_init: yamlCloudInit,
       pvc_name: undefined,
@@ -118,7 +118,7 @@ describe('useAdminTemplatesController', () => {
     });
   });
 
-  it('clears image_url when source_type is pvc', async () => {
+  it('clears image_url when source_type is cdi_pvc_clone', async () => {
     const createMutate = vi.fn();
 
     useApiMutationMock
@@ -129,7 +129,7 @@ describe('useAdminTemplatesController', () => {
     createFormState.validateFields.mockResolvedValue({
       name: 'centos7-pvc',
       enabled: true,
-      source_type: 'pvc',
+      source_type: 'cdi_pvc_clone',
       pvc_name: 'centos7-base-disk',
       pvc_namespace: 'default',
       image_url: 'docker.io/stale/image',  // stale value that should be cleared
@@ -141,9 +141,58 @@ describe('useAdminTemplatesController', () => {
       await result.current.submitCreate();
     });
 
-    // source_type='pvc' → image_url is cleared (undefined); pvc_namespace is preserved.
+    // clone source types clear image_url and preserve source PVC coordinates.
     expect(createMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ source_type: 'pvc', pvc_name: 'centos7-base-disk', pvc_namespace: 'default', image_url: undefined }),
+      expect.objectContaining({ source_type: 'cdi_pvc_clone', pvc_name: 'centos7-base-disk', pvc_namespace: 'default', image_url: undefined }),
     );
+  });
+
+  it('keeps experimental sources hidden by default in create flow until explicitly enabled', () => {
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      return { mutate: vi.fn(), isPending: false, key: mutationCall };
+    });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminTemplatesController({ t }));
+
+    expect(result.current.createExperimentalSourcesEnabled).toBe(false);
+
+    act(() => {
+      result.current.openCreateModal();
+    });
+
+    expect(result.current.createExperimentalSourcesEnabled).toBe(false);
+
+    act(() => {
+      result.current.enableCreateExperimentalSources();
+    });
+
+    expect(result.current.createExperimentalSourcesEnabled).toBe(true);
+  });
+
+  it('auto-enables experimental sources when editing an existing containerdisk template', () => {
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      return { mutate: vi.fn(), isPending: false, key: mutationCall };
+    });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminTemplatesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'tpl-1',
+        name: 'fedora-ephemeral',
+        source_type: 'containerdisk',
+        image_url: 'docker://quay.io/containerdisks/fedora:40',
+        catalog_scope: 'test',
+        enabled: true,
+      } as never);
+    });
+
+    expect(result.current.editExperimentalSourcesEnabled).toBe(true);
   });
 });

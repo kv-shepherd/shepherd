@@ -18,9 +18,9 @@ interface UseAdminTemplatesControllerArgs {
  *
  * Template fields per design:
  *   - name, display_name, description, os_family, os_version, enabled
- *   - source_type: 'image' (containerdisk) | 'pvc'
- *   - image_url: ContainerDisk image URL (when source_type='image')
- *   - pvc_name:  DataVolume/PVC name    (when source_type='pvc')
+ *   - source_type: 'containerdisk' | 'cdi_image_import' | 'cdi_pvc_clone'
+ *   - image_url: Boot image/import URL (when source_type is not 'cdi_pvc_clone')
+ *   - pvc_name:  Source PVC name        (when source_type='cdi_pvc_clone')
  *   - cloud_init: YAML cloud-init config (admin-editable plain text, NOT JSON)
  *
  * cloud_init is a first-class Template field — it is a plain YAML string stored
@@ -35,6 +35,8 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
     const [createOpen, setCreateOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
+    const [createExperimentalSourcesEnabled, setCreateExperimentalSourcesEnabled] = useState(false);
+    const [editExperimentalSourcesEnabled, setEditExperimentalSourcesEnabled] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
     const [deletingTemplate, setDeletingTemplate] = useState<Template | null>(null);
 
@@ -126,17 +128,21 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
     const openCreateModal = () => {
         createForm.resetFields();
         createForm.setFieldsValue({
+            catalog_scope: 'unclassified',
             enabled: true,
-            source_type: 'image', // default to containerdisk mode per master-flow Step 3
+            source_type: 'cdi_image_import',
         });
+        setCreateExperimentalSourcesEnabled(false);
         setCreateOpen(true);
     };
 
     const openEditModal = (template: Template) => {
         setEditingTemplate(template);
+        setEditExperimentalSourcesEnabled(template.source_type === 'containerdisk');
         editForm.setFieldsValue({
             display_name: template.display_name,
             description: template.description,
+            catalog_scope: template.catalog_scope,
             os_family: template.os_family,
             os_version: template.os_version,
             enabled: template.enabled,
@@ -170,12 +176,11 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
     const submitCreate = async () => {
         const values = await createForm.validateFields() as TemplateCreateRequest;
         const payload: TemplateCreateRequest = { ...values };
-        if (payload.source_type === 'image') {
-            // Clear PVC fields so stale values are not sent to the API.
+        if (payload.source_type === 'cdi_pvc_clone') {
+            payload.image_url = undefined;
+        } else {
             payload.pvc_name = undefined;
             payload.pvc_namespace = undefined;
-        } else if (payload.source_type === 'pvc') {
-            payload.image_url = undefined;
         }
         createMutation.mutate(payload);
     };
@@ -189,12 +194,11 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
         }
         const values = await editForm.validateFields() as TemplateUpdateRequest;
         const payload: TemplateUpdateRequest = { ...values };
-        if (payload.source_type === 'image') {
-            // Clear PVC fields so stale values are not sent to the API.
+        if (payload.source_type === 'cdi_pvc_clone') {
+            payload.image_url = undefined;
+        } else {
             payload.pvc_name = undefined;
             payload.pvc_namespace = undefined;
-        } else if (payload.source_type === 'pvc') {
-            payload.image_url = undefined;
         }
         updateMutation.mutate({
             id: editingTemplate.id,
@@ -238,10 +242,12 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
         openDeleteModal,
         closeCreateModal: () => {
             setCreateOpen(false);
+            setCreateExperimentalSourcesEnabled(false);
             createForm.resetFields();
         },
         closeEditModal: () => {
             setEditOpen(false);
+            setEditExperimentalSourcesEnabled(false);
             setEditingTemplate(null);
             editForm.resetFields();
         },
@@ -252,6 +258,10 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
         submitCreate,
         submitEdit,
         submitDelete,
+        createExperimentalSourcesEnabled,
+        editExperimentalSourcesEnabled,
+        enableCreateExperimentalSources: () => setCreateExperimentalSourcesEnabled(true),
+        enableEditExperimentalSources: () => setEditExperimentalSourcesEnabled(true),
         createPending: createMutation.isPending,
         updatePending: updateMutation.isPending,
         deletePending: deleteMutation.isPending,

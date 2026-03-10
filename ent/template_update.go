@@ -228,6 +228,20 @@ func (_u *TemplateUpdate) ClearOsVersion() *TemplateUpdate {
 	return _u
 }
 
+// SetCatalogScope sets the "catalog_scope" field.
+func (_u *TemplateUpdate) SetCatalogScope(v template.CatalogScope) *TemplateUpdate {
+	_u.mutation.SetCatalogScope(v)
+	return _u
+}
+
+// SetNillableCatalogScope sets the "catalog_scope" field if the given value is not nil.
+func (_u *TemplateUpdate) SetNillableCatalogScope(v *template.CatalogScope) *TemplateUpdate {
+	if v != nil {
+		_u.SetCatalogScope(*v)
+	}
+	return _u
+}
+
 // SetEnabled sets the "enabled" field.
 func (_u *TemplateUpdate) SetEnabled(v bool) *TemplateUpdate {
 	_u.mutation.SetEnabled(v)
@@ -302,6 +316,11 @@ func (_u *TemplateUpdate) check() error {
 	if v, ok := _u.mutation.Name(); ok {
 		if err := template.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Template.name": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.CatalogScope(); ok {
+		if err := template.CatalogScopeValidator(v); err != nil {
+			return &ValidationError{Name: "catalog_scope", err: fmt.Errorf(`ent: validator failed for field "Template.catalog_scope": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.CreatedBy(); ok {
@@ -383,6 +402,9 @@ func (_u *TemplateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.OsVersionCleared() {
 		_spec.ClearField(template.FieldOsVersion, field.TypeString)
+	}
+	if value, ok := _u.mutation.CatalogScope(); ok {
+		_spec.SetField(template.FieldCatalogScope, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(template.FieldEnabled, field.TypeBool, value)
@@ -610,6 +632,20 @@ func (_u *TemplateUpdateOne) ClearOsVersion() *TemplateUpdateOne {
 	return _u
 }
 
+// SetCatalogScope sets the "catalog_scope" field.
+func (_u *TemplateUpdateOne) SetCatalogScope(v template.CatalogScope) *TemplateUpdateOne {
+	_u.mutation.SetCatalogScope(v)
+	return _u
+}
+
+// SetNillableCatalogScope sets the "catalog_scope" field if the given value is not nil.
+func (_u *TemplateUpdateOne) SetNillableCatalogScope(v *template.CatalogScope) *TemplateUpdateOne {
+	if v != nil {
+		_u.SetCatalogScope(*v)
+	}
+	return _u
+}
+
 // SetEnabled sets the "enabled" field.
 func (_u *TemplateUpdateOne) SetEnabled(v bool) *TemplateUpdateOne {
 	_u.mutation.SetEnabled(v)
@@ -697,6 +733,11 @@ func (_u *TemplateUpdateOne) check() error {
 	if v, ok := _u.mutation.Name(); ok {
 		if err := template.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Template.name": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.CatalogScope(); ok {
+		if err := template.CatalogScopeValidator(v); err != nil {
+			return &ValidationError{Name: "catalog_scope", err: fmt.Errorf(`ent: validator failed for field "Template.catalog_scope": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.CreatedBy(); ok {
@@ -795,6 +836,9 @@ func (_u *TemplateUpdateOne) sqlSave(ctx context.Context) (_node *Template, err 
 	}
 	if _u.mutation.OsVersionCleared() {
 		_spec.ClearField(template.FieldOsVersion, field.TypeString)
+	}
+	if value, ok := _u.mutation.CatalogScope(); ok {
+		_spec.SetField(template.FieldCatalogScope, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(template.FieldEnabled, field.TypeBool, value)

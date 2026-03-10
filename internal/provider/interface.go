@@ -45,6 +45,16 @@ type ProvisioningQueryProvider interface {
 	ListEventsForObject(ctx context.Context, cluster string, ref domain.ObjectReference) ([]domain.ProvisioningEvent, error)
 }
 
+// PVCClonePreflightProvider exposes source PVC checks needed before approving
+// CDI clone-backed VM creation.
+type PVCClonePreflightProvider interface {
+	GetPersistentVolumeClaim(ctx context.Context, cluster, namespace, name string) (*domain.PersistentVolumeClaim, error)
+	GetStorageClass(ctx context.Context, cluster, name string) (*domain.StorageClass, error)
+	GetStorageProfile(ctx context.Context, cluster, name string) (*domain.StorageProfile, error)
+	ListPodsUsingPVC(ctx context.Context, cluster, namespace, claimName string) ([]domain.ObjectReference, error)
+	CanClonePVCSource(ctx context.Context, cluster, namespace string) (bool, string, error)
+}
+
 // SnapshotProvider provides snapshot capabilities (RFC-0013).
 type SnapshotProvider interface {
 	CreateSnapshot(ctx context.Context, cluster, namespace, vmName, snapshotName string) (*domain.Snapshot, error)

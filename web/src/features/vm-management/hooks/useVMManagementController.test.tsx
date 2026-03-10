@@ -111,7 +111,7 @@ describe('useVMManagementController', () => {
     let getCall = 0;
     useApiGetMock.mockImplementation(() => {
       getCall += 1;
-      const slot = ((getCall - 1) % 7) + 1;
+      const slot = ((getCall - 1) % 8) + 1;
       if (slot === 1) return { data: { items: [] }, isLoading: false, refetch: vi.fn() };
       if (slot === 2) return { data: { items: [{ id: 'sys-1', name: 'System A' }] }, isLoading: false };
       if (slot === 3) return { data: { items: [{ id: 'svc-1', name: 'Service A' }] }, isLoading: false };
@@ -125,8 +125,20 @@ describe('useVMManagementController', () => {
           isLoading: false,
         };
       }
-      if (slot === 5) return { data: { items: [] }, isLoading: false };
+      if (slot === 5) {
+        return {
+          data: {
+            placement_hint: {
+              status: 'AVAILABLE',
+              compatible_cluster_count: 1,
+              evaluated_cluster_count: 2,
+            },
+          },
+          isLoading: false,
+        };
+      }
       if (slot === 6) return { data: { items: [] }, isLoading: false };
+      if (slot === 7) return { data: { items: [] }, isLoading: false };
       return {
         data: {
           batch_id: 'batch-live-1',
@@ -222,6 +234,32 @@ describe('useVMManagementController', () => {
       instance_size_id: 'size-1',
       namespace: 'prod',
       reason: 'scale up',
+    });
+  });
+
+  it('requests placement hint when namespace, template, and size are selected', async () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    expect(result.current.placementHint?.status).toBe('AVAILABLE');
+
+    const hintCall = [...useApiGetMock.mock.calls].reverse().find(
+      (call) => Array.isArray(call[0]) && call[0][0] === 'vm-request-context' && call[0][1] === 'placement-hint'
+    );
+    const hintQueryFn = hintCall?.[1];
+    expect(hintQueryFn).toBeTypeOf('function');
+
+    await act(async () => {
+      await hintQueryFn();
+    });
+
+    expect(apiGetMock).toHaveBeenCalledWith('/vms/request-context', {
+      params: {
+        query: {
+          namespace: 'prod',
+          template_id: 'tpl-1',
+          instance_size_id: 'size-1',
+        },
+      },
     });
   });
 

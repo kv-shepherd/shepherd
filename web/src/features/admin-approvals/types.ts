@@ -1,6 +1,11 @@
 import dayjs from 'dayjs';
 import type { ElementType } from 'react';
-import { DeleteOutlined, PlusCircleOutlined } from '@ant-design/icons';
+import {
+    DeleteOutlined,
+    DesktopOutlined,
+    PlusCircleOutlined,
+    PoweroffOutlined,
+} from '@ant-design/icons';
 
 import type { components } from '@/types/api.gen';
 
@@ -35,6 +40,8 @@ export const STATUS_BADGES: Record<string, 'processing' | 'success' | 'error' | 
 export const OP_TYPE_CONFIG: Record<string, { color: string; icon: ElementType }> = {
     CREATE: { color: 'blue', icon: PlusCircleOutlined },
     DELETE: { color: 'red', icon: DeleteOutlined },
+    POWER: { color: 'orange', icon: PoweroffOutlined },
+    VNC_ACCESS: { color: 'geekblue', icon: DesktopOutlined },
 };
 
 /** ADR-0015 §11: visual priority by pending duration. */
@@ -61,4 +68,12 @@ export const STATUS_FILTER_OPTIONS: Array<{ key: ApprovalStatus | 'ALL'; i18nKey
     { key: 'REJECTED', i18nKey: 'filter.rejected' },
     { key: 'CANCELLED', i18nKey: 'filter.cancelled' },
     { key: 'ALL', i18nKey: 'filter.all' },
+];
+
+export const OPERATION_FILTER_OPTIONS: Array<{ key: ApprovalTicket['operation_type'] | 'ALL'; i18nKey: string }> = [
+    { key: 'ALL', i18nKey: 'filter.operation_all' },
+    { key: 'CREATE', i18nKey: 'op_type.CREATE' },
+    { key: 'DELETE', i18nKey: 'op_type.DELETE' },
+    { key: 'POWER', i18nKey: 'op_type.POWER' },
+    { key: 'VNC_ACCESS', i18nKey: 'op_type.VNC_ACCESS' },
 ];

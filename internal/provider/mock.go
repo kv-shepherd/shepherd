@@ -13,24 +13,33 @@ import (
 
 // MockProvider implements InfrastructureProvider for testing without a K8s cluster.
 type MockProvider struct {
-	vms             map[string]*domain.VM                    // key: namespace/name
-	dataVolumes     map[string]*domain.DataVolume            // key: namespace/name
-	pvcs            map[string]*domain.PersistentVolumeClaim // key: namespace/name
-	storageClasses  map[string]*domain.StorageClass          // key: name
-	storageProfiles map[string]*domain.StorageProfile        // key: name
-	events          map[string][]domain.ProvisioningEvent    // key: namespace/kind/name
-	mu              sync.RWMutex
+	vms               map[string]*domain.VM                    // key: namespace/name
+	dataVolumes       map[string]*domain.DataVolume            // key: namespace/name
+	pvcs              map[string]*domain.PersistentVolumeClaim // key: namespace/name
+	storageClasses    map[string]*domain.StorageClass          // key: name
+	storageProfiles   map[string]*domain.StorageProfile        // key: name
+	events            map[string][]domain.ProvisioningEvent    // key: namespace/kind/name
+	pvcConsumers      map[string][]domain.ObjectReference      // key: namespace/claim
+	cloneSourceAccess map[string]cloneSourceAccessDecision     // key: source namespace
+	mu                sync.RWMutex
+}
+
+type cloneSourceAccessDecision struct {
+	allowed bool
+	reason  string
 }
 
 // NewMockProvider creates a new MockProvider.
 func NewMockProvider() *MockProvider {
 	return &MockProvider{
-		vms:             make(map[string]*domain.VM),
-		dataVolumes:     make(map[string]*domain.DataVolume),
-		pvcs:            make(map[string]*domain.PersistentVolumeClaim),
-		storageClasses:  make(map[string]*domain.StorageClass),
-		storageProfiles: make(map[string]*domain.StorageProfile),
-		events:          make(map[string][]domain.ProvisioningEvent),
+		vms:               make(map[string]*domain.VM),
+		dataVolumes:       make(map[string]*domain.DataVolume),
+		pvcs:              make(map[string]*domain.PersistentVolumeClaim),
+		storageClasses:    make(map[string]*domain.StorageClass),
+		storageProfiles:   make(map[string]*domain.StorageProfile),
+		events:            make(map[string][]domain.ProvisioningEvent),
+		pvcConsumers:      make(map[string][]domain.ObjectReference),
+		cloneSourceAccess: make(map[string]cloneSourceAccessDecision),
 	}
 }
 
@@ -54,6 +63,8 @@ func (p *MockProvider) Reset() {
 	p.storageClasses = make(map[string]*domain.StorageClass)
 	p.storageProfiles = make(map[string]*domain.StorageProfile)
 	p.events = make(map[string][]domain.ProvisioningEvent)
+	p.pvcConsumers = make(map[string][]domain.ObjectReference)
+	p.cloneSourceAccess = make(map[string]cloneSourceAccessDecision)
 }
 
 func (p *MockProvider) Name() string { return "mock" }
@@ -201,6 +212,18 @@ func (p *MockProvider) SeedEvents(ref domain.ObjectReference, items []domain.Pro
 	p.events[eventKey(ref)] = append([]domain.ProvisioningEvent(nil), items...)
 }
 
+func (p *MockProvider) SeedPVCConsumers(namespace, claimName string, items []domain.ObjectReference) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pvcConsumers[pvcConsumerKey(namespace, claimName)] = append([]domain.ObjectReference(nil), items...)
+}
+
+func (p *MockProvider) SetCloneSourceAccess(namespace string, allowed bool, reason string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cloneSourceAccess[namespace] = cloneSourceAccessDecision{allowed: allowed, reason: reason}
+}
+
 func (p *MockProvider) GetDataVolume(_ context.Context, _, namespace, name string) (*domain.DataVolume, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -250,6 +273,25 @@ func (p *MockProvider) ListEventsForObject(_ context.Context, _ string, ref doma
 	return out, nil
 }
 
+func (p *MockProvider) ListPodsUsingPVC(_ context.Context, _, namespace, claimName string) ([]domain.ObjectReference, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	items := p.pvcConsumers[pvcConsumerKey(namespace, claimName)]
+	out := make([]domain.ObjectReference, len(items))
+	copy(out, items)
+	return out, nil
+}
+
+func (p *MockProvider) CanClonePVCSource(_ context.Context, _, namespace string) (allowed bool, reason string, err error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	decision, ok := p.cloneSourceAccess[namespace]
+	if !ok {
+		return true, "", nil
+	}
+	return decision.allowed, decision.reason, nil
+}
+
 func (p *MockProvider) setStatus(namespace, name string, status domain.VMStatus) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -264,4 +306,8 @@ func (p *MockProvider) setStatus(namespace, name string, status domain.VMStatus)
 
 func eventKey(ref domain.ObjectReference) string {
 	return ref.Namespace + "/" + ref.Kind + "/" + ref.Name
+}
+
+func pvcConsumerKey(namespace, claimName string) string {
+	return namespace + "/" + claimName
 }

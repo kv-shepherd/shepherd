@@ -299,6 +299,20 @@ func (_u *InstanceSizeUpdate) ClearSpecOverrides() *InstanceSizeUpdate {
 	return _u
 }
 
+// SetCatalogScope sets the "catalog_scope" field.
+func (_u *InstanceSizeUpdate) SetCatalogScope(v instancesize.CatalogScope) *InstanceSizeUpdate {
+	_u.mutation.SetCatalogScope(v)
+	return _u
+}
+
+// SetNillableCatalogScope sets the "catalog_scope" field if the given value is not nil.
+func (_u *InstanceSizeUpdate) SetNillableCatalogScope(v *instancesize.CatalogScope) *InstanceSizeUpdate {
+	if v != nil {
+		_u.SetCatalogScope(*v)
+	}
+	return _u
+}
+
 // SetSortOrder sets the "sort_order" field.
 func (_u *InstanceSizeUpdate) SetSortOrder(v int) *InstanceSizeUpdate {
 	_u.mutation.ResetSortOrder()
@@ -421,6 +435,11 @@ func (_u *InstanceSizeUpdate) check() error {
 			return &ValidationError{Name: "memory_request_gi", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.memory_request_gi": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.CatalogScope(); ok {
+		if err := instancesize.CatalogScopeValidator(v); err != nil {
+			return &ValidationError{Name: "catalog_scope", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.catalog_scope": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.CreatedBy(); ok {
 		if err := instancesize.CreatedByValidator(v); err != nil {
 			return &ValidationError{Name: "created_by", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.created_by": %w`, err)}
@@ -521,6 +540,9 @@ func (_u *InstanceSizeUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if _u.mutation.SpecOverridesCleared() {
 		_spec.ClearField(instancesize.FieldSpecOverrides, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.CatalogScope(); ok {
+		_spec.SetField(instancesize.FieldCatalogScope, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.SortOrder(); ok {
 		_spec.SetField(instancesize.FieldSortOrder, field.TypeInt, value)
@@ -825,6 +847,20 @@ func (_u *InstanceSizeUpdateOne) ClearSpecOverrides() *InstanceSizeUpdateOne {
 	return _u
 }
 
+// SetCatalogScope sets the "catalog_scope" field.
+func (_u *InstanceSizeUpdateOne) SetCatalogScope(v instancesize.CatalogScope) *InstanceSizeUpdateOne {
+	_u.mutation.SetCatalogScope(v)
+	return _u
+}
+
+// SetNillableCatalogScope sets the "catalog_scope" field if the given value is not nil.
+func (_u *InstanceSizeUpdateOne) SetNillableCatalogScope(v *instancesize.CatalogScope) *InstanceSizeUpdateOne {
+	if v != nil {
+		_u.SetCatalogScope(*v)
+	}
+	return _u
+}
+
 // SetSortOrder sets the "sort_order" field.
 func (_u *InstanceSizeUpdateOne) SetSortOrder(v int) *InstanceSizeUpdateOne {
 	_u.mutation.ResetSortOrder()
@@ -960,6 +996,11 @@ func (_u *InstanceSizeUpdateOne) check() error {
 			return &ValidationError{Name: "memory_request_gi", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.memory_request_gi": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.CatalogScope(); ok {
+		if err := instancesize.CatalogScopeValidator(v); err != nil {
+			return &ValidationError{Name: "catalog_scope", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.catalog_scope": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.CreatedBy(); ok {
 		if err := instancesize.CreatedByValidator(v); err != nil {
 			return &ValidationError{Name: "created_by", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.created_by": %w`, err)}
@@ -1077,6 +1118,9 @@ func (_u *InstanceSizeUpdateOne) sqlSave(ctx context.Context) (_node *InstanceSi
 	}
 	if _u.mutation.SpecOverridesCleared() {
 		_spec.ClearField(instancesize.FieldSpecOverrides, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.CatalogScope(); ok {
+		_spec.SetField(instancesize.FieldCatalogScope, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.SortOrder(); ok {
 		_spec.SetField(instancesize.FieldSortOrder, field.TypeInt, value)

@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 )
@@ -69,5 +70,13 @@ func (Cluster) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("name").Unique(),
 		index.Fields("status"),
+	}
+}
+
+// Edges of the Cluster.
+func (Cluster) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.To("policy", ClusterPolicy.Type).
+			Unique(),
 	}
 }

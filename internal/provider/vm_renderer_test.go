@@ -104,12 +104,14 @@ func TestRenderVMSpecToYAML_OneAndHalfGi(t *testing.T) {
 	}
 }
 
-func TestRenderVMSpecToYAML_PVCImage(t *testing.T) {
+func TestRenderVMSpecToYAML_ClonePVCImage(t *testing.T) {
 	spec := &VMRenderInput{
-		Name:     "vm-pvc",
-		CPUCores: 2,
-		MemoryGi: 4,
-		Image:    "pvc:my-namespace/my-pvc",
+		Name:         "vm-pvc",
+		CPUCores:     2,
+		MemoryGi:     4,
+		DiskGB:       40,
+		Image:        "clone-pvc:my-namespace/my-pvc",
+		StorageClass: "fast-sc",
 	}
 
 	yaml, err := RenderVMSpecToYAML("test-ns", spec)
@@ -117,14 +119,78 @@ func TestRenderVMSpecToYAML_PVCImage(t *testing.T) {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
 
-	if !strings.Contains(yaml, "persistentVolumeClaim") {
-		t.Errorf("expected PVC reference, got:\n%s", yaml)
+	if !strings.Contains(yaml, "dataVolumeTemplates:") {
+		t.Errorf("expected dataVolumeTemplates for clone-pvc source, got:\n%s", yaml)
 	}
-	if !strings.Contains(yaml, `claimName: "my-pvc"`) {
-		t.Errorf("expected claimName=my-pvc, got:\n%s", yaml)
+	if !strings.Contains(yaml, "dataVolume:") {
+		t.Errorf("expected dataVolume root volume for clone-pvc source, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, `namespace: "my-namespace"`) || !strings.Contains(yaml, `name: "my-pvc"`) {
+		t.Errorf("expected source pvc namespace/name in DataVolumeTemplate, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, `storageClassName: "fast-sc"`) {
+		t.Errorf("expected clone DataVolume storageClassName, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, `storage: "40Gi"`) {
+		t.Errorf("expected clone DataVolume storage request size, got:\n%s", yaml)
+	}
+	if strings.Contains(yaml, "persistentVolumeClaim") {
+		t.Errorf("expected no direct PVC mount for clone-pvc source")
 	}
 	if strings.Contains(yaml, "containerDisk") {
-		t.Errorf("expected no containerDisk for PVC image")
+		t.Errorf("expected no containerDisk for clone-pvc source")
+	}
+	if strings.Contains(yaml, "emptyDisk") {
+		t.Errorf("expected no extra emptyDisk when DiskGB is used as clone root size")
+	}
+}
+
+func TestRenderVMSpecToYAML_CDIImageImport(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:         "vm-import",
+		CPUCores:     2,
+		MemoryGi:     4,
+		DiskGB:       30,
+		Image:        "import-image:docker://quay.io/containerdisks/fedora:40",
+		StorageClass: "gold-sc",
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	if !strings.Contains(yaml, "dataVolumeTemplates:") {
+		t.Errorf("expected dataVolumeTemplates for import-image source, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "registry:") || !strings.Contains(yaml, `url: "docker://quay.io/containerdisks/fedora:40"`) {
+		t.Errorf("expected registry import source in DataVolumeTemplate, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, `storage: "30Gi"`) {
+		t.Errorf("expected DataVolume storage request size, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, `storageClassName: "gold-sc"`) {
+		t.Errorf("expected import DataVolume storageClassName, got:\n%s", yaml)
+	}
+	if strings.Contains(yaml, "containerDisk") {
+		t.Errorf("expected no containerDisk for import-image source")
+	}
+	if strings.Contains(yaml, "emptyDisk") {
+		t.Errorf("expected no extra emptyDisk when DiskGB is used as root DataVolume size")
+	}
+}
+
+func TestRenderVMSpecToYAML_DirectPVCRejected(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-direct-pvc",
+		CPUCores: 2,
+		MemoryGi: 4,
+		Image:    "pvc:my-namespace/my-pvc",
+	}
+
+	_, err := RenderVMSpecToYAML("test-ns", spec)
+	if err == nil {
+		t.Fatal("expected error for unsupported direct PVC boot source")
 	}
 }
 

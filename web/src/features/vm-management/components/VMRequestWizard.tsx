@@ -28,8 +28,15 @@ import type {
     Template,
     TemplateList,
     VMCreateRequest,
+    VMPlacementHint,
 } from '../types';
 import { formatMemory } from '../types';
+import {
+    getPlacementAdvisoryLabelKey,
+    getPlacementReasonActionKey,
+    sortPlacementAdvisoryCounts,
+    sortPlacementReasonCounts,
+} from '../placementHint';
 
 const { Text } = Typography;
 
@@ -48,6 +55,8 @@ interface VMRequestWizardProps {
     sizesData: InstanceSizeList | undefined;
     selectedTemplate: Template | undefined;
     selectedSize: InstanceSize | undefined;
+    placementHint: VMPlacementHint | undefined;
+    placementHintLoading: boolean;
     serviceIdValue: string | undefined;
     namespaceValue: string | undefined;
     namespaceOptions: string[];
@@ -92,6 +101,8 @@ export function VMRequestWizard({
     sizesData,
     selectedTemplate,
     selectedSize,
+    placementHint,
+    placementHintLoading,
     serviceIdValue,
     namespaceValue,
     namespaceOptions,
@@ -226,6 +237,26 @@ export function VMRequestWizard({
                         >
                             <Input.TextArea rows={4} placeholder={t('wizard.reason_placeholder')} />
                         </Form.Item>
+                        {selectedTemplate && selectedSize && namespaceValue ? (
+                            placementHintLoading ? (
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    style={{ marginBottom: 16 }}
+                                    message={t('wizard.placement_hint_loading')}
+                                />
+                            ) : placementHint ? (
+                                <Alert
+                                    type={placementHint.status === 'AVAILABLE' ? 'success' : 'warning'}
+                                    showIcon
+                                    style={{ marginBottom: 16 }}
+                                    message={placementHint.status === 'AVAILABLE'
+                                        ? t('wizard.placement_hint_available', { count: placementHint.compatible_cluster_count })
+                                        : t('wizard.placement_hint_unavailable')}
+                                    description={renderPlacementHintDescription(placementHint, t)}
+                                />
+                            ) : null
+                        ) : null}
                         <Form.Item
                             name="batch_count"
                             label={t('wizard.batch_count')}
@@ -319,5 +350,48 @@ export function VMRequestWizard({
                 {renderStep()}
             </Form>
         </Modal>
+    );
+}
+
+function renderPlacementHintDescription(hint: VMPlacementHint, t: TFunction): ReactNode {
+    if (hint.status === 'AVAILABLE') {
+        const advisoryCounts = sortPlacementAdvisoryCounts(hint.advisory_counts);
+        return (
+            <Space direction="vertical" size={4}>
+                <Text>
+                    {t('wizard.placement_hint_available_detail', {
+                        count: hint.compatible_cluster_count,
+                        total: hint.evaluated_cluster_count,
+                    })}
+                </Text>
+                {hint.primary_advisory_code ? (
+                    <Text type="warning">
+                        {t('wizard.placement_hint_advisory', {
+                            note: t(getPlacementAdvisoryLabelKey(hint.primary_advisory_code)),
+                            count: advisoryCounts[0]?.count ?? 1,
+                        })}
+                    </Text>
+                ) : null}
+            </Space>
+        );
+    }
+
+    const primaryReason = t(`wizard.placement_reason.${hint.primary_reason_code ?? 'Other'}`);
+    const suggestedAction = t(getPlacementReasonActionKey(hint.primary_reason_code));
+    const reasonCounts = sortPlacementReasonCounts(hint.reason_counts);
+    return (
+        <Space direction="vertical" size={6}>
+            <Text>{t('wizard.placement_hint_unavailable_detail', { reason: primaryReason })}</Text>
+            <Text type="secondary">{t('wizard.placement_hint_next_step', { action: suggestedAction })}</Text>
+            {reasonCounts.length > 0 ? (
+                <Space size={[0, 4]} wrap>
+                    {reasonCounts.slice(0, 3).map((reason) => (
+                        <Tag key={reason.code} color="orange">
+                            {t(`wizard.placement_reason.${reason.code}`)} ({reason.count})
+                        </Tag>
+                    ))}
+                </Space>
+            ) : null}
+        </Space>
     );
 }

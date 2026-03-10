@@ -4,6 +4,7 @@ export type VM = components['schemas']['VM'];
 export type VMList = components['schemas']['VMList'];
 export type VMCreateRequest = components['schemas']['VMCreateRequest'];
 export type VMRequestContext = components['schemas']['VMRequestContext'];
+export type VMPlacementHint = components['schemas']['VMPlacementHint'];
 export type SystemList = components['schemas']['SystemList'];
 export type ServiceList = components['schemas']['ServiceList'];
 export type TemplateList = components['schemas']['TemplateList'];

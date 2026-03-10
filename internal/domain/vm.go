@@ -27,13 +27,14 @@ type VM struct {
 // VMSpec represents the desired state of a VM.
 // Resource units: CPU in cores (0.5 step), Memory in Gi (0.5 step).
 type VMSpec struct {
-	Name      string            `json:"name,omitempty"`
-	CPU       float64           `json:"cpu"`
-	MemoryGi  float64           `json:"memory_gi"`
-	DiskGB    int               `json:"disk_gb,omitempty"`
-	Image     string            `json:"image,omitempty"`
-	CloudInit string            `json:"cloud_init,omitempty"`
-	Labels    map[string]string `json:"labels,omitempty"`
+	Name         string            `json:"name,omitempty"`
+	CPU          float64           `json:"cpu"`
+	MemoryGi     float64           `json:"memory_gi"`
+	DiskGB       int               `json:"disk_gb,omitempty"`
+	Image        string            `json:"image,omitempty"`
+	StorageClass string            `json:"storage_class,omitempty"`
+	CloudInit    string            `json:"cloud_init,omitempty"`
+	Labels       map[string]string `json:"labels,omitempty"`
 
 	// CPURequest is the K8s CPU request in cores (overcommit: request ≤ limit/CPU).
 	// Zero means "use CPU" (no overcommit). Set via admin resource override (Stage 5.B).

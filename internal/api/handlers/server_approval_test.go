@@ -42,7 +42,7 @@ func TestTicketToAPI_NilPayload_WhenPayloadMapNil(t *testing.T) {
 		Status:        approvalticket.StatusPENDING,
 		CreatedAt:     time.Now(),
 	}
-	got := ticketToAPI(tick, nil)
+	got := ticketToAPI(tick, nil, nil)
 	if got.TicketPayload != nil {
 		t.Fatalf("TicketPayload = %v, want nil when payloadMap is nil", got.TicketPayload)
 	}
@@ -64,7 +64,7 @@ func TestTicketToAPI_PopulatesTicketPayload(t *testing.T) {
 		Status:        approvalticket.StatusPENDING,
 		CreatedAt:     time.Now(),
 	}
-	got := ticketToAPI(tick, payload)
+	got := ticketToAPI(tick, payload, nil)
 	if got.TicketPayload == nil {
 		t.Fatal("TicketPayload is nil, want non-nil")
 	}
@@ -73,6 +73,43 @@ func TestTicketToAPI_PopulatesTicketPayload(t *testing.T) {
 	}
 	if got.TicketPayload["reason"] != "scale up" {
 		t.Fatalf("TicketPayload[reason] = %v, want %q", got.TicketPayload["reason"], "scale up")
+	}
+}
+
+func TestTicketToAPI_PopulatesPlacementEvaluation(t *testing.T) {
+	t.Parallel()
+
+	tick := &ent.ApprovalTicket{
+		ID:            "ticket-placement",
+		EventID:       "event-placement",
+		OperationType: approvalticket.OperationTypeCREATE,
+		Requester:     "user-c",
+		Status:        approvalticket.StatusAPPROVED,
+		PlacementEvaluation: map[string]interface{}{
+			"selected_cluster_id":          "cluster-1",
+			"selected_cluster_name":        "cluster-a",
+			"selected_cluster_environment": "prod",
+			"effective_storage_class":      "gold-sc",
+			"eligible":                     true,
+			"advisory_code":                "PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY",
+			"advisory_message":             "clone may fall back to host-assisted copy",
+			"evaluated_at":                 "2026-03-08T00:00:00Z",
+		},
+		CreatedAt: time.Now(),
+	}
+
+	got := ticketToAPI(tick, nil, nil)
+	if got.PlacementEvaluation == nil {
+		t.Fatal("PlacementEvaluation is nil, want non-nil")
+	}
+	if got.PlacementEvaluation.SelectedClusterId != "cluster-1" {
+		t.Fatalf("SelectedClusterId = %q, want cluster-1", got.PlacementEvaluation.SelectedClusterId)
+	}
+	if !got.PlacementEvaluation.Eligible {
+		t.Fatal("Eligible = false, want true")
+	}
+	if got.PlacementEvaluation.AdvisoryCode != "PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY" {
+		t.Fatalf("AdvisoryCode = %q, want PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY", got.PlacementEvaluation.AdvisoryCode)
 	}
 }
 
@@ -86,6 +123,7 @@ func TestTicketToAPI_OperationTypePassedThrough(t *testing.T) {
 	}{
 		{"CREATE", approvalticket.OperationTypeCREATE, generated.ApprovalTicketOperationType("CREATE")},
 		{"DELETE", approvalticket.OperationTypeDELETE, generated.ApprovalTicketOperationType("DELETE")},
+		{"POWER", approvalticket.OperationTypePOWER, generated.ApprovalTicketOperationType("POWER")},
 		{"VNC_ACCESS", approvalticket.OperationTypeVNC_ACCESS, generated.ApprovalTicketOperationType("VNC_ACCESS")},
 	}
 
@@ -101,7 +139,7 @@ func TestTicketToAPI_OperationTypePassedThrough(t *testing.T) {
 				Status:        approvalticket.StatusPENDING,
 				CreatedAt:     time.Now(),
 			}
-			got := ticketToAPI(tick, nil)
+			got := ticketToAPI(tick, nil, nil)
 			if got.OperationType != tc.wantAPI {
 				t.Fatalf("OperationType = %q, want %q", got.OperationType, tc.wantAPI)
 			}
@@ -283,6 +321,156 @@ func TestListApprovals_MalformedEventPayload_NilPayloadNonFatal(t *testing.T) {
 	// Malformed payload → deserialization fails → TicketPayload must be nil.
 	if found.TicketPayload != nil {
 		t.Fatalf("TicketPayload = %v, want nil when event payload is malformed", found.TicketPayload)
+	}
+}
+
+func TestListApprovals_FiltersByOperationType(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newApprovalTestServer(t, "approval_filter_op_type")
+
+	createEventID := "ev-create-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, createEventID, []byte(`{"seed":"create"}`))
+	createTicketID := "ticket-create-" + uuid.NewString()
+	mustCreateApprovalTicket(t, client, createTicketID, createEventID, approvalticket.OperationTypeCREATE, "user-a")
+
+	powerEventID := "ev-power-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, powerEventID, []byte(`{"seed":"power"}`))
+	powerTicketID := "ticket-power-" + uuid.NewString()
+	mustCreateApprovalTicket(t, client, powerTicketID, powerEventID, approvalticket.OperationTypePOWER, "user-a")
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/approvals?operation_type=POWER", "", "admin-1", []string{"approval:view", "platform:admin"})
+	srv.ListApprovals(c, generated.ListApprovalsParams{
+		OperationType: generated.ListApprovalsParamsOperationType("POWER"),
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.ApprovalTicketList
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("items length = %d, want 1", len(resp.Items))
+	}
+	if resp.Items[0].Id != powerTicketID {
+		t.Fatalf("ticket id = %q, want %q", resp.Items[0].Id, powerTicketID)
+	}
+}
+
+func TestListApprovals_FiltersBySelectedClusterAndPlacementSnapshot(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newApprovalTestServer(t, "approval_filter_placement")
+
+	withPlacementEventID := "ev-placement-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, withPlacementEventID, []byte(`{"seed":"placement"}`))
+	withPlacementTicketID := "ticket-placement-" + uuid.NewString()
+	mustCreateApprovalTicket(t, client, withPlacementTicketID, withPlacementEventID, approvalticket.OperationTypeCREATE, "user-a")
+	if err := client.ApprovalTicket.UpdateOneID(withPlacementTicketID).
+		SetStatus(approvalticket.StatusAPPROVED).
+		SetSelectedClusterID("cluster-a").
+		SetPlacementEvaluation(map[string]interface{}{
+			"selected_cluster_id":          "cluster-a",
+			"selected_cluster_name":        "cluster-a-name",
+			"selected_cluster_environment": "prod",
+			"eligible":                     true,
+			"evaluated_at":                 "2026-03-08T00:00:00Z",
+		}).
+		Exec(t.Context()); err != nil {
+		t.Fatalf("update ticket with placement: %v", err)
+	}
+
+	withoutPlacementEventID := "ev-no-placement-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, withoutPlacementEventID, []byte(`{"seed":"no-placement"}`))
+	withoutPlacementTicketID := "ticket-no-placement-" + uuid.NewString()
+	mustCreateApprovalTicket(t, client, withoutPlacementTicketID, withoutPlacementEventID, approvalticket.OperationTypeCREATE, "user-a")
+	if err := client.ApprovalTicket.UpdateOneID(withoutPlacementTicketID).
+		SetStatus(approvalticket.StatusAPPROVED).
+		SetSelectedClusterID("cluster-b").
+		Exec(t.Context()); err != nil {
+		t.Fatalf("update ticket without placement: %v", err)
+	}
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/approvals?selected_cluster_id=cluster-a&placement_snapshot=present", "", "admin-1", []string{"approval:view", "platform:admin"})
+	srv.ListApprovals(c, generated.ListApprovalsParams{
+		SelectedClusterId: "cluster-a",
+		PlacementSnapshot: generated.ListApprovalsParamsPlacementSnapshot("present"),
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.ApprovalTicketList
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("items length = %d, want 1", len(resp.Items))
+	}
+	if resp.Items[0].Id != withPlacementTicketID {
+		t.Fatalf("ticket id = %q, want %q", resp.Items[0].Id, withPlacementTicketID)
+	}
+}
+
+func TestListApprovals_FiltersByPlacementAdvisoryCode(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newApprovalTestServer(t, "approval_filter_advisory")
+
+	withAdvisoryEventID := "ev-advisory-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, withAdvisoryEventID, []byte(`{"seed":"advisory"}`))
+	withAdvisoryTicketID := "ticket-advisory-" + uuid.NewString()
+	mustCreateApprovalTicket(t, client, withAdvisoryTicketID, withAdvisoryEventID, approvalticket.OperationTypeCREATE, "user-a")
+	if err := client.ApprovalTicket.UpdateOneID(withAdvisoryTicketID).
+		SetStatus(approvalticket.StatusAPPROVED).
+		SetPlacementEvaluation(map[string]interface{}{
+			"selected_cluster_id": "cluster-a",
+			"eligible":            true,
+			"advisory_code":       "PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY",
+			"advisory_message":    "clone may fall back to host-assisted copy",
+			"evaluated_at":        "2026-03-08T00:00:00Z",
+		}).
+		Exec(t.Context()); err != nil {
+		t.Fatalf("update ticket with placement advisory: %v", err)
+	}
+
+	withoutAdvisoryEventID := "ev-no-advisory-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, withoutAdvisoryEventID, []byte(`{"seed":"no-advisory"}`))
+	withoutAdvisoryTicketID := "ticket-no-advisory-" + uuid.NewString()
+	mustCreateApprovalTicket(t, client, withoutAdvisoryTicketID, withoutAdvisoryEventID, approvalticket.OperationTypeCREATE, "user-a")
+	if err := client.ApprovalTicket.UpdateOneID(withoutAdvisoryTicketID).
+		SetStatus(approvalticket.StatusAPPROVED).
+		SetPlacementEvaluation(map[string]interface{}{
+			"selected_cluster_id": "cluster-b",
+			"eligible":            true,
+			"evaluated_at":        "2026-03-08T00:00:00Z",
+		}).
+		Exec(t.Context()); err != nil {
+		t.Fatalf("update ticket without placement advisory: %v", err)
+	}
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/approvals?placement_advisory_code=PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY", "", "admin-1", []string{"approval:view", "platform:admin"})
+	srv.ListApprovals(c, generated.ListApprovalsParams{
+		PlacementAdvisoryCode: "PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY",
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.ApprovalTicketList
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("items length = %d, want 1", len(resp.Items))
+	}
+	if resp.Items[0].Id != withAdvisoryTicketID {
+		t.Fatalf("ticket id = %q, want %q", resp.Items[0].Id, withAdvisoryTicketID)
 	}
 }
 

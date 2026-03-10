@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"math"
 
@@ -12,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 	"kv-shepherd.io/shepherd/ent/predicate"
 )
 
@@ -22,6 +24,7 @@ type ClusterQuery struct {
 	order      []cluster.OrderOption
 	inters     []Interceptor
 	predicates []predicate.Cluster
+	withPolicy *ClusterPolicyQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -56,6 +59,28 @@ func (_q *ClusterQuery) Unique(unique bool) *ClusterQuery {
 func (_q *ClusterQuery) Order(o ...cluster.OrderOption) *ClusterQuery {
 	_q.order = append(_q.order, o...)
 	return _q
+}
+
+// QueryPolicy chains the current query on the "policy" edge.
+func (_q *ClusterQuery) QueryPolicy() *ClusterPolicyQuery {
+	query := (&ClusterPolicyClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(cluster.Table, cluster.FieldID, selector),
+			sqlgraph.To(clusterpolicy.Table, clusterpolicy.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, cluster.PolicyTable, cluster.PolicyColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
 }
 
 // First returns the first Cluster entity from the query.
@@ -250,10 +275,22 @@ func (_q *ClusterQuery) Clone() *ClusterQuery {
 		order:      append([]cluster.OrderOption{}, _q.order...),
 		inters:     append([]Interceptor{}, _q.inters...),
 		predicates: append([]predicate.Cluster{}, _q.predicates...),
+		withPolicy: _q.withPolicy.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
 	}
+}
+
+// WithPolicy tells the query-builder to eager-load the nodes that are connected to
+// the "policy" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *ClusterQuery) WithPolicy(opts ...func(*ClusterPolicyQuery)) *ClusterQuery {
+	query := (&ClusterPolicyClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withPolicy = query
+	return _q
 }
 
 // GroupBy is used to group vertices by one or more fields/columns.
@@ -332,8 +369,11 @@ func (_q *ClusterQuery) prepareQuery(ctx context.Context) error {
 
 func (_q *ClusterQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Cluster, error) {
 	var (
-		nodes = []*Cluster{}
-		_spec = _q.querySpec()
+		nodes       = []*Cluster{}
+		_spec       = _q.querySpec()
+		loadedTypes = [1]bool{
+			_q.withPolicy != nil,
+		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
 		return (*Cluster).scanValues(nil, columns)
@@ -341,6 +381,7 @@ func (_q *ClusterQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Clus
 	_spec.Assign = func(columns []string, values []any) error {
 		node := &Cluster{config: _q.config}
 		nodes = append(nodes, node)
+		node.Edges.loadedTypes = loadedTypes
 		return node.assignValues(columns, values)
 	}
 	for i := range hooks {
@@ -352,7 +393,41 @@ func (_q *ClusterQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Clus
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
+	if query := _q.withPolicy; query != nil {
+		if err := _q.loadPolicy(ctx, query, nodes, nil,
+			func(n *Cluster, e *ClusterPolicy) { n.Edges.Policy = e }); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
+}
+
+func (_q *ClusterQuery) loadPolicy(ctx context.Context, query *ClusterPolicyQuery, nodes []*Cluster, init func(*Cluster), assign func(*Cluster, *ClusterPolicy)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[string]*Cluster)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(clusterpolicy.FieldClusterID)
+	}
+	query.Where(predicate.ClusterPolicy(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(cluster.PolicyColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.ClusterID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "cluster_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
 }
 
 func (_q *ClusterQuery) sqlCount(ctx context.Context) (int, error) {

@@ -105,6 +105,7 @@ func ensureRenderedYAML(namespace string, spec *domain.VMSpec) error {
 		MemoryGi:        spec.MemoryGi,
 		DiskGB:          spec.DiskGB,
 		Image:           spec.Image,
+		StorageClass:    spec.StorageClass,
 		CloudInit:       spec.CloudInit,
 		Labels:          spec.Labels,
 		CPURequest:      spec.CPURequest,

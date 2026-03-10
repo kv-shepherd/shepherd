@@ -50,6 +50,8 @@ type InstanceSize struct {
 	HugepagesSize string `json:"hugepages_size,omitempty"`
 	// SpecOverrides holds the value of the "spec_overrides" field.
 	SpecOverrides map[string]interface{} `json:"spec_overrides,omitempty"`
+	// Catalog visibility scope only. Not scheduling environment.
+	CatalogScope instancesize.CatalogScope `json:"catalog_scope,omitempty"`
 	// SortOrder holds the value of the "sort_order" field.
 	SortOrder int `json:"sort_order,omitempty"`
 	// Enabled holds the value of the "enabled" field.
@@ -72,7 +74,7 @@ func (*InstanceSize) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case instancesize.FieldDiskGB, instancesize.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
-		case instancesize.FieldID, instancesize.FieldName, instancesize.FieldDisplayName, instancesize.FieldDescription, instancesize.FieldHugepagesSize, instancesize.FieldCreatedBy:
+		case instancesize.FieldID, instancesize.FieldName, instancesize.FieldDisplayName, instancesize.FieldDescription, instancesize.FieldHugepagesSize, instancesize.FieldCatalogScope, instancesize.FieldCreatedBy:
 			values[i] = new(sql.NullString)
 		case instancesize.FieldCreatedAt, instancesize.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -195,6 +197,12 @@ func (_m *InstanceSize) assignValues(columns []string, values []any) error {
 					return fmt.Errorf("unmarshal field spec_overrides: %w", err)
 				}
 			}
+		case instancesize.FieldCatalogScope:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field catalog_scope", values[i])
+			} else if value.Valid {
+				_m.CatalogScope = instancesize.CatalogScope(value.String)
+			}
 		case instancesize.FieldSortOrder:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field sort_order", values[i])
@@ -296,6 +304,9 @@ func (_m *InstanceSize) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("spec_overrides=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SpecOverrides))
+	builder.WriteString(", ")
+	builder.WriteString("catalog_scope=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CatalogScope))
 	builder.WriteString(", ")
 	builder.WriteString("sort_order=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SortOrder))

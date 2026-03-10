@@ -50,7 +50,7 @@ func TestVmToAPI_Environment_Prod(t *testing.T) {
 
 	vm := minimalEntVM(t)
 	vm.ClusterID = "cluster-a"
-	got := vmToAPI(vm, "prod")
+	got := vmToAPI(vm, "prod", nil)
 
 	if got.Environment != generated.VMEnvironmentProd {
 		t.Fatalf("environment = %q, want %q", got.Environment, generated.VMEnvironmentProd)
@@ -62,7 +62,7 @@ func TestVmToAPI_Environment_Test(t *testing.T) {
 
 	vm := minimalEntVM(t)
 	vm.ClusterID = "cluster-b"
-	got := vmToAPI(vm, "test")
+	got := vmToAPI(vm, "test", nil)
 
 	if got.Environment != generated.VMEnvironmentTest {
 		t.Fatalf("environment = %q, want %q", got.Environment, generated.VMEnvironmentTest)
@@ -74,7 +74,7 @@ func TestVmToAPI_Environment_Empty_WhenClusterEnvBlank(t *testing.T) {
 
 	vm := minimalEntVM(t)
 	// No clusterEnv provided → environment must remain zero value.
-	got := vmToAPI(vm, "")
+	got := vmToAPI(vm, "", nil)
 
 	if got.Environment != "" {
 		t.Fatalf("environment = %q, want empty string (no cluster env)", got.Environment)
@@ -86,7 +86,7 @@ func TestVmToAPI_PreservesCoreFields(t *testing.T) {
 
 	vm := minimalEntVM(t)
 	vm.ClusterID = "cluster-core"
-	got := vmToAPI(vm, "prod")
+	got := vmToAPI(vm, "prod", nil)
 
 	if got.Id != vm.ID {
 		t.Fatalf("id = %q, want %q", got.Id, vm.ID)

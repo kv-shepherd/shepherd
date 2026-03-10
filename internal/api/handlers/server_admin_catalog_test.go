@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/internal/api/generated"
@@ -21,7 +22,7 @@ func TestAdminTemplateCRUD(t *testing.T) {
 		t,
 		http.MethodPost,
 		"/admin/templates",
-		`{"name":"ubuntu-base","display_name":"Ubuntu Base","description":"base image","os_family":"linux","os_version":"22.04","enabled":true}`,
+		`{"name":"ubuntu-base","display_name":"Ubuntu Base","description":"base image","catalog_scope":"prod","os_family":"linux","os_version":"22.04","enabled":true}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
@@ -35,12 +36,15 @@ func TestAdminTemplateCRUD(t *testing.T) {
 	if created.Id == "" || created.Name != "ubuntu-base" {
 		t.Fatalf("unexpected created template: %+v", created)
 	}
+	if created.CatalogScope != "prod" {
+		t.Fatalf("catalog_scope = %q, want %q", created.CatalogScope, "prod")
+	}
 
 	updateCtx, updateW := newAuthedGinContext(
 		t,
 		http.MethodPatch,
 		"/admin/templates/"+created.Id,
-		`{"display_name":"Ubuntu Base v2","enabled":false}`,
+		`{"display_name":"Ubuntu Base v2","catalog_scope":"all","enabled":false}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
@@ -53,6 +57,9 @@ func TestAdminTemplateCRUD(t *testing.T) {
 	mustDecodeJSON(t, updateW.Body.Bytes(), &updated)
 	if updated.DisplayName != "Ubuntu Base v2" {
 		t.Fatalf("display_name = %q, want %q", updated.DisplayName, "Ubuntu Base v2")
+	}
+	if updated.CatalogScope != "all" {
+		t.Fatalf("catalog_scope = %q, want %q", updated.CatalogScope, "all")
 	}
 	if updated.Enabled {
 		t.Fatal("expected template enabled=false after update")
@@ -98,7 +105,7 @@ func TestAdminInstanceSizeCRUD(t *testing.T) {
 		t,
 		http.MethodPost,
 		"/admin/instance-sizes",
-		`{"name":"m4.large","display_name":"M4 Large","cpu_cores":4,"memory_gi":8,"disk_gb":80,"dedicated_cpu":false,"enabled":true}`,
+		`{"name":"m4.large","display_name":"M4 Large","catalog_scope":"test","cpu_cores":4,"memory_gi":8,"disk_gb":80,"dedicated_cpu":false,"enabled":true}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
@@ -112,12 +119,15 @@ func TestAdminInstanceSizeCRUD(t *testing.T) {
 	if created.Id == "" || created.Name != "m4.large" {
 		t.Fatalf("unexpected created instance size: %+v", created)
 	}
+	if created.CatalogScope != "test" {
+		t.Fatalf("catalog_scope = %q, want %q", created.CatalogScope, "test")
+	}
 
 	updateCtx, updateW := newAuthedGinContext(
 		t,
 		http.MethodPatch,
 		"/admin/instance-sizes/"+created.Id,
-		`{"display_name":"M4 Large Updated","requires_gpu":true,"enabled":false}`,
+		`{"display_name":"M4 Large Updated","catalog_scope":"all","requires_gpu":true,"enabled":false}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
@@ -130,6 +140,9 @@ func TestAdminInstanceSizeCRUD(t *testing.T) {
 	mustDecodeJSON(t, updateW.Body.Bytes(), &updated)
 	if updated.DisplayName != "M4 Large Updated" {
 		t.Fatalf("display_name = %q, want %q", updated.DisplayName, "M4 Large Updated")
+	}
+	if updated.CatalogScope != "all" {
+		t.Fatalf("catalog_scope = %q, want %q", updated.CatalogScope, "all")
 	}
 	if !updated.RequiresGpu {
 		t.Fatal("expected requires_gpu=true after update")
@@ -163,6 +176,122 @@ func TestAdminInstanceSizeCRUD(t *testing.T) {
 
 	if _, err := client.InstanceSize.Get(t.Context(), created.Id); !ent.IsNotFound(err) {
 		t.Fatalf("expected instance size deleted, err=%v", err)
+	}
+}
+
+func TestAdminTemplateCreate_StoresCanonicalSourceType(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminCatalogTestServer(t)
+
+	createCtx, createW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/templates",
+		`{"name":"ubuntu-base","source_type":"cdi_pvc_clone","pvc_name":"golden-ubuntu","pvc_namespace":"golden-images","enabled":true}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.CreateAdminTemplate(createCtx)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body=%s", createW.Code, http.StatusCreated, createW.Body.String())
+	}
+
+	var created generated.Template
+	mustDecodeJSON(t, createW.Body.Bytes(), &created)
+	if got, want := string(created.SourceType), "cdi_pvc_clone"; got != want {
+		t.Fatalf("source_type = %q, want %q", got, want)
+	}
+
+	stored, err := client.Template.Get(t.Context(), created.Id)
+	if err != nil {
+		t.Fatalf("load created template: %v", err)
+	}
+	if got, want := stored.SourceType, "cdi_pvc_clone"; got != want {
+		t.Fatalf("stored source_type = %q, want %q", got, want)
+	}
+}
+
+func TestAdminTemplateCreate_RejectsLegacySourceTypeAlias(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newAdminCatalogTestServer(t)
+
+	createCtx, createW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/templates",
+		`{"name":"ubuntu-base","source_type":"pvc","pvc_name":"golden-ubuntu","pvc_namespace":"golden-images","enabled":true}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.CreateAdminTemplate(createCtx)
+	if createW.Code != http.StatusBadRequest {
+		t.Fatalf("create status = %d, want %d, body=%s", createW.Code, http.StatusBadRequest, createW.Body.String())
+	}
+}
+
+func TestAdminTemplateCreate_RejectsContainerDiskForProdCatalog(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newAdminCatalogTestServer(t)
+
+	createCtx, createW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/templates",
+		`{"name":"fedora-ephemeral","source_type":"containerdisk","image_url":"quay.io/containerdisks/fedora:40","catalog_scope":"prod","enabled":true}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.CreateAdminTemplate(createCtx)
+	if createW.Code != http.StatusBadRequest {
+		t.Fatalf("create status = %d, want %d, body=%s", createW.Code, http.StatusBadRequest, createW.Body.String())
+	}
+
+	var resp generated.Error
+	mustDecodeJSON(t, createW.Body.Bytes(), &resp)
+	if got, want := resp.Code, "INVALID_TEMPLATE_SOURCE_SCOPE"; got != want {
+		t.Fatalf("error code = %q, want %q", got, want)
+	}
+}
+
+func TestAdminTemplateUpdate_RejectsPromotingContainerDiskToAllCatalog(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminCatalogTestServer(t)
+
+	templateID := "tpl-" + uuid.NewString()
+	_, err := client.Template.Create().
+		SetID(templateID).
+		SetName("fedora-ephemeral").
+		SetSourceType("containerdisk").
+		SetImageURL("quay.io/containerdisks/fedora:40").
+		SetCatalogScope("test").
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/templates/"+templateID,
+		`{"catalog_scope":"all"}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.UpdateAdminTemplate(updateCtx, templateID)
+	if updateW.Code != http.StatusBadRequest {
+		t.Fatalf("update status = %d, want %d, body=%s", updateW.Code, http.StatusBadRequest, updateW.Body.String())
+	}
+
+	var resp generated.Error
+	mustDecodeJSON(t, updateW.Body.Bytes(), &resp)
+	if got, want := resp.Code, "INVALID_TEMPLATE_SOURCE_SCOPE"; got != want {
+		t.Fatalf("error code = %q, want %q", got, want)
 	}
 }
 

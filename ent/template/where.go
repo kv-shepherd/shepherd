@@ -954,6 +954,26 @@ func OsVersionContainsFold(v string) predicate.Template {
 	return predicate.Template(sql.FieldContainsFold(FieldOsVersion, v))
 }
 
+// CatalogScopeEQ applies the EQ predicate on the "catalog_scope" field.
+func CatalogScopeEQ(v CatalogScope) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldCatalogScope, v))
+}
+
+// CatalogScopeNEQ applies the NEQ predicate on the "catalog_scope" field.
+func CatalogScopeNEQ(v CatalogScope) predicate.Template {
+	return predicate.Template(sql.FieldNEQ(FieldCatalogScope, v))
+}
+
+// CatalogScopeIn applies the In predicate on the "catalog_scope" field.
+func CatalogScopeIn(vs ...CatalogScope) predicate.Template {
+	return predicate.Template(sql.FieldIn(FieldCatalogScope, vs...))
+}
+
+// CatalogScopeNotIn applies the NotIn predicate on the "catalog_scope" field.
+func CatalogScopeNotIn(vs ...CatalogScope) predicate.Template {
+	return predicate.Template(sql.FieldNotIn(FieldCatalogScope, vs...))
+}
+
 // EnabledEQ applies the EQ predicate on the "enabled" field.
 func EnabledEQ(v bool) predicate.Template {
 	return predicate.Template(sql.FieldEQ(FieldEnabled, v))

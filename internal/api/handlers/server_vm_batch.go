@@ -22,6 +22,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/ratelimitexemption"
 	"kv-shepherd.io/shepherd/ent/ratelimituseroverride"
+	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/domain"
@@ -384,9 +385,13 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		} else if ok {
+			status := generated.VMBatchParentStatusINPROGRESS
+			if view, _, loadErr := s.loadBatchView(ctx, existingID); loadErr == nil {
+				status = view.Status
+			}
 			c.JSON(http.StatusAccepted, generated.VMBatchSubmitResponse{
 				BatchId:           existingID,
-				Status:            generated.VMBatchParentStatusINPROGRESS,
+				Status:            status,
 				StatusUrl:         "/api/v1/vms/batch/" + existingID,
 				RetryAfterSeconds: batchRetryAfterSeconds,
 			})
@@ -1496,6 +1501,27 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 	if err != nil {
 		return generated.VMBatchStatusResponse{}, nil, err
 	}
+	createChildTicketIDs := make([]string, 0, len(children))
+	for _, child := range children {
+		if child.OperationType == approvalticket.OperationTypeCREATE {
+			createChildTicketIDs = append(createChildTicketIDs, child.ID)
+		}
+	}
+	createVMByTicketID := make(map[string]*ent.VM)
+	if len(createChildTicketIDs) > 0 {
+		vms, vmErr := s.client.VM.Query().
+			Where(entvm.TicketIDIn(createChildTicketIDs...)).
+			All(ctx)
+		if vmErr != nil {
+			return generated.VMBatchStatusResponse{}, nil, vmErr
+		}
+		for _, vm := range vms {
+			if vm == nil || strings.TrimSpace(vm.TicketID) == "" {
+				continue
+			}
+			createVMByTicketID[vm.TicketID] = vm
+		}
+	}
 
 	eventIDs := make([]string, 0, len(children))
 	for _, child := range children {
@@ -1575,6 +1601,7 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 			ResourceName: resourceName,
 			LastError:    lastError,
 			AttemptCount: attemptCount,
+			Provisioning: s.loadVMProvisioning(ctx, createVMByTicketID[child.ID]),
 		})
 	}
 

@@ -9,18 +9,74 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 )
 
 // ApprovalValidator performs pre-approval checks per master-flow.md Stage 5.B.
 type ApprovalValidator struct {
-	client *ent.Client
+	client    *ent.Client
+	policySvc *ClusterPolicyService
+	vmService *VMService
 }
 
 // NewApprovalValidator creates a new ApprovalValidator.
 func NewApprovalValidator(client *ent.Client) *ApprovalValidator {
-	return &ApprovalValidator{client: client}
+	return &ApprovalValidator{
+		client:    client,
+		policySvc: NewClusterPolicyService(client),
+	}
+}
+
+// SetVMService injects VMService-backed infrastructure reads used for
+// non-blocking storage advisories during placement evaluation.
+func (v *ApprovalValidator) SetVMService(svc *VMService) *ApprovalValidator {
+	v.vmService = svc
+	return v
+}
+
+// ApprovalValidationInput carries all create-approval context needed for
+// capability and policy checks.
+type ApprovalValidationInput struct {
+	ClusterID      string
+	TemplateID     string
+	InstanceSizeID string
+	Namespace      string
+	StorageClass   string
+	Override       *ApprovalResourceOverride
+}
+
+// ApprovalResourceOverride contains the effective admin override values applied
+// during CREATE approval.
+type ApprovalResourceOverride struct {
+	CPURequest      float64
+	CPULimit        float64
+	MemoryRequestGi float64
+	MemoryLimitGi   float64
+	DiskGB          int
+}
+
+// ClusterCompatibilityResult is the preflight compatibility verdict for one
+// cluster candidate under a CREATE placement context.
+type ClusterCompatibilityResult struct {
+	Cluster         *ent.Cluster
+	Eligible        bool
+	ReasonCode      string
+	ReasonMessage   string
+	AdvisoryCode    string
+	AdvisoryMessage string
+}
+
+type resolvedApprovalValidationContext struct {
+	namespace       *ent.NamespaceRegistry
+	template        *ent.Template
+	instanceSize    *ent.InstanceSize
+	cpuCores        float64
+	cpuRequest      float64
+	memoryGi        float64
+	memoryRequestGi float64
+	requiredCaps    []string
 }
 
 // ValidateApproval checks:
@@ -30,20 +86,25 @@ func NewApprovalValidator(client *ent.Client) *ApprovalValidator {
 // Returns nil if validation passes.
 func (v *ApprovalValidator) ValidateApproval(
 	ctx context.Context,
-	clusterID string,
-	instanceSizeID string,
-	namespace string,
+	input ApprovalValidationInput,
 ) error {
 	var (
 		cl               *ent.Cluster
+		policy           *ent.ClusterPolicy
+		tpl              *ent.Template
+		size             *ent.InstanceSize
 		clusterCapSet    map[string]struct{}
 		clusterDisplayID string
+		cpuCores         float64
+		cpuRequest       float64
+		memoryGi         float64
+		memoryRequestGi  float64
 	)
 
 	// 1. Validate cluster exists and is healthy.
-	if clusterID != "" {
+	if input.ClusterID != "" {
 		var err error
-		cl, err = v.client.Cluster.Get(ctx, clusterID)
+		cl, err = v.client.Cluster.Get(ctx, input.ClusterID)
 		if err != nil {
 			if ent.IsNotFound(err) {
 				return apperrors.BadRequest(apperrors.CodeValidationFailed, "selected cluster not found")
@@ -59,12 +120,24 @@ func (v *ApprovalValidator) ValidateApproval(
 		if clusterDisplayID == "" {
 			clusterDisplayID = cl.ID
 		}
+		if v.policySvc != nil {
+			policy, err = v.policySvc.GetByClusterID(ctx, cl.ID)
+			if err != nil {
+				if ent.IsNotFound(err) {
+					return apperrors.BadRequest(
+						"CLUSTER_POLICY_NOT_CONFIGURED",
+						fmt.Sprintf("selected cluster %s has no cluster policy configured", clusterDisplayID),
+					)
+				}
+				return fmt.Errorf("query cluster policy for %s: %w", cl.ID, err)
+			}
+		}
 	}
 
 	// 2. Validate namespace environment isolation.
-	if strings.TrimSpace(namespace) != "" {
+	if strings.TrimSpace(input.Namespace) != "" {
 		ns, err := v.client.NamespaceRegistry.Query().
-			Where(namespaceregistry.NameEQ(strings.TrimSpace(namespace))).
+			Where(namespaceregistry.NameEQ(strings.TrimSpace(input.Namespace))).
 			Only(ctx)
 		if err != nil {
 			if ent.IsNotFound(err) {
@@ -85,9 +158,21 @@ func (v *ApprovalValidator) ValidateApproval(
 		}
 	}
 
+	if input.TemplateID != "" {
+		var err error
+		tpl, err = v.client.Template.Get(ctx, input.TemplateID)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				return apperrors.BadRequest(apperrors.CodeValidationFailed, "template not found")
+			}
+			return fmt.Errorf("query template: %w", err)
+		}
+	}
+
 	// 3. Validate InstanceSize constraints and capability matching.
-	if instanceSizeID != "" {
-		size, err := v.client.InstanceSize.Get(ctx, instanceSizeID)
+	if input.InstanceSizeID != "" {
+		var err error
+		size, err = v.client.InstanceSize.Get(ctx, input.InstanceSizeID)
 		if err != nil {
 			if ent.IsNotFound(err) {
 				return apperrors.BadRequest(apperrors.CodeValidationFailed, "instance size not found")
@@ -100,7 +185,25 @@ func (v *ApprovalValidator) ValidateApproval(
 		// This prevents bypassing the dedicated+overcommit conflict check by only setting
 		// the flag inside spec_overrides while leaving the top-level dedicated_cpu unset.
 		effectiveDedicatedCPU := size.DedicatedCPU || hasDedicatedCPUInSpecOverrides(size.SpecOverrides)
-		if err := ValidateOvercommit(size.CPUCores, size.CPURequest, size.MemoryGi, size.MemoryRequestGi, effectiveDedicatedCPU); err != nil {
+		cpuCores = size.CPUCores
+		cpuRequest = size.CPURequest
+		memoryGi = size.MemoryGi
+		memoryRequestGi = size.MemoryRequestGi
+		if input.Override != nil {
+			if input.Override.CPULimit > 0 {
+				cpuCores = input.Override.CPULimit
+			}
+			if input.Override.CPURequest > 0 {
+				cpuRequest = input.Override.CPURequest
+			}
+			if input.Override.MemoryLimitGi > 0 {
+				memoryGi = input.Override.MemoryLimitGi
+			}
+			if input.Override.MemoryRequestGi > 0 {
+				memoryRequestGi = input.Override.MemoryRequestGi
+			}
+		}
+		if err := ValidateOvercommit(cpuCores, cpuRequest, memoryGi, memoryRequestGi, effectiveDedicatedCPU); err != nil {
 			return err
 		}
 
@@ -120,7 +223,371 @@ func (v *ApprovalValidator) ValidateApproval(
 		}
 	}
 
+	if v.policySvc != nil && cl != nil {
+		if err := v.policySvc.ValidateCreatePlacement(ClusterPolicyValidationInput{
+			Cluster:         cl,
+			Policy:          policy,
+			Template:        tpl,
+			InstanceSize:    size,
+			TargetNamespace: input.Namespace,
+			SelectedStorage: input.StorageClass,
+			CPUCores:        cpuCores,
+			CPURequest:      cpuRequest,
+			MemoryGi:        memoryGi,
+			MemoryRequestGi: memoryRequestGi,
+		}); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+// FilterCompatibleClusters evaluates CREATE placement compatibility against a
+// preloaded cluster page. AppErrors are treated as incompatibility and only
+// unexpected errors abort the whole operation.
+func (v *ApprovalValidator) FilterCompatibleClusters(
+	ctx context.Context,
+	clusters []*ent.Cluster,
+	input ApprovalValidationInput,
+) ([]*ent.Cluster, error) {
+	results, err := v.EvaluateClusterCompatibility(ctx, clusters, input)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]*ent.Cluster, 0, len(results))
+	for _, result := range results {
+		if result.Eligible && result.Cluster != nil {
+			filtered = append(filtered, result.Cluster)
+		}
+	}
+	return filtered, nil
+}
+
+// EvaluateClusterCompatibility evaluates CREATE placement compatibility for one
+// cluster page. Invalid request inputs still return an AppError; per-cluster
+// incompatibilities are returned as machine-readable reason codes/messages.
+func (v *ApprovalValidator) EvaluateClusterCompatibility(
+	ctx context.Context,
+	clusters []*ent.Cluster,
+	input ApprovalValidationInput,
+) ([]ClusterCompatibilityResult, error) {
+	if len(clusters) == 0 {
+		return nil, nil
+	}
+
+	resolved, err := v.resolveValidationContext(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	policyByClusterID, err := v.loadPoliciesForClusters(ctx, clusters)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]ClusterCompatibilityResult, 0, len(clusters))
+	for _, cl := range clusters {
+		if cl == nil {
+			continue
+		}
+		result := ClusterCompatibilityResult{
+			Cluster:  cl,
+			Eligible: true,
+		}
+		if err := v.validateResolvedCluster(cl, policyByClusterID[cl.ID], resolved, input); err != nil {
+			if appErr, ok := apperrors.IsAppError(err); ok {
+				result.Eligible = false
+				result.ReasonCode = appErr.Code
+				result.ReasonMessage = appErr.Message
+				results = append(results, result)
+				continue
+			}
+			return nil, err
+		}
+		v.attachCloneAdvisory(ctx, &result, resolved, input)
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+// EvaluateClusterPlacement evaluates one selected cluster and returns a
+// machine-readable compatibility verdict. Request-shape errors are still
+// returned directly; cluster-specific incompatibilities are encoded in the
+// returned result with Eligible=false.
+func (v *ApprovalValidator) EvaluateClusterPlacement(
+	ctx context.Context,
+	input ApprovalValidationInput,
+) (*ClusterCompatibilityResult, error) {
+	clusterID := strings.TrimSpace(input.ClusterID)
+	if clusterID == "" {
+		return nil, apperrors.BadRequest(apperrors.CodeValidationFailed, "selected cluster is required for cluster policy evaluation")
+	}
+
+	resolved, err := v.resolveValidationContext(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	cl, err := v.client.Cluster.Get(ctx, clusterID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return &ClusterCompatibilityResult{
+				Eligible:      false,
+				ReasonCode:    apperrors.CodeValidationFailed,
+				ReasonMessage: "selected cluster not found",
+			}, nil
+		}
+		return nil, fmt.Errorf("query cluster: %w", err)
+	}
+
+	var policy *ent.ClusterPolicy
+	if v.policySvc != nil {
+		policy, err = v.policySvc.GetByClusterID(ctx, cl.ID)
+		if err != nil && !ent.IsNotFound(err) {
+			return nil, fmt.Errorf("query cluster policy for %s: %w", cl.ID, err)
+		}
+	}
+
+	result := &ClusterCompatibilityResult{
+		Cluster:  cl,
+		Eligible: true,
+	}
+	if err := v.validateResolvedCluster(cl, policy, resolved, input); err != nil {
+		if appErr, ok := apperrors.IsAppError(err); ok {
+			result.Eligible = false
+			result.ReasonCode = appErr.Code
+			result.ReasonMessage = appErr.Message
+			return result, nil
+		}
+		return nil, err
+	}
+	v.attachCloneAdvisory(ctx, result, resolved, input)
+	return result, nil
+}
+
+func (v *ApprovalValidator) resolveValidationContext(
+	ctx context.Context,
+	input ApprovalValidationInput,
+) (*resolvedApprovalValidationContext, error) {
+	resolved := &resolvedApprovalValidationContext{}
+
+	if strings.TrimSpace(input.Namespace) != "" {
+		ns, err := v.client.NamespaceRegistry.Query().
+			Where(namespaceregistry.NameEQ(strings.TrimSpace(input.Namespace))).
+			Only(ctx)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				return nil, apperrors.BadRequest(apperrors.CodeValidationFailed, "namespace not found in registry")
+			}
+			return nil, fmt.Errorf("query namespace registry by name: %w", err)
+		}
+		if !ns.Enabled {
+			return nil, apperrors.BadRequest(apperrors.CodeValidationFailed,
+				fmt.Sprintf("namespace %s is disabled", ns.Name))
+		}
+		resolved.namespace = ns
+	}
+
+	if input.TemplateID != "" {
+		tpl, err := v.client.Template.Get(ctx, input.TemplateID)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				return nil, apperrors.BadRequest(apperrors.CodeValidationFailed, "template not found")
+			}
+			return nil, fmt.Errorf("query template: %w", err)
+		}
+		resolved.template = tpl
+	}
+
+	if input.InstanceSizeID != "" {
+		size, err := v.client.InstanceSize.Get(ctx, input.InstanceSizeID)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				return nil, apperrors.BadRequest(apperrors.CodeValidationFailed, "instance size not found")
+			}
+			return nil, fmt.Errorf("query instance size: %w", err)
+		}
+
+		effectiveDedicatedCPU := size.DedicatedCPU || hasDedicatedCPUInSpecOverrides(size.SpecOverrides)
+		resolved.instanceSize = size
+		resolved.cpuCores = size.CPUCores
+		resolved.cpuRequest = size.CPURequest
+		resolved.memoryGi = size.MemoryGi
+		resolved.memoryRequestGi = size.MemoryRequestGi
+		if input.Override != nil {
+			if input.Override.CPULimit > 0 {
+				resolved.cpuCores = input.Override.CPULimit
+			}
+			if input.Override.CPURequest > 0 {
+				resolved.cpuRequest = input.Override.CPURequest
+			}
+			if input.Override.MemoryLimitGi > 0 {
+				resolved.memoryGi = input.Override.MemoryLimitGi
+			}
+			if input.Override.MemoryRequestGi > 0 {
+				resolved.memoryRequestGi = input.Override.MemoryRequestGi
+			}
+		}
+		if err := ValidateOvercommit(
+			resolved.cpuCores,
+			resolved.cpuRequest,
+			resolved.memoryGi,
+			resolved.memoryRequestGi,
+			effectiveDedicatedCPU,
+		); err != nil {
+			return nil, err
+		}
+		resolved.requiredCaps = ExtractRequiredCapabilities(size)
+	}
+
+	return resolved, nil
+}
+
+func (v *ApprovalValidator) loadPoliciesForClusters(
+	ctx context.Context,
+	clusters []*ent.Cluster,
+) (map[string]*ent.ClusterPolicy, error) {
+	out := make(map[string]*ent.ClusterPolicy, len(clusters))
+	if len(clusters) == 0 {
+		return out, nil
+	}
+	clusterIDs := make([]string, 0, len(clusters))
+	for _, cl := range clusters {
+		if cl != nil && strings.TrimSpace(cl.ID) != "" {
+			clusterIDs = append(clusterIDs, cl.ID)
+		}
+	}
+	if len(clusterIDs) == 0 {
+		return out, nil
+	}
+	policies, err := v.client.ClusterPolicy.Query().
+		Where(clusterpolicy.ClusterIDIn(clusterIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query cluster policies: %w", err)
+	}
+	for _, policy := range policies {
+		if policy != nil && policy.ClusterID != "" {
+			out[policy.ClusterID] = policy
+		}
+	}
+	return out, nil
+}
+
+func (v *ApprovalValidator) validateResolvedCluster(
+	cl *ent.Cluster,
+	policy *ent.ClusterPolicy,
+	resolved *resolvedApprovalValidationContext,
+	input ApprovalValidationInput,
+) error {
+	if cl == nil {
+		return apperrors.BadRequest(apperrors.CodeValidationFailed, "selected cluster not found")
+	}
+	if cl.Status != cluster.StatusHEALTHY {
+		return apperrors.BadRequest(
+			apperrors.CodeValidationFailed,
+			fmt.Sprintf("cluster %s is not healthy (status: %s)", cl.Name, cl.Status),
+		)
+	}
+
+	if resolved != nil && resolved.namespace != nil {
+		if err := validateNamespaceClusterEnvironment(
+			string(resolved.namespace.Environment),
+			string(cl.Environment),
+		); err != nil {
+			return err
+		}
+	}
+
+	if resolved != nil && resolved.instanceSize != nil {
+		clusterCapSet := buildClusterCapabilitySet(cl.EnabledFeatures)
+		missing := MissingCapabilities(resolved.requiredCaps, clusterCapSet)
+		if len(missing) > 0 {
+			return apperrors.BadRequest(
+				apperrors.CodeValidationFailed,
+				fmt.Sprintf("cluster %s is missing required capabilities: %s", clusterDisplayName(cl), strings.Join(missing, ", ")),
+			)
+		}
+	}
+
+	if v.policySvc != nil {
+		if policy == nil {
+			return apperrors.BadRequest(
+				"CLUSTER_POLICY_NOT_CONFIGURED",
+				fmt.Sprintf("selected cluster %s has no cluster policy configured", clusterDisplayName(cl)),
+			)
+		}
+		var (
+			template        *ent.Template
+			instanceSize    *ent.InstanceSize
+			cpuCores        float64
+			cpuRequest      float64
+			memoryGi        float64
+			memoryRequestGi float64
+		)
+		if resolved != nil {
+			template = resolved.template
+			instanceSize = resolved.instanceSize
+			cpuCores = resolved.cpuCores
+			cpuRequest = resolved.cpuRequest
+			memoryGi = resolved.memoryGi
+			memoryRequestGi = resolved.memoryRequestGi
+		}
+		if err := v.policySvc.ValidateCreatePlacement(ClusterPolicyValidationInput{
+			Cluster:         cl,
+			Policy:          policy,
+			Template:        template,
+			InstanceSize:    instanceSize,
+			TargetNamespace: input.Namespace,
+			SelectedStorage: input.StorageClass,
+			CPUCores:        cpuCores,
+			CPURequest:      cpuRequest,
+			MemoryGi:        memoryGi,
+			MemoryRequestGi: memoryRequestGi,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (v *ApprovalValidator) attachCloneAdvisory(
+	ctx context.Context,
+	result *ClusterCompatibilityResult,
+	resolved *resolvedApprovalValidationContext,
+	input ApprovalValidationInput,
+) {
+	if v == nil || v.vmService == nil || result == nil || result.Cluster == nil || !result.Eligible {
+		return
+	}
+	if resolved == nil || resolved.template == nil {
+		return
+	}
+	if EffectiveTemplateSourceType(
+		resolved.template.SourceType,
+		resolved.template.ImageURL,
+		resolved.template.PvcName,
+	) != TemplateSourceCDIPVCClone {
+		return
+	}
+	targetStorageClass := strings.TrimSpace(input.StorageClass)
+	if targetStorageClass == "" {
+		targetStorageClass = strings.TrimSpace(result.Cluster.DefaultStorageClass)
+	}
+	advisory, err := v.vmService.GetPVCCloneAdvisory(
+		ctx,
+		result.Cluster.ID,
+		input.Namespace,
+		resolved.template.PvcNamespace,
+		resolved.template.PvcName,
+		targetStorageClass,
+	)
+	if err != nil || advisory == nil {
+		return
+	}
+	result.AdvisoryCode = advisory.Code
+	result.AdvisoryMessage = advisory.Message
 }
 
 func validateNamespaceClusterEnvironment(namespaceEnv, clusterEnv string) error {

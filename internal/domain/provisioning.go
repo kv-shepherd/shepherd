@@ -68,3 +68,19 @@ type StorageProfile struct {
 	CloneStrategy     string `json:"clone_strategy,omitempty"`
 	DefaultVolumeMode string `json:"default_volume_mode,omitempty"`
 }
+
+// ProvisioningStatus summarizes CDI-backed root-disk provisioning for a VM.
+type ProvisioningStatus struct {
+	RootDataVolumeName  string                  `json:"root_data_volume_name,omitempty"`
+	ClaimName           string                  `json:"claim_name,omitempty"`
+	Phase               string                  `json:"phase,omitempty"`
+	Progress            string                  `json:"progress,omitempty"`
+	RestartCount        int32                   `json:"restart_count,omitempty"`
+	PvcPhase            string                  `json:"pvc_phase,omitempty"`
+	CloneType           string                  `json:"clone_type,omitempty"`
+	ClonePhase          string                  `json:"clone_phase,omitempty"`
+	CloneFallbackReason string                  `json:"clone_fallback_reason,omitempty"`
+	FailureMessage      string                  `json:"failure_message,omitempty"`
+	Conditions          []ProvisioningCondition `json:"conditions,omitempty"`
+	RecentEvents        []ProvisioningEvent     `json:"recent_events,omitempty"`
+}

@@ -456,7 +456,32 @@ paths:
       description: |
         Returns user-visible context required by VM request wizard.
         Context is computed using current RBAC/environment visibility rules.
+        When `namespace`, `template_id`, and `instance_size_id` are all supplied,
+        the response may also include a sanitized placement hint summary. The
+        hint is intended for end-user guidance and does not expose cluster
+        identities or raw policy messages.
       operationId: getVMRequestContext
+      parameters:
+        - name: namespace
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional selected namespace for placement hint evaluation.
+        - name: template_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional selected template for placement hint evaluation.
+        - name: instance_size_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional selected instance size for placement hint evaluation.
       responses:
         '200':
           description: VM request context
@@ -669,6 +694,10 @@ paths:
       responses:
         '202':
           description: Start accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMPowerAcceptedResponse'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -682,6 +711,10 @@ paths:
       responses:
         '202':
           description: Stop accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMPowerAcceptedResponse'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -695,6 +728,10 @@ paths:
       responses:
         '202':
           description: Restart accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMPowerAcceptedResponse'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -822,6 +859,28 @@ paths:
           schema:
             type: string
             enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
+        - name: operation_type
+          in: query
+          description: Filter by approval operation type.
+          schema:
+            type: string
+            enum: [CREATE, DELETE, POWER, VNC_ACCESS]
+        - name: selected_cluster_id
+          in: query
+          description: Filter by the cluster selected during CREATE approval.
+          schema:
+            type: string
+        - name: placement_advisory_code
+          in: query
+          description: Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets.
+          schema:
+            type: string
+        - name: placement_snapshot
+          in: query
+          description: Filter by whether a placement evaluation snapshot exists on the ticket.
+          schema:
+            type: string
+            enum: [present, missing]
       responses:
         '200':
           description: Approval ticket list
@@ -941,9 +1000,71 @@ paths:
           schema:
             type: string
             example: "LiveMigration,Snapshot"
+        - name: namespace
+          in: query
+          required: false
+          description: Filter clusters compatible with a CREATE request targeting this namespace.
+          schema:
+            type: string
+        - name: template_id
+          in: query
+          required: false
+          description: Filter clusters compatible with a CREATE request using this template.
+          schema:
+            type: string
+        - name: instance_size_id
+          in: query
+          required: false
+          description: Filter clusters compatible with a CREATE request using this instance size.
+          schema:
+            type: string
+        - name: selected_storage_class
+          in: query
+          required: false
+          description: Optional storage class selected by approver when evaluating cluster policy compatibility.
+          schema:
+            type: string
+        - name: cpu_request
+          in: query
+          required: false
+          description: Optional override CPU request in cores for compatibility evaluation.
+          schema:
+            type: number
+            minimum: 0.5
+            multipleOf: 0.5
+        - name: cpu_limit
+          in: query
+          required: false
+          description: Optional override CPU limit in cores for compatibility evaluation.
+          schema:
+            type: number
+            minimum: 0.5
+            multipleOf: 0.5
+        - name: memory_request_gi
+          in: query
+          required: false
+          description: Optional override memory request in Gi for compatibility evaluation.
+          schema:
+            type: number
+            minimum: 0.5
+            multipleOf: 0.5
+        - name: memory_limit_gi
+          in: query
+          required: false
+          description: Optional override memory limit in Gi for compatibility evaluation.
+          schema:
+            type: number
+            minimum: 0.5
+            multipleOf: 0.5
+        - name: include_incompatible
+          in: query
+          required: false
+          description: When true, keep incompatible clusters in the result and annotate them with compatibility reasons instead of filtering them out.
+          schema:
+            type: boolean
       responses:
         '200':
-          description: Cluster list (filtered by `requires` if provided)
+          description: Cluster list (filtered by feature requirements and optional CREATE placement compatibility context)
           content:
             application/json:
               schema:
@@ -1877,6 +1998,52 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /admin/clusters/{cluster_id}/policy:
+    get:
+      tags: [clusters, admin]
+      summary: Get cluster policy
+      operationId: getClusterPolicy
+      parameters:
+        - name: cluster_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cluster policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterPolicy'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [clusters, admin]
+      summary: Create or replace cluster policy
+      operationId: upsertClusterPolicy
+      parameters:
+        - name: cluster_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterPolicyUpsertRequest'
+      responses:
+        '200':
+          description: Cluster policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterPolicy'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   # ── Notifications (ADR-0015 §20) ─────────────────────
   /notifications:
     get:
@@ -1964,6 +2131,21 @@ paths:
             type: string
         - name: resource_id
           in: query
+          schema:
+            type: string
+        - name: approval_decision
+          in: query
+          description: Filter approval audit entries by details.decision (for example approved, rejected, validation_failed)
+          schema:
+            type: string
+        - name: placement_reason_code
+          in: query
+          description: Filter approval audit entries by details.placement_evaluation.reason_code
+          schema:
+            type: string
+        - name: placement_advisory_code
+          in: query
+          description: Filter approval audit entries by details.placement_evaluation.advisory_code
           schema:
             type: string
       responses:
@@ -2433,6 +2615,78 @@ components:
           type: string
           enum: [test, prod]
           description: Inherited from cluster environment (ADR-0015 §15)
+        provisioning:
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: '#/components/schemas/ProvisioningStatus'
+
+    ProvisioningCondition:
+      type: object
+      properties:
+        type:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        message:
+          type: string
+        last_transition_time:
+          type: string
+          format: date-time
+
+    ProvisioningEvent:
+      type: object
+      properties:
+        type:
+          type: string
+        reason:
+          type: string
+        message:
+          type: string
+        count:
+          type: integer
+        first_observed:
+          type: string
+          format: date-time
+        last_observed:
+          type: string
+          format: date-time
+
+    ProvisioningStatus:
+      type: object
+      properties:
+        root_data_volume_name:
+          type: string
+        claim_name:
+          type: string
+        phase:
+          type: string
+        progress:
+          type: string
+        restart_count:
+          type: integer
+        pvc_phase:
+          type: string
+        clone_type:
+          type: string
+          description: CDI clone execution type observed on the root PVC, for example `copy` when host-assisted fallback is used.
+        clone_phase:
+          type: string
+          description: CDI clone phase annotation observed on the root PVC.
+        clone_fallback_reason:
+          type: string
+          description: CDI fallback reason observed on the root PVC when efficient clone prerequisites were not met.
+        failure_message:
+          type: string
+        conditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProvisioningCondition'
+        recent_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProvisioningEvent'
 
     VMCreateRequest:
       type: object
@@ -2480,6 +2734,76 @@ components:
           type: array
           items:
             type: string
+        placement_hint:
+          $ref: '#/components/schemas/VMPlacementHint'
+
+    VMPlacementHint:
+      type: object
+      required: [status, compatible_cluster_count, evaluated_cluster_count]
+      properties:
+        status:
+          type: string
+          enum: [AVAILABLE, UNAVAILABLE]
+        compatible_cluster_count:
+          type: integer
+          minimum: 0
+        evaluated_cluster_count:
+          type: integer
+          minimum: 0
+        primary_reason_code:
+          type: string
+          enum:
+            - NoCandidateClusters
+            - ClusterUnavailable
+            - CapabilityMismatch
+            - PolicyNotConfigured
+            - PolicyDenied
+            - RequestInvalid
+            - Other
+        reason_counts:
+          type: array
+          items:
+            $ref: '#/components/schemas/VMPlacementHintReasonCount'
+        primary_advisory_code:
+          type: string
+          enum:
+            - HostAssistedCloneLikely
+            - Other
+        advisory_counts:
+          type: array
+          items:
+            $ref: '#/components/schemas/VMPlacementHintAdvisoryCount'
+
+    VMPlacementHintReasonCount:
+      type: object
+      required: [code, count]
+      properties:
+        code:
+          type: string
+          enum:
+            - NoCandidateClusters
+            - ClusterUnavailable
+            - CapabilityMismatch
+            - PolicyNotConfigured
+            - PolicyDenied
+            - RequestInvalid
+            - Other
+        count:
+          type: integer
+          minimum: 0
+
+    VMPlacementHintAdvisoryCount:
+      type: object
+      required: [code, count]
+      properties:
+        code:
+          type: string
+          enum:
+            - HostAssistedCloneLikely
+            - Other
+        count:
+          type: integer
+          minimum: 0
 
     VMList:
       type: object
@@ -2613,6 +2937,10 @@ components:
         attempt_count:
           type: integer
           minimum: 0
+        provisioning:
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: '#/components/schemas/ProvisioningStatus'
 
     VMBatchStatusResponse:
       type: object
@@ -2752,6 +3080,14 @@ components:
           type: ["object", "null"]
           description: Contextual payload of the original request depending on operation_type
           additionalProperties: true
+        provisioning:
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: '#/components/schemas/ProvisioningStatus'
+        placement_evaluation:
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: '#/components/schemas/PlacementEvaluation'
         created_at:
           type: string
           format: date-time
@@ -2875,9 +3211,112 @@ components:
           description: Auto-detected StorageClass list (ADR-0015 §8)
         default_storage_class:
           type: string
+        policy_configured:
+          type: boolean
+          description: Whether an explicit ClusterPolicy row exists for this cluster
+        policy_summary:
+          $ref: '#/components/schemas/ClusterPolicySummary'
+        compatibility:
+          $ref: '#/components/schemas/ClusterCompatibility'
         enabled:
           type: boolean
         created_at:
+          type: string
+          format: date-time
+
+    ClusterPolicySummary:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [MISSING, OPEN, GUARDED]
+          description: |
+            Operator-facing summary of cluster governance posture.
+            `MISSING` means no explicit ClusterPolicy exists.
+            `OPEN` means a policy exists but adds no deny/scope guardrails.
+            `GUARDED` means one or more deny/scope guardrails are configured.
+        denied_controls:
+          type: array
+          items:
+            type: string
+            enum:
+              - cpu_overcommit
+              - memory_overcommit
+              - dedicated_cpu
+              - gpu
+              - sriov
+              - hugepages
+              - cdi_clone
+          description: Machine-readable controls that are explicitly denied by policy.
+        scoped_controls:
+          type: array
+          items:
+            type: string
+            enum:
+              - hugepages_sizes
+              - clone_source_namespaces
+              - storage_classes
+          description: Machine-readable controls that are constrained by allowlists.
+        allowed_storage_class_count:
+          type: integer
+          minimum: 0
+        allowed_clone_source_namespace_count:
+          type: integer
+          minimum: 0
+        allowed_hugepages_size_count:
+          type: integer
+          minimum: 0
+
+    ClusterCompatibility:
+      type: object
+      required: [eligible]
+      properties:
+        eligible:
+          type: boolean
+          description: Whether the cluster is compatible with the supplied CREATE placement context.
+        reason_code:
+          type: string
+          description: Machine-readable incompatibility code. Omitted when the cluster is eligible.
+        reason_message:
+          type: string
+          description: Human-readable incompatibility reason. Omitted when the cluster is eligible.
+        advisory_code:
+          type: string
+          description: Machine-readable advisory code for compatible placements that may use a slower fallback path.
+        advisory_message:
+          type: string
+          description: Human-readable advisory message for compatible placements that may use a slower fallback path.
+
+    PlacementEvaluation:
+      type: object
+      required: [selected_cluster_id, eligible, evaluated_at]
+      properties:
+        selected_cluster_id:
+          type: string
+        selected_cluster_name:
+          type: string
+        selected_cluster_environment:
+          type: string
+          enum: [test, prod]
+        requested_storage_class:
+          type: string
+        effective_storage_class:
+          type: string
+        eligible:
+          type: boolean
+        reason_code:
+          type: string
+        reason_message:
+          type: string
+        advisory_code:
+          type: string
+        advisory_message:
+          type: string
+        override:
+          type: object
+          additionalProperties: true
+        evaluated_at:
           type: string
           format: date-time
 
@@ -2912,6 +3351,101 @@ components:
           type: string
           enum: [test, prod]
 
+    ClusterPolicy:
+      type: object
+      required:
+        - id
+        - cluster_id
+        - allow_cpu_overcommit
+        - allow_memory_overcommit
+        - allow_dedicated_cpu
+        - allow_gpu
+        - allow_sriov
+        - allow_hugepages
+        - allow_cdi_clone
+        - created_by
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        cluster_id:
+          type: string
+        allow_cpu_overcommit:
+          type: boolean
+        allow_memory_overcommit:
+          type: boolean
+        allow_dedicated_cpu:
+          type: boolean
+        allow_gpu:
+          type: boolean
+        allow_sriov:
+          type: boolean
+        allow_hugepages:
+          type: boolean
+        allowed_hugepages_sizes:
+          type: array
+          items:
+            type: string
+        allow_cdi_clone:
+          type: boolean
+        allowed_clone_source_namespaces:
+          type: array
+          items:
+            type: string
+        allowed_storage_classes:
+          type: array
+          items:
+            type: string
+        created_by:
+          type: string
+        updated_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ClusterPolicyUpsertRequest:
+      type: object
+      required:
+        - allow_cpu_overcommit
+        - allow_memory_overcommit
+        - allow_dedicated_cpu
+        - allow_gpu
+        - allow_sriov
+        - allow_hugepages
+        - allow_cdi_clone
+      properties:
+        allow_cpu_overcommit:
+          type: boolean
+        allow_memory_overcommit:
+          type: boolean
+        allow_dedicated_cpu:
+          type: boolean
+        allow_gpu:
+          type: boolean
+        allow_sriov:
+          type: boolean
+        allow_hugepages:
+          type: boolean
+        allowed_hugepages_sizes:
+          type: array
+          items:
+            type: string
+        allow_cdi_clone:
+          type: boolean
+        allowed_clone_source_namespaces:
+          type: array
+          items:
+            type: string
+        allowed_storage_classes:
+          type: array
+          items:
+            type: string
+
     ClusterList:
       type: object
       properties:
@@ -2935,19 +3469,30 @@ components:
           type: string
         description:
           type: string
+        catalog_scope:
+          type: string
+          enum: [unclassified, test, prod, all]
+          description: Catalog visibility scope only. Not scheduling environment.
         source_type:
           type: string
-          enum: [image, pvc]
-          description: Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+          enum: [containerdisk, cdi_image_import, cdi_pvc_clone]
+          description: >-
+            Canonical boot source type. `containerdisk` boots directly from a KubeVirt
+            containerDisk image, `cdi_image_import` creates a VM-owned DataVolume from an
+            image import source, and `cdi_pvc_clone` clones a source PVC via CDI.
+            Legacy aliases `image` and `pvc` are accepted temporarily for backward compatibility.
         image_url:
           type: string
-          description: Container registry URL for ContainerDisk mode, e.g. quay.io/containerdisks/ubuntu:22.04
+          description: >-
+            Image / import source URL. Used by `containerdisk` and `cdi_image_import`.
+            For CDI image import, plain registry references are canonicalized to `docker://...`
+            by the server.
         pvc_name:
           type: string
-          description: PVC/DataVolume name for PVC mode
+          description: Source PVC name for CDI PVC clone mode
         pvc_namespace:
           type: string
-          description: Kubernetes namespace where the PVC/DataVolume is located (required when source_type is 'pvc')
+          description: Kubernetes namespace where the source PVC is located (required when source_type is 'cdi_pvc_clone')
         cloud_init:
           type: string
           description: Cloud-init userdata YAML (applied at VM boot)
@@ -2973,23 +3518,29 @@ components:
           type: string
         description:
           type: string
+        catalog_scope:
+          type: string
+          enum: [unclassified, test, prod, all]
+          description: Catalog visibility scope only. Not scheduling environment.
         source_type:
           x-oapi-codegen-extra-tags:
-            validate: "oneof=image pvc"
+            validate: "oneof=containerdisk cdi_image_import cdi_pvc_clone"
           type: string
-          enum: [image, pvc]
-          description: Boot source type. 'image' = ContainerDisk, 'pvc' = DataVolume/PVC
+          enum: [containerdisk, cdi_image_import, cdi_pvc_clone]
+          description: >-
+            Canonical boot source type. Legacy aliases `image` and `pvc` are accepted
+            temporarily for backward compatibility.
         image_url:
           type: string
-          description: Required when source_type is 'image'
+          description: Required when source_type is 'containerdisk' or 'cdi_image_import'
         pvc_name:
           type: string
-          description: Required when source_type is 'pvc'
+          description: Source PVC name. Required when source_type is 'cdi_pvc_clone'
         pvc_namespace:
           type: string
           description: >-
-            Kubernetes namespace where the PVC/DataVolume is located.
-            Required when source_type is 'pvc'.
+            Kubernetes namespace where the source PVC is located.
+            Required when source_type is 'cdi_pvc_clone'.
         cloud_init:
           type: string
           description: Cloud-init userdata YAML
@@ -3007,18 +3558,21 @@ components:
           type: string
         description:
           type: string
+        catalog_scope:
+          type: string
+          enum: [unclassified, test, prod, all]
         source_type:
           x-oapi-codegen-extra-tags:
-            validate: "oneof=image pvc"
+            validate: "oneof=containerdisk cdi_image_import cdi_pvc_clone"
           type: string
-          enum: [image, pvc]
+          enum: [containerdisk, cdi_image_import, cdi_pvc_clone]
         image_url:
           type: string
         pvc_name:
           type: string
         pvc_namespace:
           type: string
-          description: Kubernetes namespace where the PVC/DataVolume is located
+          description: Kubernetes namespace where the source PVC is located
         cloud_init:
           type: string
         os_family:
@@ -3051,6 +3605,10 @@ components:
           type: string
         description:
           type: string
+        catalog_scope:
+          type: string
+          enum: [unclassified, test, prod, all]
+          description: Catalog visibility scope only. Not scheduling environment.
         cpu_cores:
           type: number
         memory_gi:
@@ -3070,6 +3628,9 @@ components:
         spec_overrides:
           type: object
           additionalProperties: true
+          description: >
+            KubeVirt spec path overrides (admin-only). Only populated in admin
+            catalog endpoints; omitted from user-facing responses.
         enabled:
           type: boolean
         created_at:
@@ -3088,6 +3649,10 @@ components:
           type: string
         description:
           type: string
+        catalog_scope:
+          type: string
+          enum: [unclassified, test, prod, all]
+          description: Catalog visibility scope only. Not scheduling environment.
         cpu_cores:
           x-oapi-codegen-extra-tags:
             validate: "required,gte=0.5"
@@ -3144,6 +3709,9 @@ components:
           type: string
         description:
           type: string
+        catalog_scope:
+          type: string
+          enum: [unclassified, test, prod, all]
         cpu_cores:
           x-oapi-codegen-extra-tags:
             validate: "gte=0.5"

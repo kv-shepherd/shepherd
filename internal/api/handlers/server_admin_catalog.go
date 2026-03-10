@@ -29,16 +29,21 @@ import (
 )
 
 type templateCreateRequest struct {
-	Name        string  `json:"name" binding:"required"`
-	DisplayName *string `json:"display_name"`
-	Description *string `json:"description"`
-	// SourceType selects boot mode: "image" (ContainerDisk) or "pvc" (DataVolume).
+	Name         string  `json:"name" binding:"required"`
+	DisplayName  *string `json:"display_name"`
+	Description  *string `json:"description"`
+	CatalogScope *string `json:"catalog_scope"`
+	// SourceType selects boot mode:
+	// - "containerdisk"
+	// - "cdi_image_import"
+	// - "cdi_pvc_clone"
 	SourceType *string `json:"source_type"`
-	// ImageURL is the container image URI, required when source_type == "image".
+	// ImageURL is the image / import URI.
+	// Required for containerdisk and cdi_image_import.
 	ImageURL *string `json:"image_url"`
-	// PVCName is the PersistentVolumeClaim name, required when source_type == "pvc".
+	// PVCName is the source PersistentVolumeClaim name, required when source_type == cdi_pvc_clone.
 	PVCName *string `json:"pvc_name"`
-	// PVCNamespace is the Kubernetes namespace where the PVC lives, required when source_type == "pvc".
+	// PVCNamespace is the Kubernetes namespace where the source PVC lives, required when source_type == cdi_pvc_clone.
 	PVCNamespace *string `json:"pvc_namespace"`
 	// CloudInit is optional cloud-init userdata YAML.
 	CloudInit *string `json:"cloud_init"`
@@ -48,11 +53,12 @@ type templateCreateRequest struct {
 }
 
 type templateUpdateRequest struct {
-	DisplayName *string `json:"display_name"`
-	Description *string `json:"description"`
-	SourceType  *string `json:"source_type"`
-	ImageURL    *string `json:"image_url"`
-	PVCName     *string `json:"pvc_name"`
+	DisplayName  *string `json:"display_name"`
+	Description  *string `json:"description"`
+	CatalogScope *string `json:"catalog_scope"`
+	SourceType   *string `json:"source_type"`
+	ImageURL     *string `json:"image_url"`
+	PVCName      *string `json:"pvc_name"`
 	// PVCNamespace is the Kubernetes namespace where the PVC lives.
 	PVCNamespace *string `json:"pvc_namespace"`
 	CloudInit    *string `json:"cloud_init"`
@@ -65,6 +71,7 @@ type instanceSizeCreateRequest struct {
 	Name              string                 `json:"name" binding:"required"`
 	DisplayName       *string                `json:"display_name"`
 	Description       *string                `json:"description"`
+	CatalogScope      *string                `json:"catalog_scope"`
 	CPUCores          float64                `json:"cpu_cores" binding:"required,min=0.5"`
 	MemoryGi          float64                `json:"memory_gi" binding:"required,min=0.5"`
 	DiskGb            *int                   `json:"disk_gb"`
@@ -84,6 +91,7 @@ type instanceSizeUpdateRequest struct {
 	Name              *string                 `json:"name"`
 	DisplayName       *string                 `json:"display_name"`
 	Description       *string                 `json:"description"`
+	CatalogScope      *string                 `json:"catalog_scope"`
 	CPUCores          *float64                `json:"cpu_cores"`
 	MemoryGi          *float64                `json:"memory_gi"`
 	DiskGb            *int                    `json:"disk_gb"`
@@ -242,6 +250,19 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_TEMPLATE_SOURCE", Message: err.Error()})
 		return
 	}
+	catalogScope, err := normalizeCatalogScopeInput(req.CatalogScope)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_CATALOG_SCOPE", Message: err.Error()})
+		return
+	}
+	effectiveCatalogScope := catalogScope
+	if effectiveCatalogScope == "" {
+		effectiveCatalogScope = service.CatalogScopeUnclassified
+	}
+	if scopeErr := validateTemplateSourceCatalogScope(req.SourceType, effectiveCatalogScope); scopeErr != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_TEMPLATE_SOURCE_SCOPE", Message: scopeErr.Error()})
+		return
+	}
 
 	id, _ := uuid.NewV7()
 	create := s.client.Template.Create().
@@ -258,8 +279,11 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 			create = create.SetDescription(v)
 		}
 	}
+	if catalogScope != "" {
+		create = create.SetCatalogScope(enttemplate.CatalogScope(catalogScope))
+	}
 	if req.SourceType != nil {
-		create = create.SetSourceType(*req.SourceType)
+		create = create.SetSourceType(service.NormalizeTemplateSourceType(*req.SourceType))
 	}
 	if req.ImageURL != nil {
 		if v := strings.TrimSpace(*req.ImageURL); v != "" {
@@ -333,7 +357,7 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateID generated.Templa
 	// Problem: validateTemplateSource(req.SourceType, ...) short-circuits when
 	// source_type is nil ("draft template" path), allowing a PATCH that sets
 	// pvc_namespace="" without source_type to clear pvc_namespace on a record
-	// that already has source_type="pvc", leaving the row in an inconsistent state.
+	// that already has source_type="cdi_pvc_clone", leaving the row in an inconsistent state.
 	//
 	// Fix: always validate against the effective (merged) state. If the request
 	// does not include a field, fall back to the stored value.
@@ -353,10 +377,27 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateID generated.Templa
 	resolvedImageURL := resolveStringPtr(req.ImageURL, existingTpl.ImageURL)
 	resolvedPVCName := resolveStringPtr(req.PVCName, existingTpl.PvcName)
 	resolvedPVCNamespace := resolveStringPtr(req.PVCNamespace, existingTpl.PvcNamespace)
+	resolvedCatalogScope := resolveStringPtr(req.CatalogScope, string(existingTpl.CatalogScope))
 
 	// ADR-0036: Validate source_type consistency against the effective state.
 	if validateErr := validateTemplateSource(resolvedSourceType, resolvedImageURL, resolvedPVCName, resolvedPVCNamespace); validateErr != nil {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_TEMPLATE_SOURCE", Message: validateErr.Error()})
+		return
+	}
+	catalogScope, err := normalizeCatalogScopeInput(req.CatalogScope)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_CATALOG_SCOPE", Message: err.Error()})
+		return
+	}
+	effectiveCatalogScope := string(existingTpl.CatalogScope)
+	if resolvedCatalogScope != nil {
+		effectiveCatalogScope = service.NormalizeCatalogScope(*resolvedCatalogScope)
+	}
+	if effectiveCatalogScope == "" {
+		effectiveCatalogScope = service.CatalogScopeUnclassified
+	}
+	if validateErr := validateTemplateSourceCatalogScope(resolvedSourceType, effectiveCatalogScope); validateErr != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_TEMPLATE_SOURCE_SCOPE", Message: validateErr.Error()})
 		return
 	}
 
@@ -375,8 +416,11 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateID generated.Templa
 			update = update.SetDescription(v)
 		}
 	}
+	if req.CatalogScope != nil {
+		update = update.SetCatalogScope(enttemplate.CatalogScope(catalogScope))
+	}
 	if req.SourceType != nil {
-		update = update.SetSourceType(*req.SourceType)
+		update = update.SetSourceType(service.NormalizeTemplateSourceType(*req.SourceType))
 	}
 	if req.ImageURL != nil {
 		if v := strings.TrimSpace(*req.ImageURL); v == "" {
@@ -506,6 +550,11 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
 		return
 	}
+	catalogScope, err := normalizeCatalogScopeInput(req.CatalogScope)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_CATALOG_SCOPE", Message: err.Error()})
+		return
+	}
 
 	id, _ := uuid.NewV7()
 	create := s.client.InstanceSize.Create().
@@ -523,6 +572,9 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 		if v := strings.TrimSpace(*req.Description); v != "" {
 			create = create.SetDescription(v)
 		}
+	}
+	if catalogScope != "" {
+		create = create.SetCatalogScope(instancesize.CatalogScope(catalogScope))
 	}
 	if req.DiskGb != nil {
 		create = create.SetDiskGB(*req.DiskGb)
@@ -552,10 +604,10 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 	}
 	if req.SpecOverrides != nil {
 		// ADR-0036: Validate spec_overrides paths use spec.* prefix.
-		if err := service.ValidateSpecOverrides(req.SpecOverrides); err != nil {
+		if validateErr := service.ValidateSpecOverrides(req.SpecOverrides); validateErr != nil {
 			c.JSON(http.StatusBadRequest, generated.Error{
 				Code:    "INVALID_SPEC_OVERRIDES",
-				Message: err.Error(),
+				Message: validateErr.Error(),
 			})
 			return
 		}
@@ -631,6 +683,11 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeID generate
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: validateErr.Error()})
 		return
 	}
+	catalogScope, err := normalizeCatalogScopeInput(req.CatalogScope)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_CATALOG_SCOPE", Message: err.Error()})
+		return
+	}
 
 	update := s.client.InstanceSize.UpdateOneID(instanceSizeID)
 	if req.Name != nil {
@@ -654,6 +711,9 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeID generate
 		} else {
 			update = update.SetDescription(v)
 		}
+	}
+	if req.CatalogScope != nil {
+		update = update.SetCatalogScope(instancesize.CatalogScope(catalogScope))
 	}
 	if req.CPUCores != nil {
 		update = update.SetCPUCores(*req.CPUCores)
@@ -1823,11 +1883,16 @@ func normalizeIDPAllowedEnvironmentsUpdate(raw []generated.IdPGroupMappingUpdate
 }
 
 func normalizeIDPAllowedEnvironments(raw []string) []string {
+	const (
+		envTest = "test"
+		envProd = "prod"
+	)
+
 	seen := make(map[string]struct{}, len(raw))
 	out := make([]string, 0, len(raw))
 	for _, env := range raw {
 		v := strings.ToLower(strings.TrimSpace(env))
-		if v != "test" && v != "prod" {
+		if v != envTest && v != envProd {
 			continue
 		}
 		if _, exists := seen[v]; exists {
@@ -2196,29 +2261,43 @@ func authProviderToAPI(p *ent.AuthProvider) generated.AuthProvider {
 	}
 }
 
-// validateTemplateSource enforces the ADR-0036 rule that source_type must be
-// either "image" or "pvc" (when provided), and that the corresponding required
-// fields (image_url, or pvc_name + pvc_namespace) are present.
-// The two modes are mutually exclusive.
+// validateTemplateSource enforces the canonical template boot-source taxonomy.
+// Supported source_type values are:
+//   - "containerdisk"
+//   - "cdi_image_import"
+//   - "cdi_pvc_clone"
+//
+// Draft templates may omit source_type entirely.
 func validateTemplateSource(sourceType, imageURL, pvcName, pvcNamespace *string) error {
 	if sourceType == nil {
 		// No source configured yet — allowed (draft template).
 		return nil
 	}
-	switch *sourceType {
-	case "image":
+	normalized := service.NormalizeTemplateSourceType(*sourceType)
+	switch normalized {
+	case service.TemplateSourceContainerDisk:
 		if imageURL == nil || strings.TrimSpace(*imageURL) == "" {
-			return fmt.Errorf("image_url is required when source_type is 'image'")
+			return fmt.Errorf("image_url is required when source_type is %q", service.TemplateSourceContainerDisk)
 		}
-	case "pvc":
+	case service.TemplateSourceCDIImageImport:
+		if imageURL == nil || strings.TrimSpace(*imageURL) == "" {
+			return fmt.Errorf("image_url is required when source_type is %q", service.TemplateSourceCDIImageImport)
+		}
+	case service.TemplateSourceCDIPVCClone:
 		if pvcName == nil || strings.TrimSpace(*pvcName) == "" {
-			return fmt.Errorf("pvc_name is required when source_type is 'pvc'")
+			return fmt.Errorf("pvc_name is required when source_type is %q", service.TemplateSourceCDIPVCClone)
 		}
 		if pvcNamespace == nil || strings.TrimSpace(*pvcNamespace) == "" {
-			return fmt.Errorf("pvc_namespace is required when source_type is 'pvc'")
+			return fmt.Errorf("pvc_namespace is required when source_type is %q", service.TemplateSourceCDIPVCClone)
 		}
 	default:
-		return fmt.Errorf("source_type must be 'image' or 'pvc', got %q", *sourceType)
+		return fmt.Errorf(
+			"source_type must be one of %q, %q, %q; got %q",
+			service.TemplateSourceContainerDisk,
+			service.TemplateSourceCDIImageImport,
+			service.TemplateSourceCDIPVCClone,
+			*sourceType,
+		)
 	}
 
 	// Detect accidental dual-mode configuration.
@@ -2227,6 +2306,33 @@ func validateTemplateSource(sourceType, imageURL, pvcName, pvcNamespace *string)
 	if hasImage && hasPVC {
 		return fmt.Errorf("image_url and pvc_name are mutually exclusive; set only one")
 	}
+	if normalized == service.TemplateSourceCDIPVCClone && imageURL != nil && strings.TrimSpace(*imageURL) != "" {
+		return fmt.Errorf("image_url must be empty when source_type is %q", service.TemplateSourceCDIPVCClone)
+	}
+	if (normalized == service.TemplateSourceContainerDisk || normalized == service.TemplateSourceCDIImageImport) && hasPVC {
+		return fmt.Errorf("pvc_name must be empty when source_type is %q", normalized)
+	}
 
 	return nil
+}
+
+func validateTemplateSourceCatalogScope(sourceType *string, catalogScope string) error {
+	if sourceType == nil {
+		return nil
+	}
+	if service.NormalizeTemplateSourceType(*sourceType) != service.TemplateSourceContainerDisk {
+		return nil
+	}
+	switch service.NormalizeCatalogScope(catalogScope) {
+	case service.CatalogScopeProd, service.CatalogScopeAll:
+		return fmt.Errorf(
+			"source_type %q cannot use catalog_scope %q; use %q or %q for ephemeral container disks",
+			service.TemplateSourceContainerDisk,
+			service.NormalizeCatalogScope(catalogScope),
+			service.CatalogScopeTest,
+			service.CatalogScopeUnclassified,
+		)
+	default:
+		return nil
+	}
 }

@@ -11,6 +11,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/authprovider"
 	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
 	"kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
 	"kv-shepherd.io/shepherd/ent/idpgroupmapping"
@@ -244,6 +245,53 @@ func init() {
 	clusterDescEnabled := clusterFields[14].Descriptor()
 	// cluster.DefaultEnabled holds the default value on creation for the enabled field.
 	cluster.DefaultEnabled = clusterDescEnabled.Default.(bool)
+	clusterpolicyMixin := schema.ClusterPolicy{}.Mixin()
+	clusterpolicyMixinFields0 := clusterpolicyMixin[0].Fields()
+	_ = clusterpolicyMixinFields0
+	clusterpolicyFields := schema.ClusterPolicy{}.Fields()
+	_ = clusterpolicyFields
+	// clusterpolicyDescCreatedAt is the schema descriptor for created_at field.
+	clusterpolicyDescCreatedAt := clusterpolicyMixinFields0[0].Descriptor()
+	// clusterpolicy.DefaultCreatedAt holds the default value on creation for the created_at field.
+	clusterpolicy.DefaultCreatedAt = clusterpolicyDescCreatedAt.Default.(func() time.Time)
+	// clusterpolicyDescUpdatedAt is the schema descriptor for updated_at field.
+	clusterpolicyDescUpdatedAt := clusterpolicyMixinFields0[1].Descriptor()
+	// clusterpolicy.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	clusterpolicy.DefaultUpdatedAt = clusterpolicyDescUpdatedAt.Default.(func() time.Time)
+	// clusterpolicy.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	clusterpolicy.UpdateDefaultUpdatedAt = clusterpolicyDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// clusterpolicyDescAllowCPUOvercommit is the schema descriptor for allow_cpu_overcommit field.
+	clusterpolicyDescAllowCPUOvercommit := clusterpolicyFields[2].Descriptor()
+	// clusterpolicy.DefaultAllowCPUOvercommit holds the default value on creation for the allow_cpu_overcommit field.
+	clusterpolicy.DefaultAllowCPUOvercommit = clusterpolicyDescAllowCPUOvercommit.Default.(bool)
+	// clusterpolicyDescAllowMemoryOvercommit is the schema descriptor for allow_memory_overcommit field.
+	clusterpolicyDescAllowMemoryOvercommit := clusterpolicyFields[3].Descriptor()
+	// clusterpolicy.DefaultAllowMemoryOvercommit holds the default value on creation for the allow_memory_overcommit field.
+	clusterpolicy.DefaultAllowMemoryOvercommit = clusterpolicyDescAllowMemoryOvercommit.Default.(bool)
+	// clusterpolicyDescAllowDedicatedCPU is the schema descriptor for allow_dedicated_cpu field.
+	clusterpolicyDescAllowDedicatedCPU := clusterpolicyFields[4].Descriptor()
+	// clusterpolicy.DefaultAllowDedicatedCPU holds the default value on creation for the allow_dedicated_cpu field.
+	clusterpolicy.DefaultAllowDedicatedCPU = clusterpolicyDescAllowDedicatedCPU.Default.(bool)
+	// clusterpolicyDescAllowGpu is the schema descriptor for allow_gpu field.
+	clusterpolicyDescAllowGpu := clusterpolicyFields[5].Descriptor()
+	// clusterpolicy.DefaultAllowGpu holds the default value on creation for the allow_gpu field.
+	clusterpolicy.DefaultAllowGpu = clusterpolicyDescAllowGpu.Default.(bool)
+	// clusterpolicyDescAllowSriov is the schema descriptor for allow_sriov field.
+	clusterpolicyDescAllowSriov := clusterpolicyFields[6].Descriptor()
+	// clusterpolicy.DefaultAllowSriov holds the default value on creation for the allow_sriov field.
+	clusterpolicy.DefaultAllowSriov = clusterpolicyDescAllowSriov.Default.(bool)
+	// clusterpolicyDescAllowHugepages is the schema descriptor for allow_hugepages field.
+	clusterpolicyDescAllowHugepages := clusterpolicyFields[7].Descriptor()
+	// clusterpolicy.DefaultAllowHugepages holds the default value on creation for the allow_hugepages field.
+	clusterpolicy.DefaultAllowHugepages = clusterpolicyDescAllowHugepages.Default.(bool)
+	// clusterpolicyDescAllowCdiClone is the schema descriptor for allow_cdi_clone field.
+	clusterpolicyDescAllowCdiClone := clusterpolicyFields[9].Descriptor()
+	// clusterpolicy.DefaultAllowCdiClone holds the default value on creation for the allow_cdi_clone field.
+	clusterpolicy.DefaultAllowCdiClone = clusterpolicyDescAllowCdiClone.Default.(bool)
+	// clusterpolicyDescCreatedBy is the schema descriptor for created_by field.
+	clusterpolicyDescCreatedBy := clusterpolicyFields[12].Descriptor()
+	// clusterpolicy.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
+	clusterpolicy.CreatedByValidator = clusterpolicyDescCreatedBy.Validators[0].(func(string) error)
 	domaineventMixin := schema.DomainEvent{}.Mixin()
 	domaineventMixinFields0 := domaineventMixin[0].Fields()
 	_ = domaineventMixinFields0
@@ -410,15 +458,15 @@ func init() {
 	// instancesize.DefaultRequiresHugepages holds the default value on creation for the requires_hugepages field.
 	instancesize.DefaultRequiresHugepages = instancesizeDescRequiresHugepages.Default.(bool)
 	// instancesizeDescSortOrder is the schema descriptor for sort_order field.
-	instancesizeDescSortOrder := instancesizeFields[15].Descriptor()
+	instancesizeDescSortOrder := instancesizeFields[16].Descriptor()
 	// instancesize.DefaultSortOrder holds the default value on creation for the sort_order field.
 	instancesize.DefaultSortOrder = instancesizeDescSortOrder.Default.(int)
 	// instancesizeDescEnabled is the schema descriptor for enabled field.
-	instancesizeDescEnabled := instancesizeFields[16].Descriptor()
+	instancesizeDescEnabled := instancesizeFields[17].Descriptor()
 	// instancesize.DefaultEnabled holds the default value on creation for the enabled field.
 	instancesize.DefaultEnabled = instancesizeDescEnabled.Default.(bool)
 	// instancesizeDescCreatedBy is the schema descriptor for created_by field.
-	instancesizeDescCreatedBy := instancesizeFields[17].Descriptor()
+	instancesizeDescCreatedBy := instancesizeFields[18].Descriptor()
 	// instancesize.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	instancesize.CreatedByValidator = instancesizeDescCreatedBy.Validators[0].(func(string) error)
 	namespaceregistryMixin := schema.NamespaceRegistry{}.Mixin()
@@ -796,11 +844,11 @@ func init() {
 	// template.DefaultSourceType holds the default value on creation for the source_type field.
 	template.DefaultSourceType = templateDescSourceType.Default.(string)
 	// templateDescEnabled is the schema descriptor for enabled field.
-	templateDescEnabled := templateFields[11].Descriptor()
+	templateDescEnabled := templateFields[12].Descriptor()
 	// template.DefaultEnabled holds the default value on creation for the enabled field.
 	template.DefaultEnabled = templateDescEnabled.Default.(bool)
 	// templateDescCreatedBy is the schema descriptor for created_by field.
-	templateDescCreatedBy := templateFields[12].Descriptor()
+	templateDescCreatedBy := templateFields[13].Descriptor()
 	// template.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	template.CreatedByValidator = templateDescCreatedBy.Validators[0].(func(string) error)
 	userMixin := schema.User{}.Mixin()

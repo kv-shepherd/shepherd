@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"kv-shepherd.io/shepherd/ent/predicate"
 )
 
@@ -857,6 +858,29 @@ func EnabledEQ(v bool) predicate.Cluster {
 // EnabledNEQ applies the NEQ predicate on the "enabled" field.
 func EnabledNEQ(v bool) predicate.Cluster {
 	return predicate.Cluster(sql.FieldNEQ(FieldEnabled, v))
+}
+
+// HasPolicy applies the HasEdge predicate on the "policy" edge.
+func HasPolicy() predicate.Cluster {
+	return predicate.Cluster(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, PolicyTable, PolicyColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasPolicyWith applies the HasEdge predicate on the "policy" edge with a given conditions (other predicates).
+func HasPolicyWith(preds ...predicate.ClusterPolicy) predicate.Cluster {
+	return predicate.Cluster(func(s *sql.Selector) {
+		step := newPolicyStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // And groups predicates with the AND operator between them.

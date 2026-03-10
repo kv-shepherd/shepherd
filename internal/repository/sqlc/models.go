@@ -24,6 +24,7 @@ type ApprovalTicket struct {
 	SelectedStorageClass    pgtype.Text        `db:"selected_storage_class" json:"selected_storage_class"`
 	TemplateSnapshot        []byte             `db:"template_snapshot" json:"template_snapshot"`
 	InstanceSizeSnapshot    []byte             `db:"instance_size_snapshot" json:"instance_size_snapshot"`
+	PlacementEvaluation     []byte             `db:"placement_evaluation" json:"placement_evaluation"`
 	ModifiedSpec            []byte             `db:"modified_spec" json:"modified_spec"`
 	ParentTicketID          pgtype.Text        `db:"parent_ticket_id" json:"parent_ticket_id"`
 }

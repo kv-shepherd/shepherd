@@ -48,6 +48,7 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	ticketID, eventID, approver, clusterID, storageClass, serviceID, namespace, requesterID string,
 	templateSnapshot map[string]interface{},
 	instanceSizeSnapshot map[string]interface{},
+	placementEvaluation map[string]interface{},
 	modifiedSpec map[string]interface{},
 ) (vmID, vmName string, err error) {
 	if w.pool == nil || w.riverClient == nil || w.queries == nil {
@@ -72,6 +73,10 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	if err != nil {
 		return "", "", fmt.Errorf("marshal instance size snapshot: %w", err)
 	}
+	placementEvaluationBytes, err := marshalJSONOrNull(placementEvaluation)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal placement evaluation: %w", err)
+	}
 	modifiedSpecBytes, err := marshalJSONOrNull(modifiedSpec)
 	if err != nil {
 		return "", "", fmt.Errorf("marshal modified spec: %w", err)
@@ -82,6 +87,7 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 		SelectedStorageClass: strings.TrimSpace(storageClass),
 		TemplateSnapshot:     templateSnapshotBytes,
 		InstanceSizeSnapshot: instanceSizeSnapshotBytes,
+		PlacementEvaluation:  placementEvaluationBytes,
 		ModifiedSpec:         modifiedSpecBytes,
 		ID:                   ticketID,
 		EventID:              eventID,

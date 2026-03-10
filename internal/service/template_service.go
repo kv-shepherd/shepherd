@@ -9,7 +9,7 @@ import (
 )
 
 // TemplateService handles template business logic (ADR-0007, ADR-0018, ADR-0036).
-// Templates define OS image source (ContainerDisk or PVC) and cloud-init only.
+// Templates define boot source kind and cloud-init only.
 // Hardware configuration belongs exclusively to InstanceSize.
 type TemplateService struct {
 	client *ent.Client
@@ -62,7 +62,7 @@ func (s *TemplateService) GetByID(ctx context.Context, id string) (*ent.Template
 	return t, nil
 }
 
-// CreateTemplate creates a new template. source_type must be "image" or "pvc".
+// CreateTemplate creates a new template.
 func (s *TemplateService) CreateTemplate(
 	ctx context.Context,
 	id, name, createdBy string,
@@ -73,7 +73,7 @@ func (s *TemplateService) CreateTemplate(
 		SetName(name).
 		SetCreatedBy(createdBy)
 	if sourceType != "" {
-		create = create.SetSourceType(sourceType)
+		create = create.SetSourceType(NormalizeTemplateSourceType(sourceType))
 	}
 	if imageURL != "" {
 		create = create.SetImageURL(imageURL)

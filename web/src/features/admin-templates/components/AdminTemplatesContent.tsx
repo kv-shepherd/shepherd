@@ -2,6 +2,7 @@
 
 import { useRef } from 'react';
 import {
+    Alert,
     Button,
     Card,
     Divider,
@@ -10,6 +11,7 @@ import {
     Input,
     Modal,
     Radio,
+    Select,
     Space,
     Switch,
     Table,
@@ -31,8 +33,36 @@ import { useTranslation } from 'react-i18next';
 
 import { useAdminTemplatesController } from '../hooks/useAdminTemplatesController';
 import { OS_COLOR_MAP, type Template } from '../types';
+import { getTemplateRequestFlowStatus } from '../requestFlow';
 
 const { Title, Text } = Typography;
+
+function ExperimentalSourceGate({
+    title,
+    description,
+    buttonLabel,
+    onEnable,
+}: {
+    title: string;
+    description: string;
+    buttonLabel: string;
+    onEnable: () => void;
+}) {
+    return (
+        <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={title}
+            description={description}
+            action={
+                <Button size="small" onClick={onEnable}>
+                    {buttonLabel}
+                </Button>
+            }
+        />
+    );
+}
 
 function highlightText(text: string, highlight: string): React.ReactNode {
     if (!highlight) {
@@ -60,6 +90,12 @@ export function AdminTemplatesContent() {
     const { t } = useTranslation(['admin', 'common', 'error']);
     const templates = useAdminTemplatesController({ t });
     const searchInputRef = useRef<InputRef>(null);
+    const catalogScopeOptions = [
+        { label: t('templates.scope_unclassified'), value: 'unclassified' },
+        { label: t('templates.scope_test'), value: 'test' },
+        { label: t('templates.scope_prod'), value: 'prod' },
+        { label: t('templates.scope_all'), value: 'all' },
+    ];
 
     const getColumnSearchProps = (dataIndex: keyof Template): Partial<ColumnsType<Template>[number]> => ({
         filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }: FilterDropdownProps) => (
@@ -164,6 +200,73 @@ export function AdminTemplatesContent() {
             key: 'os_version',
             width: 120,
             render: (version: string | undefined) => version ? <Tag>{version}</Tag> : '—',
+        },
+        {
+            title: t('templates.catalog_scope'),
+            dataIndex: 'catalog_scope',
+            key: 'catalog_scope',
+            width: 120,
+            render: (scope: string | undefined) => {
+                const normalized = (scope ?? 'unclassified').toLowerCase();
+                const color = normalized === 'prod' ? 'red' : normalized === 'all' ? 'blue' : normalized === 'test' ? 'gold' : 'default';
+                return <Tag color={color}>{t(`templates.scope_${normalized}`, { defaultValue: normalized })}</Tag>;
+            },
+        },
+        {
+            title: t('templates.request_flow'),
+            key: 'request_flow',
+            width: 240,
+            render: (_: unknown, record: Template) => {
+                const status = getTemplateRequestFlowStatus(record);
+                switch (status) {
+                    case 'self_service':
+                        return <Tag color="green">{t('templates.request_flow_self_service')}</Tag>;
+                    case 'admin_only_source':
+                        return (
+                            <div>
+                                <Tag color="orange">{t('templates.request_flow_admin_only')}</Tag>
+                                <div>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        {t('templates.request_flow_reason_admin_only')}
+                                    </Text>
+                                </div>
+                            </div>
+                        );
+                    case 'hidden_unclassified':
+                        return (
+                            <div>
+                                <Tag color="gold">{t('templates.request_flow_hidden')}</Tag>
+                                <div>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        {t('templates.request_flow_reason_hidden')}
+                                    </Text>
+                                </div>
+                            </div>
+                        );
+                    case 'disabled':
+                        return (
+                            <div>
+                                <Tag>{t('templates.request_flow_disabled')}</Tag>
+                                <div>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        {t('templates.request_flow_reason_disabled')}
+                                    </Text>
+                                </div>
+                            </div>
+                        );
+                    default:
+                        return (
+                            <div>
+                                <Tag color="red">{t('templates.request_flow_unavailable')}</Tag>
+                                <div>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        {t('templates.request_flow_reason_unsupported')}
+                                    </Text>
+                                </div>
+                            </div>
+                        );
+                }
+            },
         },
         {
             title: t('templates.enabled'),
@@ -318,18 +421,72 @@ export function AdminTemplatesContent() {
                     <Form.Item name="description" label={t('common:table.description')}>
                         <Input.TextArea rows={3} />
                     </Form.Item>
+                    <Form.Item
+                        name="catalog_scope"
+                        label={t('templates.catalog_scope')}
+                        initialValue="unclassified"
+                        dependencies={['source_type']}
+                        extra={t('templates.catalog_scope_help')}
+                        rules={[
+                            { required: true, message: t('templates.catalog_scope_required') },
+                            ({ getFieldValue }) => ({
+                                validator: async (_, value: string | undefined) => {
+                                    if (getFieldValue('source_type') === 'containerdisk' && (value === 'prod' || value === 'all')) {
+                                        throw new Error(t('templates.containerdisk_scope_invalid'));
+                                    }
+                                },
+                            }),
+                        ]}
+                    >
+                        <Select options={catalogScopeOptions} />
+                    </Form.Item>
 
-                    {/* Image Source — master-flow Step 3: containerdisk vs pvc toggle */}
+                    {/* Boot Source — three-mode taxonomy from the current backend canonical model */}
                     <Divider orientation="left" plain>{t('templates.image_source')}</Divider>
-                    <Form.Item name="source_type" label={t('templates.source_type')} initialValue="image">
+                    {!templates.createExperimentalSourcesEnabled ? (
+                        <ExperimentalSourceGate
+                            title={t('templates.experimental_source_title')}
+                            description={t('templates.experimental_source_description')}
+                            buttonLabel={t('templates.experimental_source_enable')}
+                            onEnable={templates.enableCreateExperimentalSources}
+                        />
+                    ) : null}
+                    <Form.Item name="source_type" label={t('templates.source_type')} initialValue="cdi_image_import">
                         <Radio.Group>
-                            <Radio value="image">{t('templates.source_containerdisk')}</Radio>
-                            <Radio value="pvc">{t('templates.source_pvc')}</Radio>
+                            <Radio value="cdi_image_import">{t('templates.source_cdi_import')}</Radio>
+                            <Radio value="cdi_pvc_clone">{t('templates.source_cdi_clone')}</Radio>
+                            {templates.createExperimentalSourcesEnabled ? (
+                                <Radio value="containerdisk">{t('templates.source_containerdisk')}</Radio>
+                            ) : null}
                         </Radio.Group>
+                    </Form.Item>
+                    <Form.Item
+                        noStyle
+                        shouldUpdate={(prev, cur) =>
+                            prev.source_type !== cur.source_type || prev.catalog_scope !== cur.catalog_scope
+                        }
+                    >
+                        {({ getFieldValue }) => {
+                            const sourceType = getFieldValue('source_type');
+                            const scope = getFieldValue('catalog_scope');
+                            if (sourceType !== 'containerdisk') {
+                                return null;
+                            }
+                            const invalidScope = scope === 'prod' || scope === 'all';
+                            return (
+                                <Alert
+                                    type={invalidScope ? 'error' : 'warning'}
+                                    showIcon
+                                    style={{ marginBottom: 16 }}
+                                    message={invalidScope ? t('templates.containerdisk_scope_invalid') : t('templates.containerdisk_scope_warning')}
+                                    description={t('templates.request_flow_reason_admin_only')}
+                                />
+                            );
+                        }}
                     </Form.Item>
                     <Form.Item noStyle shouldUpdate={(prev, cur) => prev.source_type !== cur.source_type}>
                         {({ getFieldValue }) =>
-                            getFieldValue('source_type') === 'pvc' ? (
+                            getFieldValue('source_type') === 'cdi_pvc_clone' ? (
                                 <>
                                     <Form.Item
                                         name="pvc_namespace"
@@ -349,7 +506,7 @@ export function AdminTemplatesContent() {
                                     </Form.Item>
                                 </>
                             ) : (
-                                <Form.Item name="image_url" label={t('templates.image_url')} rules={[{ required: true }]}>
+                                <Form.Item name="image_url" label={t('templates.image_url')} rules={[{ required: true, message: t('templates.image_url_required') }]}>
                                     <Input placeholder="docker.io/kubevirt/centos:7" />
                                 </Form.Item>
                             )
@@ -399,18 +556,71 @@ export function AdminTemplatesContent() {
                     <Form.Item name="description" label={t('common:table.description')}>
                         <Input.TextArea rows={3} />
                     </Form.Item>
+                    <Form.Item
+                        name="catalog_scope"
+                        label={t('templates.catalog_scope')}
+                        dependencies={['source_type']}
+                        extra={t('templates.catalog_scope_help')}
+                        rules={[
+                            { required: true, message: t('templates.catalog_scope_required') },
+                            ({ getFieldValue }) => ({
+                                validator: async (_, value: string | undefined) => {
+                                    if (getFieldValue('source_type') === 'containerdisk' && (value === 'prod' || value === 'all')) {
+                                        throw new Error(t('templates.containerdisk_scope_invalid'));
+                                    }
+                                },
+                            }),
+                        ]}
+                    >
+                        <Select options={catalogScopeOptions} />
+                    </Form.Item>
 
                     {/* Image Source toggle */}
                     <Divider orientation="left" plain>{t('templates.image_source')}</Divider>
+                    {!templates.editExperimentalSourcesEnabled ? (
+                        <ExperimentalSourceGate
+                            title={t('templates.experimental_source_title')}
+                            description={t('templates.experimental_source_description')}
+                            buttonLabel={t('templates.experimental_source_enable')}
+                            onEnable={templates.enableEditExperimentalSources}
+                        />
+                    ) : null}
                     <Form.Item name="source_type" label={t('templates.source_type')}>
                         <Radio.Group>
-                            <Radio value="image">{t('templates.source_containerdisk')}</Radio>
-                            <Radio value="pvc">{t('templates.source_pvc')}</Radio>
+                            <Radio value="cdi_image_import">{t('templates.source_cdi_import')}</Radio>
+                            <Radio value="cdi_pvc_clone">{t('templates.source_cdi_clone')}</Radio>
+                            {templates.editExperimentalSourcesEnabled ? (
+                                <Radio value="containerdisk">{t('templates.source_containerdisk')}</Radio>
+                            ) : null}
                         </Radio.Group>
+                    </Form.Item>
+                    <Form.Item
+                        noStyle
+                        shouldUpdate={(prev, cur) =>
+                            prev.source_type !== cur.source_type || prev.catalog_scope !== cur.catalog_scope
+                        }
+                    >
+                        {({ getFieldValue }) => {
+                            const sourceType = getFieldValue('source_type');
+                            const scope = getFieldValue('catalog_scope');
+                            if (sourceType !== 'containerdisk') {
+                                return null;
+                            }
+                            const invalidScope = scope === 'prod' || scope === 'all';
+                            return (
+                                <Alert
+                                    type={invalidScope ? 'error' : 'warning'}
+                                    showIcon
+                                    style={{ marginBottom: 16 }}
+                                    message={invalidScope ? t('templates.containerdisk_scope_invalid') : t('templates.containerdisk_scope_warning')}
+                                    description={t('templates.request_flow_reason_admin_only')}
+                                />
+                            );
+                        }}
                     </Form.Item>
                     <Form.Item noStyle shouldUpdate={(prev, cur) => prev.source_type !== cur.source_type}>
                         {({ getFieldValue }) =>
-                            getFieldValue('source_type') === 'pvc' ? (
+                            getFieldValue('source_type') === 'cdi_pvc_clone' ? (
                                 <>
                                     <Form.Item
                                         name="pvc_namespace"

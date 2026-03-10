@@ -3,6 +3,7 @@
 package instancesize
 
 import (
+	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -45,6 +46,8 @@ const (
 	FieldHugepagesSize = "hugepages_size"
 	// FieldSpecOverrides holds the string denoting the spec_overrides field in the database.
 	FieldSpecOverrides = "spec_overrides"
+	// FieldCatalogScope holds the string denoting the catalog_scope field in the database.
+	FieldCatalogScope = "catalog_scope"
 	// FieldSortOrder holds the string denoting the sort_order field in the database.
 	FieldSortOrder = "sort_order"
 	// FieldEnabled holds the string denoting the enabled field in the database.
@@ -74,6 +77,7 @@ var Columns = []string{
 	FieldRequiresHugepages,
 	FieldHugepagesSize,
 	FieldSpecOverrides,
+	FieldCatalogScope,
 	FieldSortOrder,
 	FieldEnabled,
 	FieldCreatedBy,
@@ -123,6 +127,34 @@ var (
 	// CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	CreatedByValidator func(string) error
 )
+
+// CatalogScope defines the type for the "catalog_scope" enum field.
+type CatalogScope string
+
+// CatalogScopeUnclassified is the default value of the CatalogScope enum.
+const DefaultCatalogScope = CatalogScopeUnclassified
+
+// CatalogScope values.
+const (
+	CatalogScopeUnclassified CatalogScope = "unclassified"
+	CatalogScopeTest         CatalogScope = "test"
+	CatalogScopeProd         CatalogScope = "prod"
+	CatalogScopeAll          CatalogScope = "all"
+)
+
+func (cs CatalogScope) String() string {
+	return string(cs)
+}
+
+// CatalogScopeValidator is a validator for the "catalog_scope" field enum values. It is called by the builders before save.
+func CatalogScopeValidator(cs CatalogScope) error {
+	switch cs {
+	case CatalogScopeUnclassified, CatalogScopeTest, CatalogScopeProd, CatalogScopeAll:
+		return nil
+	default:
+		return fmt.Errorf("instancesize: invalid enum value for catalog_scope field: %q", cs)
+	}
+}
 
 // OrderOption defines the ordering options for the InstanceSize queries.
 type OrderOption func(*sql.Selector)
@@ -205,6 +237,11 @@ func ByRequiresHugepages(opts ...sql.OrderTermOption) OrderOption {
 // ByHugepagesSize orders the results by the hugepages_size field.
 func ByHugepagesSize(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldHugepagesSize, opts...).ToFunc()
+}
+
+// ByCatalogScope orders the results by the catalog_scope field.
+func ByCatalogScope(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCatalogScope, opts...).ToFunc()
 }
 
 // BySortOrder orders the results by the sort_order field.
