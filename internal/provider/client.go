@@ -3,9 +3,12 @@ package provider
 import (
 	"context"
 
+	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	kubevirtv1 "kubevirt.io/api/core/v1"
+	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
 // DynamicSSAClient submits unstructured resources via Server-Side Apply.
@@ -47,6 +50,32 @@ type VirtualMachineInstanceClient interface {
 	Unpause(ctx context.Context, namespace, name string, opts *kubevirtv1.UnpauseOptions) error
 }
 
+// DataVolumeClient abstracts CDI DataVolume read operations.
+type DataVolumeClient interface {
+	Get(ctx context.Context, namespace, name string, opts k8smetav1.GetOptions) (*cdiv1beta1.DataVolume, error)
+	List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*cdiv1beta1.DataVolumeList, error)
+}
+
+// StorageProfileClient abstracts CDI StorageProfile reads.
+type StorageProfileClient interface {
+	Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*cdiv1beta1.StorageProfile, error)
+}
+
+// PersistentVolumeClaimClient abstracts PVC read operations.
+type PersistentVolumeClaimClient interface {
+	Get(ctx context.Context, namespace, name string, opts k8smetav1.GetOptions) (*corev1.PersistentVolumeClaim, error)
+}
+
+// StorageClassClient abstracts cluster-scoped StorageClass reads.
+type StorageClassClient interface {
+	Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*storagev1.StorageClass, error)
+}
+
+// EventClient abstracts namespace-scoped Kubernetes Event reads.
+type EventClient interface {
+	List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*corev1.EventList, error)
+}
+
 // KubeVirtCRClient provides access to the cluster-scoped KubeVirt CR.
 // Used by CapabilityDetector to fetch enabled feature gates and running version (ADR-0014).
 //
@@ -71,8 +100,13 @@ type KubeVirtCRClient interface {
 type KubeVirtClusterClient interface {
 	VM() VirtualMachineClient          // Read + lifecycle (type-safe)
 	VMI() VirtualMachineInstanceClient // VMI read + pause/unpause
-	SSA() DynamicSSAClient             // Write: CreateVM/UpdateVM (Unstructured SSA, ADR-0011)
-	KubeVirt() KubeVirtCRClient        // KubeVirt CR access for capability detection (ADR-0014)
+	DataVolume() DataVolumeClient      // CDI DataVolume reads for provisioning observability
+	StorageProfile() StorageProfileClient
+	PVC() PersistentVolumeClaimClient // PVC reads for provisioning observability
+	StorageClass() StorageClassClient // StorageClass reads for clone expansion preflight
+	Events() EventClient              // CoreV1 Events for best-effort failure summaries
+	SSA() DynamicSSAClient            // Write: CreateVM/UpdateVM (Unstructured SSA, ADR-0011)
+	KubeVirt() KubeVirtCRClient       // KubeVirt CR access for capability detection (ADR-0014)
 }
 
 // ClusterClientFactory creates KubeVirtClusterClient for a given cluster name.

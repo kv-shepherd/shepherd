@@ -246,10 +246,15 @@ type stubClusterClient struct {
 	kvCR KubeVirtCRClient
 }
 
-func (s *stubClusterClient) VM() VirtualMachineClient          { return nil }
-func (s *stubClusterClient) VMI() VirtualMachineInstanceClient { return nil }
-func (s *stubClusterClient) SSA() DynamicSSAClient             { return nil }
-func (s *stubClusterClient) KubeVirt() KubeVirtCRClient        { return s.kvCR }
+func (s *stubClusterClient) VM() VirtualMachineClient             { return nil }
+func (s *stubClusterClient) VMI() VirtualMachineInstanceClient    { return nil }
+func (s *stubClusterClient) DataVolume() DataVolumeClient         { return nil }
+func (s *stubClusterClient) StorageProfile() StorageProfileClient { return nil }
+func (s *stubClusterClient) PVC() PersistentVolumeClaimClient     { return nil }
+func (s *stubClusterClient) StorageClass() StorageClassClient     { return nil }
+func (s *stubClusterClient) Events() EventClient                  { return nil }
+func (s *stubClusterClient) SSA() DynamicSSAClient                { return nil }
+func (s *stubClusterClient) KubeVirt() KubeVirtCRClient           { return s.kvCR }
 
 func TestCapabilityDetector_Detect_MergesGAAndExplicitGates(t *testing.T) {
 	t.Parallel()
