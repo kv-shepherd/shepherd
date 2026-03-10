@@ -43,6 +43,7 @@ func TestApprovalModule_WiringContract(t *testing.T) {
 
 	required := []string{
 		"approval.NewGateway(",
+		"service.NewApprovalRequirementService(",
 		"notification.NewTriggers(",
 		"gateway.SetNotifier(",
 		"usecase.NewApprovalAtomicWriter(",

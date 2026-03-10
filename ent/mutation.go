@@ -87,8 +87,11 @@ type ApprovalPolicyMutation struct {
 	updated_at        *time.Time
 	name              *string
 	description       *string
-	action            *approvalpolicy.Action
-	namespace_pattern *string
+	environment_type  *approvalpolicy.EnvironmentType
+	operation         *approvalpolicy.Operation
+	requires_approval *bool
+	priority          *int
+	addpriority       *int
 	enabled           *bool
 	created_by        *string
 	clearedFields     map[string]struct{}
@@ -358,89 +361,168 @@ func (m *ApprovalPolicyMutation) ResetDescription() {
 	delete(m.clearedFields, approvalpolicy.FieldDescription)
 }
 
-// SetAction sets the "action" field.
-func (m *ApprovalPolicyMutation) SetAction(a approvalpolicy.Action) {
-	m.action = &a
+// SetEnvironmentType sets the "environment_type" field.
+func (m *ApprovalPolicyMutation) SetEnvironmentType(at approvalpolicy.EnvironmentType) {
+	m.environment_type = &at
 }
 
-// Action returns the value of the "action" field in the mutation.
-func (m *ApprovalPolicyMutation) Action() (r approvalpolicy.Action, exists bool) {
-	v := m.action
+// EnvironmentType returns the value of the "environment_type" field in the mutation.
+func (m *ApprovalPolicyMutation) EnvironmentType() (r approvalpolicy.EnvironmentType, exists bool) {
+	v := m.environment_type
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldAction returns the old "action" field's value of the ApprovalPolicy entity.
+// OldEnvironmentType returns the old "environment_type" field's value of the ApprovalPolicy entity.
 // If the ApprovalPolicy object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ApprovalPolicyMutation) OldAction(ctx context.Context) (v approvalpolicy.Action, err error) {
+func (m *ApprovalPolicyMutation) OldEnvironmentType(ctx context.Context) (v approvalpolicy.EnvironmentType, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldAction is only allowed on UpdateOne operations")
+		return v, errors.New("OldEnvironmentType is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldAction requires an ID field in the mutation")
+		return v, errors.New("OldEnvironmentType requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldAction: %w", err)
+		return v, fmt.Errorf("querying old value for OldEnvironmentType: %w", err)
 	}
-	return oldValue.Action, nil
+	return oldValue.EnvironmentType, nil
 }
 
-// ResetAction resets all changes to the "action" field.
-func (m *ApprovalPolicyMutation) ResetAction() {
-	m.action = nil
+// ResetEnvironmentType resets all changes to the "environment_type" field.
+func (m *ApprovalPolicyMutation) ResetEnvironmentType() {
+	m.environment_type = nil
 }
 
-// SetNamespacePattern sets the "namespace_pattern" field.
-func (m *ApprovalPolicyMutation) SetNamespacePattern(s string) {
-	m.namespace_pattern = &s
+// SetOperation sets the "operation" field.
+func (m *ApprovalPolicyMutation) SetOperation(a approvalpolicy.Operation) {
+	m.operation = &a
 }
 
-// NamespacePattern returns the value of the "namespace_pattern" field in the mutation.
-func (m *ApprovalPolicyMutation) NamespacePattern() (r string, exists bool) {
-	v := m.namespace_pattern
+// Operation returns the value of the "operation" field in the mutation.
+func (m *ApprovalPolicyMutation) Operation() (r approvalpolicy.Operation, exists bool) {
+	v := m.operation
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldNamespacePattern returns the old "namespace_pattern" field's value of the ApprovalPolicy entity.
+// OldOperation returns the old "operation" field's value of the ApprovalPolicy entity.
 // If the ApprovalPolicy object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ApprovalPolicyMutation) OldNamespacePattern(ctx context.Context) (v string, err error) {
+func (m *ApprovalPolicyMutation) OldOperation(ctx context.Context) (v approvalpolicy.Operation, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldNamespacePattern is only allowed on UpdateOne operations")
+		return v, errors.New("OldOperation is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldNamespacePattern requires an ID field in the mutation")
+		return v, errors.New("OldOperation requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldNamespacePattern: %w", err)
+		return v, fmt.Errorf("querying old value for OldOperation: %w", err)
 	}
-	return oldValue.NamespacePattern, nil
+	return oldValue.Operation, nil
 }
 
-// ClearNamespacePattern clears the value of the "namespace_pattern" field.
-func (m *ApprovalPolicyMutation) ClearNamespacePattern() {
-	m.namespace_pattern = nil
-	m.clearedFields[approvalpolicy.FieldNamespacePattern] = struct{}{}
+// ResetOperation resets all changes to the "operation" field.
+func (m *ApprovalPolicyMutation) ResetOperation() {
+	m.operation = nil
 }
 
-// NamespacePatternCleared returns if the "namespace_pattern" field was cleared in this mutation.
-func (m *ApprovalPolicyMutation) NamespacePatternCleared() bool {
-	_, ok := m.clearedFields[approvalpolicy.FieldNamespacePattern]
-	return ok
+// SetRequiresApproval sets the "requires_approval" field.
+func (m *ApprovalPolicyMutation) SetRequiresApproval(b bool) {
+	m.requires_approval = &b
 }
 
-// ResetNamespacePattern resets all changes to the "namespace_pattern" field.
-func (m *ApprovalPolicyMutation) ResetNamespacePattern() {
-	m.namespace_pattern = nil
-	delete(m.clearedFields, approvalpolicy.FieldNamespacePattern)
+// RequiresApproval returns the value of the "requires_approval" field in the mutation.
+func (m *ApprovalPolicyMutation) RequiresApproval() (r bool, exists bool) {
+	v := m.requires_approval
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequiresApproval returns the old "requires_approval" field's value of the ApprovalPolicy entity.
+// If the ApprovalPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ApprovalPolicyMutation) OldRequiresApproval(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequiresApproval is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequiresApproval requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequiresApproval: %w", err)
+	}
+	return oldValue.RequiresApproval, nil
+}
+
+// ResetRequiresApproval resets all changes to the "requires_approval" field.
+func (m *ApprovalPolicyMutation) ResetRequiresApproval() {
+	m.requires_approval = nil
+}
+
+// SetPriority sets the "priority" field.
+func (m *ApprovalPolicyMutation) SetPriority(i int) {
+	m.priority = &i
+	m.addpriority = nil
+}
+
+// Priority returns the value of the "priority" field in the mutation.
+func (m *ApprovalPolicyMutation) Priority() (r int, exists bool) {
+	v := m.priority
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPriority returns the old "priority" field's value of the ApprovalPolicy entity.
+// If the ApprovalPolicy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ApprovalPolicyMutation) OldPriority(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPriority is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPriority requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPriority: %w", err)
+	}
+	return oldValue.Priority, nil
+}
+
+// AddPriority adds i to the "priority" field.
+func (m *ApprovalPolicyMutation) AddPriority(i int) {
+	if m.addpriority != nil {
+		*m.addpriority += i
+	} else {
+		m.addpriority = &i
+	}
+}
+
+// AddedPriority returns the value that was added to the "priority" field in this mutation.
+func (m *ApprovalPolicyMutation) AddedPriority() (r int, exists bool) {
+	v := m.addpriority
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPriority resets all changes to the "priority" field.
+func (m *ApprovalPolicyMutation) ResetPriority() {
+	m.priority = nil
+	m.addpriority = nil
 }
 
 // SetEnabled sets the "enabled" field.
@@ -549,7 +631,7 @@ func (m *ApprovalPolicyMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ApprovalPolicyMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 10)
 	if m.created_at != nil {
 		fields = append(fields, approvalpolicy.FieldCreatedAt)
 	}
@@ -562,11 +644,17 @@ func (m *ApprovalPolicyMutation) Fields() []string {
 	if m.description != nil {
 		fields = append(fields, approvalpolicy.FieldDescription)
 	}
-	if m.action != nil {
-		fields = append(fields, approvalpolicy.FieldAction)
+	if m.environment_type != nil {
+		fields = append(fields, approvalpolicy.FieldEnvironmentType)
 	}
-	if m.namespace_pattern != nil {
-		fields = append(fields, approvalpolicy.FieldNamespacePattern)
+	if m.operation != nil {
+		fields = append(fields, approvalpolicy.FieldOperation)
+	}
+	if m.requires_approval != nil {
+		fields = append(fields, approvalpolicy.FieldRequiresApproval)
+	}
+	if m.priority != nil {
+		fields = append(fields, approvalpolicy.FieldPriority)
 	}
 	if m.enabled != nil {
 		fields = append(fields, approvalpolicy.FieldEnabled)
@@ -590,10 +678,14 @@ func (m *ApprovalPolicyMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case approvalpolicy.FieldDescription:
 		return m.Description()
-	case approvalpolicy.FieldAction:
-		return m.Action()
-	case approvalpolicy.FieldNamespacePattern:
-		return m.NamespacePattern()
+	case approvalpolicy.FieldEnvironmentType:
+		return m.EnvironmentType()
+	case approvalpolicy.FieldOperation:
+		return m.Operation()
+	case approvalpolicy.FieldRequiresApproval:
+		return m.RequiresApproval()
+	case approvalpolicy.FieldPriority:
+		return m.Priority()
 	case approvalpolicy.FieldEnabled:
 		return m.Enabled()
 	case approvalpolicy.FieldCreatedBy:
@@ -615,10 +707,14 @@ func (m *ApprovalPolicyMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldName(ctx)
 	case approvalpolicy.FieldDescription:
 		return m.OldDescription(ctx)
-	case approvalpolicy.FieldAction:
-		return m.OldAction(ctx)
-	case approvalpolicy.FieldNamespacePattern:
-		return m.OldNamespacePattern(ctx)
+	case approvalpolicy.FieldEnvironmentType:
+		return m.OldEnvironmentType(ctx)
+	case approvalpolicy.FieldOperation:
+		return m.OldOperation(ctx)
+	case approvalpolicy.FieldRequiresApproval:
+		return m.OldRequiresApproval(ctx)
+	case approvalpolicy.FieldPriority:
+		return m.OldPriority(ctx)
 	case approvalpolicy.FieldEnabled:
 		return m.OldEnabled(ctx)
 	case approvalpolicy.FieldCreatedBy:
@@ -660,19 +756,33 @@ func (m *ApprovalPolicyMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetDescription(v)
 		return nil
-	case approvalpolicy.FieldAction:
-		v, ok := value.(approvalpolicy.Action)
+	case approvalpolicy.FieldEnvironmentType:
+		v, ok := value.(approvalpolicy.EnvironmentType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetAction(v)
+		m.SetEnvironmentType(v)
 		return nil
-	case approvalpolicy.FieldNamespacePattern:
-		v, ok := value.(string)
+	case approvalpolicy.FieldOperation:
+		v, ok := value.(approvalpolicy.Operation)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetNamespacePattern(v)
+		m.SetOperation(v)
+		return nil
+	case approvalpolicy.FieldRequiresApproval:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequiresApproval(v)
+		return nil
+	case approvalpolicy.FieldPriority:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPriority(v)
 		return nil
 	case approvalpolicy.FieldEnabled:
 		v, ok := value.(bool)
@@ -695,13 +805,21 @@ func (m *ApprovalPolicyMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *ApprovalPolicyMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addpriority != nil {
+		fields = append(fields, approvalpolicy.FieldPriority)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *ApprovalPolicyMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case approvalpolicy.FieldPriority:
+		return m.AddedPriority()
+	}
 	return nil, false
 }
 
@@ -710,6 +828,13 @@ func (m *ApprovalPolicyMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *ApprovalPolicyMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case approvalpolicy.FieldPriority:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPriority(v)
+		return nil
 	}
 	return fmt.Errorf("unknown ApprovalPolicy numeric field %s", name)
 }
@@ -720,9 +845,6 @@ func (m *ApprovalPolicyMutation) ClearedFields() []string {
 	var fields []string
 	if m.FieldCleared(approvalpolicy.FieldDescription) {
 		fields = append(fields, approvalpolicy.FieldDescription)
-	}
-	if m.FieldCleared(approvalpolicy.FieldNamespacePattern) {
-		fields = append(fields, approvalpolicy.FieldNamespacePattern)
 	}
 	return fields
 }
@@ -740,9 +862,6 @@ func (m *ApprovalPolicyMutation) ClearField(name string) error {
 	switch name {
 	case approvalpolicy.FieldDescription:
 		m.ClearDescription()
-		return nil
-	case approvalpolicy.FieldNamespacePattern:
-		m.ClearNamespacePattern()
 		return nil
 	}
 	return fmt.Errorf("unknown ApprovalPolicy nullable field %s", name)
@@ -764,11 +883,17 @@ func (m *ApprovalPolicyMutation) ResetField(name string) error {
 	case approvalpolicy.FieldDescription:
 		m.ResetDescription()
 		return nil
-	case approvalpolicy.FieldAction:
-		m.ResetAction()
+	case approvalpolicy.FieldEnvironmentType:
+		m.ResetEnvironmentType()
 		return nil
-	case approvalpolicy.FieldNamespacePattern:
-		m.ResetNamespacePattern()
+	case approvalpolicy.FieldOperation:
+		m.ResetOperation()
+		return nil
+	case approvalpolicy.FieldRequiresApproval:
+		m.ResetRequiresApproval()
+		return nil
+	case approvalpolicy.FieldPriority:
+		m.ResetPriority()
 		return nil
 	case approvalpolicy.FieldEnabled:
 		m.ResetEnabled()

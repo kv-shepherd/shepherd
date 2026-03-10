@@ -15,8 +15,10 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "name", Type: field.TypeString},
 		{Name: "description", Type: field.TypeString, Nullable: true},
-		{Name: "action", Type: field.TypeEnum, Enums: []string{"VM_CREATE", "VM_DELETE", "VM_MODIFY"}, Default: "VM_CREATE"},
-		{Name: "namespace_pattern", Type: field.TypeString, Nullable: true},
+		{Name: "environment_type", Type: field.TypeEnum, Enums: []string{"test", "prod", "all"}, Default: "all"},
+		{Name: "operation", Type: field.TypeEnum, Enums: []string{"CREATE_VM", "MODIFY_VM", "DELETE_VM", "START_VM", "STOP_VM", "RESTART_VM", "VNC_ACCESS"}, Default: "CREATE_VM"},
+		{Name: "requires_approval", Type: field.TypeBool, Default: true},
+		{Name: "priority", Type: field.TypeInt, Default: 100},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "created_by", Type: field.TypeString},
 	}
@@ -27,9 +29,9 @@ var (
 		PrimaryKey: []*schema.Column{ApprovalPoliciesColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "approvalpolicy_action_enabled",
+				Name:    "approvalpolicy_operation_environment_type_enabled_priority",
 				Unique:  false,
-				Columns: []*schema.Column{ApprovalPoliciesColumns[5], ApprovalPoliciesColumns[7]},
+				Columns: []*schema.Column{ApprovalPoliciesColumns[6], ApprovalPoliciesColumns[5], ApprovalPoliciesColumns[9], ApprovalPoliciesColumns[8]},
 			},
 		},
 	}
@@ -39,7 +41,7 @@ var (
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "event_id", Type: field.TypeString},
-		{Name: "operation_type", Type: field.TypeEnum, Enums: []string{"CREATE", "DELETE", "VNC_ACCESS"}, Default: "CREATE"},
+		{Name: "operation_type", Type: field.TypeEnum, Enums: []string{"CREATE", "DELETE", "POWER", "VNC_ACCESS"}, Default: "CREATE"},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXECUTING", "SUCCESS", "FAILED"}, Default: "PENDING"},
 		{Name: "requester", Type: field.TypeString},
 		{Name: "approver", Type: field.TypeString, Nullable: true},

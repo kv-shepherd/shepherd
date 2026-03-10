@@ -24,7 +24,7 @@ type ApprovalTicket struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// EventID holds the value of the "event_id" field.
 	EventID string `json:"event_id,omitempty"`
-	// Distinguishes CREATE vs DELETE approval tickets (Phase 4 governance)
+	// Distinguishes CREATE vs DELETE vs POWER approval tickets (Phase 4 governance)
 	OperationType approvalticket.OperationType `json:"operation_type,omitempty"`
 	// Status holds the value of the "status" field.
 	Status approvalticket.Status `json:"status,omitempty"`

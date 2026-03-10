@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 )
 
@@ -13,27 +12,27 @@ func TestEvaluateVNCRequest(t *testing.T) {
 
 	tests := []struct {
 		name              string
-		env               namespaceregistry.Environment
 		vmStatus          entvm.Status
 		hasPermission     bool
 		hasPendingRequest bool
+		requireApproval   bool
 		want              VNCDecision
 	}{
 		{
-			name:          "test environment allows direct access",
-			env:           namespaceregistry.EnvironmentTest,
-			vmStatus:      entvm.StatusRUNNING,
-			hasPermission: true,
+			name:            "direct access allowed when approval not required",
+			vmStatus:        entvm.StatusRUNNING,
+			hasPermission:   true,
+			requireApproval: false,
 			want: VNCDecision{
 				Allowed:         true,
 				RequireApproval: false,
 			},
 		},
 		{
-			name:          "prod environment requires approval",
-			env:           namespaceregistry.EnvironmentProd,
-			vmStatus:      entvm.StatusRUNNING,
-			hasPermission: true,
+			name:            "approval required path is surfaced",
+			vmStatus:        entvm.StatusRUNNING,
+			hasPermission:   true,
+			requireApproval: true,
 			want: VNCDecision{
 				Allowed:         true,
 				RequireApproval: true,
@@ -41,37 +40,28 @@ func TestEvaluateVNCRequest(t *testing.T) {
 		},
 		{
 			name:              "prod duplicate pending rejected",
-			env:               namespaceregistry.EnvironmentProd,
 			vmStatus:          entvm.StatusRUNNING,
 			hasPermission:     true,
 			hasPendingRequest: true,
+			requireApproval:   true,
 			want: VNCDecision{
 				RejectCode: "DUPLICATE_PENDING_VNC_REQUEST",
 			},
 		},
 		{
-			name:          "vm not running rejected",
-			env:           namespaceregistry.EnvironmentTest,
-			vmStatus:      entvm.StatusSTOPPED,
-			hasPermission: true,
+			name:            "vm not running rejected",
+			vmStatus:        entvm.StatusSTOPPED,
+			hasPermission:   true,
+			requireApproval: false,
 			want: VNCDecision{
 				RejectCode: "VM_NOT_RUNNING",
 			},
 		},
 		{
-			name:     "missing vnc permission rejected",
-			env:      namespaceregistry.EnvironmentTest,
-			vmStatus: entvm.StatusRUNNING,
-			want:     VNCDecision{RejectCode: "FORBIDDEN"},
-		},
-		{
-			name:          "unsupported environment rejected",
-			env:           namespaceregistry.Environment("staging"),
-			vmStatus:      entvm.StatusRUNNING,
-			hasPermission: true,
-			want: VNCDecision{
-				RejectCode: "UNSUPPORTED_NAMESPACE_ENVIRONMENT",
-			},
+			name:            "missing vnc permission rejected",
+			vmStatus:        entvm.StatusRUNNING,
+			requireApproval: false,
+			want:            VNCDecision{RejectCode: "FORBIDDEN"},
 		},
 	}
 
@@ -80,7 +70,7 @@ func TestEvaluateVNCRequest(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := EvaluateVNCRequest(tc.env, tc.vmStatus, tc.hasPermission, tc.hasPendingRequest)
+			got := EvaluateVNCRequest(tc.vmStatus, tc.hasPermission, tc.hasPendingRequest, tc.requireApproval)
 			if got != tc.want {
 				t.Fatalf("EvaluateVNCRequest() = %+v, want %+v", got, tc.want)
 			}

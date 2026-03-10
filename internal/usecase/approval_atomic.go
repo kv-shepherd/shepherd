@@ -243,6 +243,59 @@ func (w *ApprovalAtomicWriter) ApproveDeleteAndEnqueue(
 	return nil
 }
 
+// ApprovePowerAndEnqueue atomically:
+// 1) marks ticket APPROVED,
+// 2) inserts River vm_power job via InsertTx.
+//
+// The associated DomainEvent remains PENDING until the worker starts and
+// resolves the operation outcome.
+func (w *ApprovalAtomicWriter) ApprovePowerAndEnqueue(
+	ctx context.Context,
+	ticketID, eventID, approver, operation string,
+) error {
+	if w.pool == nil || w.riverClient == nil || w.queries == nil {
+		return fmt.Errorf("approval atomic writer is not initialized")
+	}
+	if strings.TrimSpace(ticketID) == "" ||
+		strings.TrimSpace(eventID) == "" ||
+		strings.TrimSpace(approver) == "" ||
+		strings.TrimSpace(operation) == "" {
+		return fmt.Errorf("approve power input is incomplete")
+	}
+
+	tx, err := w.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin approval power tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := w.queries.WithTx(tx)
+
+	affected, err := qtx.ApprovePowerTicket(ctx, sqlcrepo.ApprovePowerTicketParams{
+		Approver: pgtype.Text{String: approver, Valid: true},
+		ID:       ticketID,
+		EventID:  eventID,
+	})
+	if err != nil {
+		return fmt.Errorf("approve power ticket %s: %w", ticketID, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("approve power ticket %s: not pending or operation type mismatch", ticketID)
+	}
+
+	if _, err := w.riverClient.InsertTx(ctx, tx, jobs.VMPowerArgs{
+		EventID:   eventID,
+		Operation: operation,
+	}, nil); err != nil {
+		return fmt.Errorf("enqueue vm_power for event %s: %w", eventID, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit approval power tx: %w", err)
+	}
+	return nil
+}
+
 func (w *ApprovalAtomicWriter) validateCreateInput(
 	ticketID, eventID, approver, clusterID, serviceID, namespace, requesterID string,
 ) error {

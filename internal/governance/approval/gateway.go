@@ -51,6 +51,7 @@ type AtomicApprovalWriter interface {
 		modifiedSpec map[string]interface{},
 	) (vmID, vmName string, err error)
 	ApproveDeleteAndEnqueue(ctx context.Context, ticketID, eventID, approver, vmID string) error
+	ApprovePowerAndEnqueue(ctx context.Context, ticketID, eventID, approver, operation string) error
 }
 
 // Gateway orchestrates approval decisions.
@@ -120,12 +121,56 @@ func (g *Gateway) Approve(ctx context.Context, ticketID, approver string, opts A
 	switch ticket.OperationType {
 	case approvalticket.OperationTypeDELETE:
 		return g.approveDelete(ctx, ticket, ticketID, approver)
+	case approvalticket.OperationTypePOWER:
+		return g.approvePower(ctx, ticket, event, ticketID, approver)
 	case approvalticket.OperationTypeVNC_ACCESS:
 		return g.approveVNC(ctx, ticket, event, ticketID, approver)
 	default:
 		// CREATE is the default operation type.
 		return g.approveCreate(ctx, ticket, ticketID, approver, opts)
 	}
+}
+
+// approvePower handles approval of POWER tickets.
+func (g *Gateway) approvePower(ctx context.Context, ticket *ent.ApprovalTicket, event *ent.DomainEvent, ticketID, approver string) error {
+	if event == nil {
+		return fmt.Errorf("power approval requires domain event")
+	}
+
+	var payload domain.VMPowerPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return fmt.Errorf("parse power payload for ticket %s: %w", ticketID, err)
+	}
+	operation := strings.TrimSpace(strings.ToLower(payload.Operation))
+	switch operation {
+	case "start", "stop", "restart":
+	default:
+		return fmt.Errorf("ticket %s has unsupported power operation %q", ticketID, payload.Operation)
+	}
+
+	if g.atomicWriter == nil {
+		return fmt.Errorf("atomic approval writer is not configured")
+	}
+	if err := g.atomicWriter.ApprovePowerAndEnqueue(ctx, ticketID, ticket.EventID, approver, operation); err != nil {
+		return fmt.Errorf("approve power ticket %s atomically: %w", ticketID, err)
+	}
+
+	if g.auditLogger != nil {
+		_ = g.auditLogger.LogApproval(ctx, ticketID, "power_approved", approver)
+	}
+	if g.notifier != nil {
+		g.notifier.OnTicketApproved(ctx, ticketID, payload.Actor, approver)
+	}
+
+	logger.Info("POWER ticket approved and job enqueued",
+		zap.String("ticket_id", ticketID),
+		zap.String("approver", approver),
+		zap.String("vm_id", payload.VMID),
+		zap.String("vm_name", payload.VMName),
+		zap.String("operation", operation),
+		zap.String("event_id", ticket.EventID),
+	)
+	return nil
 }
 
 // approveCreate handles approval of CREATE tickets (original flow).
@@ -514,6 +559,17 @@ func (g *Gateway) approveBatchParent(
 		switch child.OperationType {
 		case approvalticket.OperationTypeDELETE:
 			approveErr = g.approveDelete(ctx, child, child.ID, approver)
+		case approvalticket.OperationTypePOWER:
+			childEvent := parentEvent
+			if childEvent == nil || child.EventID != childEvent.ID {
+				childEvent, approveErr = g.client.DomainEvent.Get(ctx, child.EventID)
+				if approveErr != nil {
+					failedCount++
+					g.markChildApprovalDispatchFailed(ctx, child, approver, fmt.Errorf("load power child event %s: %w", child.EventID, approveErr))
+					continue
+				}
+			}
+			approveErr = g.approvePower(ctx, child, childEvent, child.ID, approver)
 		default:
 			approveErr = g.approveCreate(ctx, child, child.ID, approver, opts)
 		}

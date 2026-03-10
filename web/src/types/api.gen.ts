@@ -1526,7 +1526,7 @@ export interface components {
              * @description Type of operation this ticket represents (ADR-0015)
              * @enum {string}
              */
-            operation_type?: "CREATE" | "DELETE" | "VNC_ACCESS";
+            operation_type?: "CREATE" | "DELETE" | "POWER" | "VNC_ACCESS";
         };
         ApprovalTicket: {
             id: string;
@@ -1537,7 +1537,7 @@ export interface components {
              * @description Type of operation this ticket represents (ADR-0015)
              * @enum {string}
              */
-            operation_type?: "CREATE" | "DELETE" | "VNC_ACCESS";
+            operation_type?: "CREATE" | "DELETE" | "POWER" | "VNC_ACCESS";
             requester: string;
             approver?: string;
             reason?: string;
@@ -2168,8 +2168,9 @@ export interface components {
         };
         VMPowerAcceptedResponse: {
             event_id: string;
+            ticket_id?: string | null;
             /** @enum {string} */
-            status: "ACCEPTED";
+            status: "ACCEPTED" | "PENDING_APPROVAL";
         };
         RateLimitExemptionList: {
             items?: components["schemas"]["RateLimitExemption"][];

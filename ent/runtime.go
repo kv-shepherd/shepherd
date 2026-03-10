@@ -57,12 +57,20 @@ func init() {
 	approvalpolicyDescName := approvalpolicyFields[1].Descriptor()
 	// approvalpolicy.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	approvalpolicy.NameValidator = approvalpolicyDescName.Validators[0].(func(string) error)
+	// approvalpolicyDescRequiresApproval is the schema descriptor for requires_approval field.
+	approvalpolicyDescRequiresApproval := approvalpolicyFields[5].Descriptor()
+	// approvalpolicy.DefaultRequiresApproval holds the default value on creation for the requires_approval field.
+	approvalpolicy.DefaultRequiresApproval = approvalpolicyDescRequiresApproval.Default.(bool)
+	// approvalpolicyDescPriority is the schema descriptor for priority field.
+	approvalpolicyDescPriority := approvalpolicyFields[6].Descriptor()
+	// approvalpolicy.DefaultPriority holds the default value on creation for the priority field.
+	approvalpolicy.DefaultPriority = approvalpolicyDescPriority.Default.(int)
 	// approvalpolicyDescEnabled is the schema descriptor for enabled field.
-	approvalpolicyDescEnabled := approvalpolicyFields[5].Descriptor()
+	approvalpolicyDescEnabled := approvalpolicyFields[7].Descriptor()
 	// approvalpolicy.DefaultEnabled holds the default value on creation for the enabled field.
 	approvalpolicy.DefaultEnabled = approvalpolicyDescEnabled.Default.(bool)
 	// approvalpolicyDescCreatedBy is the schema descriptor for created_by field.
-	approvalpolicyDescCreatedBy := approvalpolicyFields[6].Descriptor()
+	approvalpolicyDescCreatedBy := approvalpolicyFields[8].Descriptor()
 	// approvalpolicy.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	approvalpolicy.CreatedByValidator = approvalpolicyDescCreatedBy.Validators[0].(func(string) error)
 	approvalticketMixin := schema.ApprovalTicket{}.Mixin()
