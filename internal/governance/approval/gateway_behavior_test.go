@@ -18,7 +18,8 @@ import (
 )
 
 type fakeAtomicWriter struct {
-	called bool
+	called      bool
+	powerCalled bool
 
 	ticketID     string
 	eventID      string
@@ -29,6 +30,7 @@ type fakeAtomicWriter struct {
 	namespace    string
 	requesterID  string
 	modifiedSpec map[string]interface{}
+	powerOp      string
 }
 
 func init() {
@@ -56,6 +58,15 @@ func (f *fakeAtomicWriter) ApproveCreateAndEnqueue(
 }
 
 func (f *fakeAtomicWriter) ApproveDeleteAndEnqueue(_ context.Context, _, _, _, _ string) error {
+	return nil
+}
+
+func (f *fakeAtomicWriter) ApprovePowerAndEnqueue(_ context.Context, ticketID, eventID, approver, operation string) error {
+	f.powerCalled = true
+	f.ticketID = ticketID
+	f.eventID = eventID
+	f.approver = approver
+	f.powerOp = operation
 	return nil
 }
 
@@ -286,6 +297,57 @@ func TestGatewayApproveVNC_TransitionsTicketAndEventWithoutAtomicWriter(t *testi
 	}
 	if event.Status != domainevent.StatusCOMPLETED {
 		t.Fatalf("event status = %s, want %s", event.Status, domainevent.StatusCOMPLETED)
+	}
+}
+
+func TestGatewayApprovePower_DelegatesToAtomicWriter(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_behavior_power_approve")
+
+	eventID := "event-power-approve-1"
+	ticketID := "ticket-power-approve-1"
+	payloadRaw, _ := json.Marshal(domain.VMPowerPayload{
+		VMID:      "vm-1",
+		VMName:    "vm-1",
+		ClusterID: "cluster-a",
+		Namespace: "team-a",
+		Operation: "restart",
+		Actor:     "user-1",
+	})
+	_, _ = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMRestartRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("vm-1").
+		SetPayload(payloadRaw).
+		SetCreatedBy("user-1").
+		Save(context.Background())
+	_, _ = client.ApprovalTicket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(approvalticket.StatusPENDING).
+		SetOperationType(approvalticket.OperationTypePOWER).
+		SetReason("vm restart request").
+		Save(context.Background())
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", ApproveOpts{}); err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	if !writer.powerCalled {
+		t.Fatal("power atomic writer not called")
+	}
+	if writer.ticketID != ticketID || writer.eventID != eventID {
+		t.Fatalf("writer ids mismatch: ticket=%s event=%s", writer.ticketID, writer.eventID)
+	}
+	if writer.approver != "admin-1" {
+		t.Fatalf("writer approver = %s, want admin-1", writer.approver)
+	}
+	if writer.powerOp != "restart" {
+		t.Fatalf("writer operation = %s, want restart", writer.powerOp)
 	}
 }
 

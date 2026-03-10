@@ -15,6 +15,7 @@ import (
 type ApprovalModule struct {
 	gateway        *approval.Gateway
 	providerRouter *approval.ApprovalProviderRouter
+	requirements   *service.ApprovalRequirementService
 	notifier       *notification.Triggers
 }
 
@@ -35,6 +36,7 @@ func NewApprovalModule(infra *Infrastructure, vmSvc *service.VMService) (*Approv
 
 	atomicWriter := usecase.NewApprovalAtomicWriter(infra.Pool, infra.RiverClient)
 	gateway := approval.NewGateway(infra.EntClient, infra.AuditLogger, atomicWriter)
+	requirements := service.NewApprovalRequirementService(infra.EntClient)
 
 	// Wire notification system (ADR-0015 §20, master-flow.md Stage 5.F).
 	inboxSender := notification.NewInboxSender(infra.EntClient)
@@ -56,6 +58,7 @@ func NewApprovalModule(infra *Infrastructure, vmSvc *service.VMService) (*Approv
 	return &ApprovalModule{
 		gateway:        gateway,
 		providerRouter: providerRouter,
+		requirements:   requirements,
 		notifier:       notifier,
 	}, nil
 }
@@ -68,6 +71,7 @@ func (m *ApprovalModule) ContributeServerDeps(deps *handlers.ServerDeps) {
 	}
 	deps.Gateway = m.gateway
 	deps.Notifier = m.notifier
+	deps.ApprovalReqs = m.requirements
 	// Stage 2.E: expose the provider router so handlers can route submissions
 	// through the correct backend (builtin in V1, external in V2+).
 	deps.ApprovalRouter = m.providerRouter

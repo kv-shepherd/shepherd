@@ -22,10 +22,14 @@ const (
 	FieldName = "name"
 	// FieldDescription holds the string denoting the description field in the database.
 	FieldDescription = "description"
-	// FieldAction holds the string denoting the action field in the database.
-	FieldAction = "action"
-	// FieldNamespacePattern holds the string denoting the namespace_pattern field in the database.
-	FieldNamespacePattern = "namespace_pattern"
+	// FieldEnvironmentType holds the string denoting the environment_type field in the database.
+	FieldEnvironmentType = "environment_type"
+	// FieldOperation holds the string denoting the operation field in the database.
+	FieldOperation = "operation"
+	// FieldRequiresApproval holds the string denoting the requires_approval field in the database.
+	FieldRequiresApproval = "requires_approval"
+	// FieldPriority holds the string denoting the priority field in the database.
+	FieldPriority = "priority"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
 	// FieldCreatedBy holds the string denoting the created_by field in the database.
@@ -41,8 +45,10 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldName,
 	FieldDescription,
-	FieldAction,
-	FieldNamespacePattern,
+	FieldEnvironmentType,
+	FieldOperation,
+	FieldRequiresApproval,
+	FieldPriority,
 	FieldEnabled,
 	FieldCreatedBy,
 }
@@ -66,36 +72,71 @@ var (
 	UpdateDefaultUpdatedAt func() time.Time
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
+	// DefaultRequiresApproval holds the default value on creation for the "requires_approval" field.
+	DefaultRequiresApproval bool
+	// DefaultPriority holds the default value on creation for the "priority" field.
+	DefaultPriority int
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
 	// CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	CreatedByValidator func(string) error
 )
 
-// Action defines the type for the "action" enum field.
-type Action string
+// EnvironmentType defines the type for the "environment_type" enum field.
+type EnvironmentType string
 
-// ActionVM_CREATE is the default value of the Action enum.
-const DefaultAction = ActionVM_CREATE
+// EnvironmentTypeAll is the default value of the EnvironmentType enum.
+const DefaultEnvironmentType = EnvironmentTypeAll
 
-// Action values.
+// EnvironmentType values.
 const (
-	ActionVM_CREATE Action = "VM_CREATE"
-	ActionVM_DELETE Action = "VM_DELETE"
-	ActionVM_MODIFY Action = "VM_MODIFY"
+	EnvironmentTypeTest EnvironmentType = "test"
+	EnvironmentTypeProd EnvironmentType = "prod"
+	EnvironmentTypeAll  EnvironmentType = "all"
 )
 
-func (a Action) String() string {
-	return string(a)
+func (et EnvironmentType) String() string {
+	return string(et)
 }
 
-// ActionValidator is a validator for the "action" field enum values. It is called by the builders before save.
-func ActionValidator(a Action) error {
-	switch a {
-	case ActionVM_CREATE, ActionVM_DELETE, ActionVM_MODIFY:
+// EnvironmentTypeValidator is a validator for the "environment_type" field enum values. It is called by the builders before save.
+func EnvironmentTypeValidator(et EnvironmentType) error {
+	switch et {
+	case EnvironmentTypeTest, EnvironmentTypeProd, EnvironmentTypeAll:
 		return nil
 	default:
-		return fmt.Errorf("approvalpolicy: invalid enum value for action field: %q", a)
+		return fmt.Errorf("approvalpolicy: invalid enum value for environment_type field: %q", et)
+	}
+}
+
+// Operation defines the type for the "operation" enum field.
+type Operation string
+
+// OperationCREATE_VM is the default value of the Operation enum.
+const DefaultOperation = OperationCREATE_VM
+
+// Operation values.
+const (
+	OperationCREATE_VM  Operation = "CREATE_VM"
+	OperationMODIFY_VM  Operation = "MODIFY_VM"
+	OperationDELETE_VM  Operation = "DELETE_VM"
+	OperationSTART_VM   Operation = "START_VM"
+	OperationSTOP_VM    Operation = "STOP_VM"
+	OperationRESTART_VM Operation = "RESTART_VM"
+	OperationVNC_ACCESS Operation = "VNC_ACCESS"
+)
+
+func (o Operation) String() string {
+	return string(o)
+}
+
+// OperationValidator is a validator for the "operation" field enum values. It is called by the builders before save.
+func OperationValidator(o Operation) error {
+	switch o {
+	case OperationCREATE_VM, OperationMODIFY_VM, OperationDELETE_VM, OperationSTART_VM, OperationSTOP_VM, OperationRESTART_VM, OperationVNC_ACCESS:
+		return nil
+	default:
+		return fmt.Errorf("approvalpolicy: invalid enum value for operation field: %q", o)
 	}
 }
 
@@ -127,14 +168,24 @@ func ByDescription(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDescription, opts...).ToFunc()
 }
 
-// ByAction orders the results by the action field.
-func ByAction(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldAction, opts...).ToFunc()
+// ByEnvironmentType orders the results by the environment_type field.
+func ByEnvironmentType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEnvironmentType, opts...).ToFunc()
 }
 
-// ByNamespacePattern orders the results by the namespace_pattern field.
-func ByNamespacePattern(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldNamespacePattern, opts...).ToFunc()
+// ByOperation orders the results by the operation field.
+func ByOperation(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOperation, opts...).ToFunc()
+}
+
+// ByRequiresApproval orders the results by the requires_approval field.
+func ByRequiresApproval(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRequiresApproval, opts...).ToFunc()
+}
+
+// ByPriority orders the results by the priority field.
+func ByPriority(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriority, opts...).ToFunc()
 }
 
 // ByEnabled orders the results by the enabled field.

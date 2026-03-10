@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/approvalpolicy"
 	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
@@ -104,6 +105,60 @@ func TestVMConsole_Request_ProductionCreatesPendingApprovalTicket(t *testing.T) 
 	}
 	if event.EventType != string(domain.EventVNCAccessRequested) {
 		t.Fatalf("event_type = %q, want %q", event.EventType, domain.EventVNCAccessRequested)
+	}
+}
+
+func TestVMConsole_Request_ProductionExplicitNoApprovalIssuesDirectVNCURL(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newVMConsoleBehaviorTestServer(t)
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
+	mustCreateVNCApprovalPolicy(t, client, approvalpolicy.EnvironmentTypeProd, false, 1)
+
+	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
+	srv.RequestVMConsoleAccess(c, vm.ID)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	resp := decodeJSONMap(t, w.Body.Bytes())
+	if got := toStringValue(resp["status"]); got != "APPROVED" {
+		t.Fatalf("status = %q, want %q", got, "APPROVED")
+	}
+	if vncURL := toStringValue(resp["vnc_url"]); vncURL != "/api/v1/vms/"+vm.ID+"/vnc" {
+		t.Fatalf("vnc_url = %q, want %q", vncURL, "/api/v1/vms/"+vm.ID+"/vnc")
+	}
+
+	count, err := client.ApprovalTicket.Query().Count(t.Context())
+	if err != nil {
+		t.Fatalf("count approval tickets: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("approval ticket count = %d, want 0", count)
+	}
+}
+
+func TestVMConsole_Request_TestExplicitApprovalCreatesPendingTicket(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newVMConsoleBehaviorTestServer(t)
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentTest, entvm.StatusRUNNING)
+	mustCreateVNCApprovalPolicy(t, client, approvalpolicy.EnvironmentTypeTest, true, 1)
+
+	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
+	srv.RequestVMConsoleAccess(c, vm.ID)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	resp := decodeJSONMap(t, w.Body.Bytes())
+	if got := toStringValue(resp["status"]); got != "PENDING_APPROVAL" {
+		t.Fatalf("status = %q, want %q", got, "PENDING_APPROVAL")
+	}
+	if ticketID := toStringValue(resp["ticket_id"]); ticketID == "" {
+		t.Fatal("ticket_id is empty")
 	}
 }
 
@@ -342,6 +397,29 @@ func mustSeedPendingVNCRequest(t *testing.T, client *ent.Client, vmID, clusterID
 	}
 
 	return ticketID
+}
+
+func mustCreateVNCApprovalPolicy(
+	t *testing.T,
+	client *ent.Client,
+	environment approvalpolicy.EnvironmentType,
+	requiresApproval bool,
+	priority int,
+) {
+	t.Helper()
+
+	if _, err := client.ApprovalPolicy.Create().
+		SetID("policy-vnc-" + uuid.NewString()).
+		SetName(fmt.Sprintf("vnc-%s-%t", environment, requiresApproval)).
+		SetEnvironmentType(environment).
+		SetOperation(approvalpolicy.OperationVNC_ACCESS).
+		SetRequiresApproval(requiresApproval).
+		SetPriority(priority).
+		SetEnabled(true).
+		SetCreatedBy("tester").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create vnc approval policy: %v", err)
+	}
 }
 
 func mustTicketEventID(t *testing.T, client *ent.Client, ticketID string) string {

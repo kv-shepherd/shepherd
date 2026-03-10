@@ -68,37 +68,66 @@ func (_u *ApprovalPolicyUpdate) ClearDescription() *ApprovalPolicyUpdate {
 	return _u
 }
 
-// SetAction sets the "action" field.
-func (_u *ApprovalPolicyUpdate) SetAction(v approvalpolicy.Action) *ApprovalPolicyUpdate {
-	_u.mutation.SetAction(v)
+// SetEnvironmentType sets the "environment_type" field.
+func (_u *ApprovalPolicyUpdate) SetEnvironmentType(v approvalpolicy.EnvironmentType) *ApprovalPolicyUpdate {
+	_u.mutation.SetEnvironmentType(v)
 	return _u
 }
 
-// SetNillableAction sets the "action" field if the given value is not nil.
-func (_u *ApprovalPolicyUpdate) SetNillableAction(v *approvalpolicy.Action) *ApprovalPolicyUpdate {
+// SetNillableEnvironmentType sets the "environment_type" field if the given value is not nil.
+func (_u *ApprovalPolicyUpdate) SetNillableEnvironmentType(v *approvalpolicy.EnvironmentType) *ApprovalPolicyUpdate {
 	if v != nil {
-		_u.SetAction(*v)
+		_u.SetEnvironmentType(*v)
 	}
 	return _u
 }
 
-// SetNamespacePattern sets the "namespace_pattern" field.
-func (_u *ApprovalPolicyUpdate) SetNamespacePattern(v string) *ApprovalPolicyUpdate {
-	_u.mutation.SetNamespacePattern(v)
+// SetOperation sets the "operation" field.
+func (_u *ApprovalPolicyUpdate) SetOperation(v approvalpolicy.Operation) *ApprovalPolicyUpdate {
+	_u.mutation.SetOperation(v)
 	return _u
 }
 
-// SetNillableNamespacePattern sets the "namespace_pattern" field if the given value is not nil.
-func (_u *ApprovalPolicyUpdate) SetNillableNamespacePattern(v *string) *ApprovalPolicyUpdate {
+// SetNillableOperation sets the "operation" field if the given value is not nil.
+func (_u *ApprovalPolicyUpdate) SetNillableOperation(v *approvalpolicy.Operation) *ApprovalPolicyUpdate {
 	if v != nil {
-		_u.SetNamespacePattern(*v)
+		_u.SetOperation(*v)
 	}
 	return _u
 }
 
-// ClearNamespacePattern clears the value of the "namespace_pattern" field.
-func (_u *ApprovalPolicyUpdate) ClearNamespacePattern() *ApprovalPolicyUpdate {
-	_u.mutation.ClearNamespacePattern()
+// SetRequiresApproval sets the "requires_approval" field.
+func (_u *ApprovalPolicyUpdate) SetRequiresApproval(v bool) *ApprovalPolicyUpdate {
+	_u.mutation.SetRequiresApproval(v)
+	return _u
+}
+
+// SetNillableRequiresApproval sets the "requires_approval" field if the given value is not nil.
+func (_u *ApprovalPolicyUpdate) SetNillableRequiresApproval(v *bool) *ApprovalPolicyUpdate {
+	if v != nil {
+		_u.SetRequiresApproval(*v)
+	}
+	return _u
+}
+
+// SetPriority sets the "priority" field.
+func (_u *ApprovalPolicyUpdate) SetPriority(v int) *ApprovalPolicyUpdate {
+	_u.mutation.ResetPriority()
+	_u.mutation.SetPriority(v)
+	return _u
+}
+
+// SetNillablePriority sets the "priority" field if the given value is not nil.
+func (_u *ApprovalPolicyUpdate) SetNillablePriority(v *int) *ApprovalPolicyUpdate {
+	if v != nil {
+		_u.SetPriority(*v)
+	}
+	return _u
+}
+
+// AddPriority adds value to the "priority" field.
+func (_u *ApprovalPolicyUpdate) AddPriority(v int) *ApprovalPolicyUpdate {
+	_u.mutation.AddPriority(v)
 	return _u
 }
 
@@ -178,9 +207,14 @@ func (_u *ApprovalPolicyUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "ApprovalPolicy.name": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.Action(); ok {
-		if err := approvalpolicy.ActionValidator(v); err != nil {
-			return &ValidationError{Name: "action", err: fmt.Errorf(`ent: validator failed for field "ApprovalPolicy.action": %w`, err)}
+	if v, ok := _u.mutation.EnvironmentType(); ok {
+		if err := approvalpolicy.EnvironmentTypeValidator(v); err != nil {
+			return &ValidationError{Name: "environment_type", err: fmt.Errorf(`ent: validator failed for field "ApprovalPolicy.environment_type": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.Operation(); ok {
+		if err := approvalpolicy.OperationValidator(v); err != nil {
+			return &ValidationError{Name: "operation", err: fmt.Errorf(`ent: validator failed for field "ApprovalPolicy.operation": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.CreatedBy(); ok {
@@ -215,14 +249,20 @@ func (_u *ApprovalPolicyUpdate) sqlSave(ctx context.Context) (_node int, err err
 	if _u.mutation.DescriptionCleared() {
 		_spec.ClearField(approvalpolicy.FieldDescription, field.TypeString)
 	}
-	if value, ok := _u.mutation.Action(); ok {
-		_spec.SetField(approvalpolicy.FieldAction, field.TypeEnum, value)
+	if value, ok := _u.mutation.EnvironmentType(); ok {
+		_spec.SetField(approvalpolicy.FieldEnvironmentType, field.TypeEnum, value)
 	}
-	if value, ok := _u.mutation.NamespacePattern(); ok {
-		_spec.SetField(approvalpolicy.FieldNamespacePattern, field.TypeString, value)
+	if value, ok := _u.mutation.Operation(); ok {
+		_spec.SetField(approvalpolicy.FieldOperation, field.TypeEnum, value)
 	}
-	if _u.mutation.NamespacePatternCleared() {
-		_spec.ClearField(approvalpolicy.FieldNamespacePattern, field.TypeString)
+	if value, ok := _u.mutation.RequiresApproval(); ok {
+		_spec.SetField(approvalpolicy.FieldRequiresApproval, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.Priority(); ok {
+		_spec.SetField(approvalpolicy.FieldPriority, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPriority(); ok {
+		_spec.AddField(approvalpolicy.FieldPriority, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(approvalpolicy.FieldEnabled, field.TypeBool, value)
@@ -290,37 +330,66 @@ func (_u *ApprovalPolicyUpdateOne) ClearDescription() *ApprovalPolicyUpdateOne {
 	return _u
 }
 
-// SetAction sets the "action" field.
-func (_u *ApprovalPolicyUpdateOne) SetAction(v approvalpolicy.Action) *ApprovalPolicyUpdateOne {
-	_u.mutation.SetAction(v)
+// SetEnvironmentType sets the "environment_type" field.
+func (_u *ApprovalPolicyUpdateOne) SetEnvironmentType(v approvalpolicy.EnvironmentType) *ApprovalPolicyUpdateOne {
+	_u.mutation.SetEnvironmentType(v)
 	return _u
 }
 
-// SetNillableAction sets the "action" field if the given value is not nil.
-func (_u *ApprovalPolicyUpdateOne) SetNillableAction(v *approvalpolicy.Action) *ApprovalPolicyUpdateOne {
+// SetNillableEnvironmentType sets the "environment_type" field if the given value is not nil.
+func (_u *ApprovalPolicyUpdateOne) SetNillableEnvironmentType(v *approvalpolicy.EnvironmentType) *ApprovalPolicyUpdateOne {
 	if v != nil {
-		_u.SetAction(*v)
+		_u.SetEnvironmentType(*v)
 	}
 	return _u
 }
 
-// SetNamespacePattern sets the "namespace_pattern" field.
-func (_u *ApprovalPolicyUpdateOne) SetNamespacePattern(v string) *ApprovalPolicyUpdateOne {
-	_u.mutation.SetNamespacePattern(v)
+// SetOperation sets the "operation" field.
+func (_u *ApprovalPolicyUpdateOne) SetOperation(v approvalpolicy.Operation) *ApprovalPolicyUpdateOne {
+	_u.mutation.SetOperation(v)
 	return _u
 }
 
-// SetNillableNamespacePattern sets the "namespace_pattern" field if the given value is not nil.
-func (_u *ApprovalPolicyUpdateOne) SetNillableNamespacePattern(v *string) *ApprovalPolicyUpdateOne {
+// SetNillableOperation sets the "operation" field if the given value is not nil.
+func (_u *ApprovalPolicyUpdateOne) SetNillableOperation(v *approvalpolicy.Operation) *ApprovalPolicyUpdateOne {
 	if v != nil {
-		_u.SetNamespacePattern(*v)
+		_u.SetOperation(*v)
 	}
 	return _u
 }
 
-// ClearNamespacePattern clears the value of the "namespace_pattern" field.
-func (_u *ApprovalPolicyUpdateOne) ClearNamespacePattern() *ApprovalPolicyUpdateOne {
-	_u.mutation.ClearNamespacePattern()
+// SetRequiresApproval sets the "requires_approval" field.
+func (_u *ApprovalPolicyUpdateOne) SetRequiresApproval(v bool) *ApprovalPolicyUpdateOne {
+	_u.mutation.SetRequiresApproval(v)
+	return _u
+}
+
+// SetNillableRequiresApproval sets the "requires_approval" field if the given value is not nil.
+func (_u *ApprovalPolicyUpdateOne) SetNillableRequiresApproval(v *bool) *ApprovalPolicyUpdateOne {
+	if v != nil {
+		_u.SetRequiresApproval(*v)
+	}
+	return _u
+}
+
+// SetPriority sets the "priority" field.
+func (_u *ApprovalPolicyUpdateOne) SetPriority(v int) *ApprovalPolicyUpdateOne {
+	_u.mutation.ResetPriority()
+	_u.mutation.SetPriority(v)
+	return _u
+}
+
+// SetNillablePriority sets the "priority" field if the given value is not nil.
+func (_u *ApprovalPolicyUpdateOne) SetNillablePriority(v *int) *ApprovalPolicyUpdateOne {
+	if v != nil {
+		_u.SetPriority(*v)
+	}
+	return _u
+}
+
+// AddPriority adds value to the "priority" field.
+func (_u *ApprovalPolicyUpdateOne) AddPriority(v int) *ApprovalPolicyUpdateOne {
+	_u.mutation.AddPriority(v)
 	return _u
 }
 
@@ -413,9 +482,14 @@ func (_u *ApprovalPolicyUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "ApprovalPolicy.name": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.Action(); ok {
-		if err := approvalpolicy.ActionValidator(v); err != nil {
-			return &ValidationError{Name: "action", err: fmt.Errorf(`ent: validator failed for field "ApprovalPolicy.action": %w`, err)}
+	if v, ok := _u.mutation.EnvironmentType(); ok {
+		if err := approvalpolicy.EnvironmentTypeValidator(v); err != nil {
+			return &ValidationError{Name: "environment_type", err: fmt.Errorf(`ent: validator failed for field "ApprovalPolicy.environment_type": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.Operation(); ok {
+		if err := approvalpolicy.OperationValidator(v); err != nil {
+			return &ValidationError{Name: "operation", err: fmt.Errorf(`ent: validator failed for field "ApprovalPolicy.operation": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.CreatedBy(); ok {
@@ -467,14 +541,20 @@ func (_u *ApprovalPolicyUpdateOne) sqlSave(ctx context.Context) (_node *Approval
 	if _u.mutation.DescriptionCleared() {
 		_spec.ClearField(approvalpolicy.FieldDescription, field.TypeString)
 	}
-	if value, ok := _u.mutation.Action(); ok {
-		_spec.SetField(approvalpolicy.FieldAction, field.TypeEnum, value)
+	if value, ok := _u.mutation.EnvironmentType(); ok {
+		_spec.SetField(approvalpolicy.FieldEnvironmentType, field.TypeEnum, value)
 	}
-	if value, ok := _u.mutation.NamespacePattern(); ok {
-		_spec.SetField(approvalpolicy.FieldNamespacePattern, field.TypeString, value)
+	if value, ok := _u.mutation.Operation(); ok {
+		_spec.SetField(approvalpolicy.FieldOperation, field.TypeEnum, value)
 	}
-	if _u.mutation.NamespacePatternCleared() {
-		_spec.ClearField(approvalpolicy.FieldNamespacePattern, field.TypeString)
+	if value, ok := _u.mutation.RequiresApproval(); ok {
+		_spec.SetField(approvalpolicy.FieldRequiresApproval, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.Priority(); ok {
+		_spec.SetField(approvalpolicy.FieldPriority, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPriority(); ok {
+		_spec.AddField(approvalpolicy.FieldPriority, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(approvalpolicy.FieldEnabled, field.TypeBool, value)

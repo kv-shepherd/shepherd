@@ -2613,7 +2613,7 @@ components:
           enum: [PENDING]
         operation_type:
           type: string
-          enum: [CREATE, DELETE, VNC_ACCESS]
+          enum: [CREATE, DELETE, POWER, VNC_ACCESS]
           description: Type of operation this ticket represents (ADR-0015)
     ApprovalTicket:
       type: object
@@ -2628,7 +2628,7 @@ components:
           enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
         operation_type:
           type: string
-          enum: [CREATE, DELETE, VNC_ACCESS]
+          enum: [CREATE, DELETE, POWER, VNC_ACCESS]
           description: Type of operation this ticket represents (ADR-0015)
         requester:
           type: string
@@ -3941,9 +3941,12 @@ components:
       properties:
         event_id:
           type: string
+        ticket_id:
+          type: "string"
+          nullable: true
         status:
           type: string
-          enum: [ACCEPTED]
+          enum: [ACCEPTED, PENDING_APPROVAL]
     # ── Rate Limit Exemption List ─────────────────────
     RateLimitExemptionList:
       type: object
