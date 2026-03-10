@@ -142,20 +142,19 @@ enforce_traceability_manifest_update() {
   local event_path="${GITHUB_EVENT_PATH:-}"
   local event_name="${GITHUB_EVENT_NAME:-}"
 
-  if [[ -z "${event_path}" || ! -f "${event_path}" ]]; then
-    return 0
-  fi
-  if ! command -v python3 >/dev/null 2>&1; then
-    fail "python3 is required for traceability diff enforcement in CI"
-  fi
-  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    fail "git repository is required for traceability diff enforcement in CI"
-  fi
-
   local base_sha=""
   local head_sha=""
-  read -r base_sha head_sha < <(
-    python3 - "$event_name" "$event_path" <<'PY'
+  local diff_mode="ci"
+  if [[ -n "${event_path}" && -f "${event_path}" ]]; then
+    if ! command -v python3 >/dev/null 2>&1; then
+      fail "python3 is required for traceability diff enforcement in CI"
+    fi
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      fail "git repository is required for traceability diff enforcement in CI"
+    fi
+
+    read -r base_sha head_sha < <(
+      python3 - "$event_name" "$event_path" <<'PY'
 import json
 import sys
 
@@ -180,11 +179,34 @@ if not base or not head:
 
 print(base, head)
 PY
-  ) || fail "Cannot determine base/head commit for traceability diff enforcement. Ensure checkout fetch-depth is 0."
+    ) || fail "Cannot determine base/head commit for traceability diff enforcement. Ensure checkout fetch-depth is 0."
+  else
+    diff_mode="local"
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      return 0
+    fi
+    if ! git show-ref --verify --quiet refs/remotes/origin/main; then
+      fail "Local traceability diff enforcement requires refs/remotes/origin/main. Run 'git fetch origin main' before local ci-checks."
+    fi
+
+    base_sha="$(git merge-base HEAD refs/remotes/origin/main)" \
+      || fail "Cannot determine merge-base against origin/main for local traceability diff enforcement."
+    head_sha="$(git rev-parse HEAD)" \
+      || fail "Cannot determine HEAD for local traceability diff enforcement."
+  fi
 
   local changed_files=""
-  changed_files="$(git diff --name-only "${base_sha}...${head_sha}" 2>/dev/null)" \
-    || fail "git diff failed for ${base_sha}...${head_sha}. Ensure checkout fetch-depth is 0."
+  if [[ "${diff_mode}" == "ci" ]]; then
+    changed_files="$(git diff --name-only "${base_sha}...${head_sha}" 2>/dev/null)" \
+      || fail "git diff failed for ${base_sha}...${head_sha}. Ensure checkout fetch-depth is 0."
+  else
+    local tracked_changes=""
+    local untracked_changes=""
+    tracked_changes="$(git diff --name-only "${base_sha}" 2>/dev/null)" \
+      || fail "git diff failed for local traceability enforcement against ${base_sha}."
+    untracked_changes="$(git ls-files --others --exclude-standard)"
+    changed_files="$(printf '%s\n%s\n' "${tracked_changes}" "${untracked_changes}" | awk 'NF' | sort -u)"
+  fi
 
   if [[ -z "${changed_files}" ]]; then
     return 0

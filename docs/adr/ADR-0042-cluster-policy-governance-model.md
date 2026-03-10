@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-03-06
 deciders: ["@jindyzhao"]
 consulted: []
@@ -9,6 +9,7 @@ informed: []
 # ADR-0042: Explicit Cluster Policy Governance Model
 
 > **Review Period**: Until 2026-03-08 (48-hour minimum)<br>
+> **Accepted On**: 2026-03-10<br>
 > **Discussion**: [Issue #326](https://github.com/kv-shepherd/shepherd/issues/326)<br>
 > **Amends**: `ADR-0014-capability-detection.md` *(clarifies capability vs policy boundary)*<br>
 > **Amends**: `ADR-0018-instance-size-abstraction.md` *(adds policy enforcement after capability matching)*
@@ -62,7 +63,7 @@ expand, and avoids mixing mutable policy with connection metadata on `Cluster`.
   and policy denial explicitly
 * ✅ Good, because policy changes become auditable configuration changes instead
   of hidden conventions
-* 🟡 Neutral, because rollout requires a new entity and migration/backfill work
+* 🟡 Neutral, because rollout requires a new entity and explicit admin policy configuration
 * ❌ Bad, because the platform must now maintain one more admin-managed model;
   mitigation is to keep the first version intentionally small and explicit
 
@@ -176,9 +177,8 @@ Steady-state requirement:
 
 Rollout rule:
 
-* existing clusters are backfilled with explicit rows generated from a
-  `legacy-compatible` preset so the platform does not rely on "missing policy =
-  allow"
+* because the project is pre-launch, clusters are expected to be created with an
+  explicit policy row from the start
 * new clusters are not eligible for selection until a policy row exists
 
 ### Out of Scope
@@ -218,12 +218,12 @@ This ADR does **not** define:
 
 ### Implementation Notes
 
-The first implementation step after acceptance should be a focused issue that:
+Initial implementation landed in the first production slice:
 
-1. adds `ClusterPolicy` schema and migration
-2. introduces a `ClusterPolicyService`
-3. integrates policy checks into `ApprovalValidator`
-4. exposes read-only policy state on admin cluster detail APIs
+1. `ClusterPolicy` schema and service were added
+2. `ApprovalValidator` gained explicit policy checks after capability matching
+3. admin cluster APIs and UI now expose policy state and editing
+4. placement evaluation surfaces now distinguish capability mismatch from policy denial
 
 ---
 
@@ -232,3 +232,4 @@ The first implementation step after acceptance should be a focused issue that:
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-03-06 | @jindyzhao | Initial draft |
+| 2026-03-10 | @jindyzhao | Status promoted to accepted after review period and implementation merge |

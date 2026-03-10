@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-03-06
 deciders: ["@jindyzhao"]
 consulted: []
@@ -9,6 +9,7 @@ informed: []
 # ADR-0041: Power Operation Approval Requirement Service
 
 > **Review Period**: Until 2026-03-08 (48-hour minimum)<br>
+> **Accepted On**: 2026-03-10<br>
 > **Amends**: `ADR-0005-workflow-extensibility.md`, `ADR-0015-governance-model-v2.md#7-environment-aware-approval-policies`<br>
 > **Relates To**: `ADR-0015-governance-model-v2.md#15-namespace-cluster-binding-and-environment-type-clarification`, `RFC-0004-external-approval.md`
 
@@ -232,3 +233,4 @@ If future policy needs selectors richer than environment type, add explicit type
 |------|--------|--------|
 | 2026-03-06 | @jindyzhao | Initial draft |
 | 2026-03-06 | @jindyzhao | Reworked around `ApprovalRequirementService`, environment-type policy keys, and existing provider-router boundaries |
+| 2026-03-10 | @jindyzhao | Status promoted to accepted after review period and implementation merge |

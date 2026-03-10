@@ -47,9 +47,9 @@
 | [ADR-0035](./ADR-0035-auth-provider-plugin-boundary.md) | Auth Provider Plugin Boundary and Type Discovery | **Accepted** | - |
 | [ADR-0036](./ADR-0036-template-instancesize-boundary-enforcement.md) | Template / InstanceSize Boundary Enforcement | **Accepted** | - |
 | [ADR-0037](./ADR-0037-openapi-validation-architecture-and-enforcement-policy.md) | OpenAPI Validation Architecture and Enforcement Policy | **Accepted** | - |
-| [ADR-0040](./ADR-0040-catalog-scope-for-template-and-instancesize.md) | Catalog Scope for Template and InstanceSize | **Proposed** | - |
-| [ADR-0041](./ADR-0041-power-operation-approval-requirement-service.md) | Power Operation Approval Requirement Service | **Proposed** | - |
-| [ADR-0042](./ADR-0042-cluster-policy-governance-model.md) | Explicit Cluster Policy Governance Model | **Proposed** | - |
+| [ADR-0040](./ADR-0040-catalog-scope-for-template-and-instancesize.md) | Catalog Scope for Template and InstanceSize | **Accepted** | - |
+| [ADR-0041](./ADR-0041-power-operation-approval-requirement-service.md) | Power Operation Approval Requirement Service | **Accepted** | - |
+| [ADR-0042](./ADR-0042-cluster-policy-governance-model.md) | Explicit Cluster Policy Governance Model | **Accepted** | - |
 
 > ℹ️ **ADR-0037 Sync Notes**:
 >
@@ -114,6 +114,9 @@ For newcomers, we recommend reading ADRs in this order:
 12. **ADR-0021** (API Contract-First) → Contract-first API lifecycle
 13. **ADR-0029** (OpenAPI Toolchain Governance) → Lint/generate/diff enforcement baseline
 14. **ADR-0037** (OpenAPI Validation Architecture, **Accepted**) → Runtime/business validation architecture and compat bridge governance
+15. **ADR-0040** (Catalog Scope, **Accepted**) → User-facing catalog visibility and zero-trust classification
+16. **ADR-0041** (Power Approval Requirement, **Accepted**) → Environment-aware approval decision path for power and VNC operations
+17. **ADR-0042** (Cluster Policy Governance, **Accepted**) → Explicit post-capability governance controls for cluster selection and approval
 
 ### Historical Context
 - **ADR-0002** → Why we moved from Git storage to DB (Superseded by ADR-0007)
