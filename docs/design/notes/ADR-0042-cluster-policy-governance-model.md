@@ -1,17 +1,17 @@
 # Design Note: ADR-0042 — Explicit Cluster Policy Governance Model
 
-> **Status**: Proposed
+> **Status**: Active (ADR-0042 accepted 2026-03-10)
 > **Related ADR**: [ADR-0042](../../adr/ADR-0042-cluster-policy-governance-model.md)
 > **Owner**: @jindyzhao
-> **Date**: 2026-03-06
+> **Created**: 2026-03-06
+> **Last Updated**: 2026-03-10
 
 ## Summary
 
-ADR-0042 proposes a dedicated `ClusterPolicy` model so the platform can decide
+ADR-0042 establishes a dedicated `ClusterPolicy` model so the platform can decide
 not only whether a cluster technically supports a workload, but also whether the
-platform allows that workload on that cluster. This note captures the proposed
-schema, enforcement order, API impact, and migration approach while the ADR
-remains under review.
+platform allows that workload on that cluster. This note captures the accepted
+schema, enforcement order, API impact, and pre-launch rollout approach.
 
 ## Scope
 
@@ -25,7 +25,7 @@ remains under review.
 - Out of scope: per-namespace policy overrides
 - Out of scope: `containerdisk` product policy decisions
 
-## Pending Changes (Not Yet Normative)
+## Accepted Scope
 
 - Affected docs:
   - `docs/adr/ADR-0042-cluster-policy-governance-model.md`
@@ -100,13 +100,14 @@ Admin-facing cluster detail should expose both:
 
 The UI should not merge them into a single undifferentiated feature list.
 
-## Migration / Rollout
+## Rollout Notes
 
 1. Add `cluster_policies` table and one-to-one relation
-2. Backfill existing clusters with explicit `legacy-compatible` policy rows
-3. Update admin APIs so cluster onboarding can create or edit policy
-4. Add validator integration behind the new policy service
-5. Tighten defaults only after admin review/backfill is complete
+2. Update admin APIs so cluster onboarding can create or edit policy
+3. Add validator integration behind the new policy service
+4. Keep capability facts and policy decisions exposed separately
+5. Because the project is pre-launch, no historical backfill or compatibility
+   layer is required
 
 ## Open Questions
 
@@ -114,5 +115,5 @@ The UI should not merge them into a single undifferentiated feature list.
   implicit allow, or must it also be explicitly listed?
 - Should clone-source namespace restrictions live here permanently, or move to a
   future storage-policy entity if the matrix grows?
-- Does the first rollout need a separate `ClusterPolicyPreset` concept, or is a
-  one-time migration/backfill script sufficient?
+- Does the platform ever need a separate `ClusterPolicyPreset` concept, or is a
+  direct one-policy-per-cluster model sufficient?
