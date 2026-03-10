@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg
 
 # Go parameters
 GOCMD=go
@@ -117,6 +117,10 @@ build-shepherd-lint:
 shepherd-lint: build-shepherd-lint
 	./$(BUILD_DIR)/shepherd-lint ./internal/... ./cmd/... ./pkg/...
 
+## test-shepherd-linter: Run go/analysis unit tests for custom shepherd-linter analyzers
+test-shepherd-linter:
+	cd $(SHEPHERD_LINTER_DIR) && $(GOTEST) ./...
+
 ## fmt: Format code
 fmt:
 	goimports -w .
@@ -138,6 +142,7 @@ docker:
 ## ci-checks: Run CI check scripts
 ci-checks:
 	@echo "Running CI checks..."
+	@$(MAKE) test-shepherd-linter
 	@for script in docs/design/ci/scripts/*.sh; do \
 		echo "Running $$script..."; \
 		bash "$$script" || exit 1; \
