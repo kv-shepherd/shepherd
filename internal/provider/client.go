@@ -8,6 +8,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
@@ -21,6 +22,10 @@ type DynamicSSAClient interface {
 	// ApplyYAML submits YAML bytes as an SSA Patch to Kubernetes.
 	// fieldManager is always FieldOwner ("kubevirt-shepherd").
 	ApplyYAML(ctx context.Context, namespace string, yamlData []byte) (*unstructured.Unstructured, error)
+
+	// ApplyClusterScopedYAML submits cluster-scoped YAML bytes as an SSA Patch.
+	// Used for non-namespaced resources such as Namespace.
+	ApplyClusterScopedYAML(ctx context.Context, gvr schema.GroupVersionResource, yamlData []byte) (*unstructured.Unstructured, error)
 
 	// DryRunApplyYAML validates YAML via SSA DryRun without creating the resource.
 	DryRunApplyYAML(ctx context.Context, namespace string, yamlData []byte) error
@@ -78,6 +83,11 @@ type EventClient interface {
 	List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*corev1.EventList, error)
 }
 
+// NamespaceClient abstracts cluster-scoped Namespace reads.
+type NamespaceClient interface {
+	Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*corev1.Namespace, error)
+}
+
 // PodClient abstracts namespace-scoped Pod reads used for PVC clone preflight checks.
 type PodClient interface {
 	List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*corev1.PodList, error)
@@ -121,6 +131,7 @@ type KubeVirtClusterClient interface {
 	PVC() PersistentVolumeClaimClient   // PVC reads for provisioning observability
 	StorageClass() StorageClassClient   // StorageClass reads for clone expansion preflight
 	Events() EventClient                // CoreV1 Events for best-effort failure summaries
+	Namespaces() NamespaceClient        // CoreV1 Namespaces for idempotent namespace creation
 	Pods() PodClient                    // CoreV1 Pods for PVC clone in-use preflight
 	Authorization() AuthorizationClient // SAR for CDI clone source RBAC preflight
 	SSA() DynamicSSAClient              // Write: CreateVM/UpdateVM (Unstructured SSA, ADR-0011)

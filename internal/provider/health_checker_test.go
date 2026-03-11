@@ -46,6 +46,7 @@ func (s *stubHealthClusterClient) StorageProfile() StorageProfileClient { return
 func (s *stubHealthClusterClient) PVC() PersistentVolumeClaimClient     { return nil }
 func (s *stubHealthClusterClient) StorageClass() StorageClassClient     { return s.storageClass }
 func (s *stubHealthClusterClient) Events() EventClient                  { return nil }
+func (s *stubHealthClusterClient) Namespaces() NamespaceClient          { return nil }
 func (s *stubHealthClusterClient) Pods() PodClient                      { return nil }
 func (s *stubHealthClusterClient) Authorization() AuthorizationClient   { return nil }
 func (s *stubHealthClusterClient) SSA() DynamicSSAClient                { return nil }

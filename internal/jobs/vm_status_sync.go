@@ -196,20 +196,43 @@ func (w *VMStatusSyncWorker) Work(ctx context.Context, job *river.Job[VMStatusSy
 		// Reschedule at the same interval — transient failures should not change tier.
 		return w.scheduleNext(ctx, eventID, vmRow.PollIntervalSec)
 	}
+	now := time.Now()
 	if vmList == nil || len(vmList.Items) == 0 || vmList.Items[0] == nil {
-		// Create flow race is expected: VM row exists but K8s object not yet visible.
-		logger.Warn("vm_status_sync: VM not visible on cluster yet, will retry",
+		newStatus := reconcileMissingVMStatus(vmRow, now)
+		newTier := tierForStatus(newStatus)
+		newInterval := intervalForTier(newTier)
+		highTierSince := deriveHighTierSince(vmRow, newTier, now)
+
+		logger.Warn("vm_status_sync: VM not visible on cluster",
 			zap.String("vm_id", vmID),
 			zap.String("cluster", clusterID),
 			zap.String("namespace", vmRow.Namespace),
 			zap.String("name", vmRow.Name),
+			zap.String("new_status", string(newStatus)),
 		)
-		return w.scheduleNext(ctx, eventID, vmRow.PollIntervalSec)
+
+		update := w.entClient.VM.UpdateOneID(vmID).
+			SetStatus(newStatus).
+			SetPollingTier(newTier).
+			SetPollIntervalSec(newInterval).
+			SetLastPolledAt(now).
+			ClearLastK8sRv()
+
+		if highTierSince == nil {
+			update = update.ClearHighTierSince()
+		} else {
+			update = update.SetHighTierSince(*highTierSince)
+		}
+
+		if _, err := update.Save(ctx); err != nil {
+			return fmt.Errorf("vm_status_sync: persist missing-vm status for vm %s: %w", vmID, err)
+		}
+
+		return w.scheduleNext(ctx, eventID, newInterval)
 	}
 	domainVM := vmList.Items[0]
 
 	// Step 3: Determine new DB status and polling tier.
-	now := time.Now()
 	observedStatus := mapDomainStatusToEntVM(domainVM.Status)
 	newStatus := reconcileCreateBootstrapStatus(vmRow, observedStatus, now)
 	newTier := tierForStatus(newStatus)
@@ -395,6 +418,10 @@ func reconcileCreateBootstrapStatus(vmRow *ent.VM, observed vm.Status, now time.
 		return vm.StatusCREATING
 	}
 	return observed
+}
+
+func reconcileMissingVMStatus(vmRow *ent.VM, now time.Time) vm.Status {
+	return reconcileCreateBootstrapStatus(vmRow, vm.StatusUNKNOWN, now)
 }
 
 func shouldHoldCreateBootstrapStatus(vmRow *ent.VM, observed vm.Status, now time.Time) bool {

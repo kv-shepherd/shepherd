@@ -9,6 +9,7 @@ import (
 
 	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -52,6 +53,40 @@ func (p *KubeVirtProviderImpl) Name() string { return "kubevirt" }
 
 // Type returns the provider type.
 func (p *KubeVirtProviderImpl) Type() string { return "kubevirt" }
+
+// EnsureNamespace idempotently creates the target namespace on the selected
+// cluster when it does not already exist.
+func (p *KubeVirtProviderImpl) EnsureNamespace(ctx context.Context, cluster, namespace string) error {
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		return fmt.Errorf("ensure namespace: namespace is required")
+	}
+
+	client, err := p.clientFactory(cluster)
+	if err != nil {
+		return fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	if _, getErr := client.Namespaces().Get(opCtx, namespace, k8smetav1.GetOptions{}); getErr == nil {
+		return nil
+	} else if !apierrors.IsNotFound(getErr) {
+		return fmt.Errorf("get namespace %s on cluster %s: %w", namespace, cluster, getErr)
+	}
+
+	namespaceManifest := []byte(fmt.Sprintf(`apiVersion: v1
+kind: Namespace
+metadata:
+  name: %s
+`, namespace))
+	_, err = client.SSA().ApplyClusterScopedYAML(opCtx, namespaceGVR, namespaceManifest)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("apply namespace %s on cluster %s: %w", namespace, cluster, err)
+	}
+	return nil
+}
 
 // GetVM retrieves a VM from the specified cluster.
 func (p *KubeVirtProviderImpl) GetVM(ctx context.Context, cluster, namespace, name string) (*domain.VM, error) {

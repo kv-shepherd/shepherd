@@ -13,7 +13,8 @@ import (
 
 // MockProvider implements InfrastructureProvider for testing without a K8s cluster.
 type MockProvider struct {
-	vms               map[string]*domain.VM                    // key: namespace/name
+	vms               map[string]*domain.VM // key: namespace/name
+	namespaces        map[string]struct{}
 	dataVolumes       map[string]*domain.DataVolume            // key: namespace/name
 	pvcs              map[string]*domain.PersistentVolumeClaim // key: namespace/name
 	storageClasses    map[string]*domain.StorageClass          // key: name
@@ -33,6 +34,7 @@ type cloneSourceAccessDecision struct {
 func NewMockProvider() *MockProvider {
 	return &MockProvider{
 		vms:               make(map[string]*domain.VM),
+		namespaces:        make(map[string]struct{}),
 		dataVolumes:       make(map[string]*domain.DataVolume),
 		pvcs:              make(map[string]*domain.PersistentVolumeClaim),
 		storageClasses:    make(map[string]*domain.StorageClass),
@@ -58,6 +60,7 @@ func (p *MockProvider) Reset() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.vms = make(map[string]*domain.VM)
+	p.namespaces = make(map[string]struct{})
 	p.dataVolumes = make(map[string]*domain.DataVolume)
 	p.pvcs = make(map[string]*domain.PersistentVolumeClaim)
 	p.storageClasses = make(map[string]*domain.StorageClass)
@@ -69,6 +72,16 @@ func (p *MockProvider) Reset() {
 
 func (p *MockProvider) Name() string { return "mock" }
 func (p *MockProvider) Type() string { return "mock" }
+
+func (p *MockProvider) EnsureNamespace(_ context.Context, _, namespace string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if namespace == "" {
+		return fmt.Errorf("namespace is required")
+	}
+	p.namespaces[namespace] = struct{}{}
+	return nil
+}
 
 func (p *MockProvider) GetVM(_ context.Context, _, namespace, name string) (*domain.VM, error) {
 	p.mu.RLock()
