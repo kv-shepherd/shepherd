@@ -252,6 +252,196 @@ func TestGatewayApproveCreate_RequiresClusterSelection(t *testing.T) {
 	}
 }
 
+func TestGatewayApproveBatchParent_ReturnsFirstChildValidationError(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_behavior_batch_validation")
+	ctx := context.Background()
+
+	parentEventID := "batch-event-1"
+	parentTicketID := "batch-ticket-1"
+	childEventID := "child-event-1"
+	childTicketID := "child-ticket-1"
+	requester := "user-1"
+
+	parentPayloadRaw, err := json.Marshal(map[string]interface{}{
+		"operation": "CREATE",
+		"items": []map[string]interface{}{
+			{
+				"namespace":        "team-a",
+				"template_id":      "tpl-1",
+				"instance_size_id": "size-1",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal batch parent payload: %v", err)
+	}
+	childPayloadRaw, err := json.Marshal(map[string]interface{}{
+		"requester_id":     requester,
+		"service_id":       "svc-1",
+		"template_id":      "tpl-1",
+		"instance_size_id": "size-1",
+		"namespace":        "team-a",
+	})
+	if err != nil {
+		t.Fatalf("marshal child payload: %v", err)
+	}
+
+	_, err = client.DomainEvent.Create().
+		SetID(parentEventID).
+		SetEventType(string(domain.EventBatchCreateRequested)).
+		SetAggregateType("vm_batch").
+		SetAggregateID("svc-1").
+		SetPayload(parentPayloadRaw).
+		SetCreatedBy(requester).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create parent event: %v", err)
+	}
+	_, err = client.DomainEvent.Create().
+		SetID(childEventID).
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("svc-1").
+		SetPayload(childPayloadRaw).
+		SetCreatedBy(requester).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create child event: %v", err)
+	}
+
+	_, err = client.ApprovalTicket.Create().
+		SetID(parentTicketID).
+		SetEventID(parentEventID).
+		SetRequester(requester).
+		SetStatus(approvalticket.StatusPENDING).
+		SetOperationType(approvalticket.OperationTypeCREATE).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create parent ticket: %v", err)
+	}
+	_, err = client.ApprovalTicket.Create().
+		SetID(childTicketID).
+		SetEventID(childEventID).
+		SetRequester(requester).
+		SetParentTicketID(parentTicketID).
+		SetStatus(approvalticket.StatusPENDING).
+		SetOperationType(approvalticket.OperationTypeCREATE).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create child ticket: %v", err)
+	}
+
+	_, err = client.Cluster.Create().
+		SetID("cluster-1").
+		SetName("cluster-a").
+		SetAPIServerURL("https://cluster.invalid").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetEnvironment(entcluster.EnvironmentTest).
+		SetDefaultStorageClass("gold-sc").
+		SetCreatedBy("seed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+	_, err = client.ClusterPolicy.Create().
+		SetID("policy-1").
+		SetClusterID("cluster-1").
+		SetAllowCPUOvercommit(true).
+		SetAllowMemoryOvercommit(true).
+		SetAllowDedicatedCPU(true).
+		SetAllowGpu(true).
+		SetAllowSriov(true).
+		SetAllowHugepages(true).
+		SetAllowCdiClone(true).
+		SetAllowedStorageClasses([]string{"gold-sc"}).
+		SetCreatedBy("seed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster policy: %v", err)
+	}
+	_, err = client.NamespaceRegistry.Create().
+		SetID("ns-1").
+		SetName("team-a").
+		SetEnvironment(entnamespaceregistry.EnvironmentTest).
+		SetEnabled(true).
+		SetCreatedBy("seed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create namespace registry: %v", err)
+	}
+	_, err = client.Template.Create().
+		SetID("tpl-1").
+		SetName("tpl").
+		SetSourceType(service.TemplateSourceCDIImageImport).
+		SetImageURL("docker://quay.io/containerdisks/ubuntu:22.04").
+		SetCreatedBy("seed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	_, err = client.InstanceSize.Create().
+		SetID("size-1").
+		SetName("small").
+		SetCPUCores(2).
+		SetMemoryGi(4).
+		SetDiskGB(50).
+		SetCreatedBy("seed").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create instance size: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	gw := NewGateway(client, nil, writer)
+	gw.SetVMService(service.NewVMService(newDryRunProviderStub(
+		&domain.ValidationResult{Valid: false, Errors: []string{`namespaces "team-a" not found`}},
+		nil,
+	)))
+
+	err = gw.Approve(ctx, parentTicketID, "admin-1", ApproveOpts{ClusterID: "cluster-1"})
+	if err == nil {
+		t.Fatal("Approve() expected validation error for batch parent, got nil")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("Approve() error = %T, want AppError", err)
+	}
+	if appErr.Code != apperrors.CodeValidationFailed {
+		t.Fatalf("Approve() app error code = %q, want %q", appErr.Code, apperrors.CodeValidationFailed)
+	}
+	if !strings.Contains(appErr.Message, `namespaces "team-a" not found`) {
+		t.Fatalf("Approve() message = %q, want namespace rejection context", appErr.Message)
+	}
+
+	childTicket, err := client.ApprovalTicket.Get(ctx, childTicketID)
+	if err != nil {
+		t.Fatalf("get child ticket: %v", err)
+	}
+	if childTicket.Status != approvalticket.StatusFAILED {
+		t.Fatalf("child status = %s, want FAILED", childTicket.Status)
+	}
+	if !strings.Contains(childTicket.RejectReason, `namespaces "team-a" not found`) {
+		t.Fatalf("child reject_reason = %q, want namespace rejection context", childTicket.RejectReason)
+	}
+
+	parentTicket, err := client.ApprovalTicket.Get(ctx, parentTicketID)
+	if err != nil {
+		t.Fatalf("get parent ticket: %v", err)
+	}
+	if parentTicket.Status != approvalticket.StatusFAILED {
+		t.Fatalf("parent status = %s, want FAILED", parentTicket.Status)
+	}
+	if !strings.Contains(parentTicket.RejectReason, `namespaces "team-a" not found`) {
+		t.Fatalf("parent reject_reason = %q, want first child validation error", parentTicket.RejectReason)
+	}
+	if writer.called {
+		t.Fatal("atomic writer should not be called when batch child dryrun fails")
+	}
+}
+
 func TestGatewayApproveCreate_PersistsPlacementEvaluationToAuditAndAtomicWriter(t *testing.T) {
 	t.Parallel()
 

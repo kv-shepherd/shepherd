@@ -678,7 +678,11 @@ func (g *Gateway) approveBatchParent(
 		return fmt.Errorf("batch parent %s has no child tickets", parent.ID)
 	}
 
-	var successCount, failedCount int
+	var (
+		successCount int
+		failedCount  int
+		firstErr     error
+	)
 	for _, child := range children {
 		if child.Status != approvalticket.StatusPENDING {
 			continue
@@ -704,6 +708,9 @@ func (g *Gateway) approveBatchParent(
 		}
 		if approveErr != nil {
 			failedCount++
+			if firstErr == nil {
+				firstErr = approveErr
+			}
 			g.markChildApprovalDispatchFailed(ctx, child, approver, approveErr)
 			continue
 		}
@@ -727,7 +734,14 @@ func (g *Gateway) approveBatchParent(
 		parentUpdater = parentUpdater.SetSelectedStorageClass(opts.StorageClass)
 	}
 	if failedCount > 0 {
-		parentUpdater = parentUpdater.SetRejectReason(fmt.Sprintf("%d child approvals failed during dispatch", failedCount))
+		rejectReason := fmt.Sprintf("%d child approvals failed during dispatch", failedCount)
+		if firstErr != nil {
+			message := strings.TrimSpace(firstErr.Error())
+			if message != "" {
+				rejectReason = message
+			}
+		}
+		parentUpdater = parentUpdater.SetRejectReason(rejectReason)
 	}
 	if _, err := parentUpdater.Save(ctx); err != nil {
 		return fmt.Errorf("update batch parent ticket %s: %w", parent.ID, err)
@@ -745,6 +759,9 @@ func (g *Gateway) approveBatchParent(
 	g.syncBatchProjectionByParentID(ctx, parent.ID)
 
 	if successCount == 0 {
+		if firstErr != nil {
+			return firstErr
+		}
 		return fmt.Errorf("batch parent %s approval dispatch failed for all children", parent.ID)
 	}
 

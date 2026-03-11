@@ -28,6 +28,7 @@ func (m *GovernanceModule) RegisterWorkers(workers *river.Workers) {
 		return
 	}
 	river.AddWorker(workers, jobs.NewNotificationCleanupWorker(m.infra.EntClient, 90*24*time.Hour))
+	river.AddWorker(workers, jobs.NewDomainEventArchiveWorker(m.infra.EntClient, 30*24*time.Hour))
 }
 
 func (m *GovernanceModule) Shutdown(context.Context) error { return nil }

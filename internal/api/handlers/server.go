@@ -48,6 +48,7 @@ type ServerDeps struct {
 	EntClient      *ent.Client
 	Pool           *pgxpool.Pool
 	JWTCfg         middleware.JWTConfig
+	EncryptionKey  []byte
 	Audit          *audit.Logger
 	VMService      *service.VMService
 	ApprovalReqs   *service.ApprovalRequirementService
@@ -68,7 +69,13 @@ func NewServer(deps ServerDeps) *Server {
 		if deps.Pool != nil {
 			replay = service.NewPostgresVNCReplayStore(deps.Pool)
 		}
-		vncTokens = service.NewVNCTokenManager(deps.JWTCfg.SigningKey, deps.JWTCfg.Issuer, service.DefaultVNCTokenTTL, replay)
+		vncTokens = service.NewVNCTokenManager(
+			deps.JWTCfg.SigningKey,
+			deps.EncryptionKey,
+			deps.JWTCfg.Issuer,
+			service.DefaultVNCTokenTTL,
+			replay,
+		)
 	}
 	approvalReqs := deps.ApprovalReqs
 	if approvalReqs == nil && deps.EntClient != nil {

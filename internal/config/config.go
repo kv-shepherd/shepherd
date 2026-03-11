@@ -196,7 +196,27 @@ func (c *Config) Validate() error {
 	if len(c.Security.SessionSecret) < 32 {
 		return fmt.Errorf("security.session_secret must be at least 32 characters")
 	}
+	if _, err := c.Security.DecodeEncryptionKey(); err != nil {
+		return err
+	}
 	return nil
+}
+
+// DecodeEncryptionKey decodes the configured AES-256-GCM key.
+func (c SecurityConfig) DecodeEncryptionKey() ([]byte, error) {
+	key := strings.TrimSpace(c.EncryptionKey)
+	if key == "" {
+		return nil, fmt.Errorf("security.encryption_key must not be empty")
+	}
+
+	raw, err := hex.DecodeString(key)
+	if err != nil {
+		return nil, fmt.Errorf("security.encryption_key must be hex-encoded: %w", err)
+	}
+	if len(raw) != 32 {
+		return nil, fmt.Errorf("security.encryption_key must decode to 32 bytes, got %d", len(raw))
+	}
+	return raw, nil
 }
 
 // ensureSecrets auto-generates missing secrets per ADR-0025.

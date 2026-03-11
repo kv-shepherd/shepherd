@@ -63,22 +63,9 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 		infra.Close()
 		return nil, fmt.Errorf("init river workers: %w", initRiverErr)
 	}
-	// Notification retention cleanup (master-flow Stage 5.F): run daily and once
-	// on startup to avoid long-lived inbox bloat.
-	if infra.RiverClient != nil {
-		infra.RiverClient.PeriodicJobs().Add(
-			river.NewPeriodicJob(
-				river.PeriodicInterval(24*time.Hour),
-				func() (river.JobArgs, *river.InsertOpts) {
-					return jobs.NotificationCleanupArgs{}, nil
-				},
-				&river.PeriodicJobOpts{RunOnStart: true},
-			),
-		)
-	}
+	registerPeriodicJobs(infra)
 
 	// P1-A: Pass vmModule's VMService to ApprovalModule to enable DryRun Pre-flight Gate (ADR-0006 Addendum).
-	// vmModule is guaranteed to be non-nil here (error check above).
 	approvalModule, err := modules.NewApprovalModule(infra, vmModule.VMService())
 	if err != nil {
 		infra.Close()
@@ -99,4 +86,31 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 		EntClient:   infra.EntClient,
 		HealthCheck: infra.HealthCheck,
 	}, nil
+}
+
+// registerPeriodicJobs configures scheduled background tasks.
+// Notification retention cleanup (master-flow Stage 5.F): run daily and once
+// on startup to avoid long-lived inbox bloat.
+func registerPeriodicJobs(infra *modules.Infrastructure) {
+	if infra.RiverClient == nil {
+		return
+	}
+	infra.RiverClient.PeriodicJobs().Add(
+		river.NewPeriodicJob(
+			river.PeriodicInterval(24*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return jobs.NotificationCleanupArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: true},
+		),
+	)
+	infra.RiverClient.PeriodicJobs().Add(
+		river.NewPeriodicJob(
+			river.PeriodicInterval(24*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return jobs.DomainEventArchiveArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: true},
+		),
+	)
 }
