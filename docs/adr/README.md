@@ -174,5 +174,5 @@ Accepted ADRs are **immutable**. To change a decision:
 
 - [TEMPLATE.md](./TEMPLATE.md) - Official ADR template with guidelines
 - [Glossary](./GLOSSARY.md) - Technical terminology
-- [RFC Directory](../rfc/) - Future feature proposals
+- [RFC Directory](../rfc/) - Future feature proposals and backlog specs (not architecture authority)
 - [Core Go Project](../design/) - Implementation details

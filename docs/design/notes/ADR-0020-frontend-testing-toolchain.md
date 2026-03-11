@@ -8,7 +8,7 @@
 
 ## Overview
 
-This document details the implementation of the frontend testing toolchain as defined in ADR-0020. It provides comprehensive configuration, CI enforcement gates, and best practices for React 19 + Next.js 15 applications.
+This document details the implementation of the frontend testing toolchain as defined in ADR-0020. It provides comprehensive configuration, CI enforcement gates, and best practices for React 19 + Next.js 16 applications.
 
 ## Goals
 

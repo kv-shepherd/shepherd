@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/02-providers.md](../phases/02-providers.md)
 >
-> **Implementation Status**: 🔄 Partial (~50%) — Basic VM CRUD + mapper done, Snapshot/Clone/Migration/ResourceWatcher deferred
+> **Implementation Status**: 🔄 Partial (~65%) — Basic VM CRUD + SSAApplier + VMRenderer + AuthProvider Admin done; Snapshot/Clone/Migration deferred. V1 status sync baseline is ADR-0038 adaptive polling; optional ResourceWatcher acceleration remains deferred
 
 ---
 
@@ -102,9 +102,18 @@
 
 ---
 
-## ResourceWatcher
+## ResourceWatcher (V2 Optional Acceleration)
 
-- [ ] List-Watch pattern implemented
+> **Best-practice rule**:
+> V1 keeps **one authoritative status sync path**: ADR-0038 adaptive polling with
+> `ResourceVersion` caching. A future watch/informer path, if added, must be an
+> optional acceleration layer with polling/reconcile fallback, not a second
+> authoritative pipeline.
+>
+> **Tracking**: Future watch acceleration is documented in
+> [RFC-0020](../../rfc/RFC-0020-k8s-watch-acceleration.md).
+
+- [ ] List-Watch pattern implemented (deferred V2 acceleration)
 - [ ] **410 Gone Complete Handling**:
   - [ ] Clear `resourceVersion` (force full Re-list)
   - [ ] Notify `CacheService` to invalidate cache
@@ -167,7 +176,7 @@
 ## Pre-Phase 3 Verification
 
 - [ ] KubeVirtProvider unit tests pass (using Mock Client) — requires testcontainers
-- [ ] ResourceWatcher `410 Gone` handling test passes — deferred
+- [ ] ResourceWatcher `410 Gone` handling test passes — only required if optional watch accelerator is introduced later
 - [ ] Mapper defensive code test coverage > 80% — deferred
 - [x] `go vet ./...` passes
 - [x] `go build ./...` passes

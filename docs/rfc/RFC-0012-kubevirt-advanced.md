@@ -5,8 +5,16 @@
 > **Trigger**: Advanced KubeVirt features required beyond basic VM lifecycle
 
 > **Implementation Boundary**:
-> - **Provider-level methods** (MigrateVM, GetVMMigration, etc.) are implemented in **Phase 2**
-> - **This RFC covers Service-level orchestration**: automated migration policies, hot-plug orchestration, maintenance mode
+> - **Provider interfaces and domain types** are defined in Phase 1-2
+> - **Runtime provider methods** (migration/hot-plug/GPU/SR-IOV) are **not** implemented in V1
+> - **This RFC covers both future provider implementation and higher-level orchestration**: automated migration policies, hot-plug orchestration, maintenance mode
+
+## Current State (2026-03-11)
+
+The `MigrationProvider` seam exists in `internal/provider/interface.go`, but no
+KubeVirt-backed runtime implementation is currently wired into services or API
+handlers. Treat this RFC as future work, not as a description of shipped Phase
+2 behavior.
 
 ---
 

@@ -5,8 +5,17 @@
 > **Trigger**: Backup and restore capabilities required
 
 > **Implementation Boundary**:
-> - **Provider-level methods** (CreateVMSnapshot, GetVMSnapshot, etc.) are implemented in **Phase 2**
-> - **This RFC covers Service-level orchestration**: scheduled backups, retention policies, cross-cluster restore
+> - **Provider interfaces and domain types** are defined in Phase 1-2
+> - **Runtime snapshot provider methods** are **not** implemented in V1
+> - **This RFC covers both future provider implementation and service-level orchestration**: scheduled backups, retention policies, cross-cluster restore
+
+## Current State (2026-03-11)
+
+The `SnapshotProvider` interface exists in `internal/provider/interface.go`, but
+there is no KubeVirt-backed snapshot runtime in the current service/API path.
+The extra lifecycle section below for `instance_size_snapshot` is separate from
+VM snapshot support and should not be read as evidence that KubeVirt snapshot
+operations are already shipped.
 
 ---
 
@@ -27,18 +36,26 @@ type SnapshotService struct {
 
 // CreateSnapshot creates a VM snapshot
 func (s *SnapshotService) CreateSnapshot(ctx context.Context, input CreateSnapshotInput) (*Snapshot, error) {
-    return s.provider.CreateVMSnapshot(ctx, SnapshotSpec{
-        VMName:      input.VMName,
-        Namespace:   input.Namespace,
-        ClusterName: input.ClusterName,
-        Name:        input.SnapshotName,
-    })
+    return s.provider.CreateSnapshot(
+        ctx,
+        input.ClusterName,
+        input.Namespace,
+        input.VMName,
+        input.SnapshotName,
+    )
 }
 
 // RestoreSnapshot restores VM to snapshot state
 func (s *SnapshotService) RestoreSnapshot(ctx context.Context, snapshotID string) error {
     snapshot, _ := s.repo.Get(ctx, snapshotID)
-    return s.provider.RestoreVMFromSnapshot(ctx, snapshot)
+    _, err := s.provider.RestoreFromSnapshot(
+        ctx,
+        snapshot.ClusterName,
+        snapshot.Namespace,
+        snapshot.Name,
+        snapshot.TargetVMName,
+    )
+    return err
 }
 ```
 

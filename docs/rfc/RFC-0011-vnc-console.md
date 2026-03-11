@@ -1,8 +1,8 @@
 # RFC-0011: VNC Console (noVNC)
 
-> **Status**: Proposed (V1 simplified implementation)  
-> **Priority**: P1  
-> **Trigger**: ~~Browser-based VM console access required~~ V1 core feature
+> **Status**: Deferred
+> **Priority**: P2
+> **Trigger**: Embedded noVNC UX, active revoke, or session recording required
 
 ---
 
@@ -20,18 +20,33 @@
 > | Audit Logging Requirements | §18 Audit Table |
 > | V1 delivery scope freeze (no active revoke API) | §18.1 Addendum |
 >
-> **This RFC covers frontend implementation only:**
-> - noVNC JavaScript library integration
-> - WebSocket proxy implementation
+> **This RFC now covers only the remaining non-ADR implementation details and enhancements:**
+> - embedded noVNC asset/runtime integration
+> - WebSocket proxy refinements and session lifecycle controls
 > - UI/UX for console access
 >
 > All security and permission logic must conform to ADR-0015 §18 and §18.1 addendum.
+
+## Current State (2026-03-11)
+
+The Stage 6 V1 baseline is already implemented:
+
+- backend endpoints: `POST /api/v1/vms/{vm_id}/console/request`, `GET /api/v1/vms/{vm_id}/console/status`, `GET /api/v1/vms/{vm_id}/vnc`
+- approval-aware request/status flow and `VNC_ACCESS` governance integration
+- encrypted single-use VNC bootstrap tokens with PostgreSQL replay markers
+- frontend launcher that opens the configured noVNC entrypoint using the returned websocket path
+
+This RFC now tracks only the remaining enhancements not required for the V1
+baseline, such as richer embedded noVNC UX, deeper websocket proxy lifecycle
+controls, active revoke APIs, and optional session recording.
 
 ---
 
 ## V1 Implementation Scope
 
-> **V1 adopts a simplified implementation** to balance feature delivery with complexity.
+### Implemented V1 Baseline
+
+> **The shipped baseline uses a simplified implementation** to balance feature delivery with complexity.
 
 | Feature | V1 (Simplified) | Full (V2+) |
 |---------|-----------------|------------|

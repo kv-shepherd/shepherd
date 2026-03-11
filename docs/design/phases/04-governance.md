@@ -81,7 +81,7 @@ The following features are **explicitly out of scope** for V1:
 
 | Deliverable | File Path | Status | Notes |
 |-------------|-----------|--------|-------|
-| Atlas config | `atlas.hcl` | ⬜ | Deferred (requires running DB) |
+| Atlas config | `atlas.hcl` | ✅ | Config present; migration execution remains environment-dependent |
 | River Jobs | `internal/jobs/vm_create.go`, `vm_delete.go`, `vm_power.go` | ✅ | VMCreate/Delete/Power workers with retry + idempotency guard + audit |
 | EventDispatcher | `internal/domain/dispatcher.go` | ✅ | - |
 | Domain Event Payloads | `internal/domain/event.go` | ✅ | VMCreationPayload, VMDeletePayload, VMPowerPayload |
@@ -95,8 +95,8 @@ The following features are **explicitly out of scope** for V1:
 | Namespace Handlers | `internal/api/handlers/server_namespace.go` | ✅ | CRUD (List/Create/Get/Update/Delete) with environment filter + confirm_name delete gate |
 | Notification Handlers | `internal/api/handlers/server_notification.go` | ✅ | List/UnreadCount/MarkRead/MarkAllRead; triggers/sender integrated; retention cleanup scheduled |
 | Admin Handlers | `internal/api/handlers/server_admin.go` | ✅ | Clusters/Templates/InstanceSizes CRUD + UpdateClusterEnvironment (omitzero adapted) |
-| SSAApplier | `internal/provider/ssa_applier.go` | ⬜ | Deferred |
-| OpenAPI Spec | `api/openapi.yaml` | ✅ | 38 endpoints total; Namespace CRUD + Notification + omitzero value types (ADR-0028) |
+| SSAApplier | `internal/provider/ssa_applier.go` | ✅ | SSA apply + dry-run implementation present |
+| OpenAPI Spec | `api/openapi.yaml` | ✅ | 97 operationIds; includes Namespace/Notification/Batch/VNC/AuthProvider/ClusterPolicy scope |
 
 ---
 
@@ -218,6 +218,10 @@ func (w *EventJobWorker) Work(ctx context.Context, job *river.Job[EventJobArgs])
 ```
 
 ### Soft Archiving
+
+**Implementation status**: ✅ Implemented in `internal/jobs/event_archive.go`,
+registered via `GovernanceModule` and scheduled in `bootstrap.go` as a daily
+River periodic job with `RunOnStart`.
 
 ```go
 // DomainEvent schema
@@ -906,7 +910,7 @@ DELETE /api/v1/systems/{sys_id}?confirm_name=my-system
 | ApprovalTicket.operation_type | ✅ Done | Enum field (`CREATE`/`DELETE`) with `CREATE` default |
 | VM delete approval ticket flow | ✅ Done | DeleteVM use case creates `operation_type=DELETE` ticket and routes through approval gateway |
 
-> **Remaining**: Batch Stage 5.E baseline is implemented end-to-end (backend + frontend queue UX + `status_url` polling + 429 cooldown + affected-child feedback + `aria-live`). Stage 6 VNC baseline and shared PostgreSQL replay marker are implemented; noVNC proxy internals and credential encryption hardening are ongoing.
+> **Remaining**: Batch Stage 5.E baseline is implemented end-to-end (backend + frontend queue UX + `status_url` polling + 429 cooldown + affected-child feedback + `aria-live`). Stage 6 VNC baseline, shared PostgreSQL replay marker, and AES-256-GCM token envelope are implemented; noVNC proxy internals and active revocation remain V2+ work.
 
 ---
 
@@ -925,7 +929,7 @@ DELETE /api/v1/systems/{sys_id}?confirm_name=my-system
 
 | Feature | V1 (Simplified) | Full (V2+) |
 |---------|-----------------|------------|
-| Token tracking | Signed JWT + shared replay marker (`jti`, `used_at`) | Full token lifecycle table + policy controls |
+| Token tracking | AES-256-GCM encrypted JWT + shared replay marker (`jti`, `used_at`) | Full token lifecycle table + policy controls |
 | Token revocation | No active revoke API (TTL + single-use only) | Active revocation API |
 | Session recording | ❌ Not supported | ✅ Optional |
 
@@ -949,10 +953,10 @@ DELETE /api/v1/systems/{sys_id}?confirm_name=my-system
 | **Single Use** | Token invalidated after first connection | JWT `jti` replay marker (`used_at`) in shared store (PostgreSQL recommended) |
 | **Time-Bounded** | Max TTL: 2 hours (configurable) | JWT `exp` claim |
 | **User Binding** | Token includes user ID | JWT `sub` claim |
-| **Encryption** | AES-256-GCM | Shared key management |
+| **Encryption** | AES-256-GCM | Encrypted JWT envelope using shared `ENCRYPTION_KEY` |
 | **Audit Logged** | All sessions recorded | `vnc.access` event (see [master-flow.md §Canonical Action Naming](../interaction-flows/master-flow.md#canonical-action-naming)) |
 
-> **V1 Note**: No active revoke endpoint. Security relies on short TTL + single-use replay protection.
+> **V1 Note**: No active revoke endpoint. Security relies on AES-256-GCM encrypted JWTs, short TTL, and single-use replay protection.
 > Do not introduce Redis dependency for token tracking.
 
 ### API Endpoints
@@ -1489,7 +1493,7 @@ If >50% of resources detected as ghosts, halt and alert.
 - [ ] Audit logs complete
 - [ ] Environment isolation enforced (via Cluster + RoleBinding.allowed_environments)
 - [ ] Delete confirmation mechanism works (tiered by entity/environment)
-- [ ] VNC token security enforced (single-use, time-bounded)
+- [x] VNC token security enforced (single-use, time-bounded, AES-256-GCM encrypted)
 - [ ] **IdP Authentication** (V1):
   - [ ] OIDC login flow works (token validation per checklist)
   - [ ] LDAP login flow works
@@ -1548,7 +1552,7 @@ If >50% of resources detected as ghosts, halt and alert.
 | §15 Cluster Visibility | ✅ Done | Section 6 (this doc) | Namespace/cluster env matching enforced in approval+worker; `allowed_environments` visibility filtering enforced in namespace/VM query-read path |
 | §16 Global Naming | ✅ Done | [01-contracts.md §1.1](01-contracts.md#11-naming-constraints-adr-0019) | RFC 1035 + ADR-0019 extension |
 | §17 Template Snapshot | ✅ Done | [master-flow.md Stage 5.B](../interaction-flows/master-flow.md#stage-5-b) | ApprovalTicket stores immutable snapshot |
-| §18 VNC Permissions | ⚠️ Partial | Section 6.2 (this doc) | V1 Stage 6 baseline implemented (request/status/open + approval + audit + single-use credential); proxy internals hardening continues |
+| §18 VNC Permissions | ⚠️ Partial | Section 6.2 (this doc) | V1 Stage 6 baseline implemented (request/status/open + approval + audit + AES-256-GCM encrypted single-use credential); proxy internals + active revocation remain V2+ |
 | §19 Batch Operations | ⚠️ Partial | Section 5.6 (this doc) | Runtime API + child execution dispatch + two-layer throttling + parent projection persistence + admin override APIs + `/vms/batch/power` compatibility execution implemented (`/vms/batch` submit/query/retry/cancel + `/vms/batch/power` + `/approvals/batch` + `/admin/rate-limits/*`), but frontend queue UX is still pending |
 | §20 Notification System | ✅ V1 Inbox | Section 6.3 (this doc) | Sync writes; external adapters V2+ |
 | §21 Scope Exclusions | 📋 Reference | ADR-0015 | Lists deferred items |

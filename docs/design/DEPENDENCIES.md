@@ -188,7 +188,7 @@ func (c *DatabaseClients) Close() {
 | `k8s.io/client-go` | `v0.33.5` | 2025-12 | K8s official client (aligned with K8s 1.33) |
 | `k8s.io/apimachinery` | `v0.33.5` | 2025-12 | K8s API machinery |
 | `k8s.io/api` | `v0.33.5` | 2025-12 | K8s API types |
-| `kubevirt.io/client-go` | `v1.7.0` | 2025-11-27 | **KubeVirt official client** (Informer usage) |
+| `kubevirt.io/client-go` | `v1.7.0` | 2025-11-27 | **KubeVirt official client** (typed client + list/watch primitives) |
 | `kubevirt.io/api` | `v1.7.0` | 2025-11-27 | KubeVirt API type definitions |
 | `sigs.k8s.io/controller-runtime` | `v0.22.5` | 2025-12 | **SSA Apply core dependency** (ADR-0011), compatible with k8s.io v0.33.x |
 
@@ -352,7 +352,6 @@ replace (
 |---------|---------|--------------|-------------|
 | `github.com/alexedwards/scs/v2` | `v2.9.0` | 2026-01 | HTTP Session management (OWASP security spec) |
 | `github.com/alexedwards/scs/postgresstore` | `v2.9.0` | 2026-01 | PostgreSQL Session Store |
-| `github.com/sony/gobreaker` | `v1.0.0` | Stable | Circuit breaker pattern (ResourceWatcher usage) |
 
 > **Distributed Lock Best Practices**:
 > 
@@ -436,7 +435,7 @@ replace (
 > | Component | Purpose | Usage Scope |
 > |-----------|---------|-------------|
 > | **River Workers** | Job queue consumption | All async write operations (VM create, delete, etc.) |
-> | **ants Pool** | General concurrency | Non-River async tasks (ResourceWatcher, batch reads, etc.) |
+> | **ants Pool** | General concurrency | Non-River async tasks (batch reads, optional future accelerators, etc.) |
 >
 > ⚠️ **Anti-Pattern**: Do NOT use ants Pool inside River Worker handlers. River has built-in concurrency control.
 >
