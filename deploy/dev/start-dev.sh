@@ -6,10 +6,12 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/deploy/dev/docker-compose.yml"
 HOST_USER_ID="${USER_ID:-$(id -u)}"
 HOST_GROUP_ID="${GROUP_ID:-$(id -g)}"
+DEV_ADMIN_PASSWORD="${DEV_ADMIN_PASSWORD:-admin123}"
 NODE_MODULES_DIR="${ROOT_DIR}/web/node_modules"
 LOCK_HASH_FILE="${NODE_MODULES_DIR}/.package-lock.hash"
 SERVICES_TO_DELETE=("db" "server" "web" "nginx")
 COMPOSE_CMD=(docker compose -f "${COMPOSE_FILE}")
+DEV_INCLUDE_E2E_SEED="${DEV_INCLUDE_E2E_SEED:-1}"
 
 require_cmd() {
     local cmd="$1"
@@ -28,9 +30,68 @@ compute_sha256() {
     fi
 }
 
+json_string() {
+    node -p 'JSON.stringify(process.argv[1])' "$1"
+}
+
+login_token() {
+    local username="$1"
+    local password="$2"
+    local response=""
+
+    response="$(
+        curl -fsS http://localhost:8080/api/v1/auth/login \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":$(json_string "$username"),\"password\":$(json_string "$password")}"
+    )" || return 1
+
+    printf '%s' "$response" | node -e '
+        let data = "";
+        process.stdin.on("data", (chunk) => { data += chunk; });
+        process.stdin.on("end", () => {
+            const parsed = JSON.parse(data);
+            if (typeof parsed.token !== "string" || parsed.token.trim() === "") {
+                process.exit(1);
+            }
+            process.stdout.write(parsed.token.trim());
+        });
+    '
+}
+
+rotate_default_admin_password() {
+    local bootstrap_password="admin"
+    local target_password="$1"
+    local token=""
+
+    if [[ "${target_password}" == "${bootstrap_password}" ]]; then
+        echo " admin password left at bootstrap default"
+        return 0
+    fi
+
+    if token="$(login_token admin "${target_password}" 2>/dev/null)"; then
+        echo " admin password already rotated"
+        return 0
+    fi
+
+    token="$(login_token admin "${bootstrap_password}")" || {
+        echo " failed to login with bootstrap admin credentials"
+        return 1
+    }
+
+    curl -fsS http://localhost:8080/api/v1/auth/change-password \
+        -X POST \
+        -H "Authorization: Bearer ${token}" \
+        -H "Content-Type: application/json" \
+        -d "{\"old_password\":$(json_string "${bootstrap_password}"),\"new_password\":$(json_string "${target_password}")}" \
+        >/dev/null
+
+    echo " admin password rotated to admin/${target_password}"
+}
+
 require_cmd docker
 require_cmd go
 require_cmd npm
+require_cmd node
 require_cmd curl
 
 if ! [[ "$HOST_USER_ID" =~ ^[0-9]+$ ]] || ! [[ "$HOST_GROUP_ID" =~ ^[0-9]+$ ]]; then
@@ -55,6 +116,7 @@ mkdir -p "${ROOT_DIR}/build/bin"
     cd "$ROOT_DIR"
     GOOS=linux GOARCH="$(go env GOARCH)" CGO_ENABLED=0 go build -ldflags="-s -w" -o build/bin/shepherd ./cmd/server/...
     GOOS=linux GOARCH="$(go env GOARCH)" CGO_ENABLED=0 go build -ldflags="-s -w" -o build/bin/seed ./cmd/seed/...
+    GOOS=linux GOARCH="$(go env GOARCH)" CGO_ENABLED=0 go build -ldflags="-s -w" -o build/bin/e2e-seed ./cmd/e2e-seed/...
 )
 
 echo "Packaging backend image (shepherd-server)..."
@@ -105,9 +167,15 @@ if [ "$backend_ready" != "true" ]; then
     exit 1
 fi
 
-echo "Seeding default development data (admin/admin)..."
+echo "Seeding development data..."
 "${COMPOSE_CMD[@]}" exec -T server /usr/local/bin/seed >/dev/null
-echo " seed complete"
+rotate_default_admin_password "${DEV_ADMIN_PASSWORD}"
+if [[ "${DEV_INCLUDE_E2E_SEED}" == "1" ]]; then
+    "${COMPOSE_CMD[@]}" exec -T server /usr/local/bin/e2e-seed >/dev/null
+    echo " seed complete (baseline + extended fixtures)"
+else
+    echo " seed complete (baseline only; set DEV_INCLUDE_E2E_SEED=1 to include extended fixtures)"
+fi
 
 echo "Waiting for ingress (http://localhost:3000)..."
 for _ in {1..30}; do
@@ -130,3 +198,7 @@ echo "Development environment is UP"
 echo "  - Web (nginx ingress): http://localhost:3000"
 echo "  - Backend direct:      http://localhost:8080"
 echo "  - DB:                  localhost:5432"
+echo "  - Seeded users:        admin/${DEV_ADMIN_PASSWORD} (rotated from bootstrap admin/admin)"
+if [[ "${DEV_INCLUDE_E2E_SEED}" == "1" ]]; then
+    echo "                         e2e-admin/e2e-admin-123"
+fi
