@@ -14,7 +14,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { getAntModal, loginWithForcePasswordSupport, selectAntOption, urlPathEndsWith } from './lib/helpers';
+import { ensureSeedSystemAndService, getAntModal, loginWithForcePasswordSupport, selectAntOption, urlPathEndsWith } from './lib/helpers';
 
 const e2eUsername = process.env.E2E_USERNAME ?? 'e2e-admin';
 const e2ePassword = process.env.E2E_PASSWORD ?? 'e2e-admin-123';
@@ -66,6 +66,19 @@ test.describe('Edge Cases / Negative Paths', () => {
     });
 
     test.describe('With Admin Auth', () => {
+        test.beforeAll(async ({ request }) => {
+            // Ensure seed system + service exist (idempotent, API-first).
+            const seed = await ensureSeedSystemAndService(request, {
+                username: e2eUsername,
+                primaryPassword: e2ePassword,
+                secondaryPassword: e2eNewPassword,
+                currentPasswordHint: activePassword,
+                systemName: e2eSystemName,
+                serviceName: e2eServiceName,
+            });
+            activePassword = seed.password;
+        });
+
         test.beforeEach(async ({ page }) => {
             await page.addInitScript(() => { window.open = () => null; });
             await loginAdmin(page);

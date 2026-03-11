@@ -12,12 +12,14 @@ RUN --mount=type=cache,id=shepherd-go-mod,target=/go/pkg/mod go mod download
 COPY . .
 RUN --mount=type=cache,id=shepherd-go-mod,target=/go/pkg/mod --mount=type=cache,id=shepherd-go-build,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bin/shepherd ./cmd/server/...
 RUN --mount=type=cache,id=shepherd-go-mod,target=/go/pkg/mod --mount=type=cache,id=shepherd-go-build,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bin/seed ./cmd/seed/...
+RUN --mount=type=cache,id=shepherd-go-mod,target=/go/pkg/mod --mount=type=cache,id=shepherd-go-build,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bin/e2e-seed ./cmd/e2e-seed/...
 
 # Stage 2: Runtime
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=builder /build/bin/shepherd /usr/local/bin/shepherd
 COPY --from=builder /build/bin/seed /usr/local/bin/seed
+COPY --from=builder /build/bin/e2e-seed /usr/local/bin/e2e-seed
 
 USER nonroot:nonroot
 
@@ -31,6 +33,7 @@ FROM gcr.io/distroless/static-debian12:nonroot AS dev-runtime
 
 COPY build/bin/shepherd /usr/local/bin/shepherd
 COPY build/bin/seed /usr/local/bin/seed
+COPY build/bin/e2e-seed /usr/local/bin/e2e-seed
 
 USER nonroot:nonroot
 

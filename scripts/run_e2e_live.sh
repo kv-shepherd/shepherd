@@ -19,6 +19,707 @@ log_error() {
   printf '%s ERROR: %s\n' "$(ts_now)" "$*" >&2
 }
 
+json_string() {
+  node -p 'JSON.stringify(process.argv[1])' "$1"
+}
+
+login_api_token() {
+  local username="$1"
+  local password="$2"
+  local response=""
+
+  response="$(
+    curl -fsS "${API_BASE_URL}/api/v1/auth/login" \
+      -H "Content-Type: application/json" \
+      -d "{\"username\":$(json_string "${username}"),\"password\":$(json_string "${password}")}"
+  )" || return 1
+
+  printf '%s' "${response}" | node -e '
+    let raw = "";
+    process.stdin.on("data", (chunk) => { raw += chunk; });
+    process.stdin.on("end", () => {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.token !== "string" || parsed.token.trim() === "") {
+        process.exit(1);
+      }
+      process.stdout.write(parsed.token.trim());
+    });
+  '
+}
+
+acquire_cleanup_token() {
+  local token=""
+
+  if token="$(login_api_token "${E2E_ADMIN_USERNAME}" "${E2E_ADMIN_PASSWORD}" 2>/dev/null)"; then
+    printf '%s' "${token}"
+    return 0
+  fi
+
+  if [[ -n "${E2E_NEW_PASSWORD:-}" ]]; then
+    if token="$(login_api_token "${E2E_ADMIN_USERNAME}" "${E2E_NEW_PASSWORD}" 2>/dev/null)"; then
+      printf '%s' "${token}"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+api_get() {
+  local token="$1"
+  local path="$2"
+  api_request_json GET "${token}" "${path}"
+}
+
+api_post_json() {
+  local token="$1"
+  local path="$2"
+  local body="$3"
+  api_request_json POST "${token}" "${path}" "${body}"
+}
+
+api_patch_json() {
+  local token="$1"
+  local path="$2"
+  local body="$3"
+  api_request_json PATCH "${token}" "${path}" "${body}"
+}
+
+api_put_json() {
+  local token="$1"
+  local path="$2"
+  local body="$3"
+  api_request_json PUT "${token}" "${path}" "${body}"
+}
+
+api_request_json() {
+  local method="$1"
+  local token="$2"
+  local path="$3"
+  local body="${4:-}"
+  local response_file=""
+  local http_code=""
+
+  response_file="$(mktemp)"
+  if [[ "${method}" == "GET" ]]; then
+    http_code="$(
+      curl -sS -o "${response_file}" -w '%{http_code}' "${API_BASE_URL}${path}" \
+        -H "Authorization: Bearer ${token}"
+    )" || {
+      rm -f "${response_file}"
+      return 1
+    }
+  else
+    http_code="$(
+      curl -sS -o "${response_file}" -w '%{http_code}' "${API_BASE_URL}${path}" \
+        -X "${method}" \
+        -H "Authorization: Bearer ${token}" \
+        -H "Content-Type: application/json" \
+        -d "${body}"
+    )" || {
+      rm -f "${response_file}"
+      return 1
+    }
+  fi
+
+  if [[ "${http_code}" =~ ^[0-9]+$ ]] && (( http_code >= 400 )); then
+    log_error "API ${method} ${path} failed with HTTP ${http_code}"
+    if [[ -s "${response_file}" ]]; then
+      sed 's/^/response body: /' "${response_file}" >&2
+    fi
+    rm -f "${response_file}"
+    return 22
+  fi
+
+  cat "${response_file}"
+  rm -f "${response_file}"
+}
+
+extract_json_id() {
+  local response="$1"
+  printf '%s' "${response}" | node -e '
+    let raw = "";
+    process.stdin.on("data", (chunk) => { raw += chunk; });
+    process.stdin.on("end", () => {
+      const parsed = JSON.parse(raw);
+      const id = typeof parsed.id === "string" ? parsed.id.trim() : "";
+      process.stdout.write(id);
+    });
+  '
+}
+
+find_item_id_by_name() {
+  local response="$1"
+  local target_name="$2"
+  printf '%s' "${response}" | node -e '
+    const target = process.argv[1].trim().toLowerCase();
+    let raw = "";
+    process.stdin.on("data", (chunk) => { raw += chunk; });
+    process.stdin.on("end", () => {
+      const parsed = JSON.parse(raw);
+      const items = Array.isArray(parsed.items) ? parsed.items : [];
+      for (const item of items) {
+        const name = typeof item.name === "string" ? item.name.trim().toLowerCase() : "";
+        if (name !== target) {
+          continue;
+        }
+        const id = typeof item.id === "string" ? item.id.trim() : "";
+        process.stdout.write(id);
+        return;
+      }
+      process.stdout.write("");
+    });
+  ' "${target_name}"
+}
+
+strip_name_from_payload() {
+  local payload="$1"
+  printf '%s' "${payload}" | node -e '
+    let raw = "";
+    process.stdin.on("data", (chunk) => { raw += chunk; });
+    process.stdin.on("end", () => {
+      const parsed = JSON.parse(raw);
+      delete parsed.name;
+      process.stdout.write(JSON.stringify(parsed));
+    });
+  '
+}
+
+build_namespace_payload() {
+  node -e '
+    const payload = {
+      name: process.argv[1],
+      environment: "test",
+      description: "Live E2E namespace"
+    };
+    process.stdout.write(JSON.stringify(payload));
+  ' "${E2E_NAMESPACE}"
+}
+
+build_system_payload() {
+  node -e '
+    const payload = {
+      name: process.argv[1],
+      description: "Live E2E system"
+    };
+    process.stdout.write(JSON.stringify(payload));
+  ' "${E2E_SYSTEM:-e2e-system}"
+}
+
+build_service_payload() {
+  node -e '
+    const payload = {
+      name: process.argv[1],
+      description: "Live E2E service"
+    };
+    process.stdout.write(JSON.stringify(payload));
+  ' "${E2E_SERVICE:-e2e-service}"
+}
+
+build_template_payload() {
+  node - <<'EOF' "${E2E_TEMPLATE:-e2e-template}" "${E2E_NAMESPACE:-e2e-live}"
+const [name, namespace] = process.argv.slice(2);
+const payload = {
+  name,
+  display_name: "Ubuntu 22.04 (E2E)",
+  description: `Live E2E Ubuntu template for namespace ${namespace}`,
+  catalog_scope: "all",
+  source_type: "cdi_image_import",
+  image_url: "docker://quay.io/containerdisks/ubuntu:22.04",
+  cloud_init: [
+    "#cloud-config",
+    "hostname: e2e-template",
+    "manage_etc_hosts: true",
+    "users:",
+    "  - default",
+    "package_update: false"
+  ].join("\n"),
+  os_family: "linux",
+  os_version: "22.04",
+  enabled: true
+};
+process.stdout.write(JSON.stringify(payload));
+EOF
+}
+
+build_cluster_policy_payload() {
+  node - <<'EOF' "${E2E_NAMESPACE:-e2e-live}"
+const namespace = process.argv[2].trim();
+const allowedCloneNamespaces = ["golden-images"];
+if (namespace !== "" && namespace !== "golden-images") {
+  allowedCloneNamespaces.push(namespace);
+}
+const payload = {
+  allow_cpu_overcommit: true,
+  allow_memory_overcommit: true,
+  allow_dedicated_cpu: true,
+  allow_gpu: true,
+  allow_sriov: true,
+  allow_hugepages: true,
+  allowed_hugepages_sizes: ["2Mi", "1Gi"],
+  allow_cdi_clone: true,
+  allowed_clone_source_namespaces: allowedCloneNamespaces,
+  allowed_storage_classes: []
+};
+process.stdout.write(JSON.stringify(payload));
+EOF
+}
+
+live_instance_size_payloads() {
+  node - <<'EOF' "${E2E_SIZE:-e2e-small}"
+const defaultSizeName = process.argv[2];
+const fixtures = [
+  {
+    name: defaultSizeName,
+    display_name: "E2E Small",
+    description: "Baseline general-purpose live E2E size",
+    catalog_scope: "all",
+    cpu_cores: 2,
+    memory_gi: 4,
+    disk_gb: 40,
+    sort_order: 10,
+    enabled: true
+  },
+  {
+    name: "e2e-overcommit",
+    display_name: "E2E Overcommit",
+    description: "CPU and memory overcommit example for live E2E",
+    catalog_scope: "all",
+    cpu_cores: 4,
+    cpu_request: 2,
+    memory_gi: 8,
+    memory_request_gi: 6,
+    disk_gb: 80,
+    sort_order: 20,
+    enabled: true
+  },
+  {
+    name: "e2e-dedicated",
+    display_name: "E2E Dedicated CPU",
+    description: "Dedicated CPU example for live E2E",
+    catalog_scope: "all",
+    cpu_cores: 4,
+    cpu_request: 4,
+    memory_gi: 8,
+    memory_request_gi: 8,
+    disk_gb: 80,
+    dedicated_cpu: true,
+    sort_order: 30,
+    enabled: true
+  },
+  {
+    name: "e2e-gpu",
+    display_name: "E2E GPU",
+    description: "GPU workload example for live E2E",
+    catalog_scope: "all",
+    cpu_cores: 8,
+    memory_gi: 16,
+    disk_gb: 120,
+    requires_gpu: true,
+    sort_order: 40,
+    enabled: true
+  },
+  {
+    name: "e2e-hugepages",
+    display_name: "E2E Hugepages",
+    description: "Hugepages workload example for live E2E",
+    catalog_scope: "all",
+    cpu_cores: 4,
+    memory_gi: 8,
+    disk_gb: 80,
+    requires_hugepages: true,
+    hugepages_size: "2Mi",
+    sort_order: 50,
+    enabled: true
+  },
+  {
+    name: "e2e-sriov",
+    display_name: "E2E SR-IOV",
+    description: "SR-IOV workload example for live E2E",
+    catalog_scope: "all",
+    cpu_cores: 4,
+    memory_gi: 8,
+    disk_gb: 80,
+    requires_sriov: true,
+    sort_order: 60,
+    enabled: true
+  }
+];
+for (const fixture of fixtures) {
+  process.stdout.write(JSON.stringify(fixture) + "\n");
+}
+EOF
+}
+
+ensure_namespace_api() {
+  local token="$1"
+  local existing=""
+  local response=""
+
+  if ! response="$(api_get "${token}" "/api/v1/admin/namespaces?page=1&per_page=100")"; then
+    return 1
+  fi
+  existing="$(find_item_id_by_name "${response}" "${E2E_NAMESPACE}")"
+  if [[ -n "${existing}" ]]; then
+    printf '%s' "${existing}"
+    return 0
+  fi
+
+  if ! response="$(api_post_json "${token}" "/api/v1/admin/namespaces" "$(build_namespace_payload)")"; then
+    return 1
+  fi
+  extract_json_id "${response}"
+}
+
+ensure_system_api() {
+  local token="$1"
+  local system_name="${E2E_SYSTEM:-e2e-system}"
+  local existing=""
+  local response=""
+
+  if ! response="$(api_get "${token}" "/api/v1/systems?page=1&per_page=100")"; then
+    return 1
+  fi
+  existing="$(find_item_id_by_name "${response}" "${system_name}")"
+  if [[ -n "${existing}" ]]; then
+    printf '%s' "${existing}"
+    return 0
+  fi
+
+  if ! response="$(api_post_json "${token}" "/api/v1/systems" "$(build_system_payload)")"; then
+    return 1
+  fi
+  extract_json_id "${response}"
+}
+
+ensure_service_api() {
+  local token="$1"
+  local system_id="$2"
+  local service_name="${E2E_SERVICE:-e2e-service}"
+  local existing=""
+  local response=""
+
+  if ! response="$(api_get "${token}" "/api/v1/systems/${system_id}/services?page=1&per_page=100")"; then
+    return 1
+  fi
+  existing="$(find_item_id_by_name "${response}" "${service_name}")"
+  if [[ -n "${existing}" ]]; then
+    printf '%s' "${existing}"
+    return 0
+  fi
+
+  if ! response="$(api_post_json "${token}" "/api/v1/systems/${system_id}/services" "$(build_service_payload)")"; then
+    return 1
+  fi
+  extract_json_id "${response}"
+}
+
+ensure_cluster_api() {
+  local token="$1"
+  local cluster_name="${E2E_CLUSTER:-e2e-cluster}"
+  local existing=""
+  local response=""
+  local payload=""
+
+  if ! response="$(api_get "${token}" "/api/v1/admin/clusters?page=1&per_page=100")"; then
+    return 1
+  fi
+  existing="$(find_item_id_by_name "${response}" "${cluster_name}")"
+  if [[ -n "${existing}" ]]; then
+    printf '%s' "${existing}"
+    return 0
+  fi
+
+  payload="$(node -e '
+    const payload = {
+      name: process.argv[1],
+      display_name: "E2E Cluster",
+      environment: "test",
+      kubeconfig: process.argv[2]
+    };
+    process.stdout.write(JSON.stringify(payload));
+  ' "${cluster_name}" "${E2E_KUBECONFIG_B64}")"
+  if ! response="$(api_post_json "${token}" "/api/v1/admin/clusters" "${payload}")"; then
+    return 1
+  fi
+  extract_json_id "${response}"
+}
+
+upsert_cluster_policy_api() {
+  local token="$1"
+  local cluster_id="$2"
+  api_put_json "${token}" "/api/v1/admin/clusters/${cluster_id}/policy" "$(build_cluster_policy_payload)" >/dev/null
+}
+
+upsert_template_api() {
+  local token="$1"
+  local template_name="${E2E_TEMPLATE:-e2e-template}"
+  local existing_id=""
+  local response=""
+  local payload=""
+
+  if ! response="$(api_get "${token}" "/api/v1/admin/templates?page=1&per_page=100")"; then
+    return 1
+  fi
+  existing_id="$(find_item_id_by_name "${response}" "${template_name}")"
+  payload="$(build_template_payload)"
+  if [[ -n "${existing_id}" ]]; then
+    api_patch_json "${token}" "/api/v1/admin/templates/${existing_id}" "$(strip_name_from_payload "${payload}")" >/dev/null
+    return 0
+  fi
+
+  api_post_json "${token}" "/api/v1/admin/templates" "${payload}" >/dev/null
+}
+
+upsert_instance_size_api() {
+  local token="$1"
+  local payload="$2"
+  local name=""
+  local existing_id=""
+  local response=""
+
+  name="$(printf '%s' "${payload}" | node -e '
+    let raw = "";
+    process.stdin.on("data", (chunk) => { raw += chunk; });
+    process.stdin.on("end", () => {
+      const parsed = JSON.parse(raw);
+      process.stdout.write(typeof parsed.name === "string" ? parsed.name.trim() : "");
+    });
+  ')"
+  if ! response="$(api_get "${token}" "/api/v1/admin/instance-sizes")"; then
+    return 1
+  fi
+  existing_id="$(find_item_id_by_name "${response}" "${name}")"
+  if [[ -n "${existing_id}" ]]; then
+    api_patch_json "${token}" "/api/v1/admin/instance-sizes/${existing_id}" "${payload}" >/dev/null
+    return 0
+  fi
+
+  api_post_json "${token}" "/api/v1/admin/instance-sizes" "${payload}" >/dev/null
+}
+
+seed_live_api_managed_fixtures() {
+  local token="$1"
+  local namespace_id=""
+  local system_id=""
+  local service_id=""
+  local cluster_id=""
+  local payload=""
+
+  log_info "seeding namespace fixture (${E2E_NAMESPACE})"
+  namespace_id="$(ensure_namespace_api "${token}")"
+  log_info "seeding system fixture (${E2E_SYSTEM:-e2e-system})"
+  system_id="$(ensure_system_api "${token}")"
+  log_info "seeding service fixture (${E2E_SERVICE:-e2e-service})"
+  service_id="$(ensure_service_api "${token}" "${system_id}")"
+  log_info "seeding cluster fixture (${E2E_CLUSTER:-e2e-cluster})"
+  cluster_id="$(ensure_cluster_api "${token}")"
+  log_info "upserting cluster policy for cluster ${cluster_id}"
+  upsert_cluster_policy_api "${token}" "${cluster_id}"
+  log_info "upserting template fixture (${E2E_TEMPLATE:-e2e-template})"
+  upsert_template_api "${token}"
+
+  while IFS= read -r payload; do
+    [[ -z "${payload}" ]] && continue
+    log_info "upserting instance size fixture ($(printf '%s' "${payload}" | node -e 'let raw = ""; process.stdin.on("data", (chunk) => { raw += chunk; }); process.stdin.on("end", () => { const parsed = JSON.parse(raw); process.stdout.write(typeof parsed.name === "string" ? parsed.name : ""); });'))"
+    upsert_instance_size_api "${token}" "${payload}"
+  done < <(live_instance_size_payloads)
+
+  log_info "seeded API-managed live fixtures (namespace=${namespace_id} system=${system_id} service=${service_id} cluster=${cluster_id})"
+}
+
+list_namespace_vms() {
+  local token="$1"
+  local namespace="$2"
+  local page=1
+  local per_page=100
+  local response=""
+  local total_pages=1
+
+  while (( page <= total_pages )); do
+    response="$(
+      curl -fsS -G "${API_BASE_URL}/api/v1/vms" \
+        --data-urlencode "page=${page}" \
+        --data-urlencode "per_page=${per_page}" \
+        --data-urlencode "namespace=${namespace}" \
+        -H "Authorization: Bearer ${token}"
+    )" || return 1
+
+    printf '%s' "${response}" | node -e '
+      let raw = "";
+      process.stdin.on("data", (chunk) => { raw += chunk; });
+      process.stdin.on("end", () => {
+        const parsed = JSON.parse(raw);
+        for (const item of parsed.items ?? []) {
+          const id = typeof item.id === "string" ? item.id.trim() : "";
+          if (id === "") {
+            continue;
+          }
+          const name = typeof item.name === "string" ? item.name.trim() : "";
+          const status = typeof item.status === "string" ? item.status.trim() : "";
+          process.stdout.write(`${id}\t${name}\t${status}\n`);
+        }
+      });
+    '
+
+    total_pages="$(printf '%s' "${response}" | node -e '
+      let raw = "";
+      process.stdin.on("data", (chunk) => { raw += chunk; });
+      process.stdin.on("end", () => {
+        const parsed = JSON.parse(raw);
+        const totalPages = Number(parsed.pagination?.total_pages ?? 1);
+        process.stdout.write(String(Number.isFinite(totalPages) && totalPages > 0 ? totalPages : 1));
+      });
+    ')"
+    page=$((page + 1))
+  done
+}
+
+wait_for_vm_status() {
+  local token="$1"
+  local vm_id="$2"
+  local expected_status="$3"
+  local response=""
+  local current_status=""
+
+  for _ in $(seq 1 40); do
+    response="$(curl -fsS "${API_BASE_URL}/api/v1/vms/${vm_id}" -H "Authorization: Bearer ${token}" 2>/dev/null || true)"
+    current_status="$(printf '%s' "${response}" | node -e '
+      let raw = "";
+      process.stdin.on("data", (chunk) => { raw += chunk; });
+      process.stdin.on("end", () => {
+        if (raw.trim() === "") {
+          process.stdout.write("");
+          return;
+        }
+        try {
+          const parsed = JSON.parse(raw);
+          process.stdout.write(typeof parsed.status === "string" ? parsed.status.trim().toUpperCase() : "");
+        } catch {
+          process.stdout.write("");
+        }
+      });
+    ')"
+    if [[ "${current_status}" == "${expected_status}" ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  return 1
+}
+
+wait_for_vm_absent() {
+  local token="$1"
+  local vm_id="$2"
+
+  for _ in $(seq 1 60); do
+    if ! curl -fsS "${API_BASE_URL}/api/v1/vms/${vm_id}" -H "Authorization: Bearer ${token}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  return 1
+}
+
+cleanup_namespace_vms() {
+  local enabled="${E2E_CLEANUP_NAMESPACE_VMS:-1}"
+  local namespace="${E2E_NAMESPACE:-}"
+  local token=""
+  local cleanup_failed=0
+  local vm_entries=""
+  local delete_response=""
+  local ticket_id=""
+
+  if [[ "${enabled}" == "0" ]]; then
+    log_warn "skipping namespace VM cleanup (E2E_CLEANUP_NAMESPACE_VMS=0)"
+    return 0
+  fi
+  if [[ -z "${namespace}" ]]; then
+    log_warn "skipping namespace VM cleanup because E2E_NAMESPACE is empty"
+    return 0
+  fi
+
+  if ! token="$(acquire_cleanup_token)"; then
+    log_warn "failed to acquire API token for namespace VM cleanup"
+    return 1
+  fi
+
+  log_info "cleaning up VMs in namespace ${namespace}"
+
+  if ! vm_entries="$(list_namespace_vms "${token}" "${namespace}")"; then
+    log_warn "failed to list VMs for namespace cleanup"
+    return 1
+  fi
+
+  while IFS=$'\t' read -r vm_id vm_name vm_status; do
+    [[ -z "${vm_id}" ]] && continue
+    vm_status="$(printf '%s' "${vm_status}" | tr '[:lower:]' '[:upper:]')"
+
+    if [[ "${vm_status}" == "RUNNING" || "${vm_status}" == "STARTING" || "${vm_status}" == "UNKNOWN" ]]; then
+      if curl -fsS "${API_BASE_URL}/api/v1/vms/${vm_id}/stop" \
+        -X POST \
+        -H "Authorization: Bearer ${token}" >/dev/null 2>&1; then
+        if ! wait_for_vm_status "${token}" "${vm_id}" "STOPPED"; then
+          log_warn "timed out waiting for VM ${vm_id} to stop before cleanup delete"
+          cleanup_failed=1
+          continue
+        fi
+      else
+        log_warn "failed to request stop for VM ${vm_id} during cleanup"
+        cleanup_failed=1
+        continue
+      fi
+    fi
+
+    delete_response="$(
+      curl -fsS "${API_BASE_URL}/api/v1/vms/${vm_id}?confirm=true" \
+        -X DELETE \
+        -H "Authorization: Bearer ${token}" 2>/dev/null || true
+    )"
+    ticket_id="$(printf '%s' "${delete_response}" | node -e '
+      let raw = "";
+      process.stdin.on("data", (chunk) => { raw += chunk; });
+      process.stdin.on("end", () => {
+        if (raw.trim() === "") {
+          process.stdout.write("");
+          return;
+        }
+        try {
+          const parsed = JSON.parse(raw);
+          const ticketID = typeof parsed.ticket_id === "string" ? parsed.ticket_id.trim() : "";
+          process.stdout.write(ticketID);
+        } catch {
+          process.stdout.write("");
+        }
+      });
+    ')"
+    if [[ -z "${ticket_id}" ]]; then
+      log_warn "failed to create delete approval for VM ${vm_id} during cleanup"
+      cleanup_failed=1
+      continue
+    fi
+
+    if ! curl -fsS "${API_BASE_URL}/api/v1/approvals/${ticket_id}/approve" \
+      -X POST \
+      -H "Authorization: Bearer ${token}" \
+      -H "Content-Type: application/json" \
+      -d '{}' >/dev/null 2>&1; then
+      log_warn "failed to approve delete ticket ${ticket_id} for VM ${vm_id}"
+      cleanup_failed=1
+      continue
+    fi
+
+    if ! wait_for_vm_absent "${token}" "${vm_id}"; then
+      log_warn "timed out waiting for VM ${vm_id} to disappear after cleanup approval"
+      cleanup_failed=1
+    fi
+  done <<< "${vm_entries}"
+
+  return "${cleanup_failed}"
+}
+
 run_live_e2e_preflight_checks() {
   local skip="${E2E_SKIP_PREFLIGHT_GATES:-0}"
   if [[ "${skip}" == "1" ]]; then
@@ -509,6 +1210,11 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v node >/dev/null 2>&1; then
+  log_error "node command not found"
+  exit 1
+fi
+
 pick_free_port() {
   local candidate
   for _ in $(seq 1 80); do
@@ -597,7 +1303,16 @@ DEFAULT_E2E_PASSWORD="${E2E_PASSWORD:-${E2E_ADMIN_PASSWORD:-admin}}"
 export E2E_USERNAME="${DEFAULT_E2E_USERNAME}"
 export E2E_PASSWORD="${DEFAULT_E2E_PASSWORD}"
 export E2E_NEW_PASSWORD="${E2E_NEW_PASSWORD:-admin123}"
+export E2E_CLUSTER="${E2E_CLUSTER:-e2e-cluster}"
+export E2E_SYSTEM="${E2E_SYSTEM:-e2e-system}"
+export E2E_SERVICE="${E2E_SERVICE:-e2e-service}"
+export E2E_TEMPLATE="${E2E_TEMPLATE:-e2e-template}"
+export E2E_SIZE="${E2E_SIZE:-e2e-small}"
 export E2E_NAMESPACE="${E2E_NAMESPACE:-e2e-live}"
+export E2E_VM_RUNNING_ID="${E2E_VM_RUNNING_ID:-vm-e2e-running}"
+export E2E_VM_STOPPED_ID="${E2E_VM_STOPPED_ID:-vm-e2e-stopped}"
+export E2E_VM_RUNNING_NAME="${E2E_VM_RUNNING_NAME:-vm-live}"
+export E2E_VM_STOPPED_NAME="${E2E_VM_STOPPED_NAME:-vm-stopped}"
 
 if [[ -z "${E2E_KUBECONFIG_B64:-}" ]]; then
   DEFAULT_KUBECONFIG_FILE="${ROOT_DIR}/k8s-admin.yaml"
@@ -612,17 +1327,31 @@ if [[ -z "${E2E_KUBECONFIG_B64:-}" ]]; then
   fi
 fi
 
+if [[ -z "${E2E_KUBECONFIG_B64:-}" ]]; then
+  log_error "live E2E requires a real kubeconfig (set E2E_KUBECONFIG_B64 or provide ${ROOT_DIR}/k8s-admin.yaml)"
+  exit 1
+fi
+
 # Keep e2e-seed aligned with the same account to avoid user/data drift.
 export E2E_ADMIN_USERNAME="${E2E_ADMIN_USERNAME:-${E2E_USERNAME}}"
 export E2E_ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-${E2E_PASSWORD}}"
 
 SERVER_PID=""
 cleanup() {
+  local exit_code=$?
+  local cleanup_vm_exit=0
+  set +e
+  cleanup_namespace_vms
+  cleanup_vm_exit=$?
   if [[ -n "$SERVER_PID" ]]; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" >/dev/null 2>&1 || true
   fi
   cleanup_next_web_port "${PW_WEB_PORT:-}"
+  if [[ "${cleanup_vm_exit}" -ne 0 ]]; then
+    log_warn "namespace VM cleanup completed with warnings"
+  fi
+  return "${exit_code}"
 }
 trap cleanup EXIT INT TERM
 
@@ -663,7 +1392,13 @@ fi
 
 log_info "seeding baseline data"
 go run ./cmd/seed
-go run ./cmd/e2e-seed
+
+log_info "seeding API-managed live fixtures"
+SEED_API_TOKEN="$(login_api_token "${E2E_ADMIN_USERNAME}" "${E2E_ADMIN_PASSWORD}")"
+seed_live_api_managed_fixtures "${SEED_API_TOKEN}"
+
+log_info "seeding extended low-level fixtures"
+E2E_SKIP_API_MANAGED_FIXTURES=1 go run ./cmd/e2e-seed
 
 log_info "running live-e2e preflight gates"
 run_live_e2e_preflight_checks

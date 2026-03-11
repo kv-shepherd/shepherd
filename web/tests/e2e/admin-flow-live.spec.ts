@@ -748,7 +748,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
             const createModal = getAntModal(page, 'template-create-modal');
             await expect(createModal).toBeVisible();
             await createModal.getByRole('textbox').first().fill(templateName);
-            await createModal.getByLabel(/container image url/i).fill('quay.io/containerdisks/ubuntu:22.04');
+            await createModal.getByLabel(/image url/i).fill('quay.io/containerdisks/ubuntu:22.04');
             await createModal.getByRole('button', { name: 'OK' }).click();
 
             const createResp = await createRespPromise;

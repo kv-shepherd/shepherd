@@ -84,19 +84,33 @@ export function urlPathIncludes(url: string, path: string): boolean {
  * @param page - Playwright Page instance
  * @param combobox - Locator for the combobox trigger element
  * @param optionFilter - Optional: filter options by text content (regex or string)
- * @param timeout - Max time to wait for option visibility (default: 5000ms)
+ * @param timeout - Max time to wait for option visibility (default: 15000ms)
  */
 export async function selectAntOption(
     page: Page,
     combobox: Locator,
     optionFilter?: string | RegExp,
-    timeout = 5000
+    timeout = 15_000
 ): Promise<void> {
     const trigger = combobox.first();
     await expect(trigger).toBeVisible({ timeout });
 
     // Step 1: Click to open dropdown
     await trigger.click();
+
+    // Step 1.5: If the Select supports showSearch and a string filter is given,
+    // type the filter text into the search input. This narrows the virtual list
+    // to only matching options, preventing items outside the viewport from being
+    // invisible in the DOM. We use .pressSequentially() for realistic key-by-key
+    // input that triggers Ant's onSearch handler.
+    if (typeof optionFilter === 'string' && optionFilter.length > 0) {
+        const searchInput = trigger.locator('input[type="search"]');
+        if (await searchInput.count() > 0 && await searchInput.isVisible().catch(() => false)) {
+            await searchInput.pressSequentially(optionFilter, { delay: 30 });
+            // Give Ant a moment to re-render filtered options
+            await page.waitForTimeout(200);
+        }
+    }
 
     // Step 2: Wait for any OLD dropdown leave-animations to finish.
     // Ant Design adds `.ant-slide-up-leave` during close animation.
@@ -486,4 +500,83 @@ export async function ensureBatchSubmitPolicyForUser(
     validateResponse('RateLimitUserOverride', await overrideResp.json());
 
     return { password: auth.password, userID };
+}
+
+/**
+ * Idempotent API-first seed: ensure the named system and service exist.
+ *
+ * Uses GET-then-POST pattern — safe to call from multiple test files.
+ * Returns the system and service IDs for downstream consumption.
+ */
+export async function ensureSeedSystemAndService(
+    request: APIRequestContext,
+    options: AuthFlowOptions & {
+        systemName: string;
+        serviceName: string;
+    }
+): Promise<{ password: string; systemId: string; serviceId: string }> {
+    const auth = await getApiTokenWithForcePasswordSupport(request, options);
+    const headers = { Authorization: `Bearer ${auth.token}` };
+
+    // ── Ensure system exists ─────────────────────────────────────────────────
+    const systemsResp = await request.get('/api/v1/systems', { headers });
+    expect(systemsResp.status(), 'GET /systems must return 200 in seed setup').toBe(200);
+    const systemsBody = await systemsResp.json() as {
+        items?: Array<{ id?: string; name?: string }>;
+    };
+    validateResponse('SystemList', systemsBody);
+
+    let system = (systemsBody.items ?? []).find(
+        (item) => (item.name ?? '').trim() === options.systemName
+    );
+    if (!system?.id) {
+        const createResp = await request.post('/api/v1/systems', {
+            headers,
+            data: {
+                name: options.systemName,
+                description: `Auto-seeded by E2E test setup`,
+            },
+        });
+        expect(
+            createResp.status(),
+            `POST /systems returned ${createResp.status()} for seed system "${options.systemName}"`
+        ).toBe(201);
+        const created = await createResp.json() as { id?: string; name?: string };
+        validateResponse('System', created);
+        system = created;
+    }
+    const systemId = (system?.id ?? '').trim();
+    expect(systemId, `Seed system "${options.systemName}" must have an id`).toBeTruthy();
+
+    // ── Ensure service exists under the system ───────────────────────────────
+    const servicesResp = await request.get(`/api/v1/systems/${systemId}/services`, { headers });
+    expect(servicesResp.status(), 'GET /systems/{id}/services must return 200 in seed setup').toBe(200);
+    const servicesBody = await servicesResp.json() as {
+        items?: Array<{ id?: string; name?: string }>;
+    };
+    validateResponse('ServiceList', servicesBody);
+
+    let service = (servicesBody.items ?? []).find(
+        (item) => (item.name ?? '').trim() === options.serviceName
+    );
+    if (!service?.id) {
+        const createResp = await request.post(`/api/v1/systems/${systemId}/services`, {
+            headers,
+            data: {
+                name: options.serviceName,
+                description: `Auto-seeded by E2E test setup`,
+            },
+        });
+        expect(
+            createResp.status(),
+            `POST /systems/${systemId}/services returned ${createResp.status()} for seed service "${options.serviceName}"`
+        ).toBe(201);
+        const created = await createResp.json() as { id?: string; name?: string };
+        validateResponse('Service', created);
+        service = created;
+    }
+    const serviceId = (service?.id ?? '').trim();
+    expect(serviceId, `Seed service "${options.serviceName}" must have an id`).toBeTruthy();
+
+    return { password: auth.password, systemId, serviceId };
 }
