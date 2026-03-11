@@ -36,6 +36,12 @@ type InfrastructureProvider interface {
 	ValidateSpec(ctx context.Context, cluster, namespace string, spec *domain.VMSpec) (*domain.ValidationResult, error)
 }
 
+// NamespaceProvisioner ensures a target namespace exists before namespaced
+// resources are validated or created on the cluster.
+type NamespaceProvisioner interface {
+	EnsureNamespace(ctx context.Context, cluster, namespace string) error
+}
+
 // ProvisioningQueryProvider exposes CDI/PVC/event read paths used for boot-disk observability.
 type ProvisioningQueryProvider interface {
 	GetDataVolume(ctx context.Context, cluster, namespace, name string) (*domain.DataVolume, error)

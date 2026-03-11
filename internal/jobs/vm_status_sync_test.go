@@ -298,3 +298,37 @@ func TestReconcileCreateBootstrapStatus(t *testing.T) {
 		}
 	})
 }
+
+func TestReconcileMissingVMStatus(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+
+	t.Run("hold_missing_vm_as_creating_during_bootstrap", func(t *testing.T) {
+		t.Parallel()
+
+		vmRow := &ent.VM{
+			Status:      vm.StatusRUNNING,
+			PollingTier: vm.PollingTierHigh,
+			CreatedAt:   now.Add(-30 * time.Second),
+		}
+		got := reconcileMissingVMStatus(vmRow, now)
+		if got != vm.StatusCREATING {
+			t.Fatalf("reconcileMissingVMStatus() = %s, want %s", got, vm.StatusCREATING)
+		}
+	})
+
+	t.Run("missing_vm_becomes_unknown_after_bootstrap_window", func(t *testing.T) {
+		t.Parallel()
+
+		vmRow := &ent.VM{
+			Status:      vm.StatusRUNNING,
+			PollingTier: vm.PollingTierHigh,
+			CreatedAt:   now.Add(-createBootstrapGraceWindow - time.Second),
+		}
+		got := reconcileMissingVMStatus(vmRow, now)
+		if got != vm.StatusUNKNOWN {
+			t.Fatalf("reconcileMissingVMStatus() = %s, want %s", got, vm.StatusUNKNOWN)
+		}
+	})
+}

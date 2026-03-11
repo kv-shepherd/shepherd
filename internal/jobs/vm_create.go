@@ -393,18 +393,10 @@ func validateNamespaceClusterEnvironment(namespaceEnv, clusterEnv string) error 
 
 func mapCreatedVMStatusToRow(created *domain.VM) vm.Status {
 	if created == nil {
-		return vm.StatusRUNNING
+		return vm.StatusCREATING
 	}
 
-	// Stage 5.C in master-flow mandates CREATING -> RUNNING|FAILED.
-	// For create-time provider statuses other than explicit FAILED, we persist RUNNING
-	// and rely on vm_status_sync (ADR-0038) for later reconciliation.
-	switch created.Status {
-	case domain.VMStatusFailed:
-		return vm.StatusFAILED
-	default:
-		return vm.StatusRUNNING
-	}
+	return mapDomainStatusToEntVM(created.Status)
 }
 
 func resolveEffectiveSelectionIDs(

@@ -502,9 +502,9 @@ func TestMapCreatedVMStatusToRow(t *testing.T) {
 		expect entvm.Status
 	}{
 		{
-			name:   "nil vm defaults to running",
+			name:   "nil vm defaults to creating",
 			vm:     nil,
-			expect: entvm.StatusRUNNING,
+			expect: entvm.StatusCREATING,
 		},
 		{
 			name:   "running stays running",
@@ -517,44 +517,44 @@ func TestMapCreatedVMStatusToRow(t *testing.T) {
 			expect: entvm.StatusFAILED,
 		},
 		{
-			name:   "creating promoted to running",
+			name:   "creating stays creating",
 			vm:     &domain.VM{Status: domain.VMStatusCreating},
-			expect: entvm.StatusRUNNING,
+			expect: entvm.StatusCREATING,
 		},
 		{
-			name:   "pending promoted to running",
+			name:   "pending stays pending",
 			vm:     &domain.VM{Status: domain.VMStatusPending},
-			expect: entvm.StatusRUNNING,
+			expect: entvm.StatusPENDING,
 		},
 		{
-			name:   "unknown promoted to running",
+			name:   "unknown stays unknown",
 			vm:     &domain.VM{Status: domain.VMStatusUnknown},
-			expect: entvm.StatusRUNNING,
+			expect: entvm.StatusUNKNOWN,
 		},
 		{
-			name:   "stopping maps to stopping",
+			name:   "stopping stays stopping",
 			vm:     &domain.VM{Status: domain.VMStatusStopping},
-			expect: entvm.StatusRUNNING,
+			expect: entvm.StatusSTOPPING,
 		},
 		{
 			name:   "stopped maps to stopped",
 			vm:     &domain.VM{Status: domain.VMStatusStopped},
-			expect: entvm.StatusRUNNING,
+			expect: entvm.StatusSTOPPED,
 		},
 		{
 			name:   "deleting maps to deleting",
 			vm:     &domain.VM{Status: domain.VMStatusDeleting},
-			expect: entvm.StatusRUNNING,
+			expect: entvm.StatusDELETING,
 		},
 		{
 			name:   "migrating maps to migrating",
 			vm:     &domain.VM{Status: domain.VMStatusMigrating},
-			expect: entvm.StatusRUNNING,
+			expect: entvm.StatusMIGRATING,
 		},
 		{
 			name:   "paused maps to paused",
 			vm:     &domain.VM{Status: domain.VMStatusPaused},
-			expect: entvm.StatusRUNNING,
+			expect: entvm.StatusPAUSED,
 		},
 	}
 
