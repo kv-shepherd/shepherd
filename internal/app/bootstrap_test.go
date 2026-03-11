@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -72,4 +74,25 @@ func TestApplication_Start_NoDependencies(t *testing.T) {
 		err := app.Start(context.Background())
 		require.NoError(t, err)
 	})
+}
+
+func TestRegisterPeriodicJobs_WiringContract(t *testing.T) {
+	t.Parallel()
+
+	src, err := os.ReadFile("bootstrap.go")
+	if err != nil {
+		t.Fatalf("read bootstrap.go: %v", err)
+	}
+	text := string(src)
+
+	required := []string{
+		"jobs.NotificationCleanupArgs{}",
+		"jobs.DomainEventArchiveArgs{}",
+		"&river.PeriodicJobOpts{RunOnStart: true}",
+	}
+	for _, fragment := range required {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("bootstrap periodic job wiring missing required fragment %q", fragment)
+		}
+	}
 }

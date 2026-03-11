@@ -33,7 +33,7 @@ func TestEnsureSecrets_PreservesProvidedValues(t *testing.T) {
 	cfg := &Config{
 		Security: SecurityConfig{
 			SessionSecret: "abcdefghijklmnopqrstuvwxyzABCDEF123456", // 38 chars
-			EncryptionKey: "keep-existing-encryption-key",
+			EncryptionKey: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		},
 	}
 
@@ -44,7 +44,7 @@ func TestEnsureSecrets_PreservesProvidedValues(t *testing.T) {
 	if got := cfg.Security.SessionSecret; got != "abcdefghijklmnopqrstuvwxyzABCDEF123456" {
 		t.Fatalf("session secret changed unexpectedly: %q", got)
 	}
-	if got := cfg.Security.EncryptionKey; got != "keep-existing-encryption-key" {
+	if got := cfg.Security.EncryptionKey; got != "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
 		t.Fatalf("encryption key changed unexpectedly: %q", got)
 	}
 }
@@ -55,9 +55,24 @@ func TestConfigValidate_RejectsShortSessionSecret(t *testing.T) {
 	cfg := &Config{
 		Security: SecurityConfig{
 			SessionSecret: "short-secret",
+			EncryptionKey: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		},
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("Validate() expected error for short session secret, got nil")
+	}
+}
+
+func TestConfigValidate_RejectsInvalidEncryptionKey(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Security: SecurityConfig{
+			SessionSecret: "abcdefghijklmnopqrstuvwxyzABCDEF123456",
+			EncryptionKey: "not-hex",
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() expected error for invalid encryption key, got nil")
 	}
 }

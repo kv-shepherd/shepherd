@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -14,12 +17,18 @@ import (
 )
 
 var (
-	ErrVNCTokenSigningKeyMissing = errors.New("vnc token signing key is not configured")
-	ErrVNCTokenIDMissing         = errors.New("vnc token id is required")
-	ErrVNCTokenVMMismatch        = errors.New("vnc token vm mismatch")
-	ErrVNCTokenReplayed          = errors.New("vnc token already used")
-	ErrVNCReplayStoreUnavailable = errors.New("vnc replay store is unavailable")
+	ErrVNCTokenSigningKeyMissing    = errors.New("vnc token signing key is not configured")
+	ErrVNCTokenEncryptionKeyMissing = errors.New("vnc token encryption key is not configured")
+	ErrVNCTokenEncryptionKeyInvalid = errors.New("vnc token encryption key must be 32 bytes")
+	ErrVNCTokenIDMissing            = errors.New("vnc token id is required")
+	ErrVNCTokenVMMismatch           = errors.New("vnc token vm mismatch")
+	ErrVNCTokenReplayed             = errors.New("vnc token already used")
+	ErrVNCReplayStoreUnavailable    = errors.New("vnc replay store is unavailable")
+	ErrVNCTokenCiphertextInvalid    = errors.New("vnc token ciphertext is invalid")
+	ErrVNCTokenDecryptFailed        = errors.New("vnc token decryption failed")
 )
+
+const encryptedVNCTokenPrefix = "encv1."
 
 // VNCReplayStore tracks consumed single-use VNC token IDs.
 type VNCReplayStore interface {
@@ -143,15 +152,16 @@ type VNCJWTClaims struct {
 
 // VNCTokenManager issues and validates Stage 6 single-use VNC tokens.
 type VNCTokenManager struct {
-	signingKey []byte
-	issuer     string
-	ttl        time.Duration
-	now        func() time.Time
-	replay     VNCReplayStore
+	signingKey    []byte
+	encryptionKey []byte
+	issuer        string
+	ttl           time.Duration
+	now           func() time.Time
+	replay        VNCReplayStore
 }
 
 // NewVNCTokenManager creates a VNC token manager.
-func NewVNCTokenManager(signingKey []byte, issuer string, ttl time.Duration, replay VNCReplayStore) *VNCTokenManager {
+func NewVNCTokenManager(signingKey, encryptionKey []byte, issuer string, ttl time.Duration, replay VNCReplayStore) *VNCTokenManager {
 	if ttl <= 0 {
 		ttl = DefaultVNCTokenTTL
 	}
@@ -159,11 +169,12 @@ func NewVNCTokenManager(signingKey []byte, issuer string, ttl time.Duration, rep
 		replay = NewInMemoryVNCReplayStore()
 	}
 	return &VNCTokenManager{
-		signingKey: signingKey,
-		issuer:     issuer,
-		ttl:        ttl,
-		now:        func() time.Time { return time.Now().UTC() },
-		replay:     replay,
+		signingKey:    signingKey,
+		encryptionKey: encryptionKey,
+		issuer:        issuer,
+		ttl:           ttl,
+		now:           func() time.Time { return time.Now().UTC() },
+		replay:        replay,
 	}
 }
 
@@ -171,6 +182,9 @@ func NewVNCTokenManager(signingKey []byte, issuer string, ttl time.Duration, rep
 func (m *VNCTokenManager) Issue(subject, vmID, clusterID, namespace string) (token string, policyClaims VNCTokenClaims, err error) {
 	if len(m.signingKey) == 0 {
 		return "", VNCTokenClaims{}, ErrVNCTokenSigningKeyMissing
+	}
+	if validateErr := m.validateEncryptionKey(); validateErr != nil {
+		return "", VNCTokenClaims{}, validateErr
 	}
 
 	now := m.now().UTC()
@@ -201,6 +215,10 @@ func (m *VNCTokenManager) Issue(subject, vmID, clusterID, namespace string) (tok
 	if err != nil {
 		return "", VNCTokenClaims{}, fmt.Errorf("sign vnc token: %w", err)
 	}
+	token, err = m.encryptToken(token)
+	if err != nil {
+		return "", VNCTokenClaims{}, err
+	}
 
 	return token, policyClaims, nil
 }
@@ -209,6 +227,13 @@ func (m *VNCTokenManager) Issue(subject, vmID, clusterID, namespace string) (tok
 func (m *VNCTokenManager) ValidateAndConsume(ctx context.Context, token, expectedVMID string) (*VNCJWTClaims, error) {
 	if len(m.signingKey) == 0 {
 		return nil, ErrVNCTokenSigningKeyMissing
+	}
+	if validateErr := m.validateEncryptionKey(); validateErr != nil {
+		return nil, validateErr
+	}
+	token, err := m.unwrapToken(token)
+	if err != nil {
+		return nil, err
 	}
 
 	opts := []jwt.ParserOption{
@@ -251,4 +276,57 @@ func (m *VNCTokenManager) ValidateAndConsume(ctx context.Context, token, expecte
 
 	_ = ctx
 	return claims, nil
+}
+
+func (m *VNCTokenManager) validateEncryptionKey() error {
+	switch {
+	case len(m.encryptionKey) == 0:
+		return ErrVNCTokenEncryptionKeyMissing
+	case len(m.encryptionKey) != 32:
+		return ErrVNCTokenEncryptionKeyInvalid
+	default:
+		return nil
+	}
+}
+
+func (m *VNCTokenManager) encryptToken(signedToken string) (string, error) {
+	block, err := aes.NewCipher(m.encryptionKey)
+	if err != nil {
+		return "", fmt.Errorf("create vnc token cipher: %w", err)
+	}
+	aead, err := cipher.NewGCMWithRandomNonce(block)
+	if err != nil {
+		return "", fmt.Errorf("create vnc token aead: %w", err)
+	}
+
+	encrypted := aead.Seal(nil, nil, []byte(signedToken), nil)
+	return encryptedVNCTokenPrefix + base64.RawURLEncoding.EncodeToString(encrypted), nil
+}
+
+func (m *VNCTokenManager) unwrapToken(token string) (string, error) {
+	token = strings.TrimSpace(token)
+	if !strings.HasPrefix(token, encryptedVNCTokenPrefix) {
+		return token, nil
+	}
+
+	encoded := strings.TrimPrefix(token, encryptedVNCTokenPrefix)
+	ciphertext, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", errors.Join(ErrVNCTokenCiphertextInvalid, err)
+	}
+
+	block, err := aes.NewCipher(m.encryptionKey)
+	if err != nil {
+		return "", fmt.Errorf("create vnc token cipher: %w", err)
+	}
+	aead, err := cipher.NewGCMWithRandomNonce(block)
+	if err != nil {
+		return "", fmt.Errorf("create vnc token aead: %w", err)
+	}
+
+	plaintext, err := aead.Open(nil, nil, ciphertext, nil)
+	if err != nil {
+		return "", errors.Join(ErrVNCTokenDecryptFailed, err)
+	}
+	return string(plaintext), nil
 }

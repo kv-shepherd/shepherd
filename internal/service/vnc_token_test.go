@@ -2,19 +2,25 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
+
+var testVNCEncryptionKey = []byte("0123456789abcdef0123456789abcdef")
 
 func TestVNCTokenManager_IssueAndValidateSingleUse(t *testing.T) {
 	t.Parallel()
 
 	manager := NewVNCTokenManager(
 		[]byte("vnc-signing-key-123456789012345678901234567890"),
+		testVNCEncryptionKey,
 		"shepherd-test",
 		2*time.Hour,
 		nil,
@@ -26,6 +32,9 @@ func TestVNCTokenManager_IssueAndValidateSingleUse(t *testing.T) {
 	}
 	if token == "" {
 		t.Fatal("Issue() token is empty")
+	}
+	if strings.Count(token, ".") == 2 {
+		t.Fatalf("Issue() token = %q, want encrypted envelope instead of raw JWT", token)
 	}
 	if claims.JTI == "" {
 		t.Fatal("Issue() claims.jti is empty")
@@ -50,6 +59,7 @@ func TestVNCTokenManager_ValidateRejectsVMMismatch(t *testing.T) {
 
 	manager := NewVNCTokenManager(
 		[]byte("vnc-signing-key-123456789012345678901234567890"),
+		testVNCEncryptionKey,
 		"shepherd-test",
 		2*time.Hour,
 		nil,
@@ -69,9 +79,91 @@ func TestVNCTokenManager_ValidateRejectsVMMismatch(t *testing.T) {
 func TestVNCTokenManager_IssueFailsWithoutSigningKey(t *testing.T) {
 	t.Parallel()
 
-	manager := NewVNCTokenManager(nil, "shepherd-test", time.Hour, nil)
+	manager := NewVNCTokenManager(nil, testVNCEncryptionKey, "shepherd-test", time.Hour, nil)
 	if _, _, err := manager.Issue("user-1", "vm-1", "cluster-a", "team-test"); !errors.Is(err, ErrVNCTokenSigningKeyMissing) {
 		t.Fatalf("Issue() err = %v, want %v", err, ErrVNCTokenSigningKeyMissing)
+	}
+}
+
+func TestVNCTokenManager_IssueFailsWithoutEncryptionKey(t *testing.T) {
+	t.Parallel()
+
+	manager := NewVNCTokenManager(
+		[]byte("vnc-signing-key-123456789012345678901234567890"),
+		nil,
+		"shepherd-test",
+		time.Hour,
+		nil,
+	)
+	if _, _, err := manager.Issue("user-1", "vm-1", "cluster-a", "team-test"); !errors.Is(err, ErrVNCTokenEncryptionKeyMissing) {
+		t.Fatalf("Issue() err = %v, want %v", err, ErrVNCTokenEncryptionKeyMissing)
+	}
+}
+
+func TestVNCTokenManager_ValidateAndConsume_AcceptsLegacySignedJWT(t *testing.T) {
+	t.Parallel()
+
+	signingKey := []byte("vnc-signing-key-123456789012345678901234567890")
+	manager := NewVNCTokenManager(signingKey, testVNCEncryptionKey, "shepherd-test", time.Hour, nil)
+
+	now := time.Now().UTC()
+	tokenID := "legacy-" + strings.ReplaceAll(t.Name(), "/", "-")
+	legacyToken := jwt.NewWithClaims(jwt.SigningMethodHS256, VNCJWTClaims{
+		VMID:      "vm-1",
+		ClusterID: "cluster-a",
+		Namespace: "team-test",
+		SingleUse: true,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "shepherd-test",
+			Subject:   "user-1",
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ID:        tokenID,
+		},
+	})
+	signed, err := legacyToken.SignedString(signingKey)
+	if err != nil {
+		t.Fatalf("legacyToken.SignedString() error = %v", err)
+	}
+
+	claims, err := manager.ValidateAndConsume(context.Background(), signed, "vm-1")
+	if err != nil {
+		t.Fatalf("ValidateAndConsume(legacy) error = %v", err)
+	}
+	if claims.ID != tokenID {
+		t.Fatalf("claims.ID = %q, want %q", claims.ID, tokenID)
+	}
+}
+
+func TestVNCTokenManager_ValidateAndConsume_RejectsTamperedCiphertext(t *testing.T) {
+	t.Parallel()
+
+	manager := NewVNCTokenManager(
+		[]byte("vnc-signing-key-123456789012345678901234567890"),
+		testVNCEncryptionKey,
+		"shepherd-test",
+		time.Hour,
+		nil,
+	)
+	token, _, err := manager.Issue("user-1", "vm-1", "cluster-a", "team-test")
+	if err != nil {
+		t.Fatalf("Issue() error = %v", err)
+	}
+
+	encoded := strings.TrimPrefix(token, encryptedVNCTokenPrefix)
+	ciphertext, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("DecodeString() error = %v", err)
+	}
+	if len(ciphertext) == 0 {
+		t.Fatal("ciphertext is empty")
+	}
+	ciphertext[len(ciphertext)-1] ^= 0x01
+
+	tampered := encryptedVNCTokenPrefix + base64.RawURLEncoding.EncodeToString(ciphertext)
+	if _, err := manager.ValidateAndConsume(context.Background(), tampered, "vm-1"); !errors.Is(err, ErrVNCTokenDecryptFailed) {
+		t.Fatalf("ValidateAndConsume(tampered) err = %v, want %v", err, ErrVNCTokenDecryptFailed)
 	}
 }
 
@@ -115,8 +207,8 @@ func TestVNCTokenManager_ValidateAndConsume_UsesPostgresReplayStore(t *testing.T
 	pool := testutil.OpenPGXPool(t, "vnc_replay_manager")
 	signingKey := []byte("vnc-signing-key-123456789012345678901234567890")
 
-	managerA := NewVNCTokenManager(signingKey, "shepherd-test", time.Hour, NewPostgresVNCReplayStore(pool))
-	managerB := NewVNCTokenManager(signingKey, "shepherd-test", time.Hour, NewPostgresVNCReplayStore(pool))
+	managerA := NewVNCTokenManager(signingKey, testVNCEncryptionKey, "shepherd-test", time.Hour, NewPostgresVNCReplayStore(pool))
+	managerB := NewVNCTokenManager(signingKey, testVNCEncryptionKey, "shepherd-test", time.Hour, NewPostgresVNCReplayStore(pool))
 
 	token, _, err := managerA.Issue("user-1", "vm-1", "cluster-a", "team-test")
 	if err != nil {
