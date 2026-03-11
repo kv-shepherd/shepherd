@@ -34,6 +34,12 @@ var vmGVR = schema.GroupVersionResource{
 	Resource: vmResource,
 }
 
+var namespaceGVR = schema.GroupVersionResource{
+	Group:    "",
+	Version:  "v1",
+	Resource: "namespaces",
+}
+
 // KubevirtSSAApplier submits VirtualMachine resources via dynamic client + SSA.
 // Implements DynamicSSAClient.
 //
@@ -67,6 +73,33 @@ func NewKubevirtSSAApplier(dynamicClient dynamic.Interface) *KubevirtSSAApplier 
 // Force=true ensures kubevirt-shepherd owns all fields it declares, overwriting
 // any conflicting field ownership (e.g., manual kubectl edits).
 func (a *KubevirtSSAApplier) ApplyYAML(ctx context.Context, namespace string, yamlData []byte) (*unstructured.Unstructured, error) {
+	return a.applyYAML(ctx, vmGVR, namespace, yamlData, false)
+}
+
+// ApplyClusterScopedYAML submits cluster-scoped YAML bytes via SSA Patch.
+func (a *KubevirtSSAApplier) ApplyClusterScopedYAML(
+	ctx context.Context,
+	gvr schema.GroupVersionResource,
+	yamlData []byte,
+) (*unstructured.Unstructured, error) {
+	return a.applyYAML(ctx, gvr, "", yamlData, false)
+}
+
+// DryRunApplyYAML validates YAML via SSA DryRun without creating the resource.
+// Used by ValidateSpec to leverage server-side validation (more authoritative
+// than compile-time checks for external CRD fields).
+func (a *KubevirtSSAApplier) DryRunApplyYAML(ctx context.Context, namespace string, yamlData []byte) error {
+	_, err := a.applyYAML(ctx, vmGVR, namespace, yamlData, true)
+	return err
+}
+
+func (a *KubevirtSSAApplier) applyYAML(
+	ctx context.Context,
+	gvr schema.GroupVersionResource,
+	namespace string,
+	yamlData []byte,
+	dryRun bool,
+) (*unstructured.Unstructured, error) {
 	obj, jsonData, err := a.decodeAndMarshal(yamlData)
 	if err != nil {
 		return nil, err
@@ -77,43 +110,33 @@ func (a *KubevirtSSAApplier) ApplyYAML(ctx context.Context, namespace string, ya
 		return nil, fmt.Errorf("resource name is required in yaml")
 	}
 
-	result, err := a.dynamicClient.
-		Resource(vmGVR).
-		Namespace(namespace).
-		Patch(ctx, name, types.ApplyPatchType, jsonData, k8smetav1.PatchOptions{
-			FieldManager: FieldOwner,
-			Force:        ptr.To(true),
-		})
-	if err != nil {
-		return nil, fmt.Errorf("ssa apply %s/%s: %w", namespace, name, err)
+	namespaceableResource := a.dynamicClient.Resource(gvr)
+	scopeLabel := name
+	var (
+		result   *unstructured.Unstructured
+		patchErr error
+	)
+	if namespace != "" {
+		scopeLabel = fmt.Sprintf("%s/%s", namespace, name)
 	}
 
+	patchOpts := k8smetav1.PatchOptions{
+		FieldManager: FieldOwner,
+		Force:        ptr.To(true),
+	}
+	if dryRun {
+		patchOpts.DryRun = []string{k8smetav1.DryRunAll}
+	}
+
+	if namespace != "" {
+		result, patchErr = namespaceableResource.Namespace(namespace).Patch(ctx, name, types.ApplyPatchType, jsonData, patchOpts)
+	} else {
+		result, patchErr = namespaceableResource.Patch(ctx, name, types.ApplyPatchType, jsonData, patchOpts)
+	}
+	if patchErr != nil {
+		return nil, fmt.Errorf("ssa apply %s %s: %w", gvr.Resource, scopeLabel, patchErr)
+	}
 	return result, nil
-}
-
-// DryRunApplyYAML validates YAML via SSA DryRun without creating the resource.
-// Used by ValidateSpec to leverage server-side validation (more authoritative
-// than compile-time checks for external CRD fields).
-func (a *KubevirtSSAApplier) DryRunApplyYAML(ctx context.Context, namespace string, yamlData []byte) error {
-	obj, jsonData, err := a.decodeAndMarshal(yamlData)
-	if err != nil {
-		return err
-	}
-
-	name := obj.GetName()
-	if name == "" {
-		return fmt.Errorf("resource name is required in yaml")
-	}
-
-	_, err = a.dynamicClient.
-		Resource(vmGVR).
-		Namespace(namespace).
-		Patch(ctx, name, types.ApplyPatchType, jsonData, k8smetav1.PatchOptions{
-			FieldManager: FieldOwner,
-			Force:        ptr.To(true),
-			DryRun:       []string{k8smetav1.DryRunAll},
-		})
-	return err
 }
 
 // decodeAndMarshal converts YAML bytes into an Unstructured object and its JSON

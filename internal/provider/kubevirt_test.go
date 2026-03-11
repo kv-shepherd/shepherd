@@ -183,6 +183,52 @@ func TestKubevirtSSAApplier_DryRunApplyYAML(t *testing.T) {
 	}
 }
 
+func TestKubevirtSSAApplier_ApplyClusterScopedYAML(t *testing.T) {
+	scheme := runtime.NewScheme()
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
+
+	var capturedPatch []byte
+	var capturedPatchType types.PatchType
+	var capturedName string
+
+	dynClient.PrependReactor("patch", "namespaces", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		patchAction, ok := action.(k8stesting.PatchActionImpl)
+		if !ok {
+			return false, nil, nil
+		}
+		capturedPatch = patchAction.GetPatch()
+		capturedPatchType = patchAction.GetPatchType()
+		capturedName = patchAction.GetName()
+
+		obj := &unstructured.Unstructured{}
+		if err := json.Unmarshal(capturedPatch, &obj.Object); err != nil {
+			return true, nil, fmt.Errorf("unmarshal patch: %w", err)
+		}
+		return true, obj, nil
+	})
+
+	applier := NewKubevirtSSAApplier(dynClient)
+
+	result, err := applier.ApplyClusterScopedYAML(context.Background(), namespaceGVR, []byte(`
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-a
+`))
+	if err != nil {
+		t.Fatalf("ApplyClusterScopedYAML returned error: %v", err)
+	}
+	if capturedPatchType != types.ApplyPatchType {
+		t.Fatalf("expected ApplyPatchType, got %q", capturedPatchType)
+	}
+	if capturedName != "team-a" {
+		t.Fatalf("expected patch target name=team-a, got %q", capturedName)
+	}
+	if result.GetName() != "team-a" {
+		t.Fatalf("expected name=team-a, got %q", result.GetName())
+	}
+}
+
 func TestKubevirtSSAApplier_GVR(t *testing.T) {
 	// Verify the GVR constants match expected KubeVirt API group.
 	expected := schema.GroupVersionResource{

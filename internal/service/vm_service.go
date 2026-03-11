@@ -36,6 +36,9 @@ func (s *VMService) ValidateAndPrepare(ctx context.Context, cluster, namespace s
 	if spec == nil {
 		return nil, apperrors.BadRequest(apperrors.CodeValidationFailed, "spec is required")
 	}
+	if err := s.ensureNamespaceReady(ctx, cluster, namespace); err != nil {
+		return nil, err
+	}
 	if err := ensureRenderedYAML(namespace, spec); err != nil {
 		return nil, apperrors.BadRequest(apperrors.CodeValidationFailed, fmt.Sprintf("render vm yaml: %v", err))
 	}
@@ -69,6 +72,9 @@ func (s *VMService) ListVMs(ctx context.Context, cluster, namespace string, opts
 // ExecuteK8sCreate creates the VM on K8s (outside transaction).
 // Idempotent: handles AlreadyExists error gracefully.
 func (s *VMService) ExecuteK8sCreate(ctx context.Context, cluster, namespace string, spec *domain.VMSpec) (*domain.VM, error) {
+	if err := s.ensureNamespaceReady(ctx, cluster, namespace); err != nil {
+		return nil, err
+	}
 	if err := ensureRenderedYAML(namespace, spec); err != nil {
 		return nil, fmt.Errorf("render vm yaml: %w", err)
 	}
@@ -88,6 +94,20 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, cluster, namespace str
 		zap.String("name", vm.Name),
 	)
 	return vm, nil
+}
+
+func (s *VMService) ensureNamespaceReady(ctx context.Context, cluster, namespace string) error {
+	if s == nil || s.infra == nil {
+		return fmt.Errorf("vm infrastructure provider is not configured")
+	}
+	provisioner, ok := s.infra.(provider.NamespaceProvisioner)
+	if !ok {
+		return fmt.Errorf("vm infrastructure provider does not support namespace provisioning")
+	}
+	if err := provisioner.EnsureNamespace(ctx, cluster, namespace); err != nil {
+		return fmt.Errorf("ensure namespace %s on cluster %s: %w", namespace, cluster, err)
+	}
+	return nil
 }
 
 // ensureRenderedYAML renders spec.RenderedYAML when absent, keeping the provider

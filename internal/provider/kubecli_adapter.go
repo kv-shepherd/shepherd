@@ -121,6 +121,10 @@ func (c *kubevirtClusterClient) Events() EventClient {
 	return &kubevirtEventClient{client: c.client}
 }
 
+func (c *kubevirtClusterClient) Namespaces() NamespaceClient {
+	return &kubevirtNamespaceClient{client: c.client}
+}
+
 func (c *kubevirtClusterClient) Pods() PodClient {
 	return &kubevirtPodClient{client: c.client}
 }
@@ -231,6 +235,14 @@ type kubevirtEventClient struct {
 
 func (c *kubevirtEventClient) List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*corev1.EventList, error) {
 	return c.client.CoreV1().Events(namespace).List(ctx, opts)
+}
+
+type kubevirtNamespaceClient struct {
+	client kubecli.KubevirtClient
+}
+
+func (c *kubevirtNamespaceClient) Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*corev1.Namespace, error) {
+	return c.client.CoreV1().Namespaces().Get(ctx, name, opts)
 }
 
 type kubevirtPodClient struct {
