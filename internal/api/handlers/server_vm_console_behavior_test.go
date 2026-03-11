@@ -19,6 +19,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
@@ -309,12 +310,14 @@ func newVMConsoleBehaviorTestServer(t *testing.T) (*Server, *ent.Client) {
 	_ = logger.Init("error", "json")
 	client := testutil.OpenEntPostgres(t, "vm_console_behavior")
 	return NewServer(ServerDeps{
-		EntClient: client,
+		EntClient:    client,
+		ApprovalReqs: service.NewApprovalRequirementService(client),
 		JWTCfg: middleware.JWTConfig{
 			SigningKey: []byte("test-vnc-signing-key-123456789012345678901234"),
 			Issuer:     "shepherd-test",
 			ExpiresIn:  2 * time.Hour,
 		},
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
 	}), client
 }
 

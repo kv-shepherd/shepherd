@@ -18,6 +18,10 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 		}
 		verificationKeys = append(verificationKeys, []byte(key))
 	}
+	encryptionKey, err := cfg.Security.DecodeEncryptionKey()
+	if err != nil {
+		panic("validated config returned invalid encryption key: " + err.Error())
+	}
 
 	deps := handlers.ServerDeps{
 		EntClient: infra.EntClient,
@@ -28,8 +32,9 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 			Issuer:           "shepherd",
 			ExpiresIn:        cfg.Session.Lifetime,
 		},
-		Audit:       infra.AuditLogger,
-		RiverClient: infra.RiverClient,
+		EncryptionKey: encryptionKey,
+		Audit:         infra.AuditLogger,
+		RiverClient:   infra.RiverClient,
 	}
 	for _, mod := range mods {
 		if mod == nil {
