@@ -38,6 +38,7 @@ import { expect, test, type APIRequestContext, type Page, type Response } from '
 import { validateApiResponse } from './lib/schema-validator';
 import {
     ensureBatchSubmitPolicyForUser,
+    ensureSeedSystemAndService,
     fetchStatusWithStoredToken,
     getApiTokenWithForcePasswordSupport,
     loginWithForcePasswordSupport,
@@ -385,6 +386,17 @@ async function getFirstVMId(page: Page): Promise<string> {
 
 test.describe('vm-lifecycle live (contract-enforced, no mock, no skip)', () => {
     test.beforeAll(async ({ request }) => {
+        // Ensure seed system + service exist (idempotent, API-first).
+        const seed = await ensureSeedSystemAndService(request, {
+            username: e2eUsername,
+            primaryPassword: e2ePassword,
+            secondaryPassword: e2eNewPassword,
+            currentPasswordHint: activePassword,
+            systemName: e2eSystemName,
+            serviceName: e2eServiceName,
+        });
+        activePassword = seed.password;
+
         const setup = await ensureBatchSubmitPolicyForUser(request, {
             username: e2eUsername,
             primaryPassword: e2ePassword,

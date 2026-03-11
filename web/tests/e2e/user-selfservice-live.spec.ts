@@ -35,6 +35,7 @@ import { expect, test, type APIRequestContext, type Locator, type Page, type Res
 import { validateApiResponse } from './lib/schema-validator';
 import {
     ensureBatchSubmitPolicyForUser,
+    ensureSeedSystemAndService,
     fetchStatusWithStoredToken,
     getAntModal,
     getApiTokenWithForcePasswordSupport,
@@ -51,6 +52,7 @@ const e2ePassword = process.env.E2E_PASSWORD ?? 'e2e-admin-123';
 const e2eNewPassword = process.env.E2E_NEW_PASSWORD ?? (e2ePassword === 'admin' ? 'admin123' : `${e2ePassword}-new`);
 const e2eSystemName = process.env.E2E_SYSTEM ?? 'e2e-system';
 const e2eServiceName = process.env.E2E_SERVICE ?? 'e2e-service';
+const e2eNamespace = process.env.E2E_NAMESPACE ?? 'e2e-test';
 let activePassword = e2ePassword;
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
@@ -122,6 +124,17 @@ async function findTicketCancelButtonAcrossPages(
 
 test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () => {
     test.beforeAll(async ({ request }) => {
+        // Ensure seed system + service exist (idempotent, API-first).
+        const seed = await ensureSeedSystemAndService(request, {
+            username: e2eUsername,
+            primaryPassword: e2ePassword,
+            secondaryPassword: e2eNewPassword,
+            currentPasswordHint: activePassword,
+            systemName: e2eSystemName,
+            serviceName: e2eServiceName,
+        });
+        activePassword = seed.password;
+
         const setup = await ensureBatchSubmitPolicyForUser(request, {
             username: e2eUsername,
             primaryPassword: e2ePassword,
@@ -254,7 +267,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         // operationId: cancelTicket
         // First submit a VM request to get a pending ticket
         const uniqueSuffix = `${Date.now()}`;
-        const requestNamespace = `e2e-cancel-${uniqueSuffix}`;
+        const requestNamespace = e2eNamespace;
         await page.goto('/vms');
         await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
         await page.getByRole('button', { name: 'Request VM' }).click();

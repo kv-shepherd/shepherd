@@ -51,6 +51,7 @@
 import { expect, test, type APIRequestContext, type Page, type Response } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
 import {
+  ensureSeedSystemAndService,
   fetchStatusWithStoredToken,
   getAntModal,
   getApiTokenWithForcePasswordSupport,
@@ -550,6 +551,19 @@ async function seedPendingApprovalTicket(request: APIRequestContext): Promise<Ap
 // ── Test suite ────────────────────────────────────────────────────────────────
 
 test.describe('master-flow live (contract-enforced, no mock)', () => {
+  test.beforeAll(async ({ request }) => {
+    // Ensure seed system + service exist (idempotent, API-first).
+    const seed = await ensureSeedSystemAndService(request, {
+      username: e2eUsername,
+      primaryPassword: e2ePassword,
+      secondaryPassword: e2eNewPassword,
+      currentPasswordHint: activePassword,
+      systemName: e2eSystemName,
+      serviceName: e2eServiceName,
+    });
+    activePassword = seed.password;
+  });
+
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       window.open = () => null; // prevent popup interference in CI

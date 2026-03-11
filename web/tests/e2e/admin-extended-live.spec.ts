@@ -400,7 +400,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         const createModal = getAntModal(page, 'template-create-modal');
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(tplName);
-        await createModal.getByLabel(/container image url/i).fill('quay.io/containerdisks/ubuntu:22.04');
+        await createModal.getByLabel(/image url/i).fill('quay.io/containerdisks/ubuntu:22.04');
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'Template', 201);
@@ -408,10 +408,16 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         expect(tplID, 'POST /admin/templates response missing id').toBeTruthy();
 
         // ── PATCH /admin/templates/{id} → Template ────────────────────────────────
+        // First ensure the edit action button is visible before registering the
+        // response promise — the button may take a moment to appear after list
+        // re-render following POST creation.
+        const editBtn = page.getByTestId(`template-action-edit-${tplID}`);
+        await expect(editBtn).toBeVisible({ timeout: 10_000 });
+
         const updateRespPromise = page.waitForResponse(
             (r) => urlPathIncludes(r.url(), `/api/v1/admin/templates/${tplID}`) && r.request().method() === 'PATCH'
         );
-        await page.getByTestId(`template-action-edit-${tplID}`).click();
+        await editBtn.click();
         const editModal = getAntModal(page, 'template-edit-modal');
         await expect(editModal).toBeVisible();
         await editModal.locator('textarea').first().fill('Updated template description by live e2e test');

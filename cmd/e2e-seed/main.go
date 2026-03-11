@@ -20,6 +20,7 @@ import (
 	entauthprovider "kv-shepherd.io/shepherd/ent/authprovider"
 	entbatchapprovalticket "kv-shepherd.io/shepherd/ent/batchapprovalticket"
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
+	entclusterpolicy "kv-shepherd.io/shepherd/ent/clusterpolicy"
 	entdomainevent "kv-shepherd.io/shepherd/ent/domainevent"
 	entinstancesize "kv-shepherd.io/shepherd/ent/instancesize"
 	entnamespaceregistry "kv-shepherd.io/shepherd/ent/namespaceregistry"
@@ -49,10 +50,53 @@ const (
 	defaultServiceName   = "e2e-service"
 	defaultTemplateName  = "e2e-template"
 	defaultSizeName      = "e2e-small"
+	defaultCloneNSName   = "golden-images"
 
 	defaultRunningVMID = "vm-e2e-running"
 	defaultStoppedVMID = "vm-e2e-stopped"
+
+	defaultTemplateImageURL  = "docker://quay.io/containerdisks/ubuntu:22.04"
+	defaultTemplateCloudInit = `#cloud-config
+hostname: e2e-template
+manage_etc_hosts: true
+users:
+  - default
+package_update: false
+`
+
+	seedActor = "e2e-seed"
 )
+
+type templateFixture struct {
+	Name         string
+	DisplayName  string
+	Description  string
+	SourceType   string
+	ImageURL     string
+	CloudInit    string
+	OsFamily     string
+	OsVersion    string
+	CatalogScope enttemplate.CatalogScope
+}
+
+type instanceSizeFixture struct {
+	Name              string
+	DisplayName       string
+	Description       string
+	CPUCores          float64
+	MemoryGi          float64
+	DiskGB            int
+	CPURequest        float64
+	MemoryRequestGi   float64
+	DedicatedCPU      bool
+	RequiresGPU       bool
+	RequiresSriov     bool
+	RequiresHugepages bool
+	HugepagesSize     string
+	SpecOverrides     map[string]interface{}
+	CatalogScope      entinstancesize.CatalogScope
+	SortOrder         int
+}
 
 type fixtureConfig struct {
 	AdminUsername string
@@ -97,6 +141,7 @@ func run() error {
 
 	fx := loadFixtureConfig()
 	client := db.EntClient
+	skipAPIManagedFixtures := envBool("E2E_SKIP_API_MANAGED_FIXTURES")
 
 	adminID, err := ensureAdminUser(ctx, client, fx)
 	if err != nil {
@@ -106,26 +151,41 @@ func run() error {
 		return fmt.Errorf("ensure admin role binding: %w", bindErr)
 	}
 
-	if nsErr := ensureNamespaceRegistry(ctx, client, fx); nsErr != nil {
-		return fmt.Errorf("ensure namespace: %w", nsErr)
+	if skipAPIManagedFixtures {
+		if nsErr := ensureExistingNamespaceRegistry(ctx, client, fx.NamespaceName); nsErr != nil {
+			return fmt.Errorf("require namespace: %w", nsErr)
+		}
+	} else {
+		if nsErr := ensureNamespaceRegistry(ctx, client, fx); nsErr != nil {
+			return fmt.Errorf("ensure namespace: %w", nsErr)
+		}
 	}
-	clusterID, err := ensureCluster(ctx, client, fx)
+
+	clusterID, err := resolveClusterID(ctx, client, fx, skipAPIManagedFixtures)
 	if err != nil {
-		return fmt.Errorf("ensure cluster: %w", err)
+		return fmt.Errorf("resolve cluster: %w", err)
 	}
-	systemID, err := ensureSystem(ctx, client, fx)
+	serviceID, err := resolveServiceID(ctx, client, fx, skipAPIManagedFixtures)
 	if err != nil {
-		return fmt.Errorf("ensure system: %w", err)
+		return fmt.Errorf("resolve service: %w", err)
 	}
-	serviceID, err := ensureService(ctx, client, fx, systemID)
-	if err != nil {
-		return fmt.Errorf("ensure service: %w", err)
-	}
-	if tplErr := ensureTemplate(ctx, client, fx); tplErr != nil {
-		return fmt.Errorf("ensure template: %w", tplErr)
-	}
-	if sizeErr := ensureInstanceSize(ctx, client, fx); sizeErr != nil {
-		return fmt.Errorf("ensure instance size: %w", sizeErr)
+	if skipAPIManagedFixtures {
+		if tplErr := ensureExistingTemplate(ctx, client, fx.TemplateName); tplErr != nil {
+			return fmt.Errorf("require template: %w", tplErr)
+		}
+		if sizeErr := ensureExistingInstanceSize(ctx, client, fx.SizeName); sizeErr != nil {
+			return fmt.Errorf("require instance size: %w", sizeErr)
+		}
+	} else {
+		if tplErr := ensureTemplate(ctx, client, fx); tplErr != nil {
+			return fmt.Errorf("ensure template: %w", tplErr)
+		}
+		if cleanupErr := resetManagedInstanceSizes(ctx, client); cleanupErr != nil {
+			return fmt.Errorf("reset instance sizes: %w", cleanupErr)
+		}
+		if sizeErr := ensureInstanceSize(ctx, client, fx); sizeErr != nil {
+			return fmt.Errorf("ensure instance size: %w", sizeErr)
+		}
 	}
 	if runningVMErr := ensureVM(ctx, client, fx.RunningVMID, "vm-live", "01", entvm.StatusRUNNING, fx.NamespaceName, clusterID, serviceID, fx.AdminUsername); runningVMErr != nil {
 		return fmt.Errorf("ensure running vm: %w", runningVMErr)
@@ -187,6 +247,15 @@ func envOrDefault(key, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+func envBool(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 type clusterSeedInput struct {
@@ -340,6 +409,76 @@ func ensureNamespaceRegistry(ctx context.Context, client *ent.Client, fx fixture
 	return err
 }
 
+func ensureExistingNamespaceRegistry(ctx context.Context, client *ent.Client, namespaceName string) error {
+	_, err := client.NamespaceRegistry.Query().
+		Where(entnamespaceregistry.NameEQ(namespaceName)).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return fmt.Errorf("namespace %q not found; seed API-managed fixtures before running cmd/e2e-seed with E2E_SKIP_API_MANAGED_FIXTURES=1", namespaceName)
+		}
+		return err
+	}
+	return nil
+}
+
+func resolveClusterID(ctx context.Context, client *ent.Client, fx fixtureConfig, skipAPIManagedFixtures bool) (string, error) {
+	if !skipAPIManagedFixtures {
+		clusterID, err := ensureCluster(ctx, client, fx)
+		if err != nil {
+			return "", err
+		}
+		if policyErr := ensureClusterPolicy(ctx, client, clusterID, fx); policyErr != nil {
+			return "", policyErr
+		}
+		return clusterID, nil
+	}
+
+	clusterObj, err := client.Cluster.Query().
+		Where(entcluster.NameEQ(fx.ClusterName)).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return "", fmt.Errorf("cluster %q not found; seed API-managed fixtures before running cmd/e2e-seed with E2E_SKIP_API_MANAGED_FIXTURES=1", fx.ClusterName)
+		}
+		return "", err
+	}
+	return clusterObj.ID, nil
+}
+
+func resolveServiceID(ctx context.Context, client *ent.Client, fx fixtureConfig, skipAPIManagedFixtures bool) (string, error) {
+	if !skipAPIManagedFixtures {
+		systemID, err := ensureSystem(ctx, client, fx)
+		if err != nil {
+			return "", err
+		}
+		return ensureService(ctx, client, fx, systemID)
+	}
+
+	systemObj, err := client.System.Query().
+		Where(entsystem.NameEQ(fx.SystemName)).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return "", fmt.Errorf("system %q not found; seed API-managed fixtures before running cmd/e2e-seed with E2E_SKIP_API_MANAGED_FIXTURES=1", fx.SystemName)
+		}
+		return "", err
+	}
+	serviceObj, err := client.Service.Query().
+		Where(
+			entservice.NameEQ(fx.ServiceName),
+			entservice.HasSystemWith(entsystem.IDEQ(systemObj.ID)),
+		).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return "", fmt.Errorf("service %q under system %q not found; seed API-managed fixtures before running cmd/e2e-seed with E2E_SKIP_API_MANAGED_FIXTURES=1", fx.ServiceName, fx.SystemName)
+		}
+		return "", err
+	}
+	return serviceObj.ID, nil
+}
+
 func ensureCluster(ctx context.Context, client *ent.Client, fx fixtureConfig) (string, error) {
 	clusterInput, err := resolveClusterSeedInput(fx)
 	if err != nil {
@@ -381,6 +520,216 @@ func ensureCluster(ctx context.Context, client *ent.Client, fx fixtureConfig) (s
 		return "", err
 	}
 	return updated.ID, nil
+}
+
+// ensureClusterPolicy creates or updates a permissive ClusterPolicy row for the
+// e2e cluster. Without this, the approval modal's cluster dropdown marks all
+// clusters as incompatible (CLUSTER_POLICY_NOT_CONFIGURED) and the approve
+// action fails with "selected cluster is required for create approval".
+func ensureClusterPolicy(ctx context.Context, client *ent.Client, clusterID string, fx fixtureConfig) error {
+	existing, err := client.ClusterPolicy.Query().
+		Where(entclusterpolicy.ClusterIDEQ(clusterID)).
+		Only(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		return err
+	}
+
+	allowedCloneNamespaces := []string{defaultCloneNSName}
+	if namespaceName := strings.TrimSpace(fx.NamespaceName); namespaceName != "" && namespaceName != defaultCloneNSName {
+		allowedCloneNamespaces = append(allowedCloneNamespaces, namespaceName)
+	}
+	allowedHugepagesSizes := []string{"2Mi", "1Gi"}
+
+	if existing == nil {
+		id, _ := uuid.NewV7()
+		_, createErr := client.ClusterPolicy.Create().
+			SetID(id.String()).
+			SetClusterID(clusterID).
+			SetAllowCPUOvercommit(true).
+			SetAllowMemoryOvercommit(true).
+			SetAllowDedicatedCPU(true).
+			SetAllowGpu(true).
+			SetAllowSriov(true).
+			SetAllowHugepages(true).
+			SetAllowedHugepagesSizes(allowedHugepagesSizes).
+			SetAllowCdiClone(true).
+			SetAllowedCloneSourceNamespaces(allowedCloneNamespaces).
+			SetCreatedBy("e2e-seed").
+			Save(ctx)
+		return createErr
+	}
+
+	// Update existing policy to ensure it remains permissive.
+	_, err = client.ClusterPolicy.UpdateOneID(existing.ID).
+		SetAllowCPUOvercommit(true).
+		SetAllowMemoryOvercommit(true).
+		SetAllowDedicatedCPU(true).
+		SetAllowGpu(true).
+		SetAllowSriov(true).
+		SetAllowHugepages(true).
+		SetAllowedHugepagesSizes(allowedHugepagesSizes).
+		SetAllowCdiClone(true).
+		SetAllowedCloneSourceNamespaces(allowedCloneNamespaces).
+		SetUpdatedBy("e2e-seed").
+		Save(ctx)
+	return err
+}
+
+func liveTemplateFixture(fx fixtureConfig) templateFixture {
+	description := fmt.Sprintf("Live E2E Ubuntu template for namespace %s", fx.NamespaceName)
+	if strings.TrimSpace(fx.NamespaceName) == "" {
+		description = "Live E2E Ubuntu template"
+	}
+
+	return templateFixture{
+		Name:         fx.TemplateName,
+		DisplayName:  "Ubuntu 22.04 (E2E)",
+		Description:  description,
+		SourceType:   "cdi_image_import",
+		ImageURL:     defaultTemplateImageURL,
+		CloudInit:    defaultTemplateCloudInit,
+		OsFamily:     "linux",
+		OsVersion:    "22.04",
+		CatalogScope: enttemplate.CatalogScopeAll,
+	}
+}
+
+func liveInstanceSizeFixtures(fx fixtureConfig) []instanceSizeFixture {
+	return []instanceSizeFixture{
+		{
+			Name:            fx.SizeName,
+			DisplayName:     "E2E Small",
+			Description:     "Small baseline overcommit profile for live E2E",
+			CPUCores:        1,
+			MemoryGi:        2,
+			DiskGB:          60,
+			CPURequest:      0.5,
+			MemoryRequestGi: 1,
+			CatalogScope:    entinstancesize.CatalogScopeAll,
+			SortOrder:       10,
+		},
+		{
+			Name:            "e2e-overcommit",
+			DisplayName:     "E2E Overcommit",
+			Description:     "CPU and memory overcommit example for live E2E",
+			CPUCores:        4,
+			MemoryGi:        8,
+			DiskGB:          80,
+			CPURequest:      2,
+			MemoryRequestGi: 6,
+			CatalogScope:    entinstancesize.CatalogScopeAll,
+			SortOrder:       20,
+		},
+		{
+			Name:            "e2e-dedicated",
+			DisplayName:     "E2E Dedicated CPU",
+			Description:     "Dedicated CPU example for live E2E",
+			CPUCores:        4,
+			MemoryGi:        8,
+			DiskGB:          80,
+			CPURequest:      4,
+			MemoryRequestGi: 8,
+			DedicatedCPU:    true,
+			SpecOverrides: nestedSpecOverrides(
+				map[string]interface{}{
+					"template": map[string]interface{}{
+						"spec": map[string]interface{}{
+							"domain": map[string]interface{}{
+								"cpu": map[string]interface{}{
+									"dedicatedCpuPlacement": true,
+								},
+							},
+						},
+					},
+				},
+			),
+			CatalogScope: entinstancesize.CatalogScopeAll,
+			SortOrder:    30,
+		},
+		{
+			Name:        "e2e-gpu",
+			DisplayName: "E2E GPU",
+			Description: "GPU workload example for live E2E",
+			CPUCores:    8,
+			MemoryGi:    16,
+			DiskGB:      120,
+			RequiresGPU: true,
+			SpecOverrides: nestedSpecOverrides(
+				map[string]interface{}{
+					"template": map[string]interface{}{
+						"spec": map[string]interface{}{
+							"domain": map[string]interface{}{
+								"devices": map[string]interface{}{
+									"gpus": []interface{}{
+										map[string]interface{}{"name": "gpu0", "deviceName": "nvidia.com/A10"},
+									},
+								},
+							},
+						},
+					},
+				},
+			),
+			CatalogScope: entinstancesize.CatalogScopeAll,
+			SortOrder:    40,
+		},
+		{
+			Name:              "e2e-hugepages",
+			DisplayName:       "E2E Hugepages",
+			Description:       "Hugepages workload example for live E2E",
+			CPUCores:          4,
+			MemoryGi:          8,
+			DiskGB:            80,
+			RequiresHugepages: true,
+			HugepagesSize:     "2Mi",
+			SpecOverrides: nestedSpecOverrides(
+				map[string]interface{}{
+					"template": map[string]interface{}{
+						"spec": map[string]interface{}{
+							"domain": map[string]interface{}{
+								"memory": map[string]interface{}{
+									"hugepages": map[string]interface{}{
+										"pageSize": "2Mi",
+									},
+								},
+							},
+						},
+					},
+				},
+			),
+			CatalogScope: entinstancesize.CatalogScopeAll,
+			SortOrder:    50,
+		},
+		{
+			Name:          "e2e-sriov",
+			DisplayName:   "E2E SR-IOV",
+			Description:   "SR-IOV workload example for live E2E",
+			CPUCores:      4,
+			MemoryGi:      8,
+			DiskGB:        80,
+			RequiresSriov: true,
+			SpecOverrides: nestedSpecOverrides(
+				map[string]interface{}{
+					"template": map[string]interface{}{
+						"spec": map[string]interface{}{
+							"domain": map[string]interface{}{
+								"devices": map[string]interface{}{
+									"interfaces": []interface{}{
+										map[string]interface{}{"name": "sriov-net-1"},
+									},
+								},
+							},
+						},
+					},
+				},
+			),
+			CatalogScope: entinstancesize.CatalogScopeAll,
+			SortOrder:    60,
+		},
+	}
+}
+
+func nestedSpecOverrides(spec map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{"spec": spec}
 }
 
 func ensureSystem(ctx context.Context, client *ent.Client, fx fixtureConfig) (string, error) {
@@ -448,8 +797,9 @@ func ensureService(ctx context.Context, client *ent.Client, fx fixtureConfig, sy
 }
 
 func ensureTemplate(ctx context.Context, client *ent.Client, fx fixtureConfig) error {
+	fixture := liveTemplateFixture(fx)
 	obj, err := client.Template.Query().
-		Where(enttemplate.NameEQ(fx.TemplateName)).
+		Where(enttemplate.NameEQ(fixture.Name)).
 		Only(ctx)
 	if err != nil {
 		if !ent.IsNotFound(err) {
@@ -458,58 +808,155 @@ func ensureTemplate(ctx context.Context, client *ent.Client, fx fixtureConfig) e
 		id, _ := uuid.NewV7()
 		_, createErr := client.Template.Create().
 			SetID(id.String()).
-			SetName(fx.TemplateName).
-			SetDisplayName("E2E Template").
-			SetDescription("e2e template - ContainerDisk boot").
-			SetSourceType("image").
-			SetImageURL("quay.io/containerdisks/ubuntu:22.04").
-			SetOsFamily("linux").
-			SetOsVersion("ubuntu-22.04").
+			SetName(fixture.Name).
+			SetDisplayName(fixture.DisplayName).
+			SetDescription(fixture.Description).
+			SetSourceType(fixture.SourceType).
+			SetImageURL(fixture.ImageURL).
+			SetCloudInit(fixture.CloudInit).
+			SetOsFamily(fixture.OsFamily).
+			SetOsVersion(fixture.OsVersion).
+			SetCatalogScope(fixture.CatalogScope).
 			SetEnabled(true).
 			SetCreatedBy("e2e-seed").
 			Save(ctx)
 		return createErr
 	}
 
+	// Normalize stale rows to the current ADR-0036 template shape so the admin
+	// edit form reads a complete, canonical record instead of mixed legacy fields.
 	_, err = client.Template.UpdateOneID(obj.ID).
-		SetDisplayName("E2E Template").
-		SetDescription("e2e template - ContainerDisk boot").
+		SetDisplayName(fixture.DisplayName).
+		SetDescription(fixture.Description).
+		SetSourceType(fixture.SourceType).
+		SetImageURL(fixture.ImageURL).
+		ClearPvcName().
+		ClearPvcNamespace().
+		SetCloudInit(fixture.CloudInit).
+		SetOsFamily(fixture.OsFamily).
+		SetOsVersion(fixture.OsVersion).
+		SetCatalogScope(fixture.CatalogScope).
 		SetEnabled(true).
 		Save(ctx)
 	return err
 }
 
 func ensureInstanceSize(ctx context.Context, client *ent.Client, fx fixtureConfig) error {
-	obj, err := client.InstanceSize.Query().
-		Where(entinstancesize.NameEQ(fx.SizeName)).
-		Only(ctx)
-	if err != nil {
-		if !ent.IsNotFound(err) {
+	fixtures := liveInstanceSizeFixtures(fx)
+	for i := range fixtures {
+		fixture := &fixtures[i]
+		if err := upsertInstanceSizeFixture(ctx, client, *fixture); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func resetManagedInstanceSizes(ctx context.Context, client *ent.Client) error {
+	_, err := client.InstanceSize.Delete().
+		Where(entinstancesize.CreatedByEQ(seedActor)).
+		Exec(ctx)
+	return err
+}
+
+func ensureExistingTemplate(ctx context.Context, client *ent.Client, templateName string) error {
+	_, err := client.Template.Query().
+		Where(enttemplate.NameEQ(templateName)).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return fmt.Errorf("template %q not found; seed API-managed fixtures before running cmd/e2e-seed with E2E_SKIP_API_MANAGED_FIXTURES=1", templateName)
+		}
+		return err
+	}
+	return nil
+}
+
+func ensureExistingInstanceSize(ctx context.Context, client *ent.Client, sizeName string) error {
+	_, err := client.InstanceSize.Query().
+		Where(entinstancesize.NameEQ(sizeName)).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return fmt.Errorf("instance size %q not found; seed API-managed fixtures before running cmd/e2e-seed with E2E_SKIP_API_MANAGED_FIXTURES=1", sizeName)
+		}
+		return err
+	}
+	return nil
+}
+
+func upsertInstanceSizeFixture(ctx context.Context, client *ent.Client, fixture instanceSizeFixture) error {
+	obj, err := client.InstanceSize.Query().
+		Where(entinstancesize.NameEQ(fixture.Name)).
+		Only(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		return err
+	}
+
+	if obj == nil {
 		id, _ := uuid.NewV7()
-		_, createErr := client.InstanceSize.Create().
+		create := client.InstanceSize.Create().
 			SetID(id.String()).
-			SetName(fx.SizeName).
-			SetDisplayName("E2E Small").
-			SetDescription("e2e size").
-			SetCPUCores(2).
-			SetMemoryGi(4.0).
-			SetDiskGB(40).
+			SetName(fixture.Name).
+			SetDisplayName(fixture.DisplayName).
+			SetDescription(fixture.Description).
+			SetCPUCores(fixture.CPUCores).
+			SetMemoryGi(fixture.MemoryGi).
+			SetDiskGB(fixture.DiskGB).
+			SetDedicatedCPU(fixture.DedicatedCPU).
+			SetRequiresGpu(fixture.RequiresGPU).
+			SetRequiresSriov(fixture.RequiresSriov).
+			SetRequiresHugepages(fixture.RequiresHugepages).
+			SetCatalogScope(fixture.CatalogScope).
+			SetSortOrder(fixture.SortOrder).
 			SetEnabled(true).
-			SetCreatedBy("e2e-seed").
-			Save(ctx)
+			SetCreatedBy(seedActor)
+		if fixture.CPURequest > 0 {
+			create = create.SetCPURequest(fixture.CPURequest)
+		}
+		if fixture.MemoryRequestGi > 0 {
+			create = create.SetMemoryRequestGi(fixture.MemoryRequestGi)
+		}
+		if fixture.HugepagesSize != "" {
+			create = create.SetHugepagesSize(fixture.HugepagesSize)
+		}
+		if len(fixture.SpecOverrides) > 0 {
+			create = create.SetSpecOverrides(fixture.SpecOverrides)
+		}
+		_, createErr := create.Save(ctx)
 		return createErr
 	}
 
-	_, err = client.InstanceSize.UpdateOneID(obj.ID).
-		SetDisplayName("E2E Small").
-		SetDescription("e2e size").
-		SetCPUCores(2).
-		SetMemoryGi(4.0).
-		SetDiskGB(40).
-		SetEnabled(true).
-		Save(ctx)
+	update := client.InstanceSize.UpdateOneID(obj.ID).
+		SetDisplayName(fixture.DisplayName).
+		SetDescription(fixture.Description).
+		SetCPUCores(fixture.CPUCores).
+		SetMemoryGi(fixture.MemoryGi).
+		SetDiskGB(fixture.DiskGB).
+		SetDedicatedCPU(fixture.DedicatedCPU).
+		SetRequiresGpu(fixture.RequiresGPU).
+		SetRequiresSriov(fixture.RequiresSriov).
+		SetRequiresHugepages(fixture.RequiresHugepages).
+		SetCatalogScope(fixture.CatalogScope).
+		SetSortOrder(fixture.SortOrder).
+		SetEnabled(true)
+	if fixture.CPURequest > 0 {
+		update = update.SetCPURequest(fixture.CPURequest)
+	} else {
+		update = update.ClearCPURequest()
+	}
+	if fixture.MemoryRequestGi > 0 {
+		update = update.SetMemoryRequestGi(fixture.MemoryRequestGi)
+	} else {
+		update = update.ClearMemoryRequestGi()
+	}
+	if fixture.HugepagesSize != "" {
+		update = update.SetHugepagesSize(fixture.HugepagesSize)
+	} else {
+		update = update.ClearHugepagesSize()
+	}
+	update = update.SetSpecOverrides(fixture.SpecOverrides)
+	_, err = update.Save(ctx)
 	return err
 }
 
