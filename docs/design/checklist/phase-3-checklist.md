@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/03-service-layer.md](../phases/03-service-layer.md)
 >
-> **Implementation Status**: 🔄 Partial (~60%) — Core DI/UseCase structure done, CI checks/sqlc/concurrency deferred
+> **Implementation Status**: 🔄 Partial (~80%) — Core DI/UseCase + ADR-0012 atomic path + sqlc + InstanceSize handler done; CI checks/concurrency deferred
 
 ---
 
@@ -43,7 +43,7 @@
   - [x] Create Service: **No approval required** (user self-service)
   - [x] Create VM: **Approval required** (consumes resources)
   - [x] Delete System: No approval, but must have no child Services
-  - [ ] Delete Service: No approval, but must have no child VMs
+  - [x] Delete Service: No approval, but must have no child VMs
 - [x] **VM Request Flow Implementation** complete
 - [x] **Hierarchical Delete Constraint (Delete Restrict)** implemented (SystemHandler checks child services)
 
@@ -60,9 +60,9 @@
 
 ## Transaction Integration (ADR-0012 Hybrid Atomic Transaction)
 
-- [ ] **sqlc Configuration and Code Generation** complete
-- [ ] **DatabaseClients Shared Pool** implemented
-- [ ] **CreateVMAtomicUseCase Implementation** complete
+- [x] **sqlc Configuration and Code Generation** complete (`internal/repository/sqlc/`)
+- [x] **DatabaseClients Shared Pool** implemented
+- [x] **CreateVMAtomicUseCase Implementation** complete (`internal/usecase/approval_atomic.go`)
 - [ ] **CI Block: sqlc Usage Scope Check** active
 - [ ] **Lock Key Standardization** implemented
 

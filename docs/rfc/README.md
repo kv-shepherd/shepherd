@@ -2,7 +2,9 @@
 
 > This directory contains RFCs for future features and enhancements.
 >
-> RFCs are proposals that have been evaluated but are not yet scheduled for implementation. Each RFC includes a trigger condition that indicates when it should be considered for implementation.
+> In this repository, RFCs are **feature/change proposals and backlog specs**,
+> not immutable architecture authorities. Each RFC includes a trigger condition
+> that indicates when it should be considered for implementation.
 
 ---
 
@@ -14,27 +16,37 @@
 | [RFC-0002](./RFC-0002-temporal.md) | Temporal Workflow Integration | Deferred | P3 | Multi-level approval needed |
 | [RFC-0003](./RFC-0003-helm-export.md) | Helm Chart Export | Deferred | P2 | User request |
 | [RFC-0004](./RFC-0004-external-approval.md) | External Approval Systems | **Accepted** | **P1** | V1+ optional feature |
-| [RFC-0005](./RFC-0005-event-archiving.md) | Physical Event Archiving ¹ | Deferred | P2 | DomainEvent table too large |
-| [RFC-0006](./RFC-0006-hot-reload.md) | Configuration Admin API ² | Deferred | P2 | Dynamic config via API |
+| [RFC-0005](./RFC-0005-event-archiving.md) | Physical Event Archiving | Deferred | P2 | DomainEvent table too large |
+| [RFC-0006](./RFC-0006-hot-reload.md) | Configuration Admin API | Deferred | P2 | Dynamic config via API |
 | [RFC-0007](./RFC-0007-redis-cache.md) | Redis Cache Support | Deferred | P3 | Cache miss causing bottleneck |
-| [RFC-0008](./RFC-0008-extended-auth.md) | Extended Auth Providers ⁴ | Deferred | P2 | MFA/SAML 2.0 or active token revocation required |
+| [RFC-0008](./RFC-0008-extended-auth.md) | Extended Auth Providers | Deferred | P2 | MFA/SAML 2.0 or active token revocation required |
 | [RFC-0009](./RFC-0009-pgbouncer.md) | PgBouncer Dual Pool | Deferred | P3 | Enterprise deployment |
 | [RFC-0010](./RFC-0010-observability.md) | Observability Stack | Deferred | P2 | Metrics/Tracing required |
-| [RFC-0011](./RFC-0011-vnc-console.md) | VNC Console (noVNC) ³⁴ | **Proposed** | **P1** | V1 core feature |
-| [RFC-0012](./RFC-0012-kubevirt-advanced.md) | KubeVirt Advanced Features ³ | Deferred | P2 | Snapshot/Clone/Migration |
-| [RFC-0013](./RFC-0013-vm-snapshot.md) | VM Snapshot ³ | Deferred | P2 | Backup/Restore needed |
-| [RFC-0014](./RFC-0014-vm-clone.md) | VM Clone ³ | Deferred | P2 | Rapid VM duplication |
+| [RFC-0011](./RFC-0011-vnc-console.md) | VNC Console (noVNC) | Deferred | P2 | Embedded noVNC UX, active revoke, or session recording needed |
+| [RFC-0012](./RFC-0012-kubevirt-advanced.md) | KubeVirt Advanced Features | Deferred | P2 | Snapshot/Clone/Migration |
+| [RFC-0013](./RFC-0013-vm-snapshot.md) | VM Snapshot | Deferred | P2 | Backup/Restore needed |
+| [RFC-0014](./RFC-0014-vm-clone.md) | VM Clone | Deferred | P2 | Rapid VM duplication |
 | [RFC-0015](./RFC-0015-per-cluster-concurrency.md) | Per-Cluster Concurrency | Deferred | P3 | Distributed semaphore needed |
 | [RFC-0016](./RFC-0016-key-rotation.md) | Secret Key Rotation | Proposed | P2 | Compliance or operator request |
 | [RFC-0017](./RFC-0017-external-secret-provider.md) | External Secret Provider | Deferred | P2 | Enterprise KMS/Vault requirement |
 | [RFC-0018](./RFC-0018-external-notification.md) | External Notification Channels | Deferred | P2 | V1 complete; Email/Webhook/Slack requested |
 | [RFC-0019](./RFC-0019-kubevirt-instancetype-adapter.md) | KubeVirt Instancetype Adapter | Deferred | P2 | Instancetype/Preference import-export or cross-cluster migration needed |
+| [RFC-0020](./RFC-0020-k8s-watch-acceleration.md) | Optional K8s Watch Acceleration | Deferred | P3 | Near-realtime VM drift visibility or read acceleration needed |
 
-> **Notes**:
-> - ¹ Soft archiving (`archived_at` field) is implemented in Phase 4; this RFC covers physical archiving to separate tables
-> - ² Basic hot-reload (log level, rate limits) is in Phase 0; this RFC covers API-based config changes
-> - ³ Provider interfaces defined in Phase 1-2; this RFC covers full implementation
-> - ⁴ **Scope reduced by ADR-0015**: Core functionality accepted in [ADR-0015](../adr/ADR-0015-governance-model-v2.md); RFC now covers only advanced features not in ADR. See individual RFC for details.
+## Implementation Reality Check (2026-03-11)
+
+| RFC | Current State |
+|-----|---------------|
+| [RFC-0004](./RFC-0004-external-approval.md) | Registry schema + provider-router foundation are implemented; external webhook/callback adapters are still pending. |
+| [RFC-0005](./RFC-0005-event-archiving.md) | Soft archiving via `archived_at` is implemented; this RFC only covers physical archive tables and purge. |
+| [RFC-0006](./RFC-0006-hot-reload.md) | Limited runtime hot-reload primitives exist; config admin API and multi-instance sync do not. |
+| [RFC-0008](./RFC-0008-extended-auth.md) | Auth-provider admin/plugin-management foundation is implemented; MFA, SAML, and active session revocation remain deferred. |
+| [RFC-0011](./RFC-0011-vnc-console.md) | Stage 6 VNC baseline is implemented end-to-end; this RFC now tracks optional V2+ noVNC/proxy/session enhancements. |
+| [RFC-0012](./RFC-0012-kubevirt-advanced.md), [RFC-0013](./RFC-0013-vm-snapshot.md), [RFC-0014](./RFC-0014-vm-clone.md) | Interfaces and domain types exist, but runtime Snapshot/Clone/Migration provider methods are still deferred. |
+| [RFC-0016](./RFC-0016-key-rotation.md) | Verification-side signing-key compatibility exists; full keyring rotation and re-encryption workflow do not. |
+| [RFC-0017](./RFC-0017-external-secret-provider.md) | `env`/DB bootstrap secret precedence is implemented; external Vault/KMS providers remain deferred. |
+| [RFC-0018](./RFC-0018-external-notification.md) | Internal inbox notification flow is implemented; external email/webhook/slack channels remain deferred. |
+| [RFC-0019](./RFC-0019-kubevirt-instancetype-adapter.md) | Optional instancetype/preference adapter remains fully deferred. |
 
 ---
 
@@ -43,9 +55,31 @@
 | Status | Description |
 |--------|-------------|
 | **Proposed** | Under active discussion |
-| **Accepted** | Approved for implementation (moved to project backlog) |
+| **Accepted** | Feature direction approved for implementation planning/backlog work; does **not** override ADR authority |
 | **Deferred** | Valuable but not currently prioritized |
 | **Rejected** | Evaluated and declined |
+
+---
+
+## Directory Semantics
+
+Use the documentation layers like this:
+
+| Directory | Purpose | Authority |
+|-----------|---------|-----------|
+| `docs/adr/` | Accepted architecture decisions and decision history | **Highest** for architecture; accepted ADRs are immutable |
+| `docs/rfc/` | Future feature proposals, optional capability specs, backlog candidates | Lower than ADR; may evolve until implemented or replaced |
+| `docs/design/notes/` | Implementation notes and rollout details for accepted ADRs | Supports ADRs, not a replacement for them |
+
+**Important rule**:
+- If a feature proposal requires a new architectural decision, create or amend an
+  **ADR**.
+- If a feature is merely optional/deferred future work under existing ADRs, an
+  **RFC** is appropriate.
+
+This means the `rfc/` directory is **not** a misuse in this repository, but it
+should be understood as a **feature backlog/spec directory**, not as an
+alternative authority system parallel to ADRs.
 
 ---
 
@@ -66,7 +100,7 @@ When an RFC's trigger condition is met:
 1. Update RFC status from `Deferred` to `Accepted`
 2. Create implementation tasks in the relevant project
 3. Link RFC to project CHECKLIST.md
-4. If RFC becomes an architectural decision, create corresponding ADR
+4. If implementation requires a new architecture-level commitment, create corresponding ADR
 
 ---
 

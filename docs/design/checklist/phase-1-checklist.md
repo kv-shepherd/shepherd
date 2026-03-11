@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/01-contracts.md](../phases/01-contracts.md)
 >
-> **Implementation Status**: 🔄 Partial (~90%) — Ent schemas complete, TS API types + frontend testing toolchain completed, contract CI hardening gaps remain
+> **Implementation Status**: 🔄 Partial (~92%) — 28 Ent schemas complete, Go/TS API types + frontend testing toolchain completed, contract CI hardening gaps remain
 
 ---
 
@@ -103,13 +103,13 @@
 
 > **Details**: See [CI README §API Contract-First](../ci/README.md#api-contract-first-enforcement-adr-0021-adr-0029) for full implementation guidance.
 
-- [x] `api/openapi.yaml` exists and is OpenAPI 3.1 canonical spec (953 lines, full P1 coverage)
-- [ ] `api/.vacuum.yaml` exists and `make api-lint` passes (ADR-0029: vacuum replaces spectral)
+- [x] `api/openapi.yaml` exists and is OpenAPI 3.1 canonical spec (97 operationIds, full scope coverage)
+- [x] `api/.vacuum.yaml` exists and `make api-lint` passes (ADR-0029: vacuum replaces spectral) — *implemented in `build/api.mk`*
 - [x] `api/oapi-codegen.yaml` exists and targets `internal/api/generated/` — *Phase 5: v2 format with gin-server + models*
 - [x] `make api-generate` produces:
-  - [x] `internal/api/generated/` Go server types — *Phase 5: 1393 lines, ServerInterface with 28 endpoints*
+  - [x] `internal/api/generated/` Go server types — *Phase 5: 5901 lines, ServerInterface with 97 endpoints*
   - [x] `web/src/types/api.gen.ts` TypeScript types — *Regenerated from `api/openapi.yaml`*
-- [ ] `make api-check` passes with no uncommitted generated changes
+- [x] `make api-check` passes with no uncommitted generated changes — *implemented in `build/api.mk` + `docs/design/ci/scripts/api-check.sh`*
 - [ ] If 3.1-only features are used:
   - [ ] `api/openapi.compat.yaml` is generated (3.0-compatible)
   - [ ] CI runs `make api-compat-generate` before `make api-compat`

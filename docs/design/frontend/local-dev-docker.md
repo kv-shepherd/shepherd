@@ -37,7 +37,17 @@ Provide a single-command local development workflow that starts and resets backe
 - remove running compose services
 - `down --volumes --remove-orphans`
 - rebuild backend/frontend images
-- re-seed development data
+- re-seed development data (`cmd/seed`)
+- by default also seed extended local fixtures (`cmd/e2e-seed`)
+
+## Seeded Accounts
+
+- bootstrap admin created by `cmd/seed`: `admin/admin`
+- local dev startup then immediately rotates that account to: `admin/admin123`
+- extended local fixture admin: `e2e-admin/e2e-admin-123`
+
+Set `DEV_ADMIN_PASSWORD=<password>` to override the post-seed local admin password.
+Set `DEV_INCLUDE_E2E_SEED=0` when you want the minimal baseline seed only.
 
 This is optimized for early development consistency over state persistence.
 

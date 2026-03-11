@@ -32,6 +32,21 @@ Implement a **pluggable external approval system** with the following characteri
 | **Timeout handling** | Configurable timeout with fallback behavior |
 | **Retry with backoff** | Exponential backoff for transient failures |
 
+## Current State (2026-03-11)
+
+Current codebase already implements the shared foundation for this RFC:
+
+- `external_approval_systems` schema and migration exist for adapter registry data
+- `ApprovalProviderRouter` is wired, with the built-in provider as the only active V1 backend
+- request submission handlers already route through the provider-router seam
+
+The following pieces are still not implemented:
+
+- outbound webhook adapters for ServiceNow/JIRA/internal OA
+- signed callback endpoint and polling-mode external decision ingestion
+- admin CRUD/API and UI for managing external approval systems
+- retry/timeout/fallback behavior against a real external backend
+
 ### Architecture
 
 ```

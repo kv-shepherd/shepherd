@@ -9,14 +9,14 @@
 
 | Component | Technology | Version | Notes |
 |-----------|------------|---------|-------|
-| Core Library | React | 19.x | Required by Next.js 15 |
-| Framework | Next.js | 15.x | App Router (server components) |
+| Core Library | React | 19.x | Required by Next.js 16 |
+| Framework | Next.js | 16.x | App Router (server components) |
 | Language | TypeScript | 5.8+ | Strict mode |
 | UI Library | Ant Design | 5.x | Enterprise UI components |
 | State Management | Zustand | 5.x | Lightweight state |
 | Data Fetching | TanStack Query | 5.x | Server state management |
-| i18n | react-i18next | 15.x | Internationalization |
-| Form Validation | Zod | 3.x | Schema validation |
+| i18n | react-i18next | 16.x | Internationalization |
+| Form Validation | Zod | 4.x | Schema validation |
 | Styling | Tailwind CSS | 4.x | Utility-first CSS |
 
 > **Version Source**: Always refer to [DEPENDENCIES.md](../DEPENDENCIES.md) for pinned versions.

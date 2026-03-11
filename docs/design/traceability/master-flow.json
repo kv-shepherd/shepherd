@@ -16,7 +16,8 @@
         "docs/adr/ADR-0023-schema-cache-and-api-standards.md"
       ],
       "examples": [
-        "docs/design/examples/config/config.go"
+        "docs/design/examples/config/config.go",
+        "docs/design/examples/handlers/health.go"
       ]
     },
     {

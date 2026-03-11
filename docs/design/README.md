@@ -129,7 +129,7 @@ docs/design/
 │  │  ────────────────────────────────────────────────────────────────────────────  │  │
 │  │   • SSA Apply (ADR-0011) with FieldOwner: kubevirt-shepherd                   │  │
 │  │   • Multi-cluster credential management                                       │  │
-│  │   • ResourceWatcher (List-Watch pattern)                                      │  │
+│  │   • Adaptive VM status sync (ADR-0038 polling baseline)                       │  │
 │  │   • Capability Detection (ADR-0014)                                           │  │
 │  └─────────────────────────────────┬─────────────────────────────────────────────┘  │
 │                                    │                                                 │
@@ -213,7 +213,7 @@ Do not update normative specs until acceptance.
 |-------|-------|-------------|--------|
 | [Phase 00](./phases/00-prerequisites.md) | Prerequisites | Project setup, toolchain, CI | ⬜ |
 | [Phase 01](./phases/01-contracts.md) | Contracts | Ent schemas, interfaces, DTOs | ⬜ |
-| [Phase 02](./phases/02-providers.md) | Providers | KubeVirt provider, watcher | ⬜ |
+| [Phase 02](./phases/02-providers.md) | Providers | KubeVirt provider, provider-side sync boundary | ⬜ |
 | [Phase 03](./phases/03-service-layer.md) | Service Layer | Business logic, transactions | ⬜ |
 | [Phase 04](./phases/04-governance.md) | Governance | Approval workflow, River Queue | ⬜ |
 

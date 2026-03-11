@@ -1,12 +1,13 @@
 # Phase 5: Authentication, API Completion & Frontend
 
-> **Status**: In Progress (~97%)
+> **Status**: In Progress (~96%)
 > **Started**: 2026-02-09
 > **Dependencies**: Phase 0-4 completed
+> **Last Audited**: 2026-03-10 (code-vs-doc alignment audit)
 
 ## Deliverables
 
-> **Last Updated**: 2026-02-14
+> **Last Updated**: 2026-03-10
 
 | Deliverable | File Path | Status | Notes |
 |-------------|-----------|--------|-------|
@@ -15,10 +16,10 @@
 | RBAC Middleware | `internal/middleware/rbac.go` | ✅ | RequirePermission + RequireResourceAccess |
 | Member Handler | `internal/api/handlers/member.go` | ✅ | ResourceRoleBinding CRUD + audit |
 | oapi-codegen config | `api/oapi-codegen.yaml` | ✅ | v2 format, gin-server + models |
-| Generated Server | `internal/api/generated/server.gen.go` | ✅ | 44 endpoints (ADR-0028 omitzero value types), all model types |
+| Generated Server | `internal/api/generated/server.gen.go` | ✅ | 97 endpoints (ADR-0028 omitzero value types), all model types |
 | openapi-typescript | `web/src/types/api.gen.ts` | ✅ | Auto-generated from OpenAPI spec |
 | Seed Command | `cmd/seed/main.go` | ✅ | 6 roles + default admin |
-| Bootstrap | `internal/app/bootstrap.go` | ✅ | 65 lines ≤ 100 limit (ADR-0022) |
+| Bootstrap | `internal/app/bootstrap.go` | ✅ | 107 file lines; `Bootstrap()` function is 55 lines and remains orchestration-only (see ADR-0043 design note) |
 | Frontend: Login | `web/src/app/(auth)/login/page.tsx` | ✅ | Force password change flow |
 | Frontend: Dashboard | `web/src/app/dashboard/page.tsx` | ✅ | System overview + health stats |
 | Frontend: Systems | `web/src/app/systems/page.tsx` | ✅ | CRUD + DELETE with RFC 1035 validation |
@@ -31,6 +32,17 @@
 | Frontend: Templates | `web/src/app/admin/templates/page.tsx` | ✅ | CRUD + column filters + deferred search + JSON spec editor |
 | Frontend: Instance Sizes | `web/src/app/admin/instance-sizes/page.tsx` | ✅ | CRUD + capability filters + sort + JSON spec_overrides editor |
 | Frontend: Users | `web/src/app/(protected)/admin/users/page.tsx` | ✅ | User directory + system member management |
+| Frontend: Auth Providers | `web/src/app/(protected)/admin/auth-providers/page.tsx` | ✅ | OIDC/LDAP provider CRUD + test connection + group sync |
+| Frontend: Rate Limits | `web/src/app/(protected)/admin/rate-limits/page.tsx` | ✅ | Exemptions/overrides admin management |
+| Frontend: Permissions | `web/src/app/(protected)/admin/permissions/page.tsx` | ✅ | Permission browser |
+| Frontend: RBAC | `web/src/app/(protected)/admin/rbac/page.tsx` | ✅ | Role + role binding management |
+| Frontend: Batch Overview | `web/src/app/(protected)/vms/batch/page.tsx` | ✅ | Batch operations list view |
+| Frontend: Batch Detail | `web/src/app/(protected)/vms/batch/[id]/page.tsx` | ✅ | Parent-child status + retry/cancel |
+| Frontend: VM Detail | `web/src/app/(protected)/vms/[id]/page.tsx` | ✅ | VM detail view |
+| Frontend: Notifications | `web/src/app/(protected)/notifications/page.tsx` | ✅ | Full notification inbox |
+| Frontend: Profile | `web/src/app/(protected)/profile/page.tsx` | ✅ | User profile view |
+| Frontend: Change Password | `web/src/app/(auth)/auth/change-password/page.tsx` | ✅ | Standalone password change |
+| Frontend: User Approvals | `web/src/app/(protected)/approvals/page.tsx` | ✅ | User-facing approvals view |
 | Namespace Handlers | `internal/api/handlers/server_namespace.go` | ✅ | CRUD with environment filter + confirm_name delete gate |
 | Notification Handlers | `internal/api/handlers/server_notification.go` | ✅ | List/UnreadCount/MarkRead/MarkAllRead + InboxSender + Triggers + Frontend Bell |
 | Admin Handlers | `internal/api/handlers/server_admin.go` | ✅ | Clusters/Templates/InstanceSizes + UpdateClusterEnvironment |
@@ -137,8 +149,8 @@ Phase 5 bridges the backend to a usable product by implementing:
 - **UI Components**: Ant Design 5.x + @ant-design/pro-components 2.x
 - **State Management**: Zustand 5.x + TanStack Query 5.x
 - **Styling**: Tailwind CSS 4.x
-- **Form Validation**: Zod 3.x
-- **Internationalization**: react-i18next 15.x
+- **Form Validation**: Zod 4.x
+- **Internationalization**: react-i18next 16.x
 - **API Client**: Generated from OpenAPI via `openapi-typescript` + `openapi-fetch`
 
 ### Contract-First Frontend Development
@@ -147,24 +159,33 @@ Phase 5 bridges the backend to a usable product by implementing:
 2. `openapi-fetch` creates type-safe API client (no manual typing)
 3. All API calls are fully typed end-to-end (OpenAPI → Go server → TS client)
 
-### Pages (MVP)
+### Pages (MVP — 25 routes)
 
 - Login page with force password change
+- Change password page (standalone)
 - Dashboard with system overview
 - System/Service CRUD management
-- VM lifecycle management (list, create request, power operations)
-- Approval workbench (admin)
+- VM lifecycle management (list, detail, request wizard, power operations)
+- Approval workbench (admin + user-facing views)
 - Audit log viewer (admin)
 - Clusters management (admin)
 - Namespaces management (admin: CRUD + confirm_name delete)
 - Templates management (admin: CRUD, column filters, deferred search)
 - Instance Sizes management (admin: CRUD, capability filters, sort)
+- Users management (admin)
+- Auth Providers management (admin: CRUD + test connection + group sync)
+- Rate Limits management (admin: exemptions/overrides)
+- Permissions browser (admin)
+- RBAC management (admin: roles + role bindings)
+- Batch operations (list + detail with parent-child status)
+- Notifications inbox
+- Profile page
 
 ---
 
 ## Architecture Constraints
 
-- `bootstrap.go` ≤ 100 lines (ADR-0022) — currently 65 lines
+- `Bootstrap()` remains orchestration-only and concise; file-level line count is not used as a mechanical quality gate (see ADR-0043 design note)
 - Manual DI only (ADR-0013)
 - OpenAPI spec is single source of truth (ADR-0021)
 - No hardcoded API types in frontend — all generated from contract

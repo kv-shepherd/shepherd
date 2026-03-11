@@ -10,6 +10,14 @@ V1 defers key rotation to reduce complexity. As deployments mature, operators wi
 require periodic rotation of `ENCRYPTION_KEY` and `SESSION_SECRET` without downtime
 or data loss.
 
+## Current State (2026-03-11)
+
+The codebase currently supports only a narrow verification-side compatibility
+path for auth JWT signing-key rollover via `security.jwt_verification_keys`.
+There is still no versioned keyring, re-encryption envelope migration, or
+operator rotation workflow for `ENCRYPTION_KEY` / `SESSION_SECRET`. This RFC
+therefore remains a true future design item.
+
 ## Proposed Solution
 
 Introduce a keyring model with versioned keys:

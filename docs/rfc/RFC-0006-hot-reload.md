@@ -9,7 +9,8 @@
 
 ## Problem
 
-Current configuration hot-reload uses file-based `fsnotify`. Future requirements may include:
+Current runtime configuration changes are intentionally narrow and process-local.
+Future requirements may include:
 - Runtime configuration changes via REST API
 - Multi-instance configuration synchronization
 - Configuration change audit trail
@@ -18,7 +19,11 @@ Current configuration hot-reload uses file-based `fsnotify`. Future requirements
 
 ## Current State
 
-V1.0 uses file-based hot-reload with fsnotify watching config files.
+V1.0 only has limited runtime hot-reload primitives today, most notably zap
+`AtomicLevel` for dynamic log-level changes. It does **not** yet provide a
+general configuration admin API or cross-instance synchronization. This RFC is
+therefore about a broader operator-facing config-management capability, not a
+description of shipped V1 behavior.
 
 ---
 

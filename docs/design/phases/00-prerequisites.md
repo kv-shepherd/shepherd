@@ -275,14 +275,13 @@ See [ci/README.md §Script Summary](../ci/README.md#script-summary) and
 | Endpoint | Purpose | Checks |
 |----------|---------|--------|
 | `/health/live` | Liveness probe | Process responsive |
-| `/health/ready` | Readiness probe | DB, River Worker, ResourceWatchers |
+| `/health/ready` | Readiness probe | DB, River Worker |
 
 ### Worker Health Monitoring
 
 | Worker | Heartbeat Timeout | Injected In |
 |--------|-------------------|-------------|
 | River Worker | 60s | Phase 4 |
-| ResourceWatcher | 120s | Phase 2 |
 
 ---
 

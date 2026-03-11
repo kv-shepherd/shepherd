@@ -2,9 +2,9 @@
 
 > **Detailed Document**: [phases/04-governance.md](../phases/04-governance.md)
 >
-> **Implementation Status**: 🔄 Partial (~99%) — Approval flow/ADR-0012 atomic commit/Audit log/Delete handlers/ApprovalValidator/Confirm params/Notification system (API+triggers+sender+frontend bell+retention cleanup)/Namespace CRUD handlers + frontend admin pages (Namespaces/Templates/InstanceSizes) completed; Environment isolation scheduling + visibility filtering implemented (approval+worker+query/read path); Stage 5.E backend + frontend queue UX baseline is closed (batch create/delete + batch power + admin override APIs + parent-child dispatch/counters + `status_url` tracking + 429 cooldown + affected-child feedback + `aria-live`), Stage 6 VNC baseline implemented (request/status/open + approval + audit + single-use credential + shared PG replay marker), remaining hardening primarily focuses on advanced credential encryption/proxy internals
+> **Implementation Status**: 🔄 Partial (~96%) — Approval flow/ADR-0012 atomic commit/Audit log/Delete handlers/ApprovalValidator/Confirm params/Notification system/Namespace CRUD/Batch Operations (Stage 5.E)/VNC token hardening (AES-256-GCM + shared replay marker)/Catalog Scope (ADR-0040)/Cluster Policy/VM Status Sync (ADR-0038)/Template+InstanceSize validators all completed; Reconciler + Template lifecycle management deferred
 >
-> **Last Audited**: 2026-02-15T22:35 (Session: Stage 6 replay marker hardening + PG cross-instance verification)
+> **Last Audited**: 2026-03-10T21:38 (Session: VNC token hardening + audit backfill)
 >
 > **Gate Checklist**: [../ci/GATE_HARDENING_CHECKLIST.md](../ci/GATE_HARDENING_CHECKLIST.md)
 
@@ -19,12 +19,12 @@
 | Stage | Description | Alignment | Key Gaps | Priority |
 |-------|-------------|-----------|----------|----------|
 | 5.A | VM Request Submission | ✅ 90% | Domain `PENDING` status is redundant (VM row not created until approval) | P2 |
-| 5.B | Admin Approval | ✅ 90% | Prod overcommit informational warning (`request ≠ limit`) not yet surfaced | P3 |
+| 5.B | Admin Approval | ✅ 95% | Prod overcommit informational warning already surfaced in approval UI; template lifecycle follow-ups remain deferred | P3 |
 | 5.C | VM Creation Execution | ✅ 95% | Provider-side hard idempotency (AlreadyExists/object ownership check) can be further strengthened | P3 |
 | 5.D | Delete Operations | ✅ 90% | VM tombstone cleanup policy after successful K8s deletion still pending | P2 |
 | 5.E | Batch Operations | ✅ 96% | Canonical API baseline + parent-child linkage + submit throttling (pending parent + global/min + pending child + cooldown) + parent approval dispatch to independent child workers + retry/cancel + parent projection table persisted counters + admin override APIs + `/vms/batch/power` compatibility execution + frontend queue UX (`status_url` polling / `429 Retry-After` countdown / affected-child feedback / `aria-live`) implemented; export-result UX pending | P2 |
 | 5.F | Notification System | ✅ 95% | V1 inbox notification flow implemented end-to-end (API + triggers + InboxSender + NotificationBell + 90-day retention cleanup) | P3 |
-| 6 | VNC Console Access | ⚠️ 95% | Stage 6 baseline + shared PG replay marker implemented; proxy internals + credential encryption hardening rollout validation pending | P2 |
+| 6 | VNC Console Access | ⚠️ 96% | Stage 6 baseline + shared PG replay marker + AES-256-GCM encrypted token envelope implemented; proxy internals + active revocation remain deferred | P2 |
 | Part 4 | State Machines | ✅ 90% | ~~`FAILED`, `DELETING`, `STOPPING` states~~ added; ~~`PENDING` clarified~~ as K8s-only | P2-done |
 
 ### Blocking Issues (must fix before further feature work)
@@ -182,7 +182,7 @@
 - [x] **EventDispatcher** implemented (`internal/domain/dispatcher.go`)
 - [ ] **Event Handlers** registered (deferred — wired at composition root)
 - [x] **Idempotency Guarantee** implemented (VM create event-label guard + unique River enqueue by args/queue)
-- [ ] **Soft Archiving** configured (deferred)
+- [x] **Soft Archiving** configured (`internal/jobs/event_archive.go` + periodic bootstrap registration; marks 30d-old terminal events with `archived_at`)
 
 ---
 
@@ -233,7 +233,7 @@
 - [x] `POST /api/v1/approvals/{id}/cancel` implemented and contract-defined
 - [x] **AuditLogger** implemented (`internal/governance/audit/logger.go`)
 - [x] **Approval API** endpoints complete (list/approve/reject/cancel)
-- [ ] Policy matching logic implemented (deferred)
+- [x] Policy matching logic implemented (`ApprovalRequirementService`: operation + environment + priority matching with default matrix fallback)
 - [ ] **Extensible Approval Handler Architecture** designed (deferred)
 - [x] **Notification Service (Reserved Interface)** defined (`internal/provider/auth.go`)
 - [x] **Notification Integration** implemented — Gateway calls `OnTicketApproved`/`OnTicketRejected`, handlers call `OnTicketSubmitted`
@@ -244,7 +244,7 @@
 - [x] **InstanceSize schema enhancement**: `dedicated_cpu`, `requires_gpu`, `requires_sriov`, `requires_hugepages`, `hugepages_size`, `spec_overrides` added
 - [x] **Resource Capability Matching**: Requirements are extracted from InstanceSize flags/spec_overrides and matched to cluster capabilities
 - [x] **Dedicated CPU + Overcommit Mutual Exclusion**: `dedicatedCpuPlacement` enforces blocking error when `cpu_request != cpu_limit`
-- [ ] **Prod Overcommit Warning**: `request ≠ limit` in prod environment → yellow informational warning
+- [x] **Prod Overcommit Warning**: `request ≠ limit` in prod environment → yellow informational warning
 
 ---
 
@@ -290,7 +290,7 @@
   - [x] Single-use token
   - [x] Time-bounded (max 2 hours)
   - [x] User-bound (`sub` binds token to requester user ID)
-  - [ ] AES-256-GCM encryption
+  - [x] AES-256-GCM encryption (encrypted JWT envelope, `ENCRYPTION_KEY`)
 - [x] Shared replay marker store (`jti` + `used_at`) works across replicas (no Redis dependency)
 - [x] V1 has **no active token revocation API** (documented limitation, see ADR-0015 §18.1 addendum); revocation capability is tracked as V2+ enhancement
 - [x] **VNC Session Audit** logging
