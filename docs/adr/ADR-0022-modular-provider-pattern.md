@@ -461,3 +461,17 @@ Upon acceptance, perform the following:
 ---
 
 _End of ADR-0022_
+
+---
+
+## Post-Acceptance Note (2026-03-11)
+
+`ADR-0043-bootstrap-orchestration-quality-gate.md` is currently in
+`proposed` status and remains under the repository's standard 48-hour review
+window. Until it is accepted, implementation-facing guidance for this
+clarification lives in
+`docs/design/notes/ADR-0043-bootstrap-orchestration-quality-gate.md`.
+
+This follow-up note does not change the accepted content of `ADR-0022`; it only
+clarifies the current review status of the proposed composition-root quality
+gate adjustment.
