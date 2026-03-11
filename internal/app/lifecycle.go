@@ -105,6 +105,11 @@ func (a *Application) refreshClusterHealth(ctx context.Context) error {
 		// Only persist when HEALTHY: avoid overwriting good features on transient failures.
 		if health.Status == provider.ClusterStatusHealthy {
 			update = update.SetEnabledFeatures(health.EnabledFeatures)
+			if health.StorageClassesDetected {
+				update = update.
+					SetStorageClasses(health.StorageClasses).
+					SetStorageClassesUpdatedAt(health.LastChecked)
+			}
 		}
 		if _, err := update.Save(ctx); err != nil {
 			logger.Warn("persist cluster health failed",

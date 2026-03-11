@@ -886,7 +886,10 @@ func newBatchBehaviorTestServer(t *testing.T) (*Server, *ent.Client) {
 	t.Helper()
 	_ = logger.Init("error", "json")
 	client := testutil.OpenEntPostgres(t, "batch_handler_behavior")
-	return NewServer(ServerDeps{EntClient: client}), client
+	return NewServer(ServerDeps{
+		EntClient:    client,
+		ApprovalReqs: service.NewApprovalRequirementService(client),
+	}), client
 }
 
 func newBatchBehaviorTestServerWithGateway(t *testing.T, writer *fakeDeleteAtomicWriter) (*Server, *ent.Client) {
@@ -895,8 +898,9 @@ func newBatchBehaviorTestServerWithGateway(t *testing.T, writer *fakeDeleteAtomi
 	client := testutil.OpenEntPostgres(t, "batch_handler_behavior_with_gateway")
 	gw := approval.NewGateway(client, nil, writer)
 	return NewServer(ServerDeps{
-		EntClient: client,
-		Gateway:   gw,
+		EntClient:    client,
+		ApprovalReqs: service.NewApprovalRequirementService(client),
+		Gateway:      gw,
 	}), client
 }
 

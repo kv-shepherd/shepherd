@@ -51,6 +51,18 @@ func NewClusterPolicyService(client *ent.Client) *ClusterPolicyService {
 	return &ClusterPolicyService{client: client}
 }
 
+// WithClient returns a shallow copy bound to a different ent client.
+// This is used for transaction-scoped work without constructing services
+// outside the composition root.
+func (s *ClusterPolicyService) WithClient(client *ent.Client) *ClusterPolicyService {
+	if s == nil {
+		return &ClusterPolicyService{client: client}
+	}
+	clone := *s
+	clone.client = client
+	return &clone
+}
+
 // GetByClusterID returns the policy row for one cluster.
 func (s *ClusterPolicyService) GetByClusterID(ctx context.Context, clusterID string) (*ent.ClusterPolicy, error) {
 	if s == nil || s.client == nil {
@@ -220,12 +232,35 @@ func (s *ClusterPolicyService) ValidateCreatePlacement(input ClusterPolicyValida
 
 	if sourceType == TemplateSourceCDIImageImport || sourceType == TemplateSourceCDIPVCClone {
 		if len(policy.AllowedStorageClasses) > 0 {
-			storageClass := effectiveStorageClass(input.SelectedStorage, input.Cluster.DefaultStorageClass)
-			if storageClass == "" {
-				return policyDeny("cluster policy requires an explicit allowed storage class")
+			selectedStorageClass := normalizeStorageClassName(input.SelectedStorage)
+			if selectedStorageClass == "" {
+				defaultStorageClass := normalizeStorageClassName(input.Cluster.DefaultStorageClass)
+				if defaultStorageClass == "" || !stringSliceContains(
+					policy.AllowedStorageClasses,
+					defaultStorageClass,
+					normalizeStorageClassName,
+				) {
+					return policyDenyWithCode(
+						"CLUSTER_POLICY_STORAGE_CLASS_REQUIRED",
+						"cluster policy requires an explicit allowed storage class",
+					)
+				}
+				selectedStorageClass = defaultStorageClass
 			}
-			if !stringSliceContains(policy.AllowedStorageClasses, storageClass, normalizeStorageClassName) {
-				return policyDeny(fmt.Sprintf("storage class %q is not allowed by cluster policy", storageClass))
+			if selectedStorageClass == "" {
+				return policyDenyWithCode(
+					"CLUSTER_POLICY_STORAGE_CLASS_REQUIRED",
+					"cluster policy requires an explicit allowed storage class",
+				)
+			}
+			if !stringSliceContains(
+				policy.AllowedStorageClasses,
+				selectedStorageClass,
+				normalizeStorageClassName,
+			) {
+				return policyDeny(
+					fmt.Sprintf("storage class %q is not allowed by cluster policy", selectedStorageClass),
+				)
 			}
 		}
 	}
@@ -287,15 +322,12 @@ func normalizeStorageClassName(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
-func effectiveStorageClass(selected, defaultStorageClass string) string {
-	if value := normalizeStorageClassName(selected); value != "" {
-		return value
-	}
-	return normalizeStorageClassName(defaultStorageClass)
+func policyDeny(message string) error {
+	return policyDenyWithCode("CLUSTER_POLICY_DENIED", message)
 }
 
-func policyDeny(message string) error {
-	return apperrors.BadRequest("CLUSTER_POLICY_DENIED", message)
+func policyDenyWithCode(code, message string) error {
+	return apperrors.BadRequest(code, message)
 }
 
 func clusterDisplayName(cl *ent.Cluster) string {

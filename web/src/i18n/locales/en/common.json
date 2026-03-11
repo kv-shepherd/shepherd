@@ -87,6 +87,7 @@
     "status.active": "Active",
     "status.disabled": "Disabled",
     "status.configured": "Configured",
+    "status.local_timezone": "Local TZ: {{timeZone}}",
     "systems.modal.create_title": "Create System",
     "systems.modal.edit_title": "Edit System",
     "systems.validation.name_required": "System name is required",

@@ -195,4 +195,108 @@ describe('useAdminTemplatesController', () => {
 
     expect(result.current.editExperimentalSourcesEnabled).toBe(true);
   });
+
+  it('hydrates edit form after the modal opens for image-import templates', () => {
+    vi.useFakeTimers();
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      return { mutate: vi.fn(), isPending: false, key: mutationCall };
+    });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminTemplatesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'tpl-1',
+        name: 'ubuntu-base',
+        display_name: 'Ubuntu Base',
+        description: 'Canonical live template',
+        catalog_scope: 'all',
+        os_family: 'linux',
+        os_version: '22.04',
+        enabled: true,
+        source_type: 'cdi_image_import',
+        image_url: 'docker://quay.io/containerdisks/ubuntu:22.04',
+        pvc_name: '',
+        pvc_namespace: '',
+        cloud_init: '#cloud-config\nusers:\n  - default',
+      } as never);
+    });
+
+    expect(editFormState.setFieldsValue).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.runAllTimers();
+    });
+
+    expect(editFormState.resetFields).toHaveBeenCalled();
+    expect(editFormState.setFieldsValue).toHaveBeenNthCalledWith(1, {
+      display_name: 'Ubuntu Base',
+      description: 'Canonical live template',
+      catalog_scope: 'all',
+      os_family: 'linux',
+      os_version: '22.04',
+      enabled: true,
+      source_type: 'cdi_image_import',
+      cloud_init: '#cloud-config\nusers:\n  - default',
+    });
+    expect(editFormState.setFieldsValue).toHaveBeenNthCalledWith(2, {
+      image_url: 'docker://quay.io/containerdisks/ubuntu:22.04',
+    });
+
+    vi.useRealTimers();
+  });
+
+  it('hydrates edit form after the modal opens for pvc-clone templates', () => {
+    vi.useFakeTimers();
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      return { mutate: vi.fn(), isPending: false, key: mutationCall };
+    });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminTemplatesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'tpl-2',
+        name: 'ubuntu-clone',
+        display_name: 'Ubuntu Clone',
+        description: 'PVC clone template',
+        catalog_scope: 'all',
+        os_family: 'linux',
+        os_version: '22.04',
+        enabled: true,
+        source_type: 'cdi_pvc_clone',
+        pvc_name: 'ubuntu-golden',
+        pvc_namespace: 'golden-images',
+        cloud_init: '#cloud-config\nusers:\n  - default',
+      } as never);
+    });
+
+    act(() => {
+      vi.runAllTimers();
+    });
+
+    expect(editFormState.resetFields).toHaveBeenCalled();
+    expect(editFormState.setFieldsValue).toHaveBeenNthCalledWith(1, {
+      display_name: 'Ubuntu Clone',
+      description: 'PVC clone template',
+      catalog_scope: 'all',
+      os_family: 'linux',
+      os_version: '22.04',
+      enabled: true,
+      source_type: 'cdi_pvc_clone',
+      cloud_init: '#cloud-config\nusers:\n  - default',
+    });
+    expect(editFormState.setFieldsValue).toHaveBeenNthCalledWith(2, {
+      pvc_name: 'ubuntu-golden',
+      pvc_namespace: 'golden-images',
+    });
+
+    vi.useRealTimers();
+  });
 });

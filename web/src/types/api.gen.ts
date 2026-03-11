@@ -1890,7 +1890,11 @@ export interface components {
              */
             catalog_scope?: "unclassified" | "test" | "prod" | "all";
             cpu_cores: number;
+            /** @description CPU request override in cores. Omitted when no explicit override is stored. */
+            cpu_request?: number;
             memory_gi: number;
+            /** @description Memory request override in Gi. Omitted when no explicit override is stored. */
+            memory_request_gi?: number;
             disk_gb?: number;
             dedicated_cpu?: boolean;
             requires_gpu?: boolean;
@@ -1901,6 +1905,7 @@ export interface components {
             spec_overrides?: {
                 [key: string]: unknown;
             };
+            sort_order?: number;
             enabled?: boolean;
             /** Format: date-time */
             created_at?: string;

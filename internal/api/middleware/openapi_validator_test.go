@@ -401,6 +401,114 @@ func TestOpenAPIValidatorAllowsDynamicAuthProviderConfigInRequestBody(t *testing
 	}
 }
 
+func TestOpenAPIValidatorAllowsDynamicInstanceSizeSpecOverridesInResponse(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/admin/instance-sizes", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"id":            "size-1",
+					"name":          "gpu-large",
+					"display_name":  "GPU Large",
+					"cpu_cores":     8,
+					"memory_gi":     16,
+					"catalog_scope": "all",
+					"enabled":       true,
+					"spec_overrides": gin.H{
+						"spec": gin.H{
+							"template": gin.H{
+								"spec": gin.H{
+									"domain": gin.H{
+										"devices": gin.H{
+											"gpus": []gin.H{
+												{
+													"name":       "gpu0",
+													"deviceName": "nvidia.com/A10",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/instance-sizes", http.NoBody)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for instance size response with dynamic spec_overrides, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsDynamicInstanceSizeSpecOverridesInRequestBody(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.POST("/api/v1/admin/instance-sizes", func(c *gin.Context) {
+		c.JSON(http.StatusCreated, gin.H{
+			"id":            "size-1",
+			"name":          "gpu-large",
+			"display_name":  "GPU Large",
+			"cpu_cores":     8,
+			"memory_gi":     16,
+			"catalog_scope": "all",
+			"enabled":       true,
+			"spec_overrides": gin.H{
+				"spec": gin.H{
+					"template": gin.H{
+						"spec": gin.H{
+							"domain": gin.H{
+								"devices": gin.H{
+									"gpus": []gin.H{
+										{
+											"name":       "gpu0",
+											"deviceName": "nvidia.com/A10",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+	})
+
+	reqBody := `{
+		"name":"gpu-large",
+		"display_name":"GPU Large",
+		"cpu_cores":8,
+		"memory_gi":16,
+		"catalog_scope":"all",
+		"enabled":true,
+		"spec_overrides":{
+			"spec":{
+				"template":{
+					"spec":{
+						"domain":{
+							"devices":{
+								"gpus":[{"name":"gpu0","deviceName":"nvidia.com/A10"}]
+							}
+						}
+					}
+				}
+			}
+		}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/instance-sizes", bytes.NewBufferString(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for instance size request with dynamic spec_overrides, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestOpenAPIValidatorStillRejectsUndeclaredAuthProviderRequestTopLevelField(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.POST("/api/v1/admin/auth-providers", func(c *gin.Context) {
@@ -491,6 +599,58 @@ func TestOpenAPIValidatorAllowsDynamicApprovalTicketPayloadInStrictMode(t *testi
 
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected 200 for dynamic approval ticket payload, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsDynamicAuditLogDetailsInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/audit-logs", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"id":            "log-1",
+					"action":        "system.create",
+					"resource_type": "system",
+					"resource_id":   "sys-1",
+					"actor":         "admin",
+					"created_at":    "2026-01-01T00:00:00Z",
+					"details": gin.H{
+						"system_id": "sys-1",
+						"name":      "shop",
+						"nested": gin.H{
+							"environment": "prod",
+						},
+					},
+				},
+				{
+					"id":            "log-2",
+					"action":        "cluster.upsert_policy",
+					"resource_type": "cluster_policy",
+					"resource_id":   "policy-1",
+					"actor":         "admin",
+					"created_at":    "2026-01-01T00:00:00Z",
+					"details": gin.H{
+						"cluster_id":  "cl-1",
+						"environment": "test",
+					},
+				},
+			},
+			"pagination": gin.H{
+				"page":        1,
+				"per_page":    20,
+				"total":       2,
+				"total_pages": 1,
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/audit-logs", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for audit log with dynamic details, got %d body=%s", resp.Code, resp.Body.String())
 	}
 }
 

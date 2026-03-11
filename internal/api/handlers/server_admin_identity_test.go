@@ -10,6 +10,7 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/internal/api/generated"
+	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
@@ -405,5 +406,9 @@ func newAdminIdentityTestServer(t *testing.T) (*Server, *ent.Client) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	client := testutil.OpenEntPostgres(t, "admin_identity")
-	return NewServer(ServerDeps{EntClient: client}), client
+	return NewServer(ServerDeps{
+		EntClient:     client,
+		ClusterPolicy: service.NewClusterPolicyService(client),
+		ApprovalReqs:  service.NewApprovalRequirementService(client),
+	}), client
 }

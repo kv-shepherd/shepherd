@@ -123,6 +123,72 @@ func TestListClusters_RequiresFilterSecondPageKeepsFilteredTotals(t *testing.T) 
 	}
 }
 
+func TestCreateCluster_CreatesDefaultPolicy(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/clusters",
+		`{
+			"name":"cluster-a",
+			"display_name":"Cluster A",
+			"environment":"prod",
+			"kubeconfig":"YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCmNsdXN0ZXJzOgotIG5hbWU6IGNsdXN0ZXItYQogIGNsdXN0ZXI6CiAgICBzZXJ2ZXI6IGh0dHBzOi8vY2x1c3Rlci5leGFtcGxlLmNvbQo="
+		}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.CreateCluster(c)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create cluster status = %d, want %d, body=%s", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	var resp generated.Cluster
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if !resp.PolicyConfigured {
+		t.Fatal("policy_configured = false, want true")
+	}
+	if resp.PolicySummary.Mode != generated.ClusterPolicySummaryMode("GUARDED") {
+		t.Fatalf("policy_summary.mode = %q, want GUARDED", resp.PolicySummary.Mode)
+	}
+
+	stored, err := client.Cluster.Query().Where(entcluster.NameEQ("cluster-a")).Only(ctx)
+	if err != nil {
+		t.Fatalf("load created cluster: %v", err)
+	}
+	policy, err := client.ClusterPolicy.Query().
+		Where(entclusterpolicy.ClusterIDEQ(stored.ID)).
+		Only(ctx)
+	if err != nil {
+		t.Fatalf("load default cluster policy: %v", err)
+	}
+	if !policy.AllowCPUOvercommit {
+		t.Fatal("allow_cpu_overcommit = false, want true")
+	}
+	if !policy.AllowMemoryOvercommit {
+		t.Fatal("allow_memory_overcommit = false, want true")
+	}
+	if !policy.AllowCdiClone {
+		t.Fatal("allow_cdi_clone = false, want true")
+	}
+	if policy.AllowDedicatedCPU {
+		t.Fatal("allow_dedicated_cpu = true, want false")
+	}
+	if policy.AllowGpu {
+		t.Fatal("allow_gpu = true, want false")
+	}
+	if policy.AllowSriov {
+		t.Fatal("allow_sriov = true, want false")
+	}
+	if policy.AllowHugepages {
+		t.Fatal("allow_hugepages = true, want false")
+	}
+}
+
 func TestListClusters_CreateCompatibilityFilterReturnsOnlyCompatibleTargets(t *testing.T) {
 	t.Parallel()
 
@@ -388,11 +454,121 @@ func TestListClusters_CreateCompatibilityFilterCanIncludeIncompatibleWithReasons
 	if itemsByID["cl-2"].Compatibility.Eligible {
 		t.Fatalf("cluster-b compatibility = %#v, want incompatible", itemsByID["cl-2"].Compatibility)
 	}
-	if itemsByID["cl-2"].Compatibility.ReasonCode != "CLUSTER_POLICY_DENIED" {
-		t.Fatalf("cluster-b reason_code = %q, want CLUSTER_POLICY_DENIED", itemsByID["cl-2"].Compatibility.ReasonCode)
+	if itemsByID["cl-2"].Compatibility.ReasonCode != "CLUSTER_POLICY_STORAGE_CLASS_REQUIRED" {
+		t.Fatalf(
+			"cluster-b reason_code = %q, want CLUSTER_POLICY_STORAGE_CLASS_REQUIRED",
+			itemsByID["cl-2"].Compatibility.ReasonCode,
+		)
 	}
 	if itemsByID["cl-2"].Compatibility.ReasonMessage == "" {
 		t.Fatal("cluster-b reason_message is empty")
+	}
+}
+
+func TestListClusters_CreateCompatibilityFilterMarksExplicitStorageClassRequirement(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	_, err := client.NamespaceRegistry.Create().
+		SetID("ns-1").
+		SetName("prod-a").
+		SetEnvironment(namespaceregistry.EnvironmentProd).
+		SetEnabled(true).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create namespace registry: %v", err)
+	}
+
+	_, err = client.Template.Create().
+		SetID("tpl-1").
+		SetName("fedora").
+		SetSourceType(service.TemplateSourceCDIImageImport).
+		SetImageURL("docker://quay.io/containerdisks/fedora:40").
+		SetCatalogScope("prod").
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+
+	_, err = client.InstanceSize.Create().
+		SetID("sz-1").
+		SetName("small").
+		SetCPUCores(2).
+		SetMemoryGi(4).
+		SetCatalogScope("prod").
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create instance size: %v", err)
+	}
+
+	_, err = client.Cluster.Create().
+		SetID("cl-1").
+		SetName("cluster-a").
+		SetDisplayName("cluster-a").
+		SetAPIServerURL("https://cluster.invalid").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetEnvironment(entcluster.EnvironmentProd).
+		SetStorageClasses([]string{"gold-sc", "silver-sc"}).
+		SetEnabledFeatures([]string{"LiveMigration"}).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster cl-1: %v", err)
+	}
+
+	_, err = client.ClusterPolicy.Create().
+		SetID("policy-1").
+		SetClusterID("cl-1").
+		SetAllowCPUOvercommit(true).
+		SetAllowMemoryOvercommit(true).
+		SetAllowDedicatedCPU(false).
+		SetAllowGpu(false).
+		SetAllowSriov(false).
+		SetAllowHugepages(false).
+		SetAllowCdiClone(true).
+		SetAllowedStorageClasses([]string{"gold-sc"}).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster policy policy-1: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/clusters?page=1&per_page=20&namespace=prod-a&template_id=tpl-1&instance_size_id=sz-1&include_incompatible=true",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListClusters(c, generated.ListClustersParams{
+		Page:                1,
+		PerPage:             20,
+		Namespace:           "prod-a",
+		TemplateId:          "tpl-1",
+		InstanceSizeId:      "sz-1",
+		IncludeIncompatible: true,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("list clusters include incompatible status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.ClusterList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("items len = %d, want 1", got)
+	}
+	if resp.Items[0].Compatibility.Eligible {
+		t.Fatalf("cluster compatibility = %#v, want incompatible", resp.Items[0].Compatibility)
+	}
+	if resp.Items[0].Compatibility.ReasonCode != "CLUSTER_POLICY_STORAGE_CLASS_REQUIRED" {
+		t.Fatalf("cluster reason_code = %q, want CLUSTER_POLICY_STORAGE_CLASS_REQUIRED", resp.Items[0].Compatibility.ReasonCode)
 	}
 }
 
@@ -809,5 +985,52 @@ func TestListClusters_ReportsGuardedPolicySummary(t *testing.T) {
 	}
 	if summary.AllowedHugepagesSizeCount != 2 {
 		t.Fatalf("allowed_hugepages_size_count = %d, want 2", summary.AllowedHugepagesSizeCount)
+	}
+}
+
+func TestListClusters_IncludesDetectedStorageClasses(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	_, err := client.Cluster.Create().
+		SetID("cl-storage").
+		SetName("cluster-storage").
+		SetDisplayName("cluster-storage").
+		SetAPIServerURL("https://cluster.invalid").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetDefaultStorageClass("fast-sc").
+		SetStorageClasses([]string{"fast-sc", "bulk-sc"}).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/clusters?page=1&per_page=20",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListClusters(c, generated.ListClustersParams{Page: 1, PerPage: 20})
+	if w.Code != http.StatusOK {
+		t.Fatalf("list clusters status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.ClusterList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if len(resp.Items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(resp.Items))
+	}
+	if got := resp.Items[0].StorageClasses; len(got) != 2 || got[0] != "fast-sc" || got[1] != "bulk-sc" {
+		t.Fatalf("storage_classes = %#v, want [fast-sc bulk-sc]", got)
+	}
+	if got := resp.Items[0].DefaultStorageClass; got != "fast-sc" {
+		t.Fatalf("default_storage_class = %q, want fast-sc", got)
 	}
 }

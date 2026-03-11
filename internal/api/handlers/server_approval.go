@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	entsql "entgo.io/ent/dialect/sql"
@@ -12,8 +15,11 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalticket"
+	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	entinstancesize "kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/predicate"
+	enttemplate "kv-shepherd.io/shepherd/ent/template"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
@@ -36,6 +42,7 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 	}
 
 	query := s.client.ApprovalTicket.Query()
+	query = query.Where(approvalticket.ParentTicketIDIsNil())
 
 	// Filter by status (omitzero: empty string = not specified).
 	if params.Status != "" {
@@ -113,6 +120,7 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 	// Batch-fetch domain events for all tickets.
 	vmInfoMap := make(map[string]vmTargetInfo) // keyed by event ID
 	eventPayloadMap := make(map[string][]byte) // keyed by event ID; value is raw JSON payload
+	eventByID := make(map[string]*ent.DomainEvent)
 	if len(allEventIDs) > 0 {
 		events, err := s.client.DomainEvent.Query().
 			Where(domainevent.IDIn(allEventIDs...)).
@@ -122,6 +130,7 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 			logger.Warn("failed to fetch domain events for approval tickets", zap.Error(err))
 		} else {
 			for _, ev := range events {
+				eventByID[ev.ID] = ev
 				// Store raw payload for all tickets.
 				eventPayloadMap[ev.ID] = ev.Payload
 				// Extract VM target info only for DELETE tickets.
@@ -141,6 +150,10 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 			}
 		}
 	}
+
+	templateIDs, instanceSizeIDs := collectApprovalCatalogLookupIDs(eventPayloadMap)
+	templateByID, instanceSizeByID := s.loadApprovalCatalogLookups(ctx, templateIDs, instanceSizeIDs)
+	batchProjectionByID := s.loadApprovalBatchProjections(ctx, tickets, eventByID)
 
 	createVMByTicketID := make(map[string]*ent.VM)
 	if len(createTicketIDs) > 0 {
@@ -171,6 +184,7 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 				)
 			}
 		}
+		enrichApprovalPayload(payloadMap, templateByID, instanceSizeByID, batchProjectionByID[t.ID])
 		var provisioning *generated.ProvisioningStatus
 		if t.OperationType == approvalticket.OperationTypeCREATE {
 			provisioning = s.loadVMProvisioning(ctx, createVMByTicketID[t.ID])
@@ -388,4 +402,214 @@ func placementEvaluationToAPI(snapshot map[string]interface{}) *generated.Placem
 		}
 	}
 	return result
+}
+
+func collectApprovalCatalogLookupIDs(eventPayloadMap map[string][]byte) (templateIDs, instanceSizeIDs []string) {
+	templateIDSet := make(map[string]struct{})
+	instanceSizeIDSet := make(map[string]struct{})
+	for _, raw := range eventPayloadMap {
+		if len(raw) == 0 {
+			continue
+		}
+		var payload map[string]interface{}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			continue
+		}
+		collectCatalogIDsFromPayload(payload, templateIDSet, instanceSizeIDSet)
+	}
+	return sortedStringSet(templateIDSet), sortedStringSet(instanceSizeIDSet)
+}
+
+func collectCatalogIDsFromPayload(
+	payload map[string]interface{},
+	templateIDs map[string]struct{},
+	instanceSizeIDs map[string]struct{},
+) {
+	if len(payload) == 0 {
+		return
+	}
+	if templateID := trimPayloadString(payload["template_id"]); templateID != "" {
+		templateIDs[templateID] = struct{}{}
+	}
+	if instanceSizeID := trimPayloadString(payload["instance_size_id"]); instanceSizeID != "" {
+		instanceSizeIDs[instanceSizeID] = struct{}{}
+	}
+	items, ok := payload["items"].([]interface{})
+	if !ok {
+		return
+	}
+	for _, item := range items {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if templateID := trimPayloadString(itemMap["template_id"]); templateID != "" {
+			templateIDs[templateID] = struct{}{}
+		}
+		if instanceSizeID := trimPayloadString(itemMap["instance_size_id"]); instanceSizeID != "" {
+			instanceSizeIDs[instanceSizeID] = struct{}{}
+		}
+	}
+}
+
+func sortedStringSet(values map[string]struct{}) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func trimPayloadString(value interface{}) string {
+	str, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(str)
+}
+
+func (s *Server) loadApprovalCatalogLookups(
+	ctx context.Context,
+	templateIDs []string,
+	instanceSizeIDs []string,
+) (templateByID map[string]*ent.Template, instanceSizeByID map[string]*ent.InstanceSize) {
+	templateByID = make(map[string]*ent.Template, len(templateIDs))
+	if len(templateIDs) > 0 {
+		templates, err := s.client.Template.Query().
+			Where(enttemplate.IDIn(templateIDs...)).
+			All(ctx)
+		if err != nil {
+			logger.Warn("failed to fetch templates for approval payload enrichment", zap.Error(err))
+		} else {
+			for _, tpl := range templates {
+				templateByID[tpl.ID] = tpl
+			}
+		}
+	}
+
+	instanceSizeByID = make(map[string]*ent.InstanceSize, len(instanceSizeIDs))
+	if len(instanceSizeIDs) > 0 {
+		sizes, err := s.client.InstanceSize.Query().
+			Where(entinstancesize.IDIn(instanceSizeIDs...)).
+			All(ctx)
+		if err != nil {
+			logger.Warn("failed to fetch instance sizes for approval payload enrichment", zap.Error(err))
+		} else {
+			for _, size := range sizes {
+				instanceSizeByID[size.ID] = size
+			}
+		}
+	}
+	return templateByID, instanceSizeByID
+}
+
+func (s *Server) loadApprovalBatchProjections(
+	ctx context.Context,
+	tickets []*ent.ApprovalTicket,
+	eventByID map[string]*ent.DomainEvent,
+) map[string]*ent.BatchApprovalTicket {
+	parentIDs := make([]string, 0)
+	for _, ticket := range tickets {
+		if ticket == nil {
+			continue
+		}
+		event := eventByID[ticket.EventID]
+		if event == nil || strings.TrimSpace(event.AggregateType) != "batch" {
+			continue
+		}
+		parentIDs = append(parentIDs, ticket.ID)
+	}
+	if len(parentIDs) == 0 {
+		return map[string]*ent.BatchApprovalTicket{}
+	}
+	rows, err := s.client.BatchApprovalTicket.Query().
+		Where(batchapprovalticket.IDIn(parentIDs...)).
+		All(ctx)
+	if err != nil {
+		logger.Warn("failed to fetch batch projections for approval list", zap.Error(err))
+		return map[string]*ent.BatchApprovalTicket{}
+	}
+	byID := make(map[string]*ent.BatchApprovalTicket, len(rows))
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+	return byID
+}
+
+func enrichApprovalPayload(
+	payload map[string]interface{},
+	templateByID map[string]*ent.Template,
+	instanceSizeByID map[string]*ent.InstanceSize,
+	batchProjection *ent.BatchApprovalTicket,
+) {
+	if len(payload) == 0 {
+		return
+	}
+	enrichApprovalPayloadItem(payload, templateByID, instanceSizeByID)
+	if items, ok := payload["items"].([]interface{}); ok {
+		for _, raw := range items {
+			item, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			enrichApprovalPayloadItem(item, templateByID, instanceSizeByID)
+		}
+		payload["batch_item_count"] = len(items)
+	}
+	if batchProjection != nil {
+		payload["batch_summary"] = map[string]interface{}{
+			"status":        string(batchProjection.Status),
+			"child_count":   batchProjection.ChildCount,
+			"success_count": batchProjection.SuccessCount,
+			"failed_count":  batchProjection.FailedCount,
+			"pending_count": batchProjection.PendingCount,
+		}
+	}
+}
+
+func enrichApprovalPayloadItem(
+	item map[string]interface{},
+	templateByID map[string]*ent.Template,
+	instanceSizeByID map[string]*ent.InstanceSize,
+) {
+	if len(item) == 0 {
+		return
+	}
+	if templateID := trimPayloadString(item["template_id"]); templateID != "" {
+		if tpl := templateByID[templateID]; tpl != nil {
+			item["template_name"] = tpl.Name
+			if strings.TrimSpace(tpl.DisplayName) != "" {
+				item["template_display_name"] = tpl.DisplayName
+				item["template_label"] = tpl.DisplayName
+			} else {
+				item["template_label"] = tpl.Name
+			}
+			if strings.TrimSpace(tpl.OsFamily) != "" {
+				item["template_os_family"] = tpl.OsFamily
+			}
+			if strings.TrimSpace(tpl.OsVersion) != "" {
+				item["template_os_version"] = tpl.OsVersion
+			}
+		}
+	}
+	if instanceSizeID := trimPayloadString(item["instance_size_id"]); instanceSizeID != "" {
+		if size := instanceSizeByID[instanceSizeID]; size != nil {
+			item["instance_size_name"] = size.Name
+			if strings.TrimSpace(size.DisplayName) != "" {
+				item["instance_size_display_name"] = size.DisplayName
+				item["instance_size_label"] = size.DisplayName
+			} else {
+				item["instance_size_label"] = size.Name
+			}
+			item["instance_size_disk_gb"] = size.DiskGB
+			item["instance_size_dedicated_cpu"] = size.DedicatedCPU
+			item["instance_size_cpu_cores"] = size.CPUCores
+			item["instance_size_memory_gi"] = size.MemoryGi
+			item["instance_size_catalog_scope"] = string(size.CatalogScope)
+		}
+	}
 }

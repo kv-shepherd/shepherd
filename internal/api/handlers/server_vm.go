@@ -999,6 +999,12 @@ func (s *Server) enqueueVMPowerOp(c *gin.Context, vm *ent.VM, operation string, 
 	}
 
 	// Enqueue River job (ADR-0006).
+	if s.riverClient == nil {
+		logger.Error("riverClient is nil — cannot enqueue VM power job (composition root misconfigured?)", zap.String("vm_id", vm.ID))
+		_, _ = s.client.DomainEvent.UpdateOneID(eventID.String()).SetStatus(domainevent.StatusFAILED).Save(ctx)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 	if _, err := s.riverClient.Insert(ctx, jobs.VMPowerArgs{
 		EventID:   eventID.String(),
 		Operation: operation,

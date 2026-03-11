@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -183,17 +184,12 @@ func collectFrontendUsage(root string, ops []operation) (map[string]bool, error)
 }
 
 func containsAPICall(text string, op operation) bool {
-	patterns := []string{
-		fmt.Sprintf("api.%s('%s'", op.Method, op.Path),
-		fmt.Sprintf("api.%s(\"%s\"", op.Method, op.Path),
-		fmt.Sprintf("api.%s(`%s`", op.Method, op.Path),
-	}
-	for _, p := range patterns {
-		if strings.Contains(text, p) {
-			return true
-		}
-	}
-	return false
+	method := regexp.QuoteMeta(op.Method)
+	path := regexp.QuoteMeta(op.Path)
+	pattern := regexp.MustCompile(
+		fmt.Sprintf(`api\s*\.\s*%s\s*\(\s*['"\x60]%s['"\x60]`, method, path),
+	)
+	return pattern.MatchString(text)
 }
 
 func loadAllowlist(path string) (map[string]struct{}, error) {
@@ -233,7 +229,7 @@ func loadAllowlist(path string) (map[string]struct{}, error) {
 
 func checkSystemDeleteConfirmGate(root string) error {
 	deleteFragments := []string{
-		"api.DELETE('/systems/{system_id}'",
+		"/systems/{system_id}",
 		"confirm_name",
 	}
 	var matchedFile string
@@ -253,10 +249,8 @@ func checkSystemDeleteConfirmGate(root string) error {
 			return readErr
 		}
 		text := string(b)
-		for _, frag := range deleteFragments {
-			if !strings.Contains(text, frag) {
-				return nil
-			}
+		if !quotedFragment(text, deleteFragments[0]) || !strings.Contains(text, deleteFragments[1]) {
+			return nil
 		}
 		matchedFile = path
 		return fs.SkipAll
@@ -272,6 +266,20 @@ func checkSystemDeleteConfirmGate(root string) error {
 		)
 	}
 	return nil
+}
+
+func quotedFragment(text, fragment string) bool {
+	patterns := []string{
+		fmt.Sprintf("'%s'", fragment),
+		fmt.Sprintf("\"%s\"", fragment),
+		fmt.Sprintf("`%s`", fragment),
+	}
+	for _, p := range patterns {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func mapValue(node *yaml.Node, key string) (*yaml.Node, bool) {
