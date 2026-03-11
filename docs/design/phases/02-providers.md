@@ -22,9 +22,20 @@ Implement infrastructure providers:
 - KubeVirt Provider (production)
 - Mock Provider (testing)
 - Anti-Corruption Layer (K8s → Domain mapping)
-- ResourceWatcher (List-Watch pattern)
+- Optional watch-based acceleration path (deferred; must not replace canonical sync)
 - Cluster health checking
 - Capability detection (ADR-0014)
+
+> **Status Sync Baseline (ADR-0038)**:
+>
+> V1 no longer treats `ResourceWatcher` as the canonical VM status convergence path.
+> The accepted baseline is **adaptive polling with `ResourceVersion` caching**
+> (`internal/jobs/vm_status_sync.go`), which keeps a **single authoritative**
+> synchronization mechanism.
+>
+> If a watch/informer path is revisited later, it MUST be an **optional,
+> non-authoritative acceleration layer** with polling/reconcile fallback, not a
+> second authoritative state pipeline.
 
 > **⚠️ Interface Composition Constraint (ADR-0004, ADR-0024)**:
 >
@@ -59,7 +70,7 @@ Implement infrastructure providers:
 | MockProvider | `internal/provider/mock.go` | ✅ | - |
 | Domain models | `internal/domain/` | ✅ | [examples/domain/vm.go](../examples/domain/vm.go) |
 | KubeVirtMapper | `internal/provider/mapper.go` | ✅ | - |
-| ResourceWatcher | `internal/provider/watcher.go` | ⬜ | Deferred |
+| ResourceWatcher | `internal/provider/watcher.go` | ⬜ | Deferred V2 acceleration only; see [RFC-0020](../../rfc/RFC-0020-k8s-watch-acceleration.md), not V1 baseline (ADR-0038) |
 | ClusterHealthChecker | `internal/provider/health_checker.go` | ✅ | - |
 | CapabilityDetector | `internal/provider/capability.go` | ✅ | - |
 
@@ -128,8 +139,10 @@ import "kubevirt.io/client-go/kubecli"
 // Create typed client
 virtClient, err := kubecli.GetKubevirtClientFromRESTConfig(restConfig)
 
-// Use Informer for List-Watch
-vmInformer := virtClient.VirtualMachine().Informer()
+// V1 baseline prefers typed client calls + ResourceVersion-aware polling (ADR-0038)
+vmList, err := virtClient.VirtualMachine(namespace).List(ctx, metav1.ListOptions{
+    ResourceVersion: lastSeenRV,
+})
 ```
 
 ### VM Operations
@@ -144,7 +157,18 @@ vmInformer := virtClient.VirtualMachine().Informer()
 
 ---
 
-## 3. ResourceWatcher
+## 3. ResourceWatcher (Deferred V2 Acceleration Only)
+
+> **Normative clarification**:
+>
+> - **Current authoritative path**: ADR-0038 adaptive polling with
+>   `ResourceVersion` caching.
+> - **Not allowed**: watch/informer and polling operating as two equal,
+>   long-term authoritative sync mechanisms.
+> - **If reintroduced later**: watch/informer may accelerate freshness or local
+>   cache warmup, but periodic polling/reconcile remains the consistency fallback.
+
+See also: [RFC-0020 Optional K8s Watch Acceleration](../../rfc/RFC-0020-k8s-watch-acceleration.md).
 
 ### List-Watch Pattern
 
@@ -163,6 +187,9 @@ Initial List → resourceVersion → Watch Events → Update Cache
 | 3 | **Do not** count toward circuit breaker (410 is normal) |
 | 4 | Read requests return stale data with `cache_status: STALE` |
 | 5 | Write requests return 503 (strong consistency) |
+
+> This section applies only if a future optional watch accelerator is introduced.
+> It is **not** a Phase 2 go-live requirement for the current V1 baseline.
 
 ### Circuit Breaker
 

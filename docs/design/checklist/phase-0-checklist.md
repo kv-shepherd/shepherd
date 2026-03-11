@@ -98,8 +98,8 @@
   - [x] Database connection status
   - [x] **Worker Health**: — *Injection points ready*
     - [x] River Worker heartbeat (Phase 4 injection) — *`SetRiverWorker()` ready, consumer deferred to [Phase 4](../phases/04-governance.md)*
-    - [x] ResourceWatcher heartbeat (Phase 2 injection) — *`AddResourceWatcher()` ready, consumer deferred to [Phase 2](../phases/02-providers.md)*
-    - [x] Heartbeat timeout: Worker 60s, Watcher 120s
+    - [x] Optional watch-accelerator heartbeat hook — *`AddResourceWatcher()` example hook remains available, but V1 baseline uses ADR-0038 polling instead of ResourceWatcher*
+    - [x] Heartbeat timeout baseline: Worker 60s; optional future watch accelerator may use longer timeout if introduced
 
 ---
 
@@ -111,7 +111,7 @@
 - [x] `internal/app/modules/module.go` defines `Module` interface
 - [x] `internal/app/modules/infrastructure.go` provides shared dependencies
 - [x] Domain modules created (vm.go, approval.go, governance.go, admin.go) — *Placeholder stubs, implementation in respective phases*
-- [x] **`bootstrap.go` does not exceed 100 lines** (Code Review enforcement) — *65 lines*
+- [x] **`Bootstrap()` remains orchestration-only and concise** (ADR-0022; pending ADR-0043 clarification note) — *current function body: 55 lines; file may exceed 100 due to helpers/comments*
 - [x] Each module is independently testable
 - [x] No Wire/Dig or reflection-based DI (CI enforcement per ADR-0013) — *`check_manual_di.sh` in CI*
 

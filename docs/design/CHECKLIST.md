@@ -22,11 +22,11 @@
 | Phase | Checklist | Specification | Status |
 |-------|-----------|---------------|--------|
 | Phase 0 | [checklist/phase-0-checklist.md](./checklist/phase-0-checklist.md) | [phases/00-prerequisites.md](./phases/00-prerequisites.md) | ✅ Complete (2026-02-09) |
-| Phase 1 | [checklist/phase-1-checklist.md](./checklist/phase-1-checklist.md) | [phases/01-contracts.md](./phases/01-contracts.md) | 🔄 Partial — Schemas + TS types + frontend testing toolchain ✅, contract CI hardening gaps |
-| Phase 2 | [checklist/phase-2-checklist.md](./checklist/phase-2-checklist.md) | [phases/02-providers.md](./phases/02-providers.md) | 🔄 Partial — Basic CRUD ✅, Snapshot/Clone/Migration ❌ |
-| Phase 3 | [checklist/phase-3-checklist.md](./checklist/phase-3-checklist.md) | [phases/03-service-layer.md](./phases/03-service-layer.md) | 🔄 Partial — Core DI/UseCase + ADR-0012 atomic path ✅, concurrency ❌ |
-| Phase 4 | [checklist/phase-4-checklist.md](./checklist/phase-4-checklist.md) | [phases/04-governance.md](./phases/04-governance.md) | 🔄 Partial — Approval/Audit/Atomic enqueue/Delete/Namespace CRUD/Notification system (API+triggers+sender+bell+retention cleanup) ✅, environment scheduling + visibility filtering ✅, Stage 5.E backend + frontend queue UX (`status_url` polling/429 cooldown/affected-child feedback/aria-live) ✅, Stage 6 VNC baseline + shared PG replay marker ✅ |
-| Phase 5 | [checklist/phase-5-checklist.md](./checklist/phase-5-checklist.md) | [phases/05-auth-api-frontend.md](./phases/05-auth-api-frontend.md) | 🔄 In Progress — Backend Auth ✅ (JWT hardening + bcrypt cost 12 + log redaction), 44 endpoints (ADR-0028 omitzero) ✅, Frontend routes feature-complete for Stage-5 (Users/member management included), E2E pending |
+| Phase 1 | [checklist/phase-1-checklist.md](./checklist/phase-1-checklist.md) | [phases/01-contracts.md](./phases/01-contracts.md) | 🔄 Partial (~92%) — 28 Ent schemas + TS/Go API types + frontend testing toolchain ✅, contract CI hardening gaps remain |
+| Phase 2 | [checklist/phase-2-checklist.md](./checklist/phase-2-checklist.md) | [phases/02-providers.md](./phases/02-providers.md) | 🔄 Partial (~65%) — Basic CRUD + SSAApplier + VMRenderer + AuthProvider Admin ✅, Snapshot/Clone/Migration deferred; V1 status sync uses ADR-0038 polling baseline |
+| Phase 3 | [checklist/phase-3-checklist.md](./checklist/phase-3-checklist.md) | [phases/03-service-layer.md](./phases/03-service-layer.md) | 🔄 Partial (~80%) — Core DI/UseCase + ADR-0012 atomic path + sqlc + InstanceSize handler ✅, concurrency semaphore/degradation ❌ |
+| Phase 4 | [checklist/phase-4-checklist.md](./checklist/phase-4-checklist.md) | [phases/04-governance.md](./phases/04-governance.md) | 🔄 Partial (~96%) — Approval/Audit/Atomic enqueue/Delete/Namespace CRUD/Notification system ✅, environment scheduling + visibility filtering ✅, Stage 5.E batch + queue UX ✅, Stage 6 VNC token hardening ✅, Catalog Scope + Cluster Policy + VM Status Sync (ADR-0038) + Template/InstanceSize validators ✅; Reconciler ❌ |
+| Phase 5 | [checklist/phase-5-checklist.md](./checklist/phase-5-checklist.md) | [phases/05-auth-api-frontend.md](./phases/05-auth-api-frontend.md) | 🔄 In Progress (~96%) — Backend Auth ✅ (JWT hardening + bcrypt cost 12 + log redaction), 97 endpoints (ADR-0028 omitzero) ✅, 25 frontend pages feature-complete (incl. AuthProvider/RateLimit/Batch/VNC management), E2E pending |
 
 ---
 
@@ -67,7 +67,7 @@
 5. ~~**P1** — Fix delete governance: cascade checks, approval ticket for VM delete, `DELETING` state usage~~ ✅ **Done** (2026-02-10)
 6. ~~**P2** — Ticket lifecycle: worker updates ticket `EXECUTING`→`SUCCESS/FAILED`~~ ✅ **Done** (2026-02-10)
 7. ~~**P1** — Align approval commit path to ADR-0012 (`sqlc + InsertTx`)~~ ✅ **Done** (2026-02-10)
-8. **P2/P3** — Batch API + child execution dispatch + two-layer throttling + parent projection + admin override APIs + `/vms/batch/power` + frontend queue UX completed (Stage 5.E baseline); Stage 6 VNC baseline completed with shared PG replay marker and now requires rollout validation + proxy internals/credential encryption hardening; Notification system ✅ (V1 inbox flow complete)
+8. ~~**P2/P3** — Batch API + child execution dispatch + two-layer throttling + parent projection + admin override APIs + `/vms/batch/power` + frontend queue UX~~ ✅ **Done** (Stage 5.E baseline complete); ~~Stage 6 VNC baseline with shared PG replay marker~~ ✅ **Done**; ~~VNC credential AES-256-GCM hardening~~ ✅ **Done** (`ENCRYPTION_KEY` + AES-256-GCM encrypted JWT envelope); Notification system ✅ (V1 inbox flow complete); VM Status Sync Worker (ADR-0038) ✅; Catalog Scope separation (ADR-0040) ✅
 
 ### CI Checks
 
@@ -94,7 +94,7 @@
 
 | Constraint | ADR | Verification Method |
 |------------|-----|---------------------|
-| `bootstrap.go` < 100 lines | ADR-0022 | Manual review |
+| `Bootstrap()` stays orchestration-only and concise | ADR-0022 + pending ADR-0043 note | Manual review |
 | Provider interfaces use embedding | ADR-0024 | Verify `KubeVirtProvider` embeds capability interfaces |
 | Optional fields use `omitzero` | ADR-0028 | Verify generated types (when ADR accepted) |
 | Service layer uses narrow interfaces | ADR-0024 | No dependency on full `KubeVirtProvider` when subset suffices |
@@ -177,11 +177,11 @@ The following items are moved to [RFC directory](../rfc/):
 | Phase | Status | Completion Date | Verified By |
 |-------|--------|-----------------|-------------|
 | Phase 0 | ✅ Complete | 2026-02-09 | CI green (go vet/build/test) |
-| Phase 1 | 🔄 Partial (~90%) | - | Schemas + TS API types + frontend testing toolchain done, contract CI hardening gaps |
-| Phase 2 | 🔄 Partial (~50%) | - | Basic VM CRUD, advanced ops deferred |
-| Phase 3 | 🔄 Partial (~70%) | - | Core DI/UseCase + ADR-0012 atomic approval done, concurrency deferred |
-| Phase 4 | 🔄 Partial (~99%) | - | Approval/Audit/Delete/atomic enqueue/Namespace CRUD/Notification system (+retention cleanup) done, namespace↔cluster env matching + RBAC env visibility filtering enforced, Stage 5.E batch submit/query/retry/cancel (+ `POST /vms/batch/power`) + child execution dispatch + two-layer throttling + parent projection + admin override APIs + frontend queue UX (`status_url` polling + 429 cooldown + affected-child feedback + aria-live) implemented, Stage 6 VNC baseline + shared PG replay marker implemented (cookie bootstrap + approval flow), noVNC proxy internals/credential encryption hardening pending |
-| Phase 5 | 🔄 In Progress (~93%) | - | Backend auth ✅, API gen 44 endpoints (ADR-0028 omitzero) ✅, frontend routes feature-complete for Stage-5 (Users/member-management included), E2E pending |
+| Phase 1 | 🔄 Partial (~92%) | - | 28 Ent schemas + Go/TS API types + frontend testing toolchain done, contract CI hardening gaps |
+| Phase 2 | 🔄 Partial (~65%) | - | Basic VM CRUD + SSAApplier + VMRenderer + AuthProvider Admin done; Snapshot/Clone/Migration deferred; ResourceWatcher docs superseded in V1 by ADR-0038 polling baseline |
+| Phase 3 | 🔄 Partial (~80%) | - | Core DI/UseCase + ADR-0012 atomic approval + sqlc + InstanceSize handler done; concurrency semaphore/degradation deferred |
+| Phase 4 | 🔄 Partial (~96%) | - | Approval/Audit/Delete/Notification/Batch/VNC hardening/Catalog Scope/Cluster Policy/VM Status Sync (ADR-0038)/Template+InstanceSize validators done; Reconciler deferred |
+| Phase 5 | 🔄 In Progress (~96%) | - | Backend auth ✅, API gen 97 endpoints (ADR-0028 omitzero) ✅, 25 frontend pages feature-complete (incl. AuthProvider/RateLimit/Batch/Profile management), E2E pending |
 
 ---
 

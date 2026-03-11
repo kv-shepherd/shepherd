@@ -26,7 +26,7 @@ type HealthHandler struct {
 	client           *ent.Client
 	pool             *pgxpool.Pool
 	riverWorker      WorkerStatus   // Injected in Phase 4
-	resourceWatchers []WorkerStatus // One per cluster
+	resourceWatchers []WorkerStatus // Optional future watch accelerators, one per cluster
 }
 
 // NewHealthHandler creates a new health check handler.
@@ -43,7 +43,8 @@ func (h *HealthHandler) SetRiverWorker(w WorkerStatus) {
 	h.riverWorker = w
 }
 
-// AddResourceWatcher adds a ResourceWatcher reference (called in Phase 2).
+// AddResourceWatcher adds an optional watch-accelerator reference.
+// V1 baseline uses ADR-0038 adaptive polling instead of mandatory ResourceWatcher injection.
 func (h *HealthHandler) AddResourceWatcher(w WorkerStatus) {
 	h.resourceWatchers = append(h.resourceWatchers, w)
 }
@@ -99,7 +100,7 @@ func (h *HealthHandler) Ready(c *gin.Context) {
 		}
 	}
 
-	// ========== Resource Watchers Check ==========
+	// ========== Optional Watch Accelerators Check ==========
 	if len(h.resourceWatchers) > 0 {
 		watchersStatus := make([]map[string]interface{}, 0, len(h.resourceWatchers))
 		watchersHealthy := true

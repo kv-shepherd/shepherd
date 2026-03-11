@@ -5,8 +5,15 @@
 > **Trigger**: Rapid VM duplication required
 
 > **Implementation Boundary**:
-> - **Provider-level methods** (CloneVM, GetVMClone, etc.) are implemented in **Phase 2**
-> - **This RFC covers Service-level orchestration**: data masking, cross-cluster clone, CI/CD integration
+> - **Provider interfaces and domain types** are defined in Phase 1-2
+> - **Runtime clone provider methods** are **not** implemented in V1
+> - **This RFC covers both future provider implementation and service-level orchestration**: data masking, cross-cluster clone, CI/CD integration
+
+## Current State (2026-03-11)
+
+The `CloneProvider` seam exists in `internal/provider/interface.go`, but no
+KubeVirt-backed clone runtime is currently wired into services or handlers.
+Treat this RFC as deferred capability work rather than completed Phase 2 scope.
 
 ---
 
@@ -30,13 +37,13 @@ type CloneService struct {
 
 // CloneVM creates a clone from existing VM
 func (s *CloneService) CloneVM(ctx context.Context, input CloneVMInput) (*Clone, error) {
-    return s.provider.CloneVM(ctx, CloneSpec{
-        SourceVMName:  input.SourceVMName,
-        Namespace:     input.Namespace,
-        ClusterName:   input.ClusterName,
-        TargetName:    input.TargetName,
-        TargetNS:      input.TargetNamespace,
-    })
+    return s.provider.CloneVM(
+        ctx,
+        input.ClusterName,
+        input.Namespace,
+        input.SourceVMName,
+        input.TargetName,
+    )
 }
 ```
 

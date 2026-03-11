@@ -43,6 +43,18 @@ type InboxSender struct {
 > - **Internal Inbox** (V1): Synchronous writes within business transaction
 > - **External Channels** (V2+): Async via River Queue for retry resilience
 
+## Current State (2026-03-11)
+
+That V1 foundation is already implemented end-to-end:
+
+- `Sender` interface plus `InboxSender`
+- approval/governance triggers wired to notification writes
+- notification API handlers and frontend bell/unread flows
+- retention cleanup for old inbox notifications
+
+This RFC therefore covers only the external-channel fanout that remains
+deferred: email, webhook, Slack/Teams, async retries, and user preferences.
+
 ---
 
 ## Proposed Solution

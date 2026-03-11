@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/05-auth-api-frontend.md](../phases/05-auth-api-frontend.md)
 >
-> **Implementation Status**: 🔄 In Progress (2026-02-14) — Backend + frontend member/user management landed, E2E verification pending
+> **Implementation Status**: 🔄 In Progress (~96%, 2026-03-10) — Backend + frontend feature-complete (97 endpoints, 25 pages), E2E verification pending
 >
 > **Gate Checklist**: [../ci/GATE_HARDENING_CHECKLIST.md](../ci/GATE_HARDENING_CHECKLIST.md)
 
@@ -46,7 +46,7 @@
 ## API Contract-First Code Generation (ADR-0021)
 
 - [x] `api/oapi-codegen.yaml` v2 format with gin-server + models generation
-- [x] `internal/api/generated/server.gen.go` — 44 endpoints (omitzero value types via ADR-0028), all model types
+- [x] `internal/api/generated/server.gen.go` — 97 endpoints (omitzero value types via ADR-0028), all model types
 - [x] `make api-gen` Makefile target
 - [x] `make ent-gen` Makefile target
 - [x] `make generate` composite target (ent-gen + api-gen)
@@ -88,24 +88,24 @@
 - [x] **River Client**: `InitRiverClient()` in `database.go` with riverpgxv5
 - [x] **Worker Registration**: VMCreateWorker in bootstrap composition root
 - [x] **Atlas Migration Config**: `migrations/atlas/atlas.hcl`
-- [x] **bootstrap.go**: 65 lines ≤ 100 line limit (ADR-0022)
+- [x] **Bootstrap composition root**: `Bootstrap()` remains orchestration-only and concise (current function body: 55 lines; file may exceed 100 due to helpers/comments, see ADR-0043 design note)
 - [x] **Seed Command**: `cmd/seed/main.go` with 6 built-in roles + default admin
 
 ---
 
 ## Frontend Application (ADR-0020)
 
-> **Note**: Frontend rebuilt with Next.js 15 + Ant Design 5 per ADR-0020 decision.
+> **Note**: Frontend rebuilt with Next.js 16 + Ant Design 5 per ADR-0020 decision.
 > Scaffold operational as of 2026-02-10.
 
-- [x] **Project Scaffold**: Next.js 15 (App Router) + React 19 + TypeScript 5.8+ (strict)
+- [x] **Project Scaffold**: Next.js 16 (App Router) + React 19 + TypeScript 5.8+ (strict)
 - [x] **UI Components**: Ant Design 5.x + @ant-design/pro-components 2.x
 - [x] **State Management**: Zustand 5.x + TanStack Query 5.x
 - [x] **Styling**: Tailwind CSS 4.x
-- [ ] **Form Validation**: Zod 3.x (i18n validation messages pending)
-- [x] **Internationalization**: react-i18next 15.x (en + zh-CN, 5 namespaces)
+- [ ] **Form Validation**: Zod 4.x (i18n validation messages pending)
+- [x] **Internationalization**: react-i18next 16.x (en + zh-CN, 5 namespaces)
 - [x] **API Client**: openapi-typescript + openapi-fetch (type-safe from contract)
-- [x] **Pages feature-complete** (13/13 routes exist and are production-ready for current Stage-5 scope):
+- [x] **Pages feature-complete** (25/25 routes exist and are production-ready for current scope):
   - [x] Login page (with force password change flow)
   - [x] Dashboard / System overview (real API: health, stats)
   - [x] System CRUD management (GET/POST/DELETE with RFC 1035 validation)
@@ -118,6 +118,17 @@
   - [x] Templates management (admin: CRUD list/forms + column filters + useDeferredValue search)
   - [x] Instance Sizes management (admin: CRUD list/forms + capability filters + sort)
   - [x] Users management page (admin) — user directory + system member CRUD (`web/src/app/(protected)/admin/users/page.tsx`)
+  - [x] Auth Providers management page (admin) — OIDC/LDAP provider CRUD + test connection + group sync + group mappings
+  - [x] Rate Limits management page (admin) — exemptions/overrides admin management
+  - [x] Permissions browser page (admin) — permission list
+  - [x] RBAC management page (admin) — roles + role bindings
+  - [x] Batch operations list page — batch overview
+  - [x] Batch detail page — parent-child status + retry/cancel
+  - [x] VM detail page — VM detail view with provisioning status
+  - [x] Notifications inbox page — full inbox view
+  - [x] Profile page — user profile
+  - [x] Change password page (standalone) — separate from login flow
+  - [x] User-facing approvals page — user's own approval view
 - [x] **Auth Integration**: JWT token in localStorage, auto-attach via middleware, 401 redirect
 - [x] **openapi-typescript** generates `web/src/types/api.gen.ts`
 - [x] **Notification Bell** (`web/src/components/ui/NotificationBell.tsx`):

@@ -21,6 +21,18 @@
 > | **SAML 2.0 Support** | ❌ Not covered | **Deferred** |
 > | **Advanced Session Management** | ❌ Not covered | **Deferred** |
 
+## Current State (2026-03-11)
+
+The codebase already includes auth-provider management foundations:
+
+- admin CRUD/type-list/test/sample/group-mapping APIs for auth providers
+- pluggable admin adapter registry with built-in `generic`, `oidc`, `ldap`, and `sso` descriptors
+- JWT middleware support for optional `jwt_verification_keys` during signing-key rollover
+
+This RFC should therefore be read as future work for MFA, SAML 2.0, and active
+session revocation. It should **not** be interpreted as evidence that full
+external login/callback runtime is already complete.
+
 ---
 
 ## Problem
