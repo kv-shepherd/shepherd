@@ -221,6 +221,10 @@ func (c *kubevirtStorageClassClient) Get(ctx context.Context, name string, opts 
 	return c.client.StorageV1().StorageClasses().Get(ctx, name, opts)
 }
 
+func (c *kubevirtStorageClassClient) List(ctx context.Context, opts k8smetav1.ListOptions) (*storagev1.StorageClassList, error) {
+	return c.client.StorageV1().StorageClasses().List(ctx, opts)
+}
+
 type kubevirtEventClient struct {
 	client kubecli.KubevirtClient
 }

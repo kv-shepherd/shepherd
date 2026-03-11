@@ -70,6 +70,7 @@ type PersistentVolumeClaimClient interface {
 // StorageClassClient abstracts cluster-scoped StorageClass reads.
 type StorageClassClient interface {
 	Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*storagev1.StorageClass, error)
+	List(ctx context.Context, opts k8smetav1.ListOptions) (*storagev1.StorageClassList, error)
 }
 
 // EventClient abstracts namespace-scoped Kubernetes Event reads.

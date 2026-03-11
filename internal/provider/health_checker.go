@@ -3,10 +3,12 @@ package provider
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
+	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
@@ -27,8 +29,12 @@ type ClusterHealth struct {
 	Status          ClusterStatus `json:"status"`
 	KubeVirtVersion string        `json:"kubevirt_version,omitempty"`
 	EnabledFeatures []string      `json:"enabled_features,omitempty"` // ADR-0014: merged GA + explicit featureGates
-	LastChecked     time.Time     `json:"last_checked"`
-	Error           string        `json:"error,omitempty"`
+	StorageClasses  []string      `json:"storage_classes,omitempty"`  // ADR-0015: auto-detected cluster StorageClasses
+	// StorageClassesDetected distinguishes a successful empty detection result from
+	// a degraded health check where StorageClass listing was skipped or failed.
+	StorageClassesDetected bool      `json:"storage_classes_detected,omitempty"`
+	LastChecked            time.Time `json:"last_checked"`
+	Error                  string    `json:"error,omitempty"`
 }
 
 // ClusterHealthChecker performs periodic health checks on registered clusters.
@@ -117,6 +123,19 @@ func (c *ClusterHealthChecker) CheckCluster(ctx context.Context, clusterName str
 		}
 	}
 
+	if storageClient := client.StorageClass(); storageClient != nil {
+		storageClasses, detectErr := detectStorageClasses(ctx, storageClient)
+		if detectErr != nil {
+			logger.Warn("storage class detection failed",
+				zap.String("cluster", clusterName),
+				zap.Error(detectErr),
+			)
+		} else {
+			health.StorageClasses = storageClasses
+			health.StorageClassesDetected = true
+		}
+	}
+
 	return health
 }
 
@@ -176,4 +195,22 @@ func (c *ClusterHealthChecker) checkAll(ctx context.Context, clusterNames []stri
 		health := c.CheckCluster(ctx, name)
 		c.UpdateHealth(health)
 	}
+}
+
+func detectStorageClasses(ctx context.Context, storageClient StorageClassClient) ([]string, error) {
+	list, err := storageClient.List(ctx, k8smetav1.ListOptions{ResourceVersion: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, 0, len(list.Items))
+	for i := range list.Items {
+		item := &list.Items[i]
+		if item.Name == "" {
+			continue
+		}
+		names = append(names, item.Name)
+	}
+	sort.Strings(names)
+	return names, nil
 }
