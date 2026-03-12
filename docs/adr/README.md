@@ -50,6 +50,7 @@
 | [ADR-0040](./ADR-0040-catalog-scope-for-template-and-instancesize.md) | Catalog Scope for Template and InstanceSize | **Accepted** | - |
 | [ADR-0041](./ADR-0041-power-operation-approval-requirement-service.md) | Power Operation Approval Requirement Service | **Accepted** | - |
 | [ADR-0042](./ADR-0042-cluster-policy-governance-model.md) | Explicit Cluster Policy Governance Model | **Accepted** | - |
+| [ADR-0044](./ADR-0044-frontend-built-in-preset-catalog-boundary.md) | Frontend Built-In Preset Catalog Boundary | **Proposed** | - |
 
 > ℹ️ **ADR-0037 Sync Notes**:
 >
@@ -117,6 +118,7 @@ For newcomers, we recommend reading ADRs in this order:
 15. **ADR-0040** (Catalog Scope, **Accepted**) → User-facing catalog visibility and zero-trust classification
 16. **ADR-0041** (Power Approval Requirement, **Accepted**) → Environment-aware approval decision path for power and VNC operations
 17. **ADR-0042** (Cluster Policy Governance, **Accepted**) → Explicit post-capability governance controls for cluster selection and approval
+18. **ADR-0044** (Frontend Built-In Preset Catalog Boundary, **Proposed**) → Clarifies V1 built-in preset catalogs vs V2 backend marketplace boundary
 
 ### Historical Context
 - **ADR-0002** → Why we moved from Git storage to DB (Superseded by ADR-0007)

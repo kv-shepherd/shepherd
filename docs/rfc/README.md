@@ -32,6 +32,8 @@
 | [RFC-0018](./RFC-0018-external-notification.md) | External Notification Channels | Deferred | P2 | V1 complete; Email/Webhook/Slack requested |
 | [RFC-0019](./RFC-0019-kubevirt-instancetype-adapter.md) | KubeVirt Instancetype Adapter | Deferred | P2 | Instancetype/Preference import-export or cross-cluster migration needed |
 | [RFC-0020](./RFC-0020-k8s-watch-acceleration.md) | Optional K8s Watch Acceleration | Deferred | P3 | Near-realtime VM drift visibility or read acceleration needed |
+| [RFC-0021](./RFC-0021-preset-catalog-marketplace.md) | Preset Catalog Marketplace for Templates and Instance Sizes | Proposed | P2 | Durable import/export, shared catalog governance, or community preset distribution needed |
+| [RFC-0022](./RFC-0022-architecture-aware-catalog-alignment.md) | Architecture-Aware Catalog Alignment for Templates, Instance Sizes, and Clusters | Deferred | P2 | First Arm64 rollout, heterogeneous cluster adoption, or architecture mismatch incidents |
 
 ## Implementation Reality Check (2026-03-11)
 
@@ -47,6 +49,8 @@
 | [RFC-0017](./RFC-0017-external-secret-provider.md) | `env`/DB bootstrap secret precedence is implemented; external Vault/KMS providers remain deferred. |
 | [RFC-0018](./RFC-0018-external-notification.md) | Internal inbox notification flow is implemented; external email/webhook/slack channels remain deferred. |
 | [RFC-0019](./RFC-0019-kubevirt-instancetype-adapter.md) | Optional instancetype/preference adapter remains fully deferred. |
+| [RFC-0021](./RFC-0021-preset-catalog-marketplace.md) | Frontend built-in preset catalogs are emerging for admin forms; durable import/export and marketplace semantics remain deferred pending backend persistence. |
+| [RFC-0022](./RFC-0022-architecture-aware-catalog-alignment.md) | Architecture-aware catalog alignment remains deferred; current rollout assumes pure x86 and avoids premature backend model expansion. |
 
 ---
 
