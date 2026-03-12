@@ -164,8 +164,33 @@ Instead:
 2. Capture concrete implementation impacts there (fields, APIs, migrations)
 3. Optionally add a short **Pending Changes** block in affected design docs
 
-Once the ADR is **Accepted**, merge Design Note changes into the design specs
-and remove the Pending Changes block.
+### Proposed ADR Review Package Policy
+
+A proposed ADR review package may merge before the ADR is accepted, but only
+when the PR is limited to ADR-review materials:
+
+1. the proposed ADR document itself
+2. the paired Design Note under `docs/design/notes/`
+3. ADR index / README updates
+4. traceability or governance metadata updates required by repository checks
+
+Such a PR must **not** include:
+
+1. normative design-spec changes
+2. implementation code
+3. unrelated generated/runtime artifacts
+
+Once the ADR is **Accepted**, use a later PR to merge Design Note changes into
+the design specs and remove the Pending Changes block.
+
+### ADR Acceptance and Follow-Up Implementation
+
+Treat proposal, acceptance, and implementation as separate lifecycle steps:
+
+1. one PR may merge the proposed ADR review package
+2. a later PR records the ADR as `Accepted` or `Rejected`
+3. only after acceptance may follow-up PRs change normative design specs or
+   land implementation code based on that decision
 
 ### Amending Accepted ADRs
 

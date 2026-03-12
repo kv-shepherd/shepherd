@@ -45,18 +45,46 @@ Well-defined issues are the foundation of efficient collaboration:
 ### Submitting Pull Requests
 
 1. **Fork** the repository
-2. **Create a feature branch** from `main`:
+2. **Sync the latest baseline** before cutting a PR branch:
+   ```bash
+   git fetch origin --prune
+   git checkout main
+   git pull --ff-only
+   ```
+3. **Create a feature branch** from the refreshed `main`:
    ```bash
    git checkout -b feature/your-feature-name
    ```
-3. **Make your changes** following our coding standards
-4. **Run tests and linters**:
+4. **Make your changes** following our coding standards
+5. **Run workflow-aligned local validation** before pushing:
    ```bash
-   go test -race ./...
-   golangci-lint run
+   make lint
+   go test ./...
+   make ci-checks
    ```
-5. **Commit** with clear, descriptive messages
-6. **Push** to your fork and create a Pull Request
+   If your PR changes frontend code, also run:
+   ```bash
+   npm run lint --prefix web
+   npm run typecheck --prefix web
+   npm run test:run --prefix web
+   ```
+   If your PR changes API/OpenAPI artifacts, also run:
+   ```bash
+   bash docs/design/ci/scripts/api-check.sh
+   ```
+6. **Commit** with clear, descriptive messages
+7. **Push** to your fork and create a Pull Request
+
+### Workflow-Aligned Validation
+
+The source of truth for local validation is the repository workflow configuration:
+
+- `.github/workflows/ci.yml`
+- `.github/workflows/frontend-tests.yml`
+- `.github/workflows/api-contract.yaml`
+
+Do not declare a branch "CI clean" unless the corresponding local commands aligned
+to those workflow jobs have actually passed.
 
 ### Atomic Pull Requests
 
@@ -68,6 +96,7 @@ An atomic PR contains the minimal, self-contained set of changes to address one 
 | **Self-Contained** | PR can be reviewed, tested, and reverted independently |
 | **Minimal Changes** | Include only what's necessary to resolve the issue |
 | **Logical Commits** | Each commit within the PR should be atomic and focused |
+| **Build/Test Closure** | Keep coupled files together when they must compile, test, or gate together |
 
 **Benefits of Atomic PRs:**
 
@@ -85,6 +114,7 @@ An atomic PR contains the minimal, self-contained set of changes to address one 
 | Multiple independent bug fixes | One PR per bug |
 | Feature + its own documentation | One PR (same concern) |
 | Feature + its own tests | One PR (tests are part of the feature) |
+| Runtime code + directly coupled tests / CI gate updates | One PR (same concern) |
 
 **Example: Splitting PRs**
 
@@ -100,6 +130,28 @@ git commit -m "feat: add VM snapshot, fix auth bug, update docs"
 ```
 
 > ⚠️ **IMPORTANT**: If you find yourself writing "also" or "additionally" in your PR description for unrelated changes, consider splitting the PR.
+
+> ⚠️ **IMPORTANT**: Do not over-split. If two files must move together to keep the
+> branch compiling, passing tests, or satisfying strict CI gates, keep them in the
+> same PR.
+
+### Squash-Merge and Sequential PRs
+
+This repository uses squash merge heavily. In that model:
+
+- treat merged content, not commit hashes, as the source of truth
+- verify branch drift with `git diff origin/main..<branch>` before replaying work
+- after each merged PR, fast-forward local `main`, then rebase/sync any long-lived
+  working branch before starting the next PR
+- do not stack tightly coupled PRs in parallel from stale local branches
+
+For related multi-PR work, prefer strict serial cadence:
+
+1. Open PR-A and wait for merge
+2. `git checkout main && git pull --ff-only`
+3. Rebase or re-cut PR-B from the refreshed baseline
+4. Re-run scoped local validation
+5. Open PR-B
 
 ### Commit Message Guidelines
 
@@ -220,10 +272,14 @@ All PRs must pass these checks:
 
 | Check | Description |
 |-------|-------------|
-| `golangci-lint` | Static analysis (standard linters) |
+| `make lint` | Go linting via the repository's configured lint wrapper |
 | `shepherd-arch` (golangci-lint) | Architecture enforcement: import boundaries, ADR compliance, concurrency rules (ADR-0039) |
-| `go test -race` | Unit tests with race detection |
-| `check_sqlc_usage.sh` | sqlc scope enforcement |
+| `go test ./...` | Backend/unit/integration test suite |
+| `npm run lint --prefix web` | Frontend lint |
+| `npm run typecheck --prefix web` | Frontend typecheck |
+| `npm run test:run --prefix web` | Frontend unit tests |
+| `make ci-checks` | Canonical governance/static strict checks |
+| `bash docs/design/ci/scripts/api-check.sh` | API contract sync (when API artifacts change) |
 
 See [docs/design/ci/README.md](docs/design/ci/README.md) for the complete list.
 
@@ -293,8 +349,22 @@ Use a Design Note to describe the concrete changes and impact:
 2. Document impacted APIs, schemas, migrations, and behavioral changes
 3. Optionally add a short **Pending Changes** block in the affected design docs
 
-After the ADR is **Accepted**, merge the Design Note into the design specs
-and remove any Pending Changes blocks.
+A proposed ADR review package may merge before acceptance only when it
+contains ADR-review documentation and required governance metadata:
+
+1. the proposed ADR
+2. the paired Design Note
+3. ADR index updates
+4. traceability/governance metadata required by CI
+
+Do **not** include normative design-spec edits or implementation code in that
+review-package PR.
+
+After the ADR is **Accepted**, use later PRs to:
+
+1. record the ADR acceptance/rejection state
+2. merge the Design Note into normative design specs
+3. land implementation code that depends on the accepted decision
 
 ## Testing
 
