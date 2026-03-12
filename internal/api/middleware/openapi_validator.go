@@ -174,9 +174,15 @@ func requestStrictIgnorePaths(request *http.Request, basePath string) []string {
 		if path == "/admin/auth-providers" {
 			return []string{"$.body.config.**"}
 		}
+		if path == "/admin/instance-sizes" {
+			return []string{"$.body.spec_overrides.**"}
+		}
 	case http.MethodPatch:
 		if strings.HasPrefix(path, "/admin/auth-providers/") && !strings.Contains(path, "/group-mappings") {
 			return []string{"$.body.config.**"}
+		}
+		if strings.HasPrefix(path, "/admin/instance-sizes/") {
+			return []string{"$.body.spec_overrides.**"}
 		}
 	}
 
@@ -212,6 +218,10 @@ func responseStrictIgnorePaths(request *http.Request, basePath string) []string 
 		// AuthProvider.config is free-form for plugin-specific settings.
 		ignorePaths = append(ignorePaths, "$.body.config.**", "$.body.**.config.**")
 	}
+	if strings.HasPrefix(path, "/admin/instance-sizes") {
+		// InstanceSize.spec_overrides is contractually free-form KubeVirt spec JSON.
+		ignorePaths = append(ignorePaths, "$.body.spec_overrides.**", "$.body.**.spec_overrides.**")
+	}
 	if path == "/admin/auth-provider-types" {
 		// AuthProviderType.config_schema is free-form JSON Schema content.
 		ignorePaths = append(ignorePaths, "$.body.**.config_schema.**")
@@ -219,6 +229,12 @@ func responseStrictIgnorePaths(request *http.Request, basePath string) []string 
 	if path == "/approvals" || strings.HasPrefix(path, "/approvals/") {
 		// ApprovalTicket.ticket_payload is contextual and intentionally free-form.
 		ignorePaths = append(ignorePaths, "$.body.**.ticket_payload.**")
+	}
+	if path == "/audit-logs" {
+		// AuditLog.details is contractually free-form (additionalProperties: true).
+		// Audit log details contain action-specific metadata (system_id, cluster_id,
+		// environment, etc.) that is intentionally NOT declared in the schema.
+		ignorePaths = append(ignorePaths, "$.body.**.details.**")
 	}
 
 	return ignorePaths

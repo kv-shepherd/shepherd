@@ -20,7 +20,6 @@ import {
     CloseCircleOutlined,
     ReloadOutlined,
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -28,6 +27,7 @@ import { useApiGet } from '@/lib/api/useApiGet';
 import { useApiMutation } from '@/lib/api/useApiMutation';
 import { api } from '@/lib/api/client';
 import { useMessage } from '@/lib/hooks/useMessage';
+import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 
 const { Title, Text } = Typography;
 
@@ -137,7 +137,7 @@ export default function ApprovalsPage() {
             width: 160,
             render: (date: string) => (
                 <Text type="secondary">
-                    {date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '—'}
+                    <LocalDateTimeText value={date} />
                 </Text>
             ),
         },

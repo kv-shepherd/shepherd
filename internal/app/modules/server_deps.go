@@ -1,11 +1,15 @@
 package modules
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
+	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/internal/api/handlers"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/provider"
 )
 
 // NewServerDeps builds base server deps then lets each module contribute explicit wiring.
@@ -32,9 +36,10 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 			Issuer:           "shepherd",
 			ExpiresIn:        cfg.Session.Lifetime,
 		},
-		EncryptionKey: encryptionKey,
-		Audit:         infra.AuditLogger,
-		RiverClient:   infra.RiverClient,
+		EncryptionKey:        encryptionKey,
+		Audit:                infra.AuditLogger,
+		RefreshClusterHealth: newClusterHealthRefresher(infra),
+		RiverClient:          infra.RiverClient,
 	}
 	for _, mod := range mods {
 		if mod == nil {
@@ -47,4 +52,54 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 		contributor.ContributeServerDeps(&deps)
 	}
 	return deps
+}
+
+func newClusterHealthRefresher(infra *Infrastructure) func(context.Context, string) error {
+	if infra == nil || infra.EntClient == nil || infra.HealthCheck == nil {
+		return nil
+	}
+	return func(ctx context.Context, clusterID string) error {
+		clusterID = strings.TrimSpace(clusterID)
+		if clusterID == "" {
+			return fmt.Errorf("cluster id is required")
+		}
+		cl, err := infra.EntClient.Cluster.Get(ctx, clusterID)
+		if err != nil {
+			return fmt.Errorf("get cluster %s: %w", clusterID, err)
+		}
+
+		health := infra.HealthCheck.CheckCluster(ctx, cl.ID)
+		infra.HealthCheck.UpdateHealth(health)
+
+		update := infra.EntClient.Cluster.UpdateOneID(cl.ID).
+			SetStatus(mapClusterHealthStatus(health.Status))
+		if health.KubeVirtVersion != "" {
+			update = update.SetKubevirtVersion(health.KubeVirtVersion)
+		}
+		if health.Status == provider.ClusterStatusHealthy {
+			update = update.SetEnabledFeatures(health.EnabledFeatures)
+			if health.StorageClassesDetected {
+				update = update.
+					SetStorageClasses(health.StorageClasses).
+					SetStorageClassesUpdatedAt(health.LastChecked)
+			}
+		}
+		if _, err := update.Save(ctx); err != nil {
+			return fmt.Errorf("persist cluster health %s: %w", cl.ID, err)
+		}
+		return nil
+	}
+}
+
+func mapClusterHealthStatus(status provider.ClusterStatus) entcluster.Status {
+	switch status {
+	case provider.ClusterStatusHealthy:
+		return entcluster.StatusHEALTHY
+	case provider.ClusterStatusUnhealthy:
+		return entcluster.StatusUNHEALTHY
+	case provider.ClusterStatusUnreachable:
+		return entcluster.StatusUNREACHABLE
+	default:
+		return entcluster.StatusUNKNOWN
+	}
 }

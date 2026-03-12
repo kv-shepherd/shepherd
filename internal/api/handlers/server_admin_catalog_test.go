@@ -105,7 +105,7 @@ func TestAdminInstanceSizeCRUD(t *testing.T) {
 		t,
 		http.MethodPost,
 		"/admin/instance-sizes",
-		`{"name":"m4.large","display_name":"M4 Large","catalog_scope":"test","cpu_cores":4,"memory_gi":8,"disk_gb":80,"dedicated_cpu":false,"enabled":true}`,
+		`{"name":"m4.large","display_name":"M4 Large","catalog_scope":"test","cpu_cores":4,"memory_gi":8,"disk_gb":80,"cpu_request":2,"memory_request_gi":6,"sort_order":20,"dedicated_cpu":false,"enabled":true}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
@@ -121,6 +121,15 @@ func TestAdminInstanceSizeCRUD(t *testing.T) {
 	}
 	if created.CatalogScope != "test" {
 		t.Fatalf("catalog_scope = %q, want %q", created.CatalogScope, "test")
+	}
+	if created.CpuRequest != 2 {
+		t.Fatalf("cpu_request = %v, want 2", created.CpuRequest)
+	}
+	if created.MemoryRequestGi != 6 {
+		t.Fatalf("memory_request_gi = %v, want 6", created.MemoryRequestGi)
+	}
+	if created.SortOrder != 20 {
+		t.Fatalf("sort_order = %d, want 20", created.SortOrder)
 	}
 
 	updateCtx, updateW := newAuthedGinContext(
@@ -146,6 +155,9 @@ func TestAdminInstanceSizeCRUD(t *testing.T) {
 	}
 	if !updated.RequiresGpu {
 		t.Fatal("expected requires_gpu=true after update")
+	}
+	if updated.CpuRequest != 2 {
+		t.Fatalf("cpu_request = %v, want 2 after unchanged update", updated.CpuRequest)
 	}
 
 	listCtx, listW := newAuthedGinContext(

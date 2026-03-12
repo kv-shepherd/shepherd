@@ -3611,7 +3611,13 @@ components:
           description: Catalog visibility scope only. Not scheduling environment.
         cpu_cores:
           type: number
+        cpu_request:
+          description: CPU request override in cores. Omitted when no explicit override is stored.
+          type: number
         memory_gi:
+          type: number
+        memory_request_gi:
+          description: Memory request override in Gi. Omitted when no explicit override is stored.
           type: number
         disk_gb:
           type: integer
@@ -3631,6 +3637,8 @@ components:
           description: >
             KubeVirt spec path overrides (admin-only). Only populated in admin
             catalog endpoints; omitted from user-facing responses.
+        sort_order:
+          type: integer
         enabled:
           type: boolean
         created_at:

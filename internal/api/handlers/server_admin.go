@@ -226,7 +226,17 @@ func (s *Server) CreateCluster(c *gin.Context) {
 	}
 
 	id, _ := uuid.NewV7()
-	create := s.client.Cluster.Create().
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		logger.Error("failed to begin cluster create transaction", zap.Error(err), zap.String("actor", actor))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	create := tx.Cluster.Create().
 		SetID(id.String()).
 		SetName(req.Name).
 		SetAPIServerURL(apiServerURL).
@@ -251,6 +261,35 @@ func (s *Server) CreateCluster(c *gin.Context) {
 		return
 	}
 
+	var policy *ent.ClusterPolicy
+	if s.clusterPolicy != nil {
+		policy, err = s.clusterPolicy.WithClient(tx.Client()).Upsert(
+			ctx,
+			cl.ID,
+			defaultClusterPolicyInput(),
+			actor,
+		)
+		if err != nil {
+			logger.Error("failed to create default cluster policy",
+				zap.Error(err),
+				zap.String("cluster_id", cl.ID),
+				zap.String("actor", actor),
+			)
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		logger.Error("failed to commit cluster create transaction",
+			zap.Error(err),
+			zap.String("cluster_id", cl.ID),
+			zap.String("actor", actor),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
 	if s.audit != nil {
 		if err := s.audit.LogAction(ctx, "cluster.create", "cluster", cl.ID, actor, nil); err != nil {
 			logger.Warn("audit log write failed",
@@ -261,7 +300,20 @@ func (s *Server) CreateCluster(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusCreated, clusterToAPI(cl, nil, generated.ClusterCompatibility{}))
+	if s.refreshClusterHealth != nil {
+		if err := s.refreshClusterHealth(ctx, cl.ID); err != nil {
+			logger.Warn("initial cluster health refresh failed",
+				zap.String("cluster_id", cl.ID),
+				zap.Error(err),
+			)
+		} else {
+			if refreshed, getErr := s.client.Cluster.Get(ctx, cl.ID); getErr == nil {
+				cl = refreshed
+			}
+		}
+	}
+
+	c.JSON(http.StatusCreated, clusterToAPI(cl, policy, generated.ClusterCompatibility{}))
 }
 
 // UpdateClusterEnvironment handles PUT /admin/clusters/{cluster_id}/environment.
@@ -343,8 +395,7 @@ func (s *Server) UpsertClusterPolicy(c *gin.Context, clusterID string) {
 		return
 	}
 
-	svc := service.NewClusterPolicyService(s.client)
-	policy, err := svc.Upsert(ctx, clusterID, service.ClusterPolicyInput{
+	policy, err := s.clusterPolicy.Upsert(ctx, clusterID, service.ClusterPolicyInput{
 		AllowCPUOvercommit:           req.AllowCpuOvercommit,
 		AllowMemoryOvercommit:        req.AllowMemoryOvercommit,
 		AllowDedicatedCPU:            req.AllowDedicatedCpu,
@@ -697,6 +748,18 @@ func buildClusterCompatibilityFilter(params generated.ListClustersParams) (servi
 	return input, hasFilter
 }
 
+func defaultClusterPolicyInput() service.ClusterPolicyInput {
+	return service.ClusterPolicyInput{
+		AllowCPUOvercommit:    true,
+		AllowMemoryOvercommit: true,
+		AllowDedicatedCPU:     false,
+		AllowGPU:              false,
+		AllowSRIOV:            false,
+		AllowHugepages:        false,
+		AllowCDIClone:         true,
+	}
+}
+
 func clusterPolicyToAPI(policy *ent.ClusterPolicy) generated.ClusterPolicy {
 	return generated.ClusterPolicy{
 		Id:                           policy.ID,
@@ -760,13 +823,16 @@ func instanceSizeToAPI(sz *ent.InstanceSize) generated.InstanceSize {
 		Description:       sz.Description,
 		CatalogScope:      generated.InstanceSizeCatalogScope(sz.CatalogScope),
 		CpuCores:          float32(sz.CPUCores),
+		CpuRequest:        float32(sz.CPURequest),
 		MemoryGi:          float32(sz.MemoryGi),
+		MemoryRequestGi:   float32(sz.MemoryRequestGi),
 		DiskGb:            sz.DiskGB,
 		DedicatedCpu:      sz.DedicatedCPU,
 		RequiresGpu:       sz.RequiresGpu,
 		RequiresSriov:     sz.RequiresSriov,
 		RequiresHugepages: sz.RequiresHugepages,
 		HugepagesSize:     sz.HugepagesSize,
+		SortOrder:         sz.SortOrder,
 		SpecOverrides:     sz.SpecOverrides,
 		Enabled:           sz.Enabled,
 	}
@@ -784,13 +850,16 @@ func instanceSizeToPublicAPI(sz *ent.InstanceSize) generated.InstanceSize {
 		Description:       sz.Description,
 		CatalogScope:      generated.InstanceSizeCatalogScope(sz.CatalogScope),
 		CpuCores:          float32(sz.CPUCores),
+		CpuRequest:        float32(sz.CPURequest),
 		MemoryGi:          float32(sz.MemoryGi),
+		MemoryRequestGi:   float32(sz.MemoryRequestGi),
 		DiskGb:            sz.DiskGB,
 		DedicatedCpu:      sz.DedicatedCPU,
 		RequiresGpu:       sz.RequiresGpu,
 		RequiresSriov:     sz.RequiresSriov,
 		RequiresHugepages: sz.RequiresHugepages,
 		HugepagesSize:     sz.HugepagesSize,
+		SortOrder:         sz.SortOrder,
 		// SpecOverrides intentionally omitted: admin-only internal detail.
 		Enabled: sz.Enabled,
 	}

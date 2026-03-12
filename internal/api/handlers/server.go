@@ -8,6 +8,8 @@
 package handlers
 
 import (
+	"context"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
@@ -27,38 +29,42 @@ var _ generated.ServerInterface = (*Server)(nil)
 
 // Server implements all API handlers satisfying generated.ServerInterface.
 type Server struct {
-	client         *ent.Client
-	pool           *pgxpool.Pool
-	jwtCfg         middleware.JWTConfig
-	audit          *audit.Logger
-	vmService      *service.VMService
-	approvalReqs   *service.ApprovalRequirementService
-	vncTokens      *service.VNCTokenManager
-	createVMUC     *usecase.CreateVMUseCase
-	deleteVMUC     *usecase.DeleteVMUseCase
-	gateway        *approval.Gateway
-	approvalRouter *approval.ApprovalProviderRouter // Stage 2.E: provider router
-	riverClient    *river.Client[pgx.Tx]
-	notifier       *notification.Triggers // Optional: notification trigger service
+	client               *ent.Client
+	pool                 *pgxpool.Pool
+	jwtCfg               middleware.JWTConfig
+	audit                *audit.Logger
+	vmService            *service.VMService
+	clusterPolicy        *service.ClusterPolicyService
+	approvalReqs         *service.ApprovalRequirementService
+	vncTokens            *service.VNCTokenManager
+	createVMUC           *usecase.CreateVMUseCase
+	deleteVMUC           *usecase.DeleteVMUseCase
+	gateway              *approval.Gateway
+	approvalRouter       *approval.ApprovalProviderRouter // Stage 2.E: provider router
+	refreshClusterHealth func(context.Context, string) error
+	riverClient          *river.Client[pgx.Tx]
+	notifier             *notification.Triggers // Optional: notification trigger service
 }
 
 // ServerDeps holds all dependencies for creating a Server.
 // ADR-0013: Manual DI, no Wire/Dig.
 type ServerDeps struct {
-	EntClient      *ent.Client
-	Pool           *pgxpool.Pool
-	JWTCfg         middleware.JWTConfig
-	EncryptionKey  []byte
-	Audit          *audit.Logger
-	VMService      *service.VMService
-	ApprovalReqs   *service.ApprovalRequirementService
-	VNCTokens      *service.VNCTokenManager
-	CreateVMUC     *usecase.CreateVMUseCase
-	DeleteVMUC     *usecase.DeleteVMUseCase
-	Gateway        *approval.Gateway
-	ApprovalRouter *approval.ApprovalProviderRouter // Stage 2.E: provider router
-	RiverClient    *river.Client[pgx.Tx]            // ISSUE-001: needed for async VM delete/power operations
-	Notifier       *notification.Triggers           // Optional: notification trigger service
+	EntClient            *ent.Client
+	Pool                 *pgxpool.Pool
+	JWTCfg               middleware.JWTConfig
+	EncryptionKey        []byte
+	Audit                *audit.Logger
+	VMService            *service.VMService
+	ClusterPolicy        *service.ClusterPolicyService
+	ApprovalReqs         *service.ApprovalRequirementService
+	VNCTokens            *service.VNCTokenManager
+	CreateVMUC           *usecase.CreateVMUseCase
+	DeleteVMUC           *usecase.DeleteVMUseCase
+	Gateway              *approval.Gateway
+	ApprovalRouter       *approval.ApprovalProviderRouter // Stage 2.E: provider router
+	RefreshClusterHealth func(context.Context, string) error
+	RiverClient          *river.Client[pgx.Tx]  // ISSUE-001: needed for async VM delete/power operations
+	Notifier             *notification.Triggers // Optional: notification trigger service
 }
 
 // NewServer creates a new Server with all dependencies.
@@ -83,18 +89,20 @@ func NewServer(deps ServerDeps) *Server {
 	}
 
 	return &Server{
-		client:         deps.EntClient,
-		pool:           deps.Pool,
-		jwtCfg:         deps.JWTCfg,
-		audit:          deps.Audit,
-		vmService:      deps.VMService,
-		approvalReqs:   approvalReqs,
-		vncTokens:      vncTokens,
-		createVMUC:     deps.CreateVMUC,
-		deleteVMUC:     deps.DeleteVMUC,
-		gateway:        deps.Gateway,
-		approvalRouter: deps.ApprovalRouter, // Stage 2.E: provider router
-		riverClient:    deps.RiverClient,
-		notifier:       deps.Notifier,
+		client:               deps.EntClient,
+		pool:                 deps.Pool,
+		jwtCfg:               deps.JWTCfg,
+		audit:                deps.Audit,
+		vmService:            deps.VMService,
+		clusterPolicy:        deps.ClusterPolicy,
+		approvalReqs:         approvalReqs,
+		vncTokens:            vncTokens,
+		createVMUC:           deps.CreateVMUC,
+		deleteVMUC:           deps.DeleteVMUC,
+		gateway:              deps.Gateway,
+		approvalRouter:       deps.ApprovalRouter, // Stage 2.E: provider router
+		refreshClusterHealth: deps.RefreshClusterHealth,
+		riverClient:          deps.RiverClient,
+		notifier:             deps.Notifier,
 	}
 }

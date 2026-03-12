@@ -91,3 +91,58 @@ func TestClusterPolicyService_ValidateCreatePlacement_UsesClusterDefaultStorageC
 	})
 	require.NoError(t, err)
 }
+
+func TestClusterPolicyService_ValidateCreatePlacement_RequiresExplicitStorageClass(t *testing.T) {
+	t.Parallel()
+
+	svc := &ClusterPolicyService{}
+	err := svc.ValidateCreatePlacement(ClusterPolicyValidationInput{
+		Cluster: &ent.Cluster{
+			Name: "cluster-a",
+		},
+		Policy: &ent.ClusterPolicy{
+			AllowCdiClone:         true,
+			AllowedStorageClasses: []string{"fast-sc"},
+		},
+		Template: &ent.Template{
+			SourceType: TemplateSourceCDIImageImport,
+			ImageURL:   "docker://quay.io/containerdisks/fedora:40",
+		},
+		InstanceSize: &ent.InstanceSize{},
+		CPUCores:     2,
+		MemoryGi:     4,
+	})
+	require.Error(t, err)
+
+	appErr, ok := apperrors.IsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, "CLUSTER_POLICY_STORAGE_CLASS_REQUIRED", appErr.Code)
+}
+
+func TestClusterPolicyService_ValidateCreatePlacement_RequiresExplicitStorageClassWhenDefaultIsOutsideAllowlist(t *testing.T) {
+	t.Parallel()
+
+	svc := &ClusterPolicyService{}
+	err := svc.ValidateCreatePlacement(ClusterPolicyValidationInput{
+		Cluster: &ent.Cluster{
+			Name:                "cluster-a",
+			DefaultStorageClass: "slow-sc",
+		},
+		Policy: &ent.ClusterPolicy{
+			AllowCdiClone:         true,
+			AllowedStorageClasses: []string{"fast-sc"},
+		},
+		Template: &ent.Template{
+			SourceType: TemplateSourceCDIImageImport,
+			ImageURL:   "docker://quay.io/containerdisks/fedora:40",
+		},
+		InstanceSize: &ent.InstanceSize{},
+		CPUCores:     2,
+		MemoryGi:     4,
+	})
+	require.Error(t, err)
+
+	appErr, ok := apperrors.IsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, "CLUSTER_POLICY_STORAGE_CLASS_REQUIRED", appErr.Code)
+}

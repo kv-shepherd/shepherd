@@ -97,6 +97,7 @@ describe('useAdminInstanceSizesController', () => {
     // spec_text replaces spec_overrides_text; content is KubeVirt VirtualMachineSpec JSON.
     createFormState.validateFields.mockResolvedValue({
       name: 'm4.large',
+      catalog_scope: 'prod',
       cpu_cores: 4,
       memory_gi: 8,
       enabled: true,
@@ -112,6 +113,7 @@ describe('useAdminInstanceSizesController', () => {
     expect(createMutate).toHaveBeenCalledTimes(1);
     expect(createMutate).toHaveBeenCalledWith(expect.objectContaining({
       name: 'm4.large',
+      catalog_scope: 'prod',
       cpu_cores: 4,
       memory_gi: 8,
       enabled: true,
@@ -154,6 +156,7 @@ describe('useAdminInstanceSizesController', () => {
 
     createFormState.validateFields.mockResolvedValue({
       name: 'm4.large',
+      catalog_scope: 'all',
       cpu_cores: 4,
       memory_gi: 8,
       // Array JSON is non-object — controller ignores it silently.
@@ -171,6 +174,7 @@ describe('useAdminInstanceSizesController', () => {
     const payload = createMutate.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(payload).toMatchObject({
       name: 'm4.large',
+      catalog_scope: 'all',
       cpu_cores: 4,
       memory_gi: 8,
     });
@@ -232,6 +236,7 @@ describe('useAdminInstanceSizesController', () => {
   });
 
   it('hydrates edit form fields after opening edit modal', async () => {
+    vi.useFakeTimers();
     useApiMutationMock
       .mockReturnValueOnce({ mutate: vi.fn(), isPending: false })
       .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
@@ -245,25 +250,122 @@ describe('useAdminInstanceSizesController', () => {
         name: 'm8.large',
         display_name: 'M8 Large',
         description: 'test size',
+        catalog_scope: 'all',
         cpu_cores: 8,
         memory_gi: 16,
         disk_gb: 100,
+        cpu_request: 4,
+        memory_request_gi: 12,
         dedicated_cpu: true,
         requires_sriov: true,
+        sort_order: 30,
         enabled: true,
         spec_overrides: {},
       });
     });
 
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      vi.runAllTimers();
     });
 
     expect(editFormState.resetFields).toHaveBeenCalled();
-    expect(editFormState.setFieldsValue).toHaveBeenCalledWith(expect.objectContaining({
+    expect(editFormState.setFieldsValue).toHaveBeenNthCalledWith(1, expect.objectContaining({
       name: 'm8.large',
       display_name: 'M8 Large',
+      catalog_scope: 'all',
+      cpu_overcommit_enabled: true,
+      memory_overcommit_enabled: true,
+      sort_order: 30,
       spec_text: '{}',
     }));
+    expect(editFormState.setFieldsValue).toHaveBeenNthCalledWith(2, {
+      cpu_request: 4,
+      memory_request_gi: 12,
+    });
+
+    vi.useRealTimers();
+  });
+
+  it('hydrates fractional cpu overcommit values for edit modals', async () => {
+    vi.useFakeTimers();
+    useApiMutationMock
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'size-3',
+        name: 'e2e-small',
+        display_name: 'E2E Small',
+        description: 'fractional overcommit',
+        catalog_scope: 'all',
+        cpu_cores: 1,
+        memory_gi: 2,
+        disk_gb: 60,
+        cpu_request: 0.5,
+        memory_request_gi: 1,
+        dedicated_cpu: false,
+        requires_sriov: false,
+        sort_order: 10,
+        enabled: true,
+        spec_overrides: {},
+      });
+    });
+
+    await act(async () => {
+      vi.runAllTimers();
+    });
+
+    expect(editFormState.setFieldsValue).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      cpu_overcommit_enabled: true,
+      memory_overcommit_enabled: true,
+      dedicated_cpu: false,
+    }));
+    expect(editFormState.setFieldsValue).toHaveBeenNthCalledWith(2, {
+      cpu_request: 0.5,
+      memory_request_gi: 1,
+    });
+
+    vi.useRealTimers();
+  });
+
+  it('normalizes dedicated cpu create payload by clearing cpu overcommit request', async () => {
+    const createMutate = vi.fn();
+
+    useApiMutationMock
+      .mockReturnValueOnce({ mutate: createMutate, isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    createFormState.validateFields.mockResolvedValue({
+      name: 'm8.dedicated',
+      catalog_scope: 'prod',
+      cpu_cores: 8,
+      memory_gi: 16,
+      dedicated_cpu: true,
+      cpu_overcommit_enabled: true,
+      cpu_request: 4,
+      enabled: true,
+      spec_text: '{}',
+    });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    await act(async () => {
+      await result.current.submitCreate();
+    });
+
+    expect(createMutate).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'm8.dedicated',
+      dedicated_cpu: true,
+      catalog_scope: 'prod',
+      cpu_cores: 8,
+      memory_gi: 16,
+    }));
+    const payload = createMutate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('cpu_request');
   });
 });
