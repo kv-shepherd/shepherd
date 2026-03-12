@@ -139,10 +139,12 @@ clean:
 docker:
 	docker build -t kubevirt-shepherd:latest .
 
-## ci-checks: Run CI check scripts
+## ci-checks: Run canonical CI check scripts wired in GitHub Actions
 ci-checks:
 	@echo "Running CI checks..."
 	@$(MAKE) test-shepherd-linter
+	@bash docs/design/ci/scripts/check_manual_di.sh
+	@bash docs/design/ci/scripts/check_sqlc_usage.sh
 	@for script in docs/design/ci/scripts/*.sh; do \
 		echo "Running $$script..."; \
 		bash "$$script" || exit 1; \
