@@ -47,10 +47,14 @@
 | [ADR-0035](./ADR-0035-auth-provider-plugin-boundary.md) | Auth Provider Plugin Boundary and Type Discovery | **Accepted** | - |
 | [ADR-0036](./ADR-0036-template-instancesize-boundary-enforcement.md) | Template / InstanceSize Boundary Enforcement | **Accepted** | - |
 | [ADR-0037](./ADR-0037-openapi-validation-architecture-and-enforcement-policy.md) | OpenAPI Validation Architecture and Enforcement Policy | **Accepted** | - |
+| [ADR-0038](./ADR-0038-adaptive-k8s-polling.md) | Adaptive K8s VM Status Polling with State-Machine-Driven Backoff | **Accepted** | - |
+| [ADR-0039](./ADR-0039-golangci-lint-custom-analyzer.md) | Architecture Enforcement via golangci-lint Custom Analyzer Plugin | **Accepted** | - |
 | [ADR-0040](./ADR-0040-catalog-scope-for-template-and-instancesize.md) | Catalog Scope for Template and InstanceSize | **Accepted** | - |
 | [ADR-0041](./ADR-0041-power-operation-approval-requirement-service.md) | Power Operation Approval Requirement Service | **Accepted** | - |
 | [ADR-0042](./ADR-0042-cluster-policy-governance-model.md) | Explicit Cluster Policy Governance Model | **Accepted** | - |
+| [ADR-0043](./ADR-0043-bootstrap-orchestration-quality-gate.md) | Clarify Bootstrap Composition-Root Quality Gate | **Proposed** | - |
 | [ADR-0044](./ADR-0044-frontend-built-in-preset-catalog-boundary.md) | Frontend Built-In Preset Catalog Boundary | **Proposed** | - |
+| [ADR-0045](./ADR-0045-cluster-resolved-root-volume-provisioning.md) | Cluster-Resolved Root Volume Provisioning Intent | **Proposed** | - |
 
 > ℹ️ **ADR-0037 Sync Notes**:
 >
@@ -119,6 +123,7 @@ For newcomers, we recommend reading ADRs in this order:
 16. **ADR-0041** (Power Approval Requirement, **Accepted**) → Environment-aware approval decision path for power and VNC operations
 17. **ADR-0042** (Cluster Policy Governance, **Accepted**) → Explicit post-capability governance controls for cluster selection and approval
 18. **ADR-0044** (Frontend Built-In Preset Catalog Boundary, **Proposed**) → Clarifies V1 built-in preset catalogs vs V2 backend marketplace boundary
+19. **ADR-0045** (Cluster-Resolved Root Volume Provisioning, **Proposed**) → Clarifies where storage `auto` intent may exist and when approval must resolve explicit root-volume provisioning values
 
 ### Historical Context
 - **ADR-0002** → Why we moved from Git storage to DB (Superseded by ADR-0007)
