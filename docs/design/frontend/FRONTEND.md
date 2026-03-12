@@ -81,7 +81,7 @@ export const i18nConfig = {
   defaultLocale: 'en',
   locales: ['en', 'zh-CN'],
   fallbackLng: 'en',
-  namespaces: ['common', 'errors', 'approval', 'vm', 'admin'],
+  namespaces: ['common', 'errors', 'approval', 'vm', 'admin', 'schema'],
   defaultNamespace: 'common',
 };
 ```
@@ -98,8 +98,16 @@ import { i18nConfig } from './config';
 // Import locale resources
 import enCommon from './locales/en/common.json';
 import enErrors from './locales/en/errors.json';
+import enVm from './locales/en/vm.json';
+import enApproval from './locales/en/approval.json';
+import enAdmin from './locales/en/admin.json';
+import enSchema from './locales/en/schema.json';
 import zhCNCommon from './locales/zh-CN/common.json';
 import zhCNErrors from './locales/zh-CN/errors.json';
+import zhCNVm from './locales/zh-CN/vm.json';
+import zhCNApproval from './locales/zh-CN/approval.json';
+import zhCNAdmin from './locales/zh-CN/admin.json';
+import zhCNSchema from './locales/zh-CN/schema.json';
 
 i18n
   .use(LanguageDetector)
@@ -109,10 +117,18 @@ i18n
       en: {
         common: enCommon,
         errors: enErrors,
+        vm: enVm,
+        approval: enApproval,
+        admin: enAdmin,
+        schema: enSchema,
       },
       'zh-CN': {
         common: zhCNCommon,
         errors: zhCNErrors,
+        vm: zhCNVm,
+        approval: zhCNApproval,
+        admin: zhCNAdmin,
+        schema: zhCNSchema,
       },
     },
     ...i18nConfig,
@@ -123,6 +139,20 @@ i18n
 
 export default i18n;
 ```
+
+### Schema Help Localization
+
+For schema-driven forms, localized help is an overlay on top of the official
+schema, not a replacement for it.
+
+Resolution order:
+
+1. explicit UI help override
+2. schema-help translation keyed by stable schema path
+3. official schema `description`
+
+If the official schema has no `description`, track the gap explicitly and fill
+it with curated bilingual help text via repository-managed locale files.
 
 ### Error Message Translation
 

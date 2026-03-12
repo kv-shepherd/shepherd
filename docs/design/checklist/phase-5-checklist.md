@@ -103,7 +103,7 @@
 - [x] **State Management**: Zustand 5.x + TanStack Query 5.x
 - [x] **Styling**: Tailwind CSS 4.x
 - [ ] **Form Validation**: Zod 4.x (i18n validation messages pending)
-- [x] **Internationalization**: react-i18next 16.x (en + zh-CN, 5 namespaces)
+- [x] **Internationalization**: react-i18next 16.x (en + zh-CN, 6 namespaces)
 - [x] **API Client**: openapi-typescript + openapi-fetch (type-safe from contract)
 - [x] **Pages feature-complete** (25/25 routes exist and are production-ready for current scope):
   - [x] Login page (with force password change flow)
