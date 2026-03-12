@@ -37,6 +37,7 @@ import { Dropdown, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
 import NotificationBell from '@/components/ui/NotificationBell';
+import LocalTimezoneBadge from '@/components/ui/LocalTimezoneBadge';
 import { hasPermission, PLATFORM_ADMIN_PERMISSION } from '@/lib/auth/permissions';
 
 const { Text } = Typography;
@@ -179,6 +180,16 @@ export default function AppLayout({
                 },
             }}
             actionsRender={() => [
+                <div
+                    key="local-timezone"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        paddingInline: 8,
+                    }}
+                >
+                    <LocalTimezoneBadge />
+                </div>,
                 <Dropdown
                     key="language"
                     menu={{

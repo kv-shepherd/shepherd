@@ -640,7 +640,11 @@ export function AdminTemplatesContent() {
                                     </Form.Item>
                                 </>
                             ) : (
-                                <Form.Item name="image_url" label={t('templates.image_url')}>
+                                <Form.Item
+                                    name="image_url"
+                                    label={t('templates.image_url')}
+                                    rules={[{ required: true, message: t('templates.image_url_required') }]}
+                                >
                                     <Input placeholder="docker.io/kubevirt/centos:7" />
                                 </Form.Item>
                             )

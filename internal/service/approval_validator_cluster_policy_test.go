@@ -122,5 +122,5 @@ func TestApprovalValidator_RejectsDisallowedStorageClassByPolicy(t *testing.T) {
 
 	appErr, ok := apperrors.IsAppError(err)
 	require.True(t, ok)
-	require.Equal(t, "CLUSTER_POLICY_DENIED", appErr.Code)
+	require.Equal(t, "CLUSTER_POLICY_STORAGE_CLASS_REQUIRED", appErr.Code)
 }

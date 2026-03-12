@@ -3,6 +3,10 @@ import type { VMPlacementHint } from './types';
 type PlacementReasonCount = NonNullable<VMPlacementHint['reason_counts']>[number];
 type PlacementAdvisoryCount = NonNullable<VMPlacementHint['advisory_counts']>[number];
 
+const USER_ACTIONABLE_PLACEMENT_REASONS = new Set<
+    NonNullable<VMPlacementHint['primary_reason_code']>
+>(['CapabilityMismatch', 'PolicyDenied', 'RequestInvalid']);
+
 export function sortPlacementReasonCounts(reasonCounts: VMPlacementHint['reason_counts']): PlacementReasonCount[] {
     return [...(reasonCounts ?? [])].sort((left, right) => {
         if (right.count !== left.count) {
@@ -47,4 +51,20 @@ export function getPlacementAdvisoryLabelKey(advisoryCode: VMPlacementHint['prim
         default:
             return 'wizard.placement_advisory.Other';
     }
+}
+
+export function shouldShowPlacementHintToUser(hint: VMPlacementHint | undefined): boolean {
+    if (!hint) {
+        return false;
+    }
+
+    if (hint.status === 'AVAILABLE') {
+        return Boolean(hint.primary_advisory_code);
+    }
+
+    if (!hint.primary_reason_code) {
+        return false;
+    }
+
+    return USER_ACTIONABLE_PLACEMENT_REASONS.has(hint.primary_reason_code);
 }

@@ -33,7 +33,7 @@ func main() {
 		"func (s *Server) CreateAdminTemplate(",
 		`requireActorWithAnyGlobalPermission(c, "template:write", "template:manage")`,
 		"func (s *Server) ListAdminInstanceSizes(",
-		`requireActorWithAnyGlobalPermission(c, "instance_size:read")`,
+		`requireActorWithAnyGlobalPermission(c, "instance_size:read", "instance_size:write")`,
 		"func (s *Server) CreateAdminInstanceSize(",
 		`requireActorWithAnyGlobalPermission(c, "instance_size:write")`,
 	})
@@ -44,7 +44,8 @@ func main() {
 	checkFragments(&violations, adminPermissionTestPath, []string{
 		"TestPermissionEnforcement_ListAdminTemplates_RequiresTemplateRead",
 		"TestPermissionEnforcement_CreateAdminTemplate_RequiresTemplateWrite",
-		"TestPermissionEnforcement_ListAdminInstanceSizes_RequiresInstanceSizeRead",
+		"TestPermissionEnforcement_ListAdminInstanceSizes_RequiresInstanceSizeReadOrWrite",
+		"TestPermissionEnforcement_ListAdminInstanceSizes_AllowsInstanceSizeWrite",
 		"TestPermissionEnforcement_CreateAdminInstanceSize_RequiresInstanceSizeWrite",
 	})
 	checkFragments(&violations, frontendTemplateHookTestPath, []string{

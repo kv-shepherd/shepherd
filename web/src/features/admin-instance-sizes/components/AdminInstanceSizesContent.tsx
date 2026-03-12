@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, type RefObject } from 'react';
 import {
     Alert,
     Button,
@@ -12,6 +12,7 @@ import {
     Input,
     InputNumber,
     Modal,
+    Select,
     Space,
     Spin,
     Switch,
@@ -19,6 +20,7 @@ import {
     Tag,
     Tooltip,
     Typography,
+    type FormInstance,
 } from 'antd';
 import type { InputRef } from 'antd';
 import type { ColumnsType, FilterDropdownProps } from 'antd/es/table/interface';
@@ -34,7 +36,14 @@ import { useTranslation } from 'react-i18next';
 
 import { UnitInputNumber } from '@/components/form/UnitInputNumber';
 import { useAdminInstanceSizesController } from '../hooks/useAdminInstanceSizesController';
-import { formatMemory, type InstanceSize } from '../types';
+import {
+    formatCores,
+    formatMemory,
+    getGPUDeviceLabels,
+    hasCPUOvercommit,
+    hasMemoryOvercommit,
+    type InstanceSize,
+} from '../types';
 import {
     DynamicSchemaForm,
     type DynamicSchemaFormHandle,
@@ -44,6 +53,59 @@ import {
 import { useDynamicSchema } from '../../admin-templates/hooks/useDynamicSchema';
 
 const { Title, Text } = Typography;
+
+function catalogScopeLabel(scope: InstanceSize['catalog_scope'], t: ReturnType<typeof useTranslation>['t']): string {
+    switch (scope) {
+        case 'test':
+            return t('templates.scope_test');
+        case 'prod':
+            return t('templates.scope_prod');
+        case 'all':
+            return t('templates.scope_all');
+        default:
+            return t('templates.scope_unclassified');
+    }
+}
+
+function catalogScopeColor(scope: InstanceSize['catalog_scope']): string {
+    switch (scope) {
+        case 'test':
+            return 'blue';
+        case 'prod':
+            return 'red';
+        case 'all':
+            return 'green';
+        default:
+            return 'default';
+    }
+}
+
+function handleInstanceSizeFormValuesChange(
+    form: FormInstance,
+    formRef: RefObject<DynamicSchemaFormHandle | null>,
+    changedValues: Record<string, unknown>,
+) {
+    const updates: Record<string, unknown> = {};
+
+    if (changedValues.dedicated_cpu === true) {
+        updates.cpu_overcommit_enabled = false;
+        updates.cpu_request = undefined;
+    }
+    if (changedValues.cpu_overcommit_enabled === true) {
+        updates.dedicated_cpu = false;
+    }
+    if (changedValues.cpu_overcommit_enabled === false) {
+        updates.cpu_request = undefined;
+    }
+    if (changedValues.memory_overcommit_enabled === false) {
+        updates.memory_request_gi = undefined;
+    }
+
+    if (Object.keys(updates).length > 0) {
+        form.setFieldsValue(updates);
+    }
+    formRef.current?.sync();
+}
 
 function highlightText(text: string, highlight: string): React.ReactNode {
     if (!highlight) {
@@ -167,6 +229,24 @@ function InstanceSizeFormFields({
             <Form.Item name="description" label={t('common:table.description')}>
                 <Input.TextArea rows={2} />
             </Form.Item>
+            <Form.Item
+                name="catalog_scope"
+                label={t('instanceSizes.catalog_scope')}
+                initialValue="unclassified"
+                extra={t('instanceSizes.catalog_scope_help')}
+                rules={[
+                    { required: true, message: t('instanceSizes.catalog_scope_required') },
+                ]}
+            >
+                <Select
+                    options={[
+                        { label: t('templates.scope_unclassified'), value: 'unclassified' },
+                        { label: t('templates.scope_test'), value: 'test' },
+                        { label: t('templates.scope_prod'), value: 'prod' },
+                        { label: t('templates.scope_all'), value: 'all' },
+                    ]}
+                />
+            </Form.Item>
             <Form.Item name="sort_order" label={t('instanceSizes.sort_order')}>
                 <InputNumber style={{ width: '100%' }} />
             </Form.Item>
@@ -180,20 +260,35 @@ function InstanceSizeFormFields({
                 <UnitInputNumber min={0.5} step={0.5} precision={1} unit={t('instanceSizes.cores')} />
             </Form.Item>
 
-            <Form.Item name="dedicated_cpu" valuePropName="checked">
-                <Checkbox>{t('instanceSizes.dedicated')}</Checkbox>
+            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.cpu_overcommit_enabled !== cur.cpu_overcommit_enabled}>
+                {({ getFieldValue }) => (
+                    <Form.Item name="dedicated_cpu" valuePropName="checked">
+                        <Checkbox disabled={!!getFieldValue('cpu_overcommit_enabled')}>
+                            {t('instanceSizes.dedicated')}
+                        </Checkbox>
+                    </Form.Item>
+                )}
             </Form.Item>
 
             {/* CPU Overcommit: conditional reveal using shouldUpdate (rendering only, no side effects) */}
-            <Form.Item name="cpu_overcommit_enabled" valuePropName="checked">
-                <Checkbox>{t('instanceSizes.enable_cpu_overcommit')}</Checkbox>
+            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.dedicated_cpu !== cur.dedicated_cpu}>
+                {({ getFieldValue }) => (
+                    <Form.Item name="cpu_overcommit_enabled" valuePropName="checked">
+                        <Checkbox disabled={!!getFieldValue('dedicated_cpu')}>
+                            {t('instanceSizes.enable_cpu_overcommit')}
+                        </Checkbox>
+                    </Form.Item>
+                )}
             </Form.Item>
             <Form.Item
                 noStyle
-                shouldUpdate={(prev, cur) => prev.cpu_overcommit_enabled !== cur.cpu_overcommit_enabled}
+                shouldUpdate={(prev, cur) =>
+                    prev.cpu_overcommit_enabled !== cur.cpu_overcommit_enabled ||
+                    prev.dedicated_cpu !== cur.dedicated_cpu
+                }
             >
                 {({ getFieldValue }) =>
-                    getFieldValue('cpu_overcommit_enabled') ? (
+                    getFieldValue('cpu_overcommit_enabled') && !getFieldValue('dedicated_cpu') ? (
                         <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
                             <Space style={{ width: '100%' }} direction="vertical">
                                 <Form.Item name="cpu_request" label={t('instanceSizes.cpu_request')} style={{ margin: 0 }}>
@@ -266,6 +361,16 @@ export function AdminInstanceSizesContent() {
     const { t } = useTranslation(['admin', 'common']);
     const sizes = useAdminInstanceSizesController({ t });
     const searchInputRef = useRef<InputRef>(null);
+    const catalogScopeOptions = [
+        { label: t('templates.scope_unclassified'), value: 'unclassified' },
+        { label: t('templates.scope_test'), value: 'test' },
+        { label: t('templates.scope_prod'), value: 'prod' },
+        { label: t('templates.scope_all'), value: 'all' },
+    ];
+    const catalogScopeFilters = catalogScopeOptions.map((option) => ({
+        text: option.label,
+        value: option.value,
+    }));
 
     // Refs for DynamicSchemaForm imperative sync (antd best practice).
     // formRef.current?.sync() is called in onValuesChange to update spec_text.
@@ -341,10 +446,18 @@ export function AdminInstanceSizesContent() {
                 <Space>
                     <HddOutlined style={{ color: '#1677ff' }} />
                     <div>
+                        {/*
+                         * Empty-string display_name should fall back to name.
+                         * The API returns "" for unset optional strings, so ?? would
+                         * render a blank primary label and make the row look missing.
+                         */}
                         <Text strong>
-                            {sizes.searchedColumn === 'name'
-                                ? highlightText(record.display_name ?? name, sizes.searchText)
-                                : (record.display_name ?? name)}
+                            {(() => {
+                                const displayName = record.display_name || name;
+                                return sizes.searchedColumn === 'name'
+                                    ? highlightText(displayName, sizes.searchText)
+                                    : displayName;
+                            })()}
                         </Text>
                         <br />
                         <Text type="secondary" style={{ fontSize: 12 }}>
@@ -363,11 +476,18 @@ export function AdminInstanceSizesContent() {
             sorter: (a, b) => a.cpu_cores - b.cpu_cores,
             render: (cores: number, record: InstanceSize) => (
                 <Space direction="vertical" size={0} style={{ textAlign: 'center' }}>
-                    <Text strong>{cores} {t('instanceSizes.cores')}</Text>
+                    <Text strong>{formatCores(cores)} {t('instanceSizes.cores')}</Text>
                     {record.dedicated_cpu && (
                         <Tag color="orange" style={{ fontSize: 10 }}>
                             <ThunderboltOutlined /> {t('instanceSizes.dedicated')}
                         </Tag>
+                    )}
+                    {hasCPUOvercommit(record) && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            {t('instanceSizes.request_compact', {
+                                value: `${formatCores(record.cpu_request!)} ${t('instanceSizes.cores')}`,
+                            })}
+                        </Text>
                     )}
                 </Space>
             ),
@@ -379,7 +499,31 @@ export function AdminInstanceSizesContent() {
             width: 100,
             align: 'center' as const,
             sorter: (a, b) => a.memory_gi - b.memory_gi,
-            render: (gi: number) => <Text strong>{formatMemory(gi)}</Text>,
+            render: (gi: number, record: InstanceSize) => (
+                <Space direction="vertical" size={0} style={{ textAlign: 'center' }}>
+                    <Text strong>{formatMemory(gi)}</Text>
+                    {hasMemoryOvercommit(record) && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            {t('instanceSizes.request_compact', {
+                                value: formatMemory(record.memory_request_gi!),
+                            })}
+                        </Text>
+                    )}
+                </Space>
+            ),
+        },
+        {
+            title: t('instanceSizes.catalog_scope'),
+            dataIndex: 'catalog_scope',
+            key: 'catalog_scope',
+            width: 120,
+            render: (scope: InstanceSize['catalog_scope']) => (
+                <Tag color={catalogScopeColor(scope)}>
+                    {catalogScopeLabel(scope, t)}
+                </Tag>
+            ),
+            filters: catalogScopeFilters,
+            onFilter: (value, record) => record.catalog_scope === value,
         },
         {
             title: t('instanceSizes.disk'),
@@ -396,7 +540,12 @@ export function AdminInstanceSizesContent() {
             width: 200,
             render: (_: unknown, record: InstanceSize) => {
                 const tags: { label: string; color: string }[] = [];
-                if (record.requires_gpu) tags.push({ label: 'GPU', color: 'volcano' });
+                const gpuDevices = getGPUDeviceLabels(record);
+                if (gpuDevices.length > 0) {
+                    tags.push(...gpuDevices.map((device) => ({ label: `GPU ${device}`, color: 'volcano' })));
+                } else if (record.requires_gpu) {
+                    tags.push({ label: 'GPU', color: 'volcano' });
+                }
                 if (record.requires_sriov) tags.push({ label: 'SR-IOV', color: 'purple' });
                 if (record.requires_hugepages) {
                     tags.push({ label: `Hugepages ${record.hugepages_size ?? ''}`.trim(), color: 'geekblue' });
@@ -489,6 +638,20 @@ export function AdminInstanceSizesContent() {
             </div>
 
             <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+                {sizes.listError && (
+                    <Alert
+                        type="error"
+                        showIcon
+                        style={{ margin: 16, marginBottom: 0 }}
+                        message={t('instanceSizes.load_error', 'Failed to load instance sizes')}
+                        description={sizes.listError.message || t('common:message.error')}
+                        action={
+                            <Button size="small" onClick={() => sizes.refetch()}>
+                                {t('common:button.refresh')}
+                            </Button>
+                        }
+                    />
+                )}
                 <div style={{
                     opacity: sizes.isStale ? 0.6 : 1,
                     transition: sizes.isStale ? 'opacity 0.2s 0.1s linear' : 'opacity 0s 0s linear',
@@ -536,11 +699,8 @@ export function AdminInstanceSizesContent() {
                 <Form
                     form={sizes.createForm}
                     layout="vertical"
-                    preserve={false}
-                    onValuesChange={() => {
-                        // antd best practice: side effects in event callbacks, not in render.
-                        // Sync spec_text JSON whenever any dynamic schema field changes.
-                        createFormRef.current?.sync();
+                    onValuesChange={(changedValues) => {
+                        handleInstanceSizeFormValuesChange(sizes.createForm, createFormRef, changedValues);
                     }}
                 >
                     <InstanceSizeFormFields isCreate={true} formRef={createFormRef} />
@@ -562,9 +722,8 @@ export function AdminInstanceSizesContent() {
                 <Form
                     form={sizes.editForm}
                     layout="vertical"
-                    preserve={false}
-                    onValuesChange={() => {
-                        editFormRef.current?.sync();
+                    onValuesChange={(changedValues) => {
+                        handleInstanceSizeFormValuesChange(sizes.editForm, editFormRef, changedValues);
                     }}
                 >
                     <InstanceSizeFormFields isCreate={false} formRef={editFormRef} />
@@ -582,7 +741,7 @@ export function AdminInstanceSizesContent() {
             >
                 <Text>
                     {t('common:message.delete_confirm', {
-                        name: sizes.deletingItem?.display_name ?? sizes.deletingItem?.name ?? '-',
+                        name: sizes.deletingItem?.display_name || sizes.deletingItem?.name || '-',
                     })}
                 </Text>
             </Modal>

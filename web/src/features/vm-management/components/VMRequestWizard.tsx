@@ -34,6 +34,7 @@ import { formatMemory } from '../types';
 import {
     getPlacementAdvisoryLabelKey,
     getPlacementReasonActionKey,
+    shouldShowPlacementHintToUser,
     sortPlacementAdvisoryCounts,
     sortPlacementReasonCounts,
 } from '../placementHint';
@@ -121,6 +122,8 @@ export function VMRequestWizard({
                         <Form.Item label={t('wizard.select_system')} style={{ marginBottom: 16 }}>
                             <Select
                                 placeholder={t('wizard.select_system')}
+                                showSearch
+                                optionFilterProp="label"
                                 value={selectedSystemId || undefined}
                                 onChange={onSystemChange}
                                 options={systemsData?.items?.map((system) => ({
@@ -137,6 +140,8 @@ export function VMRequestWizard({
                         >
                             <Select
                                 placeholder={t('wizard.select_service')}
+                                showSearch
+                                optionFilterProp="label"
                                 disabled={!selectedSystemId}
                                 options={servicesData?.items?.map((service) => ({
                                     label: service.name,
@@ -237,7 +242,10 @@ export function VMRequestWizard({
                         >
                             <Input.TextArea rows={4} placeholder={t('wizard.reason_placeholder')} />
                         </Form.Item>
-                        {selectedTemplate && selectedSize && namespaceValue ? (
+                        {selectedTemplate &&
+                        selectedSize &&
+                        namespaceValue &&
+                        shouldShowPlacementHintToUser(placementHint) ? (
                             placementHintLoading ? (
                                 <Alert
                                     type="info"

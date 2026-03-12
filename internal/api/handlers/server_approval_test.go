@@ -161,12 +161,19 @@ func TestListApprovals_CREATE_TicketPayloadPopulated(t *testing.T) {
 
 	srv, client := newApprovalTestServer(t, "approval_create_payload")
 
+	templateID := "tpl-" + uuid.NewString()
+	instanceSizeID := "size-" + uuid.NewString()
+	mustCreateApprovalTemplate(t, client, templateID, "ubuntu-golden", "Ubuntu 22.04")
+	mustCreateApprovalInstanceSize(t, client, instanceSizeID, "m4.large", "M4 Large", 80, true)
+
 	// Seed DomainEvent with a CREATE-style payload (service_id, namespace, reason fields).
 	eventID := "ev-" + uuid.NewString()
 	createPayload := map[string]interface{}{
-		"service_id": "svc-abc",
-		"namespace":  "team-prod",
-		"reason":     "need a VM",
+		"service_id":       "svc-abc",
+		"namespace":        "team-prod",
+		"reason":           "need a VM",
+		"template_id":      templateID,
+		"instance_size_id": instanceSizeID,
 	}
 	rawPayload, _ := json.Marshal(createPayload)
 	mustCreateDomainEvent(t, client, eventID, rawPayload)
@@ -185,8 +192,63 @@ func TestListApprovals_CREATE_TicketPayloadPopulated(t *testing.T) {
 	if found.TicketPayload == nil {
 		t.Fatal("TicketPayload is nil, want non-nil for CREATE ticket")
 	}
+	if got := found.TicketPayload["template_label"]; got != "Ubuntu 22.04" {
+		t.Fatalf("template_label = %v, want %q", got, "Ubuntu 22.04")
+	}
+	if got := found.TicketPayload["instance_size_label"]; got != "M4 Large" {
+		t.Fatalf("instance_size_label = %v, want %q", got, "M4 Large")
+	}
+	if got := found.TicketPayload["instance_size_disk_gb"]; got != float64(80) {
+		t.Fatalf("instance_size_disk_gb = %v, want 80", got)
+	}
+	if got := found.TicketPayload["instance_size_dedicated_cpu"]; got != true {
+		t.Fatalf("instance_size_dedicated_cpu = %v, want true", got)
+	}
 	if found.OperationType != generated.ApprovalTicketOperationType("CREATE") {
 		t.Fatalf("OperationType = %q, want CREATE", found.OperationType)
+	}
+}
+
+func TestListApprovals_HidesBatchChildTicketsFromMainList(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newApprovalTestServer(t, "approval_hide_batch_children")
+
+	parentEventID := "ev-parent-" + uuid.NewString()
+	mustCreateDomainEventWithAggregate(t, client, parentEventID, "batch", "batch-parent-1", []byte(`{"operation":"CREATE","items":[{"namespace":"prod-a"}]}`))
+	parentTicketID := "ticket-parent-" + uuid.NewString()
+	mustCreateApprovalTicket(t, client, parentTicketID, parentEventID, approvalticket.OperationTypeCREATE, "user-a")
+
+	childEventID := "ev-child-" + uuid.NewString()
+	mustCreateDomainEventWithAggregate(t, client, childEventID, "vm", "vm-child-1", []byte(`{"namespace":"prod-a"}`))
+	_, err := client.ApprovalTicket.Create().
+		SetID("ticket-child-" + uuid.NewString()).
+		SetEventID(childEventID).
+		SetOperationType(approvalticket.OperationTypeCREATE).
+		SetStatus(approvalticket.StatusPENDING).
+		SetRequester("user-a").
+		SetParentTicketID(parentTicketID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create child approval ticket: %v", err)
+	}
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/approvals", "", "admin-1", []string{"approval:view", "platform:admin"})
+	srv.ListApprovals(c, generated.ListApprovalsParams{})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.ApprovalTicketList
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("items length = %d, want 1", len(resp.Items))
+	}
+	if resp.Items[0].Id != parentTicketID {
+		t.Fatalf("ticket id = %q, want %q", resp.Items[0].Id, parentTicketID)
 	}
 }
 
@@ -518,11 +580,21 @@ func TestListApprovals_PaginationReturnsTotalAndPages(t *testing.T) {
 
 func mustCreateDomainEvent(t *testing.T, client *ent.Client, eventID string, payload []byte) {
 	t.Helper()
+	mustCreateDomainEventWithAggregate(t, client, eventID, "vm", "ag-"+uuid.NewString(), payload)
+}
+
+func mustCreateDomainEventWithAggregate(
+	t *testing.T,
+	client *ent.Client,
+	eventID, aggregateType, aggregateID string,
+	payload []byte,
+) {
+	t.Helper()
 	_, err := client.DomainEvent.Create().
 		SetID(eventID).
 		SetEventType("vm.create_requested").
-		SetAggregateType("vm").
-		SetAggregateID("ag-" + uuid.NewString()).
+		SetAggregateType(aggregateType).
+		SetAggregateID(aggregateID).
 		SetPayload(payload).
 		SetStatus(domainevent.StatusPENDING).
 		SetCreatedBy("test-seed").
@@ -549,6 +621,49 @@ func mustCreateApprovalTicket(
 		Save(t.Context())
 	if err != nil {
 		t.Fatalf("create approval ticket %s: %v", ticketID, err)
+	}
+}
+
+func mustCreateApprovalTemplate(
+	t *testing.T,
+	client *ent.Client,
+	id, name, displayName string,
+) {
+	t.Helper()
+	_, err := client.Template.Create().
+		SetID(id).
+		SetName(name).
+		SetDisplayName(displayName).
+		SetCreatedBy("test-seed").
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create template %s: %v", id, err)
+	}
+}
+
+func mustCreateApprovalInstanceSize(
+	t *testing.T,
+	client *ent.Client,
+	id, name, displayName string,
+	diskGB int,
+	dedicatedCPU bool,
+) {
+	t.Helper()
+	create := client.InstanceSize.Create().
+		SetID(id).
+		SetName(name).
+		SetDisplayName(displayName).
+		SetCPUCores(4).
+		SetMemoryGi(8).
+		SetCreatedBy("test-seed")
+	if diskGB > 0 {
+		create = create.SetDiskGB(diskGB)
+	}
+	if dedicatedCPU {
+		create = create.SetDedicatedCPU(true)
+	}
+	if _, err := create.Save(t.Context()); err != nil {
+		t.Fatalf("create instance size %s: %v", id, err)
 	}
 }
 

@@ -512,7 +512,7 @@ func (s *Server) DeleteAdminTemplate(c *gin.Context, templateID generated.Templa
 
 // ListAdminInstanceSizes handles GET /admin/instance-sizes.
 func (s *Server) ListAdminInstanceSizes(c *gin.Context) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "instance_size:read")
+	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "instance_size:read", "instance_size:write")
 	if !ok {
 		return
 	}

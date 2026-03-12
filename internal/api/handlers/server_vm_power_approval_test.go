@@ -14,6 +14,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
@@ -22,7 +23,10 @@ func TestStartVM_ProdNamespaceCreatesPendingPowerTicket(t *testing.T) {
 
 	client := testutil.OpenEntPostgres(t, "start_vm_prod_requires_approval")
 	_ = logger.Init("error", "json")
-	srv := NewServer(ServerDeps{EntClient: client})
+	srv := NewServer(ServerDeps{
+		EntClient:    client,
+		ApprovalReqs: service.NewApprovalRequirementService(client),
+	})
 
 	vmID := seedPowerTestVM(t, client, namespaceregistry.EnvironmentProd, entvm.StatusSTOPPED)
 
@@ -68,7 +72,10 @@ func TestStartVM_UnregisteredNamespaceReturnsBadRequest(t *testing.T) {
 
 	client := testutil.OpenEntPostgres(t, "start_vm_missing_namespace_registry")
 	_ = logger.Init("error", "json")
-	srv := NewServer(ServerDeps{EntClient: client})
+	srv := NewServer(ServerDeps{
+		EntClient:    client,
+		ApprovalReqs: service.NewApprovalRequirementService(client),
+	})
 
 	svcID := mustCreateServiceForVM(t, client, "owner-1")
 	vmID := "vm-" + uuid.NewString()

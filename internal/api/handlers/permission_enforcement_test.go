@@ -250,7 +250,7 @@ func TestPermissionEnforcement_CreateAdminTemplate_RequiresTemplateWrite(t *test
 	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
 }
 
-func TestPermissionEnforcement_ListAdminInstanceSizes_RequiresInstanceSizeRead(t *testing.T) {
+func TestPermissionEnforcement_ListAdminInstanceSizes_RequiresInstanceSizeReadOrWrite(t *testing.T) {
 	t.Parallel()
 
 	srv := NewServer(ServerDeps{})
@@ -261,6 +261,18 @@ func TestPermissionEnforcement_ListAdminInstanceSizes_RequiresInstanceSizeRead(t
 		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
 	}
 	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestPermissionEnforcement_ListAdminInstanceSizes_AllowsInstanceSizeWrite(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newAdminCatalogTestServer(t)
+	c, w := newAuthedGinContext(t, http.MethodGet, "/admin/instance-sizes", "", "user-a", []string{"instance_size:write"})
+
+	srv.ListAdminInstanceSizes(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
 }
 
 func TestPermissionEnforcement_CreateAdminInstanceSize_RequiresInstanceSizeWrite(t *testing.T) {

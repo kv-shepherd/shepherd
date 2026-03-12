@@ -87,6 +87,7 @@
     "status.active": "启用",
     "status.disabled": "停用",
     "status.configured": "已配置",
+    "status.local_timezone": "本地时区：{{timeZone}}",
     "systems.modal.create_title": "创建系统",
     "systems.modal.edit_title": "编辑系统",
     "systems.validation.name_required": "请输入系统名称",

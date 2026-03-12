@@ -56,8 +56,13 @@ func main() {
 		"TestSystemHandler_DeleteService_Success",
 	})
 	checkFragments(&violations, frontendVMHookTestPath, []string{
-		"deleteVM('vm-2', 'vm-two',",
-		"expect(deleteMutate).toHaveBeenCalledWith({ vmId: 'vm-2', vmName: 'vm-two' });",
+		`result.current.deleteVM("vm-2", "vm-two", "test")`,
+		`environment: "test"`,
+		`result.current.deleteVM("vm-2", "vm-two", "prod")`,
+		`result.current.setDeleteConfirmName("vm-two")`,
+		"expect(deleteMutate).toHaveBeenCalledWith({",
+		`vmId: "vm-2"`,
+		`vmName: "vm-two"`,
 	})
 	checkFragments(&violations, frontendSystemHookTestPath, []string{
 		"setDeleteConfirmName('System A')",

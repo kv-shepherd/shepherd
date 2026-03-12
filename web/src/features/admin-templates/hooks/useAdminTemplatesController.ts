@@ -2,7 +2,7 @@
 
 import { Form, message } from 'antd';
 import type { TFunction } from 'i18next';
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 
 import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
@@ -139,25 +139,55 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
     const openEditModal = (template: Template) => {
         setEditingTemplate(template);
         setEditExperimentalSourcesEnabled(template.source_type === 'containerdisk');
-        editForm.setFieldsValue({
-            display_name: template.display_name,
-            description: template.description,
-            catalog_scope: template.catalog_scope,
-            os_family: template.os_family,
-            os_version: template.os_version,
-            enabled: template.enabled,
-            source_type: template.source_type,
-            image_url: template.image_url,
-            pvc_name: template.pvc_name,
-            // pvc_namespace: must be populated so the required validation passes
-            // when editing an existing PVC-type template (master-flow Step 3).
-            pvc_namespace: template.pvc_namespace,
-            // cloud_init is the YAML cloud-init config (plain text, not JSON).
-            // master-flow Step 3: admin can freely edit this YAML text.
-            cloud_init: template.cloud_init,
-        });
         setEditOpen(true);
     };
+
+    // Edit modal uses destroyOnHidden, so form fields are unmounted while closed.
+    // Hydrate after open to avoid empty values when AntD re-mounts the form items.
+    useEffect(() => {
+        if (!editOpen || !editingTemplate) {
+            return;
+        }
+
+        let sourceFieldsTimer: ReturnType<typeof setTimeout> | undefined;
+        const timer = setTimeout(() => {
+            editForm.resetFields();
+            editForm.setFieldsValue({
+                display_name: editingTemplate.display_name,
+                description: editingTemplate.description,
+                catalog_scope: editingTemplate.catalog_scope,
+                os_family: editingTemplate.os_family,
+                os_version: editingTemplate.os_version,
+                enabled: editingTemplate.enabled,
+                source_type: editingTemplate.source_type,
+                // cloud_init is the YAML cloud-init config (plain text, not JSON).
+                // master-flow Step 3: admin can freely edit this YAML text.
+                cloud_init: editingTemplate.cloud_init,
+            });
+
+            sourceFieldsTimer = setTimeout(() => {
+                if (editingTemplate.source_type === 'cdi_pvc_clone') {
+                    editForm.setFieldsValue({
+                        pvc_name: editingTemplate.pvc_name,
+                        // pvc_namespace: must be populated so the required validation passes
+                        // when editing an existing PVC-type template (master-flow Step 3).
+                        pvc_namespace: editingTemplate.pvc_namespace,
+                    });
+                    return;
+                }
+                editForm.setFieldsValue({
+                    image_url: editingTemplate.image_url,
+                });
+            }, 0);
+        }, 0);
+
+        return () => {
+            clearTimeout(timer);
+            if (sourceFieldsTimer !== undefined) {
+                clearTimeout(sourceFieldsTimer);
+            }
+        };
+    }, [editForm, editOpen, editingTemplate]);
 
     const openDeleteModal = (template: Template) => {
         setDeletingTemplate(template);

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     getPlacementAdvisoryLabelKey,
     getPlacementReasonActionKey,
+    shouldShowPlacementHintToUser,
     sortPlacementAdvisoryCounts,
     sortPlacementReasonCounts,
 } from './placementHint';
@@ -40,5 +41,39 @@ describe('placementHint helpers', () => {
         ]);
         expect(getPlacementAdvisoryLabelKey('HostAssistedCloneLikely')).toBe('wizard.placement_advisory.HostAssistedCloneLikely');
         expect(getPlacementAdvisoryLabelKey(undefined)).toBe('wizard.placement_advisory.Other');
+    });
+
+    it('only shows placement hints that are actionable for end users', () => {
+        expect(
+            shouldShowPlacementHintToUser({
+                status: 'AVAILABLE',
+                compatible_cluster_count: 1,
+                evaluated_cluster_count: 1,
+            }),
+        ).toBe(false);
+        expect(
+            shouldShowPlacementHintToUser({
+                status: 'AVAILABLE',
+                compatible_cluster_count: 1,
+                evaluated_cluster_count: 1,
+                primary_advisory_code: 'HostAssistedCloneLikely',
+            }),
+        ).toBe(true);
+        expect(
+            shouldShowPlacementHintToUser({
+                status: 'UNAVAILABLE',
+                compatible_cluster_count: 0,
+                evaluated_cluster_count: 1,
+                primary_reason_code: 'ClusterUnavailable',
+            }),
+        ).toBe(false);
+        expect(
+            shouldShowPlacementHintToUser({
+                status: 'UNAVAILABLE',
+                compatible_cluster_count: 0,
+                evaluated_cluster_count: 1,
+                primary_reason_code: 'CapabilityMismatch',
+            }),
+        ).toBe(true);
     });
 });

@@ -24,6 +24,7 @@ interface InstanceSizeFormValues {
     name: string;
     display_name?: string;
     description?: string;
+    catalog_scope?: InstanceSize['catalog_scope'];
     cpu_cores: number;
     memory_gi: number;
     disk_gb?: number;
@@ -67,11 +68,12 @@ function formToPayload(
         }
     }
 
+    const cpuOvercommitEnabled = values.dedicated_cpu ? false : values.cpu_overcommit_enabled;
     // Overcommit clear semantics:
     // - create: omit request fields when disabled
     // - update: send 0 as clear sentinel so backend can clear persisted values
     const cpuRequest =
-        values.cpu_overcommit_enabled ? values.cpu_request : (mode === 'update' ? 0 : undefined);
+        cpuOvercommitEnabled ? values.cpu_request : (mode === 'update' ? 0 : undefined);
     const memoryRequestGi =
         values.memory_overcommit_enabled ? values.memory_request_gi : (mode === 'update' ? 0 : undefined);
 
@@ -81,6 +83,7 @@ function formToPayload(
         name: values.name,
         display_name: values.display_name,
         description: values.description,
+        catalog_scope: values.catalog_scope,
         cpu_cores: values.cpu_cores,
         memory_gi: values.memory_gi,
         disk_gb: values.disk_gb,
@@ -181,6 +184,7 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
     const openCreateModal = () => {
         createForm.resetFields();
         createForm.setFieldsValue({
+            catalog_scope: 'unclassified',
             enabled: true,
             sort_order: 0,
             dedicated_cpu: false,
@@ -207,6 +211,8 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
             sort_order?: number;
         };
 
+        let phaseTwoTimer: ReturnType<typeof setTimeout> | null = null;
+
         // Defer one tick so Modal/Form fields are mounted before hydration.
         const timer = setTimeout(() => {
             editForm.resetFields();
@@ -214,12 +220,11 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
                 name: editingItem.name,
                 display_name: editingItem.display_name,
                 description: editingItem.description,
+                catalog_scope: editingItem.catalog_scope,
                 cpu_cores: editingItem.cpu_cores,
                 memory_gi: editingItem.memory_gi,
                 disk_gb: editingItem.disk_gb,
                 dedicated_cpu: editingItem.dedicated_cpu,
-                cpu_request: hydrated.cpu_request,
-                memory_request_gi: hydrated.memory_request_gi,
                 cpu_overcommit_enabled: !!hydrated.cpu_request,
                 memory_overcommit_enabled: !!hydrated.memory_request_gi,
                 requires_sriov: editingItem.requires_sriov,
@@ -228,8 +233,22 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
                 spec_text: JSON.stringify(editingItem.spec_overrides ?? {}, null, 2),
                 enabled: editingItem.enabled,
             });
+
+            // Conditional overcommit fields mount one render later when their
+            // toggle booleans become true. Hydrate request values after mount.
+            phaseTwoTimer = setTimeout(() => {
+                editForm.setFieldsValue({
+                    cpu_request: hydrated.cpu_request,
+                    memory_request_gi: hydrated.memory_request_gi,
+                });
+            }, 0);
         }, 0);
-        return () => clearTimeout(timer);
+        return () => {
+            clearTimeout(timer);
+            if (phaseTwoTimer) {
+                clearTimeout(phaseTwoTimer);
+            }
+        };
     }, [editForm, editOpen, editingItem]);
 
     const openDeleteModal = (item: InstanceSize) => {
@@ -275,6 +294,7 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
         filteredItems,
         data: instanceSizesQuery.data,
         isLoading: instanceSizesQuery.isLoading,
+        listError: instanceSizesQuery.error,
         refetch: instanceSizesQuery.refetch,
         createOpen,
         editOpen,
