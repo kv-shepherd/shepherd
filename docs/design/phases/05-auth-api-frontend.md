@@ -46,7 +46,7 @@
 | Namespace Handlers | `internal/api/handlers/server_namespace.go` | ✅ | CRUD with environment filter + confirm_name delete gate |
 | Notification Handlers | `internal/api/handlers/server_notification.go` | ✅ | List/UnreadCount/MarkRead/MarkAllRead + InboxSender + Triggers + Frontend Bell |
 | Admin Handlers | `internal/api/handlers/server_admin.go` | ✅ | Clusters/Templates/InstanceSizes + UpdateClusterEnvironment |
-| i18n Locales | `web/src/i18n/locales/{en,zh-CN}/` | ✅ | 5 namespaces (common, vm, approval, admin, auth) |
+| i18n Locales | `web/src/i18n/locales/{en,zh-CN}/` | ✅ | 6 namespaces (common, errors, vm, approval, admin, schema) |
 
 ---
 
