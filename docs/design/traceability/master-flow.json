@@ -141,6 +141,7 @@
         "docs/adr/ADR-0014-capability-detection.md",
         "docs/adr/ADR-0018-instance-size-abstraction.md",
         "docs/adr/ADR-0031-concurrency-and-worker-pool-standard.md",
+        "docs/adr/ADR-0044-frontend-built-in-preset-catalog-boundary.md",
         "docs/adr/ADR-0040-catalog-scope-for-template-and-instancesize.md",
         "docs/adr/ADR-0042-cluster-policy-governance-model.md"
       ]
