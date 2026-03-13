@@ -321,7 +321,7 @@ func loadSeedKubeconfigBytes() ([]byte, error) {
 		return nil, errNoSeedKubeconfig
 	}
 
-	contents, err := os.ReadFile(path)
+	contents, err := os.ReadFile(path) //nolint:gosec // G703: CLI tool reads operator-provided kubeconfig path.
 	if err != nil {
 		return nil, fmt.Errorf("read E2E_KUBECONFIG_PATH %q: %w", path, err)
 	}
