@@ -272,11 +272,13 @@ const fixtures = [
   {
     name: defaultSizeName,
     display_name: "E2E Small",
-    description: "Baseline general-purpose live E2E size",
+    description: "Small baseline overcommit profile for live E2E",
     catalog_scope: "all",
-    cpu_cores: 2,
-    memory_gi: 4,
-    disk_gb: 40,
+    cpu_cores: 1,
+    cpu_request: 0.5,
+    memory_gi: 2,
+    memory_request_gi: 1,
+    disk_gb: 60,
     sort_order: 10,
     enabled: true
   },
@@ -304,6 +306,19 @@ const fixtures = [
     memory_request_gi: 8,
     disk_gb: 80,
     dedicated_cpu: true,
+    spec_overrides: {
+      spec: {
+        template: {
+          spec: {
+            domain: {
+              cpu: {
+                dedicatedCpuPlacement: true
+              }
+            }
+          }
+        }
+      }
+    },
     sort_order: 30,
     enabled: true
   },
@@ -316,6 +331,19 @@ const fixtures = [
     memory_gi: 16,
     disk_gb: 120,
     requires_gpu: true,
+    spec_overrides: {
+      spec: {
+        template: {
+          spec: {
+            domain: {
+              devices: {
+                gpus: [{ name: "gpu0", deviceName: "nvidia.com/A10" }]
+              }
+            }
+          }
+        }
+      }
+    },
     sort_order: 40,
     enabled: true
   },
@@ -329,6 +357,21 @@ const fixtures = [
     disk_gb: 80,
     requires_hugepages: true,
     hugepages_size: "2Mi",
+    spec_overrides: {
+      spec: {
+        template: {
+          spec: {
+            domain: {
+              memory: {
+                hugepages: {
+                  pageSize: "2Mi"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     sort_order: 50,
     enabled: true
   },
@@ -341,6 +384,19 @@ const fixtures = [
     memory_gi: 8,
     disk_gb: 80,
     requires_sriov: true,
+    spec_overrides: {
+      spec: {
+        template: {
+          spec: {
+            domain: {
+              devices: {
+                interfaces: [{ name: "sriov-net-1" }]
+              }
+            }
+          }
+        }
+      }
+    },
     sort_order: 60,
     enabled: true
   }

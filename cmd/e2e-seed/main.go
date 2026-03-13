@@ -7,13 +7,16 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"kv-shepherd.io/shepherd/ent"
 	entapprovalticket "kv-shepherd.io/shepherd/ent/approvalticket"
@@ -264,48 +267,100 @@ type clusterSeedInput struct {
 	Status     entcluster.Status
 }
 
+var errNoSeedKubeconfig = errors.New("no seed kubeconfig configured")
+
 func resolveClusterSeedInput(fx fixtureConfig) (clusterSeedInput, error) {
 	const fallbackStub = "apiVersion: v1\nkind: Config\nclusters: []\ncontexts: []\nusers: []\n"
-	rawB64 := strings.TrimSpace(os.Getenv("E2E_KUBECONFIG_B64"))
-	if rawB64 == "" {
-		return clusterSeedInput{
-			Kubeconfig: []byte(fallbackStub),
-			APIServer:  fx.ClusterAPIURL,
-			Status:     entcluster.StatusUNREACHABLE,
-		}, nil
+	kubeconfigBytes, err := loadSeedKubeconfigBytes()
+	if err != nil {
+		if errors.Is(err, errNoSeedKubeconfig) {
+			return clusterSeedInput{
+				Kubeconfig: []byte(fallbackStub),
+				APIServer:  fx.ClusterAPIURL,
+				Status:     entcluster.StatusUNREACHABLE,
+			}, nil
+		}
+		return clusterSeedInput{}, err
 	}
 
-	decoded, err := base64.StdEncoding.DecodeString(rawB64)
+	cfg, err := clientcmd.Load(kubeconfigBytes)
 	if err != nil {
-		return clusterSeedInput{}, fmt.Errorf("decode E2E_KUBECONFIG_B64: %w", err)
-	}
-	if strings.TrimSpace(string(decoded)) == "" {
-		return clusterSeedInput{}, fmt.Errorf("E2E_KUBECONFIG_B64 decoded to empty content")
-	}
-
-	cfg, err := clientcmd.Load(decoded)
-	if err != nil {
-		return clusterSeedInput{}, fmt.Errorf("parse kubeconfig from E2E_KUBECONFIG_B64: %w", err)
+		return clusterSeedInput{}, fmt.Errorf("parse seed kubeconfig: %w", err)
 	}
 
 	apiServer := strings.TrimSpace(fx.ClusterAPIURL)
 	if apiServer == "" || apiServer == defaultClusterAPIURL {
-		for _, cluster := range cfg.Clusters {
-			if server := strings.TrimSpace(cluster.Server); server != "" {
-				apiServer = server
-				break
-			}
-		}
+		apiServer = firstKubeconfigServer(cfg)
 	}
 	if apiServer == "" {
-		return clusterSeedInput{}, fmt.Errorf("kubeconfig in E2E_KUBECONFIG_B64 does not contain any cluster server")
+		return clusterSeedInput{}, fmt.Errorf("seed kubeconfig does not contain any cluster server")
 	}
 
 	return clusterSeedInput{
-		Kubeconfig: decoded,
+		Kubeconfig: kubeconfigBytes,
 		APIServer:  apiServer,
 		Status:     entcluster.StatusHEALTHY,
 	}, nil
+}
+
+func loadSeedKubeconfigBytes() ([]byte, error) {
+	rawB64 := strings.TrimSpace(os.Getenv("E2E_KUBECONFIG_B64"))
+	if rawB64 != "" {
+		decoded, err := base64.StdEncoding.DecodeString(rawB64)
+		if err != nil {
+			return nil, fmt.Errorf("decode E2E_KUBECONFIG_B64: %w", err)
+		}
+		if strings.TrimSpace(string(decoded)) == "" {
+			return nil, fmt.Errorf("E2E_KUBECONFIG_B64 decoded to empty content")
+		}
+		return decoded, nil
+	}
+
+	path := strings.TrimSpace(os.Getenv("E2E_KUBECONFIG_PATH"))
+	if path == "" {
+		return nil, errNoSeedKubeconfig
+	}
+
+	contents, err := os.ReadFile(path) //nolint:gosec // G703: CLI tool reads operator-provided kubeconfig path.
+	if err != nil {
+		return nil, fmt.Errorf("read E2E_KUBECONFIG_PATH %q: %w", path, err)
+	}
+	if strings.TrimSpace(string(contents)) == "" {
+		return nil, fmt.Errorf("E2E_KUBECONFIG_PATH %q is empty", path)
+	}
+	return contents, nil
+}
+
+func firstKubeconfigServer(cfg *clientcmdapi.Config) string {
+	if cfg == nil {
+		return ""
+	}
+
+	if current := strings.TrimSpace(cfg.CurrentContext); current != "" {
+		if ctx := cfg.Contexts[current]; ctx != nil {
+			if cluster := cfg.Clusters[ctx.Cluster]; cluster != nil {
+				if server := strings.TrimSpace(cluster.Server); server != "" {
+					return server
+				}
+			}
+		}
+	}
+
+	clusterNames := make([]string, 0, len(cfg.Clusters))
+	for name := range cfg.Clusters {
+		clusterNames = append(clusterNames, name)
+	}
+	sort.Strings(clusterNames)
+	for _, name := range clusterNames {
+		cluster := cfg.Clusters[name]
+		if cluster == nil {
+			continue
+		}
+		if server := strings.TrimSpace(cluster.Server); server != "" {
+			return server
+		}
+	}
+	return ""
 }
 
 func ensureAdminUser(ctx context.Context, client *ent.Client, fx fixtureConfig) (string, error) {
