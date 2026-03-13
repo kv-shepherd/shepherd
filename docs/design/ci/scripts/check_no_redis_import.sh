@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/ci/check_no_redis_import.go
+# docs/design/ci/scripts/check_no_redis_import.sh
 # Redis import prohibition check
 #
 # 2026-01-18 architecture simplification: Redis dependency removed.

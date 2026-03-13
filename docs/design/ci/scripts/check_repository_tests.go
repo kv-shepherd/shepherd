@@ -1,6 +1,6 @@
 //go:build ignore
 
-// scripts/ci/check_repository_tests.go
+// docs/design/ci/scripts/check_repository_tests.go
 
 /*
 Repository test coverage check - CI enforced

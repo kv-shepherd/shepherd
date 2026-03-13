@@ -13,7 +13,7 @@
   - [x] All dependency assembly centralized in this file
   - [x] Layered construction: Infrastructure → Repository → Service → UseCase → Handler
 - [ ] **CI Check**:
-  - [ ] `scripts/ci/check_manual_di.sh` created
+  - [ ] `docs/design/ci/scripts/check_manual_di.sh` created
   - [ ] Forbidden to instantiate Service/Repository outside `internal/app/`
   - [ ] Forbidden to initialize dependencies in `init()` functions
 - [ ] **Standards**:

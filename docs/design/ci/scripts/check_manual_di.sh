@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/ci/check_manual_di.sh
+# docs/design/ci/scripts/check_manual_di.sh
 # Strict Manual DI Policy Check
 #
 # Goal: keep dependency wiring centralized under internal/app/.
@@ -10,7 +10,7 @@
 # 3. Forbid Redis imports (Redis dependency removed)
 # 4. Forbid Wire imports (Wire dependency removed)
 #
-# Usage: ./check_manual_di.sh
+# Usage: bash docs/design/ci/scripts/check_manual_di.sh
 # Exit code: 0 = pass, 1 = violations
 
 set -e

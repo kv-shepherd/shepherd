@@ -1,6 +1,6 @@
 //go:build ignore
 
-// scripts/ci/check_validate_spec.go
+// docs/design/ci/scripts/check_validate_spec.go
 
 /*
 ValidateSpec transaction check - CI enforced
