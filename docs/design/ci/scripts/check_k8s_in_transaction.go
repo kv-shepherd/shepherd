@@ -1,6 +1,6 @@
 //go:build ignore
 
-// scripts/ci/check_k8s_in_transaction.go
+// docs/design/ci/scripts/check_k8s_in_transaction.go
 
 /*
 K8s-in-transaction check - code review assistant

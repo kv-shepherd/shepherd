@@ -1,6 +1,6 @@
 //go:build ignore
 
-// scripts/ci/check_dead_tests.go
+// docs/design/ci/scripts/check_dead_tests.go
 
 /*
 Dead test detection - CI warning (non-blocking)

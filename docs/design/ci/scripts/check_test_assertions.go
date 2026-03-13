@@ -1,6 +1,6 @@
 //go:build ignore
 
-// scripts/ci/check_test_assertions.go
+// docs/design/ci/scripts/check_test_assertions.go
 
 /*
 Test assertion check - CI enforced

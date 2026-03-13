@@ -159,6 +159,8 @@
         "docs/design/checklist/phase-4-checklist.md"
       ],
       "adrs": [
+        "docs/adr/ADR-0012-hybrid-transaction.md",
+        "docs/adr/ADR-0013-manual-di.md",
         "docs/adr/ADR-0017-vm-request-flow-clarification.md"
       ]
     },
