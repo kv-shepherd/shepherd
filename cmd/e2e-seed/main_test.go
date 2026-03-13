@@ -1,6 +1,88 @@
 package main
 
-import "testing"
+import (
+	"encoding/base64"
+	"os"
+	"path/filepath"
+	"testing"
+
+	entcluster "kv-shepherd.io/shepherd/ent/cluster"
+)
+
+const sampleSeedKubeconfig = `apiVersion: v1
+kind: Config
+clusters:
+- name: cluster-a
+  cluster:
+    server: https://cluster-a.example.invalid:6443
+contexts:
+- name: ctx-a
+  context:
+    cluster: cluster-a
+    user: user-a
+current-context: ctx-a
+users:
+- name: user-a
+  user:
+    token: sample
+`
+
+func TestResolveClusterSeedInput_UsesBase64Kubeconfig(t *testing.T) {
+	t.Setenv("E2E_KUBECONFIG_B64", base64.StdEncoding.EncodeToString([]byte(sampleSeedKubeconfig)))
+	t.Setenv("E2E_KUBECONFIG_PATH", "")
+
+	input, err := resolveClusterSeedInput(fixtureConfig{ClusterAPIURL: defaultClusterAPIURL})
+	if err != nil {
+		t.Fatalf("resolveClusterSeedInput: %v", err)
+	}
+	if got, want := string(input.Kubeconfig), sampleSeedKubeconfig; got != want {
+		t.Fatalf("kubeconfig = %q, want %q", got, want)
+	}
+	if got, want := input.APIServer, "https://cluster-a.example.invalid:6443"; got != want {
+		t.Fatalf("api server = %q, want %q", got, want)
+	}
+	if got, want := input.Status, entcluster.StatusHEALTHY; got != want {
+		t.Fatalf("status = %q, want %q", got, want)
+	}
+}
+
+func TestResolveClusterSeedInput_UsesPathWhenBase64Missing(t *testing.T) {
+	dir := t.TempDir()
+	kubeconfigPath := filepath.Join(dir, "dev-kubeconfig.yaml")
+	if err := os.WriteFile(kubeconfigPath, []byte(sampleSeedKubeconfig), 0o600); err != nil {
+		t.Fatalf("write kubeconfig: %v", err)
+	}
+
+	t.Setenv("E2E_KUBECONFIG_B64", "")
+	t.Setenv("E2E_KUBECONFIG_PATH", kubeconfigPath)
+
+	input, err := resolveClusterSeedInput(fixtureConfig{ClusterAPIURL: defaultClusterAPIURL})
+	if err != nil {
+		t.Fatalf("resolveClusterSeedInput: %v", err)
+	}
+	if got, want := string(input.Kubeconfig), sampleSeedKubeconfig; got != want {
+		t.Fatalf("kubeconfig = %q, want %q", got, want)
+	}
+	if got, want := input.APIServer, "https://cluster-a.example.invalid:6443"; got != want {
+		t.Fatalf("api server = %q, want %q", got, want)
+	}
+}
+
+func TestResolveClusterSeedInput_FallsBackToStubWithoutKubeconfig(t *testing.T) {
+	t.Setenv("E2E_KUBECONFIG_B64", "")
+	t.Setenv("E2E_KUBECONFIG_PATH", "")
+
+	input, err := resolveClusterSeedInput(fixtureConfig{ClusterAPIURL: defaultClusterAPIURL})
+	if err != nil {
+		t.Fatalf("resolveClusterSeedInput: %v", err)
+	}
+	if got, want := input.Status, entcluster.StatusUNREACHABLE; got != want {
+		t.Fatalf("status = %q, want %q", got, want)
+	}
+	if got, want := input.APIServer, defaultClusterAPIURL; got != want {
+		t.Fatalf("api server = %q, want %q", got, want)
+	}
+}
 
 func TestLiveInstanceSizeFixtures_UseNestedSpecOverrides(t *testing.T) {
 	fixtures := liveInstanceSizeFixtures(fixtureConfig{SizeName: defaultSizeName})
