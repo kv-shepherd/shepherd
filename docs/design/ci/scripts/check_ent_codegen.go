@@ -1,6 +1,6 @@
 //go:build ignore
 
-// scripts/ci/check_ent_codegen.go
+// docs/design/ci/scripts/check_ent_codegen.go
 
 /*
 Ent code generation synchronization check - CI enforced
@@ -11,7 +11,7 @@ Rules:
 3. Generated files must be committed.
 
 Usage:
-  go run scripts/ci/check_ent_codegen.go
+  go run docs/design/ci/scripts/check_ent_codegen.go
 
 Or in CI:
   cd ent && go generate . && git diff --exit-code

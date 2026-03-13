@@ -52,7 +52,7 @@ Integrate service layer with providers:
 | SystemHandler | `internal/api/handlers/system.go` | ✅ | - |
 | **InstanceSizeService** | `internal/service/instance_size_service.go` | ✅ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
 | **InstanceSizeHandler** | `internal/api/handlers/instance_size.go` | ⬜ | Deferred |
-| CI check | `scripts/ci/check_manual_di.sh` | ⬜ | Deferred |
+| CI check | `docs/design/ci/scripts/check_manual_di.sh` | ⬜ | Deferred |
 
 ---
 
@@ -176,14 +176,15 @@ func Bootstrap(cfg *config.Config) (*App, error) {
 
 | Rule | Enforcement |
 |------|-------------|
-| Service layer must not manage transactions | `check_transaction_boundary.go` |
-| K8s calls forbidden inside transactions | `check_k8s_in_transaction.go` |
+| Service layer must not manage transactions | `shepherd-arch` (tx boundary analyzer) |
+| K8s calls forbidden inside transactions | `shepherd-arch/k8sintransaction` |
 | Transaction boundaries at UseCase layer | - |
 
 > ⚠️ **Developer Guidance**: Run these checks locally before committing:
 > ```bash
-> go run scripts/ci/check_transaction_boundary.go ./...
-> go run scripts/ci/check_k8s_in_transaction.go ./...
+> make lint
+> # Optional: run the standalone script when iterating on transaction-safe K8s boundaries
+> go run docs/design/ci/scripts/check_k8s_in_transaction.go ./...
 > ```
 >
 > **Anti-Pattern (ADR-0012)**: K8s API calls inside DB transactions cause:
