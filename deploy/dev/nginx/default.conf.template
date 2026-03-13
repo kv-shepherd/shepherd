@@ -22,9 +22,9 @@ server {
         proxy_read_timeout 60s;
     }
 
-    # All UI routes are served by Next.js dev server.
+    # All UI routes are served by the Next.js dev server.
     location / {
-        proxy_pass http://web:3000;
+        proxy_pass http://${WEB_UPSTREAM};
         proxy_http_version 1.1;
         proxy_set_header Host $http_host;
         proxy_set_header Upgrade $http_upgrade;
