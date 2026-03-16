@@ -15,19 +15,44 @@ DEV_INCLUDE_E2E_SEED="${DEV_INCLUDE_E2E_SEED:-1}"
 DEV_FRONTEND_MODE="${DEV_FRONTEND_MODE:-host}"
 DEV_FRONTEND_PORT="${DEV_FRONTEND_PORT:-3001}"
 DEV_INGRESS_PORT="${DEV_INGRESS_PORT:-3000}"
+DEV_FRONTEND_RUNTIME="${DEV_FRONTEND_RUNTIME:-dev}" # dev|prod
+DEV_FRONTEND_PROD_DIST_DIR="${DEV_FRONTEND_PROD_DIST_DIR:-.next-prod}"
+# Dev-only tuning:
+# - Source maps improve stack traces but can increase memory/CPU usage.
+DEV_FRONTEND_DISABLE_SOURCE_MAPS="${DEV_FRONTEND_DISABLE_SOURCE_MAPS:-0}"
+# Frontend OOM guard defaults:
+# - enabled by default (no swap on many dev machines makes kernel OOM-kill likely)
+# - applies only to the Next.js dev server process (host or docker)
+DEV_FRONTEND_OOM_GUARD="${DEV_FRONTEND_OOM_GUARD:-1}"
+DEV_FRONTEND_OOM_GUARD_MAX_OLD_SPACE_MB="${DEV_FRONTEND_OOM_GUARD_MAX_OLD_SPACE_MB:-3072}"
+# Optional: override NODE_OPTIONS for the Next.js dev server only (host mode).
+# Example:
+#   DEV_FRONTEND_NODE_OPTIONS="--max-old-space-size=4096 --heapsnapshot-signal=SIGUSR2"
+DEV_FRONTEND_NODE_OPTIONS="${DEV_FRONTEND_NODE_OPTIONS:-}"
 FRONTEND_PID_FILE="${ROOT_DIR}/tmp/dev-web.pid"
 FRONTEND_LOG_FILE="${ROOT_DIR}/tmp/dev-web.log"
 KEEP_DB=0
+# Default to webpack for stability; Turbopack can consume excessive memory in some dev scenarios.
+DEV_FRONTEND_BUILDER="${DEV_FRONTEND_BUILDER:-webpack}"
 
 usage() {
     cat <<'EOF'
-Usage: ./start-dev.sh [--keep-db] [--frontend-docker]
+Usage: ./start-dev.sh [options]
 
 Options:
   --keep-db          Preserve the existing dev PostgreSQL container/data and only
                      recreate app services.
   --frontend-docker  Run the frontend inside Docker instead of the default host
                      Next.js dev server. This is slower but useful as a fallback.
+  --frontend-prod    Run the host frontend in production mode:
+                     - next build (into DEV_FRONTEND_PROD_DIST_DIR, default: .next-prod)
+                     - next start (no HMR)
+  --webpack          Use the webpack builder for the host Next.js dev server.
+                     Useful when Turbopack exhibits high memory usage.
+  --turbopack        Use Turbopack (Next.js default) for the host Next.js dev server.
+  --no-oom-guard     Disable the default Next.js dev server heap limit guard.
+  --disable-source-maps
+                     Disable source maps for host Next.js dev server (lower memory/CPU, worse stack traces).
   -h, --help         Show this help message.
 EOF
 }
@@ -90,7 +115,8 @@ stop_host_frontend() {
     pid="$(cat "${FRONTEND_PID_FILE}" 2>/dev/null || true)"
     if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
         echo "Stopping existing host frontend (pid ${pid})..."
-        kill "${pid}" >/dev/null 2>&1 || true
+        # Kill the entire process group created by setsid.
+        kill -- -"${pid}" >/dev/null 2>&1 || true
         for _ in {1..20}; do
             if ! kill -0 "${pid}" >/dev/null 2>&1; then
                 break
@@ -102,18 +128,73 @@ stop_host_frontend() {
 }
 
 start_host_frontend() {
-    local allowed_origins=""
-    allowed_origins="$(compute_allowed_dev_origins)"
+    local node_options="${DEV_FRONTEND_NODE_OPTIONS}"
+    if [[ -z "${node_options}" ]] && [[ "${DEV_FRONTEND_OOM_GUARD}" == "1" ]]; then
+        node_options="--max-old-space-size=${DEV_FRONTEND_OOM_GUARD_MAX_OLD_SPACE_MB} --heapsnapshot-signal=SIGUSR2"
+    fi
     mkdir -p "$(dirname "${FRONTEND_PID_FILE}")"
     stop_host_frontend
 
+    : > "${FRONTEND_LOG_FILE}"
+
+    if [[ "${DEV_FRONTEND_RUNTIME}" == "prod" ]]; then
+        echo "Building frontend on host (Next.js production build)..."
+        echo "  - distDir: ${DEV_FRONTEND_PROD_DIST_DIR}"
+        if [[ -n "${node_options}" ]]; then
+            echo "  - NODE_OPTIONS: ${node_options}"
+        fi
+
+        (
+            cd "${ROOT_DIR}/web"
+            NEXT_PUBLIC_API_URL="/api/v1" \
+            INTERNAL_API_URL="http://localhost:8080" \
+            NEXT_DIST_DIR="${DEV_FRONTEND_PROD_DIST_DIR}" \
+            NODE_OPTIONS="${node_options}" \
+            ./node_modules/.bin/next build >>"${FRONTEND_LOG_FILE}" 2>&1
+        ) || {
+            echo " frontend build failed"
+            tail -n 200 "${FRONTEND_LOG_FILE}" || true
+            return 1
+        }
+
+        echo "Starting frontend on host (Next.js production server on :${DEV_FRONTEND_PORT})..."
+        (
+            cd "${ROOT_DIR}/web"
+            NEXT_PUBLIC_API_URL="/api/v1" \
+            INTERNAL_API_URL="http://localhost:8080" \
+            NEXT_DIST_DIR="${DEV_FRONTEND_PROD_DIST_DIR}" \
+            NODE_OPTIONS="${node_options}" \
+            setsid ./node_modules/.bin/next start --hostname 0.0.0.0 --port "${DEV_FRONTEND_PORT}" >>"${FRONTEND_LOG_FILE}" 2>&1 < /dev/null &
+            echo $! > "${FRONTEND_PID_FILE}"
+        )
+        return 0
+    fi
+
+    local allowed_origins=""
+    allowed_origins="$(compute_allowed_dev_origins)"
+    local next_args=()
+    if [[ "${DEV_FRONTEND_BUILDER}" == "webpack" ]]; then
+        next_args+=(--webpack)
+    fi
+    if [[ "${DEV_FRONTEND_DISABLE_SOURCE_MAPS}" == "1" ]]; then
+        next_args+=(--disable-source-maps)
+    fi
+
     echo "Starting frontend on host (Next.js dev server on :${DEV_FRONTEND_PORT})..."
+    echo "  - builder: ${DEV_FRONTEND_BUILDER}"
+    if [[ "${DEV_FRONTEND_DISABLE_SOURCE_MAPS}" == "1" ]]; then
+        echo "  - source maps: disabled"
+    fi
+    if [[ -n "${node_options}" ]]; then
+        echo "  - NODE_OPTIONS: ${node_options}"
+    fi
     (
         cd "${ROOT_DIR}/web"
         DEV_ALLOWED_ORIGINS="${allowed_origins}" \
         NEXT_PUBLIC_API_URL="/api/v1" \
         INTERNAL_API_URL="http://localhost:8080" \
-        setsid ./node_modules/.bin/next dev --hostname 0.0.0.0 --port "${DEV_FRONTEND_PORT}" >"${FRONTEND_LOG_FILE}" 2>&1 < /dev/null &
+        NODE_OPTIONS="${node_options}" \
+        setsid ./node_modules/.bin/next dev "${next_args[@]}" --hostname 0.0.0.0 --port "${DEV_FRONTEND_PORT}" >"${FRONTEND_LOG_FILE}" 2>&1 < /dev/null &
         echo $! > "${FRONTEND_PID_FILE}"
     )
 }
@@ -212,6 +293,26 @@ while [[ $# -gt 0 ]]; do
             DEV_FRONTEND_MODE="docker"
             shift
             ;;
+        --frontend-prod)
+            DEV_FRONTEND_RUNTIME="prod"
+            shift
+            ;;
+        --webpack)
+            DEV_FRONTEND_BUILDER="webpack"
+            shift
+            ;;
+        --turbopack)
+            DEV_FRONTEND_BUILDER="turbopack"
+            shift
+            ;;
+        --no-oom-guard)
+            DEV_FRONTEND_OOM_GUARD=0
+            shift
+            ;;
+        --disable-source-maps)
+            DEV_FRONTEND_DISABLE_SOURCE_MAPS=1
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -232,6 +333,31 @@ fi
 
 if [[ "${DEV_FRONTEND_MODE}" != "host" && "${DEV_FRONTEND_MODE}" != "docker" ]]; then
     echo "DEV_FRONTEND_MODE must be 'host' or 'docker'. Current value: ${DEV_FRONTEND_MODE}"
+    exit 1
+fi
+
+if [[ "${DEV_FRONTEND_RUNTIME}" != "dev" && "${DEV_FRONTEND_RUNTIME}" != "prod" ]]; then
+    echo "DEV_FRONTEND_RUNTIME must be 'dev' or 'prod'. Current value: ${DEV_FRONTEND_RUNTIME}"
+    exit 1
+fi
+
+if [[ "${DEV_FRONTEND_BUILDER}" != "webpack" && "${DEV_FRONTEND_BUILDER}" != "turbopack" ]]; then
+    echo "DEV_FRONTEND_BUILDER must be 'webpack' or 'turbopack'. Current value: ${DEV_FRONTEND_BUILDER}"
+    exit 1
+fi
+
+if [[ "${DEV_FRONTEND_OOM_GUARD}" != "0" && "${DEV_FRONTEND_OOM_GUARD}" != "1" ]]; then
+    echo "DEV_FRONTEND_OOM_GUARD must be '0' or '1'. Current value: ${DEV_FRONTEND_OOM_GUARD}"
+    exit 1
+fi
+
+if [[ "${DEV_FRONTEND_DISABLE_SOURCE_MAPS}" != "0" && "${DEV_FRONTEND_DISABLE_SOURCE_MAPS}" != "1" ]]; then
+    echo "DEV_FRONTEND_DISABLE_SOURCE_MAPS must be '0' or '1'. Current value: ${DEV_FRONTEND_DISABLE_SOURCE_MAPS}"
+    exit 1
+fi
+
+if [[ "${DEV_FRONTEND_RUNTIME}" == "prod" && "${DEV_FRONTEND_MODE}" != "host" ]]; then
+    echo "--frontend-prod only supports the host frontend. Remove --frontend-docker or set DEV_FRONTEND_MODE=host."
     exit 1
 fi
 
