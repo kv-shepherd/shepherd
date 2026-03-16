@@ -112,8 +112,9 @@ func TestMaskFor_KnownEntityTypes(t *testing.T) {
 			}
 			// Verify it parses as valid JSON with a quick_fields array.
 			var mask struct {
-				QuickFields    []interface{} `json:"quick_fields"`
-				AdvancedFields []interface{} `json:"advanced_fields"`
+				QuickFields        []interface{} `json:"quick_fields"`
+				AdvancedFields     []interface{} `json:"advanced_fields"`
+				ProfessionalFields []interface{} `json:"professional_fields"`
 			}
 			if err := json.Unmarshal(data, &mask); err != nil {
 				t.Fatalf("MaskFor(%q): invalid JSON: %v", entityType, err)
@@ -164,7 +165,8 @@ func TestValidateMaskPaths_InvalidPath(t *testing.T) {
 	}`)
 	maskJSON := []byte(`{
 		"quick_fields": [{"path": "spec.cores"}],
-		"advanced_fields": [{"path": "spec.nonexistent.deep.path"}]
+		"advanced_fields": [{"path": "spec.nonexistent.deep.path"}],
+		"professional_fields": []
 	}`)
 
 	err := schema.ValidateMaskPaths(schemaJSON, maskJSON)
@@ -199,7 +201,8 @@ func TestValidateMaskPaths_ArrayTraversal(t *testing.T) {
 	}`)
 	maskJSON := []byte(`{
 		"quick_fields": [{"path": "devices.gpus"}],
-		"advanced_fields": []
+		"advanced_fields": [],
+		"professional_fields": []
 	}`)
 
 	if err := schema.ValidateMaskPaths(schemaJSON, maskJSON); err != nil {

@@ -48,7 +48,8 @@ import _ "embed"
 var instancesizeSchema []byte
 
 // instancesize.mask.json: UI projection mask for instancesize entity.
-// Defines quick_fields (always visible) and advanced_fields (collapsible).
+// Defines quick_fields (always visible), advanced_fields (commonly adjusted),
+// and professional_fields (rare/expert settings).
 //
 //go:embed instancesize.mask.json
 var instancesizeMask []byte

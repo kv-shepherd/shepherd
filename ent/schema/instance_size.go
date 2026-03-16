@@ -64,6 +64,18 @@ func (InstanceSize) Fields() []ent.Field {
 		// internal infrastructure tuning details. See instanceSizeToPublicAPI().
 		field.JSON("spec_overrides", map[string]interface{}{}).
 			Optional(),
+		// dv_access_modes sets the DataVolume PVC access mode(s) for VMs of this size.
+		// e.g. ["ReadWriteMany"]. When set, uses CDI 'pvc' format instead of 'storage'.
+		// Required for storage backends like Ceph RBD that require specific access modes.
+		field.JSON("dv_access_modes", []string{}).
+			Optional().
+			Comment("DataVolume PVC accessModes, e.g. [\"ReadWriteMany\"]. Empty = CDI default."),
+		// dv_volume_mode sets the DataVolume PVC volume mode: "Block" or "Filesystem".
+		// Ceph RBD typically requires "Block" mode for optimal performance.
+		field.String("dv_volume_mode").
+			Optional().
+			Default("").
+			Comment("DataVolume PVC volumeMode: Block or Filesystem. Empty = CDI default."),
 		field.Enum("catalog_scope").
 			Values("unclassified", "test", "prod", "all").
 			Default("unclassified").

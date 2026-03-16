@@ -29,10 +29,11 @@ func (s *VMService) GetProvisioningStatus(
 		return nil, nil
 	}
 
-	rootDVName := strings.TrimSpace(vmName) + "-rootdisk"
-	if strings.TrimSpace(vmName) == "" {
+	vmName = strings.TrimSpace(vmName)
+	if vmName == "" {
 		return nil, fmt.Errorf("vm name is required")
 	}
+	rootDVName := provider.DefaultRootDataVolumeName(vmName)
 
 	dv, err := observer.GetDataVolume(ctx, cluster, namespace, rootDVName)
 	if err != nil {

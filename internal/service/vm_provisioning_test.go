@@ -43,10 +43,10 @@ func TestGetProvisioningStatus_AggregatesDataVolumePVCAndEvents(t *testing.T) {
 	mock := provider.NewMockProvider()
 	mock.SeedDataVolumes([]*domain.DataVolume{
 		{
-			Name:         "vm-a-rootdisk",
+			Name:         "vm-a-rootfs",
 			Namespace:    "team-a",
 			UID:          "dv-uid-1",
-			ClaimName:    "vm-a-rootdisk",
+			ClaimName:    "vm-a-rootfs",
 			Phase:        "Failed",
 			Progress:     "75.0%",
 			RestartCount: 2,
@@ -69,7 +69,7 @@ func TestGetProvisioningStatus_AggregatesDataVolumePVCAndEvents(t *testing.T) {
 	})
 	mock.SeedPVCs([]*domain.PersistentVolumeClaim{
 		{
-			Name:                "vm-a-rootdisk",
+			Name:                "vm-a-rootfs",
 			Namespace:           "team-a",
 			Phase:               "Bound",
 			CloneType:           "copy",
@@ -79,7 +79,7 @@ func TestGetProvisioningStatus_AggregatesDataVolumePVCAndEvents(t *testing.T) {
 	})
 	mock.SeedEvents(domain.ObjectReference{
 		Kind:      "DataVolume",
-		Name:      "vm-a-rootdisk",
+		Name:      "vm-a-rootfs",
 		Namespace: "team-a",
 		UID:       "dv-uid-1",
 	}, []domain.ProvisioningEvent{
@@ -108,11 +108,11 @@ func TestGetProvisioningStatus_AggregatesDataVolumePVCAndEvents(t *testing.T) {
 	if got == nil {
 		t.Fatal("GetProvisioningStatus = nil, want aggregated status")
 	}
-	if got.RootDataVolumeName != "vm-a-rootdisk" {
-		t.Fatalf("RootDataVolumeName = %q, want %q", got.RootDataVolumeName, "vm-a-rootdisk")
+	if got.RootDataVolumeName != "vm-a-rootfs" {
+		t.Fatalf("RootDataVolumeName = %q, want %q", got.RootDataVolumeName, "vm-a-rootfs")
 	}
-	if got.ClaimName != "vm-a-rootdisk" {
-		t.Fatalf("ClaimName = %q, want %q", got.ClaimName, "vm-a-rootdisk")
+	if got.ClaimName != "vm-a-rootfs" {
+		t.Fatalf("ClaimName = %q, want %q", got.ClaimName, "vm-a-rootfs")
 	}
 	if got.Phase != "Failed" {
 		t.Fatalf("Phase = %q, want %q", got.Phase, "Failed")

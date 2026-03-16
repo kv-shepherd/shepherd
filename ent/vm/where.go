@@ -110,6 +110,16 @@ func TicketID(v string) predicate.VM {
 	return predicate.VM(sql.FieldEQ(FieldTicketID, v))
 }
 
+// RootVolumeStorageClass applies equality check predicate on the "root_volume_storage_class" field. It's identical to RootVolumeStorageClassEQ.
+func RootVolumeStorageClass(v string) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldRootVolumeStorageClass, v))
+}
+
+// RootVolumeVolumeMode applies equality check predicate on the "root_volume_volume_mode" field. It's identical to RootVolumeVolumeModeEQ.
+func RootVolumeVolumeMode(v string) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldRootVolumeVolumeMode, v))
+}
+
 // PollIntervalSec applies equality check predicate on the "poll_interval_sec" field. It's identical to PollIntervalSecEQ.
 func PollIntervalSec(v int) predicate.VM {
 	return predicate.VM(sql.FieldEQ(FieldPollIntervalSec, v))
@@ -713,6 +723,166 @@ func TicketIDEqualFold(v string) predicate.VM {
 // TicketIDContainsFold applies the ContainsFold predicate on the "ticket_id" field.
 func TicketIDContainsFold(v string) predicate.VM {
 	return predicate.VM(sql.FieldContainsFold(FieldTicketID, v))
+}
+
+// RootVolumeStorageClassEQ applies the EQ predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassEQ(v string) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldRootVolumeStorageClass, v))
+}
+
+// RootVolumeStorageClassNEQ applies the NEQ predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassNEQ(v string) predicate.VM {
+	return predicate.VM(sql.FieldNEQ(FieldRootVolumeStorageClass, v))
+}
+
+// RootVolumeStorageClassIn applies the In predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassIn(vs ...string) predicate.VM {
+	return predicate.VM(sql.FieldIn(FieldRootVolumeStorageClass, vs...))
+}
+
+// RootVolumeStorageClassNotIn applies the NotIn predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassNotIn(vs ...string) predicate.VM {
+	return predicate.VM(sql.FieldNotIn(FieldRootVolumeStorageClass, vs...))
+}
+
+// RootVolumeStorageClassGT applies the GT predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassGT(v string) predicate.VM {
+	return predicate.VM(sql.FieldGT(FieldRootVolumeStorageClass, v))
+}
+
+// RootVolumeStorageClassGTE applies the GTE predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassGTE(v string) predicate.VM {
+	return predicate.VM(sql.FieldGTE(FieldRootVolumeStorageClass, v))
+}
+
+// RootVolumeStorageClassLT applies the LT predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassLT(v string) predicate.VM {
+	return predicate.VM(sql.FieldLT(FieldRootVolumeStorageClass, v))
+}
+
+// RootVolumeStorageClassLTE applies the LTE predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassLTE(v string) predicate.VM {
+	return predicate.VM(sql.FieldLTE(FieldRootVolumeStorageClass, v))
+}
+
+// RootVolumeStorageClassContains applies the Contains predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassContains(v string) predicate.VM {
+	return predicate.VM(sql.FieldContains(FieldRootVolumeStorageClass, v))
+}
+
+// RootVolumeStorageClassHasPrefix applies the HasPrefix predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassHasPrefix(v string) predicate.VM {
+	return predicate.VM(sql.FieldHasPrefix(FieldRootVolumeStorageClass, v))
+}
+
+// RootVolumeStorageClassHasSuffix applies the HasSuffix predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassHasSuffix(v string) predicate.VM {
+	return predicate.VM(sql.FieldHasSuffix(FieldRootVolumeStorageClass, v))
+}
+
+// RootVolumeStorageClassIsNil applies the IsNil predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassIsNil() predicate.VM {
+	return predicate.VM(sql.FieldIsNull(FieldRootVolumeStorageClass))
+}
+
+// RootVolumeStorageClassNotNil applies the NotNil predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassNotNil() predicate.VM {
+	return predicate.VM(sql.FieldNotNull(FieldRootVolumeStorageClass))
+}
+
+// RootVolumeStorageClassEqualFold applies the EqualFold predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassEqualFold(v string) predicate.VM {
+	return predicate.VM(sql.FieldEqualFold(FieldRootVolumeStorageClass, v))
+}
+
+// RootVolumeStorageClassContainsFold applies the ContainsFold predicate on the "root_volume_storage_class" field.
+func RootVolumeStorageClassContainsFold(v string) predicate.VM {
+	return predicate.VM(sql.FieldContainsFold(FieldRootVolumeStorageClass, v))
+}
+
+// RootVolumeAccessModesIsNil applies the IsNil predicate on the "root_volume_access_modes" field.
+func RootVolumeAccessModesIsNil() predicate.VM {
+	return predicate.VM(sql.FieldIsNull(FieldRootVolumeAccessModes))
+}
+
+// RootVolumeAccessModesNotNil applies the NotNil predicate on the "root_volume_access_modes" field.
+func RootVolumeAccessModesNotNil() predicate.VM {
+	return predicate.VM(sql.FieldNotNull(FieldRootVolumeAccessModes))
+}
+
+// RootVolumeVolumeModeEQ applies the EQ predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeEQ(v string) predicate.VM {
+	return predicate.VM(sql.FieldEQ(FieldRootVolumeVolumeMode, v))
+}
+
+// RootVolumeVolumeModeNEQ applies the NEQ predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeNEQ(v string) predicate.VM {
+	return predicate.VM(sql.FieldNEQ(FieldRootVolumeVolumeMode, v))
+}
+
+// RootVolumeVolumeModeIn applies the In predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeIn(vs ...string) predicate.VM {
+	return predicate.VM(sql.FieldIn(FieldRootVolumeVolumeMode, vs...))
+}
+
+// RootVolumeVolumeModeNotIn applies the NotIn predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeNotIn(vs ...string) predicate.VM {
+	return predicate.VM(sql.FieldNotIn(FieldRootVolumeVolumeMode, vs...))
+}
+
+// RootVolumeVolumeModeGT applies the GT predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeGT(v string) predicate.VM {
+	return predicate.VM(sql.FieldGT(FieldRootVolumeVolumeMode, v))
+}
+
+// RootVolumeVolumeModeGTE applies the GTE predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeGTE(v string) predicate.VM {
+	return predicate.VM(sql.FieldGTE(FieldRootVolumeVolumeMode, v))
+}
+
+// RootVolumeVolumeModeLT applies the LT predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeLT(v string) predicate.VM {
+	return predicate.VM(sql.FieldLT(FieldRootVolumeVolumeMode, v))
+}
+
+// RootVolumeVolumeModeLTE applies the LTE predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeLTE(v string) predicate.VM {
+	return predicate.VM(sql.FieldLTE(FieldRootVolumeVolumeMode, v))
+}
+
+// RootVolumeVolumeModeContains applies the Contains predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeContains(v string) predicate.VM {
+	return predicate.VM(sql.FieldContains(FieldRootVolumeVolumeMode, v))
+}
+
+// RootVolumeVolumeModeHasPrefix applies the HasPrefix predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeHasPrefix(v string) predicate.VM {
+	return predicate.VM(sql.FieldHasPrefix(FieldRootVolumeVolumeMode, v))
+}
+
+// RootVolumeVolumeModeHasSuffix applies the HasSuffix predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeHasSuffix(v string) predicate.VM {
+	return predicate.VM(sql.FieldHasSuffix(FieldRootVolumeVolumeMode, v))
+}
+
+// RootVolumeVolumeModeIsNil applies the IsNil predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeIsNil() predicate.VM {
+	return predicate.VM(sql.FieldIsNull(FieldRootVolumeVolumeMode))
+}
+
+// RootVolumeVolumeModeNotNil applies the NotNil predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeNotNil() predicate.VM {
+	return predicate.VM(sql.FieldNotNull(FieldRootVolumeVolumeMode))
+}
+
+// RootVolumeVolumeModeEqualFold applies the EqualFold predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeEqualFold(v string) predicate.VM {
+	return predicate.VM(sql.FieldEqualFold(FieldRootVolumeVolumeMode, v))
+}
+
+// RootVolumeVolumeModeContainsFold applies the ContainsFold predicate on the "root_volume_volume_mode" field.
+func RootVolumeVolumeModeContainsFold(v string) predicate.VM {
+	return predicate.VM(sql.FieldContainsFold(FieldRootVolumeVolumeMode, v))
 }
 
 // PollingTierEQ applies the EQ predicate on the "polling_tier" field.

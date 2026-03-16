@@ -41,9 +41,16 @@ interface InstanceSizeFormValues {
      * Replaces the previous free-form spec_overrides_text textarea (ADR-0023 Stage 1).
      */
     spec_text?: string;
+    root_volume_mode_intent?: 'auto' | 'explicit';
+    dv_access_modes?: string[];
+    dv_volume_mode?: InstanceSize['dv_volume_mode'];
     sort_order?: number;
     enabled?: boolean;
 }
+
+type InstanceSizePayload = Record<string, unknown> & {
+    name?: string;
+};
 
 
 /**
@@ -54,7 +61,7 @@ interface InstanceSizeFormValues {
 function formToPayload(
     values: InstanceSizeFormValues,
     mode: 'create' | 'update',
-): Omit<InstanceSizeCreateRequest, 'name'> & { name?: string } {
+): InstanceSizePayload {
     // Parse DynamicSchemaForm spec_text → spec_overrides map
     let specOverrides: Record<string, unknown> | undefined;
     if (values.spec_text && values.spec_text.trim() && values.spec_text.trim() !== '{}') {
@@ -76,10 +83,13 @@ function formToPayload(
         cpuOvercommitEnabled ? values.cpu_request : (mode === 'update' ? 0 : undefined);
     const memoryRequestGi =
         values.memory_overcommit_enabled ? values.memory_request_gi : (mode === 'update' ? 0 : undefined);
+    const explicitRootVolumeMode = values.root_volume_mode_intent === 'explicit';
+    const dvAccessModes = normalizeStringList(values.dv_access_modes);
+    const dvVolumeMode = typeof values.dv_volume_mode === 'string' ? values.dv_volume_mode.trim() : '';
 
     // Explicit whitelist to avoid leaking dynamic-form internals (for example "spec")
     // into API payload and violating OpenAPI additionalProperties=false checks.
-    const payload: Omit<InstanceSizeCreateRequest, 'name'> & { name?: string } = {
+    const payload: InstanceSizePayload = {
         name: values.name,
         display_name: values.display_name,
         description: values.description,
@@ -94,6 +104,16 @@ function formToPayload(
         sort_order: values.sort_order,
         enabled: values.enabled,
         spec_overrides: specOverrides,
+        ...(explicitRootVolumeMode && dvAccessModes.length > 0 && dvVolumeMode
+            ? {
+                dv_access_modes: dvAccessModes,
+                dv_volume_mode: dvVolumeMode as InstanceSize['dv_volume_mode'],
+            }
+            : mode === 'update'
+                ? {
+                    dv_access_modes: [],
+                }
+                : {}),
     };
 
     return Object.fromEntries(
@@ -177,7 +197,8 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
             instanceSize.name.toLowerCase().includes(query) ||
             (instanceSize.display_name ?? '').toLowerCase().includes(query) ||
             (instanceSize.description ?? '').toLowerCase().includes(query) ||
-            getCapabilityLabels(instanceSize).some((label) => label.toLowerCase().includes(query))
+            getCapabilityLabels(instanceSize).some((label) => label.toLowerCase().includes(query)) ||
+            getRootVolumeModeLabels(instanceSize).some((label) => label.toLowerCase().includes(query))
         );
     }, [instanceSizesQuery.data?.items, deferredSearch]);
 
@@ -189,6 +210,9 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
             sort_order: 0,
             dedicated_cpu: false,
             spec_text: '{}',
+            root_volume_mode_intent: 'auto',
+            dv_access_modes: undefined,
+            dv_volume_mode: undefined,
         });
         setCreateOpen(true);
     };
@@ -228,6 +252,12 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
                 cpu_overcommit_enabled: !!hydrated.cpu_request,
                 memory_overcommit_enabled: !!hydrated.memory_request_gi,
                 requires_sriov: editingItem.requires_sriov,
+                root_volume_mode_intent:
+                    (editingItem.dv_access_modes?.length ?? 0) > 0 || editingItem.dv_volume_mode
+                        ? 'explicit'
+                        : 'auto',
+                dv_access_modes: editingItem.dv_access_modes,
+                dv_volume_mode: editingItem.dv_volume_mode,
                 sort_order: hydrated.sort_order,
                 // spec_text: DynamicSchemaForm will parse this JSON string on mount
                 spec_text: JSON.stringify(editingItem.spec_overrides ?? {}, null, 2),
@@ -259,7 +289,7 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
     const submitCreate = async () => {
         const values = await createForm.validateFields();
         const payload = formToPayload(values, 'create');
-        createMutation.mutate(payload as InstanceSizeCreateRequest);
+        createMutation.mutate(payload as unknown as InstanceSizeCreateRequest);
     };
 
     const submitEdit = async () => {
@@ -270,7 +300,7 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
         const payload = formToPayload(values, 'update');
         updateMutation.mutate({
             id: editingItem.id,
-            body: payload as InstanceSizeUpdateRequest,
+            body: payload as unknown as InstanceSizeUpdateRequest,
         });
     };
 
@@ -326,4 +356,28 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
         updatePending: updateMutation.isPending,
         deletePending: deleteMutation.isPending,
     };
+}
+
+function normalizeStringList(values: string[] | undefined): string[] {
+    if (!Array.isArray(values) || values.length === 0) {
+        return [];
+    }
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    for (const rawValue of values) {
+        const value = typeof rawValue === 'string' ? rawValue.trim() : '';
+        if (!value || seen.has(value)) {
+            continue;
+        }
+        seen.add(value);
+        normalized.push(value);
+    }
+    return normalized;
+}
+
+function getRootVolumeModeLabels(record: InstanceSize): string[] {
+    if (!record.dv_volume_mode || !record.dv_access_modes?.length) {
+        return ['Root Volume Auto'];
+    }
+    return [`Root Volume ${record.dv_volume_mode} ${record.dv_access_modes.join('/')}`];
 }

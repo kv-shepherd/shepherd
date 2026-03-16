@@ -50,6 +50,10 @@ type InstanceSize struct {
 	HugepagesSize string `json:"hugepages_size,omitempty"`
 	// SpecOverrides holds the value of the "spec_overrides" field.
 	SpecOverrides map[string]interface{} `json:"spec_overrides,omitempty"`
+	// DataVolume PVC accessModes, e.g. ["ReadWriteMany"]. Empty = CDI default.
+	DvAccessModes []string `json:"dv_access_modes,omitempty"`
+	// DataVolume PVC volumeMode: Block or Filesystem. Empty = CDI default.
+	DvVolumeMode string `json:"dv_volume_mode,omitempty"`
 	// Catalog visibility scope only. Not scheduling environment.
 	CatalogScope instancesize.CatalogScope `json:"catalog_scope,omitempty"`
 	// SortOrder holds the value of the "sort_order" field.
@@ -66,7 +70,7 @@ func (*InstanceSize) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case instancesize.FieldSpecOverrides:
+		case instancesize.FieldSpecOverrides, instancesize.FieldDvAccessModes:
 			values[i] = new([]byte)
 		case instancesize.FieldDedicatedCPU, instancesize.FieldRequiresGpu, instancesize.FieldRequiresSriov, instancesize.FieldRequiresHugepages, instancesize.FieldEnabled:
 			values[i] = new(sql.NullBool)
@@ -74,7 +78,7 @@ func (*InstanceSize) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case instancesize.FieldDiskGB, instancesize.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
-		case instancesize.FieldID, instancesize.FieldName, instancesize.FieldDisplayName, instancesize.FieldDescription, instancesize.FieldHugepagesSize, instancesize.FieldCatalogScope, instancesize.FieldCreatedBy:
+		case instancesize.FieldID, instancesize.FieldName, instancesize.FieldDisplayName, instancesize.FieldDescription, instancesize.FieldHugepagesSize, instancesize.FieldDvVolumeMode, instancesize.FieldCatalogScope, instancesize.FieldCreatedBy:
 			values[i] = new(sql.NullString)
 		case instancesize.FieldCreatedAt, instancesize.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -197,6 +201,20 @@ func (_m *InstanceSize) assignValues(columns []string, values []any) error {
 					return fmt.Errorf("unmarshal field spec_overrides: %w", err)
 				}
 			}
+		case instancesize.FieldDvAccessModes:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field dv_access_modes", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.DvAccessModes); err != nil {
+					return fmt.Errorf("unmarshal field dv_access_modes: %w", err)
+				}
+			}
+		case instancesize.FieldDvVolumeMode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field dv_volume_mode", values[i])
+			} else if value.Valid {
+				_m.DvVolumeMode = value.String
+			}
 		case instancesize.FieldCatalogScope:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field catalog_scope", values[i])
@@ -304,6 +322,12 @@ func (_m *InstanceSize) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("spec_overrides=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SpecOverrides))
+	builder.WriteString(", ")
+	builder.WriteString("dv_access_modes=")
+	builder.WriteString(fmt.Sprintf("%v", _m.DvAccessModes))
+	builder.WriteString(", ")
+	builder.WriteString("dv_volume_mode=")
+	builder.WriteString(_m.DvVolumeMode)
 	builder.WriteString(", ")
 	builder.WriteString("catalog_scope=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CatalogScope))

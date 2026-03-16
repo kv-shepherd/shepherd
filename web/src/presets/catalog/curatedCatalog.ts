@@ -19,7 +19,7 @@ export type CuratedInstanceSizePresetKey = CuratedTemplatePresetKey;
 export type TemplatePresetFormValues = Partial<TemplateCreateRequest & TemplateUpdateRequest>;
 
 export interface CuratedInstanceSizePresetFormValues {
-    catalog_scope: 'test' | 'prod';
+    catalog_scope: 'test' | 'prod' | 'all' | 'unclassified';
     cpu_cores: number;
     memory_gi: number;
     disk_gb: number;
@@ -335,18 +335,7 @@ export const CURATED_INSTANCE_SIZE_PRESET_ITEMS: Array<InstanceSizePresetCatalog
             requires_sriov: false,
             spec_text: toSpecText({
                 ...linuxBaseSpec,
-                spec: {
-                    ...linuxBaseSpec.spec,
-                    template: {
-                        ...linuxBaseSpec.spec.template,
-                        spec: {
-                            ...linuxBaseSpec.spec.template.spec,
-                            nodeSelector: {
-                                'kubevirt.io/ksm-enabled': 'true',
-                            },
-                        },
-                    },
-                },
+                spec: linuxBaseSpec.spec,
             }),
             enabled: true,
         },
@@ -420,18 +409,7 @@ export const CURATED_INSTANCE_SIZE_PRESET_ITEMS: Array<InstanceSizePresetCatalog
             requires_sriov: false,
             spec_text: toSpecText({
                 ...windowsBaseSpec,
-                spec: {
-                    ...windowsBaseSpec.spec,
-                    template: {
-                        ...windowsBaseSpec.spec.template,
-                        spec: {
-                            ...windowsBaseSpec.spec.template.spec,
-                            nodeSelector: {
-                                'kubevirt.io/ksm-enabled': 'true',
-                            },
-                        },
-                    },
-                },
+                spec: windowsBaseSpec.spec,
             }),
             enabled: true,
         },

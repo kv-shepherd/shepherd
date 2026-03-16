@@ -137,6 +137,39 @@ describe('useAdminInstanceSizesController', () => {
     }));
   });
 
+  it('submits explicit root volume mode when the author pins DV access modes and volume mode', async () => {
+    const createMutate = vi.fn();
+
+    useApiMutationMock
+      .mockReturnValueOnce({ mutate: createMutate, isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    createFormState.validateFields.mockResolvedValue({
+      name: 'm4.block-rwx',
+      catalog_scope: 'prod',
+      cpu_cores: 4,
+      memory_gi: 8,
+      root_volume_mode_intent: 'explicit',
+      dv_access_modes: ['ReadWriteMany'],
+      dv_volume_mode: 'Block',
+      spec_text: '{}',
+      enabled: true,
+    });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    await act(async () => {
+      await result.current.submitCreate();
+    });
+
+    expect(createMutate).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'm4.block-rwx',
+      dv_access_modes: ['ReadWriteMany'],
+      dv_volume_mode: 'Block',
+    }));
+  });
+
   /**
    * When spec_text is non-object JSON (array, null, primitive), spec_overrides is
    * silently set to undefined — no error toast is shown.  DynamicSchemaForm handles
@@ -233,6 +266,56 @@ describe('useAdminInstanceSizesController', () => {
         memory_request_gi: 0,
       }),
     }));
+  });
+
+  it('clears explicit root volume mode on update when the form switches back to auto', async () => {
+    const createMutate = vi.fn();
+    const updateMutate = vi.fn();
+
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      if (mutationCall % 2 === 1) {
+        return { mutate: createMutate, isPending: false };
+      }
+      return { mutate: updateMutate, isPending: false };
+    });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'size-explicit',
+        name: 'm4.block-rwx',
+        cpu_cores: 4,
+        memory_gi: 8,
+        dv_access_modes: ['ReadWriteMany'],
+        dv_volume_mode: 'Block',
+        enabled: true,
+      });
+    });
+
+    editFormState.validateFields.mockResolvedValue({
+      name: 'm4.block-rwx',
+      cpu_cores: 4,
+      memory_gi: 8,
+      root_volume_mode_intent: 'auto',
+      spec_text: '{}',
+      enabled: true,
+    });
+
+    await act(async () => {
+      await result.current.submitEdit();
+    });
+
+    expect(updateMutate).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'size-explicit',
+      body: expect.objectContaining({
+        dv_access_modes: [],
+      }),
+    }));
+    expect(updateMutate.mock.calls[0]?.[0]?.body).not.toHaveProperty('dv_volume_mode');
   });
 
   it('hydrates edit form fields after opening edit modal', async () => {

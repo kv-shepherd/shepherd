@@ -130,6 +130,40 @@ func (_c *VMCreate) SetNillableTicketID(v *string) *VMCreate {
 	return _c
 }
 
+// SetRootVolumeStorageClass sets the "root_volume_storage_class" field.
+func (_c *VMCreate) SetRootVolumeStorageClass(v string) *VMCreate {
+	_c.mutation.SetRootVolumeStorageClass(v)
+	return _c
+}
+
+// SetNillableRootVolumeStorageClass sets the "root_volume_storage_class" field if the given value is not nil.
+func (_c *VMCreate) SetNillableRootVolumeStorageClass(v *string) *VMCreate {
+	if v != nil {
+		_c.SetRootVolumeStorageClass(*v)
+	}
+	return _c
+}
+
+// SetRootVolumeAccessModes sets the "root_volume_access_modes" field.
+func (_c *VMCreate) SetRootVolumeAccessModes(v []string) *VMCreate {
+	_c.mutation.SetRootVolumeAccessModes(v)
+	return _c
+}
+
+// SetRootVolumeVolumeMode sets the "root_volume_volume_mode" field.
+func (_c *VMCreate) SetRootVolumeVolumeMode(v string) *VMCreate {
+	_c.mutation.SetRootVolumeVolumeMode(v)
+	return _c
+}
+
+// SetNillableRootVolumeVolumeMode sets the "root_volume_volume_mode" field if the given value is not nil.
+func (_c *VMCreate) SetNillableRootVolumeVolumeMode(v *string) *VMCreate {
+	if v != nil {
+		_c.SetRootVolumeVolumeMode(*v)
+	}
+	return _c
+}
+
 // SetPollingTier sets the "polling_tier" field.
 func (_c *VMCreate) SetPollingTier(v vm.PollingTier) *VMCreate {
 	_c.mutation.SetPollingTier(v)
@@ -425,6 +459,18 @@ func (_c *VMCreate) createSpec() (*VM, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TicketID(); ok {
 		_spec.SetField(vm.FieldTicketID, field.TypeString, value)
 		_node.TicketID = value
+	}
+	if value, ok := _c.mutation.RootVolumeStorageClass(); ok {
+		_spec.SetField(vm.FieldRootVolumeStorageClass, field.TypeString, value)
+		_node.RootVolumeStorageClass = value
+	}
+	if value, ok := _c.mutation.RootVolumeAccessModes(); ok {
+		_spec.SetField(vm.FieldRootVolumeAccessModes, field.TypeJSON, value)
+		_node.RootVolumeAccessModes = value
+	}
+	if value, ok := _c.mutation.RootVolumeVolumeMode(); ok {
+		_spec.SetField(vm.FieldRootVolumeVolumeMode, field.TypeString, value)
+		_node.RootVolumeVolumeMode = value
 	}
 	if value, ok := _c.mutation.PollingTier(); ok {
 		_spec.SetField(vm.FieldPollingTier, field.TypeEnum, value)

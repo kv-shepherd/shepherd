@@ -58,10 +58,10 @@ func TestListApprovals_CREATE_ProvisioningIncludedWhenVMExists(t *testing.T) {
 	mock := provider.NewMockProvider()
 	mock.SeedDataVolumes([]*domain.DataVolume{
 		{
-			Name:         vmName + "-rootdisk",
+			Name:         vmName + "-rootfs",
 			Namespace:    "team-prod",
 			UID:          dvUID,
-			ClaimName:    vmName + "-rootdisk",
+			ClaimName:    vmName + "-rootfs",
 			Phase:        "ImportInProgress",
 			Progress:     "55.0%",
 			RestartCount: 0,
@@ -69,7 +69,7 @@ func TestListApprovals_CREATE_ProvisioningIncludedWhenVMExists(t *testing.T) {
 	})
 	mock.SeedPVCs([]*domain.PersistentVolumeClaim{
 		{
-			Name:                vmName + "-rootdisk",
+			Name:                vmName + "-rootfs",
 			Namespace:           "team-prod",
 			Phase:               "Bound",
 			CloneType:           "copy",
@@ -79,7 +79,7 @@ func TestListApprovals_CREATE_ProvisioningIncludedWhenVMExists(t *testing.T) {
 	})
 	mock.SeedEvents(domain.ObjectReference{
 		Kind:      "DataVolume",
-		Name:      vmName + "-rootdisk",
+		Name:      vmName + "-rootfs",
 		Namespace: "team-prod",
 		UID:       dvUID,
 	}, []domain.ProvisioningEvent{
@@ -111,8 +111,8 @@ func TestListApprovals_CREATE_ProvisioningIncludedWhenVMExists(t *testing.T) {
 	if found.Provisioning.Phase != "ImportInProgress" {
 		t.Fatalf("Provisioning.Phase = %q, want %q", found.Provisioning.Phase, "ImportInProgress")
 	}
-	if found.Provisioning.ClaimName != vmName+"-rootdisk" {
-		t.Fatalf("Provisioning.ClaimName = %q, want %q", found.Provisioning.ClaimName, vmName+"-rootdisk")
+	if found.Provisioning.ClaimName != vmName+"-rootfs" {
+		t.Fatalf("Provisioning.ClaimName = %q, want %q", found.Provisioning.ClaimName, vmName+"-rootfs")
 	}
 	if found.Provisioning.CloneType != "copy" {
 		t.Fatalf("Provisioning.CloneType = %q, want %q", found.Provisioning.CloneType, "copy")

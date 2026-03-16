@@ -62,16 +62,19 @@ type System struct {
 }
 
 type Vm struct {
-	ID         string             `db:"id" json:"id"`
-	CreatedAt  pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
-	Name       string             `db:"name" json:"name"`
-	Instance   string             `db:"instance" json:"instance"`
-	Namespace  string             `db:"namespace" json:"namespace"`
-	ClusterID  pgtype.Text        `db:"cluster_id" json:"cluster_id"`
-	Status     string             `db:"status" json:"status"`
-	Hostname   pgtype.Text        `db:"hostname" json:"hostname"`
-	CreatedBy  string             `db:"created_by" json:"created_by"`
-	TicketID   pgtype.Text        `db:"ticket_id" json:"ticket_id"`
-	ServiceVms string             `db:"service_vms" json:"service_vms"`
+	ID                     string             `db:"id" json:"id"`
+	CreatedAt              pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	Name                   string             `db:"name" json:"name"`
+	Instance               string             `db:"instance" json:"instance"`
+	Namespace              string             `db:"namespace" json:"namespace"`
+	ClusterID              pgtype.Text        `db:"cluster_id" json:"cluster_id"`
+	Status                 string             `db:"status" json:"status"`
+	Hostname               pgtype.Text        `db:"hostname" json:"hostname"`
+	CreatedBy              string             `db:"created_by" json:"created_by"`
+	TicketID               pgtype.Text        `db:"ticket_id" json:"ticket_id"`
+	RootVolumeStorageClass pgtype.Text        `db:"root_volume_storage_class" json:"root_volume_storage_class"`
+	RootVolumeAccessModes  []byte             `db:"root_volume_access_modes" json:"root_volume_access_modes"`
+	RootVolumeVolumeMode   pgtype.Text        `db:"root_volume_volume_mode" json:"root_volume_volume_mode"`
+	ServiceVms             string             `db:"service_vms" json:"service_vms"`
 }

@@ -289,10 +289,10 @@ func TestBatchHandler_GetVMBatch_CreateChildIncludesProvisioningWhenVMExists(t *
 	mock := provider.NewMockProvider()
 	mock.SeedDataVolumes([]*domain.DataVolume{
 		{
-			Name:         vmName + "-rootdisk",
+			Name:         vmName + "-rootfs",
 			Namespace:    "team-prod",
 			UID:          dvUID,
-			ClaimName:    vmName + "-rootdisk",
+			ClaimName:    vmName + "-rootfs",
 			Phase:        "CloneInProgress",
 			Progress:     "33.0%",
 			RestartCount: 0,
@@ -300,7 +300,7 @@ func TestBatchHandler_GetVMBatch_CreateChildIncludesProvisioningWhenVMExists(t *
 	})
 	mock.SeedPVCs([]*domain.PersistentVolumeClaim{
 		{
-			Name:      vmName + "-rootdisk",
+			Name:      vmName + "-rootfs",
 			Namespace: "team-prod",
 			Phase:     "Bound",
 		},

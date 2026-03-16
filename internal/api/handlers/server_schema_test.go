@@ -112,9 +112,9 @@ func TestGetDynamicSchema_Cluster_Returns400(t *testing.T) {
 	}
 }
 
-// TestGetDynamicSchema_InstancesizeMask_ContainsCpuCores verifies that the
-// instancesize mask quick_fields contain the CPU cores path (integration check).
-func TestGetDynamicSchema_InstancesizeMask_ContainsCpuCores(t *testing.T) {
+// TestGetDynamicSchema_InstancesizeMask_ContainsHugepages verifies that the
+// instancesize mask quick_fields contain a high-frequency path (integration check).
+func TestGetDynamicSchema_InstancesizeMask_ContainsHugepages(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -127,16 +127,16 @@ func TestGetDynamicSchema_InstancesizeMask_ContainsCpuCores(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	cpuCoresPath := "spec.template.spec.domain.cpu.cores"
+	hugepagesPath := "spec.template.spec.domain.memory.hugepages.pageSize"
 	found := false
 	for _, f := range resp.Mask.QuickFields {
-		if f.Path == cpuCoresPath {
+		if f.Path == hugepagesPath {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("quick_fields does not contain path %q; got %+v", cpuCoresPath, resp.Mask.QuickFields)
+		t.Errorf("quick_fields does not contain path %q; got %+v", hugepagesPath, resp.Mask.QuickFields)
 	}
 }
 
@@ -172,6 +172,32 @@ func TestGetDynamicSchema_InstancesizeMask_RetainsMetadataKeys(t *testing.T) {
 	}
 	if target.PlaceholderKey == "" {
 		t.Errorf("placeholder_key is empty for %q", targetPath)
+	}
+}
+
+func TestGetDynamicSchema_InstancesizeMask_ContainsProfessionalFields(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	srv := &Server{}
+	c, w := newSchemaGinContext(t, "instancesize")
+	srv.GetDynamicSchema(c, generated.Instancesize)
+
+	var resp generated.DynamicSchemaResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	targetPath := "spec.template.spec.domain.features.hyperv.relaxed.enabled"
+	found := false
+	for _, f := range resp.Mask.ProfessionalFields {
+		if f.Path == targetPath {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("professional_fields does not contain path %q; got %+v", targetPath, resp.Mask.ProfessionalFields)
 	}
 }
 

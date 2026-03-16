@@ -138,11 +138,12 @@ func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParam
 					continue
 				}
 				compatibilityByClusterID[result.Cluster.ID] = generated.ClusterCompatibility{
-					Eligible:        result.Eligible,
-					ReasonCode:      result.ReasonCode,
-					ReasonMessage:   result.ReasonMessage,
-					AdvisoryCode:    result.AdvisoryCode,
-					AdvisoryMessage: result.AdvisoryMessage,
+					Eligible:             result.Eligible,
+					ReasonCode:           result.ReasonCode,
+					ReasonMessage:        result.ReasonMessage,
+					AdvisoryCode:         result.AdvisoryCode,
+					AdvisoryMessage:      result.AdvisoryMessage,
+					RootVolumeResolution: rootVolumeResolutionToAPI(result.RootVolumeResolution),
 				}
 				if includeIncompatible || result.Eligible {
 					nextFiltered = append(nextFiltered, result.Cluster)
@@ -727,6 +728,8 @@ func buildClusterCompatibilityFilter(params generated.ListClustersParams) (servi
 		InstanceSizeID: strings.TrimSpace(params.InstanceSizeId),
 		Namespace:      strings.TrimSpace(params.Namespace),
 		StorageClass:   strings.TrimSpace(params.SelectedStorageClass),
+		DVAccessModes:  cloneStringSlice(params.SelectedDvAccessModes),
+		DVVolumeMode:   strings.TrimSpace(string(params.SelectedDvVolumeMode)),
 	}
 
 	if params.CpuRequest != 0 || params.CpuLimit != 0 || params.MemoryRequestGi != 0 || params.MemoryLimitGi != 0 {
@@ -743,9 +746,38 @@ func buildClusterCompatibilityFilter(params generated.ListClustersParams) (servi
 		input.InstanceSizeID != "" ||
 		input.Namespace != "" ||
 		input.StorageClass != "" ||
+		len(input.DVAccessModes) > 0 ||
+		input.DVVolumeMode != "" ||
 		input.Override != nil
 
 	return input, hasFilter
+}
+
+func rootVolumeResolutionToAPI(resolution *service.RootVolumeResolution) generated.RootVolumeResolution {
+	if resolution == nil {
+		return generated.RootVolumeResolution{}
+	}
+
+	modeOptions := make([]generated.StorageClaimPropertySet, 0, len(resolution.ModeOptions))
+	for _, option := range resolution.ModeOptions {
+		modeOptions = append(modeOptions, generated.StorageClaimPropertySet{
+			AccessModes: cloneStringSlice(option.AccessModes),
+			VolumeMode:  generated.StorageClaimPropertySetVolumeMode(option.VolumeMode),
+		})
+	}
+
+	return generated.RootVolumeResolution{
+		IntentMode:            generated.RootVolumeResolutionIntentMode(resolution.IntentMode),
+		State:                 generated.RootVolumeResolutionState(resolution.State),
+		Message:               resolution.Message,
+		RequestedStorageClass: resolution.RequestedStorageClass,
+		EffectiveStorageClass: resolution.EffectiveStorageClass,
+		RequestedAccessModes:  cloneStringSlice(resolution.RequestedAccessModes),
+		RequestedVolumeMode:   generated.RootVolumeResolutionRequestedVolumeMode(resolution.RequestedVolumeMode),
+		EffectiveAccessModes:  cloneStringSlice(resolution.EffectiveAccessModes),
+		EffectiveVolumeMode:   generated.RootVolumeResolutionEffectiveVolumeMode(resolution.EffectiveVolumeMode),
+		ModeOptions:           modeOptions,
+	}
 }
 
 func defaultClusterPolicyInput() service.ClusterPolicyInput {
@@ -832,6 +864,8 @@ func instanceSizeToAPI(sz *ent.InstanceSize) generated.InstanceSize {
 		RequiresSriov:     sz.RequiresSriov,
 		RequiresHugepages: sz.RequiresHugepages,
 		HugepagesSize:     sz.HugepagesSize,
+		DvAccessModes:     cloneStringSlice(sz.DvAccessModes),
+		DvVolumeMode:      generated.InstanceSizeDvVolumeMode(strings.TrimSpace(sz.DvVolumeMode)),
 		SortOrder:         sz.SortOrder,
 		SpecOverrides:     sz.SpecOverrides,
 		Enabled:           sz.Enabled,
@@ -859,6 +893,8 @@ func instanceSizeToPublicAPI(sz *ent.InstanceSize) generated.InstanceSize {
 		RequiresSriov:     sz.RequiresSriov,
 		RequiresHugepages: sz.RequiresHugepages,
 		HugepagesSize:     sz.HugepagesSize,
+		DvAccessModes:     cloneStringSlice(sz.DvAccessModes),
+		DvVolumeMode:      generated.InstanceSizeDvVolumeMode(strings.TrimSpace(sz.DvVolumeMode)),
 		SortOrder:         sz.SortOrder,
 		// SpecOverrides intentionally omitted: admin-only internal detail.
 		Enabled: sz.Enabled,

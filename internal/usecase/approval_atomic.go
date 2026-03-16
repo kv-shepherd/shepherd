@@ -124,16 +124,26 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	}
 	vmID = vmUUID.String()
 
+	rootVolumeAccessModes := snapshotStringSlice(instanceSizeSnapshot, "dv_access_modes")
+	rootVolumeVolumeMode := snapshotString(instanceSizeSnapshot, "dv_volume_mode")
+	rootVolumeAccessModesBytes, err := marshalJSONArrayOrNull(rootVolumeAccessModes)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal root volume access modes: %w", err)
+	}
+
 	if err := qtx.InsertVM(ctx, sqlcrepo.InsertVMParams{
-		ID:         vmID,
-		Name:       vmName,
-		Instance:   instance,
-		Namespace:  namespace,
-		ClusterID:  pgtype.Text{String: clusterID, Valid: true},
-		Hostname:   pgtype.Text{String: vmName, Valid: true},
-		CreatedBy:  requesterID,
-		TicketID:   pgtype.Text{String: ticketID, Valid: true},
-		ServiceVms: serviceID,
+		ID:                     vmID,
+		Name:                   vmName,
+		Instance:               instance,
+		Namespace:              namespace,
+		ClusterID:              pgtype.Text{String: clusterID, Valid: true},
+		Hostname:               pgtype.Text{String: vmName, Valid: true},
+		CreatedBy:              requesterID,
+		TicketID:               pgtype.Text{String: ticketID, Valid: true},
+		RootVolumeStorageClass: pgtype.Text{String: strings.TrimSpace(storageClass), Valid: strings.TrimSpace(storageClass) != ""},
+		RootVolumeAccessModes:  rootVolumeAccessModesBytes,
+		RootVolumeVolumeMode:   pgtype.Text{String: rootVolumeVolumeMode, Valid: rootVolumeVolumeMode != ""},
+		ServiceVms:             serviceID,
 	}); err != nil {
 		return "", "", fmt.Errorf("insert vm %s: %w", vmID, err)
 	}
@@ -179,6 +189,69 @@ func marshalJSONOrNull(value map[string]interface{}) ([]byte, error) {
 		return nil, err
 	}
 	return data, nil
+}
+
+func marshalJSONArrayOrNull(values []string) ([]byte, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	data, err := json.Marshal(values)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func snapshotString(values map[string]interface{}, key string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	raw, ok := values[key]
+	if !ok {
+		return ""
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+func snapshotStringSlice(values map[string]interface{}, key string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	raw, ok := values[key]
+	if !ok {
+		return nil
+	}
+	switch typed := raw.(type) {
+	case []string:
+		if len(typed) == 0 {
+			return nil
+		}
+		items := make([]string, len(typed))
+		copy(items, typed)
+		return items
+	case []interface{}:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			text, ok := item.(string)
+			if !ok {
+				continue
+			}
+			text = strings.TrimSpace(text)
+			if text != "" {
+				items = append(items, text)
+			}
+		}
+		if len(items) == 0 {
+			return nil
+		}
+		return items
+	default:
+		return nil
+	}
 }
 
 // ApproveDeleteAndEnqueue atomically:

@@ -152,3 +152,41 @@ func TestVMStatusSyncInsertOpts(t *testing.T) {
 		t.Fatalf("unique opts = %+v, want ByArgs=true and ByQueue=true", opts.UniqueOpts)
 	}
 }
+
+func TestSnapshotRootVolumeHelpers(t *testing.T) {
+	t.Parallel()
+
+	values := map[string]interface{}{
+		"dv_access_modes": []interface{}{"ReadWriteMany", "  ", "ReadWriteOnce"},
+		"dv_volume_mode":  " Block ",
+	}
+
+	if got := snapshotString(values, "dv_volume_mode"); got != "Block" {
+		t.Fatalf("snapshotString(volume_mode) = %q, want Block", got)
+	}
+
+	gotModes := snapshotStringSlice(values, "dv_access_modes")
+	if len(gotModes) != 2 || gotModes[0] != "ReadWriteMany" || gotModes[1] != "ReadWriteOnce" {
+		t.Fatalf("snapshotStringSlice(access_modes) = %#v, want [ReadWriteMany ReadWriteOnce]", gotModes)
+	}
+}
+
+func TestMarshalJSONArrayOrNull(t *testing.T) {
+	t.Parallel()
+
+	data, err := marshalJSONArrayOrNull(nil)
+	if err != nil {
+		t.Fatalf("marshalJSONArrayOrNull(nil) error = %v", err)
+	}
+	if data != nil {
+		t.Fatalf("marshalJSONArrayOrNull(nil) = %s, want nil", string(data))
+	}
+
+	data, err = marshalJSONArrayOrNull([]string{"ReadWriteMany"})
+	if err != nil {
+		t.Fatalf("marshalJSONArrayOrNull(non-empty) error = %v", err)
+	}
+	if string(data) != `["ReadWriteMany"]` {
+		t.Fatalf("marshalJSONArrayOrNull(non-empty) = %s, want [\"ReadWriteMany\"]", string(data))
+	}
+}

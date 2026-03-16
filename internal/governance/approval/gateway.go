@@ -29,8 +29,10 @@ import (
 
 // ApproveOpts carries all admin-determined fields for an approval decision (ADR-0017 + Stage 5.B).
 type ApproveOpts struct {
-	ClusterID    string
-	StorageClass string
+	ClusterID     string
+	StorageClass  string
+	DVAccessModes []string
+	DVVolumeMode  string
 
 	// Resource override fields (master-flow Stage 5.B).
 	EnableOverride  bool
@@ -182,6 +184,7 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 	if opts.ClusterID == "" {
 		return fmt.Errorf("selected cluster is required for create approval")
 	}
+	resolvedOpts := opts
 
 	event, err := g.client.DomainEvent.Get(ctx, ticket.EventID)
 	if err != nil {
@@ -223,12 +226,21 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 			InstanceSizeID: effectiveInstanceSizeID,
 			Namespace:      payload.Namespace,
 			StorageClass:   opts.StorageClass,
+			DVAccessModes:  opts.DVAccessModes,
+			DVVolumeMode:   opts.DVVolumeMode,
 			Override:       override,
 		})
 		if evalErr != nil {
 			return fmt.Errorf("approval validation failed for ticket %s: %w", ticketID, evalErr)
 		}
-		placementEvaluation = buildPlacementEvaluationSnapshot(evaluation, opts)
+		if evaluation != nil && evaluation.RootVolumeResolution != nil {
+			if effectiveStorageClass := strings.TrimSpace(evaluation.RootVolumeResolution.EffectiveStorageClass); effectiveStorageClass != "" {
+				resolvedOpts.StorageClass = effectiveStorageClass
+			}
+			resolvedOpts.DVAccessModes = cloneStringSlice(evaluation.RootVolumeResolution.EffectiveAccessModes)
+			resolvedOpts.DVVolumeMode = strings.TrimSpace(evaluation.RootVolumeResolution.EffectiveVolumeMode)
+		}
+		placementEvaluation = buildPlacementEvaluationSnapshot(evaluation, opts, resolvedOpts)
 		if evaluation != nil && !evaluation.Eligible {
 			if g.auditLogger != nil {
 				_ = g.auditLogger.LogApprovalWithDetails(ctx, ticketID, "validation_failed", approver, map[string]interface{}{
@@ -264,7 +276,7 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 		templateEntity.PvcName,
 	)
 	if g.vmService != nil && effectiveSourceType == service.TemplateSourceCDIPVCClone {
-		targetStorageClass := strings.TrimSpace(opts.StorageClass)
+		targetStorageClass := strings.TrimSpace(resolvedOpts.StorageClass)
 		if targetStorageClass == "" {
 			selectedCluster, clusterErr := g.client.Cluster.Get(ctx, opts.ClusterID)
 			if clusterErr != nil {
@@ -295,7 +307,7 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 	// Gate failure → return synchronous error; do NOT enqueue River job.
 	// Gate unavailable (vmService nil) → skip silently (backward compatible).
 	if g.vmService != nil {
-		dryRunSpec, buildSpecErr := g.buildDryRunSpec(payload, templateEntity, instanceSizeEntity, opts)
+		dryRunSpec, buildSpecErr := g.buildDryRunSpec(payload, templateEntity, instanceSizeEntity, resolvedOpts)
 		if buildSpecErr != nil {
 			return apperrors.BadRequest(apperrors.CodeValidationFailed,
 				fmt.Sprintf("build dryrun spec for ticket %s: %v", ticketID, buildSpecErr))
@@ -338,6 +350,9 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 
 	templateSnapshot := buildTemplateSnapshot(templateEntity)
 	instanceSizeSnapshot := buildInstanceSizeSnapshot(instanceSizeEntity)
+	if placementEvaluation != nil {
+		instanceSizeSnapshot = applyResolvedRootVolumeToInstanceSizeSnapshot(instanceSizeSnapshot, placementEvaluation)
+	}
 	modifiedSpec := cloneMap(ticket.ModifiedSpec)
 
 	// Merge admin resource overrides into modifiedSpec (Stage 5.B).
@@ -373,7 +388,7 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 		ticket.EventID,
 		approver,
 		opts.ClusterID,
-		opts.StorageClass,
+		resolvedOpts.StorageClass,
 		payload.ServiceID,
 		payload.Namespace,
 		payload.RequesterID,
@@ -412,13 +427,14 @@ func (g *Gateway) approveCreate(ctx context.Context, ticket *ent.ApprovalTicket,
 
 func buildPlacementEvaluationSnapshot(
 	evaluation *service.ClusterCompatibilityResult,
-	opts ApproveOpts,
+	requested ApproveOpts,
+	effective ApproveOpts,
 ) map[string]interface{} {
 	if evaluation == nil || evaluation.Cluster == nil {
 		return nil
 	}
 	clusterEntity := evaluation.Cluster
-	effectiveStorageClass := strings.TrimSpace(opts.StorageClass)
+	effectiveStorageClass := strings.TrimSpace(effective.StorageClass)
 	if effectiveStorageClass == "" {
 		effectiveStorageClass = strings.TrimSpace(clusterEntity.DefaultStorageClass)
 	}
@@ -427,10 +443,31 @@ func buildPlacementEvaluationSnapshot(
 		"selected_cluster_id":          clusterEntity.ID,
 		"selected_cluster_name":        clusterEntity.Name,
 		"selected_cluster_environment": string(clusterEntity.Environment),
-		"requested_storage_class":      strings.TrimSpace(opts.StorageClass),
+		"requested_storage_class":      strings.TrimSpace(requested.StorageClass),
 		"effective_storage_class":      effectiveStorageClass,
 		"eligible":                     evaluation.Eligible,
 		"evaluated_at":                 time.Now().UTC().Format(time.RFC3339),
+	}
+	if len(requested.DVAccessModes) > 0 {
+		snapshot["requested_dv_access_modes"] = cloneStringSlice(requested.DVAccessModes)
+	}
+	if strings.TrimSpace(requested.DVVolumeMode) != "" {
+		snapshot["requested_dv_volume_mode"] = strings.TrimSpace(requested.DVVolumeMode)
+	}
+	if len(effective.DVAccessModes) > 0 {
+		snapshot["effective_dv_access_modes"] = cloneStringSlice(effective.DVAccessModes)
+	}
+	if strings.TrimSpace(effective.DVVolumeMode) != "" {
+		snapshot["effective_dv_volume_mode"] = strings.TrimSpace(effective.DVVolumeMode)
+	}
+	if evaluation.RootVolumeResolution != nil {
+		snapshot["root_volume_resolution_state"] = evaluation.RootVolumeResolution.State
+		if evaluation.RootVolumeResolution.Message != "" {
+			snapshot["root_volume_resolution_message"] = evaluation.RootVolumeResolution.Message
+		}
+		if len(evaluation.RootVolumeResolution.ModeOptions) > 0 {
+			snapshot["root_volume_mode_options"] = cloneClaimPropertySets(evaluation.RootVolumeResolution.ModeOptions)
+		}
 	}
 	if evaluation.ReasonCode != "" {
 		snapshot["reason_code"] = evaluation.ReasonCode
@@ -444,24 +481,24 @@ func buildPlacementEvaluationSnapshot(
 	if evaluation.AdvisoryMessage != "" {
 		snapshot["advisory_message"] = evaluation.AdvisoryMessage
 	}
-	if opts.EnableOverride {
+	if requested.EnableOverride {
 		override := map[string]interface{}{
 			"enabled": true,
 		}
-		if opts.CPURequest > 0 {
-			override["cpu_request"] = opts.CPURequest
+		if requested.CPURequest > 0 {
+			override["cpu_request"] = requested.CPURequest
 		}
-		if opts.CPULimit > 0 {
-			override["cpu_limit"] = opts.CPULimit
+		if requested.CPULimit > 0 {
+			override["cpu_limit"] = requested.CPULimit
 		}
-		if opts.MemoryRequestGi > 0 {
-			override["memory_request_gi"] = opts.MemoryRequestGi
+		if requested.MemoryRequestGi > 0 {
+			override["memory_request_gi"] = requested.MemoryRequestGi
 		}
-		if opts.MemoryLimitGi > 0 {
-			override["memory_limit_gi"] = opts.MemoryLimitGi
+		if requested.MemoryLimitGi > 0 {
+			override["memory_limit_gi"] = requested.MemoryLimitGi
 		}
-		if opts.DiskGB > 0 {
-			override["disk_gb"] = opts.DiskGB
+		if requested.DiskGB > 0 {
+			override["disk_gb"] = requested.DiskGB
 		}
 		snapshot["override"] = override
 	}
@@ -1066,11 +1103,42 @@ func buildInstanceSizeSnapshot(size *ent.InstanceSize) map[string]interface{} {
 		"requires_sriov":     size.RequiresSriov,
 		"requires_hugepages": size.RequiresHugepages,
 		"hugepages_size":     size.HugepagesSize,
+		"dv_access_modes":    cloneStringSlice(size.DvAccessModes),
+		"dv_volume_mode":     strings.TrimSpace(size.DvVolumeMode),
 		"spec_overrides":     cloneMap(size.SpecOverrides),
 		"sort_order":         size.SortOrder,
 		"enabled":            size.Enabled,
 		"created_by":         size.CreatedBy,
 	}
+}
+
+func applyResolvedRootVolumeToInstanceSizeSnapshot(
+	snapshot map[string]interface{},
+	placementEvaluation map[string]interface{},
+) map[string]interface{} {
+	if len(snapshot) == 0 {
+		snapshot = map[string]interface{}{}
+	}
+	if len(placementEvaluation) == 0 {
+		return snapshot
+	}
+
+	switch value := placementEvaluation["effective_dv_access_modes"].(type) {
+	case []string:
+		snapshot["dv_access_modes"] = cloneStringSlice(value)
+	case []interface{}:
+		items := make([]string, 0, len(value))
+		for _, raw := range value {
+			if text, ok := raw.(string); ok && strings.TrimSpace(text) != "" {
+				items = append(items, strings.TrimSpace(text))
+			}
+		}
+		snapshot["dv_access_modes"] = cloneStringSlice(items)
+	}
+	if value, ok := placementEvaluation["effective_dv_volume_mode"].(string); ok {
+		snapshot["dv_volume_mode"] = strings.TrimSpace(value)
+	}
+	return snapshot
 }
 
 func buildTemplateSnapshot(tpl *ent.Template) map[string]interface{} {
@@ -1101,6 +1169,29 @@ func cloneMap(src map[string]interface{}) map[string]interface{} {
 	out := make(map[string]interface{}, len(src))
 	for k, v := range src {
 		out[k] = v
+	}
+	return out
+}
+
+func cloneStringSlice(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]string, len(items))
+	copy(out, items)
+	return out
+}
+
+func cloneClaimPropertySets(items []domain.StorageClaimPropertySet) []domain.StorageClaimPropertySet {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]domain.StorageClaimPropertySet, len(items))
+	for i := range items {
+		out[i] = domain.StorageClaimPropertySet{
+			AccessModes: cloneStringSlice(items[i].AccessModes),
+			VolumeMode:  items[i].VolumeMode,
+		}
 	}
 	return out
 }
@@ -1166,6 +1257,14 @@ func (g *Gateway) buildDryRunSpec(
 		SpecOverrides:   cloneMap(size.SpecOverrides),
 		CPURequest:      size.CPURequest,
 		MemoryRequestGi: size.MemoryRequestGi,
+		DVAccessModes:   cloneStringSlice(size.DvAccessModes),
+		DVVolumeMode:    strings.TrimSpace(size.DvVolumeMode),
+	}
+	if len(opts.DVAccessModes) > 0 {
+		spec.DVAccessModes = cloneStringSlice(opts.DVAccessModes)
+	}
+	if strings.TrimSpace(opts.DVVolumeMode) != "" {
+		spec.DVVolumeMode = strings.TrimSpace(opts.DVVolumeMode)
 	}
 
 	// Apply admin resource overrides — must match what the actual job will use.

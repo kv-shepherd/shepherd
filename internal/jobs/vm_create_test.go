@@ -43,9 +43,9 @@ func TestExtractTemplateImage(t *testing.T) {
 						"spec": map[string]interface{}{
 							"volumes": []interface{}{
 								map[string]interface{}{
-									"name": "rootdisk",
+									"name": "rootfs",
 									"persistentVolumeClaim": map[string]interface{}{
-										"claimName": "shared-rootdisk",
+										"claimName": "shared-rootfs",
 									},
 								},
 							},
@@ -63,7 +63,7 @@ func TestExtractTemplateImage(t *testing.T) {
 						"spec": map[string]interface{}{
 							"volumes": []interface{}{
 								map[string]interface{}{
-									"name": "rootdisk",
+									"name": "rootfs",
 									"containerDisk": map[string]interface{}{
 										"image": "quay.io/kubevirt/fedora:40",
 									},

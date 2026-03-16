@@ -96,6 +96,19 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, cluster, namespace str
 	return vm, nil
 }
 
+// GetStorageProfile returns the CDI StorageProfile for a target storage class.
+// It is used by approval-time root-volume resolution and clone advisories.
+func (s *VMService) GetStorageProfile(ctx context.Context, cluster, name string) (*domain.StorageProfile, error) {
+	if s == nil || s.infra == nil {
+		return nil, fmt.Errorf("vm infrastructure provider is not configured")
+	}
+	query, ok := s.infra.(provider.ProvisioningQueryProvider)
+	if !ok {
+		return nil, fmt.Errorf("vm infrastructure provider does not expose storage profile queries")
+	}
+	return query.GetStorageProfile(ctx, cluster, name)
+}
+
 func (s *VMService) ensureNamespaceReady(ctx context.Context, cluster, namespace string) error {
 	if s == nil || s.infra == nil {
 		return fmt.Errorf("vm infrastructure provider is not configured")
@@ -131,6 +144,10 @@ func ensureRenderedYAML(namespace string, spec *domain.VMSpec) error {
 		CPURequest:      spec.CPURequest,
 		MemoryRequestGi: spec.MemoryRequestGi,
 		SpecOverrides:   spec.SpecOverrides,
+
+		// DV storage mode (explicit — structural DV format change).
+		DVAccessModes: spec.DVAccessModes,
+		DVVolumeMode:  spec.DVVolumeMode,
 	})
 	if err != nil {
 		return err
