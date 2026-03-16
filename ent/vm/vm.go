@@ -35,6 +35,12 @@ const (
 	FieldCreatedBy = "created_by"
 	// FieldTicketID holds the string denoting the ticket_id field in the database.
 	FieldTicketID = "ticket_id"
+	// FieldRootVolumeStorageClass holds the string denoting the root_volume_storage_class field in the database.
+	FieldRootVolumeStorageClass = "root_volume_storage_class"
+	// FieldRootVolumeAccessModes holds the string denoting the root_volume_access_modes field in the database.
+	FieldRootVolumeAccessModes = "root_volume_access_modes"
+	// FieldRootVolumeVolumeMode holds the string denoting the root_volume_volume_mode field in the database.
+	FieldRootVolumeVolumeMode = "root_volume_volume_mode"
 	// FieldPollingTier holds the string denoting the polling_tier field in the database.
 	FieldPollingTier = "polling_tier"
 	// FieldPollIntervalSec holds the string denoting the poll_interval_sec field in the database.
@@ -80,6 +86,9 @@ var Columns = []string{
 	FieldHostname,
 	FieldCreatedBy,
 	FieldTicketID,
+	FieldRootVolumeStorageClass,
+	FieldRootVolumeAccessModes,
+	FieldRootVolumeVolumeMode,
 	FieldPollingTier,
 	FieldPollIntervalSec,
 	FieldLastK8sRv,
@@ -243,6 +252,16 @@ func ByCreatedBy(opts ...sql.OrderTermOption) OrderOption {
 // ByTicketID orders the results by the ticket_id field.
 func ByTicketID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTicketID, opts...).ToFunc()
+}
+
+// ByRootVolumeStorageClass orders the results by the root_volume_storage_class field.
+func ByRootVolumeStorageClass(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRootVolumeStorageClass, opts...).ToFunc()
+}
+
+// ByRootVolumeVolumeMode orders the results by the root_volume_volume_mode field.
+func ByRootVolumeVolumeMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRootVolumeVolumeMode, opts...).ToFunc()
 }
 
 // ByPollingTier orders the results by the polling_tier field.

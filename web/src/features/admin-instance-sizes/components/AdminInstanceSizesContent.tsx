@@ -28,6 +28,7 @@ import {
     DeleteOutlined,
     EditOutlined,
     HddOutlined,
+    QuestionCircleOutlined,
     ReloadOutlined,
     SearchOutlined,
     ThunderboltOutlined,
@@ -36,6 +37,12 @@ import { useTranslation } from 'react-i18next';
 
 import { UnitInputNumber } from '@/components/form/UnitInputNumber';
 import { useAdminInstanceSizesController } from '../hooks/useAdminInstanceSizesController';
+import {
+    buildInstanceSizePresetValues,
+    getInstanceSizePresetGroups,
+    type InstanceSizePresetKey,
+} from '../instanceSizePresets';
+import { buildResolvedInstanceSizePreview } from '../resolvedPreview';
 import {
     formatCores,
     formatMemory,
@@ -53,6 +60,23 @@ import {
 import { useDynamicSchema } from '../../admin-templates/hooks/useDynamicSchema';
 
 const { Title, Text } = Typography;
+
+const INSTANCE_SIZE_RECOGNIZED_EXCLUDED_PATHS = [
+    'spec.template.spec.domain.cpu.cores',
+    'spec.template.spec.domain.cpu.dedicatedCpuPlacement',
+    'spec.template.spec.domain.memory.guest',
+    'spec.template.spec.domain.resources.limits.cpu',
+    'spec.template.spec.domain.resources.limits.memory',
+    'spec.template.spec.domain.resources.requests.cpu',
+    'spec.template.spec.domain.resources.requests.memory',
+];
+
+const ROOT_VOLUME_ACCESS_MODE_OPTIONS = [
+    'ReadWriteOnce',
+    'ReadOnlyMany',
+    'ReadWriteMany',
+    'ReadWriteOncePod',
+];
 
 function catalogScopeLabel(scope: InstanceSize['catalog_scope'], t: ReturnType<typeof useTranslation>['t']): string {
     switch (scope) {
@@ -100,6 +124,10 @@ function handleInstanceSizeFormValuesChange(
     if (changedValues.memory_overcommit_enabled === false) {
         updates.memory_request_gi = undefined;
     }
+    if (changedValues.root_volume_mode_intent === 'auto') {
+        updates.dv_access_modes = undefined;
+        updates.dv_volume_mode = undefined;
+    }
 
     if (Object.keys(updates).length > 0) {
         form.setFieldsValue(updates);
@@ -126,6 +154,20 @@ function highlightText(text: string, highlight: string): React.ReactNode {
             </span>
             {after}
         </>
+    );
+}
+
+function renderInlineHelpLabel(label: string, helpText?: string): React.ReactNode {
+    if (!helpText) {
+        return label;
+    }
+    return (
+        <Space size={6}>
+            <span>{label}</span>
+            <Tooltip title={helpText} trigger={['hover', 'click']}>
+                <QuestionCircleOutlined style={{ color: 'rgba(0,0,0,0.45)' }} />
+            </Tooltip>
+        </Space>
     );
 }
 
@@ -186,6 +228,8 @@ function InstanceSizeSpecSection({
                 schema={data.schema as SchemaNode}
                 mask={data.mask as SchemaMask}
                 disabled={disabled}
+                recognizedExcludedPaths={INSTANCE_SIZE_RECOGNIZED_EXCLUDED_PATHS}
+                schemaHelpScope="instanceSize"
             />
         </Form.Item>
     );
@@ -247,7 +291,11 @@ function InstanceSizeFormFields({
                     ]}
                 />
             </Form.Item>
-            <Form.Item name="sort_order" label={t('instanceSizes.sort_order')}>
+            <Form.Item
+                name="sort_order"
+                label={t('instanceSizes.sort_order')}
+                tooltip={{ title: t('instanceSizes.sort_order_help'), trigger: ['hover', 'click'] }}
+            >
                 <InputNumber style={{ width: '100%' }} />
             </Form.Item>
 
@@ -256,7 +304,12 @@ function InstanceSizeFormFields({
                 {t('instanceSizes.section_resources')}
             </Divider>
 
-            <Form.Item name="cpu_cores" label={t('instanceSizes.cpu')} rules={[{ required: true }]}>
+            <Form.Item
+                name="cpu_cores"
+                label={t('instanceSizes.cpu')}
+                tooltip={{ title: t('instanceSizes.cpu_help'), trigger: ['hover', 'click'] }}
+                rules={[{ required: true }]}
+            >
                 <UnitInputNumber min={0.5} step={0.5} precision={1} unit={t('instanceSizes.cores')} />
             </Form.Item>
 
@@ -264,7 +317,10 @@ function InstanceSizeFormFields({
                 {({ getFieldValue }) => (
                     <Form.Item name="dedicated_cpu" valuePropName="checked">
                         <Checkbox disabled={!!getFieldValue('cpu_overcommit_enabled')}>
-                            {t('instanceSizes.dedicated')}
+                            {renderInlineHelpLabel(
+                                t('instanceSizes.dedicated'),
+                                t('instanceSizes.dedicated_help')
+                            )}
                         </Checkbox>
                     </Form.Item>
                 )}
@@ -275,7 +331,10 @@ function InstanceSizeFormFields({
                 {({ getFieldValue }) => (
                     <Form.Item name="cpu_overcommit_enabled" valuePropName="checked">
                         <Checkbox disabled={!!getFieldValue('dedicated_cpu')}>
-                            {t('instanceSizes.enable_cpu_overcommit')}
+                            {renderInlineHelpLabel(
+                                t('instanceSizes.enable_cpu_overcommit'),
+                                t('instanceSizes.enable_cpu_overcommit_help')
+                            )}
                         </Checkbox>
                     </Form.Item>
                 )}
@@ -291,7 +350,34 @@ function InstanceSizeFormFields({
                     getFieldValue('cpu_overcommit_enabled') && !getFieldValue('dedicated_cpu') ? (
                         <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
                             <Space style={{ width: '100%' }} direction="vertical">
-                                <Form.Item name="cpu_request" label={t('instanceSizes.cpu_request')} style={{ margin: 0 }}>
+                                <Form.Item
+                                    name="cpu_request"
+                                    label={t('instanceSizes.cpu_request')}
+                                    tooltip={{ title: t('instanceSizes.cpu_request_help'), trigger: ['hover', 'click'] }}
+                                    dependencies={['cpu_cores']}
+                                    rules={[
+                                        ({ getFieldValue }) => ({
+                                            validator(_, value) {
+                                                if (typeof value !== 'number') {
+                                                    return Promise.resolve();
+                                                }
+                                                const cpuCores = getFieldValue('cpu_cores');
+                                                if (typeof cpuCores === 'number' && value > cpuCores) {
+                                                    return Promise.reject(
+                                                        new Error(
+                                                            t(
+                                                                'instanceSizes.cpu_request_exceeds_limit',
+                                                                'CPU request cannot exceed CPU limit.',
+                                                            ),
+                                                        ),
+                                                    );
+                                                }
+                                                return Promise.resolve();
+                                            },
+                                        }),
+                                    ]}
+                                    style={{ margin: 0 }}
+                                >
                                     <UnitInputNumber min={0.5} step={0.5} precision={1} unit={t('instanceSizes.cores')} />
                                 </Form.Item>
                                 <Text type="secondary" style={{ fontSize: 12 }}>
@@ -303,13 +389,23 @@ function InstanceSizeFormFields({
                 }
             </Form.Item>
 
-            <Form.Item name="memory_gi" label={t('instanceSizes.memory')} rules={[{ required: true }]}>
+            <Form.Item
+                name="memory_gi"
+                label={t('instanceSizes.memory')}
+                tooltip={{ title: t('instanceSizes.memory_help'), trigger: ['hover', 'click'] }}
+                rules={[{ required: true }]}
+            >
                 <UnitInputNumber min={0.5} step={0.5} precision={1} unit="Gi" />
             </Form.Item>
 
             {/* Memory Overcommit: conditional reveal */}
             <Form.Item name="memory_overcommit_enabled" valuePropName="checked">
-                <Checkbox>{t('instanceSizes.enable_memory_overcommit')}</Checkbox>
+                <Checkbox>
+                    {renderInlineHelpLabel(
+                        t('instanceSizes.enable_memory_overcommit'),
+                        t('instanceSizes.enable_memory_overcommit_help')
+                    )}
+                </Checkbox>
             </Form.Item>
             <Form.Item
                 noStyle
@@ -318,7 +414,34 @@ function InstanceSizeFormFields({
                 {({ getFieldValue }) =>
                     getFieldValue('memory_overcommit_enabled') ? (
                         <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
-                            <Form.Item name="memory_request_gi" label={t('instanceSizes.memory_request')} style={{ margin: 0 }}>
+                            <Form.Item
+                                name="memory_request_gi"
+                                label={t('instanceSizes.memory_request')}
+                                tooltip={{ title: t('instanceSizes.memory_request_help'), trigger: ['hover', 'click'] }}
+                                dependencies={['memory_gi']}
+                                rules={[
+                                    ({ getFieldValue }) => ({
+                                        validator(_, value) {
+                                            if (typeof value !== 'number') {
+                                                return Promise.resolve();
+                                            }
+                                            const memoryGi = getFieldValue('memory_gi');
+                                            if (typeof memoryGi === 'number' && value > memoryGi) {
+                                                return Promise.reject(
+                                                    new Error(
+                                                        t(
+                                                            'instanceSizes.memory_request_exceeds_limit',
+                                                            'Memory request cannot exceed memory limit.',
+                                                        ),
+                                                    ),
+                                                );
+                                            }
+                                            return Promise.resolve();
+                                        },
+                                    }),
+                                ]}
+                                style={{ margin: 0 }}
+                            >
                                 <UnitInputNumber min={0.5} step={0.5} precision={1} unit="Gi" />
                             </Form.Item>
                         </Card>
@@ -326,11 +449,95 @@ function InstanceSizeFormFields({
                 }
             </Form.Item>
 
-            <Form.Item name="disk_gb" label={t('instanceSizes.disk')}>
-                <UnitInputNumber min={1} unit="GB" />
+            <Form.Item
+                name="disk_gb"
+                label={t('instanceSizes.disk')}
+                tooltip={{ title: t('instanceSizes.disk_help'), trigger: ['hover', 'click'] }}
+            >
+                <UnitInputNumber min={1} step={1} precision={0} unit="GB" />
             </Form.Item>
 
-            <Form.Item name="requires_sriov" label={t('instanceSizes.sriov')} valuePropName="checked">
+            <Form.Item
+                name="root_volume_mode_intent"
+                label={t('instanceSizes.root_volume_mode')}
+                tooltip={{ title: t('instanceSizes.root_volume_mode_help'), trigger: ['hover', 'click'] }}
+                initialValue="auto"
+            >
+                <Select
+                    options={[
+                        { label: t('instanceSizes.root_volume_mode_auto'), value: 'auto' },
+                        { label: t('instanceSizes.root_volume_mode_explicit'), value: 'explicit' },
+                    ]}
+                />
+            </Form.Item>
+
+            <Form.Item
+                noStyle
+                shouldUpdate={(prev, cur) => prev.root_volume_mode_intent !== cur.root_volume_mode_intent}
+            >
+                {({ getFieldValue }) =>
+                    getFieldValue('root_volume_mode_intent') === 'explicit' ? (
+                        <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                <Text type="secondary">
+                                    {t(
+                                        'instanceSizes.root_volume_mode_explicit_help',
+                                        'Approval validates whether the target StorageClass supports this accessModes + volumeMode combination. If the cluster does not support it, the approval cannot pass.'
+                                    )}
+                                </Text>
+                                <Form.Item
+                                    name="dv_volume_mode"
+                                    label={t('instanceSizes.dv_volume_mode')}
+                                    tooltip={{ title: t('instanceSizes.dv_volume_mode_help'), trigger: ['hover', 'click'] }}
+                                    rules={[{ required: true, message: t('instanceSizes.dv_volume_mode_required') }]}
+                                    style={{ margin: 0 }}
+                                >
+                                    <Select
+                                        options={[
+                                            { label: 'Block', value: 'Block' },
+                                            { label: 'Filesystem', value: 'Filesystem' },
+                                        ]}
+                                    />
+                                </Form.Item>
+                                <Form.Item
+                                    name="dv_access_modes"
+                                    label={t('instanceSizes.dv_access_modes')}
+                                    tooltip={{ title: t('instanceSizes.dv_access_modes_help'), trigger: ['hover', 'click'] }}
+                                    rules={[{ required: true, message: t('instanceSizes.dv_access_modes_required') }]}
+                                    style={{ margin: 0 }}
+                                >
+                                    <Select
+                                        mode="multiple"
+                                        allowClear
+                                        options={ROOT_VOLUME_ACCESS_MODE_OPTIONS.map((value) => ({
+                                            label: value,
+                                            value,
+                                        }))}
+                                    />
+                                </Form.Item>
+                            </Space>
+                        </Card>
+                    ) : (
+                        <Alert
+                            type="info"
+                            showIcon
+                            style={{ marginBottom: 16 }}
+                            message={t('instanceSizes.root_volume_mode_auto')}
+                            description={t(
+                                'instanceSizes.root_volume_mode_auto_help',
+                                'The spec keeps only the Auto intent. During approval, the target cluster and StorageProfile resolve the real root volume mode; if the result is not unique, approval must choose an explicit mode.'
+                            )}
+                        />
+                    )
+                }
+            </Form.Item>
+
+            <Form.Item
+                name="requires_sriov"
+                label={t('instanceSizes.sriov')}
+                tooltip={{ title: t('instanceSizes.sriov_help'), trigger: ['hover', 'click'] }}
+                valuePropName="checked"
+            >
                 <Switch />
             </Form.Item>
 
@@ -350,10 +557,148 @@ function InstanceSizeFormFields({
              */}
             <InstanceSizeSpecSection formRef={formRef} disabled={false} />
 
-            <Form.Item name="enabled" label={t('instanceSizes.enabled')} valuePropName="checked" initialValue={true} style={{ marginTop: 16 }}>
+            <Form.Item noStyle shouldUpdate>
+                {({ getFieldsValue }) => {
+                    const resolvedPreview = buildResolvedInstanceSizePreview(
+                        getFieldsValue(true) as Record<string, unknown>,
+                    );
+
+                    return (
+                        <Card size="small" style={{ marginTop: 16, background: '#fafafa' }}>
+                            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                <Text strong>{t('instanceSizes.section_resolved_preview')}</Text>
+                                <Text type="secondary">
+                                    {t(
+                                        'instanceSizes.resolved_preview_help',
+                                        'This preview merges the indexed fields above with the raw spec overrides below in real time. The _platform block is platform metadata, not raw KubeVirt spec.'
+                                    )}
+                                </Text>
+                                <Input.TextArea
+                                    readOnly
+                                    value={resolvedPreview}
+                                    autoSize={{ minRows: 10, maxRows: 24 }}
+                                    data-testid="instance-size-resolved-preview"
+                                    style={{ fontFamily: 'monospace', fontSize: 12 }}
+                                />
+                            </Space>
+                        </Card>
+                    );
+                }}
+            </Form.Item>
+
+            <Form.Item
+                name="enabled"
+                label={t('instanceSizes.enabled')}
+                tooltip={{ title: t('instanceSizes.enabled_help'), trigger: ['hover', 'click'] }}
+                valuePropName="checked"
+                initialValue={true}
+                style={{ marginTop: 16 }}
+            >
                 <Switch />
             </Form.Item>
         </>
+    );
+}
+
+function applyInstanceSizePreset(
+    form: FormInstance,
+    _formRef: RefObject<DynamicSchemaFormHandle | null>,
+    presetKey: InstanceSizePresetKey,
+) {
+    const preserved = form.getFieldsValue([
+        'name',
+        'display_name',
+        'description',
+        'sort_order',
+    ]) as Record<string, unknown>;
+
+    form.resetFields([
+        ['spec'],
+        ['spec_text'],
+        ['catalog_scope'],
+        ['cpu_cores'],
+        ['memory_gi'],
+        ['disk_gb'],
+        ['cpu_request'],
+        ['memory_request_gi'],
+        ['cpu_overcommit_enabled'],
+        ['memory_overcommit_enabled'],
+        ['dedicated_cpu'],
+        ['root_volume_mode_intent'],
+        ['dv_access_modes'],
+        ['dv_volume_mode'],
+        ['requires_sriov'],
+        ['enabled'],
+    ]);
+
+    form.setFieldsValue({
+        ...preserved,
+        root_volume_mode_intent: 'auto',
+        dv_access_modes: undefined,
+        dv_volume_mode: undefined,
+        ...buildInstanceSizePresetValues(presetKey),
+    });
+}
+
+function InstanceSizePresetPicker({
+    t,
+    form,
+    formRef,
+}: {
+    t: ReturnType<typeof useTranslation>['t'];
+    form: FormInstance;
+    formRef: RefObject<DynamicSchemaFormHandle | null>;
+}) {
+    return (
+        <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={t('instanceSizes.preset_title', 'Preset Sizes')}
+            description={(
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Text type="secondary">
+                        {t(
+                            'instanceSizes.preset_description',
+                            'These presets group the parameter combinations that commonly appear together in KubeVirt specs. Start from the closest size, then tune only the differences in the advanced sections.'
+                        )}
+                    </Text>
+                    {getInstanceSizePresetGroups().map((group) => (
+                        <Space key={group.sourceType} direction="vertical" size={6} style={{ width: '100%' }}>
+                            <Space size={8} wrap>
+                                <Text strong>{t(group.titleKey)}</Text>
+                                <Text type="secondary">{t(group.descriptionKey)}</Text>
+                            </Space>
+                            {group.scopeGroups.map((scopeGroup) => (
+                                <Space
+                                    key={`${group.sourceType}-${scopeGroup.scope}`}
+                                    direction="vertical"
+                                    size={4}
+                                    style={{ width: '100%' }}
+                                >
+                                    <Text type="secondary">{t(scopeGroup.titleKey)}</Text>
+                                    <Space wrap>
+                                        {scopeGroup.items.map((preset) => (
+                                            <Button
+                                                key={preset.key}
+                                                size="small"
+                                                onClick={() => applyInstanceSizePreset(
+                                                    form,
+                                                    formRef,
+                                                    preset.key as InstanceSizePresetKey,
+                                                )}
+                                            >
+                                                {t(preset.labelKey)}
+                                            </Button>
+                                        ))}
+                                    </Space>
+                                </Space>
+                            ))}
+                        </Space>
+                    ))}
+                </Space>
+            )}
+        />
     );
 }
 
@@ -703,6 +1048,7 @@ export function AdminInstanceSizesContent() {
                         handleInstanceSizeFormValuesChange(sizes.createForm, createFormRef, changedValues);
                     }}
                 >
+                    <InstanceSizePresetPicker t={t} form={sizes.createForm} formRef={createFormRef} />
                     <InstanceSizeFormFields isCreate={true} formRef={createFormRef} />
                 </Form>
             </Modal>
@@ -726,6 +1072,7 @@ export function AdminInstanceSizesContent() {
                         handleInstanceSizeFormValuesChange(sizes.editForm, editFormRef, changedValues);
                     }}
                 >
+                    <InstanceSizePresetPicker t={t} form={sizes.editForm} formRef={editFormRef} />
                     <InstanceSizeFormFields isCreate={false} formRef={editFormRef} />
                 </Form>
             </Modal>

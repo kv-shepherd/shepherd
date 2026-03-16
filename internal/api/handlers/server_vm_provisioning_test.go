@@ -32,10 +32,10 @@ func TestGetVM_IncludesProvisioningStatus_WhenAvailable(t *testing.T) {
 	mock := provider.NewMockProvider()
 	mock.SeedDataVolumes([]*domain.DataVolume{
 		{
-			Name:         "vm" + vmID[len(vmID)-4:] + "-rootdisk",
+			Name:         "vm" + vmID[len(vmID)-4:] + "-rootfs",
 			Namespace:    "prod-ns",
 			UID:          "dv-uid-" + vmID[len(vmID)-6:],
-			ClaimName:    "rootdisk-pvc",
+			ClaimName:    "rootfs-pvc",
 			Phase:        "CloneInProgress",
 			Progress:     "42.0%",
 			RestartCount: 1,
@@ -43,7 +43,7 @@ func TestGetVM_IncludesProvisioningStatus_WhenAvailable(t *testing.T) {
 	})
 	mock.SeedPVCs([]*domain.PersistentVolumeClaim{
 		{
-			Name:                "rootdisk-pvc",
+			Name:                "rootfs-pvc",
 			Namespace:           "prod-ns",
 			Phase:               "Bound",
 			CloneType:           "copy",
@@ -53,7 +53,7 @@ func TestGetVM_IncludesProvisioningStatus_WhenAvailable(t *testing.T) {
 	})
 	mock.SeedEvents(domain.ObjectReference{
 		Kind:      "DataVolume",
-		Name:      "vm" + vmID[len(vmID)-4:] + "-rootdisk",
+		Name:      "vm" + vmID[len(vmID)-4:] + "-rootfs",
 		Namespace: "prod-ns",
 		UID:       "dv-uid-" + vmID[len(vmID)-6:],
 	}, []domain.ProvisioningEvent{
@@ -88,8 +88,8 @@ func TestGetVM_IncludesProvisioningStatus_WhenAvailable(t *testing.T) {
 	if resp.Provisioning.Phase != "CloneInProgress" {
 		t.Fatalf("Provisioning.Phase = %q, want %q", resp.Provisioning.Phase, "CloneInProgress")
 	}
-	if resp.Provisioning.ClaimName != "rootdisk-pvc" {
-		t.Fatalf("Provisioning.ClaimName = %q, want %q", resp.Provisioning.ClaimName, "rootdisk-pvc")
+	if resp.Provisioning.ClaimName != "rootfs-pvc" {
+		t.Fatalf("Provisioning.ClaimName = %q, want %q", resp.Provisioning.ClaimName, "rootfs-pvc")
 	}
 	if resp.Provisioning.PvcPhase != "Bound" {
 		t.Fatalf("Provisioning.PvcPhase = %q, want %q", resp.Provisioning.PvcPhase, "Bound")

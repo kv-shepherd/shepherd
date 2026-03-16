@@ -78,6 +78,9 @@ INSERT INTO vms (
     hostname,
     created_by,
     ticket_id,
+    root_volume_storage_class,
+    root_volume_access_modes,
+    root_volume_volume_mode,
     service_vms
 ) VALUES (
     $1,
@@ -91,7 +94,10 @@ INSERT INTO vms (
     $6,
     $7,
     $8,
-    $9
+    $9,
+    $10,
+    $11,
+    $12
 );
 
 -- name: SetVMStatus :execrows

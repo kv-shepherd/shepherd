@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,11 +47,11 @@ spec:
             memory: "8Gi"
         devices:
           disks:
-            - name: rootdisk
+            - name: rootfs
               disk:
                 bus: virtio
       volumes:
-        - name: rootdisk
+        - name: rootfs
           containerDisk:
             image: docker.io/kubevirt/centos:7
 `
@@ -319,6 +320,8 @@ func TestValidateYAMLResourceHalfSteps_RejectsNonStandardCPU(t *testing.T) {
 func TestMapStorageProfile_PrefersStatusOverSpec(t *testing.T) {
 	filesystem := corev1.PersistentVolumeFilesystem
 	block := corev1.PersistentVolumeBlock
+	rwo := corev1.ReadWriteOnce
+	rwx := corev1.ReadWriteMany
 	copyStrategy := cdiv1beta1.CDICloneStrategy("copy")
 	snapshotStrategy := cdiv1beta1.CDICloneStrategy("snapshot")
 
@@ -326,11 +329,11 @@ func TestMapStorageProfile_PrefersStatusOverSpec(t *testing.T) {
 	storageProfile.Name = "gold"
 	storageProfile.Spec.CloneStrategy = &copyStrategy
 	storageProfile.Spec.ClaimPropertySets = []cdiv1beta1.ClaimPropertySet{
-		{VolumeMode: &filesystem},
+		{AccessModes: []corev1.PersistentVolumeAccessMode{rwo}, VolumeMode: &filesystem},
 	}
 	storageProfile.Status.CloneStrategy = &snapshotStrategy
 	storageProfile.Status.ClaimPropertySets = []cdiv1beta1.ClaimPropertySet{
-		{VolumeMode: &block},
+		{AccessModes: []corev1.PersistentVolumeAccessMode{rwx, rwo}, VolumeMode: &block},
 	}
 
 	got := mapStorageProfile(storageProfile)
@@ -343,17 +346,27 @@ func TestMapStorageProfile_PrefersStatusOverSpec(t *testing.T) {
 	if got.DefaultVolumeMode != "Block" {
 		t.Fatalf("DefaultVolumeMode = %q, want %q", got.DefaultVolumeMode, "Block")
 	}
+	if len(got.ClaimPropertySets) != 1 {
+		t.Fatalf("ClaimPropertySets len = %d, want 1", len(got.ClaimPropertySets))
+	}
+	if got.ClaimPropertySets[0].VolumeMode != "Block" {
+		t.Fatalf("ClaimPropertySets[0].VolumeMode = %q, want %q", got.ClaimPropertySets[0].VolumeMode, "Block")
+	}
+	if diff := cmp.Diff([]string{"ReadWriteMany", "ReadWriteOnce"}, got.ClaimPropertySets[0].AccessModes); diff != "" {
+		t.Fatalf("ClaimPropertySets[0].AccessModes mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestMapStorageProfile_FallsBackToSpecWhenStatusEmpty(t *testing.T) {
 	filesystem := corev1.PersistentVolumeFilesystem
+	rwo := corev1.ReadWriteOnce
 	copyStrategy := cdiv1beta1.CDICloneStrategy("copy")
 
 	storageProfile := &cdiv1beta1.StorageProfile{}
 	storageProfile.Name = "slow"
 	storageProfile.Spec.CloneStrategy = &copyStrategy
 	storageProfile.Spec.ClaimPropertySets = []cdiv1beta1.ClaimPropertySet{
-		{VolumeMode: &filesystem},
+		{AccessModes: []corev1.PersistentVolumeAccessMode{rwo}, VolumeMode: &filesystem},
 	}
 
 	got := mapStorageProfile(storageProfile)
@@ -362,6 +375,9 @@ func TestMapStorageProfile_FallsBackToSpecWhenStatusEmpty(t *testing.T) {
 	}
 	if got.DefaultVolumeMode != "Filesystem" {
 		t.Fatalf("DefaultVolumeMode = %q, want %q", got.DefaultVolumeMode, "Filesystem")
+	}
+	if diff := cmp.Diff([]string{"ReadWriteOnce"}, got.ClaimPropertySets[0].AccessModes); diff != "" {
+		t.Fatalf("ClaimPropertySets[0].AccessModes mismatch (-want +got):\n%s", diff)
 	}
 }
 

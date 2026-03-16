@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/predicate"
@@ -299,6 +300,44 @@ func (_u *InstanceSizeUpdate) ClearSpecOverrides() *InstanceSizeUpdate {
 	return _u
 }
 
+// SetDvAccessModes sets the "dv_access_modes" field.
+func (_u *InstanceSizeUpdate) SetDvAccessModes(v []string) *InstanceSizeUpdate {
+	_u.mutation.SetDvAccessModes(v)
+	return _u
+}
+
+// AppendDvAccessModes appends value to the "dv_access_modes" field.
+func (_u *InstanceSizeUpdate) AppendDvAccessModes(v []string) *InstanceSizeUpdate {
+	_u.mutation.AppendDvAccessModes(v)
+	return _u
+}
+
+// ClearDvAccessModes clears the value of the "dv_access_modes" field.
+func (_u *InstanceSizeUpdate) ClearDvAccessModes() *InstanceSizeUpdate {
+	_u.mutation.ClearDvAccessModes()
+	return _u
+}
+
+// SetDvVolumeMode sets the "dv_volume_mode" field.
+func (_u *InstanceSizeUpdate) SetDvVolumeMode(v string) *InstanceSizeUpdate {
+	_u.mutation.SetDvVolumeMode(v)
+	return _u
+}
+
+// SetNillableDvVolumeMode sets the "dv_volume_mode" field if the given value is not nil.
+func (_u *InstanceSizeUpdate) SetNillableDvVolumeMode(v *string) *InstanceSizeUpdate {
+	if v != nil {
+		_u.SetDvVolumeMode(*v)
+	}
+	return _u
+}
+
+// ClearDvVolumeMode clears the value of the "dv_volume_mode" field.
+func (_u *InstanceSizeUpdate) ClearDvVolumeMode() *InstanceSizeUpdate {
+	_u.mutation.ClearDvVolumeMode()
+	return _u
+}
+
 // SetCatalogScope sets the "catalog_scope" field.
 func (_u *InstanceSizeUpdate) SetCatalogScope(v instancesize.CatalogScope) *InstanceSizeUpdate {
 	_u.mutation.SetCatalogScope(v)
@@ -540,6 +579,23 @@ func (_u *InstanceSizeUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if _u.mutation.SpecOverridesCleared() {
 		_spec.ClearField(instancesize.FieldSpecOverrides, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.DvAccessModes(); ok {
+		_spec.SetField(instancesize.FieldDvAccessModes, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedDvAccessModes(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, instancesize.FieldDvAccessModes, value)
+		})
+	}
+	if _u.mutation.DvAccessModesCleared() {
+		_spec.ClearField(instancesize.FieldDvAccessModes, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.DvVolumeMode(); ok {
+		_spec.SetField(instancesize.FieldDvVolumeMode, field.TypeString, value)
+	}
+	if _u.mutation.DvVolumeModeCleared() {
+		_spec.ClearField(instancesize.FieldDvVolumeMode, field.TypeString)
 	}
 	if value, ok := _u.mutation.CatalogScope(); ok {
 		_spec.SetField(instancesize.FieldCatalogScope, field.TypeEnum, value)
@@ -847,6 +903,44 @@ func (_u *InstanceSizeUpdateOne) ClearSpecOverrides() *InstanceSizeUpdateOne {
 	return _u
 }
 
+// SetDvAccessModes sets the "dv_access_modes" field.
+func (_u *InstanceSizeUpdateOne) SetDvAccessModes(v []string) *InstanceSizeUpdateOne {
+	_u.mutation.SetDvAccessModes(v)
+	return _u
+}
+
+// AppendDvAccessModes appends value to the "dv_access_modes" field.
+func (_u *InstanceSizeUpdateOne) AppendDvAccessModes(v []string) *InstanceSizeUpdateOne {
+	_u.mutation.AppendDvAccessModes(v)
+	return _u
+}
+
+// ClearDvAccessModes clears the value of the "dv_access_modes" field.
+func (_u *InstanceSizeUpdateOne) ClearDvAccessModes() *InstanceSizeUpdateOne {
+	_u.mutation.ClearDvAccessModes()
+	return _u
+}
+
+// SetDvVolumeMode sets the "dv_volume_mode" field.
+func (_u *InstanceSizeUpdateOne) SetDvVolumeMode(v string) *InstanceSizeUpdateOne {
+	_u.mutation.SetDvVolumeMode(v)
+	return _u
+}
+
+// SetNillableDvVolumeMode sets the "dv_volume_mode" field if the given value is not nil.
+func (_u *InstanceSizeUpdateOne) SetNillableDvVolumeMode(v *string) *InstanceSizeUpdateOne {
+	if v != nil {
+		_u.SetDvVolumeMode(*v)
+	}
+	return _u
+}
+
+// ClearDvVolumeMode clears the value of the "dv_volume_mode" field.
+func (_u *InstanceSizeUpdateOne) ClearDvVolumeMode() *InstanceSizeUpdateOne {
+	_u.mutation.ClearDvVolumeMode()
+	return _u
+}
+
 // SetCatalogScope sets the "catalog_scope" field.
 func (_u *InstanceSizeUpdateOne) SetCatalogScope(v instancesize.CatalogScope) *InstanceSizeUpdateOne {
 	_u.mutation.SetCatalogScope(v)
@@ -1118,6 +1212,23 @@ func (_u *InstanceSizeUpdateOne) sqlSave(ctx context.Context) (_node *InstanceSi
 	}
 	if _u.mutation.SpecOverridesCleared() {
 		_spec.ClearField(instancesize.FieldSpecOverrides, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.DvAccessModes(); ok {
+		_spec.SetField(instancesize.FieldDvAccessModes, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedDvAccessModes(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, instancesize.FieldDvAccessModes, value)
+		})
+	}
+	if _u.mutation.DvAccessModesCleared() {
+		_spec.ClearField(instancesize.FieldDvAccessModes, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.DvVolumeMode(); ok {
+		_spec.SetField(instancesize.FieldDvVolumeMode, field.TypeString, value)
+	}
+	if _u.mutation.DvVolumeModeCleared() {
+		_spec.ClearField(instancesize.FieldDvVolumeMode, field.TypeString)
 	}
 	if value, ok := _u.mutation.CatalogScope(); ok {
 		_spec.SetField(instancesize.FieldCatalogScope, field.TypeEnum, value)

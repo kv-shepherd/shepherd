@@ -29,6 +29,8 @@ const {
     resetFields: vi.fn(),
     getFieldValue: vi.fn(),
     setFieldValue: vi.fn(),
+    setFieldsValue: vi.fn(),
+    setFields: vi.fn(),
   },
   rejectFormState: {
     validateFields: vi.fn(),
@@ -37,6 +39,9 @@ const {
   watchedValues: {
     selected_cluster_id: "cluster-a",
     selected_storage_class: "rook-ceph",
+    selected_root_volume_mode_key: undefined,
+    selected_dv_access_modes: undefined,
+    selected_dv_volume_mode: undefined,
     enable_override: true,
     cpu_request: 1,
     cpu_limit: 2,
@@ -80,6 +85,18 @@ vi.mock("@/lib/api/client", () => ({
 
 import { useAdminApprovalsController } from "./useAdminApprovalsController";
 
+function findAdminClustersQueryFn(stage: "base" | "resolved" | "validated") {
+  const call = [...useApiGetMock.mock.calls]
+    .reverse()
+    .find(
+      (entry) =>
+        Array.isArray(entry[0]) &&
+        entry[0][0] === "admin-clusters" &&
+        entry[0][2] === stage,
+    );
+  return call?.[1];
+}
+
 describe("useAdminApprovalsController", () => {
   const t = ((key: string) => key) as unknown as TFunction;
 
@@ -93,6 +110,9 @@ describe("useAdminApprovalsController", () => {
     Object.assign(watchedValues, {
       selected_cluster_id: "cluster-a",
       selected_storage_class: "rook-ceph",
+      selected_root_volume_mode_key: undefined,
+      selected_dv_access_modes: undefined,
+      selected_dv_volume_mode: undefined,
       enable_override: true,
       cpu_request: 1,
       cpu_limit: 2,
@@ -111,6 +131,28 @@ describe("useAdminApprovalsController", () => {
       watchedValues.selected_storage_class = "rook-ceph";
       watchedValues.selected_cluster_id = "cluster-a";
     });
+    approveFormState.setFieldsValue.mockImplementation(
+      (patch: Record<string, unknown>) => {
+        Object.assign(watchedValues, patch);
+      },
+    );
+    approveFormState.setFields.mockImplementation(
+      (
+        fields: Array<{
+          name: string | string[];
+          value: unknown;
+        }>,
+      ) => {
+        for (const field of fields) {
+          const name = Array.isArray(field.name)
+            ? field.name[field.name.length - 1]
+            : field.name;
+          if (typeof name === "string") {
+            watchedValues[name] = field.value;
+          }
+        }
+      },
+    );
     useWatchMock.mockImplementation((name: string) => {
       return watchedValues[name];
     });
@@ -162,6 +204,7 @@ describe("useAdminApprovalsController", () => {
             ],
           },
           isLoading: false,
+          error: undefined,
         };
       }
       if (key === "admin-cluster-policy") {
@@ -178,6 +221,7 @@ describe("useAdminApprovalsController", () => {
       return {
         data: undefined,
         isLoading: false,
+        error: undefined,
       };
     });
     let mutationCall = 0;
@@ -243,6 +287,45 @@ describe("useAdminApprovalsController", () => {
     });
   });
 
+  it("disables retries and exposes cluster compatibility query errors", () => {
+    const clusterQueryError = {
+      code: "OVERCOMMIT_INVALID",
+      message: "cpu request must not exceed cpu cores",
+      status: 400,
+    };
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
+      if (key === "approvals") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+          error: undefined,
+        };
+      }
+      if (key === "admin-clusters") {
+        return {
+          data: undefined,
+          isLoading: false,
+          error: clusterQueryError,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+        error: undefined,
+      };
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    expect(result.current.clusterQueryError).toEqual(clusterQueryError);
+    const clusterCall = useApiGetMock.mock.calls.find(
+      (call) => Array.isArray(call[0]) && call[0][0] === "admin-clusters",
+    );
+    expect(clusterCall?.[2]).toMatchObject({ retry: false });
+  });
+
   it("submits approve/reject decisions with selected ticket ids", async () => {
     const { result } = renderHook(() => useAdminApprovalsController({ t }));
     const pendingTicket = {
@@ -296,12 +379,107 @@ describe("useAdminApprovalsController", () => {
       } as never);
     });
 
-    const clusterCall = [...useApiGetMock.mock.calls]
-      .reverse()
-      .find(
-        (call) => Array.isArray(call[0]) && call[0][0] === "admin-clusters",
-      );
-    const clusterQueryFn = clusterCall?.[1];
+    const clusterQueryFn = findAdminClustersQueryFn("base");
+    expect(clusterQueryFn).toBeTypeOf("function");
+
+    await act(async () => {
+      await clusterQueryFn();
+    });
+
+    expect(apiGetMock).toHaveBeenCalledWith("/admin/clusters", {
+      params: {
+        query: {
+          include_incompatible: true,
+          namespace: "prod-a",
+          template_id: "tpl-1",
+          instance_size_id: "sz-1",
+          cpu_request: 1,
+          cpu_limit: 2,
+          memory_request_gi: 2,
+          memory_limit_gi: 4,
+        },
+      },
+    });
+  });
+
+  it("includes explicitly selected root volume mode in compatibility queries", async () => {
+    watchedValues.selected_root_volume_mode_key = "Block|ReadWriteMany";
+    watchedValues.selected_dv_access_modes = ["ReadWriteMany"];
+    watchedValues.selected_dv_volume_mode = "Block";
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
+      if (key === "approvals") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (key === "admin-clusters") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["rook-ceph"],
+                default_storage_class: "rook-ceph",
+                compatibility: {
+                  eligible: false,
+                  root_volume_resolution: {
+                    state: "mode_required",
+                    message:
+                      "storage class supports multiple root volume modes",
+                    mode_options: [
+                      {
+                        access_modes: ["ReadWriteMany"],
+                        volume_mode: "Block",
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+          isLoading: false,
+        };
+      }
+      if (key === "admin-cluster-policy") {
+        return {
+          data: {
+            id: "policy-1",
+            cluster_id: "cluster-a",
+            allow_cdi_clone: true,
+            allowed_storage_classes: ["rook-ceph"],
+          },
+          isLoading: false,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+      };
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openApproveModal({
+        id: "ticket-1",
+        operation_type: "CREATE",
+        status: "PENDING",
+        requester: "alice",
+        ticket_payload: {
+          namespace: "prod-a",
+          template_id: "tpl-1",
+          instance_size_id: "sz-1",
+        },
+      } as never);
+    });
+
+    const clusterQueryFn = findAdminClustersQueryFn("validated");
     expect(clusterQueryFn).toBeTypeOf("function");
 
     await act(async () => {
@@ -316,6 +494,8 @@ describe("useAdminApprovalsController", () => {
           template_id: "tpl-1",
           instance_size_id: "sz-1",
           selected_storage_class: "rook-ceph",
+          selected_dv_access_modes: ["ReadWriteMany"],
+          selected_dv_volume_mode: "Block",
           cpu_request: 1,
           cpu_limit: 2,
           memory_request_gi: 2,
@@ -325,7 +505,458 @@ describe("useAdminApprovalsController", () => {
     });
   });
 
-  it("auto-selects an allowed storage class for the chosen cluster", () => {
+  it("keeps explicitly selected root volume mode fields once compatibility resolves", () => {
+    watchedValues.selected_root_volume_mode_key = "Block|ReadWriteMany";
+    watchedValues.selected_dv_access_modes = ["ReadWriteMany"];
+    watchedValues.selected_dv_volume_mode = "Block";
+
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
+      if (key === "approvals") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (key === "admin-clusters") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["rook-ceph"],
+                default_storage_class: "rook-ceph",
+                compatibility: {
+                  eligible: true,
+                  root_volume_resolution: {
+                    state: "resolved",
+                    effective_access_modes: ["ReadWriteMany"],
+                    effective_volume_mode: "Block",
+                  },
+                },
+              },
+            ],
+          },
+          isLoading: false,
+        };
+      }
+      if (key === "admin-cluster-policy") {
+        return {
+          data: {
+            id: "policy-1",
+            cluster_id: "cluster-a",
+            allow_cdi_clone: true,
+            allowed_storage_classes: ["rook-ceph"],
+          },
+          isLoading: false,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+      };
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openApproveModal({
+        id: "ticket-1",
+        operation_type: "CREATE",
+        status: "PENDING",
+        requester: "alice",
+        ticket_payload: {
+          namespace: "prod-a",
+          template_id: "tpl-1",
+          instance_size_id: "sz-1",
+        },
+      } as never);
+    });
+
+    expect(watchedValues.selected_root_volume_mode_key).toBe(
+      "Block|ReadWriteMany",
+    );
+    expect(watchedValues.selected_dv_access_modes).toEqual(["ReadWriteMany"]);
+    expect(watchedValues.selected_dv_volume_mode).toBe("Block");
+  });
+
+  it("keeps a newly selected root volume mode while resolved compatibility is refreshing", () => {
+    watchedValues.selected_root_volume_mode_key = "Block|ReadWriteOnce";
+    watchedValues.selected_dv_access_modes = ["ReadWriteOnce"];
+    watchedValues.selected_dv_volume_mode = "Block";
+
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
+      if (key === "approvals") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (key === "admin-clusters") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["rook-ceph"],
+                default_storage_class: "rook-ceph",
+                compatibility: {
+                  eligible: true,
+                  root_volume_resolution: {
+                    intent_mode: "auto",
+                    state: "resolved",
+                    effective_access_modes: ["ReadWriteMany"],
+                    effective_volume_mode: "Block",
+                    mode_options: [
+                      {
+                        access_modes: ["ReadWriteMany"],
+                        volume_mode: "Block",
+                      },
+                      {
+                        access_modes: ["ReadWriteOnce"],
+                        volume_mode: "Block",
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+          isLoading: false,
+        };
+      }
+      if (key === "admin-cluster-policy") {
+        return {
+          data: {
+            id: "policy-1",
+            cluster_id: "cluster-a",
+            allow_cdi_clone: true,
+            allowed_storage_classes: ["rook-ceph"],
+          },
+          isLoading: false,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+      };
+    });
+
+    renderHook(() => useAdminApprovalsController({ t }));
+
+    expect(approveFormState.setFieldsValue).not.toHaveBeenCalledWith({
+      selected_root_volume_mode_key: undefined,
+      selected_dv_access_modes: undefined,
+      selected_dv_volume_mode: undefined,
+    });
+    expect(watchedValues.selected_root_volume_mode_key).toBe(
+      "Block|ReadWriteOnce",
+    );
+    expect(watchedValues.selected_dv_access_modes).toEqual(["ReadWriteOnce"]);
+    expect(watchedValues.selected_dv_volume_mode).toBe("Block");
+  });
+
+  it("does not auto-select a root volume mode when auto intent resolves to multiple candidates", () => {
+    watchedValues.selected_root_volume_mode_key = undefined;
+    watchedValues.selected_dv_access_modes = undefined;
+    watchedValues.selected_dv_volume_mode = undefined;
+
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      if (!Array.isArray(queryKey)) {
+        return { data: undefined, isLoading: false, error: undefined };
+      }
+      const [key, , stage] = queryKey;
+      if (key === "approvals") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (key === "admin-clusters" && stage === "base") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["rook-ceph"],
+                default_storage_class: "rook-ceph",
+                compatibility: {
+                  eligible: false,
+                  root_volume_resolution: {
+                    intent_mode: "auto",
+                    state: "mode_required",
+                    mode_options: [
+                      {
+                        access_modes: ["ReadWriteMany"],
+                        volume_mode: "Block",
+                      },
+                      {
+                        access_modes: ["ReadWriteOnce"],
+                        volume_mode: "Block",
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+          isLoading: false,
+          error: undefined,
+        };
+      }
+      if (key === "admin-clusters" && stage === "resolved") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["rook-ceph"],
+                default_storage_class: "rook-ceph",
+                compatibility: {
+                  eligible: false,
+                  root_volume_resolution: {
+                    intent_mode: "auto",
+                    state: "mode_required",
+                    effective_storage_class: "rook-ceph",
+                    effective_access_modes: ["ReadWriteMany"],
+                    effective_volume_mode: "Block",
+                    mode_options: [
+                      {
+                        access_modes: ["ReadWriteMany"],
+                        volume_mode: "Block",
+                      },
+                      {
+                        access_modes: ["ReadWriteOnce"],
+                        volume_mode: "Block",
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+          isLoading: false,
+          error: undefined,
+        };
+      }
+      if (key === "admin-cluster-policy") {
+        return {
+          data: {
+            id: "policy-1",
+            cluster_id: "cluster-a",
+            allow_cdi_clone: true,
+            allowed_storage_classes: ["rook-ceph"],
+          },
+          isLoading: false,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+        error: undefined,
+      };
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    expect(result.current.effectiveSelectedRootVolumeModeKey).toBe("");
+    const validatedCall = useApiGetMock.mock.calls.find(
+      (call) =>
+        Array.isArray(call[0]) &&
+        call[0][0] === "admin-clusters" &&
+        call[0][2] === "validated",
+    );
+    expect(validatedCall?.[2]).toMatchObject({ enabled: false });
+  });
+
+  it("preserves base root volume mode options when resolved compatibility omits them", () => {
+    watchedValues.selected_storage_class = "rook-ceph";
+    watchedValues.selected_dv_access_modes = ["ReadWriteOnce"];
+    watchedValues.selected_dv_volume_mode = "Block";
+
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      if (!Array.isArray(queryKey)) {
+        return { data: undefined, isLoading: false, error: undefined };
+      }
+      const [key, , stage] = queryKey;
+      if (key === "approvals") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (key === "admin-clusters" && stage === "base") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["rook-ceph"],
+                default_storage_class: "rook-ceph",
+                compatibility: {
+                  eligible: false,
+                  root_volume_resolution: {
+                    intent_mode: "auto",
+                    state: "mode_required",
+                    mode_options: [
+                      {
+                        access_modes: ["ReadWriteMany"],
+                        volume_mode: "Block",
+                      },
+                      {
+                        access_modes: ["ReadWriteOnce"],
+                        volume_mode: "Block",
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+          isLoading: false,
+          error: undefined,
+        };
+      }
+      if (key === "admin-clusters" && stage === "resolved") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["rook-ceph"],
+                default_storage_class: "rook-ceph",
+                compatibility: {
+                  eligible: true,
+                  root_volume_resolution: {
+                    intent_mode: "auto",
+                    state: "resolved",
+                    effective_storage_class: "rook-ceph",
+                    effective_access_modes: ["ReadWriteOnce"],
+                    effective_volume_mode: "Block",
+                  },
+                },
+              },
+            ],
+          },
+          isLoading: false,
+          error: undefined,
+        };
+      }
+      if (key === "admin-cluster-policy") {
+        return {
+          data: {
+            id: "policy-1",
+            cluster_id: "cluster-a",
+            allow_cdi_clone: true,
+            allowed_storage_classes: ["rook-ceph"],
+          },
+          isLoading: false,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+        error: undefined,
+      };
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    expect(result.current.selectedRootVolumeResolution?.state).toBe("resolved");
+    expect(result.current.selectedRootVolumeResolution?.mode_options).toHaveLength(
+      2,
+    );
+  });
+
+  it("does not rewrite root volume fields when resolution is already clear", () => {
+    watchedValues.selected_root_volume_mode_key = undefined;
+    watchedValues.selected_dv_access_modes = undefined;
+    watchedValues.selected_dv_volume_mode = undefined;
+
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
+      if (key === "approvals") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (key === "admin-clusters") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["rook-ceph"],
+                default_storage_class: "rook-ceph",
+                compatibility: {
+                  eligible: true,
+                  root_volume_resolution: {
+                    state: "resolved",
+                    effective_access_modes: ["ReadWriteMany"],
+                    effective_volume_mode: "Block",
+                  },
+                },
+              },
+            ],
+          },
+          isLoading: false,
+        };
+      }
+      if (key === "admin-cluster-policy") {
+        return {
+          data: {
+            id: "policy-1",
+            cluster_id: "cluster-a",
+            allow_cdi_clone: true,
+            allowed_storage_classes: ["rook-ceph"],
+          },
+          isLoading: false,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+      };
+    });
+
+    renderHook(() => useAdminApprovalsController({ t }));
+
+    expect(approveFormState.setFieldsValue).not.toHaveBeenCalledWith({
+      selected_root_volume_mode_key: undefined,
+      selected_dv_access_modes: undefined,
+      selected_dv_volume_mode: undefined,
+    });
+  });
+
+  it("auto-selects an allowed storage class for the chosen cluster", async () => {
     watchedValues.selected_storage_class = "";
 
     const { result } = renderHook(() => useAdminApprovalsController({ t }));
@@ -347,9 +978,255 @@ describe("useAdminApprovalsController", () => {
     expect(result.current.selectedClusterStorageClassOptions).toEqual([
       "rook-ceph",
     ]);
-    expect(approveFormState.setFieldValue).toHaveBeenCalledWith(
+    expect(result.current.effectiveSelectedStorageClass).toBe("rook-ceph");
+    expect(approveFormState.setFieldValue).not.toHaveBeenCalledWith(
       "selected_storage_class",
+      expect.any(String),
+    );
+
+    const resolvedClusterQueryFn = findAdminClustersQueryFn("resolved");
+    expect(resolvedClusterQueryFn).toBeTypeOf("function");
+
+    await act(async () => {
+      await resolvedClusterQueryFn?.();
+    });
+
+    expect(apiGetMock).toHaveBeenCalledWith("/admin/clusters", {
+      params: {
+        query: {
+          include_incompatible: true,
+          namespace: "prod-a",
+          template_id: "tpl-1",
+          instance_size_id: "sz-1",
+          selected_storage_class: "rook-ceph",
+          cpu_request: 1,
+          cpu_limit: 2,
+          memory_request_gi: 2,
+          memory_limit_gi: 4,
+        },
+      },
+    });
+  });
+
+  it("submits the derived storage class when the cluster has exactly one eligible option", async () => {
+    watchedValues.selected_storage_class = "";
+    approveFormState.validateFields.mockResolvedValue({
+      selected_cluster_id: "cluster-a",
+      selected_storage_class: undefined,
+      enable_override: true,
+      comment: "approved",
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openApproveModal({
+        id: "ticket-1",
+        operation_type: "CREATE",
+        status: "PENDING",
+        requester: "alice",
+        ticket_payload: {
+          namespace: "prod-a",
+          template_id: "tpl-1",
+          instance_size_id: "sz-1",
+        },
+      } as never);
+    });
+
+    await act(async () => {
+      await result.current.submitApprove();
+    });
+
+    expect(approveMutate).toHaveBeenCalledWith({
+      ticketId: "ticket-1",
+      body: {
+        selected_cluster_id: "cluster-a",
+        selected_storage_class: "rook-ceph",
+        enable_override: true,
+        comment: "approved",
+      },
+    });
+  });
+
+  it("submits the uniquely resolved root volume mode when approval does not require manual selection", async () => {
+    watchedValues.selected_storage_class = "";
+    watchedValues.selected_root_volume_mode_key = undefined;
+    watchedValues.selected_dv_access_modes = undefined;
+    watchedValues.selected_dv_volume_mode = undefined;
+    approveFormState.validateFields.mockResolvedValue({
+      selected_cluster_id: "cluster-a",
+      selected_storage_class: undefined,
+      selected_root_volume_mode_key: undefined,
+      selected_dv_access_modes: undefined,
+      selected_dv_volume_mode: undefined,
+      enable_override: true,
+      comment: "approved",
+    });
+
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
+      if (key === "approvals") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+          error: undefined,
+        };
+      }
+      if (key === "admin-clusters") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["rook-ceph"],
+                default_storage_class: "rook-ceph",
+                compatibility: {
+                  eligible: true,
+                  root_volume_resolution: {
+                    intent_mode: "auto",
+                    state: "resolved",
+                    effective_storage_class: "rook-ceph",
+                    effective_access_modes: ["ReadWriteMany"],
+                    effective_volume_mode: "Block",
+                  },
+                },
+              },
+            ],
+          },
+          isLoading: false,
+          error: undefined,
+        };
+      }
+      if (key === "admin-cluster-policy") {
+        return {
+          data: {
+            id: "policy-1",
+            cluster_id: "cluster-a",
+            allow_cdi_clone: true,
+            allowed_storage_classes: ["rook-ceph"],
+          },
+          isLoading: false,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+        error: undefined,
+      };
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openApproveModal({
+        id: "ticket-1",
+        operation_type: "CREATE",
+        status: "PENDING",
+        requester: "alice",
+        ticket_payload: {
+          namespace: "prod-a",
+          template_id: "tpl-1",
+          instance_size_id: "sz-1",
+        },
+      } as never);
+    });
+
+    await act(async () => {
+      await result.current.submitApprove();
+    });
+
+    expect(approveMutate).toHaveBeenCalledWith({
+      ticketId: "ticket-1",
+      body: {
+        selected_cluster_id: "cluster-a",
+        selected_storage_class: "rook-ceph",
+        selected_dv_access_modes: ["ReadWriteMany"],
+        selected_dv_volume_mode: "Block",
+        enable_override: true,
+        comment: "approved",
+      },
+    });
+  });
+
+  it("does not auto-select a storage class when multiple eligible options exist", () => {
+    watchedValues.selected_storage_class = "";
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
+      if (key === "approvals") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (key === "admin-clusters") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["rook-ceph", "gold-sc"],
+                default_storage_class: "rook-ceph",
+                compatibility: {
+                  eligible: false,
+                  reason_code: "CLUSTER_POLICY_STORAGE_CLASS_REQUIRED",
+                  reason_message:
+                    "cluster policy requires an explicit allowed storage class",
+                },
+              },
+            ],
+          },
+          isLoading: false,
+        };
+      }
+      if (key === "admin-cluster-policy") {
+        return {
+          data: {
+            id: "policy-1",
+            cluster_id: "cluster-a",
+            allow_cdi_clone: true,
+            allowed_storage_classes: ["rook-ceph", "gold-sc"],
+          },
+          isLoading: false,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+      };
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openApproveModal({
+        id: "ticket-1",
+        operation_type: "CREATE",
+        status: "PENDING",
+        requester: "alice",
+        ticket_payload: {
+          namespace: "prod-a",
+          template_id: "tpl-1",
+          instance_size_id: "sz-1",
+        },
+      } as never);
+    });
+
+    expect(result.current.selectedClusterStorageClassOptions).toEqual([
       "rook-ceph",
+      "gold-sc",
+    ]);
+    expect(result.current.effectiveSelectedStorageClass).toBe("");
+    expect(approveFormState.setFieldValue).not.toHaveBeenCalledWith(
+      "selected_storage_class",
+      expect.any(String),
     );
   });
 
@@ -387,12 +1264,7 @@ describe("useAdminApprovalsController", () => {
       hasMixedSelection: false,
     });
 
-    const clusterCall = [...useApiGetMock.mock.calls]
-      .reverse()
-      .find(
-        (call) => Array.isArray(call[0]) && call[0][0] === "admin-clusters",
-      );
-    const clusterQueryFn = clusterCall?.[1];
+    const clusterQueryFn = findAdminClustersQueryFn("base");
     expect(clusterQueryFn).toBeTypeOf("function");
 
     await act(async () => {
@@ -406,7 +1278,6 @@ describe("useAdminApprovalsController", () => {
           namespace: "prod-a",
           template_id: "tpl-1",
           instance_size_id: "sz-1",
-          selected_storage_class: "rook-ceph",
           cpu_request: 1,
           cpu_limit: 2,
           memory_request_gi: 2,
@@ -462,6 +1333,24 @@ describe("useAdminApprovalsController", () => {
         enable_override: false,
         comment: "approved",
       },
+    });
+  });
+
+  it("shows approval errors with longer retention for easier recording", () => {
+    renderHook(() => useAdminApprovalsController({ t }));
+
+    const approveMutationOptions = useApiMutationMock.mock.calls[0]?.[1] as
+      | { onError?: (err: { message?: string }) => void }
+      | undefined;
+    expect(approveMutationOptions?.onError).toBeTypeOf("function");
+
+    approveMutationOptions?.onError?.({
+      message: "vm spec rejected by cluster",
+    });
+
+    expect(messageErrorMock).toHaveBeenCalledWith({
+      content: "vm spec rejected by cluster",
+      duration: 10,
     });
   });
 });

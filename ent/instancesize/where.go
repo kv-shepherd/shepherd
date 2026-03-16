@@ -139,6 +139,11 @@ func HugepagesSize(v string) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldEQ(FieldHugepagesSize, v))
 }
 
+// DvVolumeMode applies equality check predicate on the "dv_volume_mode" field. It's identical to DvVolumeModeEQ.
+func DvVolumeMode(v string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldEQ(FieldDvVolumeMode, v))
+}
+
 // SortOrder applies equality check predicate on the "sort_order" field. It's identical to SortOrderEQ.
 func SortOrder(v int) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldEQ(FieldSortOrder, v))
@@ -802,6 +807,91 @@ func SpecOverridesIsNil() predicate.InstanceSize {
 // SpecOverridesNotNil applies the NotNil predicate on the "spec_overrides" field.
 func SpecOverridesNotNil() predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldNotNull(FieldSpecOverrides))
+}
+
+// DvAccessModesIsNil applies the IsNil predicate on the "dv_access_modes" field.
+func DvAccessModesIsNil() predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldIsNull(FieldDvAccessModes))
+}
+
+// DvAccessModesNotNil applies the NotNil predicate on the "dv_access_modes" field.
+func DvAccessModesNotNil() predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldNotNull(FieldDvAccessModes))
+}
+
+// DvVolumeModeEQ applies the EQ predicate on the "dv_volume_mode" field.
+func DvVolumeModeEQ(v string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldEQ(FieldDvVolumeMode, v))
+}
+
+// DvVolumeModeNEQ applies the NEQ predicate on the "dv_volume_mode" field.
+func DvVolumeModeNEQ(v string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldNEQ(FieldDvVolumeMode, v))
+}
+
+// DvVolumeModeIn applies the In predicate on the "dv_volume_mode" field.
+func DvVolumeModeIn(vs ...string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldIn(FieldDvVolumeMode, vs...))
+}
+
+// DvVolumeModeNotIn applies the NotIn predicate on the "dv_volume_mode" field.
+func DvVolumeModeNotIn(vs ...string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldNotIn(FieldDvVolumeMode, vs...))
+}
+
+// DvVolumeModeGT applies the GT predicate on the "dv_volume_mode" field.
+func DvVolumeModeGT(v string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldGT(FieldDvVolumeMode, v))
+}
+
+// DvVolumeModeGTE applies the GTE predicate on the "dv_volume_mode" field.
+func DvVolumeModeGTE(v string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldGTE(FieldDvVolumeMode, v))
+}
+
+// DvVolumeModeLT applies the LT predicate on the "dv_volume_mode" field.
+func DvVolumeModeLT(v string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldLT(FieldDvVolumeMode, v))
+}
+
+// DvVolumeModeLTE applies the LTE predicate on the "dv_volume_mode" field.
+func DvVolumeModeLTE(v string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldLTE(FieldDvVolumeMode, v))
+}
+
+// DvVolumeModeContains applies the Contains predicate on the "dv_volume_mode" field.
+func DvVolumeModeContains(v string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldContains(FieldDvVolumeMode, v))
+}
+
+// DvVolumeModeHasPrefix applies the HasPrefix predicate on the "dv_volume_mode" field.
+func DvVolumeModeHasPrefix(v string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldHasPrefix(FieldDvVolumeMode, v))
+}
+
+// DvVolumeModeHasSuffix applies the HasSuffix predicate on the "dv_volume_mode" field.
+func DvVolumeModeHasSuffix(v string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldHasSuffix(FieldDvVolumeMode, v))
+}
+
+// DvVolumeModeIsNil applies the IsNil predicate on the "dv_volume_mode" field.
+func DvVolumeModeIsNil() predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldIsNull(FieldDvVolumeMode))
+}
+
+// DvVolumeModeNotNil applies the NotNil predicate on the "dv_volume_mode" field.
+func DvVolumeModeNotNil() predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldNotNull(FieldDvVolumeMode))
+}
+
+// DvVolumeModeEqualFold applies the EqualFold predicate on the "dv_volume_mode" field.
+func DvVolumeModeEqualFold(v string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldEqualFold(FieldDvVolumeMode, v))
+}
+
+// DvVolumeModeContainsFold applies the ContainsFold predicate on the "dv_volume_mode" field.
+func DvVolumeModeContainsFold(v string) predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldContainsFold(FieldDvVolumeMode, v))
 }
 
 // CatalogScopeEQ applies the EQ predicate on the "catalog_scope" field.

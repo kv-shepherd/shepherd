@@ -407,6 +407,8 @@ var (
 		{Name: "requires_hugepages", Type: field.TypeBool, Default: false},
 		{Name: "hugepages_size", Type: field.TypeString, Nullable: true},
 		{Name: "spec_overrides", Type: field.TypeJSON, Nullable: true},
+		{Name: "dv_access_modes", Type: field.TypeJSON, Nullable: true},
+		{Name: "dv_volume_mode", Type: field.TypeString, Nullable: true, Default: ""},
 		{Name: "catalog_scope", Type: field.TypeEnum, Enums: []string{"unclassified", "test", "prod", "all"}, Default: "unclassified"},
 		{Name: "sort_order", Type: field.TypeInt, Default: 0},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
@@ -426,7 +428,7 @@ var (
 			{
 				Name:    "instancesize_enabled_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{InstanceSizesColumns[19], InstanceSizesColumns[18]},
+				Columns: []*schema.Column{InstanceSizesColumns[21], InstanceSizesColumns[20]},
 			},
 			{
 				Name:    "instancesize_requires_gpu",
@@ -451,7 +453,7 @@ var (
 			{
 				Name:    "instancesize_catalog_scope",
 				Unique:  false,
-				Columns: []*schema.Column{InstanceSizesColumns[17]},
+				Columns: []*schema.Column{InstanceSizesColumns[19]},
 			},
 		},
 	}
@@ -882,6 +884,9 @@ var (
 		{Name: "hostname", Type: field.TypeString, Nullable: true},
 		{Name: "created_by", Type: field.TypeString},
 		{Name: "ticket_id", Type: field.TypeString, Nullable: true},
+		{Name: "root_volume_storage_class", Type: field.TypeString, Nullable: true},
+		{Name: "root_volume_access_modes", Type: field.TypeJSON, Nullable: true},
+		{Name: "root_volume_volume_mode", Type: field.TypeString, Nullable: true},
 		{Name: "polling_tier", Type: field.TypeEnum, Enums: []string{"high", "low"}, Default: "high"},
 		{Name: "poll_interval_sec", Type: field.TypeInt, Default: 15},
 		{Name: "last_k8s_rv", Type: field.TypeString, Nullable: true},
@@ -897,7 +902,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "vms_services_vms",
-				Columns:    []*schema.Column{VmsColumns[16]},
+				Columns:    []*schema.Column{VmsColumns[19]},
 				RefColumns: []*schema.Column{ServicesColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -921,7 +926,7 @@ var (
 			{
 				Name:    "vm_polling_tier",
 				Unique:  false,
-				Columns: []*schema.Column{VmsColumns[11]},
+				Columns: []*schema.Column{VmsColumns[14]},
 			},
 		},
 	}

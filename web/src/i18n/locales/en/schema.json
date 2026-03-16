@@ -1,0 +1,5 @@
+{
+  "instanceSize": {
+    "spec__template__spec__domain__clock__timer__hyperv": "Enable the Hyper-V paravirtualized timer for the guest clock."
+  }
+}

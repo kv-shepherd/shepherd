@@ -11,6 +11,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "i18n:schema-help:audit": "node scripts/audit-schema-help.mjs",
+    "i18n:schema-help:ci": "node scripts/audit-schema-help.mjs --ci",
     "test:e2e": "playwright test --project=smoke-chromium",
     "test:e2e:mock": "playwright test --project=smoke-chromium",
     "test:e2e:smoke": "playwright test --project=smoke-chromium",

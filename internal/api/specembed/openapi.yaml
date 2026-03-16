@@ -1024,6 +1024,23 @@ paths:
           description: Optional storage class selected by approver when evaluating cluster policy compatibility.
           schema:
             type: string
+        - name: selected_dv_access_modes
+          in: query
+          required: false
+          description: Optional explicit CDI DataVolume PVC accessModes selected during approval when root volume auto resolution is ambiguous.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: selected_dv_volume_mode
+          in: query
+          required: false
+          description: Optional explicit CDI DataVolume PVC volumeMode selected during approval when root volume auto resolution is ambiguous.
+          schema:
+            type: string
+            enum: [Block, Filesystem]
         - name: cpu_request
           in: query
           required: false
@@ -1069,6 +1086,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ClusterList'
+        '400':
+          description: Invalid compatibility evaluation request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       tags: [clusters, admin]
       summary: Register a cluster
@@ -2375,6 +2398,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MaskField'
+        professional_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaskField'
     DynamicSchemaResponse:
       type: object
       required: [schema, mask]
@@ -3122,6 +3149,15 @@ components:
           description: Admin selects target cluster (ADR-0017)
         selected_storage_class:
           type: string
+        selected_dv_access_modes:
+          type: array
+          items:
+            type: string
+          description: Explicit accessModes selected during approval when root volume provisioning intent cannot be auto-resolved uniquely.
+        selected_dv_volume_mode:
+          type: string
+          enum: [Block, Filesystem]
+          description: Explicit volumeMode selected during approval when root volume provisioning intent cannot be auto-resolved uniquely.
         enable_override:
           type: boolean
           description: >
@@ -3287,6 +3323,8 @@ components:
         advisory_message:
           type: string
           description: Human-readable advisory message for compatible placements that may use a slower fallback path.
+        root_volume_resolution:
+          $ref: '#/components/schemas/RootVolumeResolution'
 
     PlacementEvaluation:
       type: object
@@ -3302,6 +3340,25 @@ components:
         requested_storage_class:
           type: string
         effective_storage_class:
+          type: string
+        requested_dv_access_modes:
+          type: array
+          items:
+            type: string
+        requested_dv_volume_mode:
+          type: string
+          enum: [Block, Filesystem]
+        effective_dv_access_modes:
+          type: array
+          items:
+            type: string
+        effective_dv_volume_mode:
+          type: string
+          enum: [Block, Filesystem]
+        root_volume_resolution_state:
+          type: string
+          enum: [not_applicable, resolved, storage_class_required, mode_required, profile_incomplete, unsupported]
+        root_volume_resolution_message:
           type: string
         eligible:
           type: boolean
@@ -3631,6 +3688,19 @@ components:
           type: boolean
         hugepages_size:
           type: string
+        dv_access_modes:
+          type: array
+          items:
+            type: string
+          description: >
+            Explicit CDI DataVolume PVC accessModes for the root volume. When empty together
+            with `dv_volume_mode`, the platform treats the storage mode as approval-time auto resolution.
+        dv_volume_mode:
+          type: string
+          enum: [Block, Filesystem]
+          description: >
+            Explicit CDI DataVolume PVC volumeMode for the root volume. When empty together
+            with `dv_access_modes`, the platform treats the storage mode as approval-time auto resolution.
         spec_overrides:
           type: object
           additionalProperties: true
@@ -3700,6 +3770,17 @@ components:
           type: boolean
         hugepages_size:
           type: string
+        dv_access_modes:
+          type: array
+          items:
+            type: string
+          description: >
+            Explicit CDI DataVolume PVC accessModes for the root volume. On update,
+            send an empty array to clear an existing explicit root volume mode and
+            return the size to approval-time auto resolution.
+        dv_volume_mode:
+          type: string
+          enum: [Block, Filesystem]
         spec_overrides:
           type: object
           additionalProperties: true
@@ -3761,6 +3842,13 @@ components:
           type: boolean
         hugepages_size:
           type: string
+        dv_access_modes:
+          type: array
+          items:
+            type: string
+        dv_volume_mode:
+          type: string
+          enum: [Block, Filesystem]
         spec_overrides:
           type: object
           additionalProperties: true
@@ -3778,6 +3866,51 @@ components:
             $ref: '#/components/schemas/InstanceSize'
         pagination:
           $ref: '#/components/schemas/Pagination'
+
+    StorageClaimPropertySet:
+      type: object
+      properties:
+        access_modes:
+          type: array
+          items:
+            type: string
+        volume_mode:
+          type: string
+          enum: [Block, Filesystem]
+
+    RootVolumeResolution:
+      type: object
+      properties:
+        intent_mode:
+          type: string
+          enum: [auto, explicit]
+        state:
+          type: string
+          enum: [not_applicable, resolved, storage_class_required, mode_required, profile_incomplete, unsupported]
+        message:
+          type: string
+        requested_storage_class:
+          type: string
+        effective_storage_class:
+          type: string
+        requested_access_modes:
+          type: array
+          items:
+            type: string
+        requested_volume_mode:
+          type: string
+          enum: [Block, Filesystem]
+        effective_access_modes:
+          type: array
+          items:
+            type: string
+        effective_volume_mode:
+          type: string
+          enum: [Block, Filesystem]
+        mode_options:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorageClaimPropertySet'
 
     # ── Auth ────────────────────────────────────────
     LoginRequest:

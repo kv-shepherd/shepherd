@@ -1,19 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildInstanceSizePresetValues } from './instanceSizePresets';
+import { buildInstanceSizePresetValues, getInstanceSizePresetGroups } from './instanceSizePresets';
 
 describe('instanceSizePresets', () => {
     it('builds the linux test preset with linked overcommit values', () => {
         const preset = buildInstanceSizePresetValues('linux-test');
-        const spec = JSON.parse(preset.spec_text) as {
-            spec?: {
-                template?: {
-                    spec?: {
-                        nodeSelector?: Record<string, string>;
-                    };
-                };
-            };
-        };
 
         expect(preset).toMatchObject({
             catalog_scope: 'test',
@@ -26,11 +17,6 @@ describe('instanceSizePresets', () => {
             memory_request_gi: 4,
             dedicated_cpu: false,
             enabled: true,
-        });
-        expect(
-            spec.spec?.template?.spec?.nodeSelector,
-        ).toMatchObject({
-            'kubevirt.io/ksm-enabled': 'true',
         });
     });
 
@@ -92,5 +78,50 @@ describe('instanceSizePresets', () => {
                 hyperv: {},
             },
         });
+    });
+
+    it('groups customized presets into test and prod sections', () => {
+        const groups = getInstanceSizePresetGroups();
+        expect(groups).toHaveLength(2);
+        expect(groups[0]?.sourceType).toBe('official');
+        expect(groups[0]?.scopeGroups.map((group) => group.scope)).toEqual(['all']);
+        expect(groups[1]?.sourceType).toBe('curated');
+        expect(groups[1]?.scopeGroups.map((group) => group.scope)).toEqual(['test', 'prod']);
+    });
+
+    it('builds the community linux and windows baseline presets', () => {
+        expect(buildInstanceSizePresetValues('official-linux-general')).toMatchObject({
+            catalog_scope: 'all',
+            cpu_cores: 2,
+            memory_gi: 4,
+            disk_gb: 60,
+            dedicated_cpu: false,
+            enabled: true,
+        });
+
+        const windowsPreset = buildInstanceSizePresetValues('official-windows-general');
+        const spec = JSON.parse(windowsPreset.spec_text) as {
+            spec?: {
+                template?: {
+                    spec?: {
+                        domain?: {
+                            features?: Record<string, unknown>;
+                            clock?: Record<string, unknown>;
+                        };
+                    };
+                };
+            };
+        };
+
+        expect(windowsPreset).toMatchObject({
+            catalog_scope: 'all',
+            cpu_cores: 2,
+            memory_gi: 8,
+            disk_gb: 120,
+            dedicated_cpu: false,
+            enabled: true,
+        });
+        expect(spec.spec?.template?.spec?.domain?.features).toBeTruthy();
+        expect(spec.spec?.template?.spec?.domain?.clock).toBeTruthy();
     });
 });

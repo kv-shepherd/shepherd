@@ -533,6 +533,14 @@ func TestVMHandler_GetVMRequestContext_PlacementHintIncludesSanitizedAdvisory(t 
 		Phase:            "Bound",
 		StorageClassName: "source-sc",
 	}})
+	mock.SeedStorageProfiles([]*domain.StorageProfile{{
+		Name: "target-sc",
+		ClaimPropertySets: []domain.StorageClaimPropertySet{{
+			AccessModes: []string{"ReadWriteOnce"},
+			VolumeMode:  "Filesystem",
+		}},
+		DefaultVolumeMode: "Filesystem",
+	}})
 	srv.vmService = service.NewVMService(mock)
 
 	templateID := "00000000-0000-0000-0000-000000000011"

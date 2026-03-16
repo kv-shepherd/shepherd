@@ -1284,6 +1284,7 @@ export interface components {
         SchemaMask: {
             quick_fields: components["schemas"]["MaskField"][];
             advanced_fields?: components["schemas"]["MaskField"][];
+            professional_fields?: components["schemas"]["MaskField"][];
         };
         DynamicSchemaResponse: {
             /** @description Full structure representing the requested JSON Schema payload. */
@@ -1651,6 +1652,13 @@ export interface components {
             /** @description Admin selects target cluster (ADR-0017) */
             selected_cluster_id?: string;
             selected_storage_class?: string;
+            /** @description Explicit accessModes selected during approval when root volume provisioning intent cannot be auto-resolved uniquely. */
+            selected_dv_access_modes?: string[];
+            /**
+             * @description Explicit volumeMode selected during approval when root volume provisioning intent cannot be auto-resolved uniquely.
+             * @enum {string}
+             */
+            selected_dv_volume_mode?: "Block" | "Filesystem";
             /** @description When true, admin overrides default resource requests/limits from InstanceSize (master-flow Stage 5.B). */
             enable_override?: boolean;
             /** @description CPU request in cores (overcommit scenario, Stage 5.B) */
@@ -1731,6 +1739,7 @@ export interface components {
             advisory_code?: string;
             /** @description Human-readable advisory message for compatible placements that may use a slower fallback path. */
             advisory_message?: string;
+            root_volume_resolution?: components["schemas"]["RootVolumeResolution"];
         };
         PlacementEvaluation: {
             selected_cluster_id: string;
@@ -1739,6 +1748,15 @@ export interface components {
             selected_cluster_environment?: "test" | "prod";
             requested_storage_class?: string;
             effective_storage_class?: string;
+            requested_dv_access_modes?: string[];
+            /** @enum {string} */
+            requested_dv_volume_mode?: "Block" | "Filesystem";
+            effective_dv_access_modes?: string[];
+            /** @enum {string} */
+            effective_dv_volume_mode?: "Block" | "Filesystem";
+            /** @enum {string} */
+            root_volume_resolution_state?: "not_applicable" | "resolved" | "storage_class_required" | "mode_required" | "profile_incomplete" | "unsupported";
+            root_volume_resolution_message?: string;
             eligible: boolean;
             reason_code?: string;
             reason_message?: string;
@@ -1901,6 +1919,13 @@ export interface components {
             requires_sriov?: boolean;
             requires_hugepages?: boolean;
             hugepages_size?: string;
+            /** @description Explicit CDI DataVolume PVC accessModes for the root volume. When empty together with `dv_volume_mode`, the platform treats the storage mode as approval-time auto resolution. */
+            dv_access_modes?: string[];
+            /**
+             * @description Explicit CDI DataVolume PVC volumeMode for the root volume. When empty together with `dv_access_modes`, the platform treats the storage mode as approval-time auto resolution.
+             * @enum {string}
+             */
+            dv_volume_mode?: "Block" | "Filesystem";
             /** @description KubeVirt spec path overrides (admin-only). Only populated in admin catalog endpoints; omitted from user-facing responses. */
             spec_overrides?: {
                 [key: string]: unknown;
@@ -1929,6 +1954,10 @@ export interface components {
             requires_sriov?: boolean;
             requires_hugepages?: boolean;
             hugepages_size?: string;
+            /** @description Explicit CDI DataVolume PVC accessModes for the root volume. On update, send an empty array to clear an existing explicit root volume mode and return the size to approval-time auto resolution. */
+            dv_access_modes?: string[];
+            /** @enum {string} */
+            dv_volume_mode?: "Block" | "Filesystem";
             spec_overrides?: {
                 [key: string]: unknown;
             };
@@ -1953,6 +1982,9 @@ export interface components {
             requires_sriov?: boolean;
             requires_hugepages?: boolean;
             hugepages_size?: string;
+            dv_access_modes?: string[];
+            /** @enum {string} */
+            dv_volume_mode?: "Block" | "Filesystem";
             spec_overrides?: {
                 [key: string]: unknown;
             };
@@ -1962,6 +1994,27 @@ export interface components {
         InstanceSizeList: {
             items?: components["schemas"]["InstanceSize"][];
             pagination?: components["schemas"]["Pagination"];
+        };
+        StorageClaimPropertySet: {
+            access_modes?: string[];
+            /** @enum {string} */
+            volume_mode?: "Block" | "Filesystem";
+        };
+        RootVolumeResolution: {
+            /** @enum {string} */
+            intent_mode?: "auto" | "explicit";
+            /** @enum {string} */
+            state?: "not_applicable" | "resolved" | "storage_class_required" | "mode_required" | "profile_incomplete" | "unsupported";
+            message?: string;
+            requested_storage_class?: string;
+            effective_storage_class?: string;
+            requested_access_modes?: string[];
+            /** @enum {string} */
+            requested_volume_mode?: "Block" | "Filesystem";
+            effective_access_modes?: string[];
+            /** @enum {string} */
+            effective_volume_mode?: "Block" | "Filesystem";
+            mode_options?: components["schemas"]["StorageClaimPropertySet"][];
         };
         LoginRequest: {
             username: string;
@@ -3570,6 +3623,10 @@ export interface operations {
                 instance_size_id?: string;
                 /** @description Optional storage class selected by approver when evaluating cluster policy compatibility. */
                 selected_storage_class?: string;
+                /** @description Optional explicit CDI DataVolume PVC accessModes selected during approval when root volume auto resolution is ambiguous. */
+                selected_dv_access_modes?: string[];
+                /** @description Optional explicit CDI DataVolume PVC volumeMode selected during approval when root volume auto resolution is ambiguous. */
+                selected_dv_volume_mode?: "Block" | "Filesystem";
                 /** @description Optional override CPU request in cores for compatibility evaluation. */
                 cpu_request?: number;
                 /** @description Optional override CPU limit in cores for compatibility evaluation. */
@@ -3594,6 +3651,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClusterList"];
+                };
+            };
+            /** @description Invalid compatibility evaluation request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

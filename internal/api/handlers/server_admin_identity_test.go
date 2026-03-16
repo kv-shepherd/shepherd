@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -10,9 +11,39 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/internal/api/generated"
+	"kv-shepherd.io/shepherd/internal/domain"
+	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
+
+type genericStorageProfileProvider struct {
+	*provider.MockProvider
+}
+
+func newGenericStorageProfileProvider() *genericStorageProfileProvider {
+	return &genericStorageProfileProvider{MockProvider: provider.NewMockProvider()}
+}
+
+func (p *genericStorageProfileProvider) GetStorageProfile(
+	ctx context.Context,
+	cluster,
+	name string,
+) (*domain.StorageProfile, error) {
+	if profile, err := p.MockProvider.GetStorageProfile(ctx, cluster, name); err == nil {
+		return profile, nil
+	}
+	return &domain.StorageProfile{
+		Name: name,
+		ClaimPropertySets: []domain.StorageClaimPropertySet{
+			{
+				AccessModes: []string{"ReadWriteOnce"},
+				VolumeMode:  "Filesystem",
+			},
+		},
+		DefaultVolumeMode: "Filesystem",
+	}, nil
+}
 
 func TestAdminUserRoleBindingAndAuthProviderCRUD(t *testing.T) {
 	t.Parallel()
@@ -220,18 +251,18 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	if createProviderW.Code != http.StatusCreated {
 		t.Fatalf("create provider status = %d, want %d, body=%s", createProviderW.Code, http.StatusCreated, createProviderW.Body.String())
 	}
-	var provider generated.AuthProvider
-	mustDecodeJSON(t, createProviderW.Body.Bytes(), &provider)
+	var authProvider generated.AuthProvider
+	mustDecodeJSON(t, createProviderW.Body.Bytes(), &authProvider)
 
 	testConnCtx, testConnW := newAuthedGinContext(
 		t,
 		http.MethodPost,
-		"/admin/auth-providers/"+provider.Id+"/test-connection",
+		"/admin/auth-providers/"+authProvider.Id+"/test-connection",
 		"",
 		"admin-1",
 		[]string{"platform:admin"},
 	)
-	srv.TestAuthProviderConnection(testConnCtx, provider.Id)
+	srv.TestAuthProviderConnection(testConnCtx, authProvider.Id)
 	if testConnW.Code != http.StatusOK {
 		t.Fatalf("test connection status = %d, want %d, body=%s", testConnW.Code, http.StatusOK, testConnW.Body.String())
 	}
@@ -244,12 +275,12 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	sampleCtx, sampleW := newAuthedGinContext(
 		t,
 		http.MethodGet,
-		"/admin/auth-providers/"+provider.Id+"/sample",
+		"/admin/auth-providers/"+authProvider.Id+"/sample",
 		"",
 		"admin-1",
 		[]string{"platform:admin"},
 	)
-	srv.GetAuthProviderSample(sampleCtx, provider.Id)
+	srv.GetAuthProviderSample(sampleCtx, authProvider.Id)
 	if sampleW.Code != http.StatusOK {
 		t.Fatalf("sample status = %d, want %d, body=%s", sampleW.Code, http.StatusOK, sampleW.Body.String())
 	}
@@ -262,12 +293,12 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	syncCtx, syncW := newAuthedGinContext(
 		t,
 		http.MethodPost,
-		"/admin/auth-providers/"+provider.Id+"/sync",
+		"/admin/auth-providers/"+authProvider.Id+"/sync",
 		`{"source_field":"groups","groups":["DevOps-Team","QA-Team","Platform-Admin"]}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
-	srv.SyncAuthProviderGroups(syncCtx, provider.Id)
+	srv.SyncAuthProviderGroups(syncCtx, authProvider.Id)
 	if syncW.Code != http.StatusOK {
 		t.Fatalf("sync status = %d, want %d, body=%s", syncW.Code, http.StatusOK, syncW.Body.String())
 	}
@@ -295,12 +326,12 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	createMappingCtx, createMappingW := newAuthedGinContext(
 		t,
 		http.MethodPost,
-		"/admin/auth-providers/"+provider.Id+"/group-mappings",
+		"/admin/auth-providers/"+authProvider.Id+"/group-mappings",
 		`{"external_group_id":"DevOps-Team","role_id":"`+createdRole.Id+`","scope_type":"global","allowed_environments":["test","prod"]}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
-	srv.CreateAuthProviderGroupMapping(createMappingCtx, provider.Id)
+	srv.CreateAuthProviderGroupMapping(createMappingCtx, authProvider.Id)
 	if createMappingW.Code != http.StatusCreated {
 		t.Fatalf("create mapping status = %d, want %d, body=%s", createMappingW.Code, http.StatusCreated, createMappingW.Body.String())
 	}
@@ -313,12 +344,12 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	listMappingsCtx, listMappingsW := newAuthedGinContext(
 		t,
 		http.MethodGet,
-		"/admin/auth-providers/"+provider.Id+"/group-mappings",
+		"/admin/auth-providers/"+authProvider.Id+"/group-mappings",
 		"",
 		"admin-1",
 		[]string{"platform:admin"},
 	)
-	srv.ListAuthProviderGroupMappings(listMappingsCtx, provider.Id)
+	srv.ListAuthProviderGroupMappings(listMappingsCtx, authProvider.Id)
 	if listMappingsW.Code != http.StatusOK {
 		t.Fatalf("list mappings status = %d, want %d, body=%s", listMappingsW.Code, http.StatusOK, listMappingsW.Body.String())
 	}
@@ -331,12 +362,12 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	updateMappingCtx, updateMappingW := newAuthedGinContext(
 		t,
 		http.MethodPatch,
-		"/admin/auth-providers/"+provider.Id+"/group-mappings/"+mapping.Id,
+		"/admin/auth-providers/"+authProvider.Id+"/group-mappings/"+mapping.Id,
 		`{"allowed_environments":["test"]}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
-	srv.UpdateAuthProviderGroupMapping(updateMappingCtx, provider.Id, mapping.Id)
+	srv.UpdateAuthProviderGroupMapping(updateMappingCtx, authProvider.Id, mapping.Id)
 	if updateMappingW.Code != http.StatusOK {
 		t.Fatalf("update mapping status = %d, want %d, body=%s", updateMappingW.Code, http.StatusOK, updateMappingW.Body.String())
 	}
@@ -344,12 +375,12 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	deleteMappingCtx, deleteMappingW := newAuthedGinContext(
 		t,
 		http.MethodDelete,
-		"/admin/auth-providers/"+provider.Id+"/group-mappings/"+mapping.Id,
+		"/admin/auth-providers/"+authProvider.Id+"/group-mappings/"+mapping.Id,
 		"",
 		"admin-1",
 		[]string{"platform:admin"},
 	)
-	srv.DeleteAuthProviderGroupMapping(deleteMappingCtx, provider.Id, mapping.Id)
+	srv.DeleteAuthProviderGroupMapping(deleteMappingCtx, authProvider.Id, mapping.Id)
 	if got := deleteMappingCtx.Writer.Status(); got != http.StatusNoContent {
 		t.Fatalf("delete mapping status = %d, want %d, body=%s", got, http.StatusNoContent, deleteMappingW.Body.String())
 	}
@@ -406,8 +437,10 @@ func newAdminIdentityTestServer(t *testing.T) (*Server, *ent.Client) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	client := testutil.OpenEntPostgres(t, "admin_identity")
+	vmInfra := newGenericStorageProfileProvider()
 	return NewServer(ServerDeps{
 		EntClient:     client,
+		VMService:     service.NewVMService(vmInfra),
 		ClusterPolicy: service.NewClusterPolicyService(client),
 		ApprovalReqs:  service.NewApprovalRequirementService(client),
 	}), client

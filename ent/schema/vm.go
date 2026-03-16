@@ -57,6 +57,15 @@ func (VM) Fields() []ent.Field {
 			NotEmpty(),
 		field.String("ticket_id").
 			Optional(), // Reference to approval ticket
+		field.String("root_volume_storage_class").
+			Optional().
+			Comment("Resolved root-volume storageClass captured at approval time"),
+		field.JSON("root_volume_access_modes", []string{}).
+			Optional().
+			Comment("Resolved root-volume accessModes captured at approval time"),
+		field.String("root_volume_volume_mode").
+			Optional().
+			Comment("Resolved root-volume volumeMode captured at approval time"),
 		// NOTE: No system_id field (ADR-0015 §3) — resolve via service.system edge
 
 		// ── ADR-0038: Adaptive K8s VM Status Polling ───────────────────────────────

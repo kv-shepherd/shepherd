@@ -167,6 +167,9 @@ INSERT INTO vms (
     hostname,
     created_by,
     ticket_id,
+    root_volume_storage_class,
+    root_volume_access_modes,
+    root_volume_volume_mode,
     service_vms
 ) VALUES (
     $1,
@@ -180,20 +183,26 @@ INSERT INTO vms (
     $6,
     $7,
     $8,
-    $9
+    $9,
+    $10,
+    $11,
+    $12
 )
 `
 
 type InsertVMParams struct {
-	ID         string      `db:"id" json:"id"`
-	Name       string      `db:"name" json:"name"`
-	Instance   string      `db:"instance" json:"instance"`
-	Namespace  string      `db:"namespace" json:"namespace"`
-	ClusterID  pgtype.Text `db:"cluster_id" json:"cluster_id"`
-	Hostname   pgtype.Text `db:"hostname" json:"hostname"`
-	CreatedBy  string      `db:"created_by" json:"created_by"`
-	TicketID   pgtype.Text `db:"ticket_id" json:"ticket_id"`
-	ServiceVms string      `db:"service_vms" json:"service_vms"`
+	ID                     string      `db:"id" json:"id"`
+	Name                   string      `db:"name" json:"name"`
+	Instance               string      `db:"instance" json:"instance"`
+	Namespace              string      `db:"namespace" json:"namespace"`
+	ClusterID              pgtype.Text `db:"cluster_id" json:"cluster_id"`
+	Hostname               pgtype.Text `db:"hostname" json:"hostname"`
+	CreatedBy              string      `db:"created_by" json:"created_by"`
+	TicketID               pgtype.Text `db:"ticket_id" json:"ticket_id"`
+	RootVolumeStorageClass pgtype.Text `db:"root_volume_storage_class" json:"root_volume_storage_class"`
+	RootVolumeAccessModes  []byte      `db:"root_volume_access_modes" json:"root_volume_access_modes"`
+	RootVolumeVolumeMode   pgtype.Text `db:"root_volume_volume_mode" json:"root_volume_volume_mode"`
+	ServiceVms             string      `db:"service_vms" json:"service_vms"`
 }
 
 func (q *Queries) InsertVM(ctx context.Context, arg InsertVMParams) error {
@@ -206,6 +215,9 @@ func (q *Queries) InsertVM(ctx context.Context, arg InsertVMParams) error {
 		arg.Hostname,
 		arg.CreatedBy,
 		arg.TicketID,
+		arg.RootVolumeStorageClass,
+		arg.RootVolumeAccessModes,
+		arg.RootVolumeVolumeMode,
 		arg.ServiceVms,
 	)
 	return err
