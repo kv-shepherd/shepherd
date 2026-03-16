@@ -3,6 +3,7 @@ import {
     curatedLinuxCloudInitExample,
     curatedWindowsCloudInitExample,
     OFFICIAL_TEMPLATE_PRESET_ITEMS,
+    type PresetCatalogSourceType,
     type CuratedTemplatePresetKey,
     type OfficialTemplatePresetKey,
     type TemplatePresetFormValues,
@@ -29,6 +30,49 @@ export const TEMPLATE_OS_FAMILY_OPTIONS = [
     { labelKey: 'templates.os_family_windows', value: 'windows' as const },
 ];
 
+type TemplateCatalogScope = 'test' | 'prod' | 'all' | 'unclassified';
+
+const TEMPLATE_PRESET_SCOPE_ORDER: TemplateCatalogScope[] = ['test', 'prod', 'all', 'unclassified'];
+
+const TEMPLATE_PRESET_SCOPE_LABEL_KEYS: Record<TemplateCatalogScope, string> = {
+    test: 'templates.scope_test',
+    prod: 'templates.scope_prod',
+    all: 'templates.scope_all',
+    unclassified: 'templates.scope_unclassified',
+};
+
+const TEMPLATE_PRESET_GROUP_META: Record<
+    Extract<PresetCatalogSourceType, 'official' | 'curated'>,
+    { titleKey: string; descriptionKey: string }
+> = {
+    official: {
+        titleKey: 'catalog.group_recommended',
+        descriptionKey: 'templates.recommended_group_description',
+    },
+    curated: {
+        titleKey: 'catalog.group_customized',
+        descriptionKey: 'templates.customized_group_description',
+    },
+};
+
+function groupTemplatePresetItemsByScope(
+    items: typeof templatePresetItems,
+) {
+    return TEMPLATE_PRESET_SCOPE_ORDER
+        .map((scope) => {
+            const scopedItems = items.filter((item) => (item.values.catalog_scope ?? 'unclassified') === scope);
+            if (scopedItems.length === 0) {
+                return null;
+            }
+            return {
+                scope,
+                titleKey: TEMPLATE_PRESET_SCOPE_LABEL_KEYS[scope],
+                items: scopedItems,
+            };
+        })
+        .filter((group): group is NonNullable<typeof group> => group !== null);
+}
+
 export function buildTemplatePresetValues(key: TemplatePresetKey): TemplatePresetFormValues {
     return { ...templatePresetItemByKey[key].values };
 }
@@ -37,15 +81,13 @@ export function getTemplatePresetGroups() {
     return [
         {
             sourceType: 'official' as const,
-            titleKey: 'catalog.source_official',
-            descriptionKey: 'templates.official_group_description',
-            items: OFFICIAL_TEMPLATE_PRESET_ITEMS,
+            ...TEMPLATE_PRESET_GROUP_META.official,
+            scopeGroups: groupTemplatePresetItemsByScope(OFFICIAL_TEMPLATE_PRESET_ITEMS),
         },
         {
             sourceType: 'curated' as const,
-            titleKey: 'catalog.source_curated',
-            descriptionKey: 'templates.curated_group_description',
-            items: CURATED_TEMPLATE_PRESET_ITEMS,
+            ...TEMPLATE_PRESET_GROUP_META.curated,
+            scopeGroups: groupTemplatePresetItemsByScope(CURATED_TEMPLATE_PRESET_ITEMS),
         },
     ];
 }
