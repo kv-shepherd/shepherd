@@ -52,7 +52,7 @@
 | [ADR-0040](./ADR-0040-catalog-scope-for-template-and-instancesize.md) | Catalog Scope for Template and InstanceSize | **Accepted** | - |
 | [ADR-0041](./ADR-0041-power-operation-approval-requirement-service.md) | Power Operation Approval Requirement Service | **Accepted** | - |
 | [ADR-0042](./ADR-0042-cluster-policy-governance-model.md) | Explicit Cluster Policy Governance Model | **Accepted** | - |
-| [ADR-0043](./ADR-0043-bootstrap-orchestration-quality-gate.md) | Clarify Bootstrap Composition-Root Quality Gate | **Proposed** | - |
+| [ADR-0043](./ADR-0043-bootstrap-orchestration-quality-gate.md) | Clarify Bootstrap Composition-Root Quality Gate | **Accepted** | - |
 | [ADR-0044](./ADR-0044-frontend-built-in-preset-catalog-boundary.md) | Frontend Built-In Preset Catalog Boundary | **Proposed** | - |
 | [ADR-0045](./ADR-0045-cluster-resolved-root-volume-provisioning.md) | Cluster-Resolved Root Volume Provisioning Intent | **Proposed** | - |
 | [ADR-0046](./ADR-0046-schema-mask-field-visibility-tiers.md) | Schema Mask Field Visibility Tiers | **Proposed** | - |
