@@ -54,7 +54,7 @@
 | [ADR-0042](./ADR-0042-cluster-policy-governance-model.md) | Explicit Cluster Policy Governance Model | **Accepted** | - |
 | [ADR-0043](./ADR-0043-bootstrap-orchestration-quality-gate.md) | Clarify Bootstrap Composition-Root Quality Gate | **Accepted** | - |
 | [ADR-0044](./ADR-0044-frontend-built-in-preset-catalog-boundary.md) | Frontend Built-In Preset Catalog Boundary | **Accepted** | - |
-| [ADR-0045](./ADR-0045-cluster-resolved-root-volume-provisioning.md) | Cluster-Resolved Root Volume Provisioning Intent | **Proposed** | - |
+| [ADR-0045](./ADR-0045-cluster-resolved-root-volume-provisioning.md) | Cluster-Resolved Root Volume Provisioning Intent | **Accepted** | - |
 | [ADR-0046](./ADR-0046-schema-mask-field-visibility-tiers.md) | Schema Mask Field Visibility Tiers | **Proposed** | - |
 
 > ℹ️ **ADR-0037 Sync Notes**:
@@ -124,7 +124,7 @@ For newcomers, we recommend reading ADRs in this order:
 16. **ADR-0041** (Power Approval Requirement, **Accepted**) → Environment-aware approval decision path for power and VNC operations
 17. **ADR-0042** (Cluster Policy Governance, **Accepted**) → Explicit post-capability governance controls for cluster selection and approval
 18. **ADR-0044** (Frontend Built-In Preset Catalog Boundary, **Proposed**) → Clarifies V1 built-in preset catalogs vs V2 backend marketplace boundary
-19. **ADR-0045** (Cluster-Resolved Root Volume Provisioning, **Proposed**) → Clarifies where storage `auto` intent may exist and when approval must resolve explicit root-volume provisioning values
+19. **ADR-0045** (Cluster-Resolved Root Volume Provisioning, **Accepted**) → Clarifies where storage `auto` intent may exist and when approval must resolve explicit root-volume provisioning values
 20. **ADR-0046** (Schema Mask Field Visibility Tiers, **Proposed**) → Formalizes `professional_fields` as a UI-only expert-tier in SchemaMask
 
 ### Historical Context
