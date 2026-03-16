@@ -157,6 +157,9 @@
 │  │          display_name: "GPU 设备"                                                        │ │
 │  │        - path: "spec.template.spec.domain.memory.hugepages.pageSize"                     │ │
 │  │          display_name: "Hugepages 大小"                                                  │ │
+│  │      professional_fields:                                                                │ │
+│  │        - path: "spec.template.spec.domain.features.hyperv.relaxed.enabled"               │ │
+│  │          display_name: "Hyper-V Relaxed"                                                 │ │
 │  │                                                                                          │ │
 │  │    👉 Mask 只引用 Schema 路径，字段类型和选项由 Schema 定义                               │ │
 │  │                                                                                          │ │
@@ -947,7 +950,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  │  - `cdi_image_import` 通过 CDI 导入的持久化根盘                                            │ │
 │  │  - `cdi_pvc_clone` 通过 CDI 从源 PVC 克隆的持久化根盘                                      │ │
 │  │  - cloud-init 配置 (管理员可自定义)                                                        │ │
-│  │  - 字段可见性控制 (quick_fields / advanced_fields)                                        │ │
+│  │  - 字段可见性控制 (quick_fields / advanced_fields / professional_fields)                  │ │
 │  │                                                                                          │ │
 │  │  💡 注意: 硬件能力要求 (GPU/SR-IOV/Hugepages) 已移至 InstanceSize 配置                     │ │
 │  │  💡 直接从已有 PVC 启动 VM 不是受支持的产品模式                                             │ │

@@ -417,7 +417,7 @@ func GetEffectiveSpec(ticket *ApprovalTicket) (*VMSpec, error) {
 |----------|-------------|
 | OS image source | DataVolume, ContainerDisk, PVC reference |
 | Cloud-init YAML | SSH keys, one-time password, network config |
-| Field visibility | `quick_fields`, `advanced_fields` for UI |
+| Field visibility | `quick_fields`, `advanced_fields`, `professional_fields` for UI |
 | ❌ ~~Go Template variables~~ | **REMOVED** - Too complex, error-prone |
 | ❌ ~~RequiredFeatures/Hardware~~ | **MOVED** to InstanceSize per ADR-0018 |
 
