@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-03-13
 deciders: ["@jindyzhao"]
 consulted: []
@@ -139,4 +139,3 @@ Revisit this ADR if:
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-03-13 | @jindyzhao | Initial draft |
-
