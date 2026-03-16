@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -540,6 +541,7 @@ func mapStorageProfile(storageProfile *cdiv1beta1.StorageProfile) *domain.Storag
 		Name:              storageProfile.Name,
 		CloneStrategy:     storageProfileCloneStrategy(storageProfile),
 		DefaultVolumeMode: storageProfileDefaultVolumeMode(storageProfile),
+		ClaimPropertySets: storageProfileClaimPropertySets(storageProfile),
 	}
 }
 
@@ -561,15 +563,69 @@ func storageProfileDefaultVolumeMode(storageProfile *cdiv1beta1.StorageProfile) 
 		return ""
 	}
 
-	claimPropertySets := storageProfile.Status.ClaimPropertySets
-	if len(claimPropertySets) == 0 {
-		claimPropertySets = storageProfile.Spec.ClaimPropertySets
-	}
+	claimPropertySets := effectiveStorageProfileClaimPropertySets(storageProfile)
 	if len(claimPropertySets) == 0 || claimPropertySets[0].VolumeMode == nil {
 		return ""
 	}
 
 	return string(*claimPropertySets[0].VolumeMode)
+}
+
+func storageProfileClaimPropertySets(storageProfile *cdiv1beta1.StorageProfile) []domain.StorageClaimPropertySet {
+	if storageProfile == nil {
+		return nil
+	}
+
+	rawSets := effectiveStorageProfileClaimPropertySets(storageProfile)
+	if len(rawSets) == 0 {
+		return nil
+	}
+
+	sets := make([]domain.StorageClaimPropertySet, 0, len(rawSets))
+	for _, raw := range rawSets {
+		set := domain.StorageClaimPropertySet{
+			AccessModes: storageProfileAccessModes(raw.AccessModes),
+		}
+		if raw.VolumeMode != nil {
+			set.VolumeMode = string(*raw.VolumeMode)
+		}
+		sets = append(sets, set)
+	}
+	return sets
+}
+
+func effectiveStorageProfileClaimPropertySets(storageProfile *cdiv1beta1.StorageProfile) []cdiv1beta1.ClaimPropertySet {
+	if storageProfile == nil {
+		return nil
+	}
+
+	claimPropertySets := storageProfile.Status.ClaimPropertySets
+	if len(claimPropertySets) == 0 {
+		claimPropertySets = storageProfile.Spec.ClaimPropertySets
+	}
+	return claimPropertySets
+}
+
+func storageProfileAccessModes(items []corev1.PersistentVolumeAccessMode) []string {
+	if len(items) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(items))
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		value := string(item)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ListPodsUsingPVC returns non-terminal pods that currently reference the source PVC.

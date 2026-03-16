@@ -51,7 +51,22 @@ spec:
             namespace: "{{.SourcePVCNamespace}}"
             {{- end}}
             name: "{{.SourcePVCName}}"
-        {{- if or .RootDataVolumeStorageClass .RootDataVolumeSize}}
+        {{- if .DVAccessModes}}
+        pvc:
+          accessModes:
+          {{- range .DVAccessModes}}
+          - {{.}}
+          {{- end}}
+          {{- if .RootDataVolumeStorageClass}}
+          storageClassName: "{{.RootDataVolumeStorageClass}}"
+          {{- end}}
+          {{- if .DVVolumeMode}}
+          volumeMode: {{.DVVolumeMode}}
+          {{- end}}
+          resources:
+            requests:
+              storage: "{{.RootDataVolumeSize}}"
+        {{- else if or .RootDataVolumeStorageClass .RootDataVolumeSize}}
         storage:
           {{- if .RootDataVolumeStorageClass}}
           storageClassName: "{{.RootDataVolumeStorageClass}}"
@@ -73,6 +88,22 @@ spec:
           http:
             url: "{{.ImportSourceURL}}"
         {{- end}}
+        {{- if .DVAccessModes}}
+        pvc:
+          accessModes:
+          {{- range .DVAccessModes}}
+          - {{.}}
+          {{- end}}
+          {{- if .RootDataVolumeStorageClass}}
+          storageClassName: "{{.RootDataVolumeStorageClass}}"
+          {{- end}}
+          {{- if .DVVolumeMode}}
+          volumeMode: {{.DVVolumeMode}}
+          {{- end}}
+          resources:
+            requests:
+              storage: "{{.RootDataVolumeSize}}"
+        {{- else}}
         storage:
           {{- if .RootDataVolumeStorageClass}}
           storageClassName: "{{.RootDataVolumeStorageClass}}"
@@ -80,6 +111,7 @@ spec:
           resources:
             requests:
               storage: "{{.RootDataVolumeSize}}"
+        {{- end}}
         {{- end}}
   {{- end}}
   template:
@@ -105,42 +137,46 @@ spec:
             memory: "{{.MemoryLimit}}"
         devices:
           disks:
-            - name: rootdisk
+            - name: {{.RootDiskName}}
               disk:
                 bus: virtio
             {{- if gt .DataDiskGB 0}}
-            - name: datadisk
+            - name: {{.DataDiskName}}
               disk:
                 bus: virtio
             {{- end}}
             {{- if .CloudInit}}
-            - name: cloudinitdisk
+            - name: {{.CloudInitDiskName}}
               disk:
                 bus: virtio
             {{- end}}
       volumes:
         {{- if .HasRootDataVolume}}
-        - name: rootdisk
+        - name: {{.RootDiskName}}
           dataVolume:
             name: "{{.RootDataVolumeName}}"
         {{- else}}
-        - name: rootdisk
+        - name: {{.RootDiskName}}
           containerDisk:
             image: "{{.Image}}"
         {{- end}}
         {{- if gt .DataDiskGB 0}}
-        - name: datadisk
+        - name: {{.DataDiskName}}
           emptyDisk:
             capacity: "{{.DataDiskGB}}Gi"
         {{- end}}
         {{- if .CloudInit}}
-        - name: cloudinitdisk
+        - name: {{.CloudInitDiskName}}
           cloudInitNoCloud:
             userData: {{ printf "%q" .CloudInit }}
         {{- end}}
 `
 
 // vmTemplateData holds pre-computed values for the VM YAML template.
+//
+// ADR-0018 Hybrid Model: This struct contains ONLY fields needed for
+// structural template rendering. All VM behavior config (network, CPU model,
+// lifecycle, device optimizations) is handled via spec_overrides deep-merge.
 type vmTemplateData struct {
 	Name                       string
 	Namespace                  string
@@ -153,6 +189,9 @@ type vmTemplateData struct {
 	DataDiskGB                 int
 	Image                      string
 	CloudInit                  string
+	RootDiskName               string
+	DataDiskName               string
+	CloudInitDiskName          string
 	HasRootDataVolume          bool
 	IsClonePVC                 bool
 	IsImportImage              bool
@@ -163,6 +202,15 @@ type vmTemplateData struct {
 	RootDataVolumeName         string
 	RootDataVolumeSize         string
 	RootDataVolumeStorageClass string
+
+	// DataVolume storage mode options.
+	// When DVAccessModes is non-empty, we use the CDI "pvc" format with explicit
+	// accessModes/volumeMode instead of the "storage" format. This is needed for
+	// storage backends that require specific modes (e.g. Ceph RBD → Block + RWX).
+	// These are explicit fields (not in spec_overrides) because they change the
+	// DV YAML structure (from storage: to pvc: format).
+	DVAccessModes []string // e.g. ["ReadWriteMany"]
+	DVVolumeMode  string   // e.g. "Block" or "Filesystem"
 }
 
 // RenderVMSpecToYAML converts a VMRenderInput into a KubeVirt VirtualMachine YAML string.
@@ -224,6 +272,7 @@ func RenderVMSpecToYAML(namespace string, spec *VMRenderInput) (string, error) {
 	rootDataVolumeStorageClass := strings.TrimSpace(spec.StorageClass)
 	dataDiskGB := spec.DiskGB
 	image := spec.Image
+	naming := defaultVMReferenceNamingProfile
 	switch {
 	case strings.HasPrefix(spec.Image, "clone-pvc:"):
 		hasRootDataVolume = true
@@ -238,7 +287,7 @@ func RenderVMSpecToYAML(namespace string, spec *VMRenderInput) (string, error) {
 		if sourcePVCName == "" {
 			return "", fmt.Errorf("render vm yaml: clone-pvc image source requires pvc name")
 		}
-		rootDataVolumeName = spec.Name + "-rootdisk"
+		rootDataVolumeName = spec.Name + naming.RootDataVolumeSuffix
 		if spec.DiskGB > 0 {
 			rootDataVolumeSize = fmt.Sprintf("%dGi", spec.DiskGB)
 		}
@@ -255,7 +304,7 @@ func RenderVMSpecToYAML(namespace string, spec *VMRenderInput) (string, error) {
 		if spec.DiskGB <= 0 {
 			return "", fmt.Errorf("render vm yaml: disk_gb must be > 0 for import-image boot source")
 		}
-		rootDataVolumeName = spec.Name + "-rootdisk"
+		rootDataVolumeName = spec.Name + naming.RootDataVolumeSuffix
 		rootDataVolumeSize = fmt.Sprintf("%dGi", spec.DiskGB)
 		dataDiskGB = 0
 		image = "" // not used for import-image
@@ -289,6 +338,9 @@ func RenderVMSpecToYAML(namespace string, spec *VMRenderInput) (string, error) {
 		DataDiskGB:                 dataDiskGB,
 		Image:                      image,
 		CloudInit:                  spec.CloudInit,
+		RootDiskName:               naming.RootDiskName,
+		DataDiskName:               naming.DataDiskName,
+		CloudInitDiskName:          naming.CloudInitDiskName,
 		HasRootDataVolume:          hasRootDataVolume,
 		IsClonePVC:                 isClonePVC,
 		IsImportImage:              isImportImage,
@@ -299,6 +351,10 @@ func RenderVMSpecToYAML(namespace string, spec *VMRenderInput) (string, error) {
 		RootDataVolumeName:         rootDataVolumeName,
 		RootDataVolumeSize:         rootDataVolumeSize,
 		RootDataVolumeStorageClass: rootDataVolumeStorageClass,
+
+		// DV storage mode (explicit fields — structural DV format change).
+		DVAccessModes: spec.DVAccessModes,
+		DVVolumeMode:  strings.TrimSpace(spec.DVVolumeMode),
 	}
 
 	tmpl, err := template.New("vm").Parse(vmYAMLTemplate)
@@ -413,10 +469,17 @@ func validateOverrideResourceSteps(overrides map[string]interface{}) error {
 
 func flattenOverrideValues(overrides map[string]interface{}) map[string]interface{} {
 	flat := make(map[string]interface{})
+	// walk recursively expands nested JSON format keys (no dots in key)
+	// into dot-notation leaf paths.
 	var walk func(path string, value interface{})
 	walk = func(path string, value interface{}) {
 		nested, ok := value.(map[string]interface{})
 		if !ok {
+			flat[path] = value
+			return
+		}
+		// Empty map = leaf value (e.g. rng: {}, guestAgentPing: {}).
+		if len(nested) == 0 {
 			flat[path] = value
 			return
 		}
@@ -434,9 +497,61 @@ func flattenOverrideValues(overrides map[string]interface{}) map[string]interfac
 		if path == "" {
 			continue
 		}
-		walk(path, value)
+		// If the key already uses dot-notation (contains "."), it is a
+		// fully-qualified path and its value should NOT be recursively
+		// expanded. This preserves complex values like livenessProbe
+		// objects, annotation maps, interface arrays, etc.
+		if strings.Contains(path, ".") {
+			flat[path] = value
+		} else {
+			// Nested JSON format: key like "spec" with value {"template": ...}
+			walk(path, value)
+		}
 	}
 	return flat
+}
+
+func cloneOverrideValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		cloned := make(map[string]interface{}, len(typed))
+		for key, child := range typed {
+			cloned[key] = cloneOverrideValue(child)
+		}
+		return cloned
+	case []interface{}:
+		cloned := make([]interface{}, len(typed))
+		for index, child := range typed {
+			cloned[index] = cloneOverrideValue(child)
+		}
+		return cloned
+	default:
+		return typed
+	}
+}
+
+func mergeNestedOverrideObject(target, override map[string]interface{}) map[string]interface{} {
+	if target == nil {
+		target = make(map[string]interface{}, len(override))
+	}
+	for key, rawValue := range override {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			continue
+		}
+		nestedOverride, ok := rawValue.(map[string]interface{})
+		if !ok {
+			target[trimmed] = cloneOverrideValue(rawValue)
+			continue
+		}
+		if len(nestedOverride) == 0 {
+			target[trimmed] = map[string]interface{}{}
+			continue
+		}
+		existingTarget, _ := target[trimmed].(map[string]interface{})
+		target[trimmed] = mergeNestedOverrideObject(existingTarget, nestedOverride)
+	}
+	return target
 }
 
 func validateCPUHalfStep(path string, value interface{}) error {
@@ -534,7 +649,7 @@ func scaleUintToInt64(v, factor uint64, field string) (int64, error) {
 }
 
 // applySpecOverridesToYAML decodes YAML into an unstructured map, applies
-// dot-notation path overrides, and re-encodes to YAML.
+// spec overrides, and re-encodes to YAML.
 //
 // Override paths follow the convention from ADR-0018:
 //
@@ -546,25 +661,55 @@ func applySpecOverridesToYAML(yamlData []byte, overrides map[string]interface{})
 	if err := decoder.Decode(obj); err != nil {
 		return "", fmt.Errorf("decode yaml for spec overrides: %w", err)
 	}
+	baseObject, _ := cloneOverrideValue(obj.Object).(map[string]interface{})
 
-	// Normalize both dotted and nested override formats to leaf-path patches.
-	// This avoids replacing whole parent objects such as "spec".
-	flatOverrides := flattenOverrideValues(overrides)
-	paths := make([]string, 0, len(flatOverrides))
-	for path := range flatOverrides {
+	// Keep the original override shape here:
+	// - dotted top-level keys continue to use SetNestedField
+	// - nested JSON objects are deep-merged as literal maps
+	//
+	// This preserves legal additionalProperties keys such as
+	// "kubevirt.io/ksm-enabled" inside nodeSelector/annotations.
+	paths := make([]string, 0, len(overrides))
+	for path := range overrides {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
 
 	for _, path := range paths {
-		value := flatOverrides[path]
-		segments := strings.Split(path, ".")
-		if len(segments) == 0 {
+		trimmedPath := strings.TrimSpace(path)
+		if trimmedPath == "" {
 			continue
 		}
-		if err := unstructured.SetNestedField(obj.Object, value, segments...); err != nil {
+		value := overrides[path]
+		if strings.Contains(trimmedPath, ".") {
+			segments := strings.Split(trimmedPath, ".")
+			if err := unstructured.SetNestedField(obj.Object, cloneOverrideValue(value), segments...); err != nil {
+				return "", fmt.Errorf("set spec override %q: %w", path, err)
+			}
+			continue
+		}
+
+		nestedValue, ok := value.(map[string]interface{})
+		if !ok {
+			obj.Object[trimmedPath] = cloneOverrideValue(value)
+			continue
+		}
+
+		existingValue, found, err := unstructured.NestedMap(obj.Object, trimmedPath)
+		if err != nil {
+			return "", fmt.Errorf("get spec override %q: %w", path, err)
+		}
+		if !found {
+			existingValue = nil
+		}
+		mergedValue := mergeNestedOverrideObject(existingValue, nestedValue)
+		if err := unstructured.SetNestedField(obj.Object, mergedValue, trimmedPath); err != nil {
 			return "", fmt.Errorf("set spec override %q: %w", path, err)
 		}
+	}
+
+	if err := normalizeRenderedVMObject(obj.Object, baseObject, defaultVMReferenceNamingProfile); err != nil {
+		return "", err
 	}
 
 	// Re-encode to YAML.
@@ -579,6 +724,210 @@ func applySpecOverridesToYAML(yamlData []byte, overrides map[string]interface{})
 	}
 
 	return string(yamlOut), nil
+}
+
+func normalizeRenderedVMObject(
+	obj map[string]interface{},
+	baseObject map[string]interface{},
+	naming vmReferenceNamingProfile,
+) error {
+	if err := ensurePrimaryInterfaceBinding(obj, naming); err != nil {
+		return err
+	}
+	if err := ensurePrimaryNetworkType(obj, naming); err != nil {
+		return err
+	}
+	if err := ensureCloudInitVolumeForManagedDisk(obj, baseObject, naming); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensurePrimaryInterfaceBinding(obj map[string]interface{}, naming vmReferenceNamingProfile) error {
+	interfaces, found, err := unstructured.NestedSlice(
+		obj,
+		"spec", "template", "spec", "domain", "devices", "interfaces",
+	)
+	if err != nil || !found {
+		return err
+	}
+
+	changed := false
+	for index, raw := range interfaces {
+		iface, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(fmt.Sprint(iface["name"])) != naming.PrimaryNetworkName {
+			continue
+		}
+		if hasAnyKey(iface, "binding", "bridge", "macvtap", "masquerade", "passt", "slirp", "sriov") {
+			continue
+		}
+		iface["bridge"] = map[string]interface{}{}
+		interfaces[index] = iface
+		changed = true
+	}
+
+	if !changed {
+		return nil
+	}
+	if err := unstructured.SetNestedSlice(
+		obj,
+		interfaces,
+		"spec", "template", "spec", "domain", "devices", "interfaces",
+	); err != nil {
+		return fmt.Errorf("normalize interfaces: %w", err)
+	}
+	return nil
+}
+
+func ensurePrimaryNetworkType(obj map[string]interface{}, naming vmReferenceNamingProfile) error {
+	networks, found, err := unstructured.NestedSlice(obj, "spec", "template", "spec", "networks")
+	if err != nil {
+		return err
+	}
+	if !found {
+		networks = []interface{}{}
+	}
+
+	changed := false
+	foundPrimary := false
+	for index, raw := range networks {
+		network, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(fmt.Sprint(network["name"])) != naming.PrimaryNetworkName {
+			continue
+		}
+		foundPrimary = true
+		if hasAnyKey(network, "multus", "pod") {
+			continue
+		}
+		network["pod"] = map[string]interface{}{}
+		networks[index] = network
+		changed = true
+	}
+
+	if !foundPrimary {
+		return nil
+	}
+	if !changed {
+		return nil
+	}
+	if err := unstructured.SetNestedSlice(obj, networks, "spec", "template", "spec", "networks"); err != nil {
+		return fmt.Errorf("normalize networks: %w", err)
+	}
+	return nil
+}
+
+func ensureCloudInitVolumeForManagedDisk(
+	obj map[string]interface{},
+	baseObject map[string]interface{},
+	naming vmReferenceNamingProfile,
+) error {
+	disks, found, err := unstructured.NestedSlice(obj, "spec", "template", "spec", "domain", "devices", "disks")
+	if err != nil || !found {
+		return err
+	}
+
+	needsCloudInitVolume := false
+	for _, raw := range disks {
+		disk, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(fmt.Sprint(disk["name"])) == naming.CloudInitDiskName {
+			needsCloudInitVolume = true
+			break
+		}
+	}
+	if !needsCloudInitVolume {
+		return nil
+	}
+
+	volumes, found, err := unstructured.NestedSlice(obj, "spec", "template", "spec", "volumes")
+	if err != nil {
+		return err
+	}
+	if !found {
+		volumes = []interface{}{}
+	}
+	for _, raw := range volumes {
+		volume, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(fmt.Sprint(volume["name"])) == naming.CloudInitDiskName {
+			return nil
+		}
+	}
+
+	if baseVolume, ok := findNamedVolume(baseObject, naming.CloudInitDiskName); ok {
+		volumes = append(volumes, cloneOverrideValue(baseVolume))
+		if err := unstructured.SetNestedSlice(obj, volumes, "spec", "template", "spec", "volumes"); err != nil {
+			return fmt.Errorf("normalize cloud-init volume: %w", err)
+		}
+		return nil
+	}
+
+	filteredDisks := removeNamedItems(disks, naming.CloudInitDiskName)
+	if len(filteredDisks) != len(disks) {
+		if err := unstructured.SetNestedSlice(
+			obj,
+			filteredDisks,
+			"spec", "template", "spec", "domain", "devices", "disks",
+		); err != nil {
+			return fmt.Errorf("normalize cloud-init disk: %w", err)
+		}
+	}
+	return nil
+}
+
+func hasAnyKey(values map[string]interface{}, keys ...string) bool {
+	for _, key := range keys {
+		if _, ok := values[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func findNamedVolume(obj map[string]interface{}, name string) (map[string]interface{}, bool) {
+	if obj == nil {
+		return nil, false
+	}
+	volumes, found, err := unstructured.NestedSlice(obj, "spec", "template", "spec", "volumes")
+	if err != nil || !found {
+		return nil, false
+	}
+	for _, raw := range volumes {
+		volume, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(fmt.Sprint(volume["name"])) == name {
+			return volume, true
+		}
+	}
+	return nil, false
+}
+
+func removeNamedItems(items []interface{}, name string) []interface{} {
+	filtered := make([]interface{}, 0, len(items))
+	for _, raw := range items {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			filtered = append(filtered, raw)
+			continue
+		}
+		if strings.TrimSpace(fmt.Sprint(item["name"])) == name {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
 }
 
 // VMRenderInput contains the fields needed to render a VM YAML template.
@@ -609,6 +958,13 @@ type VMRenderInput struct {
 	// Keys are dot-notation paths starting with "spec." prefix.
 	// Applied as deep-merge patches after template rendering.
 	SpecOverrides map[string]interface{}
+
+	// DVAccessModes sets the DataVolume PVC access mode(s), e.g. ["ReadWriteMany"].
+	// When set, the renderer uses the CDI 'pvc' format instead of 'storage' format.
+	// This is an explicit field because it changes the DV YAML structure.
+	DVAccessModes []string
+	// DVVolumeMode sets the DataVolume PVC volume mode: "Block" or "Filesystem".
+	DVVolumeMode string
 }
 
 // isValidHalfStep checks that a value is a multiple of 0.5 (0.5, 1.0, 1.5, ...).

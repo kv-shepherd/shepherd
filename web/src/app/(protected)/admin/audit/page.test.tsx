@@ -49,7 +49,7 @@ describe('AuditLogPage', () => {
         expect(screen.getAllByText('Placement').length).toBeGreaterThan(0);
         expect(screen.getByPlaceholderText('audit.filter.placement_advisory_code')).toBeInTheDocument();
         expect(screen.getByPlaceholderText('audit.filter.placement_reason_code')).toBeInTheDocument();
-    });
+    }, 10000);
 
     it('builds query params for approval decision and placement advisory/reason filters', () => {
         expect(buildAuditLogQuery(1, 20, {

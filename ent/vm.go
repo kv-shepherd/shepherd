@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -38,6 +39,12 @@ type VM struct {
 	CreatedBy string `json:"created_by,omitempty"`
 	// TicketID holds the value of the "ticket_id" field.
 	TicketID string `json:"ticket_id,omitempty"`
+	// Resolved root-volume storageClass captured at approval time
+	RootVolumeStorageClass string `json:"root_volume_storage_class,omitempty"`
+	// Resolved root-volume accessModes captured at approval time
+	RootVolumeAccessModes []string `json:"root_volume_access_modes,omitempty"`
+	// Resolved root-volume volumeMode captured at approval time
+	RootVolumeVolumeMode string `json:"root_volume_volume_mode,omitempty"`
 	// ADR-0038: polling tier — high for transitional VMs, low for stable VMs
 	PollingTier vm.PollingTier `json:"polling_tier,omitempty"`
 	// ADR-0038: polling interval in seconds (15 for high-tier, 1800 for low-tier)
@@ -91,9 +98,11 @@ func (*VM) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case vm.FieldRootVolumeAccessModes:
+			values[i] = new([]byte)
 		case vm.FieldPollIntervalSec:
 			values[i] = new(sql.NullInt64)
-		case vm.FieldID, vm.FieldName, vm.FieldInstance, vm.FieldNamespace, vm.FieldClusterID, vm.FieldStatus, vm.FieldHostname, vm.FieldCreatedBy, vm.FieldTicketID, vm.FieldPollingTier, vm.FieldLastK8sRv:
+		case vm.FieldID, vm.FieldName, vm.FieldInstance, vm.FieldNamespace, vm.FieldClusterID, vm.FieldStatus, vm.FieldHostname, vm.FieldCreatedBy, vm.FieldTicketID, vm.FieldRootVolumeStorageClass, vm.FieldRootVolumeVolumeMode, vm.FieldPollingTier, vm.FieldLastK8sRv:
 			values[i] = new(sql.NullString)
 		case vm.FieldCreatedAt, vm.FieldUpdatedAt, vm.FieldLastPolledAt, vm.FieldHighTierSince:
 			values[i] = new(sql.NullTime)
@@ -179,6 +188,26 @@ func (_m *VM) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field ticket_id", values[i])
 			} else if value.Valid {
 				_m.TicketID = value.String
+			}
+		case vm.FieldRootVolumeStorageClass:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field root_volume_storage_class", values[i])
+			} else if value.Valid {
+				_m.RootVolumeStorageClass = value.String
+			}
+		case vm.FieldRootVolumeAccessModes:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field root_volume_access_modes", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.RootVolumeAccessModes); err != nil {
+					return fmt.Errorf("unmarshal field root_volume_access_modes: %w", err)
+				}
+			}
+		case vm.FieldRootVolumeVolumeMode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field root_volume_volume_mode", values[i])
+			} else if value.Valid {
+				_m.RootVolumeVolumeMode = value.String
 			}
 		case vm.FieldPollingTier:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -295,6 +324,15 @@ func (_m *VM) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("ticket_id=")
 	builder.WriteString(_m.TicketID)
+	builder.WriteString(", ")
+	builder.WriteString("root_volume_storage_class=")
+	builder.WriteString(_m.RootVolumeStorageClass)
+	builder.WriteString(", ")
+	builder.WriteString("root_volume_access_modes=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RootVolumeAccessModes))
+	builder.WriteString(", ")
+	builder.WriteString("root_volume_volume_mode=")
+	builder.WriteString(_m.RootVolumeVolumeMode)
 	builder.WriteString(", ")
 	builder.WriteString("polling_tier=")
 	builder.WriteString(fmt.Sprintf("%v", _m.PollingTier))

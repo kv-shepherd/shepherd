@@ -457,16 +457,20 @@ func init() {
 	instancesizeDescRequiresHugepages := instancesizeFields[12].Descriptor()
 	// instancesize.DefaultRequiresHugepages holds the default value on creation for the requires_hugepages field.
 	instancesize.DefaultRequiresHugepages = instancesizeDescRequiresHugepages.Default.(bool)
+	// instancesizeDescDvVolumeMode is the schema descriptor for dv_volume_mode field.
+	instancesizeDescDvVolumeMode := instancesizeFields[16].Descriptor()
+	// instancesize.DefaultDvVolumeMode holds the default value on creation for the dv_volume_mode field.
+	instancesize.DefaultDvVolumeMode = instancesizeDescDvVolumeMode.Default.(string)
 	// instancesizeDescSortOrder is the schema descriptor for sort_order field.
-	instancesizeDescSortOrder := instancesizeFields[16].Descriptor()
+	instancesizeDescSortOrder := instancesizeFields[18].Descriptor()
 	// instancesize.DefaultSortOrder holds the default value on creation for the sort_order field.
 	instancesize.DefaultSortOrder = instancesizeDescSortOrder.Default.(int)
 	// instancesizeDescEnabled is the schema descriptor for enabled field.
-	instancesizeDescEnabled := instancesizeFields[17].Descriptor()
+	instancesizeDescEnabled := instancesizeFields[19].Descriptor()
 	// instancesize.DefaultEnabled holds the default value on creation for the enabled field.
 	instancesize.DefaultEnabled = instancesizeDescEnabled.Default.(bool)
 	// instancesizeDescCreatedBy is the schema descriptor for created_by field.
-	instancesizeDescCreatedBy := instancesizeFields[18].Descriptor()
+	instancesizeDescCreatedBy := instancesizeFields[20].Descriptor()
 	// instancesize.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	instancesize.CreatedByValidator = instancesizeDescCreatedBy.Validators[0].(func(string) error)
 	namespaceregistryMixin := schema.NamespaceRegistry{}.Mixin()
@@ -928,7 +932,7 @@ func init() {
 	// vm.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	vm.CreatedByValidator = vmDescCreatedBy.Validators[0].(func(string) error)
 	// vmDescPollIntervalSec is the schema descriptor for poll_interval_sec field.
-	vmDescPollIntervalSec := vmFields[10].Descriptor()
+	vmDescPollIntervalSec := vmFields[13].Descriptor()
 	// vm.DefaultPollIntervalSec holds the default value on creation for the poll_interval_sec field.
 	vm.DefaultPollIntervalSec = vmDescPollIntervalSec.Default.(int)
 	vmrevisionMixin := schema.VMRevision{}.Mixin()

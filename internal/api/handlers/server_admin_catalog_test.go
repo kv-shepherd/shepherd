@@ -191,6 +191,49 @@ func TestAdminInstanceSizeCRUD(t *testing.T) {
 	}
 }
 
+func TestAdminInstanceSizeUpdate_EmptyDvAccessModesClearsExplicitRootVolumeMode(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminCatalogTestServer(t)
+
+	created, err := client.InstanceSize.Create().
+		SetID(uuid.NewString()).
+		SetName("m4.block-rwx").
+		SetCPUCores(4).
+		SetMemoryGi(8).
+		SetDvAccessModes([]string{"ReadWriteMany"}).
+		SetDvVolumeMode("Block").
+		SetCreatedBy("test").
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create instance size: %v", err)
+	}
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/instance-sizes/"+created.ID,
+		`{"dv_access_modes":[]}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.UpdateAdminInstanceSize(updateCtx, created.ID)
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d, body=%s", updateW.Code, http.StatusOK, updateW.Body.String())
+	}
+
+	stored, err := client.InstanceSize.Get(t.Context(), created.ID)
+	if err != nil {
+		t.Fatalf("load instance size: %v", err)
+	}
+	if len(stored.DvAccessModes) != 0 {
+		t.Fatalf("dv_access_modes = %#v, want cleared", stored.DvAccessModes)
+	}
+	if stored.DvVolumeMode != "" {
+		t.Fatalf("dv_volume_mode = %q, want cleared", stored.DvVolumeMode)
+	}
+}
+
 func TestAdminTemplateCreate_StoresCanonicalSourceType(t *testing.T) {
 	t.Parallel()
 

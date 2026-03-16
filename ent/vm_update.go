@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"kv-shepherd.io/shepherd/ent/predicate"
 	"kv-shepherd.io/shepherd/ent/service"
@@ -149,6 +150,64 @@ func (_u *VMUpdate) SetNillableTicketID(v *string) *VMUpdate {
 // ClearTicketID clears the value of the "ticket_id" field.
 func (_u *VMUpdate) ClearTicketID() *VMUpdate {
 	_u.mutation.ClearTicketID()
+	return _u
+}
+
+// SetRootVolumeStorageClass sets the "root_volume_storage_class" field.
+func (_u *VMUpdate) SetRootVolumeStorageClass(v string) *VMUpdate {
+	_u.mutation.SetRootVolumeStorageClass(v)
+	return _u
+}
+
+// SetNillableRootVolumeStorageClass sets the "root_volume_storage_class" field if the given value is not nil.
+func (_u *VMUpdate) SetNillableRootVolumeStorageClass(v *string) *VMUpdate {
+	if v != nil {
+		_u.SetRootVolumeStorageClass(*v)
+	}
+	return _u
+}
+
+// ClearRootVolumeStorageClass clears the value of the "root_volume_storage_class" field.
+func (_u *VMUpdate) ClearRootVolumeStorageClass() *VMUpdate {
+	_u.mutation.ClearRootVolumeStorageClass()
+	return _u
+}
+
+// SetRootVolumeAccessModes sets the "root_volume_access_modes" field.
+func (_u *VMUpdate) SetRootVolumeAccessModes(v []string) *VMUpdate {
+	_u.mutation.SetRootVolumeAccessModes(v)
+	return _u
+}
+
+// AppendRootVolumeAccessModes appends value to the "root_volume_access_modes" field.
+func (_u *VMUpdate) AppendRootVolumeAccessModes(v []string) *VMUpdate {
+	_u.mutation.AppendRootVolumeAccessModes(v)
+	return _u
+}
+
+// ClearRootVolumeAccessModes clears the value of the "root_volume_access_modes" field.
+func (_u *VMUpdate) ClearRootVolumeAccessModes() *VMUpdate {
+	_u.mutation.ClearRootVolumeAccessModes()
+	return _u
+}
+
+// SetRootVolumeVolumeMode sets the "root_volume_volume_mode" field.
+func (_u *VMUpdate) SetRootVolumeVolumeMode(v string) *VMUpdate {
+	_u.mutation.SetRootVolumeVolumeMode(v)
+	return _u
+}
+
+// SetNillableRootVolumeVolumeMode sets the "root_volume_volume_mode" field if the given value is not nil.
+func (_u *VMUpdate) SetNillableRootVolumeVolumeMode(v *string) *VMUpdate {
+	if v != nil {
+		_u.SetRootVolumeVolumeMode(*v)
+	}
+	return _u
+}
+
+// ClearRootVolumeVolumeMode clears the value of the "root_volume_volume_mode" field.
+func (_u *VMUpdate) ClearRootVolumeVolumeMode() *VMUpdate {
+	_u.mutation.ClearRootVolumeVolumeMode()
 	return _u
 }
 
@@ -419,6 +478,29 @@ func (_u *VMUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.TicketIDCleared() {
 		_spec.ClearField(vm.FieldTicketID, field.TypeString)
 	}
+	if value, ok := _u.mutation.RootVolumeStorageClass(); ok {
+		_spec.SetField(vm.FieldRootVolumeStorageClass, field.TypeString, value)
+	}
+	if _u.mutation.RootVolumeStorageClassCleared() {
+		_spec.ClearField(vm.FieldRootVolumeStorageClass, field.TypeString)
+	}
+	if value, ok := _u.mutation.RootVolumeAccessModes(); ok {
+		_spec.SetField(vm.FieldRootVolumeAccessModes, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedRootVolumeAccessModes(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, vm.FieldRootVolumeAccessModes, value)
+		})
+	}
+	if _u.mutation.RootVolumeAccessModesCleared() {
+		_spec.ClearField(vm.FieldRootVolumeAccessModes, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.RootVolumeVolumeMode(); ok {
+		_spec.SetField(vm.FieldRootVolumeVolumeMode, field.TypeString, value)
+	}
+	if _u.mutation.RootVolumeVolumeModeCleared() {
+		_spec.ClearField(vm.FieldRootVolumeVolumeMode, field.TypeString)
+	}
 	if value, ok := _u.mutation.PollingTier(); ok {
 		_spec.SetField(vm.FieldPollingTier, field.TypeEnum, value)
 	}
@@ -659,6 +741,64 @@ func (_u *VMUpdateOne) SetNillableTicketID(v *string) *VMUpdateOne {
 // ClearTicketID clears the value of the "ticket_id" field.
 func (_u *VMUpdateOne) ClearTicketID() *VMUpdateOne {
 	_u.mutation.ClearTicketID()
+	return _u
+}
+
+// SetRootVolumeStorageClass sets the "root_volume_storage_class" field.
+func (_u *VMUpdateOne) SetRootVolumeStorageClass(v string) *VMUpdateOne {
+	_u.mutation.SetRootVolumeStorageClass(v)
+	return _u
+}
+
+// SetNillableRootVolumeStorageClass sets the "root_volume_storage_class" field if the given value is not nil.
+func (_u *VMUpdateOne) SetNillableRootVolumeStorageClass(v *string) *VMUpdateOne {
+	if v != nil {
+		_u.SetRootVolumeStorageClass(*v)
+	}
+	return _u
+}
+
+// ClearRootVolumeStorageClass clears the value of the "root_volume_storage_class" field.
+func (_u *VMUpdateOne) ClearRootVolumeStorageClass() *VMUpdateOne {
+	_u.mutation.ClearRootVolumeStorageClass()
+	return _u
+}
+
+// SetRootVolumeAccessModes sets the "root_volume_access_modes" field.
+func (_u *VMUpdateOne) SetRootVolumeAccessModes(v []string) *VMUpdateOne {
+	_u.mutation.SetRootVolumeAccessModes(v)
+	return _u
+}
+
+// AppendRootVolumeAccessModes appends value to the "root_volume_access_modes" field.
+func (_u *VMUpdateOne) AppendRootVolumeAccessModes(v []string) *VMUpdateOne {
+	_u.mutation.AppendRootVolumeAccessModes(v)
+	return _u
+}
+
+// ClearRootVolumeAccessModes clears the value of the "root_volume_access_modes" field.
+func (_u *VMUpdateOne) ClearRootVolumeAccessModes() *VMUpdateOne {
+	_u.mutation.ClearRootVolumeAccessModes()
+	return _u
+}
+
+// SetRootVolumeVolumeMode sets the "root_volume_volume_mode" field.
+func (_u *VMUpdateOne) SetRootVolumeVolumeMode(v string) *VMUpdateOne {
+	_u.mutation.SetRootVolumeVolumeMode(v)
+	return _u
+}
+
+// SetNillableRootVolumeVolumeMode sets the "root_volume_volume_mode" field if the given value is not nil.
+func (_u *VMUpdateOne) SetNillableRootVolumeVolumeMode(v *string) *VMUpdateOne {
+	if v != nil {
+		_u.SetRootVolumeVolumeMode(*v)
+	}
+	return _u
+}
+
+// ClearRootVolumeVolumeMode clears the value of the "root_volume_volume_mode" field.
+func (_u *VMUpdateOne) ClearRootVolumeVolumeMode() *VMUpdateOne {
+	_u.mutation.ClearRootVolumeVolumeMode()
 	return _u
 }
 
@@ -958,6 +1098,29 @@ func (_u *VMUpdateOne) sqlSave(ctx context.Context) (_node *VM, err error) {
 	}
 	if _u.mutation.TicketIDCleared() {
 		_spec.ClearField(vm.FieldTicketID, field.TypeString)
+	}
+	if value, ok := _u.mutation.RootVolumeStorageClass(); ok {
+		_spec.SetField(vm.FieldRootVolumeStorageClass, field.TypeString, value)
+	}
+	if _u.mutation.RootVolumeStorageClassCleared() {
+		_spec.ClearField(vm.FieldRootVolumeStorageClass, field.TypeString)
+	}
+	if value, ok := _u.mutation.RootVolumeAccessModes(); ok {
+		_spec.SetField(vm.FieldRootVolumeAccessModes, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedRootVolumeAccessModes(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, vm.FieldRootVolumeAccessModes, value)
+		})
+	}
+	if _u.mutation.RootVolumeAccessModesCleared() {
+		_spec.ClearField(vm.FieldRootVolumeAccessModes, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.RootVolumeVolumeMode(); ok {
+		_spec.SetField(vm.FieldRootVolumeVolumeMode, field.TypeString, value)
+	}
+	if _u.mutation.RootVolumeVolumeModeCleared() {
+		_spec.ClearField(vm.FieldRootVolumeVolumeMode, field.TypeString)
 	}
 	if value, ok := _u.mutation.PollingTier(); ok {
 		_spec.SetField(vm.FieldPollingTier, field.TypeEnum, value)

@@ -6,8 +6,9 @@ import (
 	"strings"
 )
 
-// ValidateMaskPaths verifies that every path in mask.quick_fields and
-// mask.advanced_fields resolves within the provided JSON Schema.
+// ValidateMaskPaths verifies that every path in mask.quick_fields,
+// mask.advanced_fields, and mask.professional_fields resolves within the
+// provided JSON Schema.
 //
 // This implements Stage 1 requirement: "Invalid mask paths must fail
 // validation before deployment." (master-flow.md:186)
@@ -33,6 +34,9 @@ func ValidateMaskPaths(schemaJSON, maskJSON []byte) error {
 		AdvancedFields []struct {
 			Path string `json:"path"`
 		} `json:"advanced_fields"`
+		ProfessionalFields []struct {
+			Path string `json:"path"`
+		} `json:"professional_fields"`
 	}
 	if err := json.Unmarshal(maskJSON, &mask); err != nil {
 		return fmt.Errorf("parse mask: %w", err)
@@ -54,6 +58,9 @@ func ValidateMaskPaths(schemaJSON, maskJSON []byte) error {
 	}
 	for _, f := range mask.AdvancedFields {
 		check("advanced_fields", f.Path)
+	}
+	for _, f := range mask.ProfessionalFields {
+		check("professional_fields", f.Path)
 	}
 
 	if len(invalid) > 0 {

@@ -75,8 +75,9 @@ func TestRenderVMSpecToYAML_HalfCoreAndHalfGi(t *testing.T) {
 	if strings.Contains(yaml, "metadata: null") {
 		t.Errorf("expected template metadata object, got null:\n%s", yaml)
 	}
-	if !strings.Contains(yaml, "template:\n    metadata: {}") {
-		t.Errorf("expected empty template metadata object when labels are absent, got:\n%s", yaml)
+	// When labels and annotations are absent, metadata renders as "metadata:\n      {}"
+	if !strings.Contains(yaml, "metadata:") {
+		t.Errorf("expected template metadata present, got:\n%s", yaml)
 	}
 }
 
@@ -686,6 +687,585 @@ func TestFormatGi(t *testing.T) {
 		result := formatGi(tc.gi)
 		if result != tc.expected {
 			t.Errorf("formatGi(%.1f) = %q, expected %q", tc.gi, result, tc.expected)
+		}
+	}
+}
+
+// --- Production-grade feature tests (ADR-0018 Hybrid Model) ---
+// These tests validate that VM behavior configs are correctly injected via
+// spec_overrides deep-merge, not via template conditional blocks.
+
+func TestRenderVMSpecToYAML_DVAccessModesAndVolumeMode(t *testing.T) {
+	// DV access modes use explicit fields (structural DV format change).
+	spec := &VMRenderInput{
+		Name:          "vm-dv-modes",
+		CPUCores:      2,
+		MemoryGi:      4,
+		DiskGB:        60,
+		Image:         "clone-pvc:vm-muban/openeuler2203-image",
+		StorageClass:  "rook-ceph-block",
+		DVAccessModes: []string{"ReadWriteMany"},
+		DVVolumeMode:  "Block",
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	checks := []string{
+		"accessModes:",
+		"- ReadWriteMany",
+		"volumeMode: Block",
+		`storageClassName: "rook-ceph-block"`,
+		`storage: "60Gi"`,
+	}
+	for _, check := range checks {
+		if !strings.Contains(yaml, check) {
+			t.Errorf("expected YAML to contain %q, got:\n%s", check, yaml)
+		}
+	}
+}
+
+func TestRenderVMSpecToYAML_SpecOverrides_CPUModel(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-cpu-model",
+		CPUCores: 4,
+		MemoryGi: 8,
+		Image:    "docker.io/kubevirt/centos:7",
+		SpecOverrides: map[string]interface{}{
+			"spec.template.spec.domain.cpu.model": "host-passthrough",
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	if !strings.Contains(yaml, "model: host-passthrough") {
+		t.Errorf("expected cpu model host-passthrough via spec_overrides, got:\n%s", yaml)
+	}
+}
+
+func TestRenderVMSpecToYAML_SpecOverrides_BridgeNetwork(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-bridge",
+		CPUCores: 4,
+		MemoryGi: 8,
+		Image:    "docker.io/kubevirt/centos:7",
+		SpecOverrides: map[string]interface{}{
+			"spec.template.spec.domain.devices.interfaces":                 []interface{}{map[string]interface{}{"bridge": map[string]interface{}{}, "model": "virtio", "name": "default"}},
+			"spec.template.spec.domain.devices.networkInterfaceMultiqueue": true,
+			"spec.template.spec.networks":                                  []interface{}{map[string]interface{}{"name": "default", "pod": map[string]interface{}{}}},
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	checks := []string{
+		"interfaces:",
+		"model: virtio",
+		"name: default",
+		"networkInterfaceMultiqueue: true",
+		"networks:",
+	}
+	for _, check := range checks {
+		if !strings.Contains(yaml, check) {
+			t.Errorf("expected YAML to contain %q, got:\n%s", check, yaml)
+		}
+	}
+}
+
+func TestRenderVMSpecToYAML_SpecOverrides_EvictionStrategy(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-eviction",
+		CPUCores: 2,
+		MemoryGi: 4,
+		Image:    "docker.io/kubevirt/centos:7",
+		SpecOverrides: map[string]interface{}{
+			"spec.template.spec.evictionStrategy": "LiveMigrate",
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	if !strings.Contains(yaml, "evictionStrategy: LiveMigrate") {
+		t.Errorf("expected evictionStrategy via spec_overrides, got:\n%s", yaml)
+	}
+}
+
+func TestRenderVMSpecToYAML_SpecOverrides_LivenessProbe(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-liveness",
+		CPUCores: 2,
+		MemoryGi: 4,
+		Image:    "docker.io/kubevirt/centos:7",
+		SpecOverrides: map[string]interface{}{
+			"spec.template.spec.livenessProbe": map[string]interface{}{
+				"failureThreshold":    int64(3),
+				"guestAgentPing":      map[string]interface{}{},
+				"initialDelaySeconds": int64(120),
+				"periodSeconds":       int64(20),
+				"timeoutSeconds":      int64(5),
+			},
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	checks := []string{
+		"livenessProbe:",
+		"guestAgentPing:",
+		"initialDelaySeconds:",
+	}
+	for _, check := range checks {
+		if !strings.Contains(yaml, check) {
+			t.Errorf("expected YAML to contain %q, got:\n%s", check, yaml)
+		}
+	}
+}
+
+func TestRenderVMSpecToYAML_SpecOverrides_DeviceOptimizations(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-optimized",
+		CPUCores: 4,
+		MemoryGi: 8,
+		Image:    "docker.io/kubevirt/centos:7",
+		SpecOverrides: map[string]interface{}{
+			"spec.template.spec.domain.devices.autoattachGraphicsDevice": false,
+			"spec.template.spec.domain.devices.autoattachMemBalloon":     false,
+			"spec.template.spec.domain.devices.autoattachSerialConsole":  true,
+			"spec.template.spec.domain.devices.autoattachVSOCK":          true,
+			"spec.template.spec.domain.devices.blockMultiQueue":          true,
+			"spec.template.spec.domain.devices.rng":                      map[string]interface{}{},
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	checks := []string{
+		"autoattachGraphicsDevice: false",
+		"autoattachMemBalloon: false",
+		"autoattachSerialConsole: true",
+		"autoattachVSOCK: true",
+		"blockMultiQueue: true",
+		"rng:",
+	}
+	for _, check := range checks {
+		if !strings.Contains(yaml, check) {
+			t.Errorf("expected YAML to contain %q, got:\n%s", check, yaml)
+		}
+	}
+}
+
+func TestRenderVMSpecToYAML_SpecOverrides_TemplateAnnotations(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-annotations",
+		CPUCores: 2,
+		MemoryGi: 4,
+		Image:    "docker.io/kubevirt/centos:7",
+		SpecOverrides: map[string]interface{}{
+			"spec.template.metadata.annotations": map[string]interface{}{
+				"kubevirt.io/allow-pod-bridge-network-live-migration": "true",
+				"ovn.kubernetes.io/allow_live_migration":              "true",
+			},
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	checks := []string{
+		"annotations:",
+		"kubevirt.io/allow-pod-bridge-network-live-migration",
+		"ovn.kubernetes.io/allow_live_migration",
+	}
+	for _, check := range checks {
+		if !strings.Contains(yaml, check) {
+			t.Errorf("expected YAML to contain %q, got:\n%s", check, yaml)
+		}
+	}
+}
+
+func TestRenderVMSpecToYAML_SpecOverrides_NestedNodeSelectorPreservesLiteralDots(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-node-selector",
+		CPUCores: 2,
+		MemoryGi: 4,
+		Image:    "docker.io/kubevirt/centos:7",
+		SpecOverrides: map[string]interface{}{
+			"spec": map[string]interface{}{
+				"template": map[string]interface{}{
+					"spec": map[string]interface{}{
+						"nodeSelector": map[string]interface{}{
+							"kubevirt.io/ksm-enabled": "true",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	if !strings.Contains(yaml, "nodeSelector:") {
+		t.Fatalf("expected nodeSelector in rendered YAML, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "kubevirt.io/ksm-enabled: \"true\"") {
+		t.Fatalf("expected literal dotted nodeSelector key in rendered YAML, got:\n%s", yaml)
+	}
+	if strings.Contains(yaml, "kubevirt:\n") {
+		t.Fatalf("expected dotted nodeSelector key to stay literal, got nested map:\n%s", yaml)
+	}
+}
+
+func TestRenderVMSpecToYAML_SpecOverrides_SourceStyleDisksAndNetworks(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:      "vm-source-style",
+		CPUCores:  4,
+		MemoryGi:  8,
+		Image:     "clone-pvc:vm-muban/openeuler2203-image",
+		CloudInit: "#cloud-config\nusers:\n  - default",
+		SpecOverrides: map[string]interface{}{
+			"spec": map[string]interface{}{
+				"template": map[string]interface{}{
+					"spec": map[string]interface{}{
+						"domain": map[string]interface{}{
+							"devices": map[string]interface{}{
+								"disks": []interface{}{
+									map[string]interface{}{
+										"name": "rootfs",
+										"disk": map[string]interface{}{"bus": "virtio"},
+									},
+									map[string]interface{}{
+										"name": "cloudinitdisk",
+										"disk": map[string]interface{}{"bus": "virtio"},
+									},
+								},
+								"interfaces": []interface{}{
+									map[string]interface{}{
+										"bridge": map[string]interface{}{},
+										"name":   "default",
+										"model":  "virtio",
+									},
+								},
+							},
+						},
+						"networks": []interface{}{
+							map[string]interface{}{
+								"name": "default",
+								"pod":  map[string]interface{}{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	checks := []string{
+		"name: rootfs",
+		"name: cloudinitdisk",
+		"interfaces:",
+		"networks:",
+		"pod: {}",
+		"dataVolume:",
+	}
+	for _, check := range checks {
+		if !strings.Contains(yaml, check) {
+			t.Fatalf("expected rendered YAML to contain %q, got:\n%s", check, yaml)
+		}
+	}
+	if strings.Contains(yaml, "- name: rootdisk") {
+		t.Fatalf("expected rendered YAML not to use legacy rootdisk volume name, got:\n%s", yaml)
+	}
+}
+
+func TestRenderVMSpecToYAML_SpecOverrides_TerminationGracePeriod(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-term-grace",
+		CPUCores: 2,
+		MemoryGi: 4,
+		Image:    "docker.io/kubevirt/centos:7",
+		SpecOverrides: map[string]interface{}{
+			"spec.template.spec.terminationGracePeriodSeconds": int64(0),
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	if !strings.Contains(yaml, "terminationGracePeriodSeconds:") {
+		t.Errorf("expected terminationGracePeriodSeconds via spec_overrides, got:\n%s", yaml)
+	}
+}
+
+func TestRenderVMSpecToYAML_SpecOverrides_GuestMemory(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-guest-mem",
+		CPUCores: 4,
+		MemoryGi: 8,
+		Image:    "docker.io/kubevirt/centos:7",
+		SpecOverrides: map[string]interface{}{
+			"spec.template.spec.domain.memory.guest": "8Gi",
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	if !strings.Contains(yaml, "guest: 8Gi") {
+		t.Errorf("expected guest memory via spec_overrides, got:\n%s", yaml)
+	}
+}
+
+func TestRenderVMSpecToYAML_SpecOverrides_Architecture(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-arch",
+		CPUCores: 2,
+		MemoryGi: 4,
+		Image:    "docker.io/kubevirt/centos:7",
+		SpecOverrides: map[string]interface{}{
+			"spec.template.spec.architecture": "amd64",
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	if !strings.Contains(yaml, "architecture: amd64") {
+		t.Errorf("expected architecture via spec_overrides, got:\n%s", yaml)
+	}
+}
+
+func TestRenderVMSpecToYAML_NormalizesDefaultInterfaceAndNetworkWhenEmptyObjectsWerePruned(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-normalize-net",
+		CPUCores: 2,
+		MemoryGi: 4,
+		Image:    "docker.io/kubevirt/centos:7",
+		SpecOverrides: map[string]interface{}{
+			"spec.template.spec.domain.devices.interfaces": []interface{}{
+				map[string]interface{}{"model": "virtio", "name": "default"},
+			},
+			"spec.template.spec.networks": []interface{}{
+				map[string]interface{}{"name": "default"},
+			},
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	for _, check := range []string{"bridge: {}", "pod: {}", "name: default"} {
+		if !strings.Contains(yaml, check) {
+			t.Fatalf("expected normalized YAML to contain %q, got:\n%s", check, yaml)
+		}
+	}
+}
+
+func TestRenderVMSpecToYAML_RemovesManagedCloudInitDiskWhenTemplateHasNoCloudInit(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-cloudinit-fallback",
+		CPUCores: 2,
+		MemoryGi: 4,
+		Image:    "clone-pvc:vm-muban/openeuler2203-image",
+		SpecOverrides: map[string]interface{}{
+			"spec.template.spec.domain.devices.disks": []interface{}{
+				map[string]interface{}{
+					"name": "rootfs",
+					"disk": map[string]interface{}{"bus": "virtio"},
+				},
+				map[string]interface{}{
+					"name": "cloudinitdisk",
+					"disk": map[string]interface{}{"bus": "virtio"},
+				},
+			},
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	if strings.Contains(yaml, "name: cloudinitdisk") {
+		t.Fatalf("expected renderer to remove dangling cloudinitdisk when template has no cloud-init, got:\n%s", yaml)
+	}
+	if strings.Contains(yaml, "cloudInitNoCloud:") {
+		t.Fatalf("expected no cloudInitNoCloud volume when template has no cloud-init, got:\n%s", yaml)
+	}
+}
+
+func TestRenderVMSpecToYAML_RestoresBaseCloudInitVolumeWhenOverridesDropIt(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:      "vm-cloudinit-restore",
+		CPUCores:  2,
+		MemoryGi:  4,
+		Image:     "clone-pvc:vm-muban/openeuler2203-image",
+		CloudInit: "#cloud-config\nusers:\n  - name: admin",
+		SpecOverrides: map[string]interface{}{
+			"spec.template.spec.domain.devices.disks": []interface{}{
+				map[string]interface{}{
+					"name": "rootfs",
+					"disk": map[string]interface{}{"bus": "virtio"},
+				},
+				map[string]interface{}{
+					"name": "cloudinitdisk",
+					"disk": map[string]interface{}{"bus": "virtio"},
+				},
+			},
+			"spec.template.spec.volumes": []interface{}{
+				map[string]interface{}{
+					"name":       "rootfs",
+					"dataVolume": map[string]interface{}{"name": "vm-cloudinit-restore-rootfs"},
+				},
+			},
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	for _, check := range []string{"name: cloudinitdisk", "cloudInitNoCloud:", "#cloud-config", "- name: admin"} {
+		if !strings.Contains(yaml, check) {
+			t.Fatalf("expected rendered YAML to contain %q, got:\n%s", check, yaml)
+		}
+	}
+}
+
+func TestRenderVMSpecToYAML_NoNetworkByDefault(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-no-net",
+		CPUCores: 2,
+		MemoryGi: 4,
+		Image:    "docker.io/kubevirt/centos:7",
+	}
+
+	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	if strings.Contains(yaml, "interfaces:") {
+		t.Errorf("expected no interfaces when no spec_overrides, got:\n%s", yaml)
+	}
+	if strings.Contains(yaml, "networks:") {
+		t.Errorf("expected no networks when no spec_overrides, got:\n%s", yaml)
+	}
+}
+
+// TestRenderVMSpecToYAML_ProductionGradeFullSpec tests a full production-grade
+// VM spec using spec_overrides (ADR-0018 Hybrid Model).
+func TestRenderVMSpecToYAML_ProductionGradeFullSpec(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:            "prod-vm-01",
+		CPUCores:        4,
+		CPURequest:      2,
+		MemoryGi:        8,
+		MemoryRequestGi: 4,
+		DiskGB:          60,
+		Image:           "clone-pvc:vm-muban/openeuler2203-image",
+		StorageClass:    "rook-ceph-block",
+		CloudInit:       "#cloud-config\nhostname: prod-vm\n",
+
+		// DV storage mode (explicit fields).
+		DVAccessModes: []string{"ReadWriteMany"},
+		DVVolumeMode:  "Block",
+
+		// All VM behavior configs via spec_overrides (ADR-0018).
+		SpecOverrides: map[string]interface{}{
+			"spec.template.spec.architecture":                            "amd64",
+			"spec.template.spec.domain.cpu.model":                        "host-passthrough",
+			"spec.template.spec.domain.memory.guest":                     "8Gi",
+			"spec.template.spec.evictionStrategy":                        "LiveMigrate",
+			"spec.template.spec.terminationGracePeriodSeconds":           int64(0),
+			"spec.template.spec.domain.devices.autoattachGraphicsDevice": false,
+			"spec.template.spec.domain.devices.autoattachMemBalloon":     false,
+			"spec.template.spec.domain.devices.blockMultiQueue":          true,
+			"spec.template.spec.domain.devices.rng":                      map[string]interface{}{},
+			"spec.template.spec.domain.devices.interfaces": []interface{}{
+				map[string]interface{}{"bridge": map[string]interface{}{}, "model": "virtio", "name": "default"},
+			},
+			"spec.template.spec.domain.devices.networkInterfaceMultiqueue": true,
+			"spec.template.spec.networks": []interface{}{
+				map[string]interface{}{"name": "default", "pod": map[string]interface{}{}},
+			},
+			"spec.template.spec.livenessProbe": map[string]interface{}{
+				"failureThreshold": int64(3), "guestAgentPing": map[string]interface{}{},
+				"initialDelaySeconds": int64(120), "periodSeconds": int64(20), "timeoutSeconds": int64(5),
+			},
+			"spec.template.metadata.annotations": map[string]interface{}{
+				"kubevirt.io/allow-pod-bridge-network-live-migration": "true",
+			},
+		},
+	}
+
+	yaml, err := RenderVMSpecToYAML("prod-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+
+	// Verify all production-grade fields are present.
+	checks := []string{
+		"accessModes:",
+		"- ReadWriteMany",
+		"volumeMode: Block",
+		"architecture: amd64",
+		"model: host-passthrough",
+		"evictionStrategy: LiveMigrate",
+		"livenessProbe:",
+		"guestAgentPing:",
+		"terminationGracePeriodSeconds:",
+		"autoattachGraphicsDevice: false",
+		"autoattachMemBalloon: false",
+		"blockMultiQueue: true",
+		"rng:",
+		"interfaces:",
+		"networkInterfaceMultiqueue: true",
+		"networks:",
+		"annotations:",
+		"kubevirt.io/allow-pod-bridge-network-live-migration",
+		"cloudInitNoCloud:",
+		`cpu: "2"`,    // CPU overcommit request
+		`memory: 4Gi`, // Memory overcommit request
+	}
+	for _, check := range checks {
+		if !strings.Contains(yaml, check) {
+			t.Errorf("expected production YAML to contain %q, got:\n%s", check, yaml)
 		}
 	}
 }

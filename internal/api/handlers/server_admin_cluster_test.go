@@ -585,6 +585,14 @@ func TestListClusters_CreateCompatibilityFilterReturnsCloneFallbackAdvisory(t *t
 		Phase:            "Bound",
 		StorageClassName: "source-sc",
 	}})
+	mock.SeedStorageProfiles([]*domain.StorageProfile{{
+		Name: "target-sc",
+		ClaimPropertySets: []domain.StorageClaimPropertySet{{
+			AccessModes: []string{"ReadWriteOnce"},
+			VolumeMode:  "Filesystem",
+		}},
+		DefaultVolumeMode: "Filesystem",
+	}})
 	srv.vmService = service.NewVMService(mock)
 
 	_, err := client.NamespaceRegistry.Create().
@@ -688,6 +696,225 @@ func TestListClusters_CreateCompatibilityFilterReturnsCloneFallbackAdvisory(t *t
 	}
 	if resp.Items[0].Compatibility.AdvisoryMessage == "" {
 		t.Fatal("advisory_message is empty")
+	}
+}
+
+func TestListClusters_CreateCompatibilityFilterResolvedRootVolumeKeepsModeOptions(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	mock := provider.NewMockProvider()
+	mock.SeedStorageProfiles([]*domain.StorageProfile{{
+		Name: "rook-ceph-block",
+		ClaimPropertySets: []domain.StorageClaimPropertySet{
+			{
+				AccessModes: []string{"ReadWriteMany"},
+				VolumeMode:  "Block",
+			},
+			{
+				AccessModes: []string{"ReadWriteOnce"},
+				VolumeMode:  "Block",
+			},
+		},
+		DefaultVolumeMode: "Block",
+	}})
+	srv.vmService = service.NewVMService(mock)
+
+	_, err := client.NamespaceRegistry.Create().
+		SetID("ns-1").
+		SetName("prod-a").
+		SetEnvironment(namespaceregistry.EnvironmentProd).
+		SetEnabled(true).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create namespace registry: %v", err)
+	}
+
+	_, err = client.Template.Create().
+		SetID("tpl-1").
+		SetName("fedora").
+		SetSourceType(service.TemplateSourceCDIImageImport).
+		SetImageURL("docker://quay.io/containerdisks/fedora:40").
+		SetCatalogScope("prod").
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+
+	_, err = client.InstanceSize.Create().
+		SetID("sz-1").
+		SetName("small").
+		SetCPUCores(2).
+		SetMemoryGi(4).
+		SetCatalogScope("prod").
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create instance size: %v", err)
+	}
+
+	_, err = client.Cluster.Create().
+		SetID("cl-1").
+		SetName("cluster-a").
+		SetDisplayName("cluster-a").
+		SetAPIServerURL("https://cluster.invalid").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetEnvironment(entcluster.EnvironmentProd).
+		SetDefaultStorageClass("rook-ceph-block").
+		SetStorageClasses([]string{"rook-ceph-block"}).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+
+	_, err = client.ClusterPolicy.Create().
+		SetID("policy-1").
+		SetClusterID("cl-1").
+		SetAllowCPUOvercommit(true).
+		SetAllowMemoryOvercommit(true).
+		SetAllowDedicatedCPU(true).
+		SetAllowGpu(true).
+		SetAllowSriov(true).
+		SetAllowHugepages(true).
+		SetAllowCdiClone(true).
+		SetAllowedStorageClasses([]string{"rook-ceph-block"}).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster policy: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/clusters?page=1&per_page=20&namespace=prod-a&template_id=tpl-1&instance_size_id=sz-1&selected_storage_class=rook-ceph-block&selected_dv_access_modes=ReadWriteMany&selected_dv_volume_mode=Block&include_incompatible=true",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListClusters(c, generated.ListClustersParams{
+		Page:                  1,
+		PerPage:               20,
+		Namespace:             "prod-a",
+		TemplateId:            "tpl-1",
+		InstanceSizeId:        "sz-1",
+		SelectedStorageClass:  "rook-ceph-block",
+		SelectedDvAccessModes: []string{"ReadWriteMany"},
+		SelectedDvVolumeMode:  generated.ListClustersParamsSelectedDvVolumeMode("Block"),
+		IncludeIncompatible:   true,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("list clusters status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.ClusterList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("items len = %d, want 1", got)
+	}
+
+	resolution := resp.Items[0].Compatibility.RootVolumeResolution
+	if resolution.State != generated.RootVolumeResolutionStateResolved {
+		t.Fatalf("root volume resolution state = %q, want %q", resolution.State, generated.RootVolumeResolutionStateResolved)
+	}
+	if resolution.EffectiveStorageClass != "rook-ceph-block" {
+		t.Fatalf("effective storage class = %q, want rook-ceph-block", resolution.EffectiveStorageClass)
+	}
+	if got := len(resolution.ModeOptions); got != 2 {
+		t.Fatalf("mode options len = %d, want 2", got)
+	}
+}
+
+func TestListClusters_CreateCompatibilityFilterReturnsBadRequestForInvalidSpec(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	_, err := client.NamespaceRegistry.Create().
+		SetID("ns-invalid-1").
+		SetName("prod-invalid").
+		SetEnvironment(namespaceregistry.EnvironmentProd).
+		SetEnabled(true).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create namespace registry: %v", err)
+	}
+
+	_, err = client.Template.Create().
+		SetID("tpl-invalid-1").
+		SetName("fedora-invalid").
+		SetSourceType(service.TemplateSourceCDIImageImport).
+		SetImageURL("docker://quay.io/containerdisks/fedora:40").
+		SetCatalogScope("prod").
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+
+	_, err = client.InstanceSize.Create().
+		SetID("sz-invalid-1").
+		SetName("invalid-overcommit").
+		SetCatalogScope("prod").
+		SetCPUCores(2).
+		SetCPURequest(4).
+		SetMemoryGi(4).
+		SetMemoryRequestGi(2).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create invalid instance size: %v", err)
+	}
+
+	_, err = client.Cluster.Create().
+		SetID("cl-invalid-1").
+		SetName("cluster-invalid").
+		SetDisplayName("cluster-invalid").
+		SetAPIServerURL("https://cluster.invalid").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetEnvironment(entcluster.EnvironmentProd).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/clusters?page=1&per_page=20&namespace=prod-invalid&template_id=tpl-invalid-1&instance_size_id=sz-invalid-1&include_incompatible=true",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListClusters(c, generated.ListClustersParams{
+		Page:                1,
+		PerPage:             20,
+		Namespace:           "prod-invalid",
+		TemplateId:          "tpl-invalid-1",
+		InstanceSizeId:      "sz-invalid-1",
+		IncludeIncompatible: true,
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("list clusters invalid spec status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+
+	var apiErr generated.Error
+	mustDecodeJSON(t, w.Body.Bytes(), &apiErr)
+	if apiErr.Code != "OVERCOMMIT_INVALID" {
+		t.Fatalf("error.code = %q, want OVERCOMMIT_INVALID", apiErr.Code)
+	}
+	if apiErr.Message == "" {
+		t.Fatal("error.message = empty, want validation detail")
 	}
 }
 

@@ -44,7 +44,18 @@ type VMSpec struct {
 	MemoryRequestGi float64 `json:"memory_request_gi,omitempty"`
 
 	// SpecOverrides carries advanced KubeVirt spec path/value overrides (ADR-0018 Hybrid Model).
+	// Merge order: Template.spec_overrides → InstanceSize.spec_overrides → approval modified_spec.
+	// Backend does NOT interpret contents — just stores and passes to the renderer.
 	SpecOverrides map[string]interface{} `json:"spec_overrides,omitempty"`
+
+	// DVAccessModes sets the DataVolume PVC access mode(s), e.g. ["ReadWriteMany"].
+	// When set, the renderer uses the CDI 'pvc' format instead of 'storage' format.
+	// This is an explicit field (not in spec_overrides) because it changes the DV
+	// YAML structure (from storage: to pvc: format), which the template engine
+	// needs to handle structurally, not via deep-merge.
+	DVAccessModes []string `json:"dv_access_modes,omitempty"`
+	// DVVolumeMode sets the DataVolume PVC volume mode: "Block" or "Filesystem".
+	DVVolumeMode string `json:"dv_volume_mode,omitempty"`
 
 	// RenderedYAML is the fully-rendered VM YAML string from text/template.
 	// Required by CreateVM / UpdateVM / ValidateSpec (ADR-0011).

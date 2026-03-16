@@ -82,6 +82,8 @@ type instanceSizeCreateRequest struct {
 	RequiresSriov     *bool                  `json:"requires_sriov"`
 	RequiresHugepages *bool                  `json:"requires_hugepages"`
 	HugepagesSize     *string                `json:"hugepages_size"`
+	DvAccessModes     []string               `json:"dv_access_modes"`
+	DvVolumeMode      *string                `json:"dv_volume_mode"`
 	SpecOverrides     map[string]interface{} `json:"spec_overrides"`
 	SortOrder         *int                   `json:"sort_order"`
 	Enabled           *bool                  `json:"enabled"`
@@ -102,6 +104,8 @@ type instanceSizeUpdateRequest struct {
 	RequiresSriov     *bool                   `json:"requires_sriov"`
 	RequiresHugepages *bool                   `json:"requires_hugepages"`
 	HugepagesSize     *string                 `json:"hugepages_size"`
+	DvAccessModes     *[]string               `json:"dv_access_modes"`
+	DvVolumeMode      *string                 `json:"dv_volume_mode"`
 	SpecOverrides     *map[string]interface{} `json:"spec_overrides"`
 	SortOrder         *int                    `json:"sort_order"`
 	Enabled           *bool                   `json:"enabled"`
@@ -602,6 +606,14 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 			create = create.SetHugepagesSize(v)
 		}
 	}
+	if len(req.DvAccessModes) > 0 {
+		create = create.SetDvAccessModes(normalizeStringList(req.DvAccessModes))
+	}
+	if req.DvVolumeMode != nil {
+		if v := strings.TrimSpace(*req.DvVolumeMode); v != "" {
+			create = create.SetDvVolumeMode(v)
+		}
+	}
 	if req.SpecOverrides != nil {
 		// ADR-0036: Validate spec_overrides paths use spec.* prefix.
 		if validateErr := service.ValidateSpecOverrides(req.SpecOverrides); validateErr != nil {
@@ -679,7 +691,7 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeID generate
 		return
 	}
 
-	if validateErr := validateInstanceSizeUpdate(req, existingSize.DedicatedCPU); validateErr != nil {
+	if validateErr := validateInstanceSizeUpdate(req, existingSize); validateErr != nil {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: validateErr.Error()})
 		return
 	}
@@ -759,6 +771,23 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeID generate
 			update = update.ClearHugepagesSize()
 		} else {
 			update = update.SetHugepagesSize(v)
+		}
+	}
+	if req.DvAccessModes != nil {
+		if len(*req.DvAccessModes) == 0 {
+			update = update.ClearDvAccessModes()
+			if req.DvVolumeMode == nil {
+				update = update.ClearDvVolumeMode()
+			}
+		} else {
+			update = update.SetDvAccessModes(normalizeStringList(*req.DvAccessModes))
+		}
+	}
+	if req.DvVolumeMode != nil {
+		if v := strings.TrimSpace(*req.DvVolumeMode); v == "" {
+			update = update.ClearDvVolumeMode()
+		} else {
+			update = update.SetDvVolumeMode(v)
 		}
 	}
 	if req.SpecOverrides != nil {
@@ -1866,6 +1895,15 @@ func normalizeStringList(raw []string) []string {
 	return out
 }
 
+func cloneStringSlice(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]string, len(items))
+	copy(out, items)
+	return out
+}
+
 func normalizeIDPAllowedEnvironmentsCreate(raw []generated.IdPGroupMappingCreateRequestAllowedEnvironments) []string {
 	plain := make([]string, 0, len(raw))
 	for _, env := range raw {
@@ -2056,13 +2094,30 @@ func validateInstanceSizeCreate(req instanceSizeCreateRequest) error {
 		}
 	}
 	dedicated := req.DedicatedCPU != nil && *req.DedicatedCPU
-	if dedicated && req.CPURequest != nil && *req.CPURequest != req.CPUCores {
-		return fmt.Errorf("cpu_request must equal cpu_cores when dedicated_cpu is true")
+	cpuRequest := 0.0
+	if req.CPURequest != nil {
+		cpuRequest = *req.CPURequest
+	}
+	memoryRequestGi := 0.0
+	if req.MemoryRequestGi != nil {
+		memoryRequestGi = *req.MemoryRequestGi
+	}
+	if err := service.ValidateOvercommit(
+		req.CPUCores,
+		cpuRequest,
+		req.MemoryGi,
+		memoryRequestGi,
+		dedicated,
+	); err != nil {
+		return fmt.Errorf("%s", err.Error())
 	}
 	requiresHugepages := req.RequiresHugepages != nil && *req.RequiresHugepages
 	hasHugepagesSize := req.HugepagesSize != nil && strings.TrimSpace(*req.HugepagesSize) != ""
 	if requiresHugepages && !hasHugepagesSize {
 		return fmt.Errorf("hugepages_size is required when requires_hugepages is true")
+	}
+	if err := validateDVStorageMode(req.DvAccessModes, derefString(req.DvVolumeMode)); err != nil {
+		return err
 	}
 
 	// ADR-0036 constraint: dedicated_cpu indexed field must agree with spec_overrides.
@@ -2092,14 +2147,12 @@ func validateInstanceSizeCreate(req instanceSizeCreateRequest) error {
 
 // validateInstanceSizeUpdate validates a PATCH request for an InstanceSize.
 //
-// existingDedicatedCPU is the current value stored in the database. The effective
-// dedicated_cpu for validation is determined by merging:
-//   - If req.DedicatedCPU is set: use the request value (user is explicitly changing it).
-//   - If req.DedicatedCPU is nil: use the existing DB value (partial update, field unchanged).
-//
-// This prevents false-positive errors where a PATCH only updates spec_overrides
-// while leaving dedicated_cpu unchanged, but the validator would default to false.
-func validateInstanceSizeUpdate(req instanceSizeUpdateRequest, existingDedicatedCPU bool) error {
+// existingSize is the current database row. Partial updates are validated against
+// the effective post-merge values instead of the sparse PATCH body alone.
+func validateInstanceSizeUpdate(req instanceSizeUpdateRequest, existingSize *ent.InstanceSize) error {
+	if existingSize == nil {
+		return fmt.Errorf("existing instance size is required")
+	}
 	if req.CPUCores != nil {
 		if *req.CPUCores < 0.5 {
 			return fmt.Errorf("cpu_cores must be >= 0.5")
@@ -2135,17 +2188,50 @@ func validateInstanceSizeUpdate(req instanceSizeUpdateRequest, existingDedicated
 	if req.DiskGb != nil && *req.DiskGb < 0 {
 		return fmt.Errorf("disk_gb must be >= 0")
 	}
-	if req.CPUCores != nil && req.DedicatedCPU != nil && *req.DedicatedCPU && req.CPURequest != nil && *req.CPURequest > 0 && *req.CPURequest != *req.CPUCores {
-		return fmt.Errorf("cpu_request must equal cpu_cores when dedicated_cpu is true")
+	if err := validateDVStorageMode(derefStringSlice(req.DvAccessModes), derefString(req.DvVolumeMode)); err != nil {
+		return err
+	}
+
+	effectiveCPUCores := existingSize.CPUCores
+	if req.CPUCores != nil {
+		effectiveCPUCores = *req.CPUCores
+	}
+	effectiveMemoryGi := existingSize.MemoryGi
+	if req.MemoryGi != nil {
+		effectiveMemoryGi = *req.MemoryGi
+	}
+	effectiveCPURequest := existingSize.CPURequest
+	if req.CPURequest != nil {
+		if *req.CPURequest <= 0 {
+			effectiveCPURequest = 0
+		} else {
+			effectiveCPURequest = *req.CPURequest
+		}
+	}
+	effectiveMemoryRequestGi := existingSize.MemoryRequestGi
+	if req.MemoryRequestGi != nil {
+		if *req.MemoryRequestGi <= 0 {
+			effectiveMemoryRequestGi = 0
+		} else {
+			effectiveMemoryRequestGi = *req.MemoryRequestGi
+		}
+	}
+	effectiveDedicated := existingSize.DedicatedCPU
+	if req.DedicatedCPU != nil {
+		effectiveDedicated = *req.DedicatedCPU
+	}
+	if err := service.ValidateOvercommit(
+		effectiveCPUCores,
+		effectiveCPURequest,
+		effectiveMemoryGi,
+		effectiveMemoryRequestGi,
+		effectiveDedicated,
+	); err != nil {
+		return fmt.Errorf("%s", err.Error())
 	}
 
 	// ADR-0036 constraint: dedicated_cpu indexed field must agree with spec_overrides.
 	// Use the effective dedicated_cpu: request value if provided, else the existing DB value.
-	effectiveDedicated := existingDedicatedCPU
-	if req.DedicatedCPU != nil {
-		effectiveDedicated = *req.DedicatedCPU
-	}
-
 	if req.SpecOverrides != nil {
 		specHasDedicated := service.HasDedicatedCPUInSpecOverrides(*req.SpecOverrides)
 		if specHasDedicated && !effectiveDedicated {
@@ -2166,6 +2252,37 @@ func validateInstanceSizeUpdate(req instanceSizeUpdateRequest, existingDedicated
 	}
 
 	return nil
+}
+
+func validateDVStorageMode(accessModes []string, volumeMode string) error {
+	normalizedAccessModes := normalizeStringList(accessModes)
+	normalizedVolumeMode := strings.TrimSpace(volumeMode)
+	if len(normalizedAccessModes) == 0 && normalizedVolumeMode == "" {
+		return nil
+	}
+	if len(normalizedAccessModes) == 0 || normalizedVolumeMode == "" {
+		return fmt.Errorf("dv_access_modes and dv_volume_mode must be set together")
+	}
+	switch normalizedVolumeMode {
+	case "Block", "Filesystem":
+		return nil
+	default:
+		return fmt.Errorf("dv_volume_mode must be Block or Filesystem")
+	}
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func derefStringSlice(value *[]string) []string {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 // resolveStringPtr merges a PATCH request field with an existing database value for

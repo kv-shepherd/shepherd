@@ -2,7 +2,7 @@
  * i18n initialization (FRONTEND.md §Initialization).
  *
  * Uses react-i18next with browser language detection.
- * Namespaces: common, errors, vm, approval, admin
+ * Namespaces: common, errors, vm, approval, admin, schema
  */
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
@@ -15,11 +15,13 @@ import enErrors from './locales/en/errors.json';
 import enVm from './locales/en/vm.json';
 import enApproval from './locales/en/approval.json';
 import enAdmin from './locales/en/admin.json';
+import enSchema from './locales/en/schema.json';
 import zhCNCommon from './locales/zh-CN/common.json';
 import zhCNErrors from './locales/zh-CN/errors.json';
 import zhCNVm from './locales/zh-CN/vm.json';
 import zhCNApproval from './locales/zh-CN/approval.json';
 import zhCNAdmin from './locales/zh-CN/admin.json';
+import zhCNSchema from './locales/zh-CN/schema.json';
 
 i18n
     .use(LanguageDetector)
@@ -32,6 +34,7 @@ i18n
                 vm: enVm,
                 approval: enApproval,
                 admin: enAdmin,
+                schema: enSchema,
             },
             'zh-CN': {
                 common: zhCNCommon,
@@ -39,6 +42,7 @@ i18n
                 vm: zhCNVm,
                 approval: zhCNApproval,
                 admin: zhCNAdmin,
+                schema: zhCNSchema,
             },
         },
         ...i18nConfig,

@@ -57,3 +57,31 @@ func TestProvisioningTypesJSON_ExposeVolumeModeAndStorageProfileFields(t *testin
 		t.Fatalf("Marshal(provisioning models) = %s, want clone_strategy", body)
 	}
 }
+
+func TestStorageProfileJSON_ExposeClaimPropertySets(t *testing.T) {
+	t.Parallel()
+
+	raw, err := json.Marshal(StorageProfile{
+		Name:          "rook-ceph",
+		CloneStrategy: "copy",
+		ClaimPropertySets: []StorageClaimPropertySet{
+			{
+				AccessModes: []string{"ReadWriteMany"},
+				VolumeMode:  "Block",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal(storage profile with claimPropertySets) error = %v", err)
+	}
+	body := string(raw)
+	if !strings.Contains(body, `"claim_property_sets"`) {
+		t.Fatalf("Marshal(storage profile) = %s, want claim_property_sets", body)
+	}
+	if !strings.Contains(body, `"access_modes":["ReadWriteMany"]`) {
+		t.Fatalf("Marshal(storage profile) = %s, want access_modes", body)
+	}
+	if !strings.Contains(body, `"volume_mode":"Block"`) {
+		t.Fatalf("Marshal(storage profile) = %s, want volume_mode", body)
+	}
+}

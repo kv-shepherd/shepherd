@@ -61,12 +61,21 @@ type StorageClass struct {
 	AllowVolumeExpansion bool   `json:"allow_volume_expansion,omitempty"`
 }
 
+// StorageClaimPropertySet models one CDI StorageProfile claimPropertySets entry.
+// The combination of accessModes + volumeMode is the authoritative capability
+// tuple for a target storage class.
+type StorageClaimPropertySet struct {
+	AccessModes []string `json:"access_modes,omitempty"`
+	VolumeMode  string   `json:"volume_mode,omitempty"`
+}
+
 // StorageProfile models the subset of CDI StorageProfile state needed for
-// non-blocking clone advisories.
+// clone advisories and approval-time root-volume resolution.
 type StorageProfile struct {
-	Name              string `json:"name"`
-	CloneStrategy     string `json:"clone_strategy,omitempty"`
-	DefaultVolumeMode string `json:"default_volume_mode,omitempty"`
+	Name              string                    `json:"name"`
+	CloneStrategy     string                    `json:"clone_strategy,omitempty"`
+	DefaultVolumeMode string                    `json:"default_volume_mode,omitempty"`
+	ClaimPropertySets []StorageClaimPropertySet `json:"claim_property_sets,omitempty"`
 }
 
 // ProvisioningStatus summarizes CDI-backed root-disk provisioning for a VM.

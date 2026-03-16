@@ -1,0 +1,25 @@
+{
+  "instanceSize": {
+    "spec__template__spec__domain__cpu__threads": "Guest 内每个 socket 的线程数，最小值为 1。",
+    "spec__template__spec__domain__cpu__sockets": "Guest 内暴露的 CPU sockets 数量，最小值为 1。",
+    "spec__template__spec__domain__devices__autoattachSerialConsole": "是否自动附加默认 virtio-serial console。关闭后将无法使用串口控制台，默认开启。",
+    "spec__template__spec__domain__devices__autoattachGraphicsDevice": "是否自动附加默认图形设备。关闭后将无法使用 VNC，默认开启。",
+    "spec__template__spec__domain__features__hyperv__relaxed__enabled": "是否为 Guest 启用 Hyper-V Relaxed 特性，默认开启。",
+    "spec__template__spec__domain__features__hyperv__vapic__enabled": "是否为 Guest 启用 Hyper-V vAPIC 特性，默认开启。",
+    "spec__template__spec__domain__features__hyperv__spinlocks__spinlocks": "自旋锁重试次数，最小值为 4096，默认值为 4096。",
+    "spec__template__spec__domain__features__hyperv__vpindex__enabled": "是否为 Guest 启用 Hyper-V VPIndex 特性，默认开启。",
+    "spec__template__spec__domain__features__hyperv__runtime__enabled": "是否为 Guest 启用 Hyper-V Runtime 特性，默认开启。",
+    "spec__template__spec__domain__features__hyperv__synic__enabled": "是否为 Guest 启用 Hyper-V SyNIC 特性，默认开启。",
+    "spec__template__spec__domain__features__hyperv__frequencies__enabled": "是否为 Guest 启用 Hyper-V Frequencies 特性，默认开启。",
+    "spec__template__spec__domain__features__hyperv__reset__enabled": "是否为 Guest 启用 Hyper-V Reset 特性，默认开启。",
+    "spec__template__spec__domain__features__hyperv__vendorid__vendorid": "设置暴露给 Guest 的 hypervisor vendor id，最长 12 个字符。",
+    "spec__template__spec__domain__clock__timer__hpet__present": "设为 false 时，可确保 machine type 或 preset 不会自动附加 HPET 定时器。默认开启。",
+    "spec__template__spec__domain__clock__timer__pit__tickPolicy": "控制 QEMU 错过向 Guest 注入 PIT tick 截止时间时的处理方式，可选 delay、catchup、discard。",
+    "spec__template__spec__domain__clock__timer__rtc__tickPolicy": "控制 QEMU 错过向 Guest 注入 RTC tick 截止时间时的处理方式，可选 delay、catchup。",
+    "spec__template__spec__domain__clock__timer__hyperv": "为 Guest 时钟启用 Hyper-V 半虚拟化定时器。",
+    "spec__template__spec__livenessProbe__initialDelaySeconds": "Guest 启动后，开始执行存活探针前等待的秒数。",
+    "spec__template__spec__livenessProbe__periodSeconds": "执行存活探针的间隔秒数，默认 10 秒，最小值为 1。",
+    "spec__template__spec__livenessProbe__failureThreshold": "探针连续失败多少次后判定为失败，默认 3，最小值为 1。",
+    "spec__template__spec__livenessProbe__timeoutSeconds": "单次探针超时时间，单位为秒，默认 1 秒，最小值为 1。"
+  }
+}

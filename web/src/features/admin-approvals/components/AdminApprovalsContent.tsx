@@ -51,6 +51,10 @@ import {
 
 const { Title, Text } = Typography;
 type PayloadRecord = Record<string, unknown>;
+type RootVolumeResolution = NonNullable<
+  NonNullable<Cluster["compatibility"]>["root_volume_resolution"]
+>;
+type RootVolumeModeOption = NonNullable<RootVolumeResolution["mode_options"]>[number];
 
 /** Safely convert an unknown ticket_payload field to a displayable string. */
 function toStr(value: unknown): string {
@@ -157,13 +161,101 @@ function distinctPayloadStrings(
 
 function requiresStorageClassSelection(cluster: Cluster): boolean {
   return (
-    cluster.compatibility?.reason_code === "CLUSTER_POLICY_STORAGE_CLASS_REQUIRED"
+    cluster.compatibility?.reason_code === "CLUSTER_POLICY_STORAGE_CLASS_REQUIRED" ||
+    cluster.compatibility?.root_volume_resolution?.state === "storage_class_required"
   );
+}
+
+function requiresRootVolumeModeSelection(cluster: Cluster): boolean {
+  return cluster.compatibility?.root_volume_resolution?.state === "mode_required";
+}
+
+function clusterDisplayLabel(cluster: Cluster | undefined): string {
+  if (!cluster) {
+    return "—";
+  }
+  return cluster.display_name || cluster.name || cluster.id || "—";
+}
+
+function rootVolumeModeOptionKey(option: RootVolumeModeOption | undefined): string {
+  if (!option?.volume_mode || !option.access_modes?.length) {
+    return "";
+  }
+  return `${option.volume_mode}|${[...option.access_modes].sort().join(",")}`;
+}
+
+function rootVolumeModeOptionLabel(
+  option: RootVolumeModeOption | undefined,
+): string {
+  if (!option?.volume_mode) {
+    return "—";
+  }
+  const accessModes = option.access_modes?.length
+    ? option.access_modes.join(" / ")
+    : "—";
+  return `${option.volume_mode} + ${accessModes}`;
+}
+
+function rootVolumeModeRecommendationRank(
+  option: RootVolumeModeOption | undefined,
+): number {
+  if (!option?.volume_mode || !option.access_modes?.length) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  const volumeMode = option.volume_mode.trim();
+  const accessModes = [...option.access_modes].map((item) => item.trim()).sort();
+  const key = `${volumeMode}|${accessModes.join(",")}`;
+  switch (key) {
+    case "Block|ReadWriteMany":
+      return 0;
+    case "Block|ReadWriteOnce":
+      return 1;
+    case "Filesystem|ReadWriteOnce":
+      return 2;
+    default:
+      return 10;
+  }
+}
+
+function recommendedRootVolumeModeOption(
+  options: RootVolumeModeOption[],
+): RootVolumeModeOption | undefined {
+  if (options.length === 0) {
+    return undefined;
+  }
+  return [...options].sort((left, right) => {
+    const rankDiff =
+      rootVolumeModeRecommendationRank(left) -
+      rootVolumeModeRecommendationRank(right);
+    if (rankDiff !== 0) {
+      return rankDiff;
+    }
+    return rootVolumeModeOptionKey(left).localeCompare(rootVolumeModeOptionKey(right));
+  })[0];
+}
+
+function renderRootVolumeResolutionMessage(
+  resolution: RootVolumeResolution | undefined,
+): string {
+  if (!resolution) {
+    return "—";
+  }
+  if (resolution.message) {
+    return resolution.message;
+  }
+  if (resolution.state === "resolved" && resolution.effective_volume_mode) {
+    return `${resolution.effective_storage_class ?? "—"} · ${rootVolumeModeOptionLabel({
+      volume_mode: resolution.effective_volume_mode,
+      access_modes: resolution.effective_access_modes,
+    })}`;
+  }
+  return "—";
 }
 
 export function AdminApprovalsContent() {
   const { t } = useTranslation(["approval", "common"]);
   const approvals = useAdminApprovalsController({ t });
+  const selectedClusterOptionLabel = clusterDisplayLabel(approvals.selectedCluster);
 
   const columns: ColumnsType<ApprovalTicket> = [
     {
@@ -599,6 +691,18 @@ export function AdminApprovalsContent() {
                           defaultValue: "Mixed",
                         })
                     : instanceSizeLabel(payload);
+                const rootVolumeResolution =
+                  approvals.selectedRootVolumeResolution;
+                const rootVolumeModeOptions = approvals.rootVolumeModeOptions;
+                const canSelectRootVolumeMode =
+                  approvals.canSelectRootVolumeMode;
+                const selectedRootVolumeMode =
+                  approvals.effectiveSelectedRootVolumeMode;
+                const recommendedRootVolumeMode =
+                  recommendedRootVolumeModeOption(rootVolumeModeOptions);
+                const recommendedRootVolumeModeKey = rootVolumeModeOptionKey(
+                  recommendedRootVolumeMode,
+                );
                 return (
                   <>
                     {payload && batchItems.length === 0 && (
@@ -828,10 +932,32 @@ export function AdminApprovalsContent() {
                     {provisioning && (
                       <ApprovalProvisioningCard provisioning={provisioning} />
                     )}
+                    {approvals.clusterQueryError && (
+                      <Alert
+                        type="error"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                        message={t(
+                          "approve_modal.cluster_query_error_title",
+                          "Cluster compatibility check failed",
+                        )}
+                        description={
+                          approvals.clusterQueryError.message ||
+                          t(
+                            "approve_modal.cluster_query_error_description",
+                            "The current request context is invalid, so the platform cannot evaluate cluster compatibility yet.",
+                          )
+                        }
+                      />
+                    )}
                     <Form.Item
                       name="selected_cluster_id"
                       label={t("approve_modal.cluster")}
                       extra={t("approve_modal.cluster_hint")}
+                      getValueFromEvent={(value) => {
+                        approvals.handleSelectedClusterChange();
+                        return value;
+                      }}
                     >
                       <Select
                         placeholder={t("approve_modal.cluster")}
@@ -841,9 +967,16 @@ export function AdminApprovalsContent() {
                               cluster.compatibility?.eligible !== false;
                             const needsStorageClassSelection =
                               requiresStorageClassSelection(cluster);
+                            const needsRootVolumeModeSelection =
+                              requiresRootVolumeModeSelection(cluster);
+                            const needsApprovalInput =
+                              needsStorageClassSelection ||
+                              needsRootVolumeModeSelection;
                             const disabled =
                               cluster.enabled === false ||
-                              (!compatible && !needsStorageClassSelection);
+                              (!compatible &&
+                                !needsStorageClassSelection &&
+                                !needsRootVolumeModeSelection);
                             return {
                               label: (
                                 <div>
@@ -856,7 +989,7 @@ export function AdminApprovalsContent() {
                                         KV {cluster.kubevirt_version}
                                       </Tag>
                                     )}
-                                    {!compatible && (
+                                    {!compatible && !needsApprovalInput && (
                                       <Tag color="red">
                                         {t(
                                           "approve_modal.cluster_incompatible",
@@ -869,6 +1002,14 @@ export function AdminApprovalsContent() {
                                         {t(
                                           "approve_modal.cluster_requires_storage_class",
                                           "Select storage class",
+                                        )}
+                                      </Tag>
+                                    )}
+                                    {needsRootVolumeModeSelection && (
+                                      <Tag color="gold">
+                                        {t(
+                                          "approve_modal.cluster_requires_root_volume_mode",
+                                          "Select root volume mode",
                                         )}
                                       </Tag>
                                     )}
@@ -901,7 +1042,8 @@ export function AdminApprovalsContent() {
                                       <div style={{ marginTop: 4 }}>
                                         <Text
                                           type={
-                                            needsStorageClassSelection
+                                            needsStorageClassSelection ||
+                                            needsRootVolumeModeSelection
                                               ? "warning"
                                               : "secondary"
                                           }
@@ -914,22 +1056,63 @@ export function AdminApprovalsContent() {
                                 </div>
                               ),
                               value: cluster.id,
+                              title: clusterDisplayLabel(cluster),
                               disabled,
                             };
                           },
                         )}
+                        labelRender={() => selectedClusterOptionLabel}
+                        optionFilterProp="title"
                       />
                     </Form.Item>
                     <Form.Item
                       name="selected_storage_class"
                       label={t("approve_modal.storage_class")}
+                      getValueProps={() => ({
+                        value:
+                          approvals.effectiveSelectedStorageClass || undefined,
+                      })}
+                      getValueFromEvent={(value) => {
+                        approvals.handleSelectedStorageClassChange();
+                        return typeof value === "string" && value.trim() !== ""
+                          ? value.trim()
+                          : undefined;
+                      }}
+                      rules={[
+                        () => ({
+                          validator() {
+                            if (
+                              approvals.selectedCluster &&
+                              requiresStorageClassSelection(
+                                approvals.selectedCluster,
+                              ) &&
+                              !approvals.effectiveSelectedStorageClass
+                            ) {
+                              return Promise.reject(
+                                new Error(
+                                  t(
+                                    "approve_modal.storage_class_required",
+                                    "Select a storage class before approving this request.",
+                                  ),
+                                ),
+                              );
+                            }
+                            return Promise.resolve();
+                          },
+                        }),
+                      ]}
                       extra={
                         approvals.selectedClusterId
                           ? approvals.selectedClusterStorageClassOptions.length > 0
-                            ? t(
-                                "approve_modal.storage_class_auto_detected",
-                                "Auto-detected from the selected cluster. You can change it before approving.",
-                              )
+                            ? approvals.selectedClusterStorageClassOptions.length === 1
+                              ? t(
+                                  "approve_modal.storage_class_auto_detected_single",
+                                  "Exactly one eligible storage class was detected for this cluster and is auto-selected.",
+                                )
+                              : t(
+                                  "approve_modal.storage_class_auto_detected_multiple",
+                                  "Multiple eligible storage classes were detected. Choose one before approving.",
+                                )
                             : t(
                                 "approve_modal.storage_class_unavailable",
                                 "No storage class was detected for this cluster yet.",
@@ -950,9 +1133,132 @@ export function AdminApprovalsContent() {
                         )}
                         loading={approvals.selectedClusterPolicyLoading}
                         disabled={!approvals.selectedClusterId}
+                        allowClear={
+                          approvals.selectedClusterStorageClassOptions.length > 1
+                        }
                         showSearch
                         optionFilterProp="label"
                       />
+                    </Form.Item>
+                    {rootVolumeResolution &&
+                      rootVolumeResolution.state !== "not_applicable" && (
+                        <Alert
+                          type={
+                            selectedRootVolumeMode ||
+                            rootVolumeResolution.state === "resolved"
+                              ? "success"
+                              : rootVolumeResolution.state === "profile_incomplete" ||
+                                  rootVolumeResolution.state === "unsupported"
+                                ? "error"
+                                : "warning"
+                          }
+                          showIcon
+                          style={{ marginBottom: 16 }}
+                          message={t(
+                            `approve_modal.root_volume_resolution.${rootVolumeResolution.state}.title`,
+                            {
+                              defaultValue:
+                                selectedRootVolumeMode
+                                  ? "Root volume mode selected"
+                                  : rootVolumeResolution.state === "resolved"
+                                  ? "Root volume mode resolved"
+                                  : rootVolumeResolution.state === "mode_required"
+                                    ? "Select root volume mode"
+                                    : rootVolumeResolution.state === "storage_class_required"
+                                      ? "Select storage class"
+                                      : "Root volume resolution blocked",
+                            },
+                          )}
+                          description={
+                            selectedRootVolumeMode
+                              ? rootVolumeModeOptionLabel(selectedRootVolumeMode)
+                              : renderRootVolumeResolutionMessage(
+                                  rootVolumeResolution,
+                                )
+                          }
+                        />
+                      )}
+                    {canSelectRootVolumeMode && (
+                      <Form.Item
+                        name="selected_root_volume_mode_key"
+                        label={t(
+                          "approve_modal.root_volume_mode",
+                          "Root Volume Mode",
+                        )}
+                        getValueProps={() => ({
+                          value:
+                            approvals.effectiveSelectedRootVolumeModeKey ||
+                            undefined,
+                        })}
+                        getValueFromEvent={(value) =>
+                          approvals.handleSelectedRootVolumeModeChange(value)
+                        }
+                        extra={
+                          rootVolumeResolution?.intent_mode === "auto"
+                            ? t(
+                                "approve_modal.root_volume_mode_help",
+                                "This specification still uses Auto. The selected cluster exposes multiple StorageProfile combinations, so approval must choose one explicit root volume mode.",
+                              )
+                            : t(
+                                "approve_modal.root_volume_mode_editable_help",
+                                "This cluster exposes multiple supported root volume modes. You can adjust the selection before approving.",
+                              )
+                        }
+                        rules={[
+                          {
+                            required: true,
+                            message: t(
+                              "approve_modal.root_volume_mode_required",
+                              "Select a root volume mode before approving.",
+                            ),
+                          },
+                        ]}
+                      >
+                        <Select
+                          placeholder={t(
+                            "approve_modal.root_volume_mode_placeholder",
+                            "Select root volume mode",
+                          )}
+                          options={rootVolumeModeOptions.map((option) => ({
+                            label:
+                              rootVolumeModeOptionKey(option) ===
+                              recommendedRootVolumeModeKey
+                                ? `${rootVolumeModeOptionLabel(option)} ${t(
+                                    "approve_modal.root_volume_mode_recommended_suffix",
+                                    "(Recommended)",
+                                  )}`
+                                : rootVolumeModeOptionLabel(option),
+                            value: rootVolumeModeOptionKey(option),
+                          }))}
+                        />
+                      </Form.Item>
+                    )}
+                    {canSelectRootVolumeMode && recommendedRootVolumeMode && (
+                      <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginTop: -8, marginBottom: 16 }}
+                        message={t(
+                          "approve_modal.root_volume_mode_recommendation_title",
+                          "Recommended root volume mode",
+                        )}
+                        description={t(
+                          "approve_modal.root_volume_mode_recommendation_description",
+                          {
+                            defaultValue:
+                              "{{mode}} is recommended here because it preserves shared-block semantics and is the safest default for migration-friendly VM workloads.",
+                            mode: rootVolumeModeOptionLabel(
+                              recommendedRootVolumeMode,
+                            ),
+                          },
+                        )}
+                      />
+                    )}
+                    <Form.Item name="selected_dv_access_modes" hidden>
+                      <Select mode="multiple" options={[]} />
+                    </Form.Item>
+                    <Form.Item name="selected_dv_volume_mode" hidden>
+                      <Input />
                     </Form.Item>
                     <Form.Item
                       name="enable_override"
@@ -987,7 +1293,7 @@ export function AdminApprovalsContent() {
                                 }
                                 style={{ marginBottom: 0 }}
                               >
-                                <UnitInputNumber min={1} max={500} unit="GB" />
+                                <UnitInputNumber min={1} max={500} step={1} precision={0} unit="GB" />
                               </Form.Item>
                               <Space style={{ width: "100%" }}>
                                 <Form.Item

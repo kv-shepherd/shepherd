@@ -59,7 +59,7 @@ func TestValidateTemplateSpec_AllowedPaths(t *testing.T) {
 			spec: map[string]interface{}{
 				"volumes": []interface{}{
 					map[string]interface{}{
-						"name": "rootdisk",
+						"name": "rootfs",
 						"containerDisk": map[string]interface{}{
 							"image": "quay.io/containerdisks/ubuntu:22.04",
 						},

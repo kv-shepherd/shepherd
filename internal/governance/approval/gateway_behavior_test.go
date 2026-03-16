@@ -104,6 +104,26 @@ func (s *dryRunProviderStub) ValidateSpec(_ context.Context, _, _ string, _ *dom
 	return &domain.ValidationResult{Valid: true}, nil
 }
 
+func (s *dryRunProviderStub) GetStorageProfile(
+	ctx context.Context,
+	cluster,
+	name string,
+) (*domain.StorageProfile, error) {
+	if profile, err := s.MockProvider.GetStorageProfile(ctx, cluster, name); err == nil {
+		return profile, nil
+	}
+	return &domain.StorageProfile{
+		Name: name,
+		ClaimPropertySets: []domain.StorageClaimPropertySet{
+			{
+				AccessModes: []string{"ReadWriteOnce"},
+				VolumeMode:  "Filesystem",
+			},
+		},
+		DefaultVolumeMode: "Filesystem",
+	}, nil
+}
+
 // asInt converts a JSON-decoded number (typically float64 or int) to int for assertions.
 func asInt(v interface{}) (int, bool) {
 	switch n := v.(type) {

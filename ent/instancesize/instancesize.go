@@ -46,6 +46,10 @@ const (
 	FieldHugepagesSize = "hugepages_size"
 	// FieldSpecOverrides holds the string denoting the spec_overrides field in the database.
 	FieldSpecOverrides = "spec_overrides"
+	// FieldDvAccessModes holds the string denoting the dv_access_modes field in the database.
+	FieldDvAccessModes = "dv_access_modes"
+	// FieldDvVolumeMode holds the string denoting the dv_volume_mode field in the database.
+	FieldDvVolumeMode = "dv_volume_mode"
 	// FieldCatalogScope holds the string denoting the catalog_scope field in the database.
 	FieldCatalogScope = "catalog_scope"
 	// FieldSortOrder holds the string denoting the sort_order field in the database.
@@ -77,6 +81,8 @@ var Columns = []string{
 	FieldRequiresHugepages,
 	FieldHugepagesSize,
 	FieldSpecOverrides,
+	FieldDvAccessModes,
+	FieldDvVolumeMode,
 	FieldCatalogScope,
 	FieldSortOrder,
 	FieldEnabled,
@@ -120,6 +126,8 @@ var (
 	DefaultRequiresSriov bool
 	// DefaultRequiresHugepages holds the default value on creation for the "requires_hugepages" field.
 	DefaultRequiresHugepages bool
+	// DefaultDvVolumeMode holds the default value on creation for the "dv_volume_mode" field.
+	DefaultDvVolumeMode string
 	// DefaultSortOrder holds the default value on creation for the "sort_order" field.
 	DefaultSortOrder int
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
@@ -237,6 +245,11 @@ func ByRequiresHugepages(opts ...sql.OrderTermOption) OrderOption {
 // ByHugepagesSize orders the results by the hugepages_size field.
 func ByHugepagesSize(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldHugepagesSize, opts...).ToFunc()
+}
+
+// ByDvVolumeMode orders the results by the dv_volume_mode field.
+func ByDvVolumeMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDvVolumeMode, opts...).ToFunc()
 }
 
 // ByCatalogScope orders the results by the catalog_scope field.

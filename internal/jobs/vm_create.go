@@ -196,6 +196,9 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 	if vmName == "" {
 		return markFailed(fmt.Errorf("vm row for ticket %s has empty name", ticket.ID), true)
 	}
+	resolvedRootVolumeStorageClass := strings.TrimSpace(vmRow.RootVolumeStorageClass)
+	resolvedRootVolumeAccessModes := cloneStringSlice(vmRow.RootVolumeAccessModes)
+	resolvedRootVolumeVolumeMode := strings.TrimSpace(vmRow.RootVolumeVolumeMode)
 
 	size, err := w.entClient.InstanceSize.Get(ctx, effectiveInstanceSizeID)
 	if err != nil {
@@ -209,6 +212,11 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 	diskGB := size.DiskGB
 	applyInstanceSizeSnapshotOverrides(&cpu, &memoryGi, &diskGB, ticket.InstanceSizeSnapshot)
 	specOverrides := resolveInstanceSizeSpecOverrides(size.SpecOverrides, ticket.InstanceSizeSnapshot)
+	dvAccessModes, dvVolumeMode := resolveInstanceSizeDVStorage(size, ticket.InstanceSizeSnapshot)
+	if len(resolvedRootVolumeAccessModes) > 0 || resolvedRootVolumeVolumeMode != "" {
+		dvAccessModes = resolvedRootVolumeAccessModes
+		dvVolumeMode = resolvedRootVolumeVolumeMode
+	}
 
 	tpl, err := w.entClient.Template.Get(ctx, effectiveTemplateID)
 	if err != nil {
@@ -236,6 +244,11 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		}
 	}
 
+	// ADR-0018 Hybrid Model: spec_overrides comes from InstanceSize only.
+	// Template provides software baseline (image, cloud-init);
+	// InstanceSize provides hardware capabilities + runtime behavior overrides.
+	// Approval-time modified_spec (admin adjustments) is applied below via applyModifiedSpecOverrides.
+
 	spec := &domain.VMSpec{
 		Name:         vmName,
 		CPU:          cpu,
@@ -250,6 +263,15 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 			"shepherd.io/event-id":    eventID,
 		},
 		SpecOverrides: specOverrides,
+
+		// DV storage mode from InstanceSize (explicit — structural DV format change).
+		DVAccessModes: dvAccessModes,
+		DVVolumeMode:  dvVolumeMode,
+	}
+	if spec.StorageClass == "" {
+		if resolvedRootVolumeStorageClass != "" {
+			spec.StorageClass = resolvedRootVolumeStorageClass
+		}
 	}
 	if spec.StorageClass == "" {
 		spec.StorageClass = strings.TrimSpace(selectedCluster.DefaultStorageClass)
@@ -439,6 +461,22 @@ func resolveInstanceSizeSpecOverrides(
 	return cloneMapValues(baseOverrides)
 }
 
+func resolveInstanceSizeDVStorage(
+	size *ent.InstanceSize,
+	snapshot map[string]interface{},
+) (accessModes []string, volumeMode string) {
+	if accessModes := lookupStringSliceValue(snapshot, "dv_access_modes"); len(accessModes) > 0 {
+		return accessModes, lookupStringValue(snapshot, "dv_volume_mode")
+	}
+	if volumeMode := lookupStringValue(snapshot, "dv_volume_mode"); volumeMode != "" {
+		return nil, volumeMode
+	}
+	if size == nil {
+		return nil, ""
+	}
+	return cloneStringSlice(size.DvAccessModes), strings.TrimSpace(size.DvVolumeMode)
+}
+
 func extractSpecOverridesFromSnapshot(snapshot map[string]interface{}) map[string]interface{} {
 	if len(snapshot) == 0 {
 		return nil
@@ -542,6 +580,44 @@ func cloneMapValues(src map[string]interface{}) map[string]interface{} {
 		dst[k] = v
 	}
 	return dst
+}
+
+func cloneStringSlice(src []string) []string {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make([]string, len(src))
+	copy(dst, src)
+	return dst
+}
+
+func lookupStringSliceValue(values map[string]interface{}, keys ...string) []string {
+	for _, key := range keys {
+		raw, ok := lookupValue(values, key)
+		if !ok {
+			continue
+		}
+		switch typed := raw.(type) {
+		case []string:
+			return cloneStringSlice(typed)
+		case []interface{}:
+			items := make([]string, 0, len(typed))
+			for _, item := range typed {
+				text, ok := item.(string)
+				if !ok {
+					continue
+				}
+				text = strings.TrimSpace(text)
+				if text != "" {
+					items = append(items, text)
+				}
+			}
+			if len(items) > 0 {
+				return items
+			}
+		}
+	}
+	return nil
 }
 
 func isLikelySpecOverrideMap(values map[string]interface{}) bool {
@@ -657,7 +733,7 @@ func extractImageFromVolumes(raw interface{}) (string, error) {
 		}
 		if pvc, ok := volume["persistentVolumeClaim"].(map[string]interface{}); ok {
 			if claimName := strings.TrimSpace(toString(pvc["claimName"])); claimName != "" {
-				return "", fmt.Errorf("unsupported legacy direct PVC rootdisk reference %q", claimName)
+				return "", fmt.Errorf("unsupported legacy direct PVC root volume reference %q", claimName)
 			}
 		}
 	}

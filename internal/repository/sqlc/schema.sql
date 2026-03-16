@@ -66,5 +66,8 @@ CREATE TABLE vms (
     hostname text,
     created_by text NOT NULL,
     ticket_id text,
+    root_volume_storage_class text,
+    root_volume_access_modes jsonb,
+    root_volume_volume_mode text,
     service_vms text NOT NULL REFERENCES services(id)
 );

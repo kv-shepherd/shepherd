@@ -44,6 +44,8 @@ type ApprovalValidationInput struct {
 	InstanceSizeID string
 	Namespace      string
 	StorageClass   string
+	DVAccessModes  []string
+	DVVolumeMode   string
 	Override       *ApprovalResourceOverride
 }
 
@@ -60,12 +62,13 @@ type ApprovalResourceOverride struct {
 // ClusterCompatibilityResult is the preflight compatibility verdict for one
 // cluster candidate under a CREATE placement context.
 type ClusterCompatibilityResult struct {
-	Cluster         *ent.Cluster
-	Eligible        bool
-	ReasonCode      string
-	ReasonMessage   string
-	AdvisoryCode    string
-	AdvisoryMessage string
+	Cluster              *ent.Cluster
+	Eligible             bool
+	ReasonCode           string
+	ReasonMessage        string
+	AdvisoryCode         string
+	AdvisoryMessage      string
+	RootVolumeResolution *RootVolumeResolution
 }
 
 type resolvedApprovalValidationContext struct {
@@ -304,6 +307,27 @@ func (v *ApprovalValidator) EvaluateClusterCompatibility(
 			}
 			return nil, err
 		}
+		rootVolumeResolution, resolveErr := v.resolveRootVolumeProvisioning(
+			ctx,
+			cl,
+			policyByClusterID[cl.ID],
+			resolved.template,
+			resolved.instanceSize,
+			input,
+		)
+		if rootVolumeResolution != nil {
+			result.RootVolumeResolution = rootVolumeResolution
+		}
+		if resolveErr != nil {
+			if appErr, ok := apperrors.IsAppError(resolveErr); ok {
+				result.Eligible = false
+				result.ReasonCode = appErr.Code
+				result.ReasonMessage = appErr.Message
+				results = append(results, result)
+				continue
+			}
+			return nil, resolveErr
+		}
 		v.attachCloneAdvisory(ctx, &result, resolved, input)
 		results = append(results, result)
 	}
@@ -360,6 +384,19 @@ func (v *ApprovalValidator) EvaluateClusterPlacement(
 			return result, nil
 		}
 		return nil, err
+	}
+	rootVolumeResolution, resolveErr := v.resolveRootVolumeProvisioning(ctx, cl, policy, resolved.template, resolved.instanceSize, input)
+	if rootVolumeResolution != nil {
+		result.RootVolumeResolution = rootVolumeResolution
+	}
+	if resolveErr != nil {
+		if appErr, ok := apperrors.IsAppError(resolveErr); ok {
+			result.Eligible = false
+			result.ReasonCode = appErr.Code
+			result.ReasonMessage = appErr.Message
+			return result, nil
+		}
+		return nil, resolveErr
 	}
 	v.attachCloneAdvisory(ctx, result, resolved, input)
 	return result, nil
@@ -572,6 +609,9 @@ func (v *ApprovalValidator) attachCloneAdvisory(
 		return
 	}
 	targetStorageClass := strings.TrimSpace(input.StorageClass)
+	if result.RootVolumeResolution != nil && strings.TrimSpace(result.RootVolumeResolution.EffectiveStorageClass) != "" {
+		targetStorageClass = strings.TrimSpace(result.RootVolumeResolution.EffectiveStorageClass)
+	}
 	if targetStorageClass == "" {
 		targetStorageClass = strings.TrimSpace(result.Cluster.DefaultStorageClass)
 	}

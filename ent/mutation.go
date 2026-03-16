@@ -10434,39 +10434,42 @@ func (m *IdPSyncedGroupMutation) ResetEdge(name string) error {
 // InstanceSizeMutation represents an operation that mutates the InstanceSize nodes in the graph.
 type InstanceSizeMutation struct {
 	config
-	op                   Op
-	typ                  string
-	id                   *string
-	created_at           *time.Time
-	updated_at           *time.Time
-	name                 *string
-	display_name         *string
-	description          *string
-	cpu_cores            *float64
-	addcpu_cores         *float64
-	memory_gi            *float64
-	addmemory_gi         *float64
-	disk_gb              *int
-	adddisk_gb           *int
-	cpu_request          *float64
-	addcpu_request       *float64
-	memory_request_gi    *float64
-	addmemory_request_gi *float64
-	dedicated_cpu        *bool
-	requires_gpu         *bool
-	requires_sriov       *bool
-	requires_hugepages   *bool
-	hugepages_size       *string
-	spec_overrides       *map[string]interface{}
-	catalog_scope        *instancesize.CatalogScope
-	sort_order           *int
-	addsort_order        *int
-	enabled              *bool
-	created_by           *string
-	clearedFields        map[string]struct{}
-	done                 bool
-	oldValue             func(context.Context) (*InstanceSize, error)
-	predicates           []predicate.InstanceSize
+	op                    Op
+	typ                   string
+	id                    *string
+	created_at            *time.Time
+	updated_at            *time.Time
+	name                  *string
+	display_name          *string
+	description           *string
+	cpu_cores             *float64
+	addcpu_cores          *float64
+	memory_gi             *float64
+	addmemory_gi          *float64
+	disk_gb               *int
+	adddisk_gb            *int
+	cpu_request           *float64
+	addcpu_request        *float64
+	memory_request_gi     *float64
+	addmemory_request_gi  *float64
+	dedicated_cpu         *bool
+	requires_gpu          *bool
+	requires_sriov        *bool
+	requires_hugepages    *bool
+	hugepages_size        *string
+	spec_overrides        *map[string]interface{}
+	dv_access_modes       *[]string
+	appenddv_access_modes []string
+	dv_volume_mode        *string
+	catalog_scope         *instancesize.CatalogScope
+	sort_order            *int
+	addsort_order         *int
+	enabled               *bool
+	created_by            *string
+	clearedFields         map[string]struct{}
+	done                  bool
+	oldValue              func(context.Context) (*InstanceSize, error)
+	predicates            []predicate.InstanceSize
 }
 
 var _ ent.Mutation = (*InstanceSizeMutation)(nil)
@@ -11343,6 +11346,120 @@ func (m *InstanceSizeMutation) ResetSpecOverrides() {
 	delete(m.clearedFields, instancesize.FieldSpecOverrides)
 }
 
+// SetDvAccessModes sets the "dv_access_modes" field.
+func (m *InstanceSizeMutation) SetDvAccessModes(s []string) {
+	m.dv_access_modes = &s
+	m.appenddv_access_modes = nil
+}
+
+// DvAccessModes returns the value of the "dv_access_modes" field in the mutation.
+func (m *InstanceSizeMutation) DvAccessModes() (r []string, exists bool) {
+	v := m.dv_access_modes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDvAccessModes returns the old "dv_access_modes" field's value of the InstanceSize entity.
+// If the InstanceSize object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InstanceSizeMutation) OldDvAccessModes(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDvAccessModes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDvAccessModes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDvAccessModes: %w", err)
+	}
+	return oldValue.DvAccessModes, nil
+}
+
+// AppendDvAccessModes adds s to the "dv_access_modes" field.
+func (m *InstanceSizeMutation) AppendDvAccessModes(s []string) {
+	m.appenddv_access_modes = append(m.appenddv_access_modes, s...)
+}
+
+// AppendedDvAccessModes returns the list of values that were appended to the "dv_access_modes" field in this mutation.
+func (m *InstanceSizeMutation) AppendedDvAccessModes() ([]string, bool) {
+	if len(m.appenddv_access_modes) == 0 {
+		return nil, false
+	}
+	return m.appenddv_access_modes, true
+}
+
+// ClearDvAccessModes clears the value of the "dv_access_modes" field.
+func (m *InstanceSizeMutation) ClearDvAccessModes() {
+	m.dv_access_modes = nil
+	m.appenddv_access_modes = nil
+	m.clearedFields[instancesize.FieldDvAccessModes] = struct{}{}
+}
+
+// DvAccessModesCleared returns if the "dv_access_modes" field was cleared in this mutation.
+func (m *InstanceSizeMutation) DvAccessModesCleared() bool {
+	_, ok := m.clearedFields[instancesize.FieldDvAccessModes]
+	return ok
+}
+
+// ResetDvAccessModes resets all changes to the "dv_access_modes" field.
+func (m *InstanceSizeMutation) ResetDvAccessModes() {
+	m.dv_access_modes = nil
+	m.appenddv_access_modes = nil
+	delete(m.clearedFields, instancesize.FieldDvAccessModes)
+}
+
+// SetDvVolumeMode sets the "dv_volume_mode" field.
+func (m *InstanceSizeMutation) SetDvVolumeMode(s string) {
+	m.dv_volume_mode = &s
+}
+
+// DvVolumeMode returns the value of the "dv_volume_mode" field in the mutation.
+func (m *InstanceSizeMutation) DvVolumeMode() (r string, exists bool) {
+	v := m.dv_volume_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDvVolumeMode returns the old "dv_volume_mode" field's value of the InstanceSize entity.
+// If the InstanceSize object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InstanceSizeMutation) OldDvVolumeMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDvVolumeMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDvVolumeMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDvVolumeMode: %w", err)
+	}
+	return oldValue.DvVolumeMode, nil
+}
+
+// ClearDvVolumeMode clears the value of the "dv_volume_mode" field.
+func (m *InstanceSizeMutation) ClearDvVolumeMode() {
+	m.dv_volume_mode = nil
+	m.clearedFields[instancesize.FieldDvVolumeMode] = struct{}{}
+}
+
+// DvVolumeModeCleared returns if the "dv_volume_mode" field was cleared in this mutation.
+func (m *InstanceSizeMutation) DvVolumeModeCleared() bool {
+	_, ok := m.clearedFields[instancesize.FieldDvVolumeMode]
+	return ok
+}
+
+// ResetDvVolumeMode resets all changes to the "dv_volume_mode" field.
+func (m *InstanceSizeMutation) ResetDvVolumeMode() {
+	m.dv_volume_mode = nil
+	delete(m.clearedFields, instancesize.FieldDvVolumeMode)
+}
+
 // SetCatalogScope sets the "catalog_scope" field.
 func (m *InstanceSizeMutation) SetCatalogScope(is instancesize.CatalogScope) {
 	m.catalog_scope = &is
@@ -11541,7 +11658,7 @@ func (m *InstanceSizeMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InstanceSizeMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 22)
 	if m.created_at != nil {
 		fields = append(fields, instancesize.FieldCreatedAt)
 	}
@@ -11589,6 +11706,12 @@ func (m *InstanceSizeMutation) Fields() []string {
 	}
 	if m.spec_overrides != nil {
 		fields = append(fields, instancesize.FieldSpecOverrides)
+	}
+	if m.dv_access_modes != nil {
+		fields = append(fields, instancesize.FieldDvAccessModes)
+	}
+	if m.dv_volume_mode != nil {
+		fields = append(fields, instancesize.FieldDvVolumeMode)
 	}
 	if m.catalog_scope != nil {
 		fields = append(fields, instancesize.FieldCatalogScope)
@@ -11642,6 +11765,10 @@ func (m *InstanceSizeMutation) Field(name string) (ent.Value, bool) {
 		return m.HugepagesSize()
 	case instancesize.FieldSpecOverrides:
 		return m.SpecOverrides()
+	case instancesize.FieldDvAccessModes:
+		return m.DvAccessModes()
+	case instancesize.FieldDvVolumeMode:
+		return m.DvVolumeMode()
 	case instancesize.FieldCatalogScope:
 		return m.CatalogScope()
 	case instancesize.FieldSortOrder:
@@ -11691,6 +11818,10 @@ func (m *InstanceSizeMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldHugepagesSize(ctx)
 	case instancesize.FieldSpecOverrides:
 		return m.OldSpecOverrides(ctx)
+	case instancesize.FieldDvAccessModes:
+		return m.OldDvAccessModes(ctx)
+	case instancesize.FieldDvVolumeMode:
+		return m.OldDvVolumeMode(ctx)
 	case instancesize.FieldCatalogScope:
 		return m.OldCatalogScope(ctx)
 	case instancesize.FieldSortOrder:
@@ -11819,6 +11950,20 @@ func (m *InstanceSizeMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSpecOverrides(v)
+		return nil
+	case instancesize.FieldDvAccessModes:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDvAccessModes(v)
+		return nil
+	case instancesize.FieldDvVolumeMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDvVolumeMode(v)
 		return nil
 	case instancesize.FieldCatalogScope:
 		v, ok := value.(instancesize.CatalogScope)
@@ -11974,6 +12119,12 @@ func (m *InstanceSizeMutation) ClearedFields() []string {
 	if m.FieldCleared(instancesize.FieldSpecOverrides) {
 		fields = append(fields, instancesize.FieldSpecOverrides)
 	}
+	if m.FieldCleared(instancesize.FieldDvAccessModes) {
+		fields = append(fields, instancesize.FieldDvAccessModes)
+	}
+	if m.FieldCleared(instancesize.FieldDvVolumeMode) {
+		fields = append(fields, instancesize.FieldDvVolumeMode)
+	}
 	return fields
 }
 
@@ -12008,6 +12159,12 @@ func (m *InstanceSizeMutation) ClearField(name string) error {
 		return nil
 	case instancesize.FieldSpecOverrides:
 		m.ClearSpecOverrides()
+		return nil
+	case instancesize.FieldDvAccessModes:
+		m.ClearDvAccessModes()
+		return nil
+	case instancesize.FieldDvVolumeMode:
+		m.ClearDvVolumeMode()
 		return nil
 	}
 	return fmt.Errorf("unknown InstanceSize nullable field %s", name)
@@ -12064,6 +12221,12 @@ func (m *InstanceSizeMutation) ResetField(name string) error {
 		return nil
 	case instancesize.FieldSpecOverrides:
 		m.ResetSpecOverrides()
+		return nil
+	case instancesize.FieldDvAccessModes:
+		m.ResetDvAccessModes()
+		return nil
+	case instancesize.FieldDvVolumeMode:
+		m.ResetDvVolumeMode()
 		return nil
 	case instancesize.FieldCatalogScope:
 		m.ResetCatalogScope()
@@ -22672,34 +22835,38 @@ func (m *UserMutation) ResetEdge(name string) error {
 // VMMutation represents an operation that mutates the VM nodes in the graph.
 type VMMutation struct {
 	config
-	op                   Op
-	typ                  string
-	id                   *string
-	created_at           *time.Time
-	updated_at           *time.Time
-	name                 *string
-	instance             *string
-	namespace            *string
-	cluster_id           *string
-	status               *vm.Status
-	hostname             *string
-	created_by           *string
-	ticket_id            *string
-	polling_tier         *vm.PollingTier
-	poll_interval_sec    *int
-	addpoll_interval_sec *int
-	last_k8s_rv          *string
-	last_polled_at       *time.Time
-	high_tier_since      *time.Time
-	clearedFields        map[string]struct{}
-	service              *string
-	clearedservice       bool
-	revisions            map[string]struct{}
-	removedrevisions     map[string]struct{}
-	clearedrevisions     bool
-	done                 bool
-	oldValue             func(context.Context) (*VM, error)
-	predicates           []predicate.VM
+	op                             Op
+	typ                            string
+	id                             *string
+	created_at                     *time.Time
+	updated_at                     *time.Time
+	name                           *string
+	instance                       *string
+	namespace                      *string
+	cluster_id                     *string
+	status                         *vm.Status
+	hostname                       *string
+	created_by                     *string
+	ticket_id                      *string
+	root_volume_storage_class      *string
+	root_volume_access_modes       *[]string
+	appendroot_volume_access_modes []string
+	root_volume_volume_mode        *string
+	polling_tier                   *vm.PollingTier
+	poll_interval_sec              *int
+	addpoll_interval_sec           *int
+	last_k8s_rv                    *string
+	last_polled_at                 *time.Time
+	high_tier_since                *time.Time
+	clearedFields                  map[string]struct{}
+	service                        *string
+	clearedservice                 bool
+	revisions                      map[string]struct{}
+	removedrevisions               map[string]struct{}
+	clearedrevisions               bool
+	done                           bool
+	oldValue                       func(context.Context) (*VM, error)
+	predicates                     []predicate.VM
 }
 
 var _ ent.Mutation = (*VMMutation)(nil)
@@ -23205,6 +23372,169 @@ func (m *VMMutation) ResetTicketID() {
 	delete(m.clearedFields, vm.FieldTicketID)
 }
 
+// SetRootVolumeStorageClass sets the "root_volume_storage_class" field.
+func (m *VMMutation) SetRootVolumeStorageClass(s string) {
+	m.root_volume_storage_class = &s
+}
+
+// RootVolumeStorageClass returns the value of the "root_volume_storage_class" field in the mutation.
+func (m *VMMutation) RootVolumeStorageClass() (r string, exists bool) {
+	v := m.root_volume_storage_class
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRootVolumeStorageClass returns the old "root_volume_storage_class" field's value of the VM entity.
+// If the VM object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VMMutation) OldRootVolumeStorageClass(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRootVolumeStorageClass is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRootVolumeStorageClass requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRootVolumeStorageClass: %w", err)
+	}
+	return oldValue.RootVolumeStorageClass, nil
+}
+
+// ClearRootVolumeStorageClass clears the value of the "root_volume_storage_class" field.
+func (m *VMMutation) ClearRootVolumeStorageClass() {
+	m.root_volume_storage_class = nil
+	m.clearedFields[vm.FieldRootVolumeStorageClass] = struct{}{}
+}
+
+// RootVolumeStorageClassCleared returns if the "root_volume_storage_class" field was cleared in this mutation.
+func (m *VMMutation) RootVolumeStorageClassCleared() bool {
+	_, ok := m.clearedFields[vm.FieldRootVolumeStorageClass]
+	return ok
+}
+
+// ResetRootVolumeStorageClass resets all changes to the "root_volume_storage_class" field.
+func (m *VMMutation) ResetRootVolumeStorageClass() {
+	m.root_volume_storage_class = nil
+	delete(m.clearedFields, vm.FieldRootVolumeStorageClass)
+}
+
+// SetRootVolumeAccessModes sets the "root_volume_access_modes" field.
+func (m *VMMutation) SetRootVolumeAccessModes(s []string) {
+	m.root_volume_access_modes = &s
+	m.appendroot_volume_access_modes = nil
+}
+
+// RootVolumeAccessModes returns the value of the "root_volume_access_modes" field in the mutation.
+func (m *VMMutation) RootVolumeAccessModes() (r []string, exists bool) {
+	v := m.root_volume_access_modes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRootVolumeAccessModes returns the old "root_volume_access_modes" field's value of the VM entity.
+// If the VM object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VMMutation) OldRootVolumeAccessModes(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRootVolumeAccessModes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRootVolumeAccessModes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRootVolumeAccessModes: %w", err)
+	}
+	return oldValue.RootVolumeAccessModes, nil
+}
+
+// AppendRootVolumeAccessModes adds s to the "root_volume_access_modes" field.
+func (m *VMMutation) AppendRootVolumeAccessModes(s []string) {
+	m.appendroot_volume_access_modes = append(m.appendroot_volume_access_modes, s...)
+}
+
+// AppendedRootVolumeAccessModes returns the list of values that were appended to the "root_volume_access_modes" field in this mutation.
+func (m *VMMutation) AppendedRootVolumeAccessModes() ([]string, bool) {
+	if len(m.appendroot_volume_access_modes) == 0 {
+		return nil, false
+	}
+	return m.appendroot_volume_access_modes, true
+}
+
+// ClearRootVolumeAccessModes clears the value of the "root_volume_access_modes" field.
+func (m *VMMutation) ClearRootVolumeAccessModes() {
+	m.root_volume_access_modes = nil
+	m.appendroot_volume_access_modes = nil
+	m.clearedFields[vm.FieldRootVolumeAccessModes] = struct{}{}
+}
+
+// RootVolumeAccessModesCleared returns if the "root_volume_access_modes" field was cleared in this mutation.
+func (m *VMMutation) RootVolumeAccessModesCleared() bool {
+	_, ok := m.clearedFields[vm.FieldRootVolumeAccessModes]
+	return ok
+}
+
+// ResetRootVolumeAccessModes resets all changes to the "root_volume_access_modes" field.
+func (m *VMMutation) ResetRootVolumeAccessModes() {
+	m.root_volume_access_modes = nil
+	m.appendroot_volume_access_modes = nil
+	delete(m.clearedFields, vm.FieldRootVolumeAccessModes)
+}
+
+// SetRootVolumeVolumeMode sets the "root_volume_volume_mode" field.
+func (m *VMMutation) SetRootVolumeVolumeMode(s string) {
+	m.root_volume_volume_mode = &s
+}
+
+// RootVolumeVolumeMode returns the value of the "root_volume_volume_mode" field in the mutation.
+func (m *VMMutation) RootVolumeVolumeMode() (r string, exists bool) {
+	v := m.root_volume_volume_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRootVolumeVolumeMode returns the old "root_volume_volume_mode" field's value of the VM entity.
+// If the VM object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VMMutation) OldRootVolumeVolumeMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRootVolumeVolumeMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRootVolumeVolumeMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRootVolumeVolumeMode: %w", err)
+	}
+	return oldValue.RootVolumeVolumeMode, nil
+}
+
+// ClearRootVolumeVolumeMode clears the value of the "root_volume_volume_mode" field.
+func (m *VMMutation) ClearRootVolumeVolumeMode() {
+	m.root_volume_volume_mode = nil
+	m.clearedFields[vm.FieldRootVolumeVolumeMode] = struct{}{}
+}
+
+// RootVolumeVolumeModeCleared returns if the "root_volume_volume_mode" field was cleared in this mutation.
+func (m *VMMutation) RootVolumeVolumeModeCleared() bool {
+	_, ok := m.clearedFields[vm.FieldRootVolumeVolumeMode]
+	return ok
+}
+
+// ResetRootVolumeVolumeMode resets all changes to the "root_volume_volume_mode" field.
+func (m *VMMutation) ResetRootVolumeVolumeMode() {
+	m.root_volume_volume_mode = nil
+	delete(m.clearedFields, vm.FieldRootVolumeVolumeMode)
+}
+
 // SetPollingTier sets the "polling_tier" field.
 func (m *VMMutation) SetPollingTier(vt vm.PollingTier) {
 	m.polling_tier = &vt
@@ -23571,7 +23901,7 @@ func (m *VMMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *VMMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 18)
 	if m.created_at != nil {
 		fields = append(fields, vm.FieldCreatedAt)
 	}
@@ -23601,6 +23931,15 @@ func (m *VMMutation) Fields() []string {
 	}
 	if m.ticket_id != nil {
 		fields = append(fields, vm.FieldTicketID)
+	}
+	if m.root_volume_storage_class != nil {
+		fields = append(fields, vm.FieldRootVolumeStorageClass)
+	}
+	if m.root_volume_access_modes != nil {
+		fields = append(fields, vm.FieldRootVolumeAccessModes)
+	}
+	if m.root_volume_volume_mode != nil {
+		fields = append(fields, vm.FieldRootVolumeVolumeMode)
 	}
 	if m.polling_tier != nil {
 		fields = append(fields, vm.FieldPollingTier)
@@ -23645,6 +23984,12 @@ func (m *VMMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case vm.FieldTicketID:
 		return m.TicketID()
+	case vm.FieldRootVolumeStorageClass:
+		return m.RootVolumeStorageClass()
+	case vm.FieldRootVolumeAccessModes:
+		return m.RootVolumeAccessModes()
+	case vm.FieldRootVolumeVolumeMode:
+		return m.RootVolumeVolumeMode()
 	case vm.FieldPollingTier:
 		return m.PollingTier()
 	case vm.FieldPollIntervalSec:
@@ -23684,6 +24029,12 @@ func (m *VMMutation) OldField(ctx context.Context, name string) (ent.Value, erro
 		return m.OldCreatedBy(ctx)
 	case vm.FieldTicketID:
 		return m.OldTicketID(ctx)
+	case vm.FieldRootVolumeStorageClass:
+		return m.OldRootVolumeStorageClass(ctx)
+	case vm.FieldRootVolumeAccessModes:
+		return m.OldRootVolumeAccessModes(ctx)
+	case vm.FieldRootVolumeVolumeMode:
+		return m.OldRootVolumeVolumeMode(ctx)
 	case vm.FieldPollingTier:
 		return m.OldPollingTier(ctx)
 	case vm.FieldPollIntervalSec:
@@ -23772,6 +24123,27 @@ func (m *VMMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTicketID(v)
+		return nil
+	case vm.FieldRootVolumeStorageClass:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRootVolumeStorageClass(v)
+		return nil
+	case vm.FieldRootVolumeAccessModes:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRootVolumeAccessModes(v)
+		return nil
+	case vm.FieldRootVolumeVolumeMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRootVolumeVolumeMode(v)
 		return nil
 	case vm.FieldPollingTier:
 		v, ok := value.(vm.PollingTier)
@@ -23862,6 +24234,15 @@ func (m *VMMutation) ClearedFields() []string {
 	if m.FieldCleared(vm.FieldTicketID) {
 		fields = append(fields, vm.FieldTicketID)
 	}
+	if m.FieldCleared(vm.FieldRootVolumeStorageClass) {
+		fields = append(fields, vm.FieldRootVolumeStorageClass)
+	}
+	if m.FieldCleared(vm.FieldRootVolumeAccessModes) {
+		fields = append(fields, vm.FieldRootVolumeAccessModes)
+	}
+	if m.FieldCleared(vm.FieldRootVolumeVolumeMode) {
+		fields = append(fields, vm.FieldRootVolumeVolumeMode)
+	}
 	if m.FieldCleared(vm.FieldLastK8sRv) {
 		fields = append(fields, vm.FieldLastK8sRv)
 	}
@@ -23893,6 +24274,15 @@ func (m *VMMutation) ClearField(name string) error {
 		return nil
 	case vm.FieldTicketID:
 		m.ClearTicketID()
+		return nil
+	case vm.FieldRootVolumeStorageClass:
+		m.ClearRootVolumeStorageClass()
+		return nil
+	case vm.FieldRootVolumeAccessModes:
+		m.ClearRootVolumeAccessModes()
+		return nil
+	case vm.FieldRootVolumeVolumeMode:
+		m.ClearRootVolumeVolumeMode()
 		return nil
 	case vm.FieldLastK8sRv:
 		m.ClearLastK8sRv()
@@ -23940,6 +24330,15 @@ func (m *VMMutation) ResetField(name string) error {
 		return nil
 	case vm.FieldTicketID:
 		m.ResetTicketID()
+		return nil
+	case vm.FieldRootVolumeStorageClass:
+		m.ResetRootVolumeStorageClass()
+		return nil
+	case vm.FieldRootVolumeAccessModes:
+		m.ResetRootVolumeAccessModes()
+		return nil
+	case vm.FieldRootVolumeVolumeMode:
+		m.ResetRootVolumeVolumeMode()
 		return nil
 	case vm.FieldPollingTier:
 		m.ResetPollingTier()

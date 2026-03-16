@@ -232,6 +232,8 @@ func (s *Server) ApproveTicket(c *gin.Context, ticketID generated.TicketID) {
 	opts := approval.ApproveOpts{
 		ClusterID:       req.SelectedClusterId,
 		StorageClass:    req.SelectedStorageClass,
+		DVAccessModes:   req.SelectedDvAccessModes,
+		DVVolumeMode:    string(req.SelectedDvVolumeMode),
 		EnableOverride:  req.EnableOverride,
 		CPURequest:      float64(req.CpuRequest),
 		CPULimit:        float64(req.CpuLimit),
@@ -378,6 +380,24 @@ func placementEvaluationToAPI(snapshot map[string]interface{}) *generated.Placem
 	if value, ok := snapshot["effective_storage_class"].(string); ok {
 		result.EffectiveStorageClass = value
 	}
+	if value, ok := snapshot["requested_dv_access_modes"].([]interface{}); ok {
+		result.RequestedDvAccessModes = interfaceSliceToStringSlice(value)
+	}
+	if value, ok := snapshot["effective_dv_access_modes"].([]interface{}); ok {
+		result.EffectiveDvAccessModes = interfaceSliceToStringSlice(value)
+	}
+	if value, ok := snapshot["requested_dv_volume_mode"].(string); ok {
+		result.RequestedDvVolumeMode = generated.PlacementEvaluationRequestedDvVolumeMode(value)
+	}
+	if value, ok := snapshot["effective_dv_volume_mode"].(string); ok {
+		result.EffectiveDvVolumeMode = generated.PlacementEvaluationEffectiveDvVolumeMode(value)
+	}
+	if value, ok := snapshot["root_volume_resolution_state"].(string); ok {
+		result.RootVolumeResolutionState = generated.PlacementEvaluationRootVolumeResolutionState(value)
+	}
+	if value, ok := snapshot["root_volume_resolution_message"].(string); ok {
+		result.RootVolumeResolutionMessage = value
+	}
 	if value, ok := snapshot["eligible"].(bool); ok {
 		result.Eligible = value
 	}
@@ -402,6 +422,27 @@ func placementEvaluationToAPI(snapshot map[string]interface{}) *generated.Placem
 		}
 	}
 	return result
+}
+
+func interfaceSliceToStringSlice(values []interface{}) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, raw := range values {
+		text, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text != "" {
+			out = append(out, text)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func collectApprovalCatalogLookupIDs(eventPayloadMap map[string][]byte) (templateIDs, instanceSizeIDs []string) {

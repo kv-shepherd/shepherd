@@ -212,6 +212,26 @@ func (_c *InstanceSizeCreate) SetSpecOverrides(v map[string]interface{}) *Instan
 	return _c
 }
 
+// SetDvAccessModes sets the "dv_access_modes" field.
+func (_c *InstanceSizeCreate) SetDvAccessModes(v []string) *InstanceSizeCreate {
+	_c.mutation.SetDvAccessModes(v)
+	return _c
+}
+
+// SetDvVolumeMode sets the "dv_volume_mode" field.
+func (_c *InstanceSizeCreate) SetDvVolumeMode(v string) *InstanceSizeCreate {
+	_c.mutation.SetDvVolumeMode(v)
+	return _c
+}
+
+// SetNillableDvVolumeMode sets the "dv_volume_mode" field if the given value is not nil.
+func (_c *InstanceSizeCreate) SetNillableDvVolumeMode(v *string) *InstanceSizeCreate {
+	if v != nil {
+		_c.SetDvVolumeMode(*v)
+	}
+	return _c
+}
+
 // SetCatalogScope sets the "catalog_scope" field.
 func (_c *InstanceSizeCreate) SetCatalogScope(v instancesize.CatalogScope) *InstanceSizeCreate {
 	_c.mutation.SetCatalogScope(v)
@@ -324,6 +344,10 @@ func (_c *InstanceSizeCreate) defaults() {
 	if _, ok := _c.mutation.RequiresHugepages(); !ok {
 		v := instancesize.DefaultRequiresHugepages
 		_c.mutation.SetRequiresHugepages(v)
+	}
+	if _, ok := _c.mutation.DvVolumeMode(); !ok {
+		v := instancesize.DefaultDvVolumeMode
+		_c.mutation.SetDvVolumeMode(v)
 	}
 	if _, ok := _c.mutation.CatalogScope(); !ok {
 		v := instancesize.DefaultCatalogScope
@@ -518,6 +542,14 @@ func (_c *InstanceSizeCreate) createSpec() (*InstanceSize, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.SpecOverrides(); ok {
 		_spec.SetField(instancesize.FieldSpecOverrides, field.TypeJSON, value)
 		_node.SpecOverrides = value
+	}
+	if value, ok := _c.mutation.DvAccessModes(); ok {
+		_spec.SetField(instancesize.FieldDvAccessModes, field.TypeJSON, value)
+		_node.DvAccessModes = value
+	}
+	if value, ok := _c.mutation.DvVolumeMode(); ok {
+		_spec.SetField(instancesize.FieldDvVolumeMode, field.TypeString, value)
+		_node.DvVolumeMode = value
 	}
 	if value, ok := _c.mutation.CatalogScope(); ok {
 		_spec.SetField(instancesize.FieldCatalogScope, field.TypeEnum, value)

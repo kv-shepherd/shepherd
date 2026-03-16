@@ -2,7 +2,9 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
+  useState,
 } from "react";
 import {
   Alert,
@@ -17,26 +19,16 @@ import {
   Space,
   Tooltip,
   Typography,
+  type CollapseProps,
 } from "antd";
 import {
+  DeleteOutlined,
   MinusCircleOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-
-import {
-  HUGEPAGES_PAGE_SIZE_PATH,
-  HUGEPAGES_PRESET_OPTIONS,
-  isValidHugepagesPageSizeValue,
-  normalizeHugepagesPageSizeValue,
-} from "@/lib/hugepages";
-export {
-  HUGEPAGES_PAGE_SIZE_PATH,
-  HUGEPAGES_PRESET_OPTIONS,
-  isValidHugepagesPageSizeValue,
-  normalizeHugepagesPageSizeValue,
-} from "@/lib/hugepages";
+import { resolveSchemaHelpText } from "@/i18n/schemaHelp";
 
 const { Text } = Typography;
 
@@ -57,6 +49,7 @@ export interface MaskField {
 export interface SchemaMask {
   quick_fields: MaskField[];
   advanced_fields?: MaskField[];
+  professional_fields?: MaskField[];
 }
 
 export interface SchemaNode {
@@ -64,6 +57,7 @@ export interface SchemaNode {
   properties?: Record<string, SchemaNode>;
   items?: SchemaNode;
   enum?: (string | number)[];
+  additionalProperties?: SchemaNode | boolean;
   [key: string]: unknown;
 }
 
@@ -77,6 +71,10 @@ export interface DynamicSchemaFormProps {
   /** UI projection — defines which paths to expose and how to label them. */
   mask: SchemaMask;
   disabled?: boolean;
+  /** Spec paths already managed by parent-level form controls and should not reappear in JSON recognition. */
+  recognizedExcludedPaths?: string[];
+  /** Optional i18n scope for schema-backed help translations. */
+  schemaHelpScope?: "instanceSize";
 }
 
 /**
@@ -96,10 +94,17 @@ export interface DynamicSchemaFormHandle {
 
 // ─── Spec Overrides Serialisation ─────────────────────────────────────────────
 
-function pruneSpecTree(value: unknown): unknown {
+function pruneSpecTree(
+  value: unknown,
+  preserveEmptyObjectPaths?: Set<string>,
+  currentPath = "",
+  schemaNode?: SchemaNode,
+): unknown {
   if (Array.isArray(value)) {
     const items = value
-      .map((item) => pruneSpecTree(item))
+      .map((item) =>
+        pruneSpecTree(item, preserveEmptyObjectPaths, currentPath, schemaNode?.items),
+      )
       .filter((item) => item !== undefined);
     return items.length > 0 ? items : undefined;
   }
@@ -107,12 +112,31 @@ function pruneSpecTree(value: unknown): unknown {
   if (value !== null && value !== undefined && typeof value === "object") {
     const result: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      const pruned = pruneSpecTree(child);
+      const childPath = currentPath ? `${currentPath}.${key}` : key;
+      const childSchemaNode =
+        schemaNode?.properties?.[key] &&
+        typeof schemaNode.properties[key] === "object"
+          ? schemaNode.properties[key]
+          : schemaNode?.additionalProperties &&
+              typeof schemaNode.additionalProperties === "object"
+            ? schemaNode.additionalProperties
+            : undefined;
+      const pruned = pruneSpecTree(
+        child,
+        preserveEmptyObjectPaths,
+        childPath,
+        childSchemaNode,
+      );
       if (pruned !== undefined) {
         result[key] = pruned;
       }
     }
-    return Object.keys(result).length > 0 ? result : undefined;
+    if (Object.keys(result).length > 0) {
+      return result;
+    }
+    return preserveEmptyObjectPaths?.has(currentPath) || (schemaNode ? isPresenceObjectNode(schemaNode) : false)
+      ? {}
+      : undefined;
   }
 
   if (typeof value === "string" && value.trim() === "") {
@@ -150,17 +174,463 @@ const resolveSchemaNode = (
   return current;
 };
 
+function parseCommittedValue(value?: string): Record<string, unknown> {
+  if (!value || !value.trim()) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Invalid JSON is handled by the raw editor validator.
+  }
+  return {};
+}
+
+function dedupeMaskFields(fields: MaskField[]): MaskField[] {
+  const seen = new Set<string>();
+  return fields.filter((field) => {
+    if (seen.has(field.path)) {
+      return false;
+    }
+    seen.add(field.path);
+    return true;
+  });
+}
+
+function collectPresentSchemaPaths(
+  value: unknown,
+  node: SchemaNode,
+  currentPath = "",
+): string[] {
+  if (value === undefined || value === null || !node) {
+    return [];
+  }
+
+  if (isPresenceObjectNode(node)) {
+    return currentPath ? [currentPath] : [];
+  }
+
+  if (node.type === "array") {
+    return Array.isArray(value) && currentPath ? [currentPath] : [];
+  }
+
+  if (
+    node.type === "object" &&
+    node.additionalProperties &&
+    typeof node.additionalProperties === "object" &&
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  ) {
+    return currentPath ? [currentPath] : [];
+  }
+
+  if (
+    node.enum ||
+    node.type === "string" ||
+    node.type === "integer" ||
+    node.type === "number" ||
+    node.type === "boolean"
+  ) {
+    return currentPath ? [currentPath] : [];
+  }
+
+  if (
+    (node.type === "object" || node.properties) &&
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  ) {
+    return Object.entries(value as Record<string, unknown>).flatMap(
+      ([key, child]) => {
+        const childNode = node.properties?.[key];
+        if (!childNode) {
+          return [];
+        }
+        const childPath = currentPath ? `${currentPath}.${key}` : key;
+        return collectPresentSchemaPaths(child, childNode, childPath);
+      },
+    );
+  }
+
+  return [];
+}
+
+function humanizeFieldSegment(segment: string): string {
+  const normalized = segment.replace(/_/g, " ");
+  const specialLabels: Record<string, string> = {
+    acpi: "ACPI",
+    apic: "APIC",
+    cpu: "CPU",
+    gpu: "GPU",
+    gpus: "GPUs",
+    hpet: "HPET",
+    io: "I/O",
+    numa: "NUMA",
+    pit: "PIT",
+    rng: "RNG",
+    rtc: "RTC",
+    sriov: "SR-IOV",
+    utc: "UTC",
+    vendorid: "Vendor ID",
+    vpindex: "VPIndex",
+    vsock: "VSOCK",
+  };
+  const key = normalized.toLowerCase();
+  if (specialLabels[key]) {
+    return specialLabels[key];
+  }
+  return normalized
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function buildDetectedFieldLabel(path: string): string {
+  const segments = path.split(".").slice(-2);
+  const compactSegments =
+    segments.length > 1 && segments[0] === segments[1]
+      ? [segments[1]]
+      : segments;
+  return compactSegments.map(humanizeFieldSegment).join(" ");
+}
+
+function buildRecognizedMaskFields(
+  schema: SchemaNode,
+  mask: SchemaMask,
+  committedValue: Record<string, unknown>,
+  recognizedExcludedPaths?: string[],
+): MaskField[] {
+  const maskedPaths = new Set(
+    [
+      ...(mask.quick_fields ?? []),
+      ...(mask.advanced_fields ?? []),
+      ...(mask.professional_fields ?? []),
+    ].map(
+      (field) => field.path,
+    ),
+  );
+  const excludedPaths = new Set(recognizedExcludedPaths ?? []);
+
+  return dedupeMaskFields(
+    collectPresentSchemaPaths(committedValue, schema)
+      .filter((path) => !maskedPaths.has(path) && !excludedPaths.has(path))
+      .map((path) => ({
+        path,
+        display_name: buildDetectedFieldLabel(path),
+      })),
+  );
+}
+
 // ─── Field Renderers ──────────────────────────────────────────────────────────
 
 interface DynamicFieldGroupProps {
   node: SchemaNode;
   namePath: (string | number)[];
   label: string;
-  fieldPath?: string;
   helpText?: string;
   placeholder?: string;
   disabled?: boolean;
 }
+
+const isPresenceObjectNode = (node: SchemaNode): boolean =>
+  node.type === "object" &&
+  !node.items &&
+  !node.enum &&
+  !node.additionalProperties &&
+  Object.keys(node.properties ?? {}).length === 0;
+
+const getScalarMapValueNode = (node: SchemaNode): SchemaNode | null => {
+  if (node.type !== "object") {
+    return null;
+  }
+  if (node.properties && Object.keys(node.properties).length > 0) {
+    return null;
+  }
+  if (!node.additionalProperties || typeof node.additionalProperties !== "object") {
+    return null;
+  }
+  const valueNode = node.additionalProperties as SchemaNode;
+  if (valueNode.enum && Array.isArray(valueNode.enum)) {
+    return valueNode;
+  }
+  if (
+    valueNode.type === "string" ||
+    valueNode.type === "integer" ||
+    valueNode.type === "number" ||
+    valueNode.type === "boolean"
+  ) {
+    return valueNode;
+  }
+  return null;
+};
+
+interface ScalarMapEditorProps {
+  value?: Record<string, unknown>;
+  onChange?: (value?: Record<string, unknown>) => void;
+  valueNode: SchemaNode;
+  disabled?: boolean;
+  testIdBase: string;
+  valuePlaceholder?: string;
+}
+
+interface ScalarMapRow {
+  id: number;
+  keyText: string;
+  value: string | number | boolean | undefined;
+}
+
+interface ScalarMapState {
+  rows: ScalarMapRow[];
+  nextID: number;
+}
+
+interface RawEditorDraft {
+  text: string;
+  sourceValue: string;
+}
+
+function coerceMapValue(
+  rawValue: unknown,
+  valueNode: SchemaNode,
+): string | number | boolean | undefined {
+  if (valueNode.enum && Array.isArray(valueNode.enum)) {
+    return rawValue === undefined || rawValue === null ? undefined : String(rawValue);
+  }
+  if (valueNode.type === "integer" || valueNode.type === "number") {
+    return typeof rawValue === "number"
+      ? rawValue
+      : rawValue === undefined || rawValue === null || rawValue === ""
+        ? undefined
+        : Number(rawValue);
+  }
+  if (valueNode.type === "boolean") {
+    return typeof rawValue === "boolean" ? rawValue : Boolean(rawValue);
+  }
+  return rawValue === undefined || rawValue === null ? "" : String(rawValue);
+}
+
+function buildScalarMapState(
+  value: Record<string, unknown> | undefined,
+  valueNode: SchemaNode,
+  startID = 0,
+): ScalarMapState {
+  let nextID = startID;
+  const rows = Object.entries(value ?? {}).map(([key, rawValue]) => ({
+    id: nextID++,
+    keyText: key,
+    value: coerceMapValue(rawValue, valueNode),
+  }));
+  return { rows, nextID };
+}
+
+function normalizeMapRows(
+  rows: ScalarMapRow[],
+  valueNode: SchemaNode,
+): Record<string, unknown> | undefined {
+  const result: Record<string, unknown> = {};
+
+  for (const row of rows) {
+    const key = row.keyText.trim();
+    if (!key) {
+      continue;
+    }
+
+    if (valueNode.type === "integer" || valueNode.type === "number") {
+      if (typeof row.value !== "number" || Number.isNaN(row.value)) {
+        continue;
+      }
+      result[key] = row.value;
+      continue;
+    }
+
+    if (valueNode.type === "boolean") {
+      if (typeof row.value !== "boolean") {
+        continue;
+      }
+      result[key] = row.value;
+      continue;
+    }
+
+    const valueText = String(row.value ?? "").trim();
+    if (!valueText) {
+      continue;
+    }
+    result[key] = valueText;
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function validateRawEditorText(
+  rawText: string,
+  t: ReturnType<typeof useTranslation>["t"],
+): string | null {
+  if (!rawText.trim()) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawText) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return null;
+    }
+    return t(
+      "dynamic_form.raw_json_object_only",
+      'Spec JSON must be an object rooted at {"spec": ...}.',
+    );
+  } catch {
+    return t(
+      "dynamic_form.raw_json_invalid",
+      "JSON is invalid. Fix the syntax before applying advanced changes.",
+    );
+  }
+}
+
+const ScalarMapEditor: React.FC<ScalarMapEditorProps> = ({
+  value,
+  onChange,
+  valueNode,
+  disabled,
+  testIdBase,
+  valuePlaceholder,
+}) => {
+  const { t } = useTranslation(["admin", "common"]);
+  const committedState = useMemo(
+    () => buildScalarMapState(value, valueNode),
+    [value, valueNode],
+  );
+  const committedKey = useMemo(
+    () => JSON.stringify(value ?? {}),
+    [value],
+  );
+  const [mapDraft, setMapDraft] = useState<{
+    sourceKey: string;
+    rows: ScalarMapRow[];
+    nextID: number;
+  } | null>(null);
+  const activeDraft =
+    mapDraft?.sourceKey === committedKey ? mapDraft : null;
+  const rows = activeDraft?.rows ?? committedState.rows;
+  const nextID = activeDraft?.nextID ?? committedState.nextID;
+
+  const commitRows = useCallback(
+    (nextRows: ScalarMapRow[], nextDraftID = nextID) => {
+      setMapDraft({
+        sourceKey: committedKey,
+        rows: nextRows,
+        nextID: nextDraftID,
+      });
+      onChange?.(normalizeMapRows(nextRows, valueNode));
+    },
+    [committedKey, nextID, onChange, valueNode],
+  );
+
+  const updateRow = useCallback(
+    (rowID: number, patch: Partial<ScalarMapRow>) => {
+      commitRows(
+        rows.map((row) => (row.id === rowID ? { ...row, ...patch } : row)),
+      );
+    },
+    [commitRows, rows],
+  );
+
+  return (
+    <Space direction="vertical" size={8} style={{ width: "100%" }}>
+      {rows.map((row, index) => (
+        <Space
+          key={row.id}
+          align="start"
+          style={{ display: "flex", width: "100%" }}
+        >
+          <Input
+            value={row.keyText}
+            disabled={disabled}
+            placeholder={t("dynamic_form.map_key_placeholder", "Key")}
+            data-testid={`${testIdBase}-key-${index}`}
+            onChange={(event) =>
+              updateRow(row.id, { keyText: event.target.value })
+            }
+          />
+          {valueNode.enum && Array.isArray(valueNode.enum) ? (
+            <Select
+              allowClear
+              value={typeof row.value === "string" ? row.value : undefined}
+              disabled={disabled}
+              placeholder={valuePlaceholder ?? t("dynamic_form.map_value_placeholder", "Value")}
+              data-testid={`${testIdBase}-value-${index}`}
+              style={{ minWidth: 180 }}
+              onChange={(nextValue) => updateRow(row.id, { value: nextValue })}
+              options={valueNode.enum.map((option) => ({
+                label: String(option),
+                value: String(option),
+              }))}
+            />
+          ) : valueNode.type === "integer" || valueNode.type === "number" ? (
+            <InputNumber
+              value={typeof row.value === "number" ? row.value : undefined}
+              disabled={disabled}
+              placeholder={valuePlaceholder}
+              data-testid={`${testIdBase}-value-${index}`}
+              style={{ width: 180 }}
+              onChange={(nextValue) =>
+                updateRow(row.id, {
+                  value: typeof nextValue === "number" ? nextValue : undefined,
+                })
+              }
+            />
+          ) : valueNode.type === "boolean" ? (
+            <Checkbox
+              checked={Boolean(row.value)}
+              disabled={disabled}
+              data-testid={`${testIdBase}-value-${index}`}
+              onChange={(event) =>
+                updateRow(row.id, { value: Boolean(event.target.checked) })
+              }
+            >
+              {t("dynamic_form.map_boolean_value", "Enabled")}
+            </Checkbox>
+          ) : (
+            <Input
+              value={typeof row.value === "string" ? row.value : ""}
+              disabled={disabled}
+              placeholder={valuePlaceholder ?? t("dynamic_form.map_value_placeholder", "Value")}
+              data-testid={`${testIdBase}-value-${index}`}
+              onChange={(event) =>
+                updateRow(row.id, { value: event.target.value })
+              }
+            />
+          )}
+          <Button
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            disabled={disabled}
+            onClick={() => commitRows(rows.filter((item) => item.id !== row.id))}
+          />
+        </Space>
+      ))}
+      <Button
+        type="dashed"
+        onClick={() => {
+          const nextRow = {
+            id: nextID,
+            keyText: "",
+            value: "" as const,
+          };
+          commitRows([...rows, nextRow], nextID + 1);
+        }}
+        block
+        icon={<PlusOutlined />}
+        disabled={disabled}
+      >
+        {t("dynamic_form.add_map_item", "Add entry")}
+      </Button>
+    </Space>
+  );
+};
 
 /**
  * Pure rendering component — renders a single schema node as the appropriate
@@ -178,7 +648,6 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
   node,
   namePath,
   label,
-  fieldPath,
   helpText,
   placeholder,
   disabled,
@@ -236,9 +705,6 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
                           node={subNode}
                           namePath={[field.name, itemKey]}
                           label={itemKey}
-                          fieldPath={
-                            fieldPath ? `${fieldPath}.${itemKey}` : undefined
-                          }
                           placeholder={placeholder}
                           disabled={disabled}
                         />
@@ -271,7 +737,8 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
     );
   }
 
-  if (fieldPath === HUGEPAGES_PAGE_SIZE_PATH) {
+  const scalarMapValueNode = getScalarMapValueNode(node);
+  if (scalarMapValueNode) {
     return (
       <Form.Item
         label={label}
@@ -282,51 +749,39 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
             ? { title: helpText, trigger: ["hover", "click"] }
             : undefined
         }
-        getValueProps={(fieldValue?: string) => ({
-          value: fieldValue ? [fieldValue] : [],
-        })}
-        getValueFromEvent={(nextValue: unknown) => {
-          if (Array.isArray(nextValue)) {
-            const latest = nextValue[nextValue.length - 1];
-            return normalizeHugepagesPageSizeValue(latest);
-          }
-          return normalizeHugepagesPageSizeValue(nextValue);
-        }}
-        rules={[
-          {
-            validator: (_, fieldValue: unknown) => {
-              if (isValidHugepagesPageSizeValue(fieldValue)) {
-                return Promise.resolve();
-              }
-              return Promise.reject(
-                new Error(
-                  t(
-                    "dynamic_form.hugepages_invalid",
-                    "Hugepages must be 2Mi/1Gi, or a custom MB value (e.g. 512).",
-                  ),
-                ),
-              );
-            },
-          },
-        ]}
       >
-        <Select
-          mode="tags"
-          maxCount={1}
-          allowClear
+        <ScalarMapEditor
+          valueNode={scalarMapValueNode}
+          disabled={disabled}
+          testIdBase={`dynamic-form-${namePath.join(".")}`}
+          valuePlaceholder={placeholder}
+        />
+      </Form.Item>
+    );
+  }
+
+  if (isPresenceObjectNode(node)) {
+    return (
+      <Form.Item
+        label={label}
+        name={namePath}
+        style={{ marginBottom: 8 }}
+        tooltip={
+          helpText
+            ? { title: helpText, trigger: ["hover", "click"] }
+            : undefined
+        }
+        getValueProps={(fieldValue?: Record<string, unknown>) => ({
+          checked: fieldValue !== undefined,
+        })}
+        getValueFromEvent={(event: { target?: { checked?: boolean } }) =>
+          event?.target?.checked ? {} : undefined
+        }
+        valuePropName="checked"
+      >
+        <Checkbox
           disabled={disabled}
           data-testid={`dynamic-form-${namePath.join(".")}`}
-          placeholder={
-            placeholder ??
-            t(
-              "dynamic_form.hugepages_placeholder",
-              "Select 2Mi/1Gi or input MB",
-            )
-          }
-          options={HUGEPAGES_PRESET_OPTIONS.map((opt) => ({
-            label: opt,
-            value: opt,
-          }))}
         />
       </Form.Item>
     );
@@ -425,10 +880,87 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
 export const DynamicSchemaForm = React.forwardRef<
   DynamicSchemaFormHandle,
   DynamicSchemaFormProps
->(function DynamicSchemaForm({ value, onChange, schema, mask, disabled }, ref) {
-  const { t } = useTranslation(["admin", "common"]);
+>(function DynamicSchemaForm({
+  value,
+  onChange,
+  schema,
+  mask,
+  disabled,
+  recognizedExcludedPaths,
+  schemaHelpScope = "instanceSize",
+}, ref) {
+  const { t } = useTranslation(["admin", "schema", "common"]);
   const outerForm = Form.useFormInstance();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appliedFieldPathsRef = useRef<string[]>([]);
+  const [rawEditorDraft, setRawEditorDraft] = useState<RawEditorDraft | null>(
+    null,
+  );
+  const [recognizedFields, setRecognizedFields] = useState<MaskField[]>([]);
+  const committedValue = useMemo(() => parseCommittedValue(value), [value]);
+  const committedRawEditorText = value ?? "{}";
+  const activeRawEditorDraft =
+    rawEditorDraft?.sourceValue === committedRawEditorText
+      ? rawEditorDraft
+      : null;
+  const rawEditorText = activeRawEditorDraft?.text ?? committedRawEditorText;
+  const rawEditorError = useMemo(
+    () => validateRawEditorText(rawEditorText, t),
+    [rawEditorText, t],
+  );
+  const quickFields = useMemo(
+    () => dedupeMaskFields(mask?.quick_fields ?? []),
+    [mask?.quick_fields],
+  );
+  const advancedFields = useMemo(
+    () => dedupeMaskFields(mask?.advanced_fields ?? []),
+    [mask?.advanced_fields],
+  );
+  const professionalFields = useMemo(
+    () => dedupeMaskFields(mask?.professional_fields ?? []),
+    [mask?.professional_fields],
+  );
+
+  const managedFields = useMemo(
+    () =>
+      dedupeMaskFields([
+        ...quickFields,
+        ...advancedFields,
+        ...professionalFields,
+        ...recognizedFields,
+      ]),
+    [advancedFields, professionalFields, quickFields, recognizedFields],
+  );
+
+  const applyParsedValueToForm = useCallback(
+    (parsed: Record<string, unknown>, nextManagedFields: MaskField[]) => {
+      if (!outerForm) {
+        return;
+      }
+
+      const clearPaths = Array.from(
+        new Set([
+          ...appliedFieldPathsRef.current,
+          ...nextManagedFields.map((field) => field.path),
+        ]),
+      );
+
+      if (clearPaths.length > 0) {
+        outerForm.setFields(
+          clearPaths.map((path) => ({
+            name: path.split("."),
+            value: undefined,
+            errors: [],
+            warnings: [],
+          })),
+        );
+      }
+
+      outerForm.setFieldsValue(parsed);
+      appliedFieldPathsRef.current = nextManagedFields.map((field) => field.path);
+    },
+    [outerForm],
+  );
 
   // Initialise outer form fields from the JSON string value on first render
   // or when the modal opens with a different record.
@@ -436,18 +968,15 @@ export const DynamicSchemaForm = React.forwardRef<
   // The guard check for !schema || !mask happens after all hooks.
   useEffect(() => {
     if (!outerForm || !schema || !mask) return;
-    if (!value) {
-      return;
-    }
-    try {
-      const parsed = JSON.parse(value) as Record<string, unknown>;
-      // setFieldsValue merges — it does not reset unrelated fields.
-      outerForm.setFieldsValue(parsed);
-    } catch {
-      // Malformed stored value — log and continue with empty fields.
-      console.warn("DynamicSchemaForm: failed to parse stored value:", value);
-    }
-  }, [mask, outerForm, schema, value]);
+    applyParsedValueToForm(committedValue, managedFields);
+  }, [
+    applyParsedValueToForm,
+    committedValue,
+    managedFields,
+    mask,
+    outerForm,
+    schema,
+  ]);
 
   // Sync outer Form values back to the JSON string.
   // Called imperatively via ref.sync() — invoked by the parent Form's
@@ -472,15 +1001,75 @@ export const DynamicSchemaForm = React.forwardRef<
       for (const k of specKeys) {
         if (k in allValues) nestedSpecValues[k] = allValues[k];
       }
-      const prunedSpecOverrides = pruneSpecTree(nestedSpecValues);
+      const presenceObjectPaths = new Set(
+        managedFields
+          .filter((field) => {
+            const node = resolveSchemaNode(schema, field.path);
+            return node ? isPresenceObjectNode(node) : false;
+          })
+          .map((field) => field.path),
+      );
+      const prunedSpecOverrides = pruneSpecTree(
+        nestedSpecValues,
+        presenceObjectPaths,
+        "",
+        schema,
+      );
       onChange(JSON.stringify(prunedSpecOverrides ?? {}, null, 2));
     }, 300);
-  }, [outerForm, onChange, schema]);
+  }, [managedFields, onChange, outerForm, schema]);
 
   // Expose sync() imperatively so the parent Form's onValuesChange can call it.
   // This is the Ant Design recommended pattern: side effects in event handlers,
   // not in render. ref.sync() is called from outside; no render-phase side effects.
   useImperativeHandle(ref, () => ({ sync: syncToParent }), [syncToParent]);
+
+  const handleRawEditorChange = (nextText: string) => {
+    setRawEditorDraft({
+      text: nextText,
+      sourceValue: committedRawEditorText,
+    });
+
+    if (!outerForm || !schema || !mask || !onChange) {
+      return;
+    }
+
+    if (!nextText.trim()) {
+      setRecognizedFields([]);
+      applyParsedValueToForm({}, managedFields);
+      onChange("{}");
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(nextText) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return;
+      }
+
+      const nextRecognizedFields = buildRecognizedMaskFields(
+        schema,
+        mask,
+        parsed as Record<string, unknown>,
+        recognizedExcludedPaths,
+      );
+      const nextManagedFields = dedupeMaskFields([
+        ...quickFields,
+        ...advancedFields,
+        ...professionalFields,
+        ...nextRecognizedFields,
+      ]);
+
+      setRecognizedFields(nextRecognizedFields);
+      applyParsedValueToForm(
+        parsed as Record<string, unknown>,
+        nextManagedFields,
+      );
+      onChange(nextText);
+    } catch {
+      return;
+    }
+  };
 
   // Guard: render a hard error if required props are missing.
   // This is a developer error — schema and mask must always be provided.
@@ -524,9 +1113,17 @@ export const DynamicSchemaForm = React.forwardRef<
       const label = field.display_name_key
         ? t(field.display_name_key, field.display_name ?? field.path)
         : (field.display_name ?? field.path);
+      const schemaDescription =
+        typeof node.description === "string" ? node.description : undefined;
       const helpText = field.help_key
         ? t(field.help_key, field.help_text ?? "")
-        : field.help_text;
+        : (field.help_text ??
+          resolveSchemaHelpText(
+            t,
+            schemaHelpScope,
+            field.path,
+            schemaDescription,
+          ));
       const placeholder = field.placeholder_key
         ? t(field.placeholder_key, field.placeholder ?? "")
         : field.placeholder;
@@ -536,7 +1133,6 @@ export const DynamicSchemaForm = React.forwardRef<
           node={node}
           namePath={namePath}
           label={label}
-          fieldPath={field.path}
           helpText={helpText}
           placeholder={placeholder}
           disabled={disabled}
@@ -544,6 +1140,81 @@ export const DynamicSchemaForm = React.forwardRef<
       );
     });
   };
+
+  const collapseItems: NonNullable<CollapseProps["items"]> = [];
+  if (advancedFields.length > 0) {
+    collapseItems.push({
+      key: "advanced",
+      label: t("dynamic_form.advanced_settings", "Advanced Features"),
+      children: renderMaskElements(advancedFields),
+      forceRender: true,
+    });
+  }
+  if (professionalFields.length > 0) {
+    collapseItems.push({
+      key: "professional",
+      label: t("dynamic_form.professional_features", "Professional Features"),
+      children: renderMaskElements(professionalFields),
+      forceRender: true,
+    });
+  }
+  collapseItems.push({
+    key: "json-recognition",
+    label: t("dynamic_form.supplemental_fields", "JSON Recognition"),
+    forceRender: true,
+    children: (
+      <Space direction="vertical" size={8} style={{ width: "100%" }}>
+        <Text type="secondary">
+          {t(
+            "dynamic_form.supplemental_fields_help",
+            "Fields outside the mask can be recognized here after you provide custom JSON in the raw editor.",
+          )}
+        </Text>
+        {recognizedFields.length > 0 ? (
+          renderMaskElements(recognizedFields)
+        ) : (
+          <Alert
+            type="info"
+            showIcon
+            message={t(
+              "dynamic_form.supplemental_fields_empty",
+              "No recognized fields yet. This section is used only for custom JSON recognition.",
+            )}
+          />
+        )}
+      </Space>
+    ),
+  });
+  collapseItems.push({
+    key: "raw-json",
+    label: t("dynamic_form.raw_json", "Raw KubeVirt JSON"),
+    forceRender: true,
+    children: (
+      <Space direction="vertical" size={8} style={{ width: "100%" }}>
+        <Text type="secondary">
+          {t(
+            "dynamic_form.raw_json_help",
+            "This editor covers raw spec overrides only. When you provide custom JSON here, fields outside the mask can be recognized into the JSON Recognition section.",
+          )}
+        </Text>
+        {rawEditorError ? (
+          <Alert type="warning" showIcon message={rawEditorError} />
+        ) : null}
+        <Input.TextArea
+          value={rawEditorText}
+          onChange={(event) => handleRawEditorChange(event.target.value)}
+          autoSize={{ minRows: 8, maxRows: 18 }}
+          disabled={disabled}
+          data-testid="dynamic-form-raw-json"
+          style={{ fontFamily: "monospace", fontSize: 12 }}
+          placeholder={t(
+            "dynamic_form.raw_json_placeholder",
+            '{\n  "spec": {\n    "template": {\n      "spec": {}\n    }\n  }\n}',
+          )}
+        />
+      </Space>
+    ),
+  });
 
   return (
     <Card
@@ -558,25 +1229,16 @@ export const DynamicSchemaForm = React.forwardRef<
        *   - shouldUpdate: conditional rendering only
        *   - onValuesChange: data synchronization (side effects)
        */}
-      {mask.quick_fields && mask.quick_fields.length > 0 && (
+      {quickFields.length > 0 && (
         <div className="quick-fields-section">
-          {renderMaskElements(mask.quick_fields)}
+          {renderMaskElements(quickFields)}
         </div>
       )}
 
-      {mask.advanced_fields && mask.advanced_fields.length > 0 && (
+      {collapseItems.length > 0 && (
         <Collapse
           ghost
-          items={[
-            {
-              key: "advanced",
-              label: t("dynamic_form.advanced_settings", "Advanced Settings"),
-              children: renderMaskElements(mask.advanced_fields),
-              // Advanced spec fields must mount eagerly so existing values are
-              // available when the edit modal opens, even before the panel is expanded.
-              forceRender: true,
-            },
-          ]}
+          items={collapseItems}
           style={{ marginTop: 16 }}
         />
       )}
