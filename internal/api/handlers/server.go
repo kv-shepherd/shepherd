@@ -83,11 +83,6 @@ func NewServer(deps ServerDeps) *Server {
 			replay,
 		)
 	}
-	approvalReqs := deps.ApprovalReqs
-	if approvalReqs == nil && deps.EntClient != nil {
-		approvalReqs = service.NewApprovalRequirementService(deps.EntClient)
-	}
-
 	return &Server{
 		client:               deps.EntClient,
 		pool:                 deps.Pool,
@@ -95,7 +90,7 @@ func NewServer(deps ServerDeps) *Server {
 		audit:                deps.Audit,
 		vmService:            deps.VMService,
 		clusterPolicy:        deps.ClusterPolicy,
-		approvalReqs:         approvalReqs,
+		approvalReqs:         deps.ApprovalReqs,
 		vncTokens:            vncTokens,
 		createVMUC:           deps.CreateVMUC,
 		deleteVMUC:           deps.DeleteVMUC,
