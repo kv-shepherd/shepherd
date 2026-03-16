@@ -158,6 +158,9 @@ Define bootstrapping behavior for schema-driven platform setup and secure first 
 │  │          display_name: "GPU Devices"                                                     │ │
 │  │        - path: "spec.template.spec.domain.memory.hugepages.pageSize"                     │ │
 │  │          display_name: "Hugepages Size"                                                  │ │
+│  │      professional_fields:                                                                │ │
+│  │        - path: "spec.template.spec.domain.features.hyperv.relaxed.enabled"               │ │
+│  │          display_name: "Hyper-V Relaxed"                                                 │ │
 │  │                                                                                          │ │
 │  │    👉 Mask references Schema paths only; field types and options come from Schema       │ │
 │  │                                                                                          │ │
@@ -952,7 +955,7 @@ external systems are integrated as provider plugins without changing approval st
 │  │  - `cdi_image_import` persistent root disk imported by CDI                               │
 │  │  - `cdi_pvc_clone` persistent root disk cloned from source PVC via CDI                   │
 │  │  - cloud-init config (admin customizable)                                                │
-│  │  - field visibility control (quick_fields / advanced_fields)                             │
+│  │  - field visibility control (quick_fields / advanced_fields / professional_fields)       │
 │  │                                                                                          │
 │  │  💡 Hardware capability requirements (GPU/SR-IOV/Hugepages) moved to InstanceSize         │
 │  │  💡 Direct existing-PVC boot is not a supported product mode                              │
