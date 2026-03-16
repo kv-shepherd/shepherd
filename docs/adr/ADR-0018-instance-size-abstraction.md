@@ -2331,6 +2331,17 @@ RUNNING/STOPPED → DELETING → DELETED (terminal)
 > - Schema acquisition: Graceful degradation (ADR-0023)
 > - Validation result: Strict pass/fail, no silent degradation (ADR-0018)
 
+### ADR-0046: Schema Mask Field Visibility Tiers (2026-03-13)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §5 Template Layered Design / Template field visibility control | **AMENDED** | `SchemaMask` formally adds optional `professional_fields` as a third UI-only visibility tier alongside `quick_fields` and `advanced_fields`. | [ADR-0046](./ADR-0046-schema-mask-field-visibility-tiers.md) |
+
+> **Implementation Guidance**:
+> - Treat `professional_fields` mask paths with the same validation and audit coverage as `quick_fields` and `advanced_fields`.
+> - `professional_fields` remains opt-in UI exposure only; it must not introduce separate authorization, scheduling, or provisioning semantics.
+> - `mask.quick_fields` stays required in API responses even when empty.
+
 ---
 
 _End of ADR-0018_

@@ -2384,3 +2384,14 @@ DELETE /api/v1/systems/{id}?confirm_name=shop
 > - Core auth-provider runtime remains plugin-standard and provider-agnostic.
 > - Frontend provider type options must come from discovery API, not hardcoded OIDC/LDAP arrays.
 > - CI must keep enforcing this boundary using dedicated plugin-boundary checks.
+
+### ADR-0046: Schema Mask Field Visibility Tiers (2026-03-13)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §5 Template Layered Design (`quick_fields`, `advanced_fields`) | **AMENDED** | Field visibility now has three UI-only tiers: `quick_fields`, `advanced_fields`, and optional `professional_fields` for rare/expert-only paths. | [ADR-0046](./ADR-0046-schema-mask-field-visibility-tiers.md) |
+
+> **Implementation Guidance**:
+> - `professional_fields` is a presentation tier only; it must not change authorization, validation, approval, or runtime behavior.
+> - Admin UI must keep `professional_fields` hidden by default and require explicit opt-in before exposing expert-only paths.
+> - `mask.quick_fields` remains the required array in schema responses; `advanced_fields` and `professional_fields` stay optional mask lists.
