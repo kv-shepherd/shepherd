@@ -40,7 +40,9 @@ describe('templatePresets', () => {
     it('exposes curated and official preset groups for catalog-style picking', () => {
         const groups = getTemplatePresetGroups();
         expect(groups.map((group) => group.sourceType)).toEqual(['official', 'curated']);
-        expect(groups[0]?.items.some((item) => item.key === 'official-fedora-eval')).toBe(true);
+        expect(groups[0]?.scopeGroups.map((group) => group.scope)).toEqual(['test']);
+        expect(groups[1]?.scopeGroups.map((group) => group.scope)).toEqual(['test', 'prod']);
+        expect(groups[0]?.scopeGroups[0]?.items.some((item) => item.key === 'official-fedora-eval')).toBe(true);
     });
 
     it('uses CDI image import for official starter presets', () => {

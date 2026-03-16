@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import {
     Alert,
     Button,
@@ -19,7 +19,7 @@ import {
     Tooltip,
     Typography,
 } from 'antd';
-import type { InputRef } from 'antd';
+import type { FormInstance, InputRef } from 'antd';
 import type { ColumnsType, FilterDropdownProps } from 'antd/es/table/interface';
 import {
     DeleteOutlined,
@@ -32,10 +32,91 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { useAdminTemplatesController } from '../hooks/useAdminTemplatesController';
+import {
+    buildTemplatePresetValues,
+    getTemplateCloudInitExample,
+    getTemplateImageURLSuggestions,
+    getTemplateOSVersionSuggestions,
+    getTemplatePresetGroups,
+    getTemplatePVCNameSuggestions,
+    getTemplatePVCNamespaceSuggestions,
+    TEMPLATE_OS_FAMILY_OPTIONS,
+    type TemplatePresetKey,
+} from '../templatePresets';
 import { OS_COLOR_MAP, type Template } from '../types';
 import { getTemplateRequestFlowStatus } from '../requestFlow';
 
 const { Title, Text } = Typography;
+
+function SuggestedValueInput({
+    value,
+    onChange,
+    options,
+    selectPlaceholder,
+    inputPlaceholder,
+    customToggleLabel,
+    suggestedToggleLabel,
+    emptyHint,
+    noSuggestionsHint,
+}: {
+    value?: string;
+    onChange?: (nextValue?: string) => void;
+    options: string[];
+    selectPlaceholder: string;
+    inputPlaceholder: string;
+    customToggleLabel: string;
+    suggestedToggleLabel: string;
+    emptyHint: string;
+    noSuggestionsHint: string;
+}) {
+    const [forceCustom, setForceCustom] = useState(false);
+    const hasSuggestions = options.length > 0;
+    const [firstOption] = options;
+    const matchesSuggestion = typeof value === 'string' && options.includes(value);
+    const useCustomInput =
+        forceCustom || !hasSuggestions || (typeof value === 'string' && value.trim() !== '' && !matchesSuggestion);
+
+    return (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            <Space.Compact style={{ width: '100%' }}>
+                {useCustomInput ? (
+                    <Input
+                        value={value}
+                        placeholder={inputPlaceholder}
+                        onChange={(event) => onChange?.(event.target.value)}
+                    />
+                ) : (
+                    <Select
+                        showSearch
+                        allowClear
+                        value={value}
+                        placeholder={selectPlaceholder}
+                        options={options.map((option) => ({ label: option, value: option }))}
+                        optionFilterProp="label"
+                        onChange={(nextValue) => onChange?.(nextValue)}
+                    />
+                )}
+                {hasSuggestions ? (
+                    <Button
+                        onClick={() => {
+                            if (useCustomInput) {
+                                setForceCustom(false);
+                                onChange?.(matchesSuggestion ? value : firstOption);
+                                return;
+                            }
+                            setForceCustom(true);
+                        }}
+                    >
+                        {useCustomInput ? suggestedToggleLabel : customToggleLabel}
+                    </Button>
+                ) : null}
+            </Space.Compact>
+            <Text type="secondary">
+                {hasSuggestions ? emptyHint : noSuggestionsHint}
+            </Text>
+        </Space>
+    );
+}
 
 function ExperimentalSourceGate({
     title,
@@ -60,6 +141,87 @@ function ExperimentalSourceGate({
                     {buttonLabel}
                 </Button>
             }
+        />
+    );
+}
+
+function applyTemplatePreset(
+    form: FormInstance,
+    presetKey: TemplatePresetKey,
+    enableExperimentalSources?: () => void,
+) {
+    const values = buildTemplatePresetValues(presetKey);
+    if (values.source_type === 'containerdisk') {
+        enableExperimentalSources?.();
+    }
+    form.setFieldsValue({
+        image_url: undefined,
+        pvc_name: undefined,
+        pvc_namespace: undefined,
+        ...values,
+    });
+}
+
+function TemplatePresetPicker({
+    t,
+    form,
+    enableExperimentalSources,
+}: {
+    t: ReturnType<typeof useTranslation>['t'];
+    form: FormInstance;
+    enableExperimentalSources?: () => void;
+}) {
+    const groups = getTemplatePresetGroups();
+
+    return (
+        <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={t('templates.preset_title', 'Preset Catalog')}
+            description={(
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Text type="secondary">
+                        {t(
+                            'templates.preset_description',
+                            'Start with the closest preset, then fine-tune only the differences. Presets fill the image source, catalog scope, operating system, and cloud-init example together.'
+                        )}
+                    </Text>
+                    {groups.map((group) => (
+                        <Space key={group.sourceType} direction="vertical" size={6} style={{ width: '100%' }}>
+                            <Space size={8} wrap>
+                                <Text strong>{t(group.titleKey)}</Text>
+                                <Text type="secondary">{t(group.descriptionKey)}</Text>
+                            </Space>
+                            {group.scopeGroups.map((scopeGroup) => (
+                                <Space
+                                    key={`${group.sourceType}-${scopeGroup.scope}`}
+                                    direction="vertical"
+                                    size={4}
+                                    style={{ width: '100%' }}
+                                >
+                                    <Text type="secondary">{t(scopeGroup.titleKey)}</Text>
+                                    <Space wrap>
+                                        {scopeGroup.items.map((preset) => (
+                                            <Button
+                                                key={preset.key}
+                                                size="small"
+                                                onClick={() => applyTemplatePreset(
+                                                    form,
+                                                    preset.key as TemplatePresetKey,
+                                                    enableExperimentalSources,
+                                                )}
+                                            >
+                                                {t(preset.labelKey)}
+                                            </Button>
+                                        ))}
+                                    </Space>
+                                </Space>
+                            ))}
+                        </Space>
+                    ))}
+                </Space>
+            )}
         />
     );
 }
@@ -406,6 +568,11 @@ export function AdminTemplatesContent() {
                 data-testid="template-create-modal"
             >
                 <Form form={templates.createForm} layout="vertical" preserve={false}>
+                    <TemplatePresetPicker
+                        t={t}
+                        form={templates.createForm}
+                        enableExperimentalSources={templates.enableCreateExperimentalSources}
+                    />
                     <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
                         <Input placeholder="centos7-standard" />
                     </Form.Item>
@@ -413,10 +580,38 @@ export function AdminTemplatesContent() {
                         <Input />
                     </Form.Item>
                     <Form.Item name="os_family" label={t('templates.os_family')}>
-                        <Input placeholder={t('templates.os_family_placeholder')} />
+                        <Select
+                            placeholder={t('templates.os_family_placeholder')}
+                            options={TEMPLATE_OS_FAMILY_OPTIONS.map((option) => ({
+                                label: t(option.labelKey),
+                                value: option.value,
+                            }))}
+                        />
                     </Form.Item>
-                    <Form.Item name="os_version" label={t('templates.os_version')}>
-                        <Input placeholder={t('templates.os_version_placeholder')} />
+                    <Form.Item noStyle shouldUpdate={(prev, cur) => prev.os_family !== cur.os_family}>
+                        {({ getFieldValue }) => (
+                            <Form.Item
+                                name="os_version"
+                                label={t('templates.os_version')}
+                                extra={t('templates.os_version_help', 'Prefer a suggested version first. Switch to custom input only when you need a version outside the preset list.')}
+                            >
+                                <SuggestedValueInput
+                                    options={getTemplateOSVersionSuggestions(getFieldValue('os_family'))}
+                                    selectPlaceholder={t('templates.os_version_placeholder')}
+                                    inputPlaceholder={t('templates.os_version_placeholder')}
+                                    customToggleLabel={t('templates.use_custom_value', 'Custom')}
+                                    suggestedToggleLabel={t('templates.use_suggested_value', 'Use suggested value')}
+                                    emptyHint={t(
+                                        'templates.select_or_customize_hint',
+                                        'Prefer a suggested value. Switch to custom input only when the preset list does not cover your case.'
+                                    )}
+                                    noSuggestionsHint={t(
+                                        'templates.no_suggestions_hint',
+                                        'No suggested values are available for this field yet. Enter a custom value directly.'
+                                    )}
+                                />
+                            </Form.Item>
+                        )}
                     </Form.Item>
                     <Form.Item name="description" label={t('common:table.description')}>
                         <Input.TextArea rows={3} />
@@ -494,20 +689,66 @@ export function AdminTemplatesContent() {
                                         rules={[{ required: true, message: t('templates.pvc_namespace_required') }]}
                                         extra={t('templates.pvc_namespace_help')}
                                     >
-                                        <Input placeholder="default" />
+                                        <SuggestedValueInput
+                                            options={getTemplatePVCNamespaceSuggestions()}
+                                            selectPlaceholder="vm-muban"
+                                            inputPlaceholder="vm-muban"
+                                            customToggleLabel={t('templates.use_custom_value', 'Custom')}
+                                            suggestedToggleLabel={t('templates.use_suggested_value', 'Use suggested value')}
+                                            emptyHint={t(
+                                                'templates.select_or_customize_hint',
+                                                'Prefer a suggested value. Switch to custom input only when the preset list does not cover your case.'
+                                            )}
+                                            noSuggestionsHint={t(
+                                                'templates.no_suggestions_hint',
+                                                'No suggested values are available for this field yet. Enter a custom value directly.'
+                                            )}
+                                        />
                                     </Form.Item>
-                                    <Form.Item
-                                        name="pvc_name"
-                                        label={t('templates.pvc_name')}
-                                        rules={[{ required: true, message: t('templates.pvc_name_required') }]}
-                                        extra={t('templates.pvc_name_help')}
-                                    >
-                                        <Input placeholder="centos7-base-disk" />
+                                    <Form.Item noStyle shouldUpdate={(prev, cur) => prev.os_family !== cur.os_family}>
+                                        {({ getFieldValue }) => (
+                                            <Form.Item
+                                                name="pvc_name"
+                                                label={t('templates.pvc_name')}
+                                                rules={[{ required: true, message: t('templates.pvc_name_required') }]}
+                                                extra={t('templates.pvc_name_help')}
+                                            >
+                                                <SuggestedValueInput
+                                                    options={getTemplatePVCNameSuggestions(getFieldValue('os_family'))}
+                                                    selectPlaceholder="openeuler2203-image"
+                                                    inputPlaceholder="openeuler2203-image"
+                                                    customToggleLabel={t('templates.use_custom_value', 'Custom')}
+                                                    suggestedToggleLabel={t('templates.use_suggested_value', 'Use suggested value')}
+                                                    emptyHint={t(
+                                                        'templates.select_or_customize_hint',
+                                                        'Prefer a suggested value. Switch to custom input only when the preset list does not cover your case.'
+                                                    )}
+                                                    noSuggestionsHint={t(
+                                                        'templates.no_suggestions_hint',
+                                                        'No suggested values are available for this field yet. Enter a custom value directly.'
+                                                    )}
+                                                />
+                                            </Form.Item>
+                                        )}
                                     </Form.Item>
                                 </>
                             ) : (
                                 <Form.Item name="image_url" label={t('templates.image_url')} rules={[{ required: true, message: t('templates.image_url_required') }]}>
-                                    <Input placeholder="docker.io/kubevirt/centos:7" />
+                                    <SuggestedValueInput
+                                        options={getTemplateImageURLSuggestions(getFieldValue('os_family'))}
+                                        selectPlaceholder="docker://quay.io/containerdisks/ubuntu:22.04"
+                                        inputPlaceholder="docker://quay.io/containerdisks/ubuntu:22.04"
+                                        customToggleLabel={t('templates.use_custom_value', 'Custom')}
+                                        suggestedToggleLabel={t('templates.use_suggested_value', 'Use suggested value')}
+                                        emptyHint={t(
+                                            'templates.select_or_customize_hint',
+                                            'Prefer a suggested value. Switch to custom input only when the preset list does not cover your case.'
+                                        )}
+                                        noSuggestionsHint={t(
+                                            'templates.no_suggestions_hint',
+                                            'No suggested values are available for this field yet. Enter a custom value directly.'
+                                        )}
+                                    />
                                 </Form.Item>
                             )
                         }
@@ -515,6 +756,23 @@ export function AdminTemplatesContent() {
 
                     {/* cloud-init config — master-flow Step 3: YAML text, NOT JSON spec */}
                     <Divider orientation="left" plain>{t('templates.cloud_init')}</Divider>
+                    <Space wrap style={{ marginBottom: 8 }}>
+                        <Text type="secondary">
+                            {t('templates.cloud_init_example_hint', 'Insert an example first, then edit it to fit the target system.')}
+                        </Text>
+                        <Button
+                            size="small"
+                            onClick={() => templates.createForm.setFieldValue('cloud_init', getTemplateCloudInitExample('linux'))}
+                        >
+                            {t('templates.cloud_init_example_linux', 'Linux example')}
+                        </Button>
+                        <Button
+                            size="small"
+                            onClick={() => templates.createForm.setFieldValue('cloud_init', getTemplateCloudInitExample('windows'))}
+                        >
+                            {t('templates.cloud_init_example_windows', 'Windows example')}
+                        </Button>
+                    </Space>
                     <Form.Item
                         name="cloud_init"
                         extra={t('templates.cloud_init_help', 'YAML cloud-init configuration. Provides one-time password and initial OS setup.')}
@@ -544,14 +802,47 @@ export function AdminTemplatesContent() {
                 data-testid="template-edit-modal"
             >
                 <Form form={templates.editForm} layout="vertical" preserve={false}>
+                    <TemplatePresetPicker
+                        t={t}
+                        form={templates.editForm}
+                        enableExperimentalSources={templates.enableEditExperimentalSources}
+                    />
                     <Form.Item name="display_name" label={t('common:table.display_name')}>
                         <Input />
                     </Form.Item>
                     <Form.Item name="os_family" label={t('templates.os_family')}>
-                        <Input />
+                        <Select
+                            placeholder={t('templates.os_family_placeholder')}
+                            options={TEMPLATE_OS_FAMILY_OPTIONS.map((option) => ({
+                                label: t(option.labelKey),
+                                value: option.value,
+                            }))}
+                        />
                     </Form.Item>
-                    <Form.Item name="os_version" label={t('templates.os_version')}>
-                        <Input />
+                    <Form.Item noStyle shouldUpdate={(prev, cur) => prev.os_family !== cur.os_family}>
+                        {({ getFieldValue }) => (
+                            <Form.Item
+                                name="os_version"
+                                label={t('templates.os_version')}
+                                extra={t('templates.os_version_help', 'Prefer a suggested version first. Switch to custom input only when you need a version outside the preset list.')}
+                            >
+                                <SuggestedValueInput
+                                    options={getTemplateOSVersionSuggestions(getFieldValue('os_family'))}
+                                    selectPlaceholder={t('templates.os_version_placeholder')}
+                                    inputPlaceholder={t('templates.os_version_placeholder')}
+                                    customToggleLabel={t('templates.use_custom_value', 'Custom')}
+                                    suggestedToggleLabel={t('templates.use_suggested_value', 'Use suggested value')}
+                                    emptyHint={t(
+                                        'templates.select_or_customize_hint',
+                                        'Prefer a suggested value. Switch to custom input only when the preset list does not cover your case.'
+                                    )}
+                                    noSuggestionsHint={t(
+                                        'templates.no_suggestions_hint',
+                                        'No suggested values are available for this field yet. Enter a custom value directly.'
+                                    )}
+                                />
+                            </Form.Item>
+                        )}
                     </Form.Item>
                     <Form.Item name="description" label={t('common:table.description')}>
                         <Input.TextArea rows={3} />
@@ -628,15 +919,47 @@ export function AdminTemplatesContent() {
                                         rules={[{ required: true, message: t('templates.pvc_namespace_required') }]}
                                         extra={t('templates.pvc_namespace_help')}
                                     >
-                                        <Input placeholder="default" />
+                                        <SuggestedValueInput
+                                            options={getTemplatePVCNamespaceSuggestions()}
+                                            selectPlaceholder="vm-muban"
+                                            inputPlaceholder="vm-muban"
+                                            customToggleLabel={t('templates.use_custom_value', 'Custom')}
+                                            suggestedToggleLabel={t('templates.use_suggested_value', 'Use suggested value')}
+                                            emptyHint={t(
+                                                'templates.select_or_customize_hint',
+                                                'Prefer a suggested value. Switch to custom input only when the preset list does not cover your case.'
+                                            )}
+                                            noSuggestionsHint={t(
+                                                'templates.no_suggestions_hint',
+                                                'No suggested values are available for this field yet. Enter a custom value directly.'
+                                            )}
+                                        />
                                     </Form.Item>
-                                    <Form.Item
-                                        name="pvc_name"
-                                        label={t('templates.pvc_name')}
-                                        rules={[{ required: true, message: t('templates.pvc_name_required') }]}
-                                        extra={t('templates.pvc_name_help')}
-                                    >
-                                        <Input placeholder="centos7-base-disk" />
+                                    <Form.Item noStyle shouldUpdate={(prev, cur) => prev.os_family !== cur.os_family}>
+                                        {({ getFieldValue }) => (
+                                            <Form.Item
+                                                name="pvc_name"
+                                                label={t('templates.pvc_name')}
+                                                rules={[{ required: true, message: t('templates.pvc_name_required') }]}
+                                                extra={t('templates.pvc_name_help')}
+                                            >
+                                                <SuggestedValueInput
+                                                    options={getTemplatePVCNameSuggestions(getFieldValue('os_family'))}
+                                                    selectPlaceholder="win2022-image"
+                                                    inputPlaceholder="win2022-image"
+                                                    customToggleLabel={t('templates.use_custom_value', 'Custom')}
+                                                    suggestedToggleLabel={t('templates.use_suggested_value', 'Use suggested value')}
+                                                    emptyHint={t(
+                                                        'templates.select_or_customize_hint',
+                                                        'Prefer a suggested value. Switch to custom input only when the preset list does not cover your case.'
+                                                    )}
+                                                    noSuggestionsHint={t(
+                                                        'templates.no_suggestions_hint',
+                                                        'No suggested values are available for this field yet. Enter a custom value directly.'
+                                                    )}
+                                                />
+                                            </Form.Item>
+                                        )}
                                     </Form.Item>
                                 </>
                             ) : (
@@ -645,7 +968,21 @@ export function AdminTemplatesContent() {
                                     label={t('templates.image_url')}
                                     rules={[{ required: true, message: t('templates.image_url_required') }]}
                                 >
-                                    <Input placeholder="docker.io/kubevirt/centos:7" />
+                                    <SuggestedValueInput
+                                        options={getTemplateImageURLSuggestions(getFieldValue('os_family'))}
+                                        selectPlaceholder="docker://quay.io/containerdisks/ubuntu:22.04"
+                                        inputPlaceholder="docker://quay.io/containerdisks/ubuntu:22.04"
+                                        customToggleLabel={t('templates.use_custom_value', 'Custom')}
+                                        suggestedToggleLabel={t('templates.use_suggested_value', 'Use suggested value')}
+                                        emptyHint={t(
+                                            'templates.select_or_customize_hint',
+                                            'Prefer a suggested value. Switch to custom input only when the preset list does not cover your case.'
+                                        )}
+                                        noSuggestionsHint={t(
+                                            'templates.no_suggestions_hint',
+                                            'No suggested values are available for this field yet. Enter a custom value directly.'
+                                        )}
+                                    />
                                 </Form.Item>
                             )
                         }
@@ -653,6 +990,23 @@ export function AdminTemplatesContent() {
 
                     {/* cloud-init YAML editor */}
                     <Divider orientation="left" plain>{t('templates.cloud_init')}</Divider>
+                    <Space wrap style={{ marginBottom: 8 }}>
+                        <Text type="secondary">
+                            {t('templates.cloud_init_example_hint', 'Insert an example first, then edit it to fit the target system.')}
+                        </Text>
+                        <Button
+                            size="small"
+                            onClick={() => templates.editForm.setFieldValue('cloud_init', getTemplateCloudInitExample('linux'))}
+                        >
+                            {t('templates.cloud_init_example_linux', 'Linux example')}
+                        </Button>
+                        <Button
+                            size="small"
+                            onClick={() => templates.editForm.setFieldValue('cloud_init', getTemplateCloudInitExample('windows'))}
+                        >
+                            {t('templates.cloud_init_example_windows', 'Windows example')}
+                        </Button>
+                    </Space>
                     <Form.Item
                         name="cloud_init"
                         extra={t('templates.cloud_init_help', 'YAML cloud-init configuration. Provides one-time password and initial OS setup.')}

@@ -13,6 +13,30 @@ interface UseAdminTemplatesControllerArgs {
     t: TFunction;
 }
 
+const CREATE_TEMPLATE_DEFAULTS: Pick<TemplateCreateRequest, 'catalog_scope' | 'enabled' | 'source_type'> = {
+    catalog_scope: 'unclassified',
+    enabled: true,
+    source_type: 'cdi_image_import',
+};
+
+function buildEditTemplateFormValues(template: Template): TemplateUpdateRequest {
+    return {
+        display_name: template.display_name,
+        description: template.description,
+        catalog_scope: template.catalog_scope,
+        os_family: template.os_family,
+        os_version: template.os_version,
+        enabled: template.enabled,
+        source_type: template.source_type,
+        image_url: template.source_type === 'cdi_pvc_clone' ? undefined : template.image_url,
+        pvc_name: template.source_type === 'cdi_pvc_clone' ? template.pvc_name : undefined,
+        pvc_namespace: template.source_type === 'cdi_pvc_clone' ? template.pvc_namespace : undefined,
+        // cloud_init is the YAML cloud-init config (plain text, not JSON).
+        // master-flow Step 3: admin can freely edit this YAML text.
+        cloud_init: template.cloud_init,
+    };
+}
+
 /**
  * master-flow Step 3: Configure Template
  *
@@ -126,12 +150,6 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
     }, [templatesQuery.data?.items, deferredSearch]);
 
     const openCreateModal = () => {
-        createForm.resetFields();
-        createForm.setFieldsValue({
-            catalog_scope: 'unclassified',
-            enabled: true,
-            source_type: 'cdi_image_import',
-        });
         setCreateExperimentalSourcesEnabled(false);
         setCreateOpen(true);
     };
@@ -142,51 +160,24 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
         setEditOpen(true);
     };
 
-    // Edit modal uses destroyOnHidden, so form fields are unmounted while closed.
-    // Hydrate after open to avoid empty values when AntD re-mounts the form items.
+    useEffect(() => {
+        if (!createOpen) {
+            return;
+        }
+
+        createForm.resetFields();
+        createForm.setFieldsValue(CREATE_TEMPLATE_DEFAULTS);
+    }, [createForm, createOpen]);
+
+    // Ant Design Modal keeps its content memoized while closed. Hydrate after the
+    // modal opens so the mounted form store owns the latest dependent source fields.
     useEffect(() => {
         if (!editOpen || !editingTemplate) {
             return;
         }
 
-        let sourceFieldsTimer: ReturnType<typeof setTimeout> | undefined;
-        const timer = setTimeout(() => {
-            editForm.resetFields();
-            editForm.setFieldsValue({
-                display_name: editingTemplate.display_name,
-                description: editingTemplate.description,
-                catalog_scope: editingTemplate.catalog_scope,
-                os_family: editingTemplate.os_family,
-                os_version: editingTemplate.os_version,
-                enabled: editingTemplate.enabled,
-                source_type: editingTemplate.source_type,
-                // cloud_init is the YAML cloud-init config (plain text, not JSON).
-                // master-flow Step 3: admin can freely edit this YAML text.
-                cloud_init: editingTemplate.cloud_init,
-            });
-
-            sourceFieldsTimer = setTimeout(() => {
-                if (editingTemplate.source_type === 'cdi_pvc_clone') {
-                    editForm.setFieldsValue({
-                        pvc_name: editingTemplate.pvc_name,
-                        // pvc_namespace: must be populated so the required validation passes
-                        // when editing an existing PVC-type template (master-flow Step 3).
-                        pvc_namespace: editingTemplate.pvc_namespace,
-                    });
-                    return;
-                }
-                editForm.setFieldsValue({
-                    image_url: editingTemplate.image_url,
-                });
-            }, 0);
-        }, 0);
-
-        return () => {
-            clearTimeout(timer);
-            if (sourceFieldsTimer !== undefined) {
-                clearTimeout(sourceFieldsTimer);
-            }
-        };
+        editForm.resetFields();
+        editForm.setFieldsValue(buildEditTemplateFormValues(editingTemplate));
     }, [editForm, editOpen, editingTemplate]);
 
     const openDeleteModal = (template: Template) => {
