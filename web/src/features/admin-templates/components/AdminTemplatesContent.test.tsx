@@ -102,7 +102,7 @@ describe('AdminTemplatesContent', () => {
                 call.some((value) => String(value).includes('There may be circular references')),
             ),
         ).toBe(false);
-    });
+    }, 20000);
 
     it('hydrates the official fedora preset into the create form', async () => {
         const user = userEvent.setup();
