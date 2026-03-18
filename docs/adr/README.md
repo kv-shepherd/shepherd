@@ -56,6 +56,7 @@
 | [ADR-0044](./ADR-0044-frontend-built-in-preset-catalog-boundary.md) | Frontend Built-In Preset Catalog Boundary | **Accepted** | - |
 | [ADR-0045](./ADR-0045-cluster-resolved-root-volume-provisioning.md) | Cluster-Resolved Root Volume Provisioning Intent | **Accepted** | - |
 | [ADR-0046](./ADR-0046-schema-mask-field-visibility-tiers.md) | Schema Mask Field Visibility Tiers | **Accepted** | - |
+| [ADR-0047](./ADR-0047-vm-status-granular-lifecycle-states.md) | Granular VM Lifecycle States (STARTING / NOT_FOUND) | **Proposed** | - |
 
 > ℹ️ **ADR-0037 Sync Notes**:
 >
@@ -126,6 +127,7 @@ For newcomers, we recommend reading ADRs in this order:
 18. **ADR-0044** (Frontend Built-In Preset Catalog Boundary, **Proposed**) → Clarifies V1 built-in preset catalogs vs V2 backend marketplace boundary
 19. **ADR-0045** (Cluster-Resolved Root Volume Provisioning, **Accepted**) → Clarifies where storage `auto` intent may exist and when approval must resolve explicit root-volume provisioning values
 20. **ADR-0046** (Schema Mask Field Visibility Tiers, **Accepted**) → Formalizes `professional_fields` as a UI-only expert-tier in SchemaMask
+21. **ADR-0047** (Granular VM Lifecycle States, **Proposed** 🔍 48-hr review window) → Adds `STARTING` and `NOT_FOUND` as first-class VM status values with polling/delete integration
 
 ### Historical Context
 - **ADR-0002** → Why we moved from Git storage to DB (Superseded by ADR-0007)
