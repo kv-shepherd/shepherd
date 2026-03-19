@@ -12,7 +12,8 @@ informed: []  # Stakeholders kept up-to-date (one-way communication)
 > **Review Period**: Until YYYY-MM-DD (48-hour minimum)<br>
 > **Discussion**: [Issue #XX](https://github.com/kv-shepherd/shepherd/issues/XX)<br>
 > **Supersedes**: `ADR-XXXX-xxx.md` *(if applicable)*<br>
-> **Amends**: `ADR-XXXX-xxx.md#section-anchor` *(if applicable)*
+> **Amends**: `ADR-XXXX-xxx.md#section-anchor` *(if applicable)*<br>
+> **Extends**: `ADR-XXXX-xxx.md` *(if applicable; use only when building on a prior ADR without modifying it)*
 
 ---
 

@@ -49,6 +49,7 @@ canonical import result in core?
 * **ADR-0035 plugin boundary**: Core auth/RBAC runtime must remain plugin-standard and provider-agnostic.
 * **ADR-0024 capability composition**: Directory sync must remain an optional capability, not a mandatory expansion of `AuthProviderAdminAdapter`.
 * **ADR-0026 standardized provider output**: Core must consume canonical identity fields, not vendor-specific field names or flow steps.
+* **ADR-0021 contract-first governance**: The directory-sync API must stay provider-agnostic at the HTTP contract boundary even when providers use different request shapes.
 * **Core philosophy**: Core only governs consistent results; provider-specific process belongs at the edge.
 * **Identity safety**: Sync must respect global `User` invariants such as username/email uniqueness and stable external identity linkage.
 * **ADR-0006 async model**: Bulk directory import remains an async job.
@@ -168,6 +169,9 @@ The approved API surface is:
 | `GET` | `/admin/auth-providers/{id}/directory/sync-jobs` | List sync jobs |
 | `GET` | `/admin/auth-providers/{id}/directory/sync-jobs/{jobId}` | Get one sync job |
 
+`preview` is a synchronous read-only operation over provider-owned request
+input. `sync` enqueues an asynchronous import job per ADR-0006.
+
 The earlier dedicated `/departments` and `/attributes` endpoints are rejected as
 universal core concepts.
 
@@ -230,6 +234,7 @@ canonical import results.
 
 * `ADR-0035-auth-provider-plugin-boundary.md` — Auth providers remain plugin-standard and discoverable.
 * `ADR-0024-provider-interface-capability-composition.md` — Optional capability composition pattern.
+* `ADR-0021-api-contract-first.md` — Contract-first governance for the standardized directory-sync API surface.
 * `ADR-0026-idp-config-naming.md` — Canonical provider output contract and adapter-only normalization.
 * `ADR-0041-power-operation-approval-requirement-service.md` — Parallel precedent: core keeps canonical semantics, provider routing stays peripheral.
 * `ADR-0006-unified-async-model.md` — Async execution model for sync jobs.
