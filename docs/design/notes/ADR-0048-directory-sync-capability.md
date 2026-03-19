@@ -109,6 +109,21 @@ Core is not allowed to know:
 This keeps the interface small and stable while avoiding the earlier mistake of
 turning vendor workflow vocabulary into core API shape.
 
+### 1.4 Public plugin SDK exposure
+
+Implementation must expose the directory-sync capability through the public
+plugin SDK, not only through `internal/provider`.
+
+Required follow-up at implementation time:
+
+* re-export `DirectorySyncCapability` from `pkg/authproviderplugin`
+* re-export the canonical directory-sync DTOs used by plugin authors
+* keep third-party plugins from importing `internal/provider` directly
+
+This follows the shared-SDK pattern already used for admin auth-provider
+plugins and keeps the host/plugin contract small, stable, and importable by
+external plugin code.
+
 ---
 
 ## 2. Persistence Model
@@ -288,6 +303,10 @@ Response:
 }
 ```
 
+This endpoint is synchronous and read-only. It validates the opaque
+`provider_request`, asks the adapter for a canonical preview, and does not
+enqueue a River job.
+
 ### 4.3 `POST /admin/auth-providers/{id}/directory/sync`
 
 Request:
@@ -310,6 +329,9 @@ Response:
   "status": "pending"
 }
 ```
+
+This endpoint is asynchronous. It freezes `provider_request` into
+`DirectorySyncJob.request_snapshot` and enqueues the River worker.
 
 ### 4.4 `GET /admin/auth-providers/{id}/directory/sync-jobs`
 
@@ -392,6 +414,7 @@ custom UX without changing the backend contract defined here.
 * The request payload is always carried under `provider_request`; handlers/workers do not inspect provider-specific keys.
 * `go test ./internal/jobs/... -run TestDirectorySyncWorker` covers conflict classification for `external_id`, `username`, and `email`.
 * `go test ./internal/api/handlers/... -run TestDirectorySyncPreviewUsesOpaqueProviderRequest` proves handler code never parses vendor-specific request keys.
+* `pkg/authproviderplugin` re-exports the directory-sync capability and canonical DTOs needed by third-party auth-provider plugins.
 * `UserDirectoryProfile.attributes` is never read by auth/RBAC/approval/runtime paths.
 * CI auth-provider boundary checks keep passing.
 
