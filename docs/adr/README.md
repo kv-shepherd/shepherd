@@ -161,6 +161,18 @@ For newcomers, we recommend reading ADRs in this order:
 4. Submit for review with a GitHub Issue
 5. After 48-hour review period, update status to `Accepted` or `Rejected`
 
+### ADR Relationship Markers
+
+Use relationship markers only when they communicate a real dependency between
+decisions:
+
+* `Supersedes`: the new ADR replaces an older decision.
+* `Amends`: the new ADR changes or clarifies a specific section of an accepted ADR.
+* `Extends`: the new ADR builds on an existing decision without changing its normative meaning, typically by adding an adjacent capability or applying the same boundary/pattern in a new area.
+
+`Extends` is not a substitute for `Amends` or `Supersedes`. If the old decision
+is being changed, use those markers instead.
+
 ### Proposed ADRs and Pending Changes
 
 When an ADR is **Proposed**, do NOT edit normative design specs.
@@ -205,6 +217,9 @@ Accepted ADRs are **immutable**. To change a decision:
 1. **Minor Clarification**: Create a new ADR with `Amends: ADR-XXXX §X`
 2. **Major Change**: Create a new ADR with `Supersedes: ADR-XXXX`
 3. **Append Only**: Add an "Amendments by Subsequent ADRs" block at the END of the original ADR
+
+If a new ADR only builds on an accepted decision without modifying it, use
+`Extends` and leave the original ADR unchanged.
 
 ---
 
