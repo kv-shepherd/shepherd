@@ -4,7 +4,7 @@
 > **Related ADR**: [ADR-0048](../../adr/ADR-0048-directory-sync-capability.md)
 > **Owner**: @jindyzhao
 > **Created**: 2026-03-19
-> **Last Updated**: 2026-03-19
+> **Last Updated**: 2026-03-20
 
 ## Summary
 
@@ -18,6 +18,9 @@ Instead:
   async job semantics, and persistence invariants
 
 This note captures the implementation shape that follows that boundary.
+
+It also aligns the preview/import record wording with the normalized
+`external cohort` standard introduced in the ADR-0049 draft.
 
 ## Scope
 
@@ -52,13 +55,19 @@ type DirectorySyncDescriptor struct {
     SupportsPreview bool                   `json:"supports_preview"`
 }
 
+type DirectoryCohortRef struct {
+    Kind        string `json:"kind"`
+    Key         string `json:"key"`
+    DisplayName string `json:"display_name,omitempty"`
+}
+
 // DirectoryUserRecord is the canonical user-import contract consumed by core.
 type DirectoryUserRecord struct {
     ExternalID  string                 `json:"external_id"`
     Username    string                 `json:"username"`
     DisplayName string                 `json:"display_name"`
     Email       string                 `json:"email,omitempty"`
-    Groups      []string               `json:"groups,omitempty"`
+    Cohorts     []DirectoryCohortRef   `json:"cohorts,omitempty"`
     Attributes  map[string]interface{} `json:"attributes,omitempty"` // raw provider attributes, non-authoritative
 }
 
@@ -103,6 +112,10 @@ Core is not allowed to know:
 * whether the provider selected departments, groups, OUs, tags, filters, or cursors
 * provider-specific request keys
 * provider-specific attribute names outside the raw `attributes` blob
+
+Normalized cohorts are non-authoritative organizational references. They may be
+used later by explicit mapping/batch-management services, but they are not
+runtime permissions.
 
 ### 1.3 Why this shape
 
@@ -292,10 +305,13 @@ Response:
       "record": {
         "external_id": "zhangsan",
         "username": "zhangsan",
-        "display_name": "张三",
+        "display_name": "Zhang San",
         "email": "zhangsan@example.com",
-        "groups": ["tech"],
-        "attributes": { "department_name": "技术部" }
+        "cohorts": [
+          { "kind": "department", "key": "wecom:department:2", "display_name": "Engineering" },
+          { "kind": "tag", "key": "wecom:tag:tech", "display_name": "Tech" }
+        ],
+        "attributes": { "department_name": "Engineering" }
       },
       "conflicts": []
     }
@@ -416,6 +432,7 @@ custom UX without changing the backend contract defined here.
 * `go test ./internal/api/handlers/... -run TestDirectorySyncPreviewUsesOpaqueProviderRequest` proves handler code never parses vendor-specific request keys.
 * `pkg/authproviderplugin` re-exports the directory-sync capability and canonical DTOs needed by third-party auth-provider plugins.
 * `UserDirectoryProfile.attributes` is never read by auth/RBAC/approval/runtime paths.
+* provider results may expose normalized cohorts beyond plain groups without changing the core contract.
 * CI auth-provider boundary checks keep passing.
 
 ## Revisit Conditions

@@ -57,7 +57,8 @@
 | [ADR-0045](./ADR-0045-cluster-resolved-root-volume-provisioning.md) | Cluster-Resolved Root Volume Provisioning Intent | **Accepted** | - |
 | [ADR-0046](./ADR-0046-schema-mask-field-visibility-tiers.md) | Schema Mask Field Visibility Tiers | **Accepted** | - |
 | [ADR-0047](./ADR-0047-vm-status-granular-lifecycle-states.md) | Granular VM Lifecycle States (STARTING / NOT_FOUND) | **Proposed** | - |
-| [ADR-0048](./ADR-0048-directory-sync-capability.md) | Directory Sync Capability for Auth Providers | **Proposed** | Result-first contract: provider-owned workflow, core-owned canonical import semantics |
+| [ADR-0048](./ADR-0048-directory-sync-capability.md) | Directory Sync Capability for Auth Providers | **Proposed** | Result-first contract: provider-owned workflow, core-owned canonical user/cohort import semantics |
+| [ADR-0049](./ADR-0049-external-auth-runtime-jit-provisioning-and-external-cohort-rbac-mapping.md) | External Auth Runtime, JIT User Provisioning, and External Cohort-to-RBAC Mapping | **Proposed** | Unified external-auth standard: JIT user center, provider-owned workflow, platform-owned RBAC |
 
 > ℹ️ **ADR-0037 Sync Notes**:
 >
@@ -129,7 +130,8 @@ For newcomers, we recommend reading ADRs in this order:
 19. **ADR-0045** (Cluster-Resolved Root Volume Provisioning, **Accepted**) → Clarifies where storage `auto` intent may exist and when approval must resolve explicit root-volume provisioning values
 20. **ADR-0046** (Schema Mask Field Visibility Tiers, **Accepted**) → Formalizes `professional_fields` as a UI-only expert-tier in SchemaMask
 21. **ADR-0047** (Granular VM Lifecycle States, **Proposed** 🔍 48-hr review window) → Adds `STARTING` and `NOT_FOUND` as first-class VM status values with polling/delete integration
-22. **ADR-0048** (Directory Sync Capability, **Proposed** 🔍 48-hr review window) → Adds provider-owned sync request schema with core-owned canonical user-import/result semantics
+22. **ADR-0048** (Directory Sync Capability, **Proposed** 🔍 48-hr review window) → Adds provider-owned sync request schema with core-owned canonical user/cohort import semantics
+23. **ADR-0049** (External Auth Runtime, **Proposed** 🔍 48-hr review window) → Defines unified external-auth runtime, JIT user-center provisioning, and external cohort to platform RBAC mapping
 
 ### Historical Context
 - **ADR-0002** → Why we moved from Git storage to DB (Superseded by ADR-0007)

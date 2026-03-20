@@ -49,6 +49,7 @@ canonical import result in core?
 * **ADR-0035 plugin boundary**: Core auth/RBAC runtime must remain plugin-standard and provider-agnostic.
 * **ADR-0024 capability composition**: Directory sync must remain an optional capability, not a mandatory expansion of `AuthProviderAdminAdapter`.
 * **ADR-0026 standardized provider output**: Core must consume canonical identity fields, not vendor-specific field names or flow steps.
+* **ADR-0049 external auth/runtime standard**: normalized external cohorts may be carried for display and mapping input, but they are not direct permissions.
 * **ADR-0021 contract-first governance**: The directory-sync API must stay provider-agnostic at the HTTP contract boundary even when providers use different request shapes.
 * **Core philosophy**: Core only governs consistent results; provider-specific process belongs at the edge.
 * **Identity safety**: Sync must respect global `User` invariants such as username/email uniqueness and stable external identity linkage.
@@ -112,11 +113,13 @@ core persistence:
 | `username` | Canonical Shepherd username candidate |
 | `display_name` | Canonical Shepherd display name |
 | `email` | Canonical Shepherd email candidate |
-| `groups` | Normalized group list if provider can supply it |
+| `cohorts` | Normalized external cohort refs if provider can supply them |
 | `attributes` | Provider-specific raw attributes for display/audit only |
 
-Core auth/RBAC/approval/runtime logic must depend only on canonical fields and
-must not branch on provider-specific attribute keys.
+Core auth/RBAC/approval/runtime logic must depend only on canonical identity
+fields and must not branch on provider-specific attribute keys or cohort kinds.
+Normalized cohorts are informational and may be consumed only by explicit
+mapping or batch-management services that produce Shepherd RBAC records.
 
 #### 4. Conflict classification is a core responsibility
 
@@ -236,6 +239,7 @@ canonical import results.
 * `ADR-0024-provider-interface-capability-composition.md` — Optional capability composition pattern.
 * `ADR-0021-api-contract-first.md` — Contract-first governance for the standardized directory-sync API surface.
 * `ADR-0026-idp-config-naming.md` — Canonical provider output contract and adapter-only normalization.
+* `ADR-0049-external-auth-runtime-jit-provisioning-and-external-cohort-rbac-mapping.md` — JIT user-center rule and normalized external-cohort semantics.
 * `ADR-0041-power-operation-approval-requirement-service.md` — Parallel precedent: core keeps canonical semantics, provider routing stays peripheral.
 * `ADR-0006-unified-async-model.md` — Async execution model for sync jobs.
 
@@ -262,3 +266,4 @@ Revisit this ADR if:
 |------|--------|--------|
 | 2026-03-19 | @jindyzhao | Initial process-first draft published for review |
 | 2026-03-19 | @jindyzhao | Reworked to result-first contract: provider-owned workflow, core-owned canonical import semantics |
+| 2026-03-20 | @jindyzhao | Aligned canonical import wording with normalized external-cohort standard from ADR-0049 draft |
