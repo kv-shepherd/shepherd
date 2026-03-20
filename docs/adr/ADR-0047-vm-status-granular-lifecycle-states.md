@@ -12,7 +12,7 @@ informed: ["@jindyzhao"]
 > **Status**: 🔍 Public Review — 48-hour minimum comment window<br>
 > **Review Open**: 2026-03-18<br>
 > **Review Closes**: 2026-03-20 (earliest merge date)<br>
-> **Discussion**: [Code Review 2026-03-18](https://github.com/kv-shepherd/shepherd/issues/)<br>
+> **Discussion**: [Issue #389](https://github.com/kv-shepherd/shepherd/issues/389)<br>
 > **Amends**: `ADR-0038-adaptive-k8s-polling.md#§1-polling-frequency-tiers` *(adds two new states to tier classification)*
 >
 > 📝 **Design Note**: Implementation code (vm_status_sync.go, ent schema, migration) lands in a separate implementation PR **after** this ADR is accepted.
