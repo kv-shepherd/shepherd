@@ -1,6 +1,6 @@
 # Design Note: ADR-0048 — Directory Sync Capability for Auth Providers
 
-> **Status**: Proposed (ADR-0048 under review until 2026-03-21)
+> **Status**: Accepted (ADR-0048 accepted on 2026-03-23)
 > **Related ADR**: [ADR-0048](../../adr/ADR-0048-directory-sync-capability.md)
 > **Owner**: @jindyzhao
 > **Created**: 2026-03-19
@@ -22,6 +22,13 @@ This note captures the implementation shape that follows that boundary.
 It also aligns the preview/import record wording with the normalized
 `external cohort` standard introduced in the ADR-0049 draft.
 
+Admin-only read models for this workspace may live under
+`internal/edge/authworkspace/...`, split into narrower subpackages such as
+`runtimeview` and `directoryview`, so that HTTP handlers stay thin while core
+and provider code remain isolated. `runtimeview` owns runtime/login-mode DTO
+construction; `directoryview` owns preview/job/schedule DTO construction,
+including list pagination and unsupported schedule-state DTOs.
+
 ## Scope
 
 - In scope: optional `DirectorySyncCapability` contract on auth-provider adapters
@@ -40,7 +47,10 @@ It also aligns the preview/import record wording with the normalized
 
 ### 1.1 Go Interface
 
-File: `internal/provider/directory_sync.go`
+Primary contract file: `internal/provider/directorycontract/contract.go`
+
+`internal/provider/directory_sync.go` may remain as a thin re-export layer while
+the broader provider package is reduced.
 
 ```go
 package provider
@@ -80,8 +90,15 @@ type DirectoryConflict struct {
 }
 
 // DirectoryPreviewItem is what core shows in preview responses.
+type DirectoryPreviewMatch struct {
+    Action         string `json:"action"` // create | update | blocked
+    ExistingUserID string `json:"existing_user_id,omitempty"`
+    MatchedBy      string `json:"matched_by,omitempty"` // external_id
+}
+
 type DirectoryPreviewItem struct {
     Record    DirectoryUserRecord  `json:"record"`
+    Match     DirectoryPreviewMatch `json:"match"`
     Conflicts []DirectoryConflict  `json:"conflicts,omitempty"`
     Warnings  []string             `json:"warnings,omitempty"`
 }
@@ -217,9 +234,9 @@ func (DirectorySyncJob) Fields() []ent.Field {
             Comment("Opaque provider_request payload frozen at trigger time"),
         field.String("conflict_resolution").Default("skip"),
         field.Int("total_entries").Default(0),
-        field.Int("created_count").Default(0),
-        field.Int("updated_count").Default(0),
-        field.Int("skipped_count").Default(0),
+        field.Int("create_count").Default(0),
+        field.Int("update_count").Default(0),
+        field.Int("blocked_count").Default(0),
         field.Int("error_count").Default(0),
         field.JSON("errors", []string{}).Optional(),
         field.String("triggered_by").NotEmpty(),
@@ -253,6 +270,18 @@ classification. It must resolve conflicts first, then write.
 
 Preview responses include canonical `conflicts` so administrators see how a sync
 will behave before enqueue.
+
+### 3.4 Execution summary rule
+
+Async job results must reuse the same canonical action vocabulary as preview:
+
+- `create`
+- `update`
+- `blocked`
+
+`manual_import` and `scheduled_enrichment` may differ in source flow, but their
+persisted job summary must expose the same action buckets so admin UI and
+automation do not reintroduce provider-specific reasoning.
 
 ---
 
@@ -355,8 +384,78 @@ Standard paginated list response.
 
 ### 4.5 `GET /admin/auth-providers/{id}/directory/sync-jobs/{jobId}`
 
-Returns job summary and counts only. It does not expose provider workflow
-internals as first-class fields.
+Returns canonical job detail:
+
+* standard execution metadata
+* standard `result_summary` buckets using the same `create / update / blocked`
+  vocabulary as preview
+* opaque `request_snapshot` for debugging/replay
+
+It still does not expose provider workflow internals as first-class fields.
+
+### 4.6 Current admin workbench baseline
+
+The current host implementation already exposes a minimal provider-agnostic
+directory workbench around these APIs:
+
+* runtime/schedule/jobs state remains visible in the same admin surface
+* the provider-owned `request_schema` is rendered as a schema-driven request
+  form
+* preview shows canonical rows, normalized conflicts, and warnings
+* preview also exposes a result-first summary split into `ready`,
+  `warning`, and `conflict` buckets so administrators can understand match
+  quality before reading the detailed table
+* preview now carries a canonical `match` object so the host can distinguish
+  `create`, safe `update`, and `blocked` rows without guessing from raw
+  conflict arrays
+* preview can be filtered by those same standard result buckets and surfaces
+  aggregated conflict codes without introducing provider-specific navigation
+* preview summary cards may link to the latest relevant sync job detail using
+  the same canonical action vocabulary, for example jumping from a blocked
+  summary card to the latest job whose `result_summary.blocked_count > 0`
+* conflict-heavy previews may also render grouped summaries for canonical
+  conflict codes such as `username_conflict` or `ambiguous_existing_user`,
+  but that grouping remains derived from the existing canonical result shape
+* grouped conflict summaries may expand into per-code detail sections, but
+  those sections still reuse the same canonical preview rows instead of
+  introducing provider-owned sub-workflows
+* warning-heavy previews may apply the same pattern, grouping repeated warning
+  messages into expandable detail sections derived from the canonical preview
+  rows
+* manual sync launches an async job and relies on the standard jobs list for
+  follow-up
+* jobs list can be filtered by the same canonical action vocabulary
+  (`create / update / blocked`) instead of provider-specific outcome labels
+* a job detail surface may show result-summary tags, execution metadata,
+  errors, and opaque request snapshot, but should continue to avoid
+  provider-specific workflow widgets
+* handler-local view-model shaping for this admin workbench may be extracted
+  into an `internal/edge/...` package so HTTP handlers keep orchestration
+  concerns while edge workspace code owns provider-neutral admin DTO mapping
+* the same pattern can cover schedule status shaping as well: handlers load the
+  latest/pending job rows, while `internal/edge/...` code computes the standard
+  `supported/enabled/next_run` view model from the normalized plan
+* runtime descriptor construction and directory-capability resolution may also
+  move into `internal/edge/...` helpers so admin handlers stay focused on HTTP
+  flow, permission gates, and error mapping
+
+This is intentionally a result-first workbench. It must not grow
+provider-specific navigation models such as department trees, OU explorers, or
+vendor wizards into the shared UI/API.
+
+### 4.7 Schema-driven object field handling
+
+Provider-owned request payloads may legitimately contain nested objects. The
+schema-driven form layer should therefore treat `type: object` fields as local
+JSON editing surfaces:
+
+* edit-time defaults should be rendered as formatted JSON text
+* submit-time values should be parsed back into JSON objects before request
+  transmission
+* invalid JSON must be surfaced to administrators as a request-form error
+
+This keeps the shared workbench generic while still supporting provider-owned
+nested request structures.
 
 ---
 
@@ -384,7 +483,8 @@ type DirectorySyncArgs struct {
    - classify conflicts
    - create/update canonical `User`
    - upsert `UserDirectoryProfile.attributes`
-7. Update `DirectorySyncJob` counters
+7. Update `DirectorySyncJob` result summary using canonical action buckets
+   (`create / update / blocked`)
 
 ### 5.3 Explicit non-goals
 

@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"
+status: "accepted"
 date: 2026-03-21
 deciders: ["@jindyzhao"]
 consulted: ["@jindyzhao"]
@@ -9,9 +9,8 @@ informed: ["@jindyzhao"]
 
 # ADR-0050: Upstream Identity Assertion Runtime Provider for Legacy Systems
 
-> **Status**: Proposed (public review)<br>
-> **Review Open**: 2026-03-21<br>
-> **Review Closes**: 2026-03-23 (>= 48h)<br>
+> **Status**: Accepted<br>
+> **Accepted On**: 2026-03-23<br>
 > **Discussion**: [Issue #402](https://github.com/kv-shepherd/shepherd/issues/402)<br>
 > **Extends**: `ADR-0035-auth-provider-plugin-boundary.md` *(applies the auth-provider plugin boundary to legacy upstream identity assertions as a runtime provider type)*<br>
 > **Extends**: `ADR-0049-external-auth-runtime-jit-provisioning-and-external-cohort-rbac-mapping.md` *(adds a generic non-OIDC external-auth path without changing core canonical identity/RBAC rules)*<br>
@@ -279,3 +278,4 @@ Revisit this ADR if:
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-03-21 | @jindyzhao | Initial draft |
+| 2026-03-23 | @jindyzhao | Marked accepted after the 48-hour review window closed |
