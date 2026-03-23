@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"
+status: "accepted"
 date: 2026-03-20
 deciders: ["@jindyzhao"]
 consulted: ["@jindyzhao"]
@@ -9,9 +9,8 @@ informed: ["@jindyzhao"]
 
 # ADR-0049: External Auth Runtime, JIT User Provisioning, and External Cohort-to-RBAC Mapping
 
-> **Status**: 🔍 Public Review — 48-hour minimum comment window<br>
-> **Review Open**: 2026-03-20<br>
-> **Review Closes**: 2026-03-22 (earliest merge date)<br>
+> **Status**: Accepted<br>
+> **Accepted On**: 2026-03-23<br>
 > **Discussion**: [Issue #400](https://github.com/kv-shepherd/shepherd/issues/400)<br>
 > **Amends**: `ADR-0026-idp-config-naming.md#standard-provider-output-contract` *(clarifies runtime auth result shape, non-authoritative profile data, and cohort normalization)*<br>
 > **Amends**: `ADR-0035-auth-provider-plugin-boundary.md` *(extends the auth-provider boundary from admin/discovery into runtime login and callback execution)*<br>
@@ -79,6 +78,7 @@ The provider owns:
 
 * login-mode specifics
 * redirect/callback parameter semantics
+* direct credential request semantics when the provider exposes a non-redirect login mode
 * token exchange
 * remote user-info fetch
 * provider-specific validation quirks
@@ -202,9 +202,33 @@ Example:
 
 * WeCom QR login for desktop/browser use
 * WeCom in-app web authorization for users already inside the WeCom client
+* LDAP username/password login submitted directly to Shepherd
 
 Core must see these only as provider-defined login modes behind one runtime
 contract. Core must not fork business logic per vendor login mode.
+
+Runtime login modes may use one of two standard interaction styles:
+
+* `redirect`: core starts provider login, then later forwards a callback envelope
+* `credentials`: core forwards a validated credential envelope and receives a canonical auth result directly
+
+Both interaction styles must still terminate in the same canonical `AuthResult`,
+JIT provisioning, cohort reconciliation, and Shepherd-issued session.
+
+#### 9. External-auth callback base URL is platform-wide configuration, not provider configuration
+
+Runtime callback generation for external auth must use a platform-level public
+base URL owned by Shepherd deployment/system settings.
+
+This value:
+
+* is shared by WeCom, OIDC, and other external runtime providers
+* defines Shepherd's public callback origin
+* must not be duplicated inside per-provider config blobs
+
+Provider config continues to own only provider-specific credentials and remote
+protocol parameters such as `corp_id`, `agent_id`, `client_id`, `issuer`, or
+provider scopes.
 
 ### Consequences
 
@@ -223,9 +247,11 @@ contract. Core must not fork business logic per vendor login mode.
 * No runtime path hardcodes WeCom/OIDC/LDAP vendor branches in core auth flow.
 * JIT login tests prove successful external login can create and update canonical users.
 * Authorization tests prove permission checks do not read external cohorts or raw profile attributes directly.
+* Providers may expose either `redirect` or `credentials` interaction styles without changing core-owned post-auth behavior.
 * Mapping tests prove external cohorts only affect access through persisted Shepherd RBAC records.
 * Directory-sync tests continue to prove sync is optional and scoped, not the default user-center construction path.
 * CI architecture checks block provider-specific workflow leakage into runtime auth and directory-sync core paths.
+* Runtime callback URL generation proves the public base URL is platform-wide and reused across external providers.
 
 ---
 
@@ -292,3 +318,4 @@ Revisit this ADR if:
 |------|--------|--------|
 | 2026-03-20 | @jindyzhao | Initial draft |
 | 2026-03-20 | @jindyzhao | Published for 48-hour public review |
+| 2026-03-23 | @jindyzhao | Marked accepted after the 48-hour review window closed |

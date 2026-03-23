@@ -1,5 +1,8 @@
 # ADR-0051 Design Note: Scheduled Directory Enrichment
 
+> **Status**: Accepted (ADR-0051 accepted on 2026-03-23)
+> **Related ADR**: [ADR-0051](../../adr/ADR-0051-scheduled-directory-enrichment.md)
+
 ## Purpose
 
 This note captures implementation-facing details for enriching existing Shepherd
@@ -64,6 +67,30 @@ Provider-owned request/schedule inputs may include:
 
 These stay provider-local and must remain opaque to core.
 
+### Current implementation shape
+
+The current host implementation models scheduled enrichment as an optional
+provider capability:
+
+* `BuildScheduledDirectoryEnrichmentPlan(ctx, config)`
+
+The returned plan currently carries:
+
+* `enabled`
+* `mode`
+* `join_key_type`
+* `schedule_cron`
+* `schedule_timezone`
+* `provider_request`
+
+Core persists explicit job metadata for:
+
+* `sync_mode`
+* `join_key_type`
+
+This keeps manual imports and scheduled enrichment distinct in audit/job
+history without introducing a second identity model.
+
 ## Core-Owned Write Model
 
 Scheduled enrichment may write:
@@ -96,8 +123,29 @@ For a directory-capable provider, schedule/enrichment config may include:
 * `selected_cohort_kinds`
 * `write_profile_fields`
 * `write_cohorts`
+* `scheduled_provider_request`
 
 These are provider-local admin settings, not core identity fields.
+
+### Generic provider baseline
+
+The current generic provider exposes a minimal baseline for exercising the
+common contract:
+
+* `enrichment_enabled`
+* `enrichment_mode`
+* `schedule_cron`
+* `schedule_timezone`
+* `join_key_type`
+* `scheduled_provider_request`
+
+The first supported mode is:
+
+* `enrich_existing_only`
+
+The first supported join rule is:
+
+* `username`
 
 ## WeCom First-Provider Guidance
 
@@ -128,6 +176,27 @@ Admin UI should expose:
 
 The UI should not imply that enrichment changes permissions directly.
 
+### Current admin workbench baseline
+
+The current host implementation already exposes a shared admin workbench around
+scheduled enrichment and manual directory execution:
+
+* runtime capability descriptor
+* directory preview form/result
+* schedule status
+* recent sync jobs
+* sample fields and discovered cohorts
+
+This gives administrators one provider-agnostic place to understand:
+
+* how records will be normalized
+* whether runtime login is available
+* whether scheduled enrichment is enabled
+* what the latest manual or scheduled jobs did
+
+The current workbench is intentionally conservative. It does not yet implement
+a full manual-review queue for ambiguous matches.
+
 ## Testing Requirements
 
 Minimum tests:
@@ -137,6 +206,21 @@ Minimum tests:
 * unmatched records are reported but not auto-created in default mode
 * ambiguous matches are classified and skipped
 * synced cohorts do not directly affect runtime authorization
+
+### Current scheduler baseline
+
+The current host scheduler runs as a periodic River job scanner:
+
+* interval: every 5 minutes
+* startup behavior: `RunOnStart`
+
+This scanner does not own provider workflow. It only:
+
+1. asks each capable provider for a normalized plan
+2. evaluates whether the plan is due
+3. creates a canonical scheduled enrichment job
+4. lets the existing directory worker execute the provider-owned fetch and
+   core-owned write rules
 
 ## Private Repository Support
 

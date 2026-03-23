@@ -1,6 +1,6 @@
 # Design Note: ADR-0049 — External Auth Runtime, JIT User Provisioning, and External Cohort-to-RBAC Mapping
 
-> **Status**: Proposed (ADR-0049 under review until 2026-03-22)
+> **Status**: Accepted (ADR-0049 accepted on 2026-03-23)
 > **Related ADR**: [ADR-0049](../../adr/ADR-0049-external-auth-runtime-jit-provisioning-and-external-cohort-rbac-mapping.md)
 > **Owner**: @jindyzhao
 > **Created**: 2026-03-20
@@ -42,7 +42,7 @@ Implementation should extend the public plugin SDK, not `internal/provider`,
 with a runtime contract similar to:
 
 * `pkg/authproviderplugin/runtime.go`
-* `internal/provider/auth_runtime.go`
+* `internal/provider/runtimecontract/contract.go`
 
 The shared contract should stay small and stable:
 
@@ -74,39 +74,105 @@ type AuthStartRequest struct {
     ReturnTo  string `json:"return_to,omitempty"`
 }
 
+type AuthCredentialRequest struct {
+    LoginMode   string                 `json:"login_mode,omitempty"`
+    Credentials map[string]interface{} `json:"credentials,omitempty"`
+    UserAgent   string                 `json:"user_agent,omitempty"`
+}
+
 type AuthStartResponse struct {
     RedirectURL string `json:"redirect_url,omitempty"`
 }
 
 type AuthCallbackRequest struct {
-    Query  map[string][]string `json:"query,omitempty"`
-    Form   map[string][]string `json:"form,omitempty"`
-    Header map[string][]string `json:"header,omitempty"`
+    Method     string              `json:"method,omitempty"`
+    Query      map[string][]string `json:"query,omitempty"`
+    Form       map[string][]string `json:"form,omitempty"`
+    Header     map[string][]string `json:"header,omitempty"`
+    RemoteAddr string              `json:"remote_addr,omitempty"`
 }
 
 type AuthRuntimeCapability interface {
     StartLogin(ctx context.Context, config map[string]interface{}, req AuthStartRequest) (*AuthStartResponse, error)
     CompleteLogin(ctx context.Context, config map[string]interface{}, req AuthCallbackRequest) (*AuthResult, error)
 }
+
+type AuthCredentialCapability interface {
+    AuthenticateCredentials(ctx context.Context, config map[string]interface{}, req AuthCredentialRequest) (*AuthResult, error)
+}
 ```
 
 Core must validate the canonical result shape, but must not understand
-provider-specific callback fields.
+provider-specific callback fields or provider-specific credential payload
+semantics.
+
+Implementation note:
+
+* prefer `internal/provider/admincontract/contract.go` as the narrow internal
+  home for admin-side auth-provider metadata/contracts
+* prefer `internal/provider/adminregistry/registry.go` as the narrow internal
+  home for auth-provider admin registry mechanics
+* prefer `internal/provider/adminglobal/global.go` as the narrow internal home
+  for the process-global admin registry entrypoints; keep
+  `internal/provider/auth_provider_admin_global.go` focused on built-in
+  registration and root-package re-export only
+* prefer `internal/provider/configcodec/codec.go` as the narrow internal home
+  for auth-provider config encryption/masking; keep
+  `internal/provider/auth_provider_config_codec.go` as a thin re-export layer
+  so jobs and handlers can depend on the utility without widening back to the
+  root `provider` package
+* keep `internal/provider/auth.go` focused on runtime auth contract only
+* prefer `internal/provider/runtimecontract/contract.go` as the narrow internal
+  home for runtime auth types; keep `internal/provider/auth.go` as a thin
+  re-export layer while the wider `provider` package is being reduced
+* prefer `internal/provider/approvalcontract/contract.go` and
+  `internal/provider/notificationcontract/contract.go` as the narrow internal
+  homes for approval and notification seams; keep
+  `internal/provider/approval.go` and `internal/provider/notification.go` as
+  thin re-export layers so future public-SDK extraction does not drag unrelated
+  provider concerns into the runtime surface
+* approval callers that only need canonical request/decision types should
+  depend on `approvalcontract` directly instead of routing pure type references
+  through the wider `internal/provider` root package
+* provider-neutral capability helpers such as `HasAllCapabilities` should live
+  in a narrow utility package when handlers only need feature-set checks; avoid
+  pulling the wider `internal/provider` root package into admin/read-only paths
+* VM infrastructure interfaces such as `InfrastructureProvider`,
+  `ProvisioningQueryProvider`, `PVCClonePreflightProvider`, and `ListOptions`
+  should live in a narrow `infracontract` package; keep
+  `internal/provider/interface.go` as a thin re-export layer
+
+### 1.4 Platform-wide public callback base URL
+
+Runtime external-auth callback URLs should be generated from a platform-wide
+public base URL, not from per-provider config.
+
+Implementation guidance:
+
+* keep a deployment default such as `server.public_base_url`
+* optionally expose a platform-level system setting override for administrators
+* reuse the same effective value across WeCom, OIDC, and future external auth
+  providers
+* do not add `public_base_url` or equivalent fields to provider config schemas
+
+This keeps deployment topology concerns in Shepherd core/system settings rather
+than leaking them into provider-specific config.
 
 ### 1.2 Core-owned runtime steps
 
 For external auth, the generic flow should be:
 
 1. list login-capable providers
-2. start provider login
-3. receive callback on a generic provider callback path
-4. pass callback envelope to provider
-5. receive canonical `AuthResult`
-6. perform JIT upsert
-7. refresh external cohorts/profile projection
-8. reconcile auto-managed RoleBindings when configured
-9. issue Shepherd JWT/session
-10. return a provider-agnostic frontend bridge response so browser-based login
+2. either start provider login or submit a standard credential envelope,
+   depending on the provider-defined interaction style
+3. when using redirect flows, receive callback on a generic provider callback
+   path and pass the callback envelope to the provider
+4. receive canonical `AuthResult`
+5. perform JIT upsert
+6. refresh external cohorts/profile projection
+7. reconcile auto-managed RoleBindings when configured
+8. issue Shepherd JWT/session
+9. return a provider-agnostic frontend bridge response so browser-based login
     UIs can receive the Shepherd session without exposing the JWT in a callback
     query string
 
@@ -115,6 +181,7 @@ For external auth, the generic flow should be:
 The provider owns:
 
 * redirect URL construction
+* credential payload interpretation for direct credential login modes
 * provider callback parameter parsing
 * token exchange
 * remote userinfo lookup
@@ -246,6 +313,14 @@ Recommended scope:
 Both belong to one `wecom` provider type and should appear as provider-defined
 login modes, not separate core auth products.
 
+LDAP is the first standard provider practice for a non-redirect interaction
+style:
+
+* provider advertises a `credentials` login mode
+* core collects the credential envelope without understanding LDAP bind/search details
+* provider performs service bind, search, and user bind internally
+* provider returns canonical `AuthResult`
+
 ### 4.3 Canonical field mapping
 
 WeCom-specific user data should be adapted into the shared result:
@@ -276,6 +351,7 @@ surface similar to:
 
 * `GET /auth/providers`
 * `POST /auth/providers/{id}/login/start`
+* `POST /auth/providers/{id}/login/submit`
 * `GET /auth/providers/{id}/callback`
 * callback responses may be HTML bridge pages that `postMessage` the resulting
   Shepherd session back to the initiating frontend window
@@ -283,6 +359,38 @@ surface similar to:
 If additional endpoints are required, they should still preserve the rule that
 core endpoints remain provider-agnostic and provider-specific callback/query
 details stay inside the adapter.
+
+### 5.1 Current admin runtime descriptor baseline
+
+The current host implementation also exposes a provider-agnostic admin
+descriptor for runtime login capability:
+
+* `GET /admin/auth-providers/{id}/runtime`
+
+This descriptor is intended to answer only standard questions:
+
+* does this provider support runtime login at all
+* does it expose `redirect`, `credentials`, or both interaction styles
+* does any login mode require the platform-wide public callback base URL
+* which provider-defined login modes are currently visible
+
+It must not expose vendor workflow internals such as WeCom callback quirks or
+LDAP bind/search details. Those remain adapter-owned.
+
+### 5.2 Current login-page/admin contract alignment
+
+The shared runtime contract now supports two interaction styles:
+
+* `redirect`
+* `credentials`
+
+The current host implementation uses this to keep the login page and the admin
+surface aligned:
+
+* login page renders the provider-defined interaction without vendor branching
+* admin page shows runtime readiness using the same normalized descriptor
+* browser-based flows rely on the platform-wide public base URL only when the
+  provider exposes redirect-based runtime login
 
 ---
 

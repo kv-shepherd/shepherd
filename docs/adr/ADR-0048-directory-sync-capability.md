@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"
+status: "accepted"
 date: 2026-03-19
 deciders: ["@jindyzhao"]
 consulted: ["@jindyzhao"]
@@ -9,9 +9,8 @@ informed: ["@jindyzhao"]
 
 # ADR-0048: Directory Sync Capability for Auth Providers
 
-> **Status**: 🔍 Public Review — 48-hour minimum comment window<br>
-> **Review Open**: 2026-03-19<br>
-> **Review Closes**: 2026-03-21 (earliest merge date)<br>
+> **Status**: Accepted<br>
+> **Accepted On**: 2026-03-23<br>
 > **Discussion**: [Issue #396](https://github.com/kv-shepherd/shepherd/issues/396)<br>
 > **Extends**: `ADR-0035-auth-provider-plugin-boundary.md` *(adds optional directory-sync capability within the auth-provider plugin boundary)*<br>
 > **Extends**: `ADR-0024-provider-interface-capability-composition.md` *(keeps directory sync as a small optional capability, not a base-interface expansion)*
@@ -267,3 +266,4 @@ Revisit this ADR if:
 | 2026-03-19 | @jindyzhao | Initial process-first draft published for review |
 | 2026-03-19 | @jindyzhao | Reworked to result-first contract: provider-owned workflow, core-owned canonical import semantics |
 | 2026-03-20 | @jindyzhao | Aligned canonical import wording with normalized external-cohort standard from ADR-0049 draft |
+| 2026-03-23 | @jindyzhao | Marked accepted after the 48-hour review window closed |

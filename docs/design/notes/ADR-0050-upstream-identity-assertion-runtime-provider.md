@@ -1,5 +1,8 @@
 # ADR-0050 Design Note: Upstream Identity Assertion Runtime Provider
 
+> **Status**: Accepted (ADR-0050 accepted on 2026-03-23)
+> **Related ADR**: [ADR-0050](../../adr/ADR-0050-upstream-identity-assertion-runtime-provider.md)
+
 ## Purpose
 
 This note captures implementation-facing details for a runtime auth provider
@@ -34,24 +37,40 @@ runtime provider contract.
 Provider-local config may include:
 
 * `login_entry_url`
+* `callback_param_name`
+* `state_param_name`
+* `return_to_param_name`
 * `trust_mode`
 * `userinfo_endpoint`
 * `introspection_endpoint`
-* `token_transport`
+* `incoming_token_transport`
   - `authorization_bearer`
   - `query`
   - `cookie`
   - `header`
-* `token_param_name`
-* `token_header_name`
+* `incoming_token_name`
+* `upstream_token_transport`
+  - `authorization_bearer`
+  - `query`
+  - `header`
+  - `form`
+* `upstream_token_name`
 * `trusted_header_username`
 * `trusted_header_email`
+* `trusted_header_external_id`
+* `trusted_header_display_name`
+* `trusted_header_enabled`
+* `trusted_header_cohorts`
+* `trusted_header_cohort_kind`
 * `trusted_gateway_cidrs`
 * `username_path`
 * `display_name_path`
 * `email_path`
 * `external_id_path`
-* `cohort_paths`
+* `enabled_path`
+* `active_path`
+* `cohort_path`
+* `cohort_kind`
 * `profile_attribute_paths`
 * `request_timeout_seconds`
 
@@ -83,6 +102,12 @@ This config belongs to the provider, not to core runtime auth.
 3. Provider verifies request origin is within configured trust boundary.
 4. Provider maps trusted header values into canonical `AuthResult`.
 5. Core continues with standard runtime flow.
+
+Current implementation note:
+
+* trusted-header mode relies on the callback/runtime request envelope carrying
+  the request `RemoteAddr`, so provider-local CIDR checks can be performed
+  without pushing gateway trust logic into core auth semantics
 
 ## Security Constraints
 
