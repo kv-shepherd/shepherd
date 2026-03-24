@@ -131,6 +131,9 @@ bash docs/design/ci/scripts/check_live_e2e_no_mock.sh
 # Full master-flow completion claim (no deferred/exemption debt)
 go run docs/design/ci/scripts/check_master_flow_completion_readiness.go
 
+# Workflow-equivalent local PR validation bundle
+make pr-ci
+
 # End-to-end strict chain (requires DATABASE_URL)
 make master-flow-strict
 
@@ -167,6 +170,10 @@ Current split (2026-03-03 optimization):
 
 - `ci-checks`: canonical static governance and strict script gates (including frontend typecheck/unit).
 - `master-flow-strict`: PostgreSQL behavior suites + optional live e2e (`ENABLE_LIVE_E2E=true`).
+- `pr-ci`: top-level local mirror for required GitHub Actions jobs (`Lint`, `Build`,
+  `Test`, `CI Checks`, `Frontend Tests`, and API contract validation). This target
+  intentionally repeats some frontend checks because GitHub runs them in separate jobs.
+  Playwright smoke checks now fail the run if any test is only green after retry.
 
 This split avoids duplicate execution of the same static checks across both jobs while keeping gate coverage unchanged.
 

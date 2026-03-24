@@ -38,6 +38,8 @@ coverage.html
 tmp/
 /server
 .run/
+/web/.next-e2e/
+/web/tsconfig.e2e.*.json
 /custom-gcl
 /custom-gcl-proofread
 /.golangci.bck.yml

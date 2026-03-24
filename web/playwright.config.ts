@@ -15,7 +15,7 @@ const devAllowedOrigins = Array.from(
 	),
 ).join(',');
 const e2eDistDir = `.next-e2e/${e2eRunId}`;
-const e2eTsconfigPath = `.next-e2e/tsconfig.${e2eRunId}.json`;
+const e2eTsconfigPath = `tsconfig.e2e.${e2eRunId}.json`;
 
 // Live E2E tests run against a real backend.
 // Set LIVE_E2E=true to include them in the test run.
@@ -27,6 +27,8 @@ export default defineConfig({
 	fullyParallel: true,
 	// forbidOnly is always on: `.only` must never be merged to any branch.
 	forbidOnly: true,
+	// Per Playwright docs, CI should fail if a test only passes after retry.
+	failOnFlakyTests: !!process.env.CI,
 	// Global retries: smoke uses 2 in CI; live overrides to 1 at project level
 	// (live tests are stateful – excessive retries cause duplicate side-effects)
 	retries: process.env.CI ? 2 : 0,
@@ -73,19 +75,15 @@ export default defineConfig({
 	],
 	webServer: {
 		name: 'Next.js (dev)',
-		// Always run Next.js dev server — faster than production builds and sufficient
-		// for E2E functional coverage. HMR is irrelevant for headless test runs.
-		// Force a dedicated port, dist dir, and temp tsconfig mirror so E2E never
-		// contends with an already-running local next dev instance or a stale prior
-		// Playwright run.
+		// Always run a dedicated production server for E2E. Smoke tests do not need
+		// HMR or file watching, so building once and serving with `next start`
+		// avoids dev-server watcher pressure and keeps local/remote behavior closer.
+		// Force a dedicated port, dist dir, and copied tsconfig so E2E never
+		// contends with an already-running local Next instance or mutates the
+		// repository tsconfig during `next build`.
 		// When launched via run_e2e_live.sh, the process stdout is already captured
 		// by the shell (nohup redirect in background mode, or tee in foreground).
-		command: `sh -c 'rm -rf ${e2eDistDir} ${e2eTsconfigPath} && mkdir -p .next-e2e && cat > ${e2eTsconfigPath} <<\"EOF\"
-{
-  "extends": "../tsconfig.json"
-}
-EOF
-DEV_ALLOWED_ORIGINS=${devAllowedOrigins} NEXT_DIST_DIR=${e2eDistDir} NEXT_TSCONFIG_PATH=${e2eTsconfigPath} npm run dev -- --port ${webPort}'`,
+		command: `sh -c 'trap "rm -f ${e2eTsconfigPath}" EXIT && rm -rf ${e2eDistDir} ${e2eTsconfigPath} && cp tsconfig.json ${e2eTsconfigPath} && DEV_ALLOWED_ORIGINS=${devAllowedOrigins} NEXT_DIST_DIR=${e2eDistDir} NEXT_TSCONFIG_PATH=${e2eTsconfigPath} npx next build --webpack && DEV_ALLOWED_ORIGINS=${devAllowedOrigins} NEXT_DIST_DIR=${e2eDistDir} NEXT_TSCONFIG_PATH=${e2eTsconfigPath} npx next start --port ${webPort}'`,
 		url: baseURL,
 		// MUST be false unconditionally: reusing an existing server risks pointing at
 		// a stale process bound to a different backend URL or a different database.
@@ -96,7 +94,7 @@ DEV_ALLOWED_ORIGINS=${devAllowedOrigins} NEXT_DIST_DIR=${e2eDistDir} NEXT_TSCONF
 		// which is responsible for capturing logs (nohup / tee in run_e2e_live.sh).
 		stdout: 'pipe',
 		stderr: 'pipe',
-		// 180 s is ample for Next.js dev cold start; Turbopack makes it even faster.
-		timeout: 180_000,
+		// Account for a full webpack production build before `next start`.
+		timeout: 300_000,
 	},
 });

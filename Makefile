@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr-ci
 
 # Go parameters
 GOCMD=go
@@ -189,6 +189,23 @@ ci-checks:
 	@go run docs/design/ci/scripts/check_test_assertions.go
 	@go run docs/design/ci/scripts/check_dead_tests.go || true
 	@go run docs/design/ci/scripts/check_repository_tests.go
+
+## pr-ci: Run the workflow-equivalent local PR validation bundle that mirrors required GitHub Actions jobs
+##       Intentionally keeps some duplicate checks because remote CI runs them in separate jobs/workflows.
+pr-ci:
+	@echo "Running workflow-equivalent PR CI..."
+	@npm ci --prefix web
+	@sh -c 'trap '\''find web -maxdepth 1 -name "tsconfig.e2e.*.json" -delete'\'' EXIT; find web -maxdepth 1 -name "tsconfig.e2e.*.json" -delete; CI=1 npm run test:e2e:mock --prefix web'
+	@find web -maxdepth 1 -name 'tsconfig.e2e.*.json' -delete
+	@$(MAKE) lint
+	@$(GOCMD) test -race -coverprofile=coverage.out -covermode=atomic ./...
+	@$(GOCMD) build ./...
+	@$(MAKE) ci-checks
+	@$(MAKE) api-compat-generate api-generate api-compat api-contract-test
+	@npm run lint --prefix web
+	@npm run typecheck --prefix web
+	@npm run test:run --prefix web
+	@npm run build --prefix web
 
 ## master-flow-strict: Run strict master-flow test-first gate chain (requires DATABASE_URL)
 master-flow-strict:

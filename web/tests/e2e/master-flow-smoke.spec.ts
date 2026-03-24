@@ -24,6 +24,11 @@ interface MockMasterFlowOptions {
   onRequest?: (method: string, path: string, body: unknown) => void;
 }
 
+const MOCK_SYSTEM_NAME = 'shop';
+const MOCK_SERVICE_NAME = 'redis';
+const MOCK_TEMPLATE_NAME = 'Ubuntu 24';
+const MOCK_INSTANCE_SIZE_NAME = 'Small';
+
 function visibleModal(page: Page) {
   return page.locator('.ant-modal-content:visible');
 }
@@ -522,22 +527,22 @@ test.describe('master-flow mock smoke interactions', () => {
     await expect(modal).toBeVisible({ timeout: 5000 });
 
     // Step 0: Select System
-    await selectAntOption(page, modal.locator('.ant-select').nth(0));
+    await selectAntOption(page, modal.locator('.ant-select').nth(0), MOCK_SYSTEM_NAME);
 
     // Select Service
-    await selectAntOption(page, modal.locator('.ant-select').nth(1));
+    await selectAntOption(page, modal.locator('.ant-select').nth(1), MOCK_SERVICE_NAME);
 
     // Click Next
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 1: Select Template
-    await selectAntOption(page, modal.locator('.ant-select').nth(0));
+    await selectAntOption(page, modal.locator('.ant-select').nth(0), MOCK_TEMPLATE_NAME);
 
     // Click Next
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 2: Select Instance Size
-    await selectAntOption(page, modal.locator('.ant-select').nth(0));
+    await selectAntOption(page, modal.locator('.ant-select').nth(0), MOCK_INSTANCE_SIZE_NAME);
 
     // Click Next
     await modal.getByRole('button', { name: 'Next' }).click();
@@ -715,17 +720,17 @@ test.describe('master-flow mock smoke interactions', () => {
     await expect(modal).toBeVisible({ timeout: 5000 });
 
     // Step 0: Select System + Service
-    await selectAntOption(page, modal.locator('.ant-select').nth(0));
-    await selectAntOption(page, modal.locator('.ant-select').nth(1));
+    await selectAntOption(page, modal.locator('.ant-select').nth(0), MOCK_SYSTEM_NAME);
+    await selectAntOption(page, modal.locator('.ant-select').nth(1), MOCK_SERVICE_NAME);
 
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 1: Template
-    await selectAntOption(page, modal.locator('.ant-select').nth(0));
+    await selectAntOption(page, modal.locator('.ant-select').nth(0), MOCK_TEMPLATE_NAME);
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 2: Instance Size
-    await selectAntOption(page, modal.locator('.ant-select').nth(0));
+    await selectAntOption(page, modal.locator('.ant-select').nth(0), MOCK_INSTANCE_SIZE_NAME);
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 3: Namespace + Reason + Batch Count > 1

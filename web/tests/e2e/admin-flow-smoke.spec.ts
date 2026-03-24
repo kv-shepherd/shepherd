@@ -242,9 +242,9 @@ test.describe('admin-flow mock smoke interactions', () => {
         const modal = getAntModal(page, 'rbac-role-create-modal');
         await expect(modal).toBeVisible();
         await modal.getByRole('textbox').first().fill('TestRole');
-        const permissionSelect = modal.getByRole('combobox').first();
-        await selectAntOption(page, permissionSelect, 'system:read');
-        await selectAntOption(page, permissionSelect, 'vm:create');
+        const permissionSelect = modal.locator('.ant-select').first();
+        await selectAntOption(page, permissionSelect, 'system:read', 15_000, { keepOpen: true });
+        await selectAntOption(page, permissionSelect, 'vm:create', 15_000, { reuseOpenDropdown: true });
         await modal.getByRole('button', { name: /ok|create|save|submit/i }).click();
 
         await expect.poll(() => capturedPermissionCount, { timeout: 5000 }).toBe(2);

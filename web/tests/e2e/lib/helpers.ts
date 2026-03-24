@@ -90,30 +90,20 @@ export async function selectAntOption(
     page: Page,
     combobox: Locator,
     optionFilter?: string | RegExp,
-    timeout = 15_000
+    timeout = 15_000,
+    options?: { keepOpen?: boolean; reuseOpenDropdown?: boolean }
 ): Promise<void> {
     const trigger = combobox.first();
+    const selectRoot = trigger
+        .locator('xpath=ancestor-or-self::*[contains(concat(" ", normalize-space(@class), " "), " ant-select ")][1]')
+        .first();
+    const isMultipleSelect = await selectRoot
+        .evaluate((element) => element.classList.contains('ant-select-multiple'))
+        .catch(() => false);
     await expect(trigger).toBeVisible({ timeout });
+    await expect(selectRoot).not.toHaveClass(/ant-select-disabled/, { timeout });
 
-    // Step 1: Click to open dropdown
-    await trigger.click();
-
-    // Step 1.5: If the Select supports showSearch and a string filter is given,
-    // type the filter text into the search input. This narrows the virtual list
-    // to only matching options, preventing items outside the viewport from being
-    // invisible in the DOM. We use .pressSequentially() for realistic key-by-key
-    // input that triggers Ant's onSearch handler.
-    if (typeof optionFilter === 'string' && optionFilter.length > 0) {
-        const searchInput = trigger.locator('input[type="search"]');
-        if (await searchInput.count() > 0 && await searchInput.isVisible().catch(() => false)) {
-            await searchInput.fill('');
-            await searchInput.pressSequentially(optionFilter, { delay: 30 });
-            // Give Ant a moment to re-render filtered options
-            await page.waitForTimeout(200);
-        }
-    }
-
-    // Step 2: Wait for any OLD dropdown leave-animations to finish.
+    // Step 1: Wait for any OLD dropdown leave-animations to finish.
     // Ant Design adds `.ant-slide-up-leave` during close animation.
     // We must wait for these to disappear before locating the active dropdown,
     // otherwise `.ant-select-dropdown:visible` may resolve to 2 elements.
@@ -121,45 +111,75 @@ export async function selectAntOption(
         page.locator('.ant-select-dropdown.ant-slide-up-leave')
     ).toHaveCount(0, { timeout });
 
-    // Step 3: Locate the active dropdown.
-    const dropdown = page
+    // Step 2: Locate any currently active dropdown before clicking.
+    const activeDropdowns = page
         .locator('.ant-select-dropdown:not(.ant-slide-up-leave):not(.ant-slide-up-leave-active)')
-        .filter({ visible: true })
-        .last();
+        .filter({ visible: true });
+
+    let dropdown = activeDropdowns.last();
+    const shouldReuseOpenDropdown = !!options?.reuseOpenDropdown;
+    if (!shouldReuseOpenDropdown || await activeDropdowns.count() === 0) {
+        // Default to opening the target select explicitly. Only reuse an
+        // already-open dropdown when the caller intentionally keeps it open
+        // across consecutive selections (for example Ant multi-select).
+        await trigger.click();
+        await expect(
+            page.locator('.ant-select-dropdown.ant-slide-up-leave')
+        ).toHaveCount(0, { timeout });
+        dropdown = activeDropdowns.last();
+    }
+
     await expect(dropdown).toBeVisible({ timeout });
+
+    // Step 3: If the Select supports showSearch and a string filter is given,
+    // type the filter text into the search input. This narrows the virtual list
+    // to only matching options, preventing items outside the viewport from being
+    // invisible in the DOM. We use .pressSequentially() for realistic key-by-key
+    // input that triggers Ant's onSearch handler.
+    if (typeof optionFilter === 'string' && optionFilter.length > 0) {
+        const searchInput = selectRoot.locator('input[type="search"]').first();
+        if (await searchInput.count() > 0 && await searchInput.isVisible().catch(() => false)) {
+            await searchInput.click();
+            await searchInput.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+            await searchInput.press('Delete');
+            await searchInput.pressSequentially(optionFilter, { delay: 30 });
+            await expect
+                .poll(
+                    async () =>
+                        dropdown
+                            .locator('[role="option"], .ant-select-item-option')
+                            .filter({ visible: true })
+                            .count(),
+                    { timeout },
+                )
+                .toBeGreaterThan(0);
+        }
+    }
 
     const optionCandidates = dropdown.locator('[role="option"], .ant-select-item-option');
     const visibleOptions = optionCandidates.filter({ visible: true });
 
     // Step 4: Wait for options to be ready. Async option loading is common in
-    // Ant Design Select and should not fail immediately.
-    const readiness = { value: 'pending' as 'pending' | 'ready' | 'no-data' };
-    await expect
-        .poll(async () => {
-            const visibleOptionCount = await visibleOptions.count();
-            if (visibleOptionCount > 0) {
-                readiness.value = 'ready';
-                return readiness.value;
-            }
-            const noDataVisible = await dropdown
-                .getByText(/^(no data|not found|no options)$/i)
-                .first()
-                .isVisible()
-                .catch(() => false);
-            if (noDataVisible) {
-                readiness.value = 'no-data';
-                return readiness.value;
-            }
-            readiness.value = 'pending';
-            return readiness.value;
-        }, { timeout })
-        .not.toBe('pending');
-
-    if (readiness.value === 'no-data') {
-        throw new Error(
-            'Ant Select has no selectable options ("No data"/"Not Found"). ' +
-            'For approval flow this usually means no HEALTHY+enabled cluster is available.'
-        );
+    // Ant Design Select, and dependent fields may briefly show an empty list or
+    // "No data" before the backing request finishes. Only treat "no data" as a
+    // failure if the list never becomes ready within the timeout window.
+    try {
+        await expect
+            .poll(async () => visibleOptions.count(), { timeout })
+            .toBeGreaterThan(0);
+    } catch (error) {
+        const noDataVisible = await dropdown
+            .getByText(/^(no data|not found|no options)$/i)
+            .first()
+            .isVisible()
+            .catch(() => false);
+        if (noDataVisible) {
+            throw new Error(
+                'Ant Select has no selectable options ("No data"/"Not Found"). ' +
+                'For approval flow this usually means no HEALTHY+enabled cluster is available.'
+            );
+        }
+        throw error;
     }
 
     // Step 5: Find the target option within the active dropdown
@@ -195,7 +215,7 @@ export async function selectAntOption(
 
     // Multi-select dropdowns may remain open after selecting one item and can block modal buttons.
     // Press Escape once to close the dropdown explicitly when it is still visible.
-    if (await dropdown.isVisible().catch(() => false)) {
+    if (!options?.keepOpen && !isMultipleSelect && await dropdown.isVisible().catch(() => false)) {
         await page.keyboard.press('Escape');
     }
 }
