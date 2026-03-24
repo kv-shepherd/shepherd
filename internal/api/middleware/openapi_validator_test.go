@@ -102,6 +102,7 @@ func TestOpenAPIValidatorAcceptsValidServiceUpdateRequest(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/systems/sys-1/services/svc-1", bytes.NewBufferString(`{"description":"new description"}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-token")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -202,6 +203,7 @@ func TestOpenAPIValidatorAcceptsValidVMCreateRequest(t *testing.T) {
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/vms/request", bytes.NewBufferString(reqBody))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-token")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -361,6 +363,7 @@ func TestOpenAPIValidatorAllowsDynamicAuthProviderConfigInStrictMode(t *testing.
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/auth-providers", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -394,6 +397,7 @@ func TestOpenAPIValidatorAllowsDynamicAuthProviderConfigInRequestBody(t *testing
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/auth-providers", bytes.NewBufferString(reqBody))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-token")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -439,6 +443,7 @@ func TestOpenAPIValidatorAllowsDynamicInstanceSizeSpecOverridesInResponse(t *tes
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/instance-sizes", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -502,6 +507,7 @@ func TestOpenAPIValidatorAllowsDynamicInstanceSizeSpecOverridesInRequestBody(t *
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/instance-sizes", bytes.NewBufferString(reqBody))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-token")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -563,6 +569,7 @@ func TestOpenAPIValidatorAllowsDynamicAuthProviderTypeConfigSchemaInStrictMode(t
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/auth-provider-types", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -595,6 +602,7 @@ func TestOpenAPIValidatorAllowsDynamicTicketPayloadInStrictMode(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/builtin-approval/tasks", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -721,6 +729,7 @@ func TestOpenAPIValidatorStillRejectsUndeclaredAuthProviderTopLevelField(t *test
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/auth-providers", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
