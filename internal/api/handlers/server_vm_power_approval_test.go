@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/domain"
@@ -47,15 +47,15 @@ func TestStartVM_ProdNamespaceCreatesPendingPowerTicket(t *testing.T) {
 		t.Fatalf("response ticket_id/event_id must be set, got ticket=%q event=%q", resp.TicketId, resp.EventId)
 	}
 
-	ticket, err := client.ApprovalTicket.Get(t.Context(), resp.TicketId)
+	ticket, err := client.Ticket.Get(t.Context(), resp.TicketId)
 	if err != nil {
-		t.Fatalf("query approval ticket: %v", err)
+		t.Fatalf("query ticket: %v", err)
 	}
-	if ticket.OperationType != approvalticket.OperationTypePOWER {
-		t.Fatalf("ticket operation_type = %q, want %q", ticket.OperationType, approvalticket.OperationTypePOWER)
+	if ticket.OperationType != entticket.OperationTypePOWER {
+		t.Fatalf("ticket operation_type = %q, want %q", ticket.OperationType, entticket.OperationTypePOWER)
 	}
-	if ticket.Status != approvalticket.StatusPENDING {
-		t.Fatalf("ticket status = %q, want %q", ticket.Status, approvalticket.StatusPENDING)
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %q, want %q", ticket.Status, entticket.StatusPENDING)
 	}
 
 	event, err := client.DomainEvent.Get(t.Context(), resp.EventId)

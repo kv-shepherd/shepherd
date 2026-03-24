@@ -116,7 +116,7 @@ if rg -n "tracked in Redis" docs/design/phases/04-governance.md >"${legacy_refs_
   fail "04-governance.md must not require Redis for VNC token tracking"
 fi
 
-rg -q "POST /api/v1/approvals/\\{id\\}/cancel" docs/design/checklist/phase-4-checklist.md \
+rg -q "POST /api/v1/tickets/\\{id\\}/cancel" docs/design/checklist/phase-4-checklist.md \
   || fail "phase-4-checklist.md must use API-prefixed cancellation endpoint"
 
 rg -q "no active token revocation API" docs/design/checklist/phase-4-checklist.md \

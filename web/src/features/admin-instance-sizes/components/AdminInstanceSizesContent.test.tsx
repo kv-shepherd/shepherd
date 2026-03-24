@@ -1,6 +1,16 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { forwardRef, useImperativeHandle } from 'react';
+
+const controllerState = vi.hoisted(() => ({
+    createOpen: false,
+}));
+
+vi.mock('next/navigation', () => ({
+    useRouter: () => ({
+        push: vi.fn(),
+    }),
+}));
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
@@ -13,6 +23,29 @@ vi.mock('react-i18next', () => ({
             }
             return fallback?.defaultValue ?? key;
         },
+    }),
+}));
+
+vi.mock('@/features/setup-guide/hooks/useSetupGuide', () => ({
+    useSetupGuide: () => ({
+        systemsTotal: 1,
+        servicesTotal: 1,
+        vmsTotal: 0,
+        namespacesTotal: 1,
+        templatesTotal: 1,
+        instanceSizesTotal: 1,
+        canCreateSystem: true,
+        canCreateService: true,
+        canCreateVM: true,
+        canManageNamespaces: true,
+        canManageTemplates: true,
+        canManageInstanceSizes: true,
+        systemReady: true,
+        serviceReady: true,
+        prerequisitesReady: true,
+        vmRequestReady: true,
+        hasRequestedFirstVM: false,
+        isLoading: false,
     }),
 }));
 
@@ -64,13 +97,22 @@ vi.mock('../hooks/useAdminInstanceSizesController', async () => {
                 data: { items: [] },
                 isLoading: false,
                 refetch: vi.fn(),
-                createOpen: false,
+                createOpen: controllerState.createOpen,
                 editOpen: false,
                 deleteOpen: false,
                 editingItem: null,
                 deletingItem: null,
                 createForm,
                 editForm,
+                createInitialValues: {
+                    catalog_scope: 'unclassified',
+                    enabled: true,
+                    sort_order: 0,
+                    dedicated_cpu: false,
+                    spec_text: '{}',
+                    root_volume_mode_intent: 'auto',
+                },
+                editInitialValues: undefined,
                 openCreateModal: vi.fn(),
                 openEditModal: vi.fn(),
                 openDeleteModal: vi.fn(),
@@ -114,9 +156,62 @@ vi.mock('../../admin-templates/components/DynamicSchemaForm', () => ({
     })(),
 }));
 
-import { AdminInstanceSizesContent } from './AdminInstanceSizesContent';
+import { AdminInstanceSizesContent, applyInstanceSizePreset } from './AdminInstanceSizesContent';
 
 describe('AdminInstanceSizesContent', () => {
+    beforeEach(() => {
+        controllerState.createOpen = false;
+    });
+
+    it('renders the create form without duplicate initialValues warnings', async () => {
+        controllerState.createOpen = true;
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        render(<AdminInstanceSizesContent />);
+
+        expect(await screen.findByTestId('instance-size-create-modal')).toBeInTheDocument();
+        expect(
+            consoleErrorSpy.mock.calls.some((call) =>
+                call.some((value) => String(value).includes("Field can not overwrite it")),
+            ),
+        ).toBe(false);
+
+        consoleErrorSpy.mockRestore();
+        controllerState.createOpen = false;
+    }, 15000);
+
+    it('writes preset request values on the first apply', () => {
+        const setFieldsValue = vi.fn();
+        const mockForm = {
+            getFieldsValue: vi.fn(() => ({
+                name: 'kept-name',
+                display_name: 'Kept Display Name',
+                description: 'Kept Description',
+                sort_order: 9,
+            })),
+            setFieldsValue,
+        };
+
+        applyInstanceSizePreset(
+            mockForm as never,
+            { current: null },
+            'linux-test',
+        );
+
+        expect(setFieldsValue).toHaveBeenCalledTimes(1);
+        expect(setFieldsValue).toHaveBeenCalledWith(expect.objectContaining({
+            name: 'kept-name',
+            display_name: 'Kept Display Name',
+            description: 'Kept Description',
+            sort_order: 9,
+            cpu_overcommit_enabled: true,
+            cpu_request: 2,
+            memory_overcommit_enabled: true,
+            memory_request_gi: 4,
+            root_volume_mode_intent: 'auto',
+        }));
+    });
+
     it('falls back to name when display_name is an empty string', async () => {
         render(<AdminInstanceSizesContent />);
 
@@ -128,9 +223,13 @@ describe('AdminInstanceSizesContent', () => {
     it('renders overcommit request values and gpu device labels', async () => {
         render(<AdminInstanceSizesContent />);
 
-        await screen.findByText('instanceSizes.request_compact 2 instanceSizes.cores');
-        expect(screen.getByText('instanceSizes.request_compact 2 instanceSizes.cores')).toBeInTheDocument();
-        expect(screen.getByText('instanceSizes.request_compact 6 Gi')).toBeInTheDocument();
+        await screen.findByText((content) => content.includes('instanceSizes.request_compact 2 instanceSizes.cores'));
+        expect(
+            screen.getByText((content) => content.includes('instanceSizes.request_compact 2 instanceSizes.cores')),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText((content) => content.includes('instanceSizes.request_compact 6 Gi')),
+        ).toBeInTheDocument();
         expect(screen.getByText('GPU nvidia.com/A10')).toBeInTheDocument();
     });
 });

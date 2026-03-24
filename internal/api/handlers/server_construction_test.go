@@ -33,3 +33,14 @@ func TestNewServer_PreservesInjectedApprovalRequirements(t *testing.T) {
 		t.Fatal("NewServer() should preserve injected ApprovalRequirementService")
 	}
 }
+
+func TestNewServer_DoesNotConstructDirectorySyncFallback(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "server_new_no_directory_sync_fallback")
+	srv := NewServer(ServerDeps{EntClient: client})
+
+	if srv.directorySync != nil {
+		t.Fatal("NewServer() should not construct DirectorySyncService implicitly")
+	}
+}

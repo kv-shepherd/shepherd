@@ -21,18 +21,6 @@ func (f ApprovalPolicyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Val
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ApprovalPolicyMutation", m)
 }
 
-// The ApprovalTicketFunc type is an adapter to allow the use of ordinary
-// function as ApprovalTicket mutator.
-type ApprovalTicketFunc func(context.Context, *ent.ApprovalTicketMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f ApprovalTicketFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.ApprovalTicketMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ApprovalTicketMutation", m)
-}
-
 // The AuditLogFunc type is an adapter to allow the use of ordinary
 // function as AuditLog mutator.
 type AuditLogFunc func(context.Context, *ent.AuditLogMutation) (ent.Value, error)
@@ -57,16 +45,16 @@ func (f AuthProviderFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AuthProviderMutation", m)
 }
 
-// The BatchApprovalTicketFunc type is an adapter to allow the use of ordinary
-// function as BatchApprovalTicket mutator.
-type BatchApprovalTicketFunc func(context.Context, *ent.BatchApprovalTicketMutation) (ent.Value, error)
+// The BatchTicketFunc type is an adapter to allow the use of ordinary
+// function as BatchTicket mutator.
+type BatchTicketFunc func(context.Context, *ent.BatchTicketMutation) (ent.Value, error)
 
 // Mutate calls f(ctx, m).
-func (f BatchApprovalTicketFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.BatchApprovalTicketMutation); ok {
+func (f BatchTicketFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BatchTicketMutation); ok {
 		return f(ctx, mv)
 	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BatchApprovalTicketMutation", m)
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BatchTicketMutation", m)
 }
 
 // The ClusterFunc type is an adapter to allow the use of ordinary
@@ -93,6 +81,18 @@ func (f ClusterPolicyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Valu
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ClusterPolicyMutation", m)
 }
 
+// The DirectorySyncJobFunc type is an adapter to allow the use of ordinary
+// function as DirectorySyncJob mutator.
+type DirectorySyncJobFunc func(context.Context, *ent.DirectorySyncJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f DirectorySyncJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.DirectorySyncJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DirectorySyncJobMutation", m)
+}
+
 // The DomainEventFunc type is an adapter to allow the use of ordinary
 // function as DomainEvent mutator.
 type DomainEventFunc func(context.Context, *ent.DomainEventMutation) (ent.Value, error)
@@ -105,40 +105,40 @@ func (f DomainEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DomainEventMutation", m)
 }
 
-// The ExternalApprovalSystemFunc type is an adapter to allow the use of ordinary
-// function as ExternalApprovalSystem mutator.
-type ExternalApprovalSystemFunc func(context.Context, *ent.ExternalApprovalSystemMutation) (ent.Value, error)
+// The ExternalCohortFunc type is an adapter to allow the use of ordinary
+// function as ExternalCohort mutator.
+type ExternalCohortFunc func(context.Context, *ent.ExternalCohortMutation) (ent.Value, error)
 
 // Mutate calls f(ctx, m).
-func (f ExternalApprovalSystemFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.ExternalApprovalSystemMutation); ok {
+func (f ExternalCohortFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ExternalCohortMutation); ok {
 		return f(ctx, mv)
 	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ExternalApprovalSystemMutation", m)
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ExternalCohortMutation", m)
 }
 
-// The IdPGroupMappingFunc type is an adapter to allow the use of ordinary
-// function as IdPGroupMapping mutator.
-type IdPGroupMappingFunc func(context.Context, *ent.IdPGroupMappingMutation) (ent.Value, error)
+// The ExternalCohortGrantFunc type is an adapter to allow the use of ordinary
+// function as ExternalCohortGrant mutator.
+type ExternalCohortGrantFunc func(context.Context, *ent.ExternalCohortGrantMutation) (ent.Value, error)
 
 // Mutate calls f(ctx, m).
-func (f IdPGroupMappingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.IdPGroupMappingMutation); ok {
+func (f ExternalCohortGrantFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ExternalCohortGrantMutation); ok {
 		return f(ctx, mv)
 	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.IdPGroupMappingMutation", m)
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ExternalCohortGrantMutation", m)
 }
 
-// The IdPSyncedGroupFunc type is an adapter to allow the use of ordinary
-// function as IdPSyncedGroup mutator.
-type IdPSyncedGroupFunc func(context.Context, *ent.IdPSyncedGroupMutation) (ent.Value, error)
+// The ExternalCohortMappingFunc type is an adapter to allow the use of ordinary
+// function as ExternalCohortMapping mutator.
+type ExternalCohortMappingFunc func(context.Context, *ent.ExternalCohortMappingMutation) (ent.Value, error)
 
 // Mutate calls f(ctx, m).
-func (f IdPSyncedGroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.IdPSyncedGroupMutation); ok {
+func (f ExternalCohortMappingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ExternalCohortMappingMutation); ok {
 		return f(ctx, mv)
 	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.IdPSyncedGroupMutation", m)
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ExternalCohortMappingMutation", m)
 }
 
 // The InstanceSizeFunc type is an adapter to allow the use of ordinary
@@ -187,6 +187,18 @@ func (f PendingAdoptionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Va
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PendingAdoptionMutation", m)
+}
+
+// The PlatformSettingFunc type is an adapter to allow the use of ordinary
+// function as PlatformSetting mutator.
+type PlatformSettingFunc func(context.Context, *ent.PlatformSettingMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PlatformSettingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PlatformSettingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PlatformSettingMutation", m)
 }
 
 // The RateLimitExemptionFunc type is an adapter to allow the use of ordinary
@@ -297,6 +309,18 @@ func (f TemplateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TemplateMutation", m)
 }
 
+// The TicketFunc type is an adapter to allow the use of ordinary
+// function as Ticket mutator.
+type TicketFunc func(context.Context, *ent.TicketMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TicketFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TicketMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TicketMutation", m)
+}
+
 // The UserFunc type is an adapter to allow the use of ordinary
 // function as User mutator.
 type UserFunc func(context.Context, *ent.UserMutation) (ent.Value, error)
@@ -307,6 +331,18 @@ func (f UserFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error)
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserMutation", m)
+}
+
+// The UserDirectoryProfileFunc type is an adapter to allow the use of ordinary
+// function as UserDirectoryProfile mutator.
+type UserDirectoryProfileFunc func(context.Context, *ent.UserDirectoryProfileMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UserDirectoryProfileFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UserDirectoryProfileMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserDirectoryProfileMutation", m)
 }
 
 // The VMFunc type is an adapter to allow the use of ordinary

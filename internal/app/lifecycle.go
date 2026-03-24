@@ -84,14 +84,32 @@ func (a *Application) runClusterHealthLoop(ctx context.Context) {
 }
 
 func (a *Application) refreshClusterHealth(ctx context.Context) error {
-	clusters, err := a.EntClient.Cluster.Query().
-		Where(entcluster.EnabledEQ(true)).
-		All(ctx)
+	clusters, err := a.EntClient.Cluster.Query().All(ctx)
 	if err != nil {
-		return fmt.Errorf("query enabled clusters: %w", err)
+		return fmt.Errorf("query clusters: %w", err)
 	}
 
 	for _, cl := range clusters {
+		if !cl.Enabled {
+			disabledHealth := &provider.ClusterHealth{
+				ClusterName: cl.ID,
+				Status:      provider.ClusterStatusUnknown,
+				LastChecked: time.Now(),
+				Error:       "cluster is disabled",
+			}
+			a.HealthCheck.UpdateHealth(disabledHealth)
+			if _, err := a.EntClient.Cluster.UpdateOneID(cl.ID).
+				SetStatus(entcluster.StatusUNKNOWN).
+				Save(ctx); err != nil {
+				logger.Warn("persist disabled cluster health failed",
+					zap.String("cluster_id", cl.ID),
+					zap.String("cluster_name", cl.Name),
+					zap.Error(err),
+				)
+			}
+			continue
+		}
+
 		health := a.HealthCheck.CheckCluster(ctx, cl.ID)
 		a.HealthCheck.UpdateHealth(health)
 

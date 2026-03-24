@@ -2,10 +2,12 @@
 
 import { Form, message } from 'antd';
 import type { TFunction } from 'i18next';
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 
 import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
+import { translateApiError } from '@/lib/api/errorMessage';
+import { useScopeTargetCatalog } from '@/features/rbac-shared/useScopeTargetCatalog';
 
 import type {
     GlobalRoleBinding,
@@ -35,6 +37,9 @@ interface BindingFormValues {
 export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
     const [messageApi, messageContextHolder] = message.useMessage();
     const [selectedUserId, setSelectedUserId] = useState<string>('');
+    const [selectedUserLabel, setSelectedUserLabel] = useState('');
+    const [userSearch, setUserSearch] = useState('');
+    const deferredUserSearch = useDeferredValue(userSearch.trim());
 
     const [createRoleOpen, setCreateRoleOpen] = useState(false);
     const [editRoleOpen, setEditRoleOpen] = useState(false);
@@ -48,6 +53,7 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
     const [roleCreateForm] = Form.useForm<RoleCreateRequest>();
     const [roleEditForm] = Form.useForm<RoleUpdateRequest>();
     const [bindingForm] = Form.useForm<BindingFormValues>();
+    const { scopeTargetOptionsByType, scopeTargetLoadingByType } = useScopeTargetCatalog(addBindingOpen);
 
     const rolesQuery = useApiGet<RoleList>(
         ['admin-roles'],
@@ -60,8 +66,16 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
     );
 
     const usersQuery = useApiGet<UserList>(
-        ['admin-rbac-users'],
-        () => api.GET('/admin/users', { params: { query: { page: 1, per_page: 200 } } })
+        ['admin-rbac-users', deferredUserSearch],
+        () => api.GET('/admin/users', {
+            params: {
+                query: {
+                    page: 1,
+                    per_page: 50,
+                    ...(deferredUserSearch ? { search: deferredUserSearch } : {}),
+                },
+            },
+        })
     );
 
     const roleBindingsQuery = useApiGet<GlobalRoleBindingList>(
@@ -81,7 +95,7 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
                 setCreateRoleOpen(false);
                 roleCreateForm.resetFields();
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -98,7 +112,7 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
                 setEditingRole(null);
                 roleEditForm.resetFields();
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -111,7 +125,7 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
                 setDeleteRoleOpen(false);
                 setDeletingRole(null);
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -131,7 +145,7 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
                 setAddBindingOpen(false);
                 bindingForm.resetFields();
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -147,7 +161,7 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
             },
             onError: (err) => {
                 setDeletingBindingId('');
-                messageApi.error(err.message || t('common:message.error'));
+                messageApi.error(translateApiError(t, err));
             },
         }
     );
@@ -161,6 +175,10 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
         () => users.find((user) => user.id === selectedUserId),
         [selectedUserId, users]
     );
+    const selectedUserDisplayLabel = selectedUser?.display_name || selectedUser?.username || selectedUserLabel;
+    const selectedUserValue = selectedUserId
+        ? { value: selectedUserId, label: selectedUserLabel || (selectedUser ? formatUserOptionLabel(selectedUser) : selectedUserId) }
+        : undefined;
 
     const permissionOptions = useMemo(
         () => permissions.map((p) => ({
@@ -168,6 +186,13 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
             label: p.description ? `${p.key} (${p.description})` : p.key,
         })),
         [permissions]
+    );
+    const userOptions = useMemo(
+        () => users.map((user) => ({
+            value: user.id,
+            label: formatUserOptionLabel(user),
+        })),
+        [users]
     );
 
     const openCreateRoleModal = () => {
@@ -188,18 +213,14 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
 
     const openEditRoleModal = (role: Role) => {
         setEditingRole(role);
+        roleEditForm.resetFields();
+        roleEditForm.setFieldsValue({
+            display_name: role.display_name,
+            description: role.description,
+            permissions: role.permissions,
+            enabled: role.enabled,
+        });
         setEditRoleOpen(true);
-        // Modal + Form uses destroyOnHidden/preserve=false. Defer hydration to
-        // next tick so form items are mounted before setFieldsValue applies.
-        setTimeout(() => {
-            roleEditForm.resetFields();
-            roleEditForm.setFieldsValue({
-                display_name: role.display_name,
-                description: role.description,
-                permissions: role.permissions,
-                enabled: role.enabled,
-            });
-        }, 0);
     };
 
     const closeEditRoleModal = () => {
@@ -231,6 +252,11 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
             return;
         }
         deleteRoleMutation.mutate(deletingRole.id);
+    };
+
+    const selectUser = (userId: string, label = '') => {
+        setSelectedUserId(userId);
+        setSelectedUserLabel(userId ? label.trim() || userId : '');
     };
 
     const openAddBindingModal = () => {
@@ -278,14 +304,19 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
         roles,
         permissions,
         users,
+        userOptions,
         roleBindings,
         selectedUser,
+        selectedUserDisplayLabel,
         selectedUserId,
-        setSelectedUserId,
+        selectedUserValue,
+        selectUser,
+        userSearch,
+        setUserSearch,
 
         rolesLoading: rolesQuery.isLoading,
         permissionsLoading: permissionsQuery.isLoading,
-        usersLoading: usersQuery.isLoading,
+        usersLoading: usersQuery.isLoading || usersQuery.isFetching,
         roleBindingsLoading: roleBindingsQuery.isLoading,
         refetchRoles: rolesQuery.refetch,
         refetchPermissions: permissionsQuery.refetch,
@@ -293,6 +324,8 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
         refetchRoleBindings: roleBindingsQuery.refetch,
 
         permissionOptions,
+        scopeTargetOptionsByType,
+        scopeTargetLoadingByType,
 
         createRoleOpen,
         editRoleOpen,
@@ -324,4 +357,10 @@ export function useAdminRbacController({ t }: UseAdminRbacControllerArgs) {
         createBindingPending: createBindingMutation.isPending,
         deleteBindingPending: deleteBindingMutation.isPending,
     };
+}
+
+function formatUserOptionLabel(user: User) {
+    return user.display_name
+        ? `${user.display_name} (${user.username})`
+        : user.username;
 }

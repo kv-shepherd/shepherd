@@ -42,12 +42,12 @@ func TestApprovalModule_WiringContract(t *testing.T) {
 	text := string(src)
 
 	required := []string{
-		"approval.NewGateway(",
+		"ticketing.NewService(",
 		"service.NewApprovalRequirementService(",
 		"notification.NewTriggers(",
-		"gateway.SetNotifier(",
+		"ticketService.SetNotifier(",
 		"usecase.NewApprovalAtomicWriter(",
-		"gateway.SetVMService(", // P1-A: DryRun Pre-flight Gate wiring
+		"ticketService.SetVMService(", // P1-A: DryRun Pre-flight Gate wiring
 	}
 	for _, fragment := range required {
 		if !strings.Contains(text, fragment) {

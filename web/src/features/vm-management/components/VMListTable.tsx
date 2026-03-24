@@ -3,7 +3,7 @@
 import {
     Badge,
     Button,
-    Card,
+    Dropdown,
     Space,
     Table,
     Tag,
@@ -11,19 +11,24 @@ import {
     Typography,
 } from 'antd';
 import {
+    CopyOutlined,
     DeleteOutlined,
     DesktopOutlined,
     EyeOutlined,
+    MoreOutlined,
     PauseCircleOutlined,
     PlayCircleOutlined,
     RedoOutlined,
+    SettingOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import type { MenuProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { TFunction } from 'i18next';
 
 import type { VM, VMList } from '../types';
 import { VM_STATUS_MAP } from '../types';
+import { PageSurface } from '@/components/layouts/PageSection';
 
 const { Text: TypographyText } = Typography;
 
@@ -39,6 +44,8 @@ interface VMListTableProps {
     onRestart: (vmId: string) => void;
     onConsole: (vmId: string) => void;
     onDelete: (vmId: string, vmName: string, environment?: string) => void;
+    onModify: (vmId: string, vmName: string) => void;
+    onRequestSimilar: (vmId: string) => void;
     onDetail: (vmId: string) => void;
     selectedRowKeys: string[];
     onSelectionChange: (selectedKeys: string[]) => void;
@@ -56,6 +63,8 @@ export function VMListTable({
     onRestart,
     onConsole,
     onDelete,
+    onModify,
+    onRequestSimilar,
     onDetail,
     selectedRowKeys,
     onSelectionChange,
@@ -101,6 +110,22 @@ export function VMListTable({
             render: (namespace: string) => <Tag>{namespace}</Tag>,
         },
         {
+            title: t('field.cluster'),
+            dataIndex: 'cluster_name',
+            key: 'cluster_name',
+            width: 150,
+            render: (clusterName: string, record) => (
+                <Space direction="vertical" size={0}>
+                    <TypographyText>{clusterName || record.cluster_id || '—'}</TypographyText>
+                    {clusterName && record.cluster_id && clusterName !== record.cluster_id && (
+                        <TypographyText type="secondary" style={{ fontSize: 12 }}>
+                            {record.cluster_id}
+                        </TypographyText>
+                    )}
+                </Space>
+            ),
+        },
+        {
             title: t('field.hostname'),
             dataIndex: 'hostname',
             key: 'hostname',
@@ -123,7 +148,30 @@ export function VMListTable({
             render: (_, record) => {
                 const isRunning = record.status === 'RUNNING';
                 const isStopped = record.status === 'STOPPED';
-                const canDelete = isStopped || record.status === 'FAILED';
+                const canDelete = isStopped
+                    || record.status === 'FAILED'
+                    || record.status === 'NOT_FOUND'
+                    || record.status === 'UNKNOWN';
+                const moreItems: MenuProps['items'] = [
+                    {
+                        key: 'details',
+                        icon: <EyeOutlined />,
+                        label: t('action.view_details'),
+                        onClick: () => onDetail(record.id),
+                    },
+                    {
+                        key: 'modify',
+                        icon: <SettingOutlined />,
+                        label: t('action.request_modify'),
+                        onClick: () => onModify(record.id, record.name),
+                    },
+                    {
+                        key: 'request-similar',
+                        icon: <CopyOutlined />,
+                        label: t('action.request_similar'),
+                        onClick: () => onRequestSimilar(record.id),
+                    },
+                ];
 
                 return (
                     <Space size={4}>
@@ -173,16 +221,6 @@ export function VMListTable({
                                 onClick={() => onConsole(record.id)}
                             />
                         </Tooltip>
-                        <Tooltip title={t('action.console_status')}>
-                            <Button
-                                type="text"
-                                size="small"
-                                aria-label={`console status ${record.name}`}
-                                data-testid={`vm-console-status-${record.id}`}
-                                icon={<EyeOutlined />}
-                                onClick={() => onDetail(record.id)}
-                            />
-                        </Tooltip>
                         <Tooltip title={t('action.delete')}>
                             <Button
                                 type="text"
@@ -195,6 +233,15 @@ export function VMListTable({
                                 onClick={() => onDelete(record.id, record.name, record.environment)}
                             />
                         </Tooltip>
+                        <Dropdown menu={{ items: moreItems }} trigger={['click']}>
+                            <Button
+                                type="text"
+                                size="small"
+                                aria-label={`${t('common:table.actions')} ${record.name}`}
+                                data-testid={`vm-action-more-${record.id}`}
+                                icon={<MoreOutlined />}
+                            />
+                        </Dropdown>
                     </Space>
                 );
             },
@@ -202,7 +249,7 @@ export function VMListTable({
     ];
 
     return (
-        <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+        <PageSurface flush={true}>
             <Table<VM>
                 columns={columns}
                 dataSource={vmData?.items ?? []}
@@ -222,6 +269,6 @@ export function VMListTable({
                 }}
                 size="middle"
             />
-        </Card>
+        </PageSurface>
     );
 }

@@ -58,8 +58,8 @@ Define core contracts and types:
 | **InstanceSize Schema** | `ent/schema/instance_size.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
 | **Users Schema** | `ent/schema/users.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
 | **AuthProviders Schema** | `ent/schema/auth_providers.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
-| **IdPSyncedGroups Schema** | `ent/schema/idp_synced_groups.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md#stage-2-c) ³ |
-| **IdPGroupMappings Schema** | `ent/schema/idp_group_mappings.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md#stage-2-c) ³ |
+| **ExternalCohorts Schema** | `ent/schema/external_cohort.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md#stage-2-c) ³ |
+| **ExternalCohortMappings Schema** | `ent/schema/external_cohort_mapping.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md#stage-2-c) ³ |
 | **Roles Schema** | `ent/schema/roles.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.A](../interaction-flows/master-flow.md#stage-2-a) |
 | **RoleBindings Schema** | `ent/schema/role_bindings.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.B](../interaction-flows/master-flow.md#stage-2-b) |
 | **ResourceRoleBindings Schema** | `ent/schema/resource_role_bindings.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 4.A+](../interaction-flows/master-flow.md#stage-4-a-plus) |
@@ -329,11 +329,11 @@ Adapters MUST normalize all external providers into a common output payload:
 | `external_id` | string | Stable subject identifier from provider |
 | `email` | string | User email (may be empty if provider lacks) |
 | `display_name` | string | Human-readable name |
-| `groups` | string[] | Normalized group list for RBAC mapping |
+| `cohorts` | object[] | Normalized external cohort list for mapping/input only |
 | `raw_claims` | json | Raw provider claims/attributes (optional, for audit/debug) |
 
 Rules:
-- Core auth/RBAC logic consumes only this normalized output.
+- Core auth/RBAC logic consumes only the canonical identity result plus platform RBAC state.
 - Provider-specific fields must be mapped in the adapter layer.
 - Core runtime MUST NOT hardcode provider branches (e.g. OIDC/LDAP-specific `switch` in auth-provider handlers).
 

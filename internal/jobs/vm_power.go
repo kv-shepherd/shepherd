@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/riverqueue/river"
 	"go.uber.org/zap"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
@@ -78,7 +79,7 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	logger.Info("Processing VM power operation",
 		zap.String("event_id", eventID),
 		zap.String("operation", job.Args.Operation),
-		zap.Int64("attempt", int64(job.Attempt)),
+		zap.Int64("attempt", jobAttempt(job)),
 	)
 
 	// Step 1: Fetch DomainEvent (claim-check pattern).
@@ -86,7 +87,7 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	if err != nil {
 		return fmt.Errorf("fetch domain event %s: %w", eventID, err)
 	}
-	setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusEXECUTING)
+	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusEXECUTING)
 
 	// Step 2: Parse payload.
 	var payload domain.VMPowerPayload
@@ -97,7 +98,7 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 			logger.Error("failed to persist FAILED status for malformed power payload",
 				zap.String("event_id", eventID), zap.Error(saveErr))
 		}
-		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
+		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
 		return river.JobCancel(fmt.Errorf("unmarshal power payload for event %s: %w", eventID, err))
 	}
 
@@ -113,7 +114,7 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 		}
 
 		logAuditVMOp(ctx, w.auditLogger, operation+"_failed", payload.VMName, payload.Actor, eventID)
-		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
+		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
 
 		if cancel {
 			return river.JobCancel(err)
@@ -137,7 +138,7 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 			logger.Error("failed to persist FAILED status for unknown power operation",
 				zap.String("event_id", eventID), zap.Error(saveErr))
 		}
-		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
+		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
 		return river.JobCancel(fmt.Errorf("unknown power operation: %s", operation))
 	}
 
@@ -168,12 +169,39 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 		return markFailed(fmt.Errorf("execute k8s %s for event %s: %w", operation, eventID, execErr), false)
 	}
 
-	// Step 4: Update VM status in DB based on operation.
-	// CRITICAL: K8s operation already executed.
-	targetStatus := operationToStatus(operation)
-	if _, saveErr := w.entClient.VM.UpdateOneID(payload.VMID).
+	// Step 4: Refresh the VM status from K8s after the lifecycle operation.
+	// Do not assume RUNNING/STOPPED immediately after start/stop/restart:
+	// KubeVirt may still report transitional state for a while.
+	observedAt := time.Now()
+	targetStatus := fallbackPowerOperationStatus(operation)
+	targetRV := ""
+	if liveVM, liveErr := w.vmService.GetVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName); liveErr != nil {
+		logger.Warn("VM power operation succeeded but live status refresh failed; using transitional fallback",
+			zap.String("event_id", eventID),
+			zap.String("operation", operation),
+			zap.String("vm_name", payload.VMName),
+			zap.Error(liveErr),
+		)
+	} else {
+		targetStatus = mapDomainStatusToEntVM(liveVM.Status)
+		targetRV = strings.TrimSpace(liveVM.ResourceVersion)
+	}
+	targetTier := tierForStatus(targetStatus)
+	targetInterval := intervalForTier(targetTier)
+
+	update := w.entClient.VM.UpdateOneID(payload.VMID).
 		SetStatus(targetStatus).
-		Save(ctx); saveErr != nil {
+		SetPollingTier(targetTier).
+		SetPollIntervalSec(targetInterval)
+	if targetTier == vm.PollingTierHigh {
+		update = update.SetHighTierSince(observedAt)
+	} else {
+		update = update.ClearHighTierSince()
+	}
+	if targetRV != "" {
+		update = update.SetLastK8sRv(targetRV).SetLastPolledAt(observedAt)
+	}
+	if _, saveErr := update.Save(ctx); saveErr != nil {
 		logger.Error("CRITICAL: K8s power op succeeded but VM status update failed",
 			zap.String("event_id", eventID),
 			zap.String("operation", operation),
@@ -190,7 +218,7 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	}
 
 	logAuditVMOp(ctx, w.auditLogger, operation, payload.VMName, payload.Actor, eventID)
-	setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusSUCCESS)
+	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusSUCCESS)
 
 	logger.Info("VM power operation completed",
 		zap.String("event_id", eventID),
@@ -200,15 +228,16 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	return nil
 }
 
-// operationToStatus maps a power operation to the expected VM status after execution.
-func operationToStatus(operation string) vm.Status {
+// fallbackPowerOperationStatus maps a power operation to a safe transitional
+// status when a post-operation live refresh is unavailable.
+func fallbackPowerOperationStatus(operation string) vm.Status {
 	switch operation {
 	case powerOpStart:
-		return vm.StatusRUNNING
+		return vm.StatusSTARTING
 	case powerOpStop:
-		return vm.StatusSTOPPED
+		return vm.StatusSTOPPING
 	case powerOpRestart:
-		return vm.StatusRUNNING
+		return vm.StatusSTOPPING
 	default:
 		return vm.StatusUNKNOWN
 	}

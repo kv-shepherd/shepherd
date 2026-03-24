@@ -9,6 +9,7 @@ package handlers
 
 import (
 	"context"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,8 +19,11 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/governance/approval"
+	approvalbuiltin "kv-shepherd.io/shepherd/internal/governance/approval/builtin"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
+	"kv-shepherd.io/shepherd/internal/governance/ticketing"
 	"kv-shepherd.io/shepherd/internal/notification"
+	configcodec "kv-shepherd.io/shepherd/internal/provider/configcodec"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/usecase"
 )
@@ -36,11 +40,18 @@ type Server struct {
 	vmService            *service.VMService
 	clusterPolicy        *service.ClusterPolicyService
 	approvalReqs         *service.ApprovalRequirementService
+	directorySync        *service.DirectorySyncService
 	vncTokens            *service.VNCTokenManager
 	createVMUC           *usecase.CreateVMUseCase
 	deleteVMUC           *usecase.DeleteVMUseCase
-	gateway              *approval.Gateway
+	externalAuth         *service.ExternalAuthService
+	ticketService        *ticketing.Service
 	approvalRouter       *approval.ApprovalProviderRouter // Stage 2.E: provider router
+	authProviderConfig   *configcodec.AuthProviderConfigCodec
+	publicBaseURL        string
+	allowedOrigins       []string
+	settingsMu           sync.RWMutex
+	externalAuthBaseURL  string
 	refreshClusterHealth func(context.Context, string) error
 	riverClient          *river.Client[pgx.Tx]
 	notifier             *notification.Triggers // Optional: notification trigger service
@@ -57,14 +68,18 @@ type ServerDeps struct {
 	VMService            *service.VMService
 	ClusterPolicy        *service.ClusterPolicyService
 	ApprovalReqs         *service.ApprovalRequirementService
+	DirectorySync        *service.DirectorySyncService
 	VNCTokens            *service.VNCTokenManager
 	CreateVMUC           *usecase.CreateVMUseCase
 	DeleteVMUC           *usecase.DeleteVMUseCase
-	Gateway              *approval.Gateway
+	ExternalAuth         *service.ExternalAuthService
+	TicketService        *ticketing.Service
 	ApprovalRouter       *approval.ApprovalProviderRouter // Stage 2.E: provider router
 	RefreshClusterHealth func(context.Context, string) error
 	RiverClient          *river.Client[pgx.Tx]  // ISSUE-001: needed for async VM delete/power operations
 	Notifier             *notification.Triggers // Optional: notification trigger service
+	PublicBaseURL        string
+	AllowedOrigins       []string
 }
 
 // NewServer creates a new Server with all dependencies.
@@ -83,7 +98,13 @@ func NewServer(deps ServerDeps) *Server {
 			replay,
 		)
 	}
-	return &Server{
+	approvalRouter := deps.ApprovalRouter
+	if approvalRouter == nil && deps.TicketService != nil {
+		approvalRouter = approval.NewApprovalProviderRouter(
+			approvalbuiltin.NewProvider(deps.TicketService),
+		)
+	}
+	srv := &Server{
 		client:               deps.EntClient,
 		pool:                 deps.Pool,
 		jwtCfg:               deps.JWTCfg,
@@ -91,13 +112,20 @@ func NewServer(deps ServerDeps) *Server {
 		vmService:            deps.VMService,
 		clusterPolicy:        deps.ClusterPolicy,
 		approvalReqs:         deps.ApprovalReqs,
+		directorySync:        deps.DirectorySync,
 		vncTokens:            vncTokens,
 		createVMUC:           deps.CreateVMUC,
 		deleteVMUC:           deps.DeleteVMUC,
-		gateway:              deps.Gateway,
-		approvalRouter:       deps.ApprovalRouter, // Stage 2.E: provider router
+		externalAuth:         deps.ExternalAuth,
+		ticketService:        deps.TicketService,
+		approvalRouter:       approvalRouter, // Stage 2.E: provider router
+		authProviderConfig:   configcodec.NewAuthProviderConfigCodec(deps.EncryptionKey),
+		publicBaseURL:        deps.PublicBaseURL,
+		allowedOrigins:       append([]string(nil), deps.AllowedOrigins...),
 		refreshClusterHealth: deps.RefreshClusterHealth,
 		riverClient:          deps.RiverClient,
 		notifier:             deps.Notifier,
 	}
+	srv.loadExternalAuthPlatformSetting(context.Background())
+	return srv
 }

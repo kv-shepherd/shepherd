@@ -12,10 +12,13 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
 	"kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
+	"kv-shepherd.io/shepherd/ent/service"
 	entuser "kv-shepherd.io/shepherd/ent/user"
+	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
@@ -220,6 +223,11 @@ func (s *Server) DeleteUser(c *gin.Context, userID generated.UserID) {
 		return
 	}
 
+	if _, err := s.client.ExternalCohortGrant.Delete().Where(externalcohortgrant.UserIDEQ(userID)).Exec(ctx); err != nil {
+		logger.Error("failed to delete external cohort grants for user", zap.Error(err), zap.String("user_id", userID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 	if _, err := s.client.RoleBinding.Delete().Where(rolebinding.HasUserWith(entuser.IDEQ(userID))).Exec(ctx); err != nil {
 		logger.Error("failed to delete role bindings for user", zap.Error(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -278,12 +286,14 @@ func (s *Server) ListUserRoleBindings(c *gin.Context, userID generated.UserID) {
 	items := make([]generated.GlobalRoleBinding, 0, len(bindings))
 	for _, binding := range bindings {
 		roleName := ""
+		roleDisplayName := ""
 		roleID := ""
 		if binding.Edges.Role != nil {
 			roleName = binding.Edges.Role.Name
+			roleDisplayName = strings.TrimSpace(binding.Edges.Role.DisplayName)
 			roleID = binding.Edges.Role.ID
 		}
-		items = append(items, roleBindingToAPI(binding, userID, roleID, roleName))
+		items = append(items, s.roleBindingToAPI(ctx, binding, userID, roleID, roleName, roleDisplayName))
 	}
 
 	c.JSON(http.StatusOK, generated.GlobalRoleBindingList{Items: items})
@@ -394,7 +404,14 @@ func (s *Server) CreateUserRoleBinding(c *gin.Context, userID generated.UserID) 
 		})
 	}
 
-	c.JSON(http.StatusCreated, roleBindingToAPI(binding, userID, roleEnt.ID, roleEnt.Name))
+	c.JSON(http.StatusCreated, s.roleBindingToAPI(
+		ctx,
+		binding,
+		userID,
+		roleEnt.ID,
+		roleEnt.Name,
+		strings.TrimSpace(roleEnt.DisplayName),
+	))
 }
 
 // DeleteUserRoleBinding handles DELETE /admin/users/{user_id}/role-bindings/{binding_id}.
@@ -420,6 +437,11 @@ func (s *Server) DeleteUserRoleBinding(c *gin.Context, userID generated.UserID, 
 		return
 	}
 
+	if _, err := s.client.ExternalCohortGrant.Delete().Where(externalcohortgrant.RoleBindingIDEQ(binding.ID)).Exec(ctx); err != nil {
+		logger.Error("failed to delete external cohort grants for role binding", zap.Error(err), zap.String("binding_id", bindingID), zap.String("user_id", userID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 	if err := s.client.RoleBinding.DeleteOneID(binding.ID).Exec(ctx); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_BINDING_NOT_FOUND"})
@@ -478,22 +500,97 @@ func userToAPI(u *ent.User, roles []string) generated.User {
 	}
 }
 
-func roleBindingToAPI(binding *ent.RoleBinding, userID, roleID, roleName string) generated.GlobalRoleBinding {
+func (s *Server) roleBindingToAPI(
+	ctx context.Context,
+	binding *ent.RoleBinding,
+	userID, roleID, roleName, roleDisplayName string,
+) generated.GlobalRoleBinding {
 	allowed := make([]generated.GlobalRoleBindingAllowedEnvironments, 0, len(binding.AllowedEnvironments))
 	for _, env := range binding.AllowedEnvironments {
 		allowed = append(allowed, generated.GlobalRoleBindingAllowedEnvironments(env))
 	}
+	preferredRoleDisplay := strings.TrimSpace(roleDisplayName)
+	if preferredRoleDisplay == "" {
+		preferredRoleDisplay = roleName
+	}
+	managed, managedSource := s.roleBindingManagedState(ctx, binding.ID)
 	return generated.GlobalRoleBinding{
 		Id:                  binding.ID,
 		UserId:              userID,
 		RoleId:              roleID,
 		RoleName:            roleName,
+		RoleDisplayName:     preferredRoleDisplay,
 		ScopeType:           binding.ScopeType,
 		ScopeId:             binding.ScopeID,
+		ScopeDisplayName:    s.resolveRoleBindingScopeDisplayName(ctx, binding),
 		AllowedEnvironments: allowed,
+		Managed:             managed,
+		ManagedSource:       managedSource,
 		CreatedBy:           binding.CreatedBy,
 		CreatedAt:           binding.CreatedAt,
 	}
+}
+
+func (s *Server) roleBindingManagedState(ctx context.Context, bindingID string) (managed bool, managedSource string) {
+	_, err := s.client.ExternalCohortGrant.Query().
+		Where(externalcohortgrant.RoleBindingIDEQ(bindingID)).
+		Only(ctx)
+	if err == nil {
+		return true, "external_cohort"
+	}
+	if ent.IsNotFound(err) {
+		return false, ""
+	}
+	logger.Warn("failed to resolve managed role binding state", zap.Error(err), zap.String("binding_id", bindingID))
+	return false, ""
+}
+
+func (s *Server) resolveRoleBindingScopeDisplayName(
+	ctx context.Context,
+	binding *ent.RoleBinding,
+) string {
+	scopeType := strings.TrimSpace(binding.ScopeType)
+	scopeID := strings.TrimSpace(binding.ScopeID)
+	if scopeID == "" {
+		return ""
+	}
+
+	switch scopeType {
+	case "system":
+		systemEnt, err := s.client.System.Get(ctx, scopeID)
+		if err == nil {
+			return systemEnt.Name
+		}
+	case "service":
+		serviceEnt, err := s.client.Service.Query().
+			Where(service.IDEQ(scopeID)).
+			WithSystem().
+			Only(ctx)
+		if err == nil {
+			if serviceEnt.Edges.System != nil {
+				return serviceEnt.Edges.System.Name + " / " + serviceEnt.Name
+			}
+			return serviceEnt.Name
+		}
+	case "vm":
+		vmEnt, err := s.client.VM.Query().
+			Where(entvm.IDEQ(scopeID)).
+			WithService(func(q *ent.ServiceQuery) {
+				q.WithSystem()
+			}).
+			Only(ctx)
+		if err == nil {
+			if vmEnt.Edges.Service != nil && vmEnt.Edges.Service.Edges.System != nil {
+				return vmEnt.Edges.Service.Edges.System.Name + " / " + vmEnt.Edges.Service.Name + " / " + vmEnt.Name
+			}
+			if vmEnt.Edges.Service != nil {
+				return vmEnt.Edges.Service.Name + " / " + vmEnt.Name
+			}
+			return vmEnt.Name
+		}
+	}
+
+	return scopeID
 }
 
 func normalizeAllowedEnvironments(raw []string) ([]string, error) {

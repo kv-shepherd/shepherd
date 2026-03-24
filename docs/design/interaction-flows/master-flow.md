@@ -546,12 +546,12 @@ Establish authentication, authorization, and initial security defaults required 
 │  │    ('role-dev-lead', 'vm:operate'), ('role-dev-lead', 'vnc:access');               │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
-│  💡 After creating a custom role, it can be used in IdP group mapping (Stage 2.C)            │
+│  💡 After creating a custom role, it can be used in external cohort mapping (Stage 2.C)       │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
                                            │
                                            ▼
-> **Standard Provider Output**: All auth providers (OIDC/LDAP/SSO) are normalized via adapter layer into a common payload for RBAC mapping. See [ADR-0026 §Standard Provider Output](../../adr/ADR-0026-idp-config-naming.md#standard-provider-output-contract).
+> **Standard Provider Output**: All external auth providers are normalized via adapter layer into canonical identity + external cohort output. See [ADR-0026 §Standard Provider Output](../../adr/ADR-0026-idp-config-naming.md#standard-provider-output-contract).
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 │                Stage 2.B: Configure Authentication Providers (Plugin Standard)                │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
@@ -635,19 +635,19 @@ Establish authentication, authorization, and initial security defaults required 
 │  │                                                                                        │   │
 │  └────────────────────────────────────────────────────────────────────────────────────────┘   │
 │                                                                                              │
-│  ┌─ Step 2: Configure group-to-role mappings ────────────────────────────────────────────┐   │
+│  ┌─ Step 2: Configure external cohort-to-role mappings ─────────────────────────────────┐   │
 │  │                                                                                        │   │
-│  │  IdP Group → Shepherd Role mapping                                                    │   │
+│  │  External Cohort → Shepherd Role mapping                                              │   │
 │  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
-│  │  │  IdP group            Shepherd role       Allowed envs                          │   │   │
+│  │  │  External cohort      Shepherd role       Allowed envs                          │   │   │
 │  │  │  ──────────────────────────────────────────────────────────────────────────    │   │   │
-│  │  │  Platform-Admin       [PlatformAdmin ▼]  ☑ test  ☑ prod                         │   │   │
-│  │  │  DevOps-Team          [SystemAdmin ▼]    ☑ test  ☑ prod                         │   │   │
-│  │  │  QA-Team              [Operator ▼]       ☑ test  ☐ prod                         │   │   │
-│  │  │  IT-Support           [Viewer ▼]         ☑ test  ☐ prod                         │   │   │
-│  │  │  HR-Department        [Unmapped ▼]       -                                       │   │   │
+│  │  │  group:Platform-Admin [PlatformAdmin ▼]  ☑ test  ☑ prod                         │   │   │
+│  │  │  group:DevOps-Team    [SystemAdmin ▼]    ☑ test  ☑ prod                         │   │   │
+│  │  │  group:QA-Team        [Operator ▼]       ☑ test  ☐ prod                         │   │   │
+│  │  │  group:IT-Support     [Viewer ▼]         ☑ test  ☐ prod                         │   │   │
+│  │  │  department:HR        [Unmapped ▼]       -                                       │   │   │
 │  │  │                                                                                  │   │   │
-│  │  │  💡 Unmapped groups default to Viewer + test-only                                 │   │   │
+│  │  │  💡 Unmapped cohorts grant no access until an explicit platform mapping exists    │   │   │
 │  │  │                                                                                  │   │   │
 │  │  │  [Save mapping]                                                                   │   │   │
 │  │  └────────────────────────────────────────────────────────────────────────────────┘   │   │
@@ -656,20 +656,20 @@ Establish authentication, authorization, and initial security defaults required 
 │                                                                                              │
 │  📦 Database operations:                                                                     │
 │  ┌──────────────────────────────────────────────────────────────────────────────────┐       │
-│  │  -- Sync IdP groups                                                             │
-│  │  INSERT INTO idp_synced_groups (id, auth_provider_id, group_id, source_field)    │
-│  │  VALUES ('sg-001', 'idp-001', 'Platform-Admin', 'groups'),                       │
-│  │         ('sg-002', 'idp-001', 'DevOps-Team', 'groups'),                          │
-│  │         ('sg-003', 'idp-001', 'QA-Team', 'groups');                              │
+│  │  -- Record observed external cohorts                                              │
+│  │  INSERT INTO external_cohorts (id, auth_provider_id, kind, key, source_field)    │
+│  │  VALUES ('cohort-001', 'idp-001', 'group', 'Platform-Admin', 'groups'),          │
+│  │         ('cohort-002', 'idp-001', 'group', 'DevOps-Team', 'groups'),             │
+│  │         ('cohort-003', 'idp-001', 'group', 'QA-Team', 'groups');                 │
 │  │                                                                                    │
-│  │  -- Save mappings                                                                   │
-│  │  INSERT INTO idp_group_mappings (id, auth_provider_id, idp_group_id, role_id,      │
-│  │                                  scope_type, allowed_environments) VALUES          │
-│  │    ('map-001', 'idp-001', 'Platform-Admin', 'role-platform-admin',                 │
+│  │  -- Save explicit platform RBAC mappings                                            │
+│  │  INSERT INTO external_cohort_mappings (id, auth_provider_id, cohort_kind, cohort_key, │
+│  │                                       role_id, scope_type, allowed_environments) VALUES │
+│  │    ('map-001', 'idp-001', 'group', 'Platform-Admin', 'role-platform-admin',       │
 │  │     'global', ARRAY['test', 'prod']),                                              │
-│  │    ('map-002', 'idp-001', 'DevOps-Team', 'role-system-admin',                      │
+│  │    ('map-002', 'idp-001', 'group', 'DevOps-Team', 'role-system-admin',            │
 │  │     'global', ARRAY['test', 'prod']),                                              │
-│  │    ('map-003', 'idp-001', 'QA-Team', 'role-operator',                              │
+│  │    ('map-003', 'idp-001', 'group', 'QA-Team', 'role-operator',                    │
 │  │     'global', ARRAY['test']);                                                     │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
@@ -694,11 +694,11 @@ Establish authentication, authorization, and initial security defaults required 
 │  │     ← https://shepherd.company.com/api/v1/auth/providers/{provider_id}/callback?...   │
 │  │                                                                                        │
 │  │  5. Shepherd processing:                                                               │
-│  │     a. Validate token (signature, issuer, audience)                                   │
-│  │     b. Extract user info (sub, email, name, groups)                                   │
-│  │     c. Lookup idp_group_mappings by groups                                             │
-│  │     d. Create/update user record                                                      │
-│  │     e. Create RoleBindings (based on mapping)                                         │
+│  │     a. Complete provider-owned callback / token exchange                              │
+│  │     b. Normalize canonical user + external cohorts                                    │
+│  │     c. Lookup external_cohort_mappings by cohort kind/key                             │
+│  │     d. Create/update user record via JIT provisioning                                 │
+│  │     e. Create RoleBindings (based on explicit platform mapping)                       │
 │  │     f. Return JWT session token                                                       │
 │  └────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                              │
@@ -710,18 +710,18 @@ Establish authentication, authorization, and initial security defaults required 
 │  │  INSERT INTO users (id, external_id, email, name, auth_provider_id, created_at)   │
 │  │  VALUES ('user-001', 'oidc|abc123', 'zhang.san@company.com', 'Zhang San',          │
 │  │          'idp-001', NOW())                                                         │
-│  │  ON CONFLICT (external_id) DO UPDATE SET last_login_at = NOW();                   │
+│  │  ON CONFLICT (auth_provider_id, external_id) DO UPDATE SET last_login_at = NOW(); │
 │  │                                                                                    │
 │  │  -- 2. Remove old auto-assigned RoleBindings                                        │
 │  │  DELETE FROM role_bindings                                                         │
-│  │  WHERE user_id = 'user-001' AND source = 'idp_mapping';                            │
+│  │  WHERE user_id = 'user-001' AND source = 'external_cohort';                        │
 │  │                                                                                    │
-│  │  -- 3. Recreate RoleBindings based on groups                                        │
-│  │  -- (user groups: ['DevOps-Team'] → map to role-system-admin)                       │
+│  │  -- 3. Recreate RoleBindings based on explicit cohort mappings                      │
+│  │  -- (user cohort group:DevOps-Team → map to role-system-admin)                      │
 │  │  INSERT INTO role_bindings (id, user_id, role_id, scope_type,                       │
 │  │                             allowed_environments, source) VALUES                  │
 │  │    ('rb-auto-001', 'user-001', 'role-system-admin', 'global',                       │
-│  │     ARRAY['test', 'prod'], 'idp_mapping');                                          │
+│  │     ARRAY['test', 'prod'], 'external_cohort');                                      │
 │  │                                                                                    │
 │  │  COMMIT;                                                                           │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
@@ -733,8 +733,9 @@ Establish authentication, authorization, and initial security defaults required 
 
 | Login Method | Use Case | Permission Source |
 |-------------|----------|-------------------|
-| **OIDC plugin** | Production (recommended) | IdP group → mapping rules → RoleBindings |
-| **LDAP plugin** | Legacy AD environment | LDAP group → mapping rules → RoleBindings |
+| **OIDC plugin** | Production (recommended) | External cohort mapping rules → RoleBindings |
+| **LDAP plugin** | Legacy AD environment | External cohort mapping rules → RoleBindings |
+| **WeCom plugin** | Enterprise chat login | External cohort mapping rules → RoleBindings |
 | **Built-in users** | Dev/test | Manual user + RoleBindings |
 
 #### Dual-layer Permission Model Summary
@@ -744,7 +745,7 @@ Establish authentication, authorization, and initial security defaults required 
 | **Tables** | `role_bindings` | `resource_role_bindings` |
 | **Scope** | Platform-level operations | Access to specific resources |
 | **Role Types** | PlatformAdmin, SystemAdmin, Approver, Operator, Viewer, custom | Owner, Admin, Member, Viewer |
-| **Assignment** | Admin via IdP mapping or manual | Resource owner adds members |
+| **Assignment** | Admin via external cohort mapping or manual | Resource owner adds members |
 | **Typical Case** | "User can approve VM requests" | "User can access this system" |
 | **Visibility Control** | None (global) | Yes (members only) |
 | **Inheritance** | N/A | ✅ Service/VM inherit System permissions |
@@ -2049,7 +2050,7 @@ UI storyboard (parent-child queue):
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                                  │
 │  Existing APIs remain supported for compatibility:                                               │
-│    • POST /api/v1/approvals/batch                                                                │
+│    • POST /api/v1/vms/batch                                                                      │
 │    • POST /api/v1/vms/batch/power                                                                │
 │                                                                                                  │
 │  Internally, both are normalized into the same parent-child ticket pipeline.                     │

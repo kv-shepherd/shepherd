@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/predicate"
 	"kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
@@ -131,6 +132,21 @@ func (_u *RoleBindingUpdate) SetRole(v *Role) *RoleBindingUpdate {
 	return _u.SetRoleID(v.ID)
 }
 
+// AddExternalCohortGrantIDs adds the "external_cohort_grants" edge to the ExternalCohortGrant entity by IDs.
+func (_u *RoleBindingUpdate) AddExternalCohortGrantIDs(ids ...string) *RoleBindingUpdate {
+	_u.mutation.AddExternalCohortGrantIDs(ids...)
+	return _u
+}
+
+// AddExternalCohortGrants adds the "external_cohort_grants" edges to the ExternalCohortGrant entity.
+func (_u *RoleBindingUpdate) AddExternalCohortGrants(v ...*ExternalCohortGrant) *RoleBindingUpdate {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddExternalCohortGrantIDs(ids...)
+}
+
 // Mutation returns the RoleBindingMutation object of the builder.
 func (_u *RoleBindingUpdate) Mutation() *RoleBindingMutation {
 	return _u.mutation
@@ -146,6 +162,27 @@ func (_u *RoleBindingUpdate) ClearUser() *RoleBindingUpdate {
 func (_u *RoleBindingUpdate) ClearRole() *RoleBindingUpdate {
 	_u.mutation.ClearRole()
 	return _u
+}
+
+// ClearExternalCohortGrants clears all "external_cohort_grants" edges to the ExternalCohortGrant entity.
+func (_u *RoleBindingUpdate) ClearExternalCohortGrants() *RoleBindingUpdate {
+	_u.mutation.ClearExternalCohortGrants()
+	return _u
+}
+
+// RemoveExternalCohortGrantIDs removes the "external_cohort_grants" edge to ExternalCohortGrant entities by IDs.
+func (_u *RoleBindingUpdate) RemoveExternalCohortGrantIDs(ids ...string) *RoleBindingUpdate {
+	_u.mutation.RemoveExternalCohortGrantIDs(ids...)
+	return _u
+}
+
+// RemoveExternalCohortGrants removes "external_cohort_grants" edges to ExternalCohortGrant entities.
+func (_u *RoleBindingUpdate) RemoveExternalCohortGrants(v ...*ExternalCohortGrant) *RoleBindingUpdate {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveExternalCohortGrantIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -299,6 +336,51 @@ func (_u *RoleBindingUpdate) sqlSave(ctx context.Context) (_node int, err error)
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.ExternalCohortGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   rolebinding.ExternalCohortGrantsTable,
+			Columns: []string{rolebinding.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedExternalCohortGrantsIDs(); len(nodes) > 0 && !_u.mutation.ExternalCohortGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   rolebinding.ExternalCohortGrantsTable,
+			Columns: []string{rolebinding.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ExternalCohortGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   rolebinding.ExternalCohortGrantsTable,
+			Columns: []string{rolebinding.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{rolebinding.Label}
@@ -419,6 +501,21 @@ func (_u *RoleBindingUpdateOne) SetRole(v *Role) *RoleBindingUpdateOne {
 	return _u.SetRoleID(v.ID)
 }
 
+// AddExternalCohortGrantIDs adds the "external_cohort_grants" edge to the ExternalCohortGrant entity by IDs.
+func (_u *RoleBindingUpdateOne) AddExternalCohortGrantIDs(ids ...string) *RoleBindingUpdateOne {
+	_u.mutation.AddExternalCohortGrantIDs(ids...)
+	return _u
+}
+
+// AddExternalCohortGrants adds the "external_cohort_grants" edges to the ExternalCohortGrant entity.
+func (_u *RoleBindingUpdateOne) AddExternalCohortGrants(v ...*ExternalCohortGrant) *RoleBindingUpdateOne {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddExternalCohortGrantIDs(ids...)
+}
+
 // Mutation returns the RoleBindingMutation object of the builder.
 func (_u *RoleBindingUpdateOne) Mutation() *RoleBindingMutation {
 	return _u.mutation
@@ -434,6 +531,27 @@ func (_u *RoleBindingUpdateOne) ClearUser() *RoleBindingUpdateOne {
 func (_u *RoleBindingUpdateOne) ClearRole() *RoleBindingUpdateOne {
 	_u.mutation.ClearRole()
 	return _u
+}
+
+// ClearExternalCohortGrants clears all "external_cohort_grants" edges to the ExternalCohortGrant entity.
+func (_u *RoleBindingUpdateOne) ClearExternalCohortGrants() *RoleBindingUpdateOne {
+	_u.mutation.ClearExternalCohortGrants()
+	return _u
+}
+
+// RemoveExternalCohortGrantIDs removes the "external_cohort_grants" edge to ExternalCohortGrant entities by IDs.
+func (_u *RoleBindingUpdateOne) RemoveExternalCohortGrantIDs(ids ...string) *RoleBindingUpdateOne {
+	_u.mutation.RemoveExternalCohortGrantIDs(ids...)
+	return _u
+}
+
+// RemoveExternalCohortGrants removes "external_cohort_grants" edges to ExternalCohortGrant entities.
+func (_u *RoleBindingUpdateOne) RemoveExternalCohortGrants(v ...*ExternalCohortGrant) *RoleBindingUpdateOne {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveExternalCohortGrantIDs(ids...)
 }
 
 // Where appends a list predicates to the RoleBindingUpdate builder.
@@ -610,6 +728,51 @@ func (_u *RoleBindingUpdateOne) sqlSave(ctx context.Context) (_node *RoleBinding
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(role.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ExternalCohortGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   rolebinding.ExternalCohortGrantsTable,
+			Columns: []string{rolebinding.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedExternalCohortGrantsIDs(); len(nodes) > 0 && !_u.mutation.ExternalCohortGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   rolebinding.ExternalCohortGrantsTable,
+			Columns: []string{rolebinding.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ExternalCohortGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   rolebinding.ExternalCohortGrantsTable,
+			Columns: []string{rolebinding.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

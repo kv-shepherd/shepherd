@@ -48,6 +48,7 @@ func (RoleBinding) Edges() []ent.Edge {
 			Ref("role_bindings").
 			Unique().
 			Required(),
+		edge.To("external_cohort_grants", ExternalCohortGrant.Type),
 	}
 }
 

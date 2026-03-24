@@ -127,6 +127,38 @@ describe('useSystemsManagementController', () => {
     expect(deleteMutate).toHaveBeenCalledWith({ id: 'sys-1', confirmName: 'System A' });
   });
 
+  it('continues onboarding to create the first service after creating the first system', () => {
+    let createOptions: { onSuccess?: (data: { id: string }) => void } | undefined;
+    const onCreateSuccess = vi.fn(() => true);
+
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation((_, options) => {
+      mutationCall += 1;
+      if (mutationCall % 2 === 1) {
+        createOptions = options;
+        return { mutate: vi.fn(), isPending: false };
+      }
+      return { mutate: vi.fn(), isPending: false };
+    });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+    useApiGetMock.mockReturnValue({
+      data: { items: [], pagination: { total: 0 } },
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+
+    renderHook(() => useSystemsManagementController({ t, onCreateSuccess }));
+
+    createOptions?.onSuccess?.({ id: 'sys-first' });
+
+    expect(onCreateSuccess).toHaveBeenCalledWith(
+      { id: 'sys-first' },
+      { isFirstSystem: true },
+    );
+    expect(messageSuccessMock).not.toHaveBeenCalled();
+    expect(createFormState.resetFields).toHaveBeenCalled();
+  });
+
   it('submits description-only edit with selected system id', async () => {
     const createMutate = vi.fn();
     const updateMutate = vi.fn();

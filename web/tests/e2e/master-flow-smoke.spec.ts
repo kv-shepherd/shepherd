@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { selectAntOption } from './lib/helpers';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -25,18 +26,6 @@ interface MockMasterFlowOptions {
 
 function visibleModal(page: Page) {
   return page.locator('.ant-modal-content:visible');
-}
-
-async function selectFromVisibleAntdDropdown(page: Page, container: Locator, selectIndex: number) {
-  const select = container.locator('.ant-select').nth(selectIndex);
-  await expect(select).toBeVisible();
-  await expect(select.locator('[role="combobox"]').first()).toBeEnabled({ timeout: 5000 });
-  await select.locator('.ant-select-selector').click();
-
-  const dropdown = page.locator('.ant-select-dropdown:visible').last();
-  await expect(dropdown).toBeVisible({ timeout: 5000 });
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
 }
 
 /**
@@ -76,7 +65,7 @@ async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOpt
             type: 'APPROVAL_PENDING',
             title: 'VM Request Submitted',
             message: 'Your VM request is pending approval',
-            resource_type: 'approval_ticket',
+            resource_type: 'ticket',
             resource_id: 'ticket-1',
             read: false,
             created_at: new Date().toISOString(),
@@ -86,7 +75,7 @@ async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOpt
             type: 'APPROVAL_COMPLETED',
             title: 'VM Approved',
             message: 'Your VM request has been approved',
-            resource_type: 'approval_ticket',
+            resource_type: 'ticket',
             resource_id: 'ticket-1',
             read: false,
             created_at: new Date().toISOString(),
@@ -174,8 +163,8 @@ async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOpt
       });
     }
 
-    // ── Approvals ──────────────────────────────────────────────────────────
-    if (method === 'GET' && path.endsWith('/approvals')) {
+    // ── Built-in approval tasks ────────────────────────────────────────────
+    if (method === 'GET' && path.endsWith('/builtin-approval/tasks')) {
       return json({
         items: [{ id: 'ticket-1', status: 'PENDING', operation_type: 'CREATE', requester: 'alice', created_at: new Date().toISOString() }],
         pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
@@ -205,7 +194,7 @@ async function mockMasterFlowBaselineApi(page: Page, options?: MockMasterFlowOpt
     if (method === 'POST' && path.endsWith('/vms/request')) {
       return json({ ticket_id: 'ticket-vm-create-1', status: 'PENDING', operation_type: 'CREATE' }, 202);
     }
-    if (method === 'POST' && path.endsWith('/approvals/batch')) {
+    if (method === 'POST' && path.endsWith('/vms/batch')) {
       return json({
         batch_id: 'batch-create-1',
         status: 'PENDING_APPROVAL',
@@ -253,6 +242,7 @@ test.describe('master-flow mock smoke interactions', () => {
   // ── Auth Guard ────────────────────────────────────────────────────────────
   test('redirects unauthenticated users to login', async ({ page }) => {
     await page.goto('/systems');
+    await page.waitForURL(/\/login$/, { timeout: 15000 });
     await expect(page).toHaveURL(/\/login$/);
   });
 
@@ -374,7 +364,8 @@ test.describe('master-flow mock smoke interactions', () => {
 
     // Type the system name to confirm
     const confirmInput = modal.locator('input').last();
-    await confirmInput.pressSequentially('shop', { delay: 50 });
+    await expect(confirmInput).toBeVisible();
+    await confirmInput.fill('shop');
 
     // Delete button should now be enabled
     const deleteBtn = modal.getByRole('button', { name: 'Delete' });
@@ -531,22 +522,22 @@ test.describe('master-flow mock smoke interactions', () => {
     await expect(modal).toBeVisible({ timeout: 5000 });
 
     // Step 0: Select System
-    await selectFromVisibleAntdDropdown(page, modal, 0);
+    await selectAntOption(page, modal.locator('.ant-select').nth(0));
 
     // Select Service
-    await selectFromVisibleAntdDropdown(page, modal, 1);
+    await selectAntOption(page, modal.locator('.ant-select').nth(1));
 
     // Click Next
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 1: Select Template
-    await selectFromVisibleAntdDropdown(page, modal, 0);
+    await selectAntOption(page, modal.locator('.ant-select').nth(0));
 
     // Click Next
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 2: Select Instance Size
-    await selectFromVisibleAntdDropdown(page, modal, 0);
+    await selectAntOption(page, modal.locator('.ant-select').nth(0));
 
     // Click Next
     await modal.getByRole('button', { name: 'Next' }).click();
@@ -571,7 +562,7 @@ test.describe('master-flow mock smoke interactions', () => {
     ).toBeTruthy();
   });
 
-  // ── Stage 5.D: Delete VM (with approval ticket) ───────────────────────────
+  // ── Stage 5.D: Delete VM (with ticket) ────────────────────────────────────
   test('Stage 5.D: VM delete action triggers approval flow (POST /vms/{id}/delete)', async ({ page }) => {
     await page.addInitScript((storageValue) => {
       window.localStorage.setItem('shepherd-auth', storageValue);
@@ -651,12 +642,13 @@ test.describe('master-flow mock smoke interactions', () => {
 
     // Type wrong name – still disabled
     const confirmInput = modal.locator('input').last();
-    await confirmInput.pressSequentially('wrong-name', { delay: 30 });
+    await expect(confirmInput).toBeVisible();
+    await confirmInput.fill('wrong-name');
     await expect(deleteBtn).toBeDisabled();
 
     // Clear and type correct name
     await confirmInput.clear();
-    await confirmInput.pressSequentially('shop', { delay: 50 });
+    await confirmInput.fill('shop');
     await expect(deleteBtn).toBeEnabled({ timeout: 5000 });
   });
 
@@ -700,7 +692,7 @@ test.describe('master-flow mock smoke interactions', () => {
   });
 
   // ── Stage 5.E: Batch VM Request (POST /vms/batch) ────────────────────────
-  test('Stage 5.E: batch VM request triggers POST /approvals/batch', async ({ page }) => {
+  test('Stage 5.E: batch VM request triggers POST /vms/batch', async ({ page }) => {
     await page.addInitScript((storageValue) => {
       window.localStorage.setItem('shepherd-auth', storageValue);
     }, authStorageState());
@@ -723,17 +715,17 @@ test.describe('master-flow mock smoke interactions', () => {
     await expect(modal).toBeVisible({ timeout: 5000 });
 
     // Step 0: Select System + Service
-    await selectFromVisibleAntdDropdown(page, modal, 0);
-    await selectFromVisibleAntdDropdown(page, modal, 1);
+    await selectAntOption(page, modal.locator('.ant-select').nth(0));
+    await selectAntOption(page, modal.locator('.ant-select').nth(1));
 
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 1: Template
-    await selectFromVisibleAntdDropdown(page, modal, 0);
+    await selectAntOption(page, modal.locator('.ant-select').nth(0));
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 2: Instance Size
-    await selectFromVisibleAntdDropdown(page, modal, 0);
+    await selectAntOption(page, modal.locator('.ant-select').nth(0));
     await modal.getByRole('button', { name: 'Next' }).click();
 
     // Step 3: Namespace + Reason + Batch Count > 1
@@ -757,9 +749,9 @@ test.describe('master-flow mock smoke interactions', () => {
     await expect(modal.getByRole('button', { name: 'Submit' })).toBeVisible({ timeout: 5000 });
     await modal.getByRole('button', { name: 'Submit' }).click();
 
-    // Verify POST /approvals/batch was called
+    // Verify POST /vms/batch was called
     await expect.poll(() =>
-      captured.some((r) => r.method === 'POST' && r.path.endsWith('/approvals/batch'))
+      captured.some((r) => r.method === 'POST' && r.path.endsWith('/vms/batch'))
     ).toBeTruthy();
   });
 
@@ -948,14 +940,14 @@ test.describe('master-flow mock smoke interactions', () => {
   });
 
   // ── Approvals page (Stage 5.B) ────────────────────────────────────────────
-  test('Stage 5.B: approvals page renders pending tickets', async ({ page }) => {
+  test('Stage 5.B: built-in approval task page renders pending tickets', async ({ page }) => {
     await page.addInitScript((storageValue) => {
       window.localStorage.setItem('shepherd-auth', storageValue);
     }, authStorageState());
     await mockMasterFlowBaselineApi(page);
 
-    await page.goto('/approvals');
-    await expect(page.getByTestId('approvals-page')).toBeVisible({ timeout: 5000 });
+    await page.goto('/admin/approval-tasks');
+    await expect(page.getByTestId('admin-approvals-page')).toBeVisible({ timeout: 5000 });
 
     // Should show the pending ticket from mock
     await expect(page.getByText('ticket-1')).toBeVisible({ timeout: 5000 });

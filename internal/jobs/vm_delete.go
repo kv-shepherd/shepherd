@@ -7,10 +7,11 @@ import (
 
 	"github.com/riverqueue/river"
 	"go.uber.org/zap"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
@@ -67,13 +68,26 @@ func NewVMDeleteWorker(entClient *ent.Client, vmService *service.VMService, audi
 	return &VMDeleteWorker{entClient: entClient, vmService: vmService, auditLogger: auditLogger}
 }
 
+func vmDeleteExecutableStatus(status vm.Status) bool {
+	switch status {
+	case vm.StatusSTOPPED, vm.StatusFAILED, vm.StatusNOT_FOUND, vm.StatusUNKNOWN:
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldSkipK8sDelete(status vm.Status) bool {
+	return status == vm.StatusNOT_FOUND
+}
+
 // Work executes the VM deletion.
 func (w *VMDeleteWorker) Work(ctx context.Context, job *river.Job[VMDeleteArgs]) error {
 	eventID := job.Args.EventID
 
 	logger.Info("Processing VM deletion job",
 		zap.String("event_id", eventID),
-		zap.Int64("attempt", int64(job.Attempt)),
+		zap.Int64("attempt", jobAttempt(job)),
 	)
 
 	// Step 1: Fetch DomainEvent (claim-check pattern).
@@ -81,59 +95,109 @@ func (w *VMDeleteWorker) Work(ctx context.Context, job *river.Job[VMDeleteArgs])
 	if err != nil {
 		return fmt.Errorf("fetch domain event %s: %w", eventID, err)
 	}
-	setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusEXECUTING)
+	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusEXECUTING)
 
 	// Step 2: Parse payload.
 	var payload domain.VMDeletePayload
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+	if unmarshalErr := json.Unmarshal(event.Payload, &payload); unmarshalErr != nil {
 		// Permanent failure — cancel job, don't retry corrupted data.
 		_, _ = w.entClient.DomainEvent.UpdateOneID(eventID).SetStatus(domainevent.StatusFAILED).Save(ctx)
-		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
-		return river.JobCancel(fmt.Errorf("unmarshal delete payload for event %s: %w", eventID, err))
+		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
+		return river.JobCancel(fmt.Errorf("unmarshal delete payload for event %s: %w", eventID, unmarshalErr))
 	}
 
-	// Step 3: Update VM status to DELETING.
-	if _, err := w.entClient.VM.UpdateOneID(payload.VMID).
-		SetStatus(vm.StatusDELETING).
-		Save(ctx); err != nil {
-		logger.Warn("failed to set VM status to DELETING (may already be deleted)",
-			zap.String("vm_id", payload.VMID), zap.Error(err))
+	// Step 3: Re-check persisted VM state before executing the destructive delete.
+	skipK8sDelete := false
+	currentVM, err := w.entClient.VM.Get(ctx, payload.VMID)
+	switch {
+	case err == nil:
+		if !vmDeleteExecutableStatus(currentVM.Status) {
+			if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
+				SetStatus(domainevent.StatusFAILED).
+				Save(ctx); saveErr != nil {
+				logger.Error("failed to persist FAILED status for delete event rejected by runtime state guard",
+					zap.String("event_id", eventID), zap.Error(saveErr))
+			}
+			setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
+			logAuditVMOp(ctx, w.auditLogger, "delete_failed", payload.VMName, payload.Actor, eventID)
+			return river.JobCancel(fmt.Errorf(
+				"refuse delete for vm %s in %s state, must be STOPPED, FAILED, NOT_FOUND, or UNKNOWN",
+				payload.VMID,
+				currentVM.Status,
+			))
+		}
+		skipK8sDelete = shouldSkipK8sDelete(currentVM.Status)
+		if _, updateErr := w.entClient.VM.UpdateOneID(payload.VMID).
+			SetStatus(vm.StatusDELETING).
+			Save(ctx); updateErr != nil {
+			logger.Warn("failed to set VM status to DELETING (may already be deleted)",
+				zap.String("vm_id", payload.VMID), zap.Error(updateErr))
+		}
+	case ent.IsNotFound(err):
+		logger.Info("vm record already absent before delete execution, skipping status update",
+			zap.String("vm_id", payload.VMID),
+			zap.String("event_id", eventID),
+		)
+	default:
+		return fmt.Errorf("fetch current vm %s before delete: %w", payload.VMID, err)
 	}
 
 	// Step 4: Execute K8s VM deletion (outside transaction per ADR-0012).
-	if err := w.vmService.DeleteVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName); err != nil {
-		// K8s deletion failed — persist FAILED status (best-effort).
-		if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
-			SetStatus(domainevent.StatusFAILED).
-			Save(ctx); saveErr != nil {
-			logger.Error("failed to persist FAILED status for delete event",
-				zap.String("event_id", eventID), zap.Error(saveErr))
-		}
+	if skipK8sDelete {
+		logger.Info("Skipping K8s delete because VM is already NOT_FOUND on a responsive cluster",
+			zap.String("event_id", eventID),
+			zap.String("vm_id", payload.VMID),
+			zap.String("vm_name", payload.VMName),
+		)
+	} else {
+		if deleteErr := w.vmService.DeleteVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName); deleteErr != nil {
+			// If K8s reports NotFound, the resource is already gone — treat as success.
+			if !k8serrors.IsNotFound(deleteErr) {
+				// K8s deletion failed — persist FAILED status (best-effort).
+				if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
+					SetStatus(domainevent.StatusFAILED).
+					Save(ctx); saveErr != nil {
+					logger.Error("failed to persist FAILED status for delete event",
+						zap.String("event_id", eventID), zap.Error(saveErr))
+				}
 
-		// Update VM status to FAILED.
-		if _, saveErr := w.entClient.VM.UpdateOneID(payload.VMID).
-			SetStatus(vm.StatusFAILED).
-			Save(ctx); saveErr != nil {
-			logger.Error("failed to persist VM FAILED status",
-				zap.String("vm_id", payload.VMID), zap.Error(saveErr))
-		}
-		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
+				// Update VM status to FAILED.
+				if _, saveErr := w.entClient.VM.UpdateOneID(payload.VMID).
+					SetStatus(vm.StatusFAILED).
+					Save(ctx); saveErr != nil {
+					logger.Error("failed to persist VM FAILED status",
+						zap.String("vm_id", payload.VMID), zap.Error(saveErr))
+				}
+				setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
 
-		logAuditVMOp(ctx, w.auditLogger, "delete_failed", payload.VMName, payload.Actor, eventID)
-		return fmt.Errorf("execute k8s delete for event %s: %w", eventID, err)
+				logAuditVMOp(ctx, w.auditLogger, "delete_failed", payload.VMName, payload.Actor, eventID)
+				return fmt.Errorf("execute k8s delete for event %s: %w", eventID, deleteErr)
+			}
+			logger.Info("K8s VM already deleted (NotFound), proceeding with DB cleanup",
+				zap.String("event_id", eventID),
+				zap.String("vm_name", payload.VMName),
+			)
+		}
 	}
 
-	// Step 5: K8s deletion succeeded — mark VM as tombstone.
+	// Step 5: K8s deletion succeeded — hard-delete VM record from DB.
 	// CRITICAL: K8s resource is already deleted at this point.
-	// If DB update fails we MUST NOT return error (River retry would
+	// If DB delete fails we MUST NOT return error (River retry would
 	// re-execute K8s delete against a non-existent resource).
-	if _, saveErr := w.entClient.VM.UpdateOneID(payload.VMID).
-		SetStatus(vm.StatusDELETING). // Tombstone; can be hard-deleted by background job
-		Save(ctx); saveErr != nil {
-		logger.Error("CRITICAL: VM deleted in K8s but DB status update failed",
+	if deleteErr := w.entClient.VM.DeleteOneID(payload.VMID).Exec(ctx); deleteErr != nil {
+		// Fallback: if hard-delete fails (e.g. FK constraint), mark as DELETING tombstone.
+		logger.Error("CRITICAL: VM deleted in K8s but DB hard-delete failed, falling back to tombstone",
 			zap.String("event_id", eventID),
 			zap.String("vm_name", payload.VMName),
-			zap.Error(saveErr))
+			zap.Error(deleteErr))
+		if _, saveErr := w.entClient.VM.UpdateOneID(payload.VMID).
+			SetStatus(vm.StatusDELETING).
+			Save(ctx); saveErr != nil {
+			logger.Error("CRITICAL: VM tombstone fallback also failed",
+				zap.String("event_id", eventID),
+				zap.String("vm_name", payload.VMName),
+				zap.Error(saveErr))
+		}
 	}
 
 	// Step 6: Update event status to COMPLETED.
@@ -143,7 +207,7 @@ func (w *VMDeleteWorker) Work(ctx context.Context, job *river.Job[VMDeleteArgs])
 		logger.Error("CRITICAL: VM deleted but event status persistence failed",
 			zap.String("event_id", eventID), zap.Error(saveErr))
 	}
-	setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusSUCCESS)
+	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusSUCCESS)
 
 	logAuditVMOp(ctx, w.auditLogger, "delete", payload.VMName, payload.Actor, eventID)
 

@@ -1,7 +1,7 @@
-import { Alert, Card, Descriptions, Tag } from "antd";
+import { Alert, Card, Descriptions, Space, Tag } from "antd";
 import { useTranslation } from "react-i18next";
 
-import type { ApprovalTicket } from "../types";
+import type { ApprovalTask } from "../types";
 
 export function getProvisioningPhaseTagColor(phase?: string): string {
   if (!phase) return "default";
@@ -17,7 +17,7 @@ export function getCloneTypeTagColor(cloneType?: string): string {
 }
 
 type ApprovalProvisioningCardProps = {
-  provisioning: NonNullable<ApprovalTicket["provisioning"]>;
+  provisioning: NonNullable<ApprovalTask["provisioning"]>;
 };
 
 export function ApprovalProvisioningCard({
@@ -29,65 +29,68 @@ export function ApprovalProvisioningCard({
     <Card
       size="small"
       title={t("approve_modal.provisioning.title", "Provisioning Status")}
+      extra={
+        <Tag
+          color={getProvisioningPhaseTagColor(provisioning.phase)}
+          data-testid="approval-provisioning-phase"
+        >
+          {provisioning.phase || "—"}
+        </Tag>
+      }
       style={{ marginBottom: 16 }}
       data-testid="approval-provisioning-card"
     >
-      <Descriptions bordered size="small" column={1}>
-        <Descriptions.Item
-          label={t("approve_modal.provisioning.phase", "Phase")}
-        >
-          <Tag
-            color={getProvisioningPhaseTagColor(provisioning.phase)}
-            data-testid="approval-provisioning-phase"
-          >
-            {provisioning.phase || "—"}
-          </Tag>
-        </Descriptions.Item>
-        <Descriptions.Item
-          label={t("approve_modal.provisioning.progress", "Progress")}
-        >
-          {provisioning.progress || "—"}
-        </Descriptions.Item>
-        <Descriptions.Item
-          label={t("approve_modal.provisioning.root_claim", "Root Claim")}
-        >
-          {provisioning.claim_name || "—"}
-        </Descriptions.Item>
-        <Descriptions.Item
-          label={t("approve_modal.provisioning.pvc_phase", "PVC Phase")}
-        >
-          {provisioning.pvc_phase || "—"}
-        </Descriptions.Item>
-        <Descriptions.Item
-          label={t("approve_modal.provisioning.clone_type", "Clone Type")}
-        >
-          {provisioning.clone_type ? (
-            <Tag
-              color={getCloneTypeTagColor(provisioning.clone_type)}
-              data-testid="approval-provisioning-clone-type"
-            >
-              {provisioning.clone_type === "copy"
-                ? t(
-                    "approve_modal.provisioning.clone_type_copy",
-                    "Host-assisted copy",
-                  )
-                : provisioning.clone_type}
-            </Tag>
-          ) : (
-            "—"
-          )}
-        </Descriptions.Item>
-        <Descriptions.Item
-          label={t("approve_modal.provisioning.clone_phase", "Clone Phase")}
-        >
-          {provisioning.clone_phase || "—"}
-        </Descriptions.Item>
-      </Descriptions>
+      <Space direction="vertical" size={12} style={{ width: "100%" }}>
+        <Descriptions
+          bordered
+          size="small"
+          column={2}
+          items={[
+            {
+              key: "progress",
+              label: t("approve_modal.provisioning.progress", "Progress"),
+              children: provisioning.progress || "—",
+            },
+            {
+              key: "rootClaim",
+              label: t("approve_modal.provisioning.root_claim", "Root Claim"),
+              children: provisioning.claim_name || "—",
+            },
+            {
+              key: "pvcPhase",
+              label: t("approve_modal.provisioning.pvc_phase", "PVC Phase"),
+              children: provisioning.pvc_phase || "—",
+            },
+            {
+              key: "cloneType",
+              label: t("approve_modal.provisioning.clone_type", "Clone Type"),
+              children: provisioning.clone_type ? (
+                <Tag
+                  color={getCloneTypeTagColor(provisioning.clone_type)}
+                  data-testid="approval-provisioning-clone-type"
+                >
+                  {provisioning.clone_type === "copy"
+                    ? t(
+                        "approve_modal.provisioning.clone_type_copy",
+                        "Host-assisted copy",
+                      )
+                    : provisioning.clone_type}
+                </Tag>
+              ) : (
+                "—"
+              ),
+            },
+            {
+              key: "clonePhase",
+              label: t("approve_modal.provisioning.clone_phase", "Clone Phase"),
+              children: provisioning.clone_phase || "—",
+            },
+          ]}
+        />
       {provisioning.clone_fallback_reason && (
         <Alert
           type="warning"
           showIcon
-          style={{ marginTop: 12 }}
           message={t(
             "approve_modal.provisioning.clone_fallback_reason",
             "Clone fallback reason",
@@ -99,7 +102,6 @@ export function ApprovalProvisioningCard({
         <Alert
           type="error"
           showIcon
-          style={{ marginTop: 12 }}
           message={t(
             "approve_modal.provisioning.failure_message",
             "Provisioning failure",
@@ -107,6 +109,7 @@ export function ApprovalProvisioningCard({
           description={provisioning.failure_message}
         />
       )}
+      </Space>
     </Card>
   );
 }

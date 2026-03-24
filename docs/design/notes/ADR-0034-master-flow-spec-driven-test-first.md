@@ -82,7 +82,7 @@ To reduce "source-fragment only" evidence risk, behavior-level tests were added:
   - `internal/api/handlers/server_system_behavior_test.go`
   - Covers visibility filtering and update flow runtime behavior.
 - Stage 2.E / Stage 5.B:
-  - `internal/governance/approval/gateway_behavior_test.go`
+  - `internal/governance/ticketing/service_behavior_test.go`
   - Covers approve/reject/cancel state transition behavior and atomic-writer handoff.
 
 ---

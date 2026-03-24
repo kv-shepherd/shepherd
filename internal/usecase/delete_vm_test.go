@@ -79,3 +79,19 @@ func TestValidateDeleteConfirmationByEnvironment(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateDeleteConfirmationByEnvironment_ProdRejectsMissingSignal(t *testing.T) {
+	t.Parallel()
+
+	err := validateDeleteConfirmationByEnvironment("vm-01", namespaceregistry.EnvironmentProd, false, "")
+	if err == nil {
+		t.Fatal("expected DELETE_CONFIRMATION_REQUIRED, got nil")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("expected AppError, got %T", err)
+	}
+	if appErr.Code != "DELETE_CONFIRMATION_REQUIRED" {
+		t.Fatalf("error code mismatch: got %s want DELETE_CONFIRMATION_REQUIRED", appErr.Code)
+	}
+}

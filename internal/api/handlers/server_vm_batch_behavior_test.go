@@ -16,11 +16,13 @@ import (
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
+	entcluster "kv-shepherd.io/shepherd/ent/cluster"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/approval"
+	"kv-shepherd.io/shepherd/internal/governance/ticketing"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/service"
@@ -59,8 +61,8 @@ func TestBatchHandler_SubmitApprovalBatch_AliasPath(t *testing.T) {
 		},
 	})
 
-	c, w := newAuthedGinContext(t, http.MethodPost, "/approvals/batch", body, "owner-1", []string{"platform:admin"})
-	srv.SubmitApprovalBatch(c)
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/batch", body, "owner-1", []string{"platform:admin"})
+	srv.SubmitVMBatch(c)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusAccepted, w.Body.String())
 	}
@@ -89,6 +91,72 @@ func TestBatchHandler_SubmitVMBatch_InvalidBatchSize(t *testing.T) {
 		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusBadRequest, w.Body.String())
 	}
 	assertErrorCode(t, w.Body.Bytes(), "INVALID_BATCH_SIZE")
+}
+
+func TestBatchHandler_SubmitVMBatch_DeleteRejectsRunningVM(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newBatchBehaviorTestServer(t)
+	vmID := mustCreateBatchDeleteTargetVMWithStatus(t, client, entvm.StatusRUNNING)
+	body := mustJSON(t, generated.VMBatchSubmitRequest{
+		Operation: generated.VMBatchOperation("DELETE"),
+		Items: []generated.VMBatchChildItem{
+			{VmId: vmID},
+		},
+	})
+
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/batch", body, "owner-1", []string{"platform:admin"})
+	srv.SubmitVMBatch(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusConflict, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "INVALID_STATE_TRANSITION")
+}
+
+func TestBatchHandler_SubmitVMBatch_ModifyCreatesModifyChildTickets(t *testing.T) {
+	t.Parallel()
+
+	srv, client, vmID := newBatchModifyTestServer(t)
+	body := mustJSON(t, generated.VMBatchSubmitRequest{
+		Operation: generated.VMBatchOperation("MODIFY"),
+		Reason:    "scale resources",
+		Items: []generated.VMBatchChildItem{
+			{
+				VmId:           vmID,
+				Reason:         "scale memory",
+				TargetMemoryGi: 8,
+			},
+		},
+	})
+
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/batch", body, "owner-1", []string{"vm:operate", "platform:admin"})
+	srv.SubmitVMBatch(c)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	var resp generated.VMBatchSubmitResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.BatchId == "" {
+		t.Fatal("batch_id is empty")
+	}
+
+	children, err := client.Ticket.Query().
+		Where(entticket.ParentTicketIDEQ(resp.BatchId)).
+		All(t.Context())
+	if err != nil {
+		t.Fatalf("query child tickets: %v", err)
+	}
+	if len(children) != 1 {
+		t.Fatalf("child ticket count = %d, want 1", len(children))
+	}
+	if children[0].OperationType != entticket.OperationTypeMODIFY {
+		t.Fatalf("child operation_type = %q, want %q", children[0].OperationType, entticket.OperationTypeMODIFY)
+	}
 }
 
 func TestBatchHandler_SubmitDelete_GetAndCancel(t *testing.T) {
@@ -129,8 +197,8 @@ func TestBatchHandler_SubmitDelete_GetAndCancel(t *testing.T) {
 		t.Fatalf("submit status = %q, want %q", submitResp.Status, generated.VMBatchParentStatusPENDINGAPPROVAL)
 	}
 
-	children, err := client.ApprovalTicket.Query().
-		Where(approvalticket.ParentTicketIDEQ(submitResp.BatchId)).
+	children, err := client.Ticket.Query().
+		Where(entticket.ParentTicketIDEQ(submitResp.BatchId)).
 		All(t.Context())
 	if err != nil {
 		t.Fatalf("query child tickets: %v", err)
@@ -138,8 +206,8 @@ func TestBatchHandler_SubmitDelete_GetAndCancel(t *testing.T) {
 	if len(children) != 1 {
 		t.Fatalf("child ticket count = %d, want 1", len(children))
 	}
-	if children[0].Status != approvalticket.StatusPENDING {
-		t.Fatalf("child status = %q, want %q", children[0].Status, approvalticket.StatusPENDING)
+	if children[0].Status != entticket.StatusPENDING {
+		t.Fatalf("child status = %q, want %q", children[0].Status, entticket.StatusPENDING)
 	}
 
 	getCtx, getW := newAuthedGinContext(t, http.MethodGet, "/vms/batch/"+submitResp.BatchId, "", "owner-1", []string{"vm:read"})
@@ -174,12 +242,12 @@ func TestBatchHandler_SubmitDelete_GetAndCancel(t *testing.T) {
 		t.Fatalf("cancel status = %q, want %q", cancelResp.Status, generated.VMBatchParentStatusCANCELLED)
 	}
 
-	updatedChild, err := client.ApprovalTicket.Get(t.Context(), children[0].ID)
+	updatedChild, err := client.Ticket.Get(t.Context(), children[0].ID)
 	if err != nil {
 		t.Fatalf("query updated child ticket: %v", err)
 	}
-	if updatedChild.Status != approvalticket.StatusCANCELLED {
-		t.Fatalf("child status after cancel = %q, want %q", updatedChild.Status, approvalticket.StatusCANCELLED)
+	if updatedChild.Status != entticket.StatusCANCELLED {
+		t.Fatalf("child status after cancel = %q, want %q", updatedChild.Status, entticket.StatusCANCELLED)
 	}
 }
 
@@ -257,8 +325,8 @@ func TestBatchHandler_GetVMBatch_CreateChildIncludesProvisioningWhenVMExists(t *
 		t.Fatalf("decode submit response: %v", err)
 	}
 
-	children, err := client.ApprovalTicket.Query().
-		Where(approvalticket.ParentTicketIDEQ(submitResp.BatchId)).
+	children, err := client.Ticket.Query().
+		Where(entticket.ParentTicketIDEQ(submitResp.BatchId)).
 		All(t.Context())
 	if err != nil {
 		t.Fatalf("query child tickets: %v", err)
@@ -485,8 +553,8 @@ func TestBatchHandler_SubmitVMBatch_IdempotentByRequestID(t *testing.T) {
 		t.Fatalf("idempotent batch_id = %q, want %q", r2.BatchId, r1.BatchId)
 	}
 
-	parentCount, err := client.ApprovalTicket.Query().
-		Where(approvalticket.ParentTicketIDIsNil()).
+	parentCount, err := client.Ticket.Query().
+		Where(entticket.ParentTicketIDIsNil()).
 		Count(t.Context())
 	if err != nil {
 		t.Fatalf("count parent tickets: %v", err)
@@ -590,11 +658,11 @@ func TestBatchHandler_SubmitVMBatch_RateLimitedByPendingChildCount(t *testing.T)
 	vmID := mustCreateBatchDeleteTargetVM(t, client)
 
 	for i := range maxPendingBatchChildrenUser {
-		_, err := client.ApprovalTicket.Create().
+		_, err := client.Ticket.Create().
 			SetID("child-pending-" + uuid.NewString()).
 			SetEventID("event-" + uuid.NewString()).
 			SetRequester("owner-1").
-			SetStatus(approvalticket.StatusPENDING).
+			SetStatus(entticket.StatusPENDING).
 			SetParentTicketID("parent-seed").
 			Save(t.Context())
 		if err != nil {
@@ -653,7 +721,7 @@ func TestBatchHandler_RetryVMBatch_RetriesFailedDeleteChild(t *testing.T) {
 	t.Parallel()
 
 	writer := &fakeDeleteAtomicWriter{}
-	srv, client := newBatchBehaviorTestServerWithGateway(t, writer)
+	srv, client := newBatchBehaviorTestServerWithTicketService(t, writer)
 	vmID := mustCreateBatchDeleteTargetVM(t, client)
 
 	submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
@@ -679,8 +747,8 @@ func TestBatchHandler_RetryVMBatch_RetriesFailedDeleteChild(t *testing.T) {
 		t.Fatalf("decode submit response: %v", err)
 	}
 
-	children, err := client.ApprovalTicket.Query().
-		Where(approvalticket.ParentTicketIDEQ(submitResp.BatchId)).
+	children, err := client.Ticket.Query().
+		Where(entticket.ParentTicketIDEQ(submitResp.BatchId)).
 		All(t.Context())
 	if err != nil {
 		t.Fatalf("query child tickets: %v", err)
@@ -690,8 +758,8 @@ func TestBatchHandler_RetryVMBatch_RetriesFailedDeleteChild(t *testing.T) {
 	}
 	child := children[0]
 
-	if _, err := client.ApprovalTicket.UpdateOneID(child.ID).
-		SetStatus(approvalticket.StatusFAILED).
+	if _, err := client.Ticket.UpdateOneID(child.ID).
+		SetStatus(entticket.StatusFAILED).
 		SetRejectReason("seed failure").
 		Save(t.Context()); err != nil {
 		t.Fatalf("seed child failed status: %v", err)
@@ -715,6 +783,72 @@ func TestBatchHandler_RetryVMBatch_RetriesFailedDeleteChild(t *testing.T) {
 	}
 	if writer.deleteCalls != 1 {
 		t.Fatalf("delete atomic writer calls = %d, want 1", writer.deleteCalls)
+	}
+}
+
+func TestBatchHandler_RetryVMBatch_UsesApprovalProviderSeam(t *testing.T) {
+	t.Parallel()
+
+	capture := &captureApprovalProvider{}
+	srv, client := newBatchBehaviorTestServerWithApprovalRouter(t, capture)
+	vmID := mustCreateBatchDeleteTargetVM(t, client)
+
+	submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
+		Operation: generated.VMBatchOperation("DELETE"),
+		Items: []generated.VMBatchChildItem{
+			{VmId: vmID},
+		},
+	})
+	submitCtx, submitW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/vms/batch",
+		submitBody,
+		"owner-1",
+		[]string{"platform:admin"},
+	)
+	srv.SubmitVMBatch(submitCtx)
+	if submitW.Code != http.StatusAccepted {
+		t.Fatalf("submit status = %d, want %d body=%s", submitW.Code, http.StatusAccepted, submitW.Body.String())
+	}
+
+	var submitResp generated.VMBatchSubmitResponse
+	if err := json.Unmarshal(submitW.Body.Bytes(), &submitResp); err != nil {
+		t.Fatalf("decode submit response: %v", err)
+	}
+
+	children, err := client.Ticket.Query().
+		Where(entticket.ParentTicketIDEQ(submitResp.BatchId)).
+		All(t.Context())
+	if err != nil {
+		t.Fatalf("query child tickets: %v", err)
+	}
+	if len(children) != 1 {
+		t.Fatalf("child ticket count = %d, want 1", len(children))
+	}
+	child := children[0]
+
+	if _, err := client.Ticket.UpdateOneID(child.ID).
+		SetStatus(entticket.StatusFAILED).
+		SetRejectReason("seed failure").
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed child failed status: %v", err)
+	}
+
+	retryCtx, retryW := newAuthedGinContext(t, http.MethodPost, "/vms/batch/"+submitResp.BatchId+"/retry", "", "owner-1", []string{"vm:delete"})
+	srv.RetryVMBatch(retryCtx, submitResp.BatchId)
+	if retryW.Code != http.StatusOK {
+		t.Fatalf("retry status = %d, want %d body=%s", retryW.Code, http.StatusOK, retryW.Body.String())
+	}
+
+	if capture.processCalled != 1 {
+		t.Fatalf("approval provider processCalled = %d, want 1", capture.processCalled)
+	}
+	if capture.lastTicketID != child.ID {
+		t.Fatalf("approval provider lastTicketID = %q, want %q", capture.lastTicketID, child.ID)
+	}
+	if !capture.lastDecision.Approved {
+		t.Fatal("approval provider lastDecision.Approved = false, want true")
 	}
 }
 
@@ -747,8 +881,8 @@ func TestBatchHandler_SubmitVMBatchPower_EnqueueFailureFallsBackToFailed(t *test
 		t.Fatalf("status = %q, want %q", resp.Status, generated.VMBatchParentStatusFAILED)
 	}
 
-	children, err := client.ApprovalTicket.Query().
-		Where(approvalticket.ParentTicketIDEQ(resp.BatchId)).
+	children, err := client.Ticket.Query().
+		Where(entticket.ParentTicketIDEQ(resp.BatchId)).
 		All(t.Context())
 	if err != nil {
 		t.Fatalf("query child tickets: %v", err)
@@ -756,8 +890,8 @@ func TestBatchHandler_SubmitVMBatchPower_EnqueueFailureFallsBackToFailed(t *test
 	if len(children) != 1 {
 		t.Fatalf("child ticket count = %d, want 1", len(children))
 	}
-	if children[0].Status != approvalticket.StatusFAILED {
-		t.Fatalf("child status = %q, want %q", children[0].Status, approvalticket.StatusFAILED)
+	if children[0].Status != entticket.StatusFAILED {
+		t.Fatalf("child status = %q, want %q", children[0].Status, entticket.StatusFAILED)
 	}
 	if !strings.Contains(children[0].RejectReason, "enqueue vm_power job failed") {
 		t.Fatalf("child reject_reason = %q, want contains %q", children[0].RejectReason, "enqueue vm_power job failed")
@@ -784,12 +918,12 @@ func TestBatchHandler_RetryVMBatch_PowerChildUnknownOperation(t *testing.T) {
 		t.Fatalf("affected_count = %d, want 0", resp.AffectedCount)
 	}
 
-	child, err := client.ApprovalTicket.Get(t.Context(), childID)
+	child, err := client.Ticket.Get(t.Context(), childID)
 	if err != nil {
 		t.Fatalf("query child ticket: %v", err)
 	}
-	if child.Status != approvalticket.StatusFAILED {
-		t.Fatalf("child status = %q, want %q", child.Status, approvalticket.StatusFAILED)
+	if child.Status != entticket.StatusFAILED {
+		t.Fatalf("child status = %q, want %q", child.Status, entticket.StatusFAILED)
 	}
 	if !strings.Contains(child.RejectReason, "unknown power operation for retry") {
 		t.Fatalf("child reject_reason = %q, want contains %q", child.RejectReason, "unknown power operation for retry")
@@ -816,12 +950,12 @@ func TestBatchHandler_RetryVMBatch_PowerChildEnqueueFailure(t *testing.T) {
 		t.Fatalf("affected_count = %d, want 0", resp.AffectedCount)
 	}
 
-	child, err := client.ApprovalTicket.Get(t.Context(), childID)
+	child, err := client.Ticket.Get(t.Context(), childID)
 	if err != nil {
 		t.Fatalf("query child ticket: %v", err)
 	}
-	if child.Status != approvalticket.StatusFAILED {
-		t.Fatalf("child status = %q, want %q", child.Status, approvalticket.StatusFAILED)
+	if child.Status != entticket.StatusFAILED {
+		t.Fatalf("child status = %q, want %q", child.Status, entticket.StatusFAILED)
 	}
 	if !strings.Contains(child.RejectReason, "failed to enqueue vm_power job") {
 		t.Fatalf("child reject_reason = %q, want contains %q", child.RejectReason, "failed to enqueue vm_power job")
@@ -854,19 +988,19 @@ func TestBatchHandler_SubmitVMBatchPower_ProdBatchStaysPendingApproval(t *testin
 		t.Fatalf("status = %q, want %q", resp.Status, generated.VMBatchParentStatusPENDINGAPPROVAL)
 	}
 
-	parent, err := client.ApprovalTicket.Get(t.Context(), resp.BatchId)
+	parent, err := client.Ticket.Get(t.Context(), resp.BatchId)
 	if err != nil {
 		t.Fatalf("query parent ticket: %v", err)
 	}
-	if parent.OperationType != approvalticket.OperationTypePOWER {
-		t.Fatalf("parent operation_type = %q, want %q", parent.OperationType, approvalticket.OperationTypePOWER)
+	if parent.OperationType != entticket.OperationTypePOWER {
+		t.Fatalf("parent operation_type = %q, want %q", parent.OperationType, entticket.OperationTypePOWER)
 	}
-	if parent.Status != approvalticket.StatusPENDING {
-		t.Fatalf("parent status = %q, want %q", parent.Status, approvalticket.StatusPENDING)
+	if parent.Status != entticket.StatusPENDING {
+		t.Fatalf("parent status = %q, want %q", parent.Status, entticket.StatusPENDING)
 	}
 
-	children, err := client.ApprovalTicket.Query().
-		Where(approvalticket.ParentTicketIDEQ(resp.BatchId)).
+	children, err := client.Ticket.Query().
+		Where(entticket.ParentTicketIDEQ(resp.BatchId)).
 		All(t.Context())
 	if err != nil {
 		t.Fatalf("query child tickets: %v", err)
@@ -874,11 +1008,11 @@ func TestBatchHandler_SubmitVMBatchPower_ProdBatchStaysPendingApproval(t *testin
 	if len(children) != 1 {
 		t.Fatalf("child ticket count = %d, want 1", len(children))
 	}
-	if children[0].OperationType != approvalticket.OperationTypePOWER {
-		t.Fatalf("child operation_type = %q, want %q", children[0].OperationType, approvalticket.OperationTypePOWER)
+	if children[0].OperationType != entticket.OperationTypePOWER {
+		t.Fatalf("child operation_type = %q, want %q", children[0].OperationType, entticket.OperationTypePOWER)
 	}
-	if children[0].Status != approvalticket.StatusPENDING {
-		t.Fatalf("child status = %q, want %q", children[0].Status, approvalticket.StatusPENDING)
+	if children[0].Status != entticket.StatusPENDING {
+		t.Fatalf("child status = %q, want %q", children[0].Status, entticket.StatusPENDING)
 	}
 }
 
@@ -892,19 +1026,105 @@ func newBatchBehaviorTestServer(t *testing.T) (*Server, *ent.Client) {
 	}), client
 }
 
-func newBatchBehaviorTestServerWithGateway(t *testing.T, writer *fakeDeleteAtomicWriter) (*Server, *ent.Client) {
+func newBatchBehaviorTestServerWithTicketService(t *testing.T, writer *fakeDeleteAtomicWriter) (*Server, *ent.Client) {
 	t.Helper()
 	_ = logger.Init("error", "json")
-	client := testutil.OpenEntPostgres(t, "batch_handler_behavior_with_gateway")
-	gw := approval.NewGateway(client, nil, writer)
+	client := testutil.OpenEntPostgres(t, "batch_handler_behavior_with_ticket_service")
+	ticketService := ticketing.NewService(client, nil, writer)
 	return NewServer(ServerDeps{
-		EntClient:    client,
-		ApprovalReqs: service.NewApprovalRequirementService(client),
-		Gateway:      gw,
+		EntClient:     client,
+		ApprovalReqs:  service.NewApprovalRequirementService(client),
+		TicketService: ticketService,
 	}), client
 }
 
+func newBatchBehaviorTestServerWithApprovalRouter(t *testing.T, capture *captureApprovalProvider) (*Server, *ent.Client) {
+	t.Helper()
+	_ = logger.Init("error", "json")
+	client := testutil.OpenEntPostgres(t, "batch_handler_behavior_with_provider_router")
+	return NewServer(ServerDeps{
+		EntClient:      client,
+		ApprovalReqs:   service.NewApprovalRequirementService(client),
+		ApprovalRouter: approval.NewApprovalProviderRouter(capture),
+	}), client
+}
+
+func newBatchModifyTestServer(t *testing.T) (*Server, *ent.Client, string) {
+	t.Helper()
+
+	_ = logger.Init("error", "json")
+	client := testutil.OpenEntPostgres(t, "batch_handler_modify")
+
+	clusterID := "cluster-" + uuid.NewString()
+	_, err := client.Cluster.Create().
+		SetID(clusterID).
+		SetName("cluster-" + clusterID[len(clusterID)-4:]).
+		SetDisplayName("Cluster Modify").
+		SetAPIServerURL("https://k8s.example.com").
+		SetEncryptedKubeconfig([]byte("fake-kubeconfig")).
+		SetCreatedBy("seed").
+		SetEnvironment(entcluster.EnvironmentProd).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetEnabled(true).
+		SetEnabledFeatures([]string{"VMLiveUpdateFeatures", "ExpandDisks"}).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+
+	systemID := "sys-" + uuid.NewString()
+	serviceID := "svc-" + uuid.NewString()
+	vmID := "vm-" + uuid.NewString()
+	vmName := "vmname" + vmID[len(vmID)-4:]
+
+	sys := mustCreateSystem(t, client, systemID, "shop"+systemID[len(systemID)-4:], "owner-1")
+	svc := mustCreateService(t, client, serviceID, "redis"+serviceID[len(serviceID)-4:], sys.ID, "svc")
+	_, err = client.VM.Create().
+		SetID(vmID).
+		SetName(vmName).
+		SetInstance("01").
+		SetNamespace("prod-shop").
+		SetClusterID(clusterID).
+		SetStatus(entvm.StatusRUNNING).
+		SetCreatedBy("owner-1").
+		SetServiceID(svc.ID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create vm: %v", err)
+	}
+
+	mock := provider.NewMockProvider()
+	mock.Seed([]*domain.VM{{
+		ID:        vmID,
+		Name:      vmName,
+		Namespace: "prod-shop",
+		Cluster:   clusterID,
+		Status:    domain.VMStatusRunning,
+		Spec: domain.VMSpec{
+			CPU:                      2,
+			MemoryGi:                 4,
+			DiskGB:                   20,
+			RootDataVolumeName:       "rootdisk",
+			DiskHotplugSupported:     true,
+			CurrentCPUSockets:        1,
+			CurrentCPUCoresPerSocket: 2,
+			CurrentCPUThreads:        1,
+		},
+		ResourceVersion: "rv-batch-modify-1",
+	}})
+
+	return NewServer(ServerDeps{
+		EntClient: client,
+		VMService: service.NewVMService(mock),
+	}), client, vmID
+}
+
 func mustCreateBatchDeleteTargetVM(t *testing.T, client *ent.Client) string {
+	t.Helper()
+	return mustCreateBatchDeleteTargetVMWithStatus(t, client, entvm.StatusSTOPPED)
+}
+
+func mustCreateBatchDeleteTargetVMWithStatus(t *testing.T, client *ent.Client, status entvm.Status) string {
 	t.Helper()
 	actor := "owner-1"
 
@@ -920,7 +1140,7 @@ func mustCreateBatchDeleteTargetVM(t *testing.T, client *ent.Client) string {
 		SetInstance("01").
 		SetNamespace("prod-shop").
 		SetClusterID("cluster-a").
-		SetStatus("RUNNING").
+		SetStatus(status).
 		SetCreatedBy(actor).
 		SetServiceID(svc.ID).
 		Save(t.Context())
@@ -988,12 +1208,12 @@ func mustSeedPowerBatchForRetry(t *testing.T, client *ent.Client, actor, operati
 		Save(t.Context()); err != nil {
 		t.Fatalf("create parent event: %v", err)
 	}
-	if _, err := client.ApprovalTicket.Create().
+	if _, err := client.Ticket.Create().
 		SetID(batchID).
 		SetEventID(parentEventID).
 		SetRequester(actor).
-		SetStatus(approvalticket.StatusPENDING).
-		SetOperationType(approvalticket.OperationTypePOWER).
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypePOWER).
 		SetReason("power batch").
 		Save(t.Context()); err != nil {
 		t.Fatalf("create parent ticket: %v", err)
@@ -1018,18 +1238,18 @@ func mustSeedPowerBatchForRetry(t *testing.T, client *ent.Client, actor, operati
 		Save(t.Context()); err != nil {
 		t.Fatalf("create child event: %v", err)
 	}
-	if _, err := client.ApprovalTicket.Create().
+	if _, err := client.Ticket.Create().
 		SetID(childID).
 		SetEventID(childEventID).
 		SetRequester(actor).
-		SetStatus(approvalticket.StatusFAILED).
-		SetOperationType(approvalticket.OperationTypePOWER).
+		SetStatus(entticket.StatusFAILED).
+		SetOperationType(entticket.OperationTypePOWER).
 		SetParentTicketID(batchID).
 		SetRejectReason("seed failure").
 		Save(t.Context()); err != nil {
 		t.Fatalf("create child ticket: %v", err)
 	}
-	if _, err := client.BatchApprovalTicket.Create().
+	if _, err := client.BatchTicket.Create().
 		SetID(batchID).
 		SetBatchType("BATCH_POWER").
 		SetChildCount(1).
@@ -1132,6 +1352,10 @@ func (f *fakeDeleteAtomicWriter) ApproveCreateAndEnqueue(
 
 func (f *fakeDeleteAtomicWriter) ApproveDeleteAndEnqueue(_ context.Context, _, _, _, _ string) error {
 	f.deleteCalls++
+	return nil
+}
+
+func (f *fakeDeleteAtomicWriter) ApproveModifyAndEnqueue(_ context.Context, _, _, _ string) error {
 	return nil
 }
 

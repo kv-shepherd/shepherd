@@ -60,7 +60,7 @@ tools/shepherd-linter/
 | Batch | Priority | Scripts | Status |
 |-------|----------|---------|--------|
 | Batch 1 | P0 — pure AST, no external deps | **9 / 10 scripts → 7 Analyzers** | ✅ Complete |
-| Batch 2 | P1 — provider-layer + transaction safety (AST) | 2 scripts → 2 Analyzers | ✅ Complete (2026-03-03) |
+| Batch 2 | P1 — provider-layer + transaction safety (AST) | 3 scripts → 3 Analyzers | ✅ Complete (extended 2026-03-23) |
 | Batch 3 | P2 — doc/manifest consistency checks | Permanently retained as `go run` | 📌 Documented |
 
 > `check_handler_explicit_rbac_guards.go` is retained as `go run` (file-content string matching; not AST-analyzable — ADR-0039 §Batch 1 note).
@@ -84,6 +84,7 @@ Context7 best practices applied: `pass.Files` for comment scanning (not `os.Read
 
 | Analyzer | Enforces | Original script |
 |----------|----------|-----------------|
+| `authproviderlayering` | ADR-0035/ADR-0048/ADR-0049/ADR-0050/ADR-0051: core/edge/provider auth layering | New analyzer-only enforcement |
 | `ssacompliance` | ADR-0011: provider write paths must use SSA+Unstructured | `check_kubevirt_ssa_compliance.go` |
 | `k8sintransaction` | ADR-0006/ADR-0012: K8s calls inside DB transaction callbacks (advisory) | `check_k8s_in_transaction.go` |
 

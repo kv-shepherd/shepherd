@@ -65,7 +65,7 @@ Canonical endpoints from ADR-0015:
 
 Extension for existing simplified endpoints:
 
-- Keep `POST /api/v1/approvals/batch` and `POST /api/v1/vms/batch/power`
+- Keep `POST /api/v1/vms/batch` and `POST /api/v1/vms/batch/power`
 - Internally normalize them into the same parent-child ticket pipeline
 
 Request requirements:
@@ -259,7 +259,7 @@ Sensitive data must follow ADR-0019 redaction rules.
 
 ## Resolved Decisions
 
-1. Compatibility endpoints (`POST /api/v1/approvals/batch`, `POST /api/v1/vms/batch/power`) remain public but are normalized to the same parent-child pipeline.
+1. Batch submit and power compatibility endpoints (`POST /api/v1/vms/batch`, `POST /api/v1/vms/batch/power`) remain public and are normalized to the same parent-child pipeline.
 2. Submission remains strictly atomic for parent/child ticket creation; invalid child inputs fail the whole submission transaction.
 3. User-level limits use ADR defaults, with admin exemption/override APIs for exceptional cases.
 

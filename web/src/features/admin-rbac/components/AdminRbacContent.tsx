@@ -1,8 +1,9 @@
 'use client';
 
 import {
+    Alert,
+    AutoComplete,
     Button,
-    Card,
     Form,
     Input,
     Modal,
@@ -19,6 +20,21 @@ import type { ColumnsType } from 'antd/es/table';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
+import { SummaryMetricCard } from '@/components/feedback/SummaryMetricCard';
+import {
+    localizeRoleDescription,
+    localizeRoleLabel,
+} from '@/features/rbac-shared/roleCatalogI18n';
+import type { ScopeTargetOption } from '@/features/rbac-shared/useScopeTargetCatalog';
+import {
+    AccessControlGlyph,
+    QueueReviewGlyph,
+    RoleCatalogGlyph,
+    UserDirectoryGlyph,
+} from '@/components/illustrations/DashboardIllustrations';
+import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 import { useAdminRbacController } from '../hooks/useAdminRbacController';
 import {
     ENVIRONMENT_VALUES,
@@ -28,29 +44,93 @@ import {
     type Role,
 } from '../types';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
+const EMPTY_VALUE = '—';
+function permissionCatalogTranslationKey(permissionKey: string) {
+    return permissionKey.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
+}
 
 export function AdminRbacContent() {
     const { t } = useTranslation(['admin', 'common']);
     const rbac = useAdminRbacController({ t });
+    const bindingScopeType = Form.useWatch('scope_type', rbac.bindingForm);
+    const permissionCatalogMetadata = useMemo(
+        () => new Map(
+            rbac.permissions.map((permission) => {
+                const catalogKey = permissionCatalogTranslationKey(permission.key);
+                return [
+                    permission.key,
+                    {
+                        label: t(`rbac.permissions.catalog.${catalogKey}.label`, {
+                            defaultValue: permission.description?.trim() || permission.key,
+                        }),
+                        description: t(`rbac.permissions.catalog.${catalogKey}.description`, {
+                            defaultValue: permission.description?.trim() || EMPTY_VALUE,
+                        }),
+                    },
+                ];
+            })
+        ),
+        [rbac.permissions, t]
+    );
+    const permissionDescriptionByKey = useMemo(
+        () => new Map(Array.from(permissionCatalogMetadata.entries()).map(([key, value]) => [key, value.label])),
+        [permissionCatalogMetadata]
+    );
+    const roleCatalogMetadata = useMemo(
+        () => new Map(
+            rbac.roles.map((role) => {
+                return [
+                    role.id,
+                    {
+                        label: localizeRoleLabel(t, role),
+                        description: localizeRoleDescription(t, role) || EMPTY_VALUE,
+                    },
+                ];
+            })
+        ),
+        [rbac.roles, t]
+    );
+    const roleDisplayById = useMemo(
+        () => new Map(rbac.roles.map((role) => [role.id, roleCatalogMetadata.get(role.id)?.label || role.display_name?.trim() || role.name])),
+        [rbac.roles, roleCatalogMetadata]
+    );
+    const customRoleCount = rbac.roles.filter((role) => !role.built_in).length;
+
+    const renderRoleIdentity = (role: Role) => {
+        const primary = roleCatalogMetadata.get(role.id)?.label || role.display_name?.trim() || role.name;
+        const showSecondary = primary !== role.name;
+        return (
+            <Space direction="vertical" size={0}>
+                <Text strong>{primary}</Text>
+                {showSecondary ? <Text type="secondary" style={{ fontSize: 12 }}>{role.name}</Text> : null}
+            </Space>
+        );
+    };
+
+    const renderBindingScope = (binding: GlobalRoleBinding) => {
+        const scopeLabel = t(`rbac.scope.${binding.scope_type}`, { defaultValue: binding.scope_type });
+        const scopeDisplay = binding.scope_display_name || binding.scope_id || t('rbac.bindings.global_scope');
+        return (
+            <Space direction="vertical" size={0}>
+                <Tag>{scopeLabel}</Tag>
+                <Text type="secondary" style={{ fontSize: 12 }}>{scopeDisplay}</Text>
+            </Space>
+        );
+    };
 
     const roleColumns: ColumnsType<Role> = [
         {
             title: t('common:table.name'),
             dataIndex: 'name',
             key: 'name',
-            render: (name: string, role: Role) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong>{role.display_name || name}</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{name}</Text>
-                </Space>
-            ),
+            render: (_, role: Role) => renderRoleIdentity(role),
         },
         {
             title: t('common:table.description'),
             dataIndex: 'description',
             key: 'description',
-            render: (description?: string) => description || '—',
+            render: (_description: string | undefined, role: Role) => roleCatalogMetadata.get(role.id)?.description || EMPTY_VALUE,
         },
         {
             title: t('rbac.roles.permissions'),
@@ -58,9 +138,11 @@ export function AdminRbacContent() {
             key: 'permissions',
             width: 420,
             render: (permissions: string[]) => (
-                <Space wrap>
+                <Space wrap size={[6, 6]}>
                     {(permissions || []).map((key) => (
-                        <Tag key={key} color="processing">{key}</Tag>
+                        <Tag key={key} color="processing" title={key}>
+                            {permissionDescriptionByKey.get(key) || key}
+                        </Tag>
                     ))}
                 </Space>
             ),
@@ -92,8 +174,9 @@ export function AdminRbacContent() {
             key: 'actions',
             width: 180,
             render: (_, role: Role) => (
-                <Space>
+                <Space size={4} wrap>
                     <Button
+                        type="link"
                         size="small"
                         icon={<EditOutlined />}
                         disabled={role.built_in}
@@ -103,6 +186,7 @@ export function AdminRbacContent() {
                         {t('common:button.edit')}
                     </Button>
                     <Button
+                        type="link"
                         size="small"
                         danger
                         icon={<DeleteOutlined />}
@@ -122,27 +206,22 @@ export function AdminRbacContent() {
             title: t('rbac.bindings.role'),
             dataIndex: 'role_name',
             key: 'role_name',
-            render: (roleName: string, record: GlobalRoleBinding) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong>{roleName || record.role_id}</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{record.role_id}</Text>
-                </Space>
-            ),
+            render: (roleName: string, record: GlobalRoleBinding) => {
+                const localizedRoleLabel = roleDisplayById.get(record.role_id) || record.role_display_name || roleName || record.role_id;
+                return (
+                    <Space direction="vertical" size={0}>
+                        <Text strong>{localizedRoleLabel}</Text>
+                        {localizedRoleLabel !== (roleName || record.role_id) ? (
+                            <Text type="secondary" style={{ fontSize: 12 }}>{roleName || record.role_id}</Text>
+                        ) : null}
+                    </Space>
+                );
+            },
         },
         {
-            title: t('rbac.bindings.scope_type'),
-            dataIndex: 'scope_type',
-            key: 'scope_type',
-            width: 130,
-            render: (scopeType: string) => (
-                <Tag>{t(`rbac.scope.${scopeType}`, { defaultValue: scopeType })}</Tag>
-            ),
-        },
-        {
-            title: t('rbac.bindings.scope_id'),
-            dataIndex: 'scope_id',
-            key: 'scope_id',
-            render: (scopeID?: string) => scopeID || '—',
+            title: t('rbac.bindings.scope'),
+            key: 'scope',
+            render: (_: unknown, record: GlobalRoleBinding) => renderBindingScope(record),
         },
         {
             title: t('rbac.bindings.allowed_envs'),
@@ -155,9 +234,16 @@ export function AdminRbacContent() {
                         ? (envs || []).map((env) => (
                             <Tag key={env}>{t(`rbac.env.${env}`, { defaultValue: env })}</Tag>
                         ))
-                        : <Text type="secondary">—</Text>}
+                        : <Text type="secondary">{t('rbac.bindings.all_environments')}</Text>}
                 </Space>
             ),
+        },
+        {
+            title: t('common:table.created_at'),
+            dataIndex: 'created_at',
+            key: 'created_at',
+            width: 170,
+            render: (value?: string) => <LocalDateTimeText value={value} />,
         },
         {
             title: t('common:table.actions'),
@@ -171,6 +257,7 @@ export function AdminRbacContent() {
                     cancelText={t('common:button.cancel')}
                 >
                     <Button
+                        type="link"
                         danger
                         size="small"
                         data-testid={`rbac-binding-action-delete-${binding.id}`}
@@ -188,22 +275,37 @@ export function AdminRbacContent() {
             title: t('common:table.name'),
             dataIndex: 'key',
             key: 'key',
-            render: (key: string) => <Text code>{key}</Text>,
+            render: (key: string, permission: Permission) => (
+                <Space direction="vertical" size={0}>
+                    <Text strong>{permissionCatalogMetadata.get(permission.key)?.label || permission.description || key}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{key}</Text>
+                </Space>
+            ),
         },
         {
             title: t('common:table.description'),
             dataIndex: 'description',
             key: 'description',
-            render: (description?: string) => description || '—',
+            render: (_description: string | undefined, permission: Permission) => permissionCatalogMetadata.get(permission.key)?.description || EMPTY_VALUE,
         },
     ];
 
     const roleOptions = useMemo(
         () => rbac.roles.map((role) => ({
             value: role.id,
-            label: role.display_name || role.name,
+            label: roleDisplayById.get(role.id) || role.display_name || role.name,
         })),
-        [rbac.roles]
+        [rbac.roles, roleDisplayById]
+    );
+    const localizedPermissionOptions = useMemo(
+        () => rbac.permissions.map((permission) => {
+            const metadata = permissionCatalogMetadata.get(permission.key);
+            return {
+                value: permission.key,
+                label: metadata ? `${metadata.label} (${permission.key})` : permission.key,
+            };
+        }),
+        [permissionCatalogMetadata, rbac.permissions]
     );
     const scopeOptions = useMemo(
         () => RBAC_SCOPE_VALUES.map((scope) => ({
@@ -212,6 +314,8 @@ export function AdminRbacContent() {
         })),
         [t]
     );
+    const scopeTargetOptions = (rbac.scopeTargetOptionsByType?.[bindingScopeType || 'global'] ?? []) as ScopeTargetOption[];
+    const scopeTargetLoading = Boolean(rbac.scopeTargetLoadingByType?.[bindingScopeType || 'global']);
     const environmentOptions = useMemo(
         () => ENVIRONMENT_VALUES.map((env) => ({
             value: env,
@@ -223,12 +327,49 @@ export function AdminRbacContent() {
     return (
         <div data-testid="admin-rbac-page">
             {rbac.messageContextHolder}
-            <div style={{ marginBottom: 24 }}>
-                <Title level={4} style={{ margin: 0 }}>{t('rbac.title')}</Title>
-                <Text type="secondary">{t('rbac.subtitle')}</Text>
+            <PageHeader
+                title={t('rbac.title')}
+                subtitle={t('rbac.subtitle')}
+            />
+
+            <div className="summary-card-grid">
+                <SummaryMetricCard
+                    title={t('rbac.summary.roles_title')}
+                    value={rbac.roles.length}
+                    description={t('rbac.summary.roles_description')}
+                    visual={<RoleCatalogGlyph className="summary-metric-card__art" />}
+                    accentColor="#D97706"
+                    surfaceColor="#FFF4E5"
+                />
+                <SummaryMetricCard
+                    title={t('rbac.summary.custom_roles_title')}
+                    value={customRoleCount}
+                    description={t('rbac.summary.custom_roles_description')}
+                    visual={<AccessControlGlyph className="summary-metric-card__art" />}
+                    accentColor="#0F8F57"
+                    surfaceColor="#E8FFF2"
+                />
+                <SummaryMetricCard
+                    title={t('rbac.summary.bindings_title')}
+                    value={rbac.roleBindings.length}
+                    description={rbac.selectedUserDisplayLabel
+                        ? t('rbac.summary.bindings_description_selected', { user: rbac.selectedUserDisplayLabel })
+                        : t('rbac.summary.bindings_description')}
+                    visual={<QueueReviewGlyph className="summary-metric-card__art" />}
+                    accentColor="#1D5BFF"
+                    surfaceColor="#E6F4FF"
+                />
+                <SummaryMetricCard
+                    title={t('rbac.summary.permissions_title')}
+                    value={rbac.permissions.length}
+                    description={t('rbac.summary.permissions_description')}
+                    visual={<UserDirectoryGlyph className="summary-metric-card__art" />}
+                    accentColor="#6D4DE3"
+                    surfaceColor="#F5EDFF"
+                />
             </div>
 
-            <Card style={{ borderRadius: 12, marginBottom: 16 }}>
+            <PageSurface style={{ marginBottom: 16 }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
                     <Space direction="vertical" size={0}>
                         <Text strong>{t('rbac.roles.title')}</Text>
@@ -246,6 +387,13 @@ export function AdminRbacContent() {
                         </Button>
                     </Space>
                 </Space>
+                <Alert
+                    showIcon
+                    type="info"
+                    style={{ marginTop: 16 }}
+                    message={t('rbac.roles.help_title')}
+                    description={t('rbac.roles.help_description')}
+                />
 
                 <Table<Role>
                     style={{ marginTop: 16 }}
@@ -253,11 +401,27 @@ export function AdminRbacContent() {
                     columns={roleColumns}
                     dataSource={rbac.roles}
                     loading={rbac.rolesLoading}
+                    locale={{
+                        emptyText: (
+                            <div style={{ padding: 40 }}>
+                                <ActionEmptyState
+                                    title={t('rbac.roles.empty')}
+                                    description={t('rbac.roles.empty_description')}
+                                    visual={<RoleCatalogGlyph className="action-empty-state__art" />}
+                                    actions={(
+                                        <Button type="primary" icon={<PlusOutlined />} onClick={rbac.openCreateRoleModal}>
+                                            {t('rbac.roles.add')}
+                                        </Button>
+                                    )}
+                                />
+                            </div>
+                        ),
+                    }}
                     pagination={false}
                 />
-            </Card>
+            </PageSurface>
 
-            <Card style={{ borderRadius: 12, marginBottom: 16 }}>
+            <PageSurface style={{ marginBottom: 16 }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
                     <Space direction="vertical" size={0}>
                         <Text strong>{t('rbac.bindings.title')}</Text>
@@ -277,25 +441,54 @@ export function AdminRbacContent() {
                         </Button>
                     </Space>
                 </Space>
+                <Alert
+                    showIcon
+                    type="info"
+                    style={{ marginTop: 16, marginBottom: 16 }}
+                    message={t('rbac.bindings.help_title')}
+                    description={t('rbac.bindings.help_description')}
+                />
 
                 <Space align="center" style={{ marginTop: 16, marginBottom: 16 }}>
                     <SafetyCertificateOutlined />
                     <Text>{t('rbac.bindings.select_user')}</Text>
                     <Select
+                        allowClear
+                        labelInValue
                         showSearch
-                        optionFilterProp="label"
+                        filterOption={false}
                         style={{ minWidth: 320 }}
-                        value={rbac.selectedUserId || undefined}
+                        value={rbac.selectedUserValue}
                         loading={rbac.usersLoading}
                         placeholder={t('rbac.bindings.select_user_placeholder')}
                         data-testid="rbac-user-selector"
-                        onChange={(value) => rbac.setSelectedUserId(value)}
-                        options={rbac.users.map((user) => ({
-                            value: user.id,
-                            label: `${user.username}${user.display_name ? ` (${user.display_name})` : ''}`,
-                        }))}
+                        searchValue={rbac.userSearch}
+                        onSearch={rbac.setUserSearch}
+                        onChange={(value) => {
+                            if (!value) {
+                                rbac.selectUser('', '');
+                                return;
+                            }
+                            rbac.selectUser(value.value, typeof value.label === 'string' ? value.label : '');
+                        }}
+                        options={rbac.userOptions}
+                        notFoundContent={
+                            rbac.usersLoading
+                                ? t('common:message.loading')
+                                : rbac.userSearch.trim()
+                                    ? t('rbac.bindings.no_matching_users')
+                                    : t('common:message.no_data')
+                        }
                     />
                 </Space>
+
+                {rbac.selectedUserId ? (
+                    <div style={{ marginBottom: 16 }}>
+                        <Text strong>{rbac.selectedUserDisplayLabel}</Text>
+                        <br />
+                        <Text type="secondary">{t('rbac.bindings.selected_user_hint')}</Text>
+                    </div>
+                ) : null}
 
                 <Table<GlobalRoleBinding>
                     rowKey="id"
@@ -304,26 +497,68 @@ export function AdminRbacContent() {
                     loading={rbac.roleBindingsLoading}
                     locale={{
                         emptyText: rbac.selectedUserId
-                            ? t('common:message.no_data')
-                            : t('rbac.bindings.select_user_first'),
+                            ? (
+                                <div style={{ padding: 40 }}>
+                                    <ActionEmptyState
+                                        compact={true}
+                                        title={t('rbac.bindings.empty')}
+                                        description={t('rbac.bindings.empty_description', { user: rbac.selectedUserDisplayLabel || EMPTY_VALUE })}
+                                        visual={<AccessControlGlyph className="action-empty-state__art" />}
+                                        actions={(
+                                            <Button type="primary" size="small" icon={<PlusOutlined />} onClick={rbac.openAddBindingModal}>
+                                                {t('rbac.bindings.add')}
+                                            </Button>
+                                        )}
+                                    />
+                                </div>
+                            )
+                            : (
+                                <div style={{ padding: 40 }}>
+                                    <ActionEmptyState
+                                        compact={true}
+                                        title={t('rbac.bindings.select_user_first')}
+                                        description={t('rbac.bindings.select_user_help')}
+                                        visual={<UserDirectoryGlyph className="action-empty-state__art" />}
+                                    />
+                                </div>
+                            ),
                     }}
                     pagination={false}
                 />
-            </Card>
+            </PageSurface>
 
-            <Card style={{ borderRadius: 12 }}>
+            <PageSurface>
                 <Space direction="vertical" size={0} style={{ marginBottom: 16 }}>
                     <Text strong>{t('rbac.permissions.title')}</Text>
                     <Text type="secondary">{t('rbac.permissions.subtitle')}</Text>
                 </Space>
+                <Alert
+                    showIcon
+                    type="info"
+                    style={{ marginBottom: 16 }}
+                    message={t('rbac.permissions.help_title')}
+                    description={t('rbac.permissions.help_description')}
+                />
                 <Table<Permission>
                     rowKey="key"
                     columns={permissionColumns}
                     dataSource={rbac.permissions}
                     loading={rbac.permissionsLoading}
+                    locale={{
+                        emptyText: (
+                            <div style={{ padding: 40 }}>
+                                <ActionEmptyState
+                                    compact={true}
+                                    title={t('rbac.permissions.empty')}
+                                    description={t('rbac.permissions.empty_description')}
+                                    visual={<AccessControlGlyph className="action-empty-state__art" />}
+                                />
+                            </div>
+                        ),
+                    }}
                     pagination={false}
                 />
-            </Card>
+            </PageSurface>
 
             <Modal
                 title={t('rbac.roles.add_title')}
@@ -333,8 +568,9 @@ export function AdminRbacContent() {
                 }}
                 onCancel={rbac.closeCreateRoleModal}
                 confirmLoading={rbac.createRolePending}
-                forceRender
-                destroyOnHidden={true}
+                forceRender={true}
+                maskClosable={false}
+                keyboard={false}
                 data-testid="rbac-role-create-modal"
             >
                 <Form form={rbac.roleCreateForm} layout="vertical" preserve={false}>
@@ -348,7 +584,7 @@ export function AdminRbacContent() {
                         <Input.TextArea rows={3} />
                     </Form.Item>
                     <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}>
-                        <Select mode="multiple" options={rbac.permissionOptions} optionFilterProp="label" />
+                        <Select mode="multiple" options={localizedPermissionOptions} optionFilterProp="label" />
                     </Form.Item>
                     <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked" initialValue={true}>
                         <Switch />
@@ -364,8 +600,9 @@ export function AdminRbacContent() {
                 }}
                 onCancel={rbac.closeEditRoleModal}
                 confirmLoading={rbac.updateRolePending}
-                forceRender
-                destroyOnHidden={true}
+                forceRender={true}
+                maskClosable={false}
+                keyboard={false}
                 data-testid="rbac-role-edit-modal"
             >
                 <Form form={rbac.roleEditForm} layout="vertical" preserve={false}>
@@ -376,7 +613,7 @@ export function AdminRbacContent() {
                         <Input.TextArea rows={3} />
                     </Form.Item>
                     <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}>
-                        <Select mode="multiple" options={rbac.permissionOptions} optionFilterProp="label" />
+                        <Select mode="multiple" options={localizedPermissionOptions} optionFilterProp="label" />
                     </Form.Item>
                     <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked">
                         <Switch />
@@ -385,7 +622,7 @@ export function AdminRbacContent() {
             </Modal>
 
             <Modal
-                title={t('common:button.delete')}
+                title={t('rbac.roles.delete_title')}
                 open={rbac.deleteRoleOpen}
                 onOk={rbac.submitDeleteRole}
                 onCancel={rbac.closeDeleteRoleModal}
@@ -403,22 +640,50 @@ export function AdminRbacContent() {
                 }}
                 onCancel={rbac.closeAddBindingModal}
                 confirmLoading={rbac.createBindingPending}
-                destroyOnHidden={true}
+                forceRender={true}
+                maskClosable={false}
+                keyboard={false}
                 data-testid="rbac-binding-add-modal"
             >
                 <Form form={rbac.bindingForm} layout="vertical" preserve={false}>
                     <Form.Item label={t('rbac.bindings.select_user')}>
-                        <Input value={rbac.selectedUser?.display_name || rbac.selectedUser?.username || ''} readOnly />
+                        <Input value={rbac.selectedUserDisplayLabel} readOnly />
                     </Form.Item>
                     <Form.Item name="role_id" label={t('rbac.bindings.role')} rules={[{ required: true }]}>
                         <Select options={roleOptions} optionFilterProp="label" showSearch />
                     </Form.Item>
                     <Form.Item name="scope_type" label={t('rbac.bindings.scope_type')} rules={[{ required: true }]} initialValue="global">
-                        <Select options={scopeOptions} />
+                        <Select
+                            options={scopeOptions}
+                            onChange={(value) => {
+                                rbac.bindingForm.setFieldsValue({ scope_type: value, scope_id: undefined });
+                            }}
+                        />
                     </Form.Item>
-                    <Form.Item name="scope_id" label={t('rbac.bindings.scope_id')}>
-                        <Input />
-                    </Form.Item>
+                    {bindingScopeType && bindingScopeType !== 'global' ? (
+                        <Form.Item
+                            name="scope_id"
+                            label={t('rbac.bindings.scope_id')}
+                            extra={t('rbac.bindings.scope_id_help', {
+                                scope: t(`rbac.scope.${bindingScopeType}`, { defaultValue: bindingScopeType }),
+                            })}
+                        >
+                            <AutoComplete
+                                options={scopeTargetOptions}
+                                allowClear={true}
+                                placeholder={t('rbac.bindings.scope_id_placeholder')}
+                                filterOption={(inputValue, option) => {
+                                    const label = String(option?.label ?? '').toLowerCase();
+                                    const value = String(option?.value ?? '').toLowerCase();
+                                    const search = inputValue.trim().toLowerCase();
+                                    return label.includes(search) || value.includes(search);
+                                }}
+                                notFoundContent={scopeTargetLoading
+                                    ? t('common:status.loading', { defaultValue: 'Loading…' })
+                                    : t('rbac.bindings.scope_target_empty', { defaultValue: 'No suggested targets yet' })}
+                            />
+                        </Form.Item>
+                    ) : null}
                     <Form.Item name="allowed_environments" label={t('rbac.bindings.allowed_envs')}>
                         <Select mode="multiple" options={environmentOptions} />
                     </Form.Item>

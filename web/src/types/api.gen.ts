@@ -118,6 +118,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/systems/{system_id}/member-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List addable system member candidates */
+        get: operations["listSystemMemberCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/systems/{system_id}/members/{user_id}": {
         parameters: {
             query?: never;
@@ -134,6 +151,23 @@ export interface paths {
         head?: never;
         /** Update system member role */
         patch: operations["updateSystemMemberRole"];
+        trace?: never;
+    };
+    "/services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List services across visible systems */
+        get: operations["listServicesOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/systems/{system_id}/services": {
@@ -179,6 +213,28 @@ export interface paths {
          *     Service name is immutable after creation.
          */
         patch: operations["updateService"];
+        trace?: never;
+    };
+    "/systems/{system_id}/services/{service_id}/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get service workspace context
+         * @description Returns the service detail workspace context as a single server-shaped payload,
+         *     including service metadata, recent visible virtual machines, and the current
+         *     actor's recent create requests for this service.
+         */
+        get: operations["getServiceWorkspaceContext"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/vms": {
@@ -362,6 +418,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vms/{vm_id}/request-prefill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get reusable VM request prefill
+         * @description Returns the reusable CREATE-request context captured for an existing VM,
+         *     so the UI can open a prefilled "request similar VM" flow without
+         *     implying a direct KubeVirt clone.
+         */
+        get: operations["getVMRequestPrefill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vms/{vm_id}/modify-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get VM live-modify context
+         * @description Returns the current live VM resource envelope together with per-field
+         *     online-update support flags so the UI can build a safe modify request.
+         */
+        get: operations["getVMModifyContext"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vms/{vm_id}/modify-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a VM resource change request
+         * @description Submits a CPU/memory/disk change request for a single VM.
+         *     The request always goes through approval and is validated for online-only
+         *     expansion semantics before the ticket is created.
+         */
+        post: operations["createVMModifyRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vms/{vm_id}/start": {
         parameters: {
             query?: never;
@@ -449,7 +570,7 @@ export interface paths {
          * Request VM console access
          * @description Stage 6 VNC access entrypoint.
          *     test env: direct token issuance.
-         *     prod env: create approval ticket and return pending status.
+         *     prod env: create ticket and return pending status.
          */
         post: operations["requestVMConsoleAccess"];
         delete?: never;
@@ -500,15 +621,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/approvals": {
+    "/tickets": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List approval tickets */
-        get: operations["listApprovals"];
+        /** List work-order tickets */
+        get: operations["listTickets"];
         put?: never;
         post?: never;
         delete?: never;
@@ -517,7 +638,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/approvals/batch": {
+    "/builtin-approval/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List built-in approval tasks */
+        get: operations["listBuiltinApprovalTasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/builtin-approval/tasks/{ticket_id}/approve": {
         parameters: {
             query?: never;
             header?: never;
@@ -526,18 +664,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Submit batch approval request (compatibility endpoint)
-         * @description Compatibility endpoint normalized into Stage 5.E VM batch pipeline.
-         */
-        post: operations["submitApprovalBatch"];
+        /** Approve a built-in approval task */
+        post: operations["approveBuiltinApprovalTask"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/approvals/{ticket_id}/approve": {
+    "/builtin-approval/tasks/{ticket_id}/reject": {
         parameters: {
             query?: never;
             header?: never;
@@ -546,32 +681,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Approve a request */
-        post: operations["approveTicket"];
+        /** Reject a built-in approval task */
+        post: operations["rejectBuiltinApprovalTask"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/approvals/{ticket_id}/reject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Reject a request */
-        post: operations["rejectTicket"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/approvals/{ticket_id}/cancel": {
+    "/tickets/{ticket_id}/cancel": {
         parameters: {
             query?: never;
             header?: never;
@@ -608,6 +726,24 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/admin/clusters/{cluster_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete an unused cluster */
+        delete: operations["deleteCluster"];
+        options?: never;
+        head?: never;
+        /** Update cluster metadata or credentials */
+        patch: operations["updateCluster"];
         trace?: never;
     };
     "/admin/users": {
@@ -751,6 +887,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/platform-settings/external-auth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get platform-wide external authentication settings */
+        get: operations["getExternalAuthPlatformSettings"];
+        /** Update platform-wide external authentication settings */
+        put: operations["updateExternalAuthPlatformSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/auth-providers": {
         parameters: {
             query?: never;
@@ -821,7 +975,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/auth-providers/{provider_id}/sync": {
+    "/admin/auth-providers/{provider_id}/cohorts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List discovered external cohorts for an auth provider */
+        get: operations["listAuthProviderCohorts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/cohorts/sync": {
         parameters: {
             query?: never;
             header?: never;
@@ -830,33 +1001,152 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Sync external groups for an auth provider */
-        post: operations["syncAuthProviderGroups"];
+        /** Sync external cohorts for an auth provider */
+        post: operations["syncAuthProviderCohorts"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/admin/auth-providers/{provider_id}/group-mappings": {
+    "/admin/auth-providers/{provider_id}/directory/descriptor": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List IdP group mappings for an auth provider */
-        get: operations["listAuthProviderGroupMappings"];
+        /** Get directory sync capability descriptor for an auth provider */
+        get: operations["getAuthProviderDirectoryDescriptor"];
         put?: never;
-        /** Create IdP group mapping */
-        post: operations["createAuthProviderGroupMapping"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/admin/auth-providers/{provider_id}/group-mappings/{mapping_id}": {
+    "/admin/auth-providers/{provider_id}/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get runtime login descriptor for an auth provider */
+        get: operations["getAuthProviderRuntimeDescriptor"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/directory/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get scheduled directory enrichment status for an auth provider */
+        get: operations["getAuthProviderDirectorySchedule"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/directory/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview canonical directory import result */
+        post: operations["previewAuthProviderDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/directory/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trigger asynchronous directory sync job */
+        post: operations["syncAuthProviderDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/directory/sync-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List directory sync jobs for an auth provider */
+        get: operations["listAuthProviderDirectorySyncJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/directory/sync-jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one directory sync job summary */
+        get: operations["getAuthProviderDirectorySyncJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/cohort-mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List external cohort mappings for an auth provider */
+        get: operations["listAuthProviderCohortMappings"];
+        put?: never;
+        /** Create external cohort mapping */
+        post: operations["createAuthProviderCohortMapping"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/auth-providers/{provider_id}/cohort-mappings/{mapping_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -866,12 +1156,12 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete IdP group mapping */
-        delete: operations["deleteAuthProviderGroupMapping"];
+        /** Delete external cohort mapping */
+        delete: operations["deleteAuthProviderCohortMapping"];
         options?: never;
         head?: never;
-        /** Update IdP group mapping */
-        patch: operations["updateAuthProviderGroupMapping"];
+        /** Update external cohort mapping */
+        patch: operations["updateAuthProviderCohortMapping"];
         trace?: never;
     };
     "/admin/rate-limits/exemptions": {
@@ -1043,6 +1333,75 @@ export interface paths {
         get: operations["listInstanceSizes"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List enabled external login providers */
+        get: operations["listLoginAuthProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/providers/{provider_id}/login/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start external auth-provider login */
+        post: operations["startLoginAuthProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/providers/{provider_id}/login/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit credential-based auth-provider login */
+        post: operations["submitLoginAuthProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/providers/{provider_id}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Complete external auth-provider login callback */
+        get: operations["completeLoginAuthProviderGet"];
+        put?: never;
+        /** Complete external auth-provider login callback */
+        post: operations["completeLoginAuthProviderPost"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1379,6 +1738,9 @@ export interface components {
             name: string;
             description?: string;
             system_id: string;
+            /** @description Parent system display name for UI presentation */
+            system_name: string;
+            /** @description Next allocatable per-service instance index */
             next_instance_index?: number;
             /** Format: date-time */
             created_at: string;
@@ -1396,13 +1758,25 @@ export interface components {
             items?: components["schemas"]["Service"][];
             pagination?: components["schemas"]["Pagination"];
         };
+        ServiceWorkspaceSummary: {
+            visible_vm_count: number;
+            recent_request_count: number;
+        };
+        ServiceWorkspaceContext: {
+            service: components["schemas"]["Service"];
+            summary: components["schemas"]["ServiceWorkspaceSummary"];
+            visible_vms: components["schemas"]["VM"][];
+            recent_requests: components["schemas"]["Ticket"][];
+        };
         VM: {
             id: string;
             name: string;
             namespace: string;
             cluster_id?: string;
+            /** @description Display name of the cluster (populated from cluster registry) */
+            cluster_name?: string;
             /** @enum {string} */
-            status: "CREATING" | "RUNNING" | "STOPPING" | "STOPPED" | "DELETING" | "FAILED" | "PENDING" | "MIGRATING" | "PAUSED" | "UNKNOWN";
+            status: "CREATING" | "STARTING" | "RUNNING" | "STOPPING" | "STOPPED" | "DELETING" | "FAILED" | "PENDING" | "MIGRATING" | "PAUSED" | "UNKNOWN" | "NOT_FOUND";
             hostname?: string;
             service_id?: string;
             instance?: string;
@@ -1463,6 +1837,53 @@ export interface components {
             namespace: string;
             reason: string;
         };
+        VMRequestPrefill: {
+            /** Format: uuid */
+            system_id: string;
+            /** Format: uuid */
+            service_id: string;
+            /** Format: uuid */
+            template_id: string;
+            /** Format: uuid */
+            instance_size_id: string;
+            namespace: string;
+            reason: string;
+            batch_count: number;
+        };
+        VMModifyRequest: {
+            reason: string;
+            /**
+             * Format: double
+             * @description Desired total vCPU count after the change. Online CPU changes are
+             *     validated against the current socket topology and may only expand.
+             */
+            target_cpu_cores?: number;
+            /**
+             * Format: double
+             * @description Desired total guest memory in Gi after the change.
+             */
+            target_memory_gi?: number;
+            /** @description Desired total root-volume size in Gi after the change. */
+            target_disk_gb?: number;
+        };
+        VMModifyContext: {
+            vm_id: string;
+            vm_name: string;
+            namespace: string;
+            cluster_id?: string;
+            cluster_name?: string;
+            /** Format: double */
+            current_cpu_cores: number;
+            /** Format: double */
+            current_memory_gi: number;
+            current_disk_gb: number;
+            cpu_supported: boolean;
+            cpu_reason?: string;
+            memory_supported: boolean;
+            memory_reason?: string;
+            disk_supported: boolean;
+            disk_reason?: string;
+        };
         VMRequestContext: {
             templates: components["schemas"]["Template"][];
             instance_sizes: components["schemas"]["InstanceSize"][];
@@ -1496,13 +1917,13 @@ export interface components {
             pagination?: components["schemas"]["Pagination"];
         };
         /** @enum {string} */
-        VMBatchOperation: "CREATE" | "DELETE" | "POWER";
+        VMBatchOperation: "CREATE" | "MODIFY" | "DELETE" | "POWER";
         /** @enum {string} */
         VMBatchPowerAction: "START" | "STOP" | "RESTART";
         /** @enum {string} */
         VMBatchParentStatus: "PENDING_APPROVAL" | "IN_PROGRESS" | "COMPLETED" | "PARTIAL_SUCCESS" | "FAILED" | "CANCELLED";
         VMBatchChildItem: {
-            /** @description Required for DELETE operation */
+            /** @description Required for DELETE and MODIFY operations */
             vm_id?: string;
             /**
              * Format: uuid
@@ -1521,6 +1942,18 @@ export interface components {
             instance_size_id?: string;
             /** @description Required for CREATE operation */
             namespace?: string;
+            /**
+             * Format: double
+             * @description Required for MODIFY when changing CPU.
+             */
+            target_cpu_cores?: number;
+            /**
+             * Format: double
+             * @description Required for MODIFY when changing memory.
+             */
+            target_memory_gi?: number;
+            /** @description Required for MODIFY when changing disk. */
+            target_disk_gb?: number;
             reason?: string;
         };
         VMBatchPowerItem: {
@@ -1601,7 +2034,7 @@ export interface components {
             /** @description Relative websocket/proxy path for noVNC bootstrap. */
             websocket_path?: string;
         };
-        ApprovalTicketResponse: {
+        TicketResponse: {
             ticket_id: string;
             /** @enum {string} */
             status: "PENDING";
@@ -1609,9 +2042,78 @@ export interface components {
              * @description Type of operation this ticket represents (ADR-0015)
              * @enum {string}
              */
-            operation_type?: "CREATE" | "DELETE" | "POWER" | "VNC_ACCESS";
+            operation_type?: "CREATE" | "MODIFY" | "DELETE" | "POWER" | "VNC_ACCESS";
         };
-        ApprovalTicket: {
+        TicketItemSummary: {
+            system_id?: string;
+            system_name?: string;
+            service_id?: string;
+            service_name?: string;
+            namespace?: string;
+            cluster_id?: string;
+            cluster_name?: string;
+            cluster_environment?: string;
+            vm_id?: string;
+            vm_name?: string;
+            /** @description VM status captured when the approval request was created. */
+            request_vm_status?: string;
+            /** @description Latest VM status resolved when the ticket was fetched. */
+            latest_vm_status?: string;
+            /** @description Deprecated alias for latest_vm_status. */
+            vm_status?: string;
+            template_id?: string;
+            template_name?: string;
+            instance_size_id?: string;
+            instance_size_name?: string;
+            /** Format: double */
+            current_cpu_cores?: number;
+            /** Format: double */
+            current_memory_gi?: number;
+            current_disk_gb?: number;
+            /** Format: double */
+            target_cpu_cores?: number;
+            /** Format: double */
+            target_memory_gi?: number;
+            target_disk_gb?: number;
+            power_action?: string;
+        };
+        TicketSummary: {
+            system_id?: string;
+            system_name?: string;
+            service_id?: string;
+            service_name?: string;
+            namespace?: string;
+            cluster_id?: string;
+            cluster_name?: string;
+            cluster_environment?: string;
+            vm_id?: string;
+            vm_name?: string;
+            /** @description VM status captured when the approval request was created. */
+            request_vm_status?: string;
+            /** @description Latest VM status resolved when the ticket was fetched. */
+            latest_vm_status?: string;
+            /** @description Deprecated alias for latest_vm_status. */
+            vm_status?: string;
+            template_id?: string;
+            template_name?: string;
+            instance_size_id?: string;
+            instance_size_name?: string;
+            batch_count?: number;
+            /** Format: double */
+            current_cpu_cores?: number;
+            /** Format: double */
+            current_memory_gi?: number;
+            current_disk_gb?: number;
+            /** Format: double */
+            target_cpu_cores?: number;
+            /** Format: double */
+            target_memory_gi?: number;
+            target_disk_gb?: number;
+            power_action?: string;
+            irreversible?: boolean;
+            items?: components["schemas"]["TicketItemSummary"][];
+        };
+        Ticket: {
             id: string;
             event_id: string;
             /** @enum {string} */
@@ -1620,7 +2122,7 @@ export interface components {
              * @description Type of operation this ticket represents (ADR-0015)
              * @enum {string}
              */
-            operation_type?: "CREATE" | "DELETE" | "POWER" | "VNC_ACCESS";
+            operation_type?: "CREATE" | "MODIFY" | "DELETE" | "POWER" | "VNC_ACCESS";
             requester: string;
             approver?: string;
             reason?: string;
@@ -1629,6 +2131,8 @@ export interface components {
             target_vm_id?: string;
             /** @description For DELETE tickets, the VM name (for display) */
             target_vm_name?: string;
+            summary?: components["schemas"]["TicketSummary"];
+            request_prefill?: components["schemas"]["VMRequestPrefill"];
             /** @description Contextual payload of the original request depending on operation_type */
             ticket_payload?: {
                 [key: string]: unknown;
@@ -1638,8 +2142,8 @@ export interface components {
             /** Format: date-time */
             created_at?: string;
         };
-        ApprovalTicketList: {
-            items?: components["schemas"]["ApprovalTicket"][];
+        TicketList: {
+            items?: components["schemas"]["Ticket"][];
             pagination?: components["schemas"]["Pagination"];
         };
         DeleteVMResponse: {
@@ -1741,6 +2245,18 @@ export interface components {
             advisory_message?: string;
             root_volume_resolution?: components["schemas"]["RootVolumeResolution"];
         };
+        PlacementResourceOverride: {
+            enabled?: boolean;
+            /** Format: double */
+            cpu_request?: number;
+            /** Format: double */
+            cpu_limit?: number;
+            /** Format: double */
+            memory_request_gi?: number;
+            /** Format: double */
+            memory_limit_gi?: number;
+            disk_gb?: number;
+        };
         PlacementEvaluation: {
             selected_cluster_id: string;
             selected_cluster_name?: string;
@@ -1762,9 +2278,7 @@ export interface components {
             reason_message?: string;
             advisory_code?: string;
             advisory_message?: string;
-            override?: {
-                [key: string]: unknown;
-            };
+            override?: components["schemas"]["PlacementResourceOverride"];
             /** Format: date-time */
             evaluated_at: string;
         };
@@ -1778,9 +2292,20 @@ export interface components {
             environment: "test" | "prod";
             /**
              * Format: byte
-             * @description Base64-encoded kubeconfig (stored encrypted, ADR-0012)
+             * @description Kubeconfig bytes encoded as base64 for API transport. Base64 is transport encoding only, not encryption.
              */
             kubeconfig: string;
+        };
+        ClusterUpdateRequest: {
+            display_name?: string;
+            /** @enum {string} */
+            environment?: "test" | "prod";
+            enabled?: boolean;
+            /**
+             * Format: byte
+             * @description Optional replacement kubeconfig bytes encoded as base64 for API transport. Base64 is transport encoding only, not encryption.
+             */
+            kubeconfig?: string;
         };
         ClusterEnvironmentUpdate: {
             /** @enum {string} */
@@ -2021,6 +2546,54 @@ export interface components {
             /** Format: password */
             password: string;
         };
+        AuthLoginMode: {
+            key: string;
+            display_name: string;
+            description?: string;
+            /** @enum {string} */
+            interaction?: "redirect" | "credentials";
+            request_schema?: {
+                [key: string]: unknown;
+            };
+            default?: boolean;
+        };
+        AuthProviderRuntimeDescriptor: {
+            supported: boolean;
+            display_name?: string;
+            description?: string;
+            supports_redirect: boolean;
+            supports_credentials: boolean;
+            requires_public_base_url: boolean;
+            login_modes?: components["schemas"]["AuthLoginMode"][];
+        };
+        LoginAuthProvider: {
+            id: string;
+            name: string;
+            auth_type: string;
+            display_name?: string;
+            description?: string;
+            login_modes?: components["schemas"]["AuthLoginMode"][];
+        };
+        LoginAuthProviderList: {
+            items?: components["schemas"]["LoginAuthProvider"][];
+        };
+        AuthProviderLoginStartRequest: {
+            login_mode?: string;
+            /** Format: uri */
+            return_to: string;
+        };
+        AuthProviderLoginStartResponse: {
+            /** Format: uri */
+            redirect_url: string;
+        };
+        AuthProviderCredentialLoginRequest: {
+            login_mode?: string;
+            credentials: {
+                [key: string]: unknown;
+            };
+            /** Format: uri */
+            return_to?: string;
+        };
         LoginResponse: {
             token: string;
             /** Format: date-time */
@@ -2109,9 +2682,13 @@ export interface components {
             user_id: string;
             role_id: string;
             role_name: string;
+            role_display_name?: string;
             scope_type: string;
             scope_id?: string;
+            scope_display_name?: string;
             allowed_environments?: ("test" | "prod")[];
+            managed?: boolean;
+            managed_source?: string;
             created_by?: string;
             /** Format: date-time */
             created_at?: string;
@@ -2182,6 +2759,17 @@ export interface components {
             success: boolean;
             message?: string;
         };
+        ExternalAuthPlatformSettings: {
+            public_base_url?: string;
+            effective_public_base_url?: string;
+            /** @enum {string} */
+            source: "platform_setting" | "server_config" | "unset";
+            runtime_login_ready: boolean;
+        };
+        ExternalAuthPlatformSettingsUpdateRequest: {
+            /** @description Empty string clears the persisted override and falls back to deployment config. */
+            public_base_url?: string;
+        };
         AuthProviderSampleField: {
             field: string;
             /** @enum {string} */
@@ -2193,29 +2781,167 @@ export interface components {
             provider_id: string;
             fields: components["schemas"]["AuthProviderSampleField"][];
         };
-        AuthProviderGroupSyncRequest: {
+        ExternalCohortSyncRequest: {
+            cohort_kind: string;
             source_field: string;
-            groups: string[];
+            cohorts: string[];
         };
-        IdPSyncedGroup: {
+        ExternalCohort: {
             id: string;
             provider_id: string;
-            external_group_id: string;
-            group_name: string;
+            cohort_kind: string;
+            cohort_key: string;
+            display_name: string;
             source_field?: string;
             /** Format: date-time */
             last_synced_at?: string;
             /** Format: date-time */
             created_at?: string;
         };
-        AuthProviderGroupSyncResponse: {
-            items?: components["schemas"]["IdPSyncedGroup"][];
+        ExternalCohortList: {
+            items?: components["schemas"]["ExternalCohort"][];
         };
-        IdPGroupMapping: {
+        ExternalCohortSyncResponse: {
+            items?: components["schemas"]["ExternalCohort"][];
+        };
+        DirectorySyncDescriptor: {
+            display_name: string;
+            description?: string;
+            supports_preview: boolean;
+            request_schema?: {
+                [key: string]: unknown;
+            };
+        };
+        DirectoryEnrichmentScheduleStatus: {
+            supported: boolean;
+            enabled: boolean;
+            /** @enum {string} */
+            mode?: "enrich_existing_only";
+            /** @enum {string} */
+            join_key_type?: "username";
+            schedule_cron?: string;
+            schedule_timezone?: string;
+            /** Format: date-time */
+            next_run_at?: string;
+            last_job_id?: string;
+            /** @enum {string} */
+            last_job_status?: "pending" | "running" | "completed" | "failed";
+            /** Format: date-time */
+            last_job_created_at?: string;
+            /** Format: date-time */
+            last_job_completed_at?: string;
+            pending_job_id?: string;
+            /** @enum {string} */
+            pending_job_status?: "pending" | "running";
+        };
+        DirectorySyncConflict: {
+            /** @enum {string} */
+            code: "same_external_identity" | "username_conflict" | "email_conflict" | "ambiguous_existing_user";
+            field?: string;
+            existing_user_id?: string;
+            message?: string;
+        };
+        DirectoryUserRecord: {
+            external_id: string;
+            username: string;
+            display_name: string;
+            email?: string;
+            cohorts?: components["schemas"]["DirectoryExternalCohort"][];
+            attributes?: {
+                [key: string]: unknown;
+            };
+        };
+        DirectoryExternalCohort: {
+            kind: string;
+            key: string;
+            display_name?: string;
+        };
+        DirectorySyncPreviewItem: {
+            record: components["schemas"]["DirectoryUserRecord"];
+            match: components["schemas"]["DirectorySyncPreviewMatch"];
+            conflicts?: components["schemas"]["DirectorySyncConflict"][];
+            warnings?: string[];
+        };
+        DirectorySyncPreviewMatch: {
+            /** @enum {string} */
+            action: "create" | "update" | "blocked";
+            existing_user_id?: string;
+            /** @enum {string} */
+            matched_by?: "external_id";
+        };
+        DirectorySyncPreview: {
+            total_count: number;
+            items: components["schemas"]["DirectorySyncPreviewItem"][];
+        };
+        DirectorySyncPreviewRequest: {
+            provider_request: {
+                [key: string]: unknown;
+            };
+            /**
+             * @default skip
+             * @enum {string}
+             */
+            conflict_resolution: "skip";
+        };
+        DirectorySyncRequest: {
+            provider_request: {
+                [key: string]: unknown;
+            };
+            /**
+             * @default skip
+             * @enum {string}
+             */
+            conflict_resolution: "skip";
+        };
+        DirectorySyncStartResponse: {
+            job_id: string;
+            /** @enum {string} */
+            status: "pending" | "running" | "completed" | "failed";
+        };
+        DirectoryActionSummary: {
+            create_count: number;
+            update_count: number;
+            blocked_count: number;
+        };
+        DirectorySyncJob: {
             id: string;
             provider_id: string;
-            external_group_id: string;
-            group_name?: string;
+            /** @enum {string} */
+            status: "pending" | "running" | "completed" | "failed";
+            /** @enum {string} */
+            conflict_resolution: "skip";
+            /** @enum {string} */
+            sync_mode?: "manual_import" | "scheduled_enrichment";
+            join_key_type?: string;
+            total_entries: number;
+            result_summary: components["schemas"]["DirectoryActionSummary"];
+            error_count: number;
+            errors: string[];
+            triggered_by: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            completed_at?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        DirectorySyncJobDetail: components["schemas"]["DirectorySyncJob"] & {
+            request_snapshot: {
+                [key: string]: unknown;
+            };
+        };
+        DirectorySyncJobList: {
+            items: components["schemas"]["DirectorySyncJob"][];
+            pagination: components["schemas"]["Pagination"];
+        };
+        ExternalCohortMapping: {
+            id: string;
+            provider_id: string;
+            cohort_kind: string;
+            cohort_key: string;
+            cohort_display_name?: string;
             role_id: string;
             role_name?: string;
             scope_type?: string;
@@ -2226,19 +2952,20 @@ export interface components {
             /** Format: date-time */
             updated_at?: string;
         };
-        IdPGroupMappingList: {
-            items?: components["schemas"]["IdPGroupMapping"][];
+        ExternalCohortMappingList: {
+            items?: components["schemas"]["ExternalCohortMapping"][];
             pagination?: components["schemas"]["Pagination"];
         };
-        IdPGroupMappingCreateRequest: {
-            external_group_id: string;
-            group_name?: string;
+        ExternalCohortMappingCreateRequest: {
+            cohort_kind: string;
+            cohort_key: string;
+            cohort_display_name?: string;
             role_id: string;
             scope_type?: string;
             scope_id?: string;
             allowed_environments?: ("test" | "prod")[];
         };
-        IdPGroupMappingUpdateRequest: {
+        ExternalCohortMappingUpdateRequest: {
             role_id?: string;
             scope_type?: string;
             scope_id?: string;
@@ -2252,6 +2979,9 @@ export interface components {
         };
         RateLimitExemption: {
             user_id: string;
+            username?: string;
+            display_name?: string;
+            email?: string;
             exempted_by: string;
             reason?: string;
             /** Format: date-time */
@@ -2281,6 +3011,9 @@ export interface components {
         };
         RateLimitUserStatus: {
             user_id: string;
+            username?: string;
+            display_name?: string;
+            email?: string;
             exempted: boolean;
             /** Format: date-time */
             exemption_expires_at?: string | null;
@@ -2332,11 +3065,20 @@ export interface components {
             resource_type: string;
             resource_id: string;
             actor: string;
+            approval_decision?: string;
+            placement_summary?: components["schemas"]["AuditPlacementSummary"];
             details?: {
                 [key: string]: unknown;
             };
             /** Format: date-time */
             created_at: string;
+        };
+        AuditPlacementSummary: {
+            selected_cluster_name?: string;
+            selected_cluster_id?: string;
+            eligible?: boolean | null;
+            reason_code?: string;
+            advisory_code?: string;
         };
         AuditLogList: {
             items?: components["schemas"]["AuditLog"][];
@@ -2488,11 +3230,15 @@ export interface components {
         Page: number;
         /** @description Items per page */
         PerPage: number;
+        /** @description Case-insensitive search text */
+        Search: string;
         /** @description Field to sort by */
         SortBy: string;
         /** @description Sort direction */
         SortOrder: "asc" | "desc";
         SystemID: string;
+        /** @description Filter services by parent system id */
+        SystemIDFilter: string;
         VMID: string;
         TicketID: string;
         BatchID: string;
@@ -2504,6 +3250,7 @@ export interface components {
         RoleBindingID: string;
         ProviderID: string;
         MappingID: string;
+        DirectorySyncJobID: string;
         /** @description Simple deletion confirmation flag (ADR-0015 §13) */
         Confirm: boolean;
         /**
@@ -2670,6 +3417,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     deleteSystem: {
@@ -2783,6 +3531,37 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    listSystemMemberCandidates: {
+        parameters: {
+            query?: {
+                /** @description Page number (1-indexed) */
+                page?: components["parameters"]["Page"];
+                /** @description Items per page */
+                per_page?: components["parameters"]["PerPage"];
+                /** @description Case-insensitive search text */
+                search?: components["parameters"]["Search"];
+            };
+            header?: never;
+            path: {
+                system_id: components["parameters"]["SystemID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Addable user candidates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserList"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     deleteSystemMember: {
         parameters: {
             query?: never;
@@ -2834,6 +3613,33 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listServicesOverview: {
+        parameters: {
+            query?: {
+                /** @description Page number (1-indexed) */
+                page?: components["parameters"]["Page"];
+                /** @description Items per page */
+                per_page?: components["parameters"]["PerPage"];
+                /** @description Filter services by parent system id */
+                system_id?: components["parameters"]["SystemIDFilter"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service list across visible systems */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceList"];
+                };
+            };
         };
     };
     listServices: {
@@ -2971,6 +3777,31 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    getServiceWorkspaceContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                system_id: components["parameters"]["SystemID"];
+                service_id: components["parameters"]["ServiceID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service workspace context */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceWorkspaceContext"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listVMs: {
         parameters: {
             query?: {
@@ -3048,7 +3879,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApprovalTicketResponse"];
+                    "application/json": components["schemas"]["TicketResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -3263,7 +4094,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deletion accepted (approval ticket created) */
+            /** @description Deletion accepted (ticket created) */
             202: {
                 headers: {
                     [name: string]: unknown;
@@ -3272,6 +4103,86 @@ export interface operations {
                     "application/json": components["schemas"]["DeleteVMResponse"];
                 };
             };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getVMRequestPrefill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vm_id: components["parameters"]["VMID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reusable VM request prefill */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMRequestPrefill"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getVMModifyContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vm_id: components["parameters"]["VMID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Live-modify context */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMModifyContext"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createVMModifyRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vm_id: components["parameters"]["VMID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VMModifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Modification request accepted (ticket created) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
@@ -3372,6 +4283,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     requestVMConsoleAccess: {
@@ -3458,7 +4370,7 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
-    listApprovals: {
+    listTickets: {
         parameters: {
             query?: {
                 /** @description Page number (1-indexed) */
@@ -3466,9 +4378,14 @@ export interface operations {
                 /** @description Items per page */
                 per_page?: components["parameters"]["PerPage"];
                 status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
-                /** @description Filter by approval operation type. */
-                operation_type?: "CREATE" | "DELETE" | "POWER" | "VNC_ACCESS";
-                /** @description Filter by the cluster selected during CREATE approval. */
+                /**
+                 * @description When true, return only tickets requested by the current
+                 *     authenticated user. This does not require ticket:view.
+                 */
+                mine?: boolean;
+                /** @description Filter by ticket operation type. */
+                operation_type?: "CREATE" | "MODIFY" | "DELETE" | "POWER" | "VNC_ACCESS";
+                /** @description Filter by the cluster selected during CREATE execution planning. */
                 selected_cluster_id?: string;
                 /** @description Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets. */
                 placement_advisory_code?: string;
@@ -3481,52 +4398,52 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Approval ticket list */
+            /** @description Ticket list */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApprovalTicketList"];
+                    "application/json": components["schemas"]["TicketList"];
                 };
             };
         };
     };
-    submitApprovalBatch: {
+    listBuiltinApprovalTasks: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Page number (1-indexed) */
+                page?: components["parameters"]["Page"];
+                /** @description Items per page */
+                per_page?: components["parameters"]["PerPage"];
+                status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
+                /** @description Filter by task operation type. */
+                operation_type?: "CREATE" | "MODIFY" | "DELETE" | "POWER" | "VNC_ACCESS";
+                /** @description Filter by the cluster selected during CREATE execution planning. */
+                selected_cluster_id?: string;
+                /** @description Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets. */
+                placement_advisory_code?: string;
+                /** @description Filter by whether a placement evaluation snapshot exists on the task. */
+                placement_snapshot?: "present" | "missing";
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VMBatchSubmitRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Batch request accepted */
-            202: {
+            /** @description Built-in approval task list */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VMBatchSubmitResponse"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            /** @description Rate limit exceeded */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["TicketList"];
                 };
             };
         };
     };
-    approveTicket: {
+    approveBuiltinApprovalTask: {
         parameters: {
             query?: never;
             header?: never;
@@ -3541,7 +4458,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Request approved */
+            /** @description Task approved */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -3552,7 +4469,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
-    rejectTicket: {
+    rejectBuiltinApprovalTask: {
         parameters: {
             query?: never;
             header?: never;
@@ -3567,7 +4484,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Request rejected */
+            /** @description Task rejected */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -3689,6 +4606,57 @@ export interface operations {
             400: components["responses"]["BadRequest"];
         };
     };
+    deleteCluster: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cluster_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cluster deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateCluster: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cluster_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClusterUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Cluster updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Cluster"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     listUsers: {
         parameters: {
             query?: {
@@ -3696,6 +4664,8 @@ export interface operations {
                 page?: components["parameters"]["Page"];
                 /** @description Items per page */
                 per_page?: components["parameters"]["PerPage"];
+                /** @description Case-insensitive search text */
+                search?: components["parameters"]["Search"];
             };
             header?: never;
             path?: never;
@@ -4000,6 +4970,51 @@ export interface operations {
             };
         };
     };
+    getExternalAuthPlatformSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Platform external authentication settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalAuthPlatformSettings"];
+                };
+            };
+        };
+    };
+    updateExternalAuthPlatformSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalAuthPlatformSettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated platform external authentication settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalAuthPlatformSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
     listAuthProviders: {
         parameters: {
             query?: never;
@@ -4141,35 +5156,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
-    syncAuthProviderGroups: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                provider_id: components["parameters"]["ProviderID"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AuthProviderGroupSyncRequest"];
-            };
-        };
-        responses: {
-            /** @description Synced group list */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AuthProviderGroupSyncResponse"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            404: components["responses"]["NotFound"];
-        };
-    };
-    listAuthProviderGroupMappings: {
+    listAuthProviderCohorts: {
         parameters: {
             query?: never;
             header?: never;
@@ -4180,19 +5167,19 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Group mapping list */
+            /** @description External cohort list */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IdPGroupMappingList"];
+                    "application/json": components["schemas"]["ExternalCohortList"];
                 };
             };
             404: components["responses"]["NotFound"];
         };
     };
-    createAuthProviderGroupMapping: {
+    syncAuthProviderCohorts: {
         parameters: {
             query?: never;
             header?: never;
@@ -4203,17 +5190,299 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["IdPGroupMappingCreateRequest"];
+                "application/json": components["schemas"]["ExternalCohortSyncRequest"];
             };
         };
         responses: {
-            /** @description Group mapping created */
+            /** @description Synced cohort list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalCohortSyncResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAuthProviderDirectoryDescriptor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Directory sync capability descriptor */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectorySyncDescriptor"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Auth provider does not implement directory sync */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAuthProviderRuntimeDescriptor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Runtime login capability descriptor */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviderRuntimeDescriptor"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAuthProviderDirectorySchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scheduled enrichment plan and runtime status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryEnrichmentScheduleStatus"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Auth provider does not implement directory sync */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    previewAuthProviderDirectory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectorySyncPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Canonical preview result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectorySyncPreview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description Auth provider does not implement directory sync preview */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    syncAuthProviderDirectory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectorySyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Directory sync job enqueued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectorySyncStartResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description Auth provider does not implement directory sync */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listAuthProviderDirectorySyncJobs: {
+        parameters: {
+            query?: {
+                /** @description Page number (1-indexed) */
+                page?: components["parameters"]["Page"];
+                /** @description Items per page */
+                per_page?: components["parameters"]["PerPage"];
+            };
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Directory sync job list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectorySyncJobList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Auth provider does not implement directory sync */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAuthProviderDirectorySyncJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+                job_id: components["parameters"]["DirectorySyncJobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Directory sync job summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectorySyncJobDetail"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Auth provider does not implement directory sync */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listAuthProviderCohortMappings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cohort mapping list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalCohortMappingList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createAuthProviderCohortMapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalCohortMappingCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Cohort mapping created */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IdPGroupMapping"];
+                    "application/json": components["schemas"]["ExternalCohortMapping"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -4221,7 +5490,7 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
-    deleteAuthProviderGroupMapping: {
+    deleteAuthProviderCohortMapping: {
         parameters: {
             query?: never;
             header?: never;
@@ -4233,7 +5502,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Group mapping deleted */
+            /** @description Cohort mapping deleted */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -4243,7 +5512,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
-    updateAuthProviderGroupMapping: {
+    updateAuthProviderCohortMapping: {
         parameters: {
             query?: never;
             header?: never;
@@ -4255,17 +5524,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["IdPGroupMappingUpdateRequest"];
+                "application/json": components["schemas"]["ExternalCohortMappingUpdateRequest"];
             };
         };
         responses: {
-            /** @description Group mapping updated */
+            /** @description Cohort mapping updated */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IdPGroupMapping"];
+                    "application/json": components["schemas"]["ExternalCohortMapping"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -4634,6 +5903,155 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstanceSizeList"];
+                };
+            };
+        };
+    };
+    listLoginAuthProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Enabled login-capable auth providers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginAuthProviderList"];
+                };
+            };
+        };
+    };
+    startLoginAuthProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthProviderLoginStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Provider login redirect initialized */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviderLoginStartResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    submitLoginAuthProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthProviderCredentialLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Login successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    completeLoginAuthProviderGet: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+            };
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Login callback HTML bridge */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Login callback failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+        };
+    };
+    completeLoginAuthProviderPost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: components["parameters"]["ProviderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/x-www-form-urlencoded": {
+                    code?: string;
+                    state?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Login callback HTML bridge */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Login callback failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
                 };
             };
         };

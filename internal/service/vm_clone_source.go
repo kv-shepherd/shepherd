@@ -10,7 +10,7 @@ import (
 
 	"kv-shepherd.io/shepherd/internal/domain"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
-	"kv-shepherd.io/shepherd/internal/provider"
+	infracontract "kv-shepherd.io/shepherd/internal/provider/infracontract"
 )
 
 const pvcCloneHostAssistedFallbackLikelyCode = "PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY"
@@ -36,7 +36,7 @@ func (s *VMService) ValidatePVCCloneSource(
 	if s == nil || s.infra == nil {
 		return nil
 	}
-	validator, ok := s.infra.(provider.PVCClonePreflightProvider)
+	validator, ok := s.infra.(infracontract.PVCClonePreflightProvider)
 	if !ok {
 		return nil
 	}
@@ -119,7 +119,7 @@ func (s *VMService) GetPVCCloneAdvisory(
 	if s == nil || s.infra == nil {
 		return nil, nil
 	}
-	validator, ok := s.infra.(provider.PVCClonePreflightProvider)
+	validator, ok := s.infra.(infracontract.PVCClonePreflightProvider)
 	if !ok {
 		return nil, nil
 	}
@@ -160,7 +160,7 @@ func (s *VMService) GetPVCCloneAdvisory(
 
 func (s *VMService) cloneStorageProfileAdvisory(
 	ctx context.Context,
-	validator provider.PVCClonePreflightProvider,
+	validator infracontract.PVCClonePreflightProvider,
 	cluster string,
 	sourceClaim *domain.PersistentVolumeClaim,
 	targetStorageClass string,
@@ -202,7 +202,7 @@ func (s *VMService) cloneStorageProfileAdvisory(
 
 func validateCloneTargetSize(
 	ctx context.Context,
-	validator provider.PVCClonePreflightProvider,
+	validator infracontract.PVCClonePreflightProvider,
 	cluster string,
 	sourceClaim *domain.PersistentVolumeClaim,
 	targetDiskGB int,
@@ -235,7 +235,7 @@ func validateCloneTargetSize(
 
 func validateCloneTargetStorageClass(
 	ctx context.Context,
-	validator provider.PVCClonePreflightProvider,
+	validator infracontract.PVCClonePreflightProvider,
 	cluster string,
 	sourceClaim *domain.PersistentVolumeClaim,
 	requiresExpansion bool,

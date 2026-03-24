@@ -135,6 +135,16 @@ func TestApprovalAtomicWriterApprovePowerAndEnqueue_RequiresInitializedWriter(t 
 	}
 }
 
+func TestApprovalAtomicWriterApproveModifyAndEnqueue_RequiresInitializedWriter(t *testing.T) {
+	t.Parallel()
+
+	w := &ApprovalAtomicWriter{}
+	err := w.ApproveModifyAndEnqueue(t.Context(), "ticket-1", "event-1", "admin-1")
+	if err == nil {
+		t.Fatal("ApproveModifyAndEnqueue() expected initialization error, got nil")
+	}
+}
+
 func TestVMStatusSyncInsertOpts(t *testing.T) {
 	t.Parallel()
 

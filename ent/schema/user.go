@@ -56,6 +56,8 @@ func (User) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("role_bindings", RoleBinding.Type),
 		edge.To("notifications", Notification.Type),
+		edge.To("directory_profile", UserDirectoryProfile.Type).Unique(),
+		edge.To("external_cohort_grants", ExternalCohortGrant.Type),
 	}
 }
 

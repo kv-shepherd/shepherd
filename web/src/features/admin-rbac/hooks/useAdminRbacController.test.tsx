@@ -10,6 +10,7 @@ const {
   messageSuccessMock,
   messageErrorMock,
   messageWarningMock,
+  apiGetMock,
   roleCreateFormState,
   roleEditFormState,
   bindingFormState,
@@ -21,6 +22,7 @@ const {
   messageSuccessMock: vi.fn(),
   messageErrorMock: vi.fn(),
   messageWarningMock: vi.fn(),
+  apiGetMock: vi.fn(),
   roleCreateFormState: {
     validateFields: vi.fn(),
     resetFields: vi.fn(),
@@ -60,6 +62,12 @@ vi.mock('@/hooks/useApiQuery', () => ({
   useApiAction: (...args: unknown[]) => useApiActionMock(...args),
 }));
 
+vi.mock('@/lib/api/client', () => ({
+  api: {
+    GET: (...args: unknown[]) => apiGetMock(...args),
+  },
+}));
+
 import { useAdminRbacController } from './useAdminRbacController';
 
 describe('useAdminRbacController', () => {
@@ -78,7 +86,7 @@ describe('useAdminRbacController', () => {
 
     roleCreateFormState.validateFields.mockResolvedValue({
       name: 'ops_auditor',
-      permissions: ['approval:view'],
+      permissions: ['builtin_approval:view'],
       enabled: true,
     });
     bindingFormState.validateFields.mockResolvedValue({
@@ -99,7 +107,7 @@ describe('useAdminRbacController', () => {
       }
       if (queryCall === 2) {
         return {
-          data: { items: [{ key: 'approval:view', description: 'View approval tickets' }] },
+          data: { items: [{ key: 'builtin_approval:view', description: 'View built-in approval tasks' }] },
           isLoading: false,
           refetch: vi.fn(),
         };
@@ -110,12 +118,14 @@ describe('useAdminRbacController', () => {
             items: [{ id: 'u-1', username: 'user1', enabled: true, created_at: new Date().toISOString() }],
           },
           isLoading: false,
+          isFetching: false,
           refetch: vi.fn(),
         };
       }
       return {
         data: { items: [] },
         isLoading: false,
+        isFetching: false,
         refetch: vi.fn(),
       };
     });
@@ -156,12 +166,12 @@ describe('useAdminRbacController', () => {
     });
     expect(createRoleMutate).toHaveBeenCalledWith({
       name: 'ops_auditor',
-      permissions: ['approval:view'],
+      permissions: ['builtin_approval:view'],
       enabled: true,
     });
 
     act(() => {
-      result.current.setSelectedUserId('u-1');
+      result.current.selectUser('u-1', 'user1');
     });
 
     await act(async () => {
@@ -194,22 +204,53 @@ describe('useAdminRbacController', () => {
         name: 'ops-editor',
         display_name: 'Ops Editor',
         description: 'edit ops resources',
-        permissions: ['approval:view'],
+        permissions: ['builtin_approval:view'],
         built_in: false,
         enabled: true,
       });
-    });
-
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
     expect(roleEditFormState.resetFields).toHaveBeenCalled();
     expect(roleEditFormState.setFieldsValue).toHaveBeenCalledWith({
       display_name: 'Ops Editor',
       description: 'edit ops resources',
-      permissions: ['approval:view'],
+      permissions: ['builtin_approval:view'],
       enabled: true,
+    });
+  });
+
+  it('queries the searchable admin users endpoint for the RBAC user picker', async () => {
+    useApiMutationMock.mockImplementation(() => ({ mutate: vi.fn(), isPending: false }));
+    useApiActionMock.mockImplementation(() => ({ mutate: vi.fn(), isPending: false }));
+    apiGetMock.mockResolvedValue({
+      data: { items: [], pagination: { total: 0, page: 1, per_page: 50, total_pages: 0 } },
+      error: undefined,
+      response: new Response(),
+    });
+
+    const { result } = renderHook(() => useAdminRbacController({ t }));
+
+    act(() => {
+      result.current.setUserSearch('alice');
+    });
+
+    const usersCall = [...useApiGetMock.mock.calls]
+      .reverse()
+      .find((call) => Array.isArray(call[0]) && call[0][0] === 'admin-rbac-users');
+
+    expect(usersCall?.[0]).toEqual(['admin-rbac-users', 'alice']);
+
+    const fetcher = usersCall?.[1] as (() => Promise<unknown>) | undefined;
+    await fetcher?.();
+
+    expect(apiGetMock).toHaveBeenCalledWith('/admin/users', {
+      params: {
+        query: {
+          page: 1,
+          per_page: 50,
+          search: 'alice',
+        },
+      },
     });
   });
 });

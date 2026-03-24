@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
+	entbatchticket "kv-shepherd.io/shepherd/ent/batchticket"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/domain"
 )
@@ -207,37 +207,37 @@ func TestMapProjectionStatus(t *testing.T) {
 	tests := []struct {
 		name string
 		in   generated.VMBatchParentStatus
-		want batchapprovalticket.Status
+		want entbatchticket.Status
 	}{
 		{
 			name: "pending approval",
 			in:   generated.VMBatchParentStatusPENDINGAPPROVAL,
-			want: batchapprovalticket.StatusPENDING_APPROVAL,
+			want: entbatchticket.StatusPENDING_APPROVAL,
 		},
 		{
 			name: "in progress",
 			in:   generated.VMBatchParentStatusINPROGRESS,
-			want: batchapprovalticket.StatusIN_PROGRESS,
+			want: entbatchticket.StatusIN_PROGRESS,
 		},
 		{
 			name: "completed",
 			in:   generated.VMBatchParentStatusCOMPLETED,
-			want: batchapprovalticket.StatusCOMPLETED,
+			want: entbatchticket.StatusCOMPLETED,
 		},
 		{
 			name: "partial success",
 			in:   generated.VMBatchParentStatusPARTIALSUCCESS,
-			want: batchapprovalticket.StatusPARTIAL_SUCCESS,
+			want: entbatchticket.StatusPARTIAL_SUCCESS,
 		},
 		{
 			name: "cancelled",
 			in:   generated.VMBatchParentStatusCANCELLED,
-			want: batchapprovalticket.StatusCANCELLED,
+			want: entbatchticket.StatusCANCELLED,
 		},
 		{
 			name: "fallback to failed",
 			in:   generated.VMBatchParentStatus("UNKNOWN"),
-			want: batchapprovalticket.StatusFAILED,
+			want: entbatchticket.StatusFAILED,
 		},
 	}
 
@@ -258,27 +258,27 @@ func TestToBatchProjectionType(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
-		want batchapprovalticket.BatchType
+		want entbatchticket.BatchType
 	}{
 		{
 			name: "delete op",
 			in:   string(generated.VMBatchOperation("DELETE")),
-			want: batchapprovalticket.BatchTypeBATCH_DELETE,
+			want: entbatchticket.BatchTypeBATCH_DELETE,
 		},
 		{
 			name: "power enum op",
 			in:   string(generated.VMBatchOperation("POWER")),
-			want: batchapprovalticket.BatchTypeBATCH_POWER,
+			want: entbatchticket.BatchTypeBATCH_POWER,
 		},
 		{
 			name: "power start key",
 			in:   "POWER_START",
-			want: batchapprovalticket.BatchTypeBATCH_POWER,
+			want: entbatchticket.BatchTypeBATCH_POWER,
 		},
 		{
 			name: "fallback create",
 			in:   string(generated.VMBatchOperation("CREATE")),
-			want: batchapprovalticket.BatchTypeBATCH_CREATE,
+			want: entbatchticket.BatchTypeBATCH_CREATE,
 		},
 	}
 

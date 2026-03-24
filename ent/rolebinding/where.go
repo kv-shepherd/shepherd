@@ -441,6 +441,29 @@ func HasRoleWith(preds ...predicate.Role) predicate.RoleBinding {
 	})
 }
 
+// HasExternalCohortGrants applies the HasEdge predicate on the "external_cohort_grants" edge.
+func HasExternalCohortGrants() predicate.RoleBinding {
+	return predicate.RoleBinding(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ExternalCohortGrantsTable, ExternalCohortGrantsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasExternalCohortGrantsWith applies the HasEdge predicate on the "external_cohort_grants" edge with a given conditions (other predicates).
+func HasExternalCohortGrantsWith(preds ...predicate.ExternalCohortGrant) predicate.RoleBinding {
+	return predicate.RoleBinding(func(s *sql.Selector) {
+		step := newExternalCohortGrantsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.RoleBinding) predicate.RoleBinding {
 	return predicate.RoleBinding(sql.AndPredicates(predicates...))

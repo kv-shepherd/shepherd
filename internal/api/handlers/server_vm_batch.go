@@ -17,19 +17,18 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
-	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
+	entbatchticket "kv-shepherd.io/shepherd/ent/batchticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/ratelimitexemption"
 	"kv-shepherd.io/shepherd/ent/ratelimituseroverride"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/domain"
-	"kv-shepherd.io/shepherd/internal/governance/approval"
 	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
-	"kv-shepherd.io/shepherd/internal/provider"
+	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
 )
 
 const (
@@ -48,7 +47,7 @@ type preparedBatchChild struct {
 	eventType        domain.EventType
 	aggregateID      string
 	payload          []byte
-	operationType    approvalticket.OperationType
+	operationType    entticket.OperationType
 	reason           string
 	requiresApproval bool
 }
@@ -62,13 +61,21 @@ func (e *batchValidationError) Error() string {
 	return e.body.Code + ": " + e.body.Message
 }
 
-// SubmitVMBatch handles POST /vms/batch.
-func (s *Server) SubmitVMBatch(c *gin.Context) {
-	s.submitBatch(c)
+func vmDeleteAllowedStatus(status entvm.Status) bool {
+	switch status {
+	case entvm.StatusSTOPPED, entvm.StatusFAILED, entvm.StatusNOT_FOUND, entvm.StatusUNKNOWN:
+		return true
+	default:
+		return false
+	}
 }
 
-// SubmitApprovalBatch handles POST /approvals/batch compatibility endpoint.
-func (s *Server) SubmitApprovalBatch(c *gin.Context) {
+func vmDeleteInvalidStateMessage(status entvm.Status) string {
+	return fmt.Sprintf("cannot delete VM in %s state, must be STOPPED, FAILED, NOT_FOUND, or UNKNOWN", status)
+}
+
+// SubmitVMBatch handles POST /vms/batch.
+func (s *Server) SubmitVMBatch(c *gin.Context) {
 	s.submitBatch(c)
 }
 
@@ -103,11 +110,16 @@ func (s *Server) submitBatch(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_BATCH_OPERATION", Message: err.Error()})
 		return
 	}
-	if op == string(generated.VMBatchOperation("DELETE")) {
+	switch op {
+	case string(generated.VMBatchOperation("DELETE")):
 		if !requireGlobalPermission(c, "vm:delete") {
 			return
 		}
-	} else {
+	case string(generated.VMBatchOperation("MODIFY")):
+		if !requireGlobalPermission(c, "vm:operate") {
+			return
+		}
+	default:
 		if !requireGlobalPermission(c, "vm:create") {
 			return
 		}
@@ -214,7 +226,7 @@ func (s *Server) submitBatch(c *gin.Context) {
 		Reason:      strings.TrimSpace(req.Reason),
 		SubmittedBy: actor,
 		SubmittedAt: time.Now().UTC(),
-		Items:       buildBatchPayloadItems(op, req.Items),
+		Items:       buildBatchPayloadItems(op, req.Items, children...),
 	}
 	parentPayloadBytes, err := parentPayload.ToJSON()
 	if err != nil {
@@ -253,15 +265,18 @@ func (s *Server) submitBatch(c *gin.Context) {
 		return
 	}
 
-	parentBuilder := tx.ApprovalTicket.Create().
+	parentBuilder := tx.Ticket.Create().
 		SetID(parentID).
 		SetEventID(parentEventID).
 		SetRequester(actor).
-		SetStatus(approvalticket.StatusPENDING)
-	if op == string(generated.VMBatchOperation("DELETE")) {
-		parentBuilder = parentBuilder.SetOperationType(approvalticket.OperationTypeDELETE)
-	} else {
-		parentBuilder = parentBuilder.SetOperationType(approvalticket.OperationTypeCREATE)
+		SetStatus(entticket.StatusPENDING)
+	switch op {
+	case string(generated.VMBatchOperation("DELETE")):
+		parentBuilder = parentBuilder.SetOperationType(entticket.OperationTypeDELETE)
+	case string(generated.VMBatchOperation("MODIFY")):
+		parentBuilder = parentBuilder.SetOperationType(entticket.OperationTypeMODIFY)
+	default:
+		parentBuilder = parentBuilder.SetOperationType(entticket.OperationTypeCREATE)
 	}
 	parentReason := strings.TrimSpace(req.Reason)
 	if parentReason == "" {
@@ -270,16 +285,16 @@ func (s *Server) submitBatch(c *gin.Context) {
 	parentBuilder = parentBuilder.SetReason(parentReason)
 	if _, err := parentBuilder.Save(ctx); err != nil {
 		_ = tx.Rollback()
-		logger.Error("failed to create parent batch approval ticket", zap.Error(err))
+		logger.Error("failed to create parent batch ticket", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
-	if _, err := tx.BatchApprovalTicket.Create().
+	if _, err := tx.BatchTicket.Create().
 		SetID(parentID).
 		SetBatchType(toBatchProjectionType(op)).
 		SetChildCount(len(children)).
 		SetPendingCount(len(children)).
-		SetStatus(batchapprovalticket.StatusPENDING_APPROVAL).
+		SetStatus(entbatchticket.StatusPENDING_APPROVAL).
 		SetCreatedBy(actor).
 		SetReason(parentReason).
 		SetNillableRequestID(nillableTrimmed(req.RequestId)).
@@ -308,18 +323,18 @@ func (s *Server) submitBatch(c *gin.Context) {
 			return
 		}
 
-		_, err = tx.ApprovalTicket.Create().
+		_, err = tx.Ticket.Create().
 			SetID(generateIDV7()).
 			SetEventID(childEventID).
 			SetOperationType(child.operationType).
-			SetStatus(approvalticket.StatusPENDING).
+			SetStatus(entticket.StatusPENDING).
 			SetRequester(actor).
 			SetReason(child.reason).
 			SetParentTicketID(parentID).
 			Save(ctx)
 		if err != nil {
 			_ = tx.Rollback()
-			logger.Error("failed to create child approval ticket", zap.Error(err))
+			logger.Error("failed to create child ticket", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -332,7 +347,7 @@ func (s *Server) submitBatch(c *gin.Context) {
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "vm.batch.submit", "approval_ticket", parentID, actor, map[string]interface{}{
+		_ = s.audit.LogAction(ctx, "vm.batch.submit", "ticket", parentID, actor, map[string]interface{}{
 			"operation":  op,
 			"item_count": len(children),
 		})
@@ -487,7 +502,7 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 		Reason:      strings.TrimSpace(req.Reason),
 		SubmittedBy: actor,
 		SubmittedAt: time.Now().UTC(),
-		Items:       buildBatchPowerPayloadItems(req.Items),
+		Items:       buildBatchPowerPayloadItems(req.Items, children...),
 	}
 	parentPayloadBytes, err := parentPayload.ToJSON()
 	if err != nil {
@@ -535,35 +550,35 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 	if parentReason == "" {
 		parentReason = fmt.Sprintf("batch power %s request (%d items)", strings.ToLower(jobOperation), len(children))
 	}
-	if _, err := tx.ApprovalTicket.Create().
+	if _, err := tx.Ticket.Create().
 		SetID(parentID).
 		SetEventID(parentEventID).
-		SetOperationType(approvalticket.OperationTypePOWER).
-		SetStatus(func() approvalticket.Status {
+		SetOperationType(entticket.OperationTypePOWER).
+		SetStatus(func() entticket.Status {
 			if batchRequiresApproval {
-				return approvalticket.StatusPENDING
+				return entticket.StatusPENDING
 			}
-			return approvalticket.StatusEXECUTING
+			return entticket.StatusEXECUTING
 		}()).
 		SetRequester(actor).
 		SetReason(parentReason).
 		Save(ctx); err != nil {
 		_ = tx.Rollback()
-		logger.Error("failed to create power-batch parent approval ticket", zap.Error(err))
+		logger.Error("failed to create power-batch parent ticket", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
-	if _, err := tx.BatchApprovalTicket.Create().
+	if _, err := tx.BatchTicket.Create().
 		SetID(parentID).
-		SetBatchType(batchapprovalticket.BatchTypeBATCH_POWER).
+		SetBatchType(entbatchticket.BatchTypeBATCH_POWER).
 		SetChildCount(len(children)).
 		SetPendingCount(len(children)).
-		SetStatus(func() batchapprovalticket.Status {
+		SetStatus(func() entbatchticket.Status {
 			if batchRequiresApproval {
-				return batchapprovalticket.StatusPENDING_APPROVAL
+				return entbatchticket.StatusPENDING_APPROVAL
 			}
-			return batchapprovalticket.StatusIN_PROGRESS
+			return entbatchticket.StatusIN_PROGRESS
 		}()).
 		SetCreatedBy(actor).
 		SetReason(parentReason).
@@ -594,22 +609,22 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 			return
 		}
 
-		if _, err := tx.ApprovalTicket.Create().
+		if _, err := tx.Ticket.Create().
 			SetID(generateIDV7()).
 			SetEventID(childEventID).
-			SetOperationType(approvalticket.OperationTypePOWER).
-			SetStatus(func() approvalticket.Status {
+			SetOperationType(entticket.OperationTypePOWER).
+			SetStatus(func() entticket.Status {
 				if batchRequiresApproval {
-					return approvalticket.StatusPENDING
+					return entticket.StatusPENDING
 				}
-				return approvalticket.StatusEXECUTING
+				return entticket.StatusEXECUTING
 			}()).
 			SetRequester(actor).
 			SetReason(child.reason).
 			SetParentTicketID(parentID).
 			Save(ctx); err != nil {
 			_ = tx.Rollback()
-			logger.Error("failed to create power-batch child approval ticket", zap.Error(err))
+			logger.Error("failed to create power-batch child ticket", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -624,7 +639,7 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 
 	if batchRequiresApproval {
 		if s.approvalRouter != nil {
-			if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &provider.ApprovalRequest{
+			if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &approvalcontract.ApprovalRequest{
 				EventID:   parentID,
 				Requester: actor,
 				Action:    "batch_power_" + strings.ToLower(jobOperation),
@@ -646,9 +661,9 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 					zap.String("batch_id", parentID),
 					zap.Error(err),
 				)
-				_, _ = s.client.ApprovalTicket.Update().
-					Where(approvalticket.EventIDEQ(eventID)).
-					SetStatus(approvalticket.StatusFAILED).
+				_, _ = s.client.Ticket.Update().
+					Where(entticket.EventIDEQ(eventID)).
+					SetStatus(entticket.StatusFAILED).
 					SetRejectReason("enqueue vm_power job failed").
 					Save(ctx)
 				_, _ = s.client.DomainEvent.UpdateOneID(eventID).SetStatus(domainevent.StatusFAILED).Save(ctx)
@@ -657,7 +672,7 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "vm.batch.power.submit", "approval_ticket", parentID, actor, map[string]interface{}{
+		_ = s.audit.LogAction(ctx, "vm.batch.power.submit", "ticket", parentID, actor, map[string]interface{}{
 			"operation":  strings.ToLower(jobOperation),
 			"item_count": len(children),
 		})
@@ -751,7 +766,7 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 		c.JSON(http.StatusNotFound, generated.Error{Code: "BATCH_NOT_FOUND"})
 		return
 	}
-	parentTicket, err := s.client.ApprovalTicket.Get(ctx, batchID)
+	parentTicket, err := s.client.Ticket.Get(ctx, batchID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "BATCH_NOT_FOUND"})
@@ -783,17 +798,17 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 
 	targetIDs := make([]string, 0)
 	targetEventIDs := make([]string, 0)
-	targetChildren := make([]*ent.ApprovalTicket, 0)
+	targetChildren := make([]*ent.Ticket, 0)
 	for _, child := range children {
 		switch action {
 		case "retry":
-			if child.Status == approvalticket.StatusFAILED || child.Status == approvalticket.StatusREJECTED {
+			if child.Status == entticket.StatusFAILED || child.Status == entticket.StatusREJECTED {
 				targetIDs = append(targetIDs, child.ID)
 				targetEventIDs = append(targetEventIDs, child.EventID)
 				targetChildren = append(targetChildren, child)
 			}
 		case "cancel":
-			if child.Status == approvalticket.StatusPENDING {
+			if child.Status == entticket.StatusPENDING {
 				targetIDs = append(targetIDs, child.ID)
 				targetEventIDs = append(targetEventIDs, child.EventID)
 				targetChildren = append(targetChildren, child)
@@ -805,12 +820,12 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 	affectedTicketIDs := make([]string, 0)
 	if len(targetIDs) > 0 {
 		if action == "retry" {
-			retryStatus := approvalticket.StatusPENDING
+			retryStatus := entticket.StatusPENDING
 			if isPowerBatch {
-				retryStatus = approvalticket.StatusEXECUTING
+				retryStatus = entticket.StatusEXECUTING
 			}
-			if _, updateTicketErr := s.client.ApprovalTicket.Update().
-				Where(approvalticket.IDIn(targetIDs...)).
+			if _, updateTicketErr := s.client.Ticket.Update().
+				Where(entticket.IDIn(targetIDs...)).
 				SetStatus(retryStatus).
 				ClearRejectReason().
 				Save(ctx); updateTicketErr != nil {
@@ -839,8 +854,8 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 				if isPowerBatch {
 					ev, eventErr := s.client.DomainEvent.Get(ctx, child.EventID)
 					if eventErr != nil {
-						_, _ = s.client.ApprovalTicket.UpdateOneID(child.ID).
-							SetStatus(approvalticket.StatusFAILED).
+						_, _ = s.client.Ticket.UpdateOneID(child.ID).
+							SetStatus(entticket.StatusFAILED).
 							SetRejectReason("failed to load child event during power retry").
 							Save(ctx)
 						_, _ = s.client.DomainEvent.UpdateOneID(child.EventID).
@@ -855,8 +870,8 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 					}
 					var powerPayload domain.VMPowerPayload
 					if decodeErr := json.Unmarshal(ev.Payload, &powerPayload); decodeErr != nil {
-						_, _ = s.client.ApprovalTicket.UpdateOneID(child.ID).
-							SetStatus(approvalticket.StatusFAILED).
+						_, _ = s.client.Ticket.UpdateOneID(child.ID).
+							SetStatus(entticket.StatusFAILED).
 							SetRejectReason("invalid power payload for retry").
 							Save(ctx)
 						_, _ = s.client.DomainEvent.UpdateOneID(child.EventID).
@@ -871,8 +886,8 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 					}
 					op := strings.ToLower(strings.TrimSpace(powerPayload.Operation))
 					if op != "start" && op != "stop" && op != "restart" {
-						_, _ = s.client.ApprovalTicket.UpdateOneID(child.ID).
-							SetStatus(approvalticket.StatusFAILED).
+						_, _ = s.client.Ticket.UpdateOneID(child.ID).
+							SetStatus(entticket.StatusFAILED).
 							SetRejectReason("unknown power operation for retry").
 							Save(ctx)
 						_, _ = s.client.DomainEvent.UpdateOneID(child.EventID).
@@ -886,8 +901,8 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 						continue
 					}
 					if enqueueErr := s.enqueueBatchPowerJob(ctx, child.EventID, op); enqueueErr != nil {
-						_, _ = s.client.ApprovalTicket.UpdateOneID(child.ID).
-							SetStatus(approvalticket.StatusFAILED).
+						_, _ = s.client.Ticket.UpdateOneID(child.ID).
+							SetStatus(entticket.StatusFAILED).
 							SetRejectReason("failed to enqueue vm_power job").
 							Save(ctx)
 						_, _ = s.client.DomainEvent.UpdateOneID(child.EventID).
@@ -904,21 +919,24 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 					affectedTicketIDs = append(affectedTicketIDs, child.ID)
 					continue
 				}
-				if approveErr := s.gateway.Approve(
-					ctx,
-					child.ID,
-					actor,
-					approval.ApproveOpts{
-						ClusterID:    parentTicket.SelectedClusterID,
-						StorageClass: parentTicket.SelectedStorageClass,
-					},
-				); approveErr != nil {
+				approveErr := fmt.Errorf("approval provider is not configured")
+				if s.approvalRouter != nil {
+					approveErr = s.approvalRouter.ProcessApproval(ctx, child.ID, approvalcontract.ApprovalDecision{
+						Approved: true,
+						Approver: actor,
+						Execution: approvalcontract.ApprovalExecutionOptions{
+							ClusterID:    parentTicket.SelectedClusterID,
+							StorageClass: parentTicket.SelectedStorageClass,
+						},
+					})
+				}
+				if approveErr != nil {
 					message := approveErr.Error()
 					if len(message) > 512 {
 						message = message[:512]
 					}
-					_, _ = s.client.ApprovalTicket.UpdateOneID(child.ID).
-						SetStatus(approvalticket.StatusFAILED).
+					_, _ = s.client.Ticket.UpdateOneID(child.ID).
+						SetStatus(entticket.StatusFAILED).
 						SetRejectReason(message).
 						Save(ctx)
 					_, _ = s.client.DomainEvent.UpdateOneID(child.EventID).
@@ -935,9 +953,9 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 				affectedTicketIDs = append(affectedTicketIDs, child.ID)
 			}
 		} else {
-			if _, cancelTicketErr := s.client.ApprovalTicket.Update().
-				Where(approvalticket.IDIn(targetIDs...)).
-				SetStatus(approvalticket.StatusCANCELLED).
+			if _, cancelTicketErr := s.client.Ticket.Update().
+				Where(entticket.IDIn(targetIDs...)).
+				SetStatus(entticket.StatusCANCELLED).
 				Save(ctx); cancelTicketErr != nil {
 				if isRequestContextCanceled(cancelTicketErr) {
 					logger.Debug("request canceled while mutating child tickets", zap.Error(cancelTicketErr), zap.String("batch_id", batchID), zap.String("action", action))
@@ -1044,7 +1062,7 @@ func (s *Server) prepareBatchChildren(
 				eventType:     domain.EventVMCreationRequested,
 				aggregateID:   serviceID,
 				payload:       payloadBytes,
-				operationType: approvalticket.OperationTypeCREATE,
+				operationType: entticket.OperationTypeCREATE,
 				reason:        itemReason,
 			})
 
@@ -1085,12 +1103,23 @@ func (s *Server) prepareBatchChildren(
 					},
 				}
 			}
+			vmObj = s.refreshVMLiveState(ctx, vmObj)
+			if !vmDeleteAllowedStatus(vmObj.Status) {
+				return nil, &batchValidationError{
+					status: http.StatusConflict,
+					body: generated.Error{
+						Code:    "INVALID_STATE_TRANSITION",
+						Message: vmDeleteInvalidStateMessage(vmObj.Status),
+					},
+				}
+			}
 			payload := domain.VMDeletePayload{
-				VMID:      vmObj.ID,
-				VMName:    vmObj.Name,
-				ClusterID: vmObj.ClusterID,
-				Namespace: vmObj.Namespace,
-				Actor:     actor,
+				VMID:            vmObj.ID,
+				VMName:          vmObj.Name,
+				ClusterID:       vmObj.ClusterID,
+				Namespace:       vmObj.Namespace,
+				RequestVMStatus: string(vmObj.Status),
+				Actor:           actor,
 			}
 			payloadBytes, err := payload.ToJSON()
 			if err != nil {
@@ -1100,7 +1129,72 @@ func (s *Server) prepareBatchChildren(
 				eventType:     domain.EventVMDeletionRequested,
 				aggregateID:   vmObj.ID,
 				payload:       payloadBytes,
-				operationType: approvalticket.OperationTypeDELETE,
+				operationType: entticket.OperationTypeDELETE,
+				reason:        itemReason,
+			})
+
+		case string(generated.VMBatchOperation("MODIFY")):
+			vmID := strings.TrimSpace(item.VmId)
+			if vmID == "" {
+				return nil, &batchValidationError{
+					status: http.StatusBadRequest,
+					body: generated.Error{
+						Code:    "INVALID_BATCH_ITEM",
+						Message: fmt.Sprintf("modify item #%d requires vm_id", idx+1),
+					},
+				}
+			}
+			vmObj, err := s.client.VM.Get(ctx, vmID)
+			if err != nil {
+				if ent.IsNotFound(err) {
+					return nil, &batchValidationError{
+						status: http.StatusBadRequest,
+						body: generated.Error{
+							Code:    "VM_NOT_FOUND",
+							Message: fmt.Sprintf("vm %q not found", vmID),
+						},
+					}
+				}
+				return nil, err
+			}
+			visible, err := s.isNamespaceVisible(ctx, vmObj.Namespace, visibility)
+			if err != nil {
+				return nil, err
+			}
+			if !visible {
+				return nil, &batchValidationError{
+					status: http.StatusForbidden,
+					body: generated.Error{
+						Code:    "NAMESPACE_ENV_FORBIDDEN",
+						Message: fmt.Sprintf("vm namespace %q is outside allowed environment visibility", vmObj.Namespace),
+					},
+				}
+			}
+
+			payload, err := s.buildVMModifyPayload(ctx, vmObj, actor, generated.VMModifyRequest{
+				Reason:         itemReason,
+				TargetCpuCores: item.TargetCpuCores,
+				TargetMemoryGi: item.TargetMemoryGi,
+				TargetDiskGb:   item.TargetDiskGb,
+			})
+			if err != nil {
+				return nil, &batchValidationError{
+					status: http.StatusConflict,
+					body: generated.Error{
+						Code:    "VM_MODIFY_REQUEST_INVALID",
+						Message: err.Error(),
+					},
+				}
+			}
+			payloadBytes, err := payload.ToJSON()
+			if err != nil {
+				return nil, err
+			}
+			children = append(children, preparedBatchChild{
+				eventType:     domain.EventVMModifyRequested,
+				aggregateID:   vmObj.ID,
+				payload:       payloadBytes,
+				operationType: entticket.OperationTypeMODIFY,
 				reason:        itemReason,
 			})
 		}
@@ -1113,6 +1207,8 @@ func normalizeBatchOperation(op generated.VMBatchOperation) (string, domain.Even
 	switch op {
 	case generated.VMBatchOperation("CREATE"):
 		return string(op), domain.EventBatchCreateRequested, nil
+	case generated.VMBatchOperation("MODIFY"):
+		return string(op), domain.EventBatchModifyRequested, nil
 	case generated.VMBatchOperation("DELETE"):
 		return string(op), domain.EventBatchDeleteRequested, nil
 	default:
@@ -1179,6 +1275,7 @@ func (s *Server) prepareBatchPowerChildren(
 				},
 			}
 		}
+		vmObj = s.refreshVMLiveState(ctx, vmObj)
 
 		itemReason := strings.TrimSpace(item.Reason)
 		if itemReason == "" {
@@ -1202,12 +1299,13 @@ func (s *Server) prepareBatchPowerChildren(
 		}
 
 		payload := domain.VMPowerPayload{
-			VMID:      vmObj.ID,
-			VMName:    vmObj.Name,
-			ClusterID: vmObj.ClusterID,
-			Namespace: vmObj.Namespace,
-			Operation: strings.ToLower(jobOperation),
-			Actor:     actor,
+			VMID:            vmObj.ID,
+			VMName:          vmObj.Name,
+			ClusterID:       vmObj.ClusterID,
+			Namespace:       vmObj.Namespace,
+			RequestVMStatus: string(vmObj.Status),
+			Operation:       strings.ToLower(jobOperation),
+			Actor:           actor,
 		}
 		payloadBytes, err := payload.ToJSON()
 		if err != nil {
@@ -1217,7 +1315,7 @@ func (s *Server) prepareBatchPowerChildren(
 			eventType:        childEventType,
 			aggregateID:      vmObj.ID,
 			payload:          payloadBytes,
-			operationType:    approvalticket.OperationTypePOWER,
+			operationType:    entticket.OperationTypePOWER,
 			reason:           itemReason,
 			requiresApproval: requiresApproval,
 		})
@@ -1240,6 +1338,7 @@ func (s *Server) enqueueBatchPowerJob(ctx context.Context, eventID, operation st
 func batchParentEventTypes() []string {
 	return []string{
 		string(domain.EventBatchCreateRequested),
+		string(domain.EventBatchModifyRequested),
 		string(domain.EventBatchDeleteRequested),
 		string(domain.EventBatchPowerRequested),
 	}
@@ -1372,14 +1471,14 @@ func (s *Server) evaluateAdditionalBatchSubmissionLimits(
 		return nil, nil
 	}
 
-	userPendingChildren, err := s.client.ApprovalTicket.Query().
+	userPendingChildren, err := s.client.Ticket.Query().
 		Where(
-			approvalticket.RequesterEQ(actor),
-			approvalticket.ParentTicketIDNotNil(),
-			approvalticket.StatusIn(
-				approvalticket.StatusPENDING,
-				approvalticket.StatusAPPROVED,
-				approvalticket.StatusEXECUTING,
+			entticket.RequesterEQ(actor),
+			entticket.ParentTicketIDNotNil(),
+			entticket.StatusIn(
+				entticket.StatusPENDING,
+				entticket.StatusAPPROVED,
+				entticket.StatusEXECUTING,
 			),
 		).
 		Count(ctx)
@@ -1444,11 +1543,11 @@ func (s *Server) findBatchByRequestID(ctx context.Context, actor, op, requestID 
 		if strings.TrimSpace(payload.RequestID) != requestID || strings.TrimSpace(payload.Operation) != op {
 			continue
 		}
-		parentExists, err := s.client.ApprovalTicket.Query().
+		parentExists, err := s.client.Ticket.Query().
 			Where(
-				approvalticket.IDEQ(ev.AggregateID),
-				approvalticket.EventIDEQ(ev.ID),
-				approvalticket.ParentTicketIDIsNil(),
+				entticket.IDEQ(ev.AggregateID),
+				entticket.EventIDEQ(ev.ID),
+				entticket.ParentTicketIDIsNil(),
 			).
 			Exist(ctx)
 		if err != nil {
@@ -1462,11 +1561,11 @@ func (s *Server) findBatchByRequestID(ctx context.Context, actor, op, requestID 
 	return "", false, nil
 }
 
-func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.VMBatchStatusResponse, []*ent.ApprovalTicket, error) {
-	parent, err := s.client.ApprovalTicket.Query().
+func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.VMBatchStatusResponse, []*ent.Ticket, error) {
+	parent, err := s.client.Ticket.Query().
 		Where(
-			approvalticket.IDEQ(batchID),
-			approvalticket.ParentTicketIDIsNil(),
+			entticket.IDEQ(batchID),
+			entticket.ParentTicketIDIsNil(),
 		).
 		Only(ctx)
 	if err != nil {
@@ -1477,7 +1576,7 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 	if err != nil {
 		return generated.VMBatchStatusResponse{}, nil, err
 	}
-	projection, err := s.client.BatchApprovalTicket.Get(ctx, parent.ID)
+	projection, err := s.client.BatchTicket.Get(ctx, parent.ID)
 	if err != nil && !ent.IsNotFound(err) {
 		return generated.VMBatchStatusResponse{}, nil, err
 	}
@@ -1488,22 +1587,24 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 		operation = generated.VMBatchOperation("DELETE")
 	case domain.EventBatchCreateRequested:
 		operation = generated.VMBatchOperation("CREATE")
+	case domain.EventBatchModifyRequested:
+		operation = generated.VMBatchOperation("MODIFY")
 	case domain.EventBatchPowerRequested:
 		operation = generated.VMBatchOperation("POWER")
 	default:
 		return generated.VMBatchStatusResponse{}, nil, errBatchNotFound
 	}
 
-	children, err := s.client.ApprovalTicket.Query().
-		Where(approvalticket.ParentTicketIDEQ(parent.ID)).
-		Order(ent.Asc(approvalticket.FieldCreatedAt)).
+	children, err := s.client.Ticket.Query().
+		Where(entticket.ParentTicketIDEQ(parent.ID)).
+		Order(ent.Asc(entticket.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
 		return generated.VMBatchStatusResponse{}, nil, err
 	}
 	createChildTicketIDs := make([]string, 0, len(children))
 	for _, child := range children {
-		if child.OperationType == approvalticket.OperationTypeCREATE {
+		if child.OperationType == entticket.OperationTypeCREATE {
 			createChildTicketIDs = append(createChildTicketIDs, child.ID)
 		}
 	}
@@ -1549,13 +1650,13 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 	childStatuses := make([]generated.VMBatchChildStatus, 0, len(children))
 	for _, child := range children {
 		switch child.Status {
-		case approvalticket.StatusSUCCESS:
+		case entticket.StatusSUCCESS:
 			successCount++
-		case approvalticket.StatusFAILED, approvalticket.StatusREJECTED:
+		case entticket.StatusFAILED, entticket.StatusREJECTED:
 			failedCount++
-		case approvalticket.StatusCANCELLED:
+		case entticket.StatusCANCELLED:
 			cancelled++
-		case approvalticket.StatusPENDING:
+		case entticket.StatusPENDING:
 			pendingCount++
 			pendingOnly++
 		default:
@@ -1576,6 +1677,13 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 						resourceName = payload.VMName
 					}
 				}
+			case domain.EventVMModifyRequested:
+				var payload domain.VMModifyPayload
+				if decodeErr := json.Unmarshal(ev.Payload, &payload); decodeErr == nil {
+					if strings.TrimSpace(payload.VMName) != "" {
+						resourceName = payload.VMName
+					}
+				}
 			case domain.EventVMCreationRequested:
 				var payload domain.VMCreationPayload
 				if decodeErr := json.Unmarshal(ev.Payload, &payload); decodeErr == nil {
@@ -1589,7 +1697,7 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 		}
 
 		attemptCount := 0
-		if child.Status != approvalticket.StatusPENDING {
+		if child.Status != entticket.StatusPENDING {
 			attemptCount = 1
 		}
 
@@ -1608,7 +1716,7 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 	status := aggregateBatchParentStatus(len(children), successCount, failedCount, pendingCount, pendingOnly, executing, cancelled)
 	projectionStatus := mapProjectionStatus(status)
 	if projection == nil {
-		createBuilder := s.client.BatchApprovalTicket.Create().
+		createBuilder := s.client.BatchTicket.Create().
 			SetID(parent.ID).
 			SetBatchType(toBatchProjectionType(string(operation))).
 			SetChildCount(len(children)).
@@ -1622,7 +1730,7 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 			logger.Warn("failed to backfill batch projection row", zap.String("batch_id", parent.ID), zap.Error(saveErr))
 		}
 	} else {
-		_, err = s.client.BatchApprovalTicket.UpdateOneID(parent.ID).
+		_, err = s.client.BatchTicket.UpdateOneID(parent.ID).
 			SetChildCount(len(children)).
 			SetSuccessCount(successCount).
 			SetFailedCount(failedCount).
@@ -1683,31 +1791,33 @@ func aggregateBatchParentStatus(
 	return generated.VMBatchParentStatusINPROGRESS
 }
 
-func mapProjectionStatus(status generated.VMBatchParentStatus) batchapprovalticket.Status {
+func mapProjectionStatus(status generated.VMBatchParentStatus) entbatchticket.Status {
 	switch status {
 	case generated.VMBatchParentStatusPENDINGAPPROVAL:
-		return batchapprovalticket.StatusPENDING_APPROVAL
+		return entbatchticket.StatusPENDING_APPROVAL
 	case generated.VMBatchParentStatusINPROGRESS:
-		return batchapprovalticket.StatusIN_PROGRESS
+		return entbatchticket.StatusIN_PROGRESS
 	case generated.VMBatchParentStatusCOMPLETED:
-		return batchapprovalticket.StatusCOMPLETED
+		return entbatchticket.StatusCOMPLETED
 	case generated.VMBatchParentStatusPARTIALSUCCESS:
-		return batchapprovalticket.StatusPARTIAL_SUCCESS
+		return entbatchticket.StatusPARTIAL_SUCCESS
 	case generated.VMBatchParentStatusCANCELLED:
-		return batchapprovalticket.StatusCANCELLED
+		return entbatchticket.StatusCANCELLED
 	default:
-		return batchapprovalticket.StatusFAILED
+		return entbatchticket.StatusFAILED
 	}
 }
 
-func toBatchProjectionType(op string) batchapprovalticket.BatchType {
+func toBatchProjectionType(op string) entbatchticket.BatchType {
 	switch strings.TrimSpace(strings.ToUpper(op)) {
 	case string(generated.VMBatchOperation("DELETE")):
-		return batchapprovalticket.BatchTypeBATCH_DELETE
+		return entbatchticket.BatchTypeBATCH_DELETE
+	case string(generated.VMBatchOperation("MODIFY")):
+		return entbatchticket.BatchTypeBATCH_MODIFY
 	case string(generated.VMBatchOperation("POWER")), "POWER_START", "POWER_STOP", "POWER_RESTART":
-		return batchapprovalticket.BatchTypeBATCH_POWER
+		return entbatchticket.BatchTypeBATCH_POWER
 	default:
-		return batchapprovalticket.BatchTypeBATCH_CREATE
+		return entbatchticket.BatchTypeBATCH_CREATE
 	}
 }
 
@@ -1719,9 +1829,9 @@ func nillableTrimmed(v string) *string {
 	return &trimmed
 }
 
-func buildBatchPayloadItems(op string, items []generated.VMBatchChildItem) []domain.BatchVMItemPayload {
+func buildBatchPayloadItems(op string, items []generated.VMBatchChildItem, children ...preparedBatchChild) []domain.BatchVMItemPayload {
 	out := make([]domain.BatchVMItemPayload, 0, len(items))
-	for _, item := range items {
+	for idx, item := range items {
 		payloadItem := domain.BatchVMItemPayload{
 			VMID:           strings.TrimSpace(item.VmId),
 			ServiceID:      strings.TrimSpace(item.ServiceId.String()),
@@ -1729,13 +1839,41 @@ func buildBatchPayloadItems(op string, items []generated.VMBatchChildItem) []dom
 			InstanceSizeID: strings.TrimSpace(item.InstanceSizeId.String()),
 			Namespace:      strings.TrimSpace(item.Namespace),
 			Reason:         strings.TrimSpace(item.Reason),
+			TargetCPUCores: normalizeOptionalTargetFloat64(float64(item.TargetCpuCores)),
+			TargetMemoryGi: normalizeOptionalTargetFloat64(float64(item.TargetMemoryGi)),
+			TargetDiskGB:   normalizeOptionalTargetInt(item.TargetDiskGb),
 		}
-		if op == string(generated.VMBatchOperation("DELETE")) {
+		if idx < len(children) {
+			switch strings.TrimSpace(strings.ToUpper(op)) {
+			case string(generated.VMBatchOperation("DELETE")):
+				var childPayload domain.VMDeletePayload
+				if err := json.Unmarshal(children[idx].payload, &childPayload); err == nil {
+					payloadItem.VMID = strings.TrimSpace(childPayload.VMID)
+					payloadItem.Namespace = strings.TrimSpace(childPayload.Namespace)
+					payloadItem.RequestVMStatus = strings.TrimSpace(childPayload.RequestVMStatus)
+				}
+			case string(generated.VMBatchOperation("MODIFY")):
+				var childPayload domain.VMModifyPayload
+				if err := json.Unmarshal(children[idx].payload, &childPayload); err == nil {
+					payloadItem.VMID = strings.TrimSpace(childPayload.VMID)
+					payloadItem.Namespace = strings.TrimSpace(childPayload.Namespace)
+					payloadItem.RequestVMStatus = strings.TrimSpace(childPayload.RequestVMStatus)
+					payloadItem.CurrentCPUCores = childPayload.CurrentCPUCores
+					payloadItem.CurrentMemoryGi = childPayload.CurrentMemoryGi
+					payloadItem.CurrentDiskGB = childPayload.CurrentDiskGB
+					payloadItem.TargetCPUCores = childPayload.TargetCPUCores
+					payloadItem.TargetMemoryGi = childPayload.TargetMemoryGi
+					payloadItem.TargetDiskGB = childPayload.TargetDiskGB
+				}
+			}
+		}
+		switch op {
+		case string(generated.VMBatchOperation("DELETE")), string(generated.VMBatchOperation("MODIFY")):
 			payloadItem.ServiceID = ""
 			payloadItem.TemplateID = ""
 			payloadItem.InstanceSizeID = ""
 			payloadItem.Namespace = ""
-		} else {
+		default:
 			payloadItem.VMID = ""
 		}
 		out = append(out, payloadItem)
@@ -1743,13 +1881,23 @@ func buildBatchPayloadItems(op string, items []generated.VMBatchChildItem) []dom
 	return out
 }
 
-func buildBatchPowerPayloadItems(items []generated.VMBatchPowerItem) []domain.BatchVMItemPayload {
+func buildBatchPowerPayloadItems(items []generated.VMBatchPowerItem, children ...preparedBatchChild) []domain.BatchVMItemPayload {
 	out := make([]domain.BatchVMItemPayload, 0, len(items))
-	for _, item := range items {
-		out = append(out, domain.BatchVMItemPayload{
+	for idx, item := range items {
+		payloadItem := domain.BatchVMItemPayload{
 			VMID:   strings.TrimSpace(item.VmId),
 			Reason: strings.TrimSpace(item.Reason),
-		})
+		}
+		if idx < len(children) {
+			var childPayload domain.VMPowerPayload
+			if err := json.Unmarshal(children[idx].payload, &childPayload); err == nil {
+				payloadItem.VMID = strings.TrimSpace(childPayload.VMID)
+				payloadItem.Namespace = strings.TrimSpace(childPayload.Namespace)
+				payloadItem.RequestVMStatus = strings.TrimSpace(childPayload.RequestVMStatus)
+				payloadItem.Operation = strings.TrimSpace(childPayload.Operation)
+			}
+		}
+		out = append(out, payloadItem)
 	}
 	return out
 }
@@ -1768,7 +1916,7 @@ func generateIDV7() string {
 }
 
 // ListVMBatches handles GET /vms/batch.
-// Queries the BatchApprovalTicket projection table for efficient pagination.
+// Queries the BatchTicket projection table for efficient pagination.
 // Follows oapi-codegen ServerInterface contract (ADR-0021).
 func (s *Server) ListVMBatches(c *gin.Context, params generated.ListVMBatchesParams) {
 	ctx := c.Request.Context()
@@ -1788,10 +1936,10 @@ func (s *Server) ListVMBatches(c *gin.Context, params generated.ListVMBatchesPar
 	desc := params.SortOrder != generated.ListVMBatchesParamsSortOrderAsc
 
 	// Count total (without pagination).
-	query := s.client.BatchApprovalTicket.Query()
+	query := s.client.BatchTicket.Query()
 	// Non-admin users see only their own batches.
 	if !hasPlatformAdmin(c) {
-		query = query.Where(batchapprovalticket.CreatedByEQ(actor))
+		query = query.Where(entbatchticket.CreatedByEQ(actor))
 	}
 
 	total, err := query.Clone().Count(ctx)
@@ -1806,9 +1954,9 @@ func (s *Server) ListVMBatches(c *gin.Context, params generated.ListVMBatchesPar
 	}
 
 	// Apply ordering.
-	orderFn := ent.Desc(batchapprovalticket.FieldCreatedAt)
+	orderFn := ent.Desc(entbatchticket.FieldCreatedAt)
 	if !desc {
-		orderFn = ent.Asc(batchapprovalticket.FieldCreatedAt)
+		orderFn = ent.Asc(entbatchticket.FieldCreatedAt)
 	}
 
 	rows, err := query.Order(orderFn).Offset(offset).Limit(perPage).All(ctx)

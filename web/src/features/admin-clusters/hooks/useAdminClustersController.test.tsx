@@ -5,23 +5,37 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   useApiGetMock,
   useApiMutationMock,
+  useApiActionMock,
   useFormMock,
   messageSuccessMock,
   messageErrorMock,
   apiGetMock,
+  apiPostMock,
   apiPutMock,
+  apiPatchMock,
+  apiDeleteMock,
   createFormState,
+  editFormState,
   envFormState,
   policyFormState,
 } = vi.hoisted(() => ({
   useApiGetMock: vi.fn(),
   useApiMutationMock: vi.fn(),
+  useApiActionMock: vi.fn(),
   useFormMock: vi.fn(),
   messageSuccessMock: vi.fn(),
   messageErrorMock: vi.fn(),
   apiGetMock: vi.fn(),
+  apiPostMock: vi.fn(),
   apiPutMock: vi.fn(),
+  apiPatchMock: vi.fn(),
+  apiDeleteMock: vi.fn(),
   createFormState: {
+    validateFields: vi.fn(),
+    resetFields: vi.fn(),
+    setFieldsValue: vi.fn(),
+  },
+  editFormState: {
     validateFields: vi.fn(),
     resetFields: vi.fn(),
     setFieldsValue: vi.fn(),
@@ -56,12 +70,16 @@ vi.mock("antd", () => ({
 vi.mock("@/hooks/useApiQuery", () => ({
   useApiGet: (...args: unknown[]) => useApiGetMock(...args),
   useApiMutation: (...args: unknown[]) => useApiMutationMock(...args),
+  useApiAction: (...args: unknown[]) => useApiActionMock(...args),
 }));
 
 vi.mock("@/lib/api/client", () => ({
   api: {
     GET: (...args: unknown[]) => apiGetMock(...args),
+    POST: (...args: unknown[]) => apiPostMock(...args),
     PUT: (...args: unknown[]) => apiPutMock(...args),
+    PATCH: (...args: unknown[]) => apiPatchMock(...args),
+    DELETE: (...args: unknown[]) => apiDeleteMock(...args),
   },
 }));
 
@@ -77,7 +95,8 @@ describe("useAdminClustersController", () => {
     useFormMock.mockImplementation(() => {
       formCall += 1;
       if (formCall === 1) return [createFormState];
-      if (formCall === 2) return [envFormState];
+      if (formCall === 2) return [editFormState];
+      if (formCall === 3) return [envFormState];
       return [policyFormState];
     });
 
@@ -101,6 +120,14 @@ describe("useAdminClustersController", () => {
           key: mutationCall,
         };
       },
+    );
+
+    useApiActionMock.mockImplementation(
+      (actionFn: (req: unknown) => Promise<unknown>) => ({
+        mutate: vi.fn((req: unknown) => actionFn(req)),
+        mutateAsync: vi.fn((req: unknown) => actionFn(req)),
+        isPending: false,
+      }),
     );
   });
 
@@ -283,6 +310,85 @@ describe("useAdminClustersController", () => {
           allowed_clone_source_namespaces: [],
           allowed_storage_classes: ["rook-ceph-block"],
         },
+      },
+    );
+  });
+
+  it("submits cluster updates via PATCH and base64-encodes kubeconfig text", async () => {
+    apiPatchMock.mockResolvedValue({
+      data: { id: "cl-1" },
+      response: { ok: true, status: 200 },
+    });
+    editFormState.validateFields.mockResolvedValue({
+      name: "cluster-a",
+      display_name: "Cluster A",
+      environment: "prod",
+      enabled: true,
+      kubeconfig_text:
+        "apiVersion: v1\nkind: Config\nclusters:\n- name: c1\n  cluster:\n    server: https://cluster.example.com\n",
+    });
+
+    const { result } = renderHook(() => useAdminClustersController({ t }));
+
+    await act(async () => {
+      result.current.openEditModal({
+        id: "cl-1",
+        name: "cluster-a",
+        display_name: "Cluster A",
+        environment: "test",
+        enabled: true,
+      } as never);
+      await result.current.submitEdit();
+    });
+
+    expect(apiPatchMock).toHaveBeenCalledWith(
+      "/admin/clusters/{cluster_id}",
+      {
+        params: { path: { cluster_id: "cl-1" } },
+        body: expect.objectContaining({
+          display_name: "Cluster A",
+          environment: "prod",
+          enabled: true,
+          kubeconfig:
+            "YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCmNsdXN0ZXJzOgotIG5hbWU6IGMxCiAgY2x1c3RlcjoKICAgIHNlcnZlcjogaHR0cHM6Ly9jbHVzdGVyLmV4YW1wbGUuY29t",
+        }),
+      },
+    );
+  });
+
+  it("hydrates the edit form from the selected cluster after opening the modal", async () => {
+    const { result } = renderHook(() => useAdminClustersController({ t }));
+
+    await act(async () => {
+      result.current.openEditModal({
+        id: "cl-2",
+        name: "cluster-b",
+        display_name: "Cluster B",
+        environment: "prod",
+        enabled: false,
+      } as never);
+    });
+
+    expect(result.current.editingCluster?.name).toBe("cluster-b");
+    expect(result.current.editingClusterName).toBe("Cluster B");
+    expect(result.current.editOpen).toBe(true);
+  });
+
+  it("deletes clusters via DELETE action", async () => {
+    apiDeleteMock.mockResolvedValue({
+      response: { ok: true, status: 204 },
+    });
+
+    const { result } = renderHook(() => useAdminClustersController({ t }));
+
+    await act(async () => {
+      await result.current.deleteCluster("cl-9");
+    });
+
+    expect(apiDeleteMock).toHaveBeenCalledWith(
+      "/admin/clusters/{cluster_id}",
+      {
+        params: { path: { cluster_id: "cl-9" } },
       },
     );
   });

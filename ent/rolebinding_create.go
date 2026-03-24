@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
 	"kv-shepherd.io/shepherd/ent/user"
@@ -116,6 +117,21 @@ func (_c *RoleBindingCreate) SetRoleID(id string) *RoleBindingCreate {
 // SetRole sets the "role" edge to the Role entity.
 func (_c *RoleBindingCreate) SetRole(v *Role) *RoleBindingCreate {
 	return _c.SetRoleID(v.ID)
+}
+
+// AddExternalCohortGrantIDs adds the "external_cohort_grants" edge to the ExternalCohortGrant entity by IDs.
+func (_c *RoleBindingCreate) AddExternalCohortGrantIDs(ids ...string) *RoleBindingCreate {
+	_c.mutation.AddExternalCohortGrantIDs(ids...)
+	return _c
+}
+
+// AddExternalCohortGrants adds the "external_cohort_grants" edges to the ExternalCohortGrant entity.
+func (_c *RoleBindingCreate) AddExternalCohortGrants(v ...*ExternalCohortGrant) *RoleBindingCreate {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddExternalCohortGrantIDs(ids...)
 }
 
 // Mutation returns the RoleBindingMutation object of the builder.
@@ -276,6 +292,22 @@ func (_c *RoleBindingCreate) createSpec() (*RoleBinding, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.role_role_bindings = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ExternalCohortGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   rolebinding.ExternalCohortGrantsTable,
+			Columns: []string{rolebinding.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

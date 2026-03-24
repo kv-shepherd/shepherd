@@ -128,3 +128,53 @@ func TestApplication_refreshClusterHealth_PersistsDetectedCapabilities(t *testin
 		t.Fatal("storage_classes_updated_at = zero, want populated timestamp")
 	}
 }
+
+func TestApplication_refreshClusterHealth_DisabledClusterDoesNotStayHealthy(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "app_lifecycle_disabled_cluster")
+	ctx := t.Context()
+	probeCalls := 0
+
+	_, err := client.Cluster.Create().
+		SetID("cl-disabled").
+		SetName("cluster-disabled").
+		SetDisplayName("Cluster Disabled").
+		SetAPIServerURL("https://cluster.example.invalid").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetEnabled(false).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create disabled cluster: %v", err)
+	}
+
+	checker := provider.NewClusterHealthChecker(func(string) (provider.KubeVirtClusterClient, error) {
+		probeCalls++
+		return &stubLifecycleClusterClient{
+			kvCR: &stubLifecycleKVCRClient{version: "1.7.0"},
+		}, nil
+	}, 0)
+
+	app := &Application{
+		EntClient:   client,
+		HealthCheck: checker,
+	}
+
+	refreshErr := app.refreshClusterHealth(ctx)
+	if refreshErr != nil {
+		t.Fatalf("refreshClusterHealth() error = %v", refreshErr)
+	}
+
+	stored, err := client.Cluster.Get(ctx, "cl-disabled")
+	if err != nil {
+		t.Fatalf("reload cluster: %v", err)
+	}
+	if stored.Status != entcluster.StatusUNKNOWN {
+		t.Fatalf("status = %s, want %s", stored.Status, entcluster.StatusUNKNOWN)
+	}
+	if probeCalls != 0 {
+		t.Fatalf("probeCalls = %d, want 0", probeCalls)
+	}
+}

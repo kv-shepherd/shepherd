@@ -124,3 +124,32 @@ func TestApprovalValidator_RejectsDisallowedStorageClassByPolicy(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "CLUSTER_POLICY_STORAGE_CLASS_REQUIRED", appErr.Code)
 }
+
+func TestApprovalValidator_RejectsDisabledClusterEvenIfStatusIsHealthy(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "approval_validator_disabled_cluster")
+	ctx := t.Context()
+
+	_, err := client.Cluster.Create().
+		SetID("cluster-1").
+		SetName("cluster-a").
+		SetAPIServerURL("https://cluster.invalid").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetEnabled(false).
+		SetCreatedBy("seed").
+		Save(ctx)
+	require.NoError(t, err)
+
+	validator := NewApprovalValidator(client)
+	err = validator.ValidateApproval(ctx, ApprovalValidationInput{
+		ClusterID: "cluster-1",
+	})
+	require.Error(t, err)
+
+	appErr, ok := apperrors.IsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, apperrors.CodeValidationFailed, appErr.Code)
+	require.Contains(t, appErr.Message, "disabled")
+}

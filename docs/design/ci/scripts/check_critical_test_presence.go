@@ -35,8 +35,11 @@ var criticalTargets = []criticalTarget{
 		testFiles:  []string{"internal/usecase/delete_vm_test.go"},
 	},
 	{
-		sourceFile: "internal/governance/approval/gateway.go",
-		testFiles:  []string{"internal/governance/approval/gateway_test.go"},
+		sourceFile: "internal/governance/ticketing/service.go",
+		testFiles: []string{
+			"internal/governance/ticketing/service_behavior_test.go",
+			"internal/governance/ticketing/service_test.go",
+		},
 	},
 	{
 		sourceFile: "internal/api/middleware/openapi_validator.go",

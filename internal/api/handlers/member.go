@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -25,67 +27,87 @@ func (s *Server) ListUsers(c *gin.Context, params generated.ListUsersParams) {
 	}
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
-	offset := (page - 1) * perPage
+	search := strings.TrimSpace(params.Search)
 
 	query := s.client.User.Query()
-	total, err := query.Clone().Count(ctx)
-	if err != nil {
-		logger.Error("failed to count users", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	users, err := query.
-		Offset(offset).
-		Limit(perPage).
-		Order(ent.Asc(entuser.FieldUsername)).
-		WithRoleBindings(func(q *ent.RoleBindingQuery) {
-			q.WithRole()
-		}).
-		All(ctx)
+	query = applyUserSearch(query, search)
+	userList, err := listUsersPage(ctx, query, page, perPage)
 	if err != nil {
 		logger.Error("failed to list users", zap.Error(err), zap.Int("page", page))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
-	items := make([]generated.User, 0, len(users))
-	for _, u := range users {
-		roleSet := make(map[string]struct{})
-		for _, rb := range u.Edges.RoleBindings {
-			if rb == nil || rb.Edges.Role == nil {
-				continue
-			}
-			roleSet[rb.Edges.Role.Name] = struct{}{}
-		}
+	c.JSON(http.StatusOK, userList)
+}
 
-		roles := make([]string, 0, len(roleSet))
-		for roleName := range roleSet {
-			roles = append(roles, roleName)
-		}
-		sort.Strings(roles)
-
-		items = append(items, generated.User{
-			Id:          u.ID,
-			Username:    u.Username,
-			Email:       u.Email,
-			DisplayName: u.DisplayName,
-			Enabled:     u.Enabled,
-			Roles:       roles,
-			CreatedAt:   u.CreatedAt,
-		})
+// ListSystemMemberCandidates handles GET /systems/{system_id}/member-candidates.
+func (s *Server) ListSystemMemberCandidates(
+	c *gin.Context,
+	systemID generated.SystemID,
+	params generated.ListSystemMemberCandidatesParams,
+) {
+	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "rbac:manage") {
+		return
+	}
+	if _, ok := s.requireSystemRole(c, systemID, "manage_members"); !ok {
+		return
 	}
 
-	totalPages := (total + perPage - 1) / perPage
-	c.JSON(http.StatusOK, generated.UserList{
-		Items: items,
-		Pagination: generated.Pagination{
-			Page:       page,
-			PerPage:    perPage,
-			Total:      total,
-			TotalPages: totalPages,
-		},
-	})
+	page, perPage := defaultPagination(params.Page, params.PerPage)
+	search := strings.TrimSpace(params.Search)
+
+	memberBindings, err := s.client.ResourceRoleBinding.Query().
+		Where(
+			resourcerolebinding.ResourceTypeEQ("system"),
+			resourcerolebinding.ResourceIDEQ(systemID),
+		).
+		All(ctx)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while listing system member candidates", zap.Error(err), zap.String("system_id", systemID))
+			return
+		}
+		logger.Error("failed to list system member candidates", zap.Error(err), zap.String("system_id", systemID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	existingMemberUserIDs := make([]string, 0, len(memberBindings))
+	seenMemberUserIDs := make(map[string]struct{}, len(memberBindings))
+	for _, binding := range memberBindings {
+		if _, seen := seenMemberUserIDs[binding.UserID]; seen {
+			continue
+		}
+		seenMemberUserIDs[binding.UserID] = struct{}{}
+		existingMemberUserIDs = append(existingMemberUserIDs, binding.UserID)
+	}
+
+	query := s.client.User.Query()
+	if len(existingMemberUserIDs) > 0 {
+		query = query.Where(entuser.Not(entuser.IDIn(existingMemberUserIDs...)))
+	}
+	query = applyUserSearch(query, search)
+
+	userList, err := listUsersPage(ctx, query, page, perPage)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while querying system member candidates", zap.Error(err), zap.String("system_id", systemID))
+			return
+		}
+		logger.Error(
+			"failed to query system member candidates",
+			zap.Error(err),
+			zap.String("system_id", systemID),
+			zap.Int("page", page),
+			zap.String("search", search),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	c.JSON(http.StatusOK, userList)
 }
 
 // ListSystemMembers handles GET /systems/{system_id}/members.
@@ -434,6 +456,80 @@ func isValidMemberRole(role string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func listUsersPage(ctx context.Context, query *ent.UserQuery, page, perPage int) (generated.UserList, error) {
+	offset := (page - 1) * perPage
+
+	total, err := query.Clone().Count(ctx)
+	if err != nil {
+		return generated.UserList{}, err
+	}
+
+	users, err := query.
+		Offset(offset).
+		Limit(perPage).
+		Order(ent.Asc(entuser.FieldUsername)).
+		WithRoleBindings(func(q *ent.RoleBindingQuery) {
+			q.WithRole()
+		}).
+		All(ctx)
+	if err != nil {
+		return generated.UserList{}, err
+	}
+
+	items := make([]generated.User, 0, len(users))
+	for _, userEnt := range users {
+		items = append(items, toGeneratedUser(userEnt))
+	}
+
+	totalPages := (total + perPage - 1) / perPage
+	return generated.UserList{
+		Items: items,
+		Pagination: generated.Pagination{
+			Page:       page,
+			PerPage:    perPage,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	}, nil
+}
+
+func applyUserSearch(query *ent.UserQuery, search string) *ent.UserQuery {
+	if strings.TrimSpace(search) == "" {
+		return query
+	}
+	return query.Where(entuser.Or(
+		entuser.UsernameContainsFold(search),
+		entuser.DisplayNameContainsFold(search),
+		entuser.EmailContainsFold(search),
+	))
+}
+
+func toGeneratedUser(userEnt *ent.User) generated.User {
+	roleSet := make(map[string]struct{})
+	for _, rb := range userEnt.Edges.RoleBindings {
+		if rb == nil || rb.Edges.Role == nil {
+			continue
+		}
+		roleSet[rb.Edges.Role.Name] = struct{}{}
+	}
+
+	roles := make([]string, 0, len(roleSet))
+	for roleName := range roleSet {
+		roles = append(roles, roleName)
+	}
+	sort.Strings(roles)
+
+	return generated.User{
+		Id:          userEnt.ID,
+		Username:    userEnt.Username,
+		Email:       userEnt.Email,
+		DisplayName: userEnt.DisplayName,
+		Enabled:     userEnt.Enabled,
+		Roles:       roles,
+		CreatedAt:   userEnt.CreatedAt,
 	}
 }
 

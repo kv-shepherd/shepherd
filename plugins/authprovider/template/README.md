@@ -20,3 +20,14 @@ func init() {
 ```
 
 Then add a blank import in `plugins/authprovider/autoreg/autoreg.go`.
+
+You may optionally extend the template adapter by implementing:
+
+- `authproviderplugin.RuntimeCapability`
+- `authproviderplugin.CredentialRuntimeCapability`
+- `authproviderplugin.RuntimeDescriber`
+- `authproviderplugin.DirectorySyncCapability`
+- `authproviderplugin.ScheduledDirectoryEnrichmentCapability`
+
+The adapter should continue to register through
+`authproviderplugin.MustRegisterAdminAdapter(...)`.

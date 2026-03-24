@@ -65,7 +65,7 @@ func (l *Logger) LogApprovalWithDetails(
 	for key, value := range details {
 		payload[key] = value
 	}
-	return l.LogAction(ctx, "approval."+decision, "approval_ticket", ticketID, actor, payload)
+	return l.LogAction(ctx, "approval."+decision, "ticket", ticketID, actor, payload)
 }
 
 // LogVMOperation records a VM operation.

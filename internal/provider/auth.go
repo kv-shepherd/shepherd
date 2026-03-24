@@ -1,88 +1,63 @@
 package provider
 
-import "context"
+import runtimecontract "kv-shepherd.io/shepherd/internal/provider/runtimecontract"
 
-// AuthProvider defines the authentication provider interface.
-// Phase 1: JWT implementation. Future: OIDC, LDAP adapters.
-type AuthProvider interface {
-	// Authenticate validates credentials and returns a user identity.
-	Authenticate(ctx context.Context, credentials interface{}) (*AuthResult, error)
+// ExternalCohort is the provider-agnostic external organization shape.
+type ExternalCohort = runtimecontract.ExternalCohort
 
-	// ValidateToken validates a token and returns claims.
-	ValidateToken(ctx context.Context, token string) (*TokenClaims, error)
+// AuthProfileAttributes stores display-only external profile metadata.
+type AuthProfileAttributes = runtimecontract.AuthProfileAttributes
 
-	// Type returns the provider type identifier.
-	Type() string
+type AuthInteractionType = runtimecontract.AuthInteractionType
+
+const (
+	AuthInteractionRedirect    = runtimecontract.AuthInteractionRedirect
+	AuthInteractionCredentials = runtimecontract.AuthInteractionCredentials
+)
+
+// AuthResult is the canonical runtime auth result consumed by core.
+type AuthResult = runtimecontract.AuthResult
+
+// AuthStartRequest carries core-owned login parameters into the provider.
+type AuthStartRequest = runtimecontract.AuthStartRequest
+
+// AuthStartResponse carries the provider-owned redirect URL back to core.
+type AuthStartResponse = runtimecontract.AuthStartResponse
+
+// AuthStartError indicates a provider-owned login-start validation failure.
+type AuthStartError = runtimecontract.AuthStartError
+
+// NewAuthStartError constructs a structured login-start error.
+func NewAuthStartError(code, message string) error {
+	return runtimecontract.NewAuthStartError(code, message)
 }
 
-// AuthResult represents an authentication result.
-type AuthResult struct {
-	UserID      string                 `json:"user_id"`
-	Username    string                 `json:"username"`
-	Email       string                 `json:"email,omitempty"`
-	DisplayName string                 `json:"display_name,omitempty"`
-	Groups      []string               `json:"groups,omitempty"`
-	ProviderID  string                 `json:"provider_id,omitempty"`
-	ExternalID  string                 `json:"external_id,omitempty"`
-	RawClaims   map[string]interface{} `json:"raw_claims,omitempty"`
-}
+// AuthCallbackRequest is the opaque callback envelope forwarded to providers.
+type AuthCallbackRequest = runtimecontract.AuthCallbackRequest
 
-// TokenClaims represents JWT token claims.
-type TokenClaims struct {
-	UserID   string   `json:"user_id"`
-	Username string   `json:"username"`
-	Roles    []string `json:"roles,omitempty"`
-}
+// AuthCredentialRequest is the opaque credential envelope forwarded to providers.
+type AuthCredentialRequest = runtimecontract.AuthCredentialRequest
 
-// ApprovalProvider defines the approval workflow interface.
-// Phase 1: Internal (built-in). V2+: External adapters (RFC-0004).
-type ApprovalProvider interface {
-	// SubmitForApproval submits a request for approval.
-	SubmitForApproval(ctx context.Context, req *ApprovalRequest) (*ApprovalResponse, error)
+// AuthLoginMode describes one provider-owned login entrypoint.
+type AuthLoginMode = runtimecontract.AuthLoginMode
 
-	// ProcessApproval processes an approval decision.
-	ProcessApproval(ctx context.Context, ticketID string, decision ApprovalDecision) error
+// AuthRuntimeDescriptor exposes public runtime metadata for login UX.
+type AuthRuntimeDescriptor = runtimecontract.AuthRuntimeDescriptor
 
-	// Type returns the provider type identifier.
-	Type() string
-}
+// AuthRuntimeCapability is an optional auth-provider runtime extension.
+type AuthRuntimeCapability = runtimecontract.AuthRuntimeCapability
 
-// ApprovalRequest represents an approval request.
-type ApprovalRequest struct {
-	EventID   string `json:"event_id"`
-	Requester string `json:"requester"`
-	Action    string `json:"action"`
-	Reason    string `json:"reason"`
-}
+// AuthCredentialCapability is an optional auth-provider runtime extension for
+// direct credential submission flows.
+type AuthCredentialCapability = runtimecontract.AuthCredentialCapability
 
-// ApprovalResponse represents an approval submission response.
-type ApprovalResponse struct {
-	TicketID string `json:"ticket_id"`
-	Status   string `json:"status"`
-}
+// AuthRuntimeDescriber exposes public runtime metadata when supported.
+type AuthRuntimeDescriber = runtimecontract.AuthRuntimeDescriber
 
-// ApprovalDecision represents an approval decision.
-type ApprovalDecision struct {
-	Approved     bool   `json:"approved"`
-	Approver     string `json:"approver"`
-	RejectReason string `json:"reject_reason,omitempty"`
-}
+// AuthCredentialError indicates a provider-owned credential-login failure.
+type AuthCredentialError = runtimecontract.AuthCredentialError
 
-// NotificationProvider defines the notification interface.
-// Phase 1: Log (noop). Future: Email, Webhook, etc.
-type NotificationProvider interface {
-	// Send sends a notification.
-	Send(ctx context.Context, notification *Notification) error
-
-	// Type returns the provider type identifier.
-	Type() string
-}
-
-// Notification represents a notification message.
-type Notification struct {
-	RecipientID string                 `json:"recipient_id"`
-	Type        string                 `json:"type"` // e.g. "approval_required", "vm_created"
-	Title       string                 `json:"title"`
-	Body        string                 `json:"body"`
-	Data        map[string]interface{} `json:"data,omitempty"`
+// NewAuthCredentialError constructs a structured credential-login error.
+func NewAuthCredentialError(code, message string) error {
+	return runtimecontract.NewAuthCredentialError(code, message)
 }

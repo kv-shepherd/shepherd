@@ -16,9 +16,9 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
@@ -75,7 +75,7 @@ func (uc *CreateVMUseCase) WithAuditLogger(al *audit.Logger) *CreateVMUseCase {
 }
 
 // Execute runs the VM creation use case.
-// Phase 1: Creates DomainEvent + ApprovalTicket in atomic transaction.
+// Phase 1: Creates DomainEvent + Ticket in atomic transaction.
 // Phase 2: After approval, K8s create is executed by River worker.
 // master-flow.md Stage 5.A: includes duplicate pending guard + audit log.
 func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*CreateVMOutput, error) {
@@ -156,7 +156,7 @@ func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*C
 		return nil, fmt.Errorf("marshal payload: %w", err)
 	}
 
-	// Atomic transaction: create DomainEvent + ApprovalTicket (ADR-0012)
+	// Atomic transaction: create DomainEvent + Ticket (ADR-0012)
 	var eventID, ticketID string
 	txErr := withTx(ctx, uc.entClient, func(tx *ent.Tx) error {
 		// Create domain event
@@ -173,16 +173,16 @@ func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*C
 		}
 		eventID = event.ID
 
-		// Create approval ticket
-		ticket, err := tx.ApprovalTicket.Create().
+		// Create the request ticket.
+		ticket, err := tx.Ticket.Create().
 			SetID(generateID()).
 			SetEventID(event.ID).
-			SetOperationType(approvalticket.OperationTypeCREATE).
+			SetOperationType(entticket.OperationTypeCREATE).
 			SetRequester(input.RequestedBy).
 			SetReason(input.Reason).
 			Save(ctx)
 		if err != nil {
-			return fmt.Errorf("create approval ticket: %w", err)
+			return fmt.Errorf("create ticket: %w", err)
 		}
 		ticketID = ticket.ID
 
@@ -195,7 +195,7 @@ func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*C
 
 	// Audit log (master-flow.md Stage 5.A)
 	if uc.auditLogger != nil {
-		_ = uc.auditLogger.LogAction(ctx, "vm.request", "approval_ticket", ticketID, input.RequestedBy, map[string]interface{}{
+		_ = uc.auditLogger.LogAction(ctx, "vm.request", "ticket", ticketID, input.RequestedBy, map[string]interface{}{
 			"service_id":       input.ServiceID,
 			"template_id":      input.TemplateID,
 			"instance_size_id": input.InstanceSizeID,
@@ -219,7 +219,7 @@ func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*C
 func (uc *CreateVMUseCase) findPendingCreateDuplicate(
 	ctx context.Context,
 	input CreateVMInput,
-) (*ent.ApprovalTicket, error) {
+) (*ent.Ticket, error) {
 	events, err := uc.entClient.DomainEvent.Query().
 		Where(
 			domainevent.EventTypeEQ(string(domain.EventVMCreationRequested)),
@@ -245,11 +245,11 @@ func (uc *CreateVMUseCase) findPendingCreateDuplicate(
 			continue
 		}
 
-		ticket, err := uc.entClient.ApprovalTicket.Query().
+		ticket, err := uc.entClient.Ticket.Query().
 			Where(
-				approvalticket.EventIDEQ(event.ID),
-				approvalticket.OperationTypeEQ(approvalticket.OperationTypeCREATE),
-				approvalticket.StatusEQ(approvalticket.StatusPENDING),
+				entticket.EventIDEQ(event.ID),
+				entticket.OperationTypeEQ(entticket.OperationTypeCREATE),
+				entticket.StatusEQ(entticket.StatusPENDING),
 			).
 			Only(ctx)
 		if err != nil {

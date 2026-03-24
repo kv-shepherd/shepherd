@@ -44,6 +44,7 @@ func TestTierForStatus_TransitionalStatesReturnHigh(t *testing.T) {
 
 	transitional := []vm.Status{
 		vm.StatusCREATING,
+		vm.StatusSTARTING,
 		vm.StatusDELETING,
 		vm.StatusSTOPPING,
 		vm.StatusMIGRATING,
@@ -69,6 +70,7 @@ func TestTierForStatus_StableStatesReturnLow(t *testing.T) {
 		vm.StatusFAILED,
 		vm.StatusPAUSED,
 		vm.StatusUNKNOWN,
+		vm.StatusNOT_FOUND,
 	}
 	for _, s := range stable {
 		s := s
@@ -111,6 +113,7 @@ func TestMapDomainStatusToEntVM_AllStatuses(t *testing.T) {
 		want   vm.Status
 	}{
 		{domain.VMStatusCreating, vm.StatusCREATING},
+		{domain.VMStatusStarting, vm.StatusSTARTING},
 		{domain.VMStatusRunning, vm.StatusRUNNING},
 		{domain.VMStatusStopping, vm.StatusSTOPPING},
 		{domain.VMStatusStopped, vm.StatusSTOPPED},
@@ -120,6 +123,7 @@ func TestMapDomainStatusToEntVM_AllStatuses(t *testing.T) {
 		{domain.VMStatusMigrating, vm.StatusMIGRATING},
 		{domain.VMStatusPaused, vm.StatusPAUSED},
 		{domain.VMStatusUnknown, vm.StatusUNKNOWN},
+		{domain.VMStatusNotFound, vm.StatusNOT_FOUND},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -242,11 +246,11 @@ func TestReconcileCreateBootstrapStatus(t *testing.T) {
 
 	now := time.Now()
 
-	t.Run("hold_stopped_as_creating_during_bootstrap", func(t *testing.T) {
+	t.Run("hold_stopped_as_current_status_during_create_bootstrap", func(t *testing.T) {
 		t.Parallel()
 
 		vmRow := &ent.VM{
-			Status:      vm.StatusRUNNING,
+			Status:      vm.StatusCREATING,
 			PollingTier: vm.PollingTierHigh,
 			CreatedAt:   now.Add(-30 * time.Second),
 		}
@@ -267,6 +271,22 @@ func TestReconcileCreateBootstrapStatus(t *testing.T) {
 		got := reconcileCreateBootstrapStatus(vmRow, vm.StatusUNKNOWN, now)
 		if got != vm.StatusCREATING {
 			t.Fatalf("reconcileCreateBootstrapStatus() = %s, want %s", got, vm.StatusCREATING)
+		}
+	})
+
+	t.Run("hold_unknown_as_starting_using_high_tier_since_anchor", func(t *testing.T) {
+		t.Parallel()
+
+		enteredHighTier := now.Add(-45 * time.Second)
+		vmRow := &ent.VM{
+			Status:        vm.StatusSTARTING,
+			PollingTier:   vm.PollingTierHigh,
+			HighTierSince: &enteredHighTier,
+			CreatedAt:     now.Add(-24 * time.Hour),
+		}
+		got := reconcileCreateBootstrapStatus(vmRow, vm.StatusUNKNOWN, now)
+		if got != vm.StatusSTARTING {
+			t.Fatalf("reconcileCreateBootstrapStatus() = %s, want %s", got, vm.StatusSTARTING)
 		}
 	})
 
@@ -297,6 +317,22 @@ func TestReconcileCreateBootstrapStatus(t *testing.T) {
 			t.Fatalf("reconcileCreateBootstrapStatus() = %s, want %s", got, vm.StatusSTOPPED)
 		}
 	})
+
+	t.Run("no_hold_starting_when_high_tier_since_expired", func(t *testing.T) {
+		t.Parallel()
+
+		expired := now.Add(-createBootstrapGraceWindow - time.Second)
+		vmRow := &ent.VM{
+			Status:        vm.StatusSTARTING,
+			PollingTier:   vm.PollingTierHigh,
+			HighTierSince: &expired,
+			CreatedAt:     now.Add(-24 * time.Hour),
+		}
+		got := reconcileCreateBootstrapStatus(vmRow, vm.StatusUNKNOWN, now)
+		if got != vm.StatusUNKNOWN {
+			t.Fatalf("reconcileCreateBootstrapStatus() = %s, want %s", got, vm.StatusUNKNOWN)
+		}
+	})
 }
 
 func TestReconcileMissingVMStatus(t *testing.T) {
@@ -304,7 +340,7 @@ func TestReconcileMissingVMStatus(t *testing.T) {
 
 	now := time.Now()
 
-	t.Run("hold_missing_vm_as_creating_during_bootstrap", func(t *testing.T) {
+	t.Run("hold_missing_vm_status_during_bootstrap", func(t *testing.T) {
 		t.Parallel()
 
 		vmRow := &ent.VM{
@@ -313,12 +349,13 @@ func TestReconcileMissingVMStatus(t *testing.T) {
 			CreatedAt:   now.Add(-30 * time.Second),
 		}
 		got := reconcileMissingVMStatus(vmRow, now)
-		if got != vm.StatusCREATING {
-			t.Fatalf("reconcileMissingVMStatus() = %s, want %s", got, vm.StatusCREATING)
+		// During bootstrap, hold the current status (RUNNING) even if VM is not yet visible.
+		if got != vm.StatusRUNNING {
+			t.Fatalf("reconcileMissingVMStatus() = %s, want %s", got, vm.StatusRUNNING)
 		}
 	})
 
-	t.Run("missing_vm_becomes_unknown_after_bootstrap_window", func(t *testing.T) {
+	t.Run("missing_vm_becomes_not_found_after_bootstrap_window", func(t *testing.T) {
 		t.Parallel()
 
 		vmRow := &ent.VM{
@@ -327,8 +364,9 @@ func TestReconcileMissingVMStatus(t *testing.T) {
 			CreatedAt:   now.Add(-createBootstrapGraceWindow - time.Second),
 		}
 		got := reconcileMissingVMStatus(vmRow, now)
-		if got != vm.StatusUNKNOWN {
-			t.Fatalf("reconcileMissingVMStatus() = %s, want %s", got, vm.StatusUNKNOWN)
+		// After bootstrap, K8s list succeeded but VM not found → NOT_FOUND.
+		if got != vm.StatusNOT_FOUND {
+			t.Fatalf("reconcileMissingVMStatus() = %s, want %s", got, vm.StatusNOT_FOUND)
 		}
 	})
 }

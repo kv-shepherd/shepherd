@@ -29,6 +29,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Server.UnsafeAllowAllOrigins {
 		t.Errorf("Server.UnsafeAllowAllOrigins = %v, want false", cfg.Server.UnsafeAllowAllOrigins)
 	}
+	if cfg.Server.PublicBaseURL != "" {
+		t.Errorf("Server.PublicBaseURL = %q, want empty", cfg.Server.PublicBaseURL)
+	}
 
 	// Database defaults
 	if cfg.Database.Host != "localhost" {
@@ -178,5 +181,55 @@ func TestLoad_SessionHTTPOnlyFromEnv(t *testing.T) {
 	}
 	if cfg.Session.HTTPOnly {
 		t.Fatalf("Session.HTTPOnly = %v, want false", cfg.Session.HTTPOnly)
+	}
+}
+
+func TestLoad_ServerPublicBaseURLFromEnv(t *testing.T) {
+	t.Setenv("SERVER_PUBLIC_BASE_URL", "https://console.example.com")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Server.PublicBaseURL; got != "https://console.example.com" {
+		t.Fatalf("Server.PublicBaseURL = %q, want %q", got, "https://console.example.com")
+	}
+	if got := cfg.Server.AllowedOrigins[len(cfg.Server.AllowedOrigins)-1]; got != "https://console.example.com" {
+		t.Fatalf("Server.AllowedOrigins last item = %q, want %q", got, "https://console.example.com")
+	}
+}
+
+func TestLoad_ServerPublicBaseURLNotDuplicatedInAllowedOrigins(t *testing.T) {
+	t.Setenv("SERVER_PUBLIC_BASE_URL", "https://console.example.com")
+	t.Setenv("SERVER_ALLOWED_ORIGINS", "https://console.example.com,https://other.example.com")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	var count int
+	for _, origin := range cfg.Server.AllowedOrigins {
+		if origin == "https://console.example.com" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("console origin count = %d, want 1; origins=%v", count, cfg.Server.AllowedOrigins)
+	}
+}
+
+func TestLoad_SecuritySecretsFromEnv(t *testing.T) {
+	t.Setenv("SECURITY_SESSION_SECRET", "dev-session-secret-0123456789abcdef0123456789abcdef")
+	t.Setenv("SECURITY_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Security.SessionSecret; got != "dev-session-secret-0123456789abcdef0123456789abcdef" {
+		t.Fatalf("Security.SessionSecret = %q, want env value", got)
+	}
+	if got := cfg.Security.EncryptionKey; got != "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
+		t.Fatalf("Security.EncryptionKey = %q, want env value", got)
 	}
 }

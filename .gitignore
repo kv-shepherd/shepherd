@@ -52,8 +52,8 @@ config.yaml
 .env.*.local
 *.pem
 *.key
-kubeconfig
-kubeconfig.*
+/kubeconfig
+/kubeconfig.*
 
 # Docker
 .docker/

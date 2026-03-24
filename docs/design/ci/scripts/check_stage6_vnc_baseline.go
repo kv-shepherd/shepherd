@@ -13,7 +13,7 @@ import (
 const (
 	openAPIPath      = "api/openapi.yaml"
 	handlerPath      = "internal/api/handlers/server_vm_console.go"
-	gatewayPath      = "internal/governance/approval/gateway.go"
+	gatewayPath      = "internal/governance/ticketing/service.go"
 	tokenServicePath = "internal/service/vnc_token.go"
 	serverPath       = "internal/api/handlers/server.go"
 	allowlistPath    = "docs/design/ci/allowlists/master_flow_api_deferred.txt"
@@ -54,13 +54,13 @@ func main() {
 		"SingleUse",
 	})
 	checkFragments(&violations, gatewayPath, []string{
-		"case approvalticket.OperationTypeVNC_ACCESS:",
+		"case entticket.OperationTypeVNC_ACCESS:",
 		"approveVNC(",
 		"EventVNCAccessRequested",
 	})
 	checkFragments(&violations, handlerTestPath, []string{
 		"TestVMConsole_Request_TestEnvironmentIssuesDirectVNCURL",
-		"TestVMConsole_Request_ProductionCreatesPendingApprovalTicket",
+		"TestVMConsole_Request_ProductionCreatesPendingTicket",
 		"TestVMConsole_OpenVNC_RejectsTokenReplay",
 	})
 	checkFragments(&violations, tokenTestPath, []string{

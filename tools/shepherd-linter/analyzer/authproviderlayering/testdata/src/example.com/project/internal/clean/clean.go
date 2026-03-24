@@ -1,0 +1,3 @@
+package clean
+
+func OK() {}

@@ -10,6 +10,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"kv-shepherd.io/shepherd/ent/user"
+	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
 )
 
 // User is the model entity for the User schema.
@@ -51,9 +52,13 @@ type UserEdges struct {
 	RoleBindings []*RoleBinding `json:"role_bindings,omitempty"`
 	// Notifications holds the value of the notifications edge.
 	Notifications []*Notification `json:"notifications,omitempty"`
+	// DirectoryProfile holds the value of the directory_profile edge.
+	DirectoryProfile *UserDirectoryProfile `json:"directory_profile,omitempty"`
+	// ExternalCohortGrants holds the value of the external_cohort_grants edge.
+	ExternalCohortGrants []*ExternalCohortGrant `json:"external_cohort_grants,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [4]bool
 }
 
 // RoleBindingsOrErr returns the RoleBindings value or an error if the edge
@@ -72,6 +77,26 @@ func (e UserEdges) NotificationsOrErr() ([]*Notification, error) {
 		return e.Notifications, nil
 	}
 	return nil, &NotLoadedError{edge: "notifications"}
+}
+
+// DirectoryProfileOrErr returns the DirectoryProfile value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e UserEdges) DirectoryProfileOrErr() (*UserDirectoryProfile, error) {
+	if e.DirectoryProfile != nil {
+		return e.DirectoryProfile, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: userdirectoryprofile.Label}
+	}
+	return nil, &NotLoadedError{edge: "directory_profile"}
+}
+
+// ExternalCohortGrantsOrErr returns the ExternalCohortGrants value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) ExternalCohortGrantsOrErr() ([]*ExternalCohortGrant, error) {
+	if e.loadedTypes[3] {
+		return e.ExternalCohortGrants, nil
+	}
+	return nil, &NotLoadedError{edge: "external_cohort_grants"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -194,6 +219,16 @@ func (_m *User) QueryRoleBindings() *RoleBindingQuery {
 // QueryNotifications queries the "notifications" edge of the User entity.
 func (_m *User) QueryNotifications() *NotificationQuery {
 	return NewUserClient(_m.config).QueryNotifications(_m)
+}
+
+// QueryDirectoryProfile queries the "directory_profile" edge of the User entity.
+func (_m *User) QueryDirectoryProfile() *UserDirectoryProfileQuery {
+	return NewUserClient(_m.config).QueryDirectoryProfile(_m)
+}
+
+// QueryExternalCohortGrants queries the "external_cohort_grants" edge of the User entity.
+func (_m *User) QueryExternalCohortGrants() *ExternalCohortGrantQuery {
+	return NewUserClient(_m.config).QueryExternalCohortGrants(_m)
 }
 
 // Update returns a builder for updating this User.

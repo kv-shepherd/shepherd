@@ -45,21 +45,9 @@ func (s *Server) Login(c *gin.Context) {
 		return
 	}
 
-	roles, permissions, err := s.loadUserRolesAndPermissions(c.Request.Context(), user.ID)
+	loginResp, err := s.issueLoginResponse(c.Request.Context(), user)
 	if err != nil {
-		logger.Error("failed to load roles", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	roleNames := make([]string, len(roles))
-	for i, r := range roles {
-		roleNames[i] = r.Name
-	}
-
-	token, expiresAt, err := middleware.GenerateToken(s.jwtCfg, user.ID, user.Username, roleNames, permissions)
-	if err != nil {
-		logger.Error("failed to generate token", zap.Error(err))
+		logger.Error("failed to issue login response", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -79,11 +67,7 @@ func (s *Server) Login(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, generated.LoginResponse{
-		Token:               token,
-		ExpiresAt:           expiresAt,
-		ForcePasswordChange: user.ForcePasswordChange,
-	})
+	c.JSON(http.StatusOK, loginResp)
 }
 
 // GetCurrentUser handles GET /auth/me.
@@ -100,26 +84,14 @@ func (s *Server) GetCurrentUser(c *gin.Context) {
 		return
 	}
 
-	roles, permissions, err := s.loadUserRolesAndPermissions(c.Request.Context(), user.ID)
+	userInfo, err := s.buildUserInfo(c.Request.Context(), user)
 	if err != nil {
 		logger.Error("failed to load roles for current user", zap.Error(err), zap.String("user_id", user.ID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
-	roleNames := make([]string, len(roles))
-	for i, r := range roles {
-		roleNames[i] = r.Name
-	}
-
-	c.JSON(http.StatusOK, generated.UserInfo{
-		Id:          user.ID,
-		Username:    user.Username,
-		Email:       user.Email,
-		DisplayName: user.DisplayName,
-		Roles:       roleNames,
-		Permissions: permissions,
-	})
+	c.JSON(http.StatusOK, userInfo)
 }
 
 // ChangePassword handles POST /auth/change-password (Stage 1.5 forced password change).
@@ -210,6 +182,31 @@ func (s *Server) loadUserRolesAndPermissions(ctx context.Context, userID string)
 	return roles, permissions, nil
 }
 
+func (s *Server) buildUserInfo(ctx context.Context, user *ent.User) (generated.UserInfo, error) {
+	if s == nil || user == nil {
+		return generated.UserInfo{}, fmt.Errorf("server and user are required")
+	}
+
+	roles, permissions, err := s.loadUserRolesAndPermissions(ctx, user.ID)
+	if err != nil {
+		return generated.UserInfo{}, err
+	}
+
+	roleNames := make([]string, len(roles))
+	for i, role := range roles {
+		roleNames[i] = role.Name
+	}
+
+	return generated.UserInfo{
+		Id:          user.ID,
+		Username:    user.Username,
+		Email:       user.Email,
+		DisplayName: user.DisplayName,
+		Roles:       roleNames,
+		Permissions: permissions,
+	}, nil
+}
+
 // HashPassword hashes a password using bcrypt (used by seed command).
 func HashPassword(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), passwordHashCost)
@@ -223,4 +220,30 @@ func HashPassword(password string) (string, error) {
 func GenerateUserID() string {
 	id, _ := uuid.NewV7()
 	return id.String()
+}
+
+func (s *Server) issueLoginResponse(ctx context.Context, user *ent.User) (generated.LoginResponse, error) {
+	if s == nil || user == nil {
+		return generated.LoginResponse{}, fmt.Errorf("server and user are required")
+	}
+
+	roles, permissions, err := s.loadUserRolesAndPermissions(ctx, user.ID)
+	if err != nil {
+		return generated.LoginResponse{}, err
+	}
+
+	roleNames := make([]string, len(roles))
+	for i, role := range roles {
+		roleNames[i] = role.Name
+	}
+
+	token, expiresAt, err := middleware.GenerateToken(s.jwtCfg, user.ID, user.Username, roleNames, permissions)
+	if err != nil {
+		return generated.LoginResponse{}, err
+	}
+	return generated.LoginResponse{
+		Token:               token,
+		ExpiresAt:           expiresAt,
+		ForcePasswordChange: user.ForcePasswordChange,
+	}, nil
 }

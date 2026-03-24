@@ -17,24 +17,31 @@ import (
 	"kv-shepherd.io/shepherd/internal/infrastructure"
 	"kv-shepherd.io/shepherd/internal/pkg/worker"
 	"kv-shepherd.io/shepherd/internal/provider"
+	infracontract "kv-shepherd.io/shepherd/internal/provider/infracontract"
 )
 
 // Infrastructure holds shared cross-cutting dependencies for all modules.
 // It is a provider, not a Module.
 type Infrastructure struct {
-	Config      *config.Config
-	DB          *infrastructure.DatabaseClients
-	Pools       *worker.Pools
-	EntClient   *ent.Client
-	Pool        *pgxpool.Pool
-	RiverClient *river.Client[pgx.Tx]
-	AuditLogger *audit.Logger
-	VMProvider  provider.InfrastructureProvider
-	HealthCheck *provider.ClusterHealthChecker
+	Config        *config.Config
+	EncryptionKey []byte
+	DB            *infrastructure.DatabaseClients
+	Pools         *worker.Pools
+	EntClient     *ent.Client
+	Pool          *pgxpool.Pool
+	RiverClient   *river.Client[pgx.Tx]
+	AuditLogger   *audit.Logger
+	VMProvider    infracontract.InfrastructureProvider
+	HealthCheck   *provider.ClusterHealthChecker
 }
 
 // NewInfrastructure initializes DB/pools and shared services.
 func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure, error) {
+	encryptionKey, err := cfg.Security.DecodeEncryptionKey()
+	if err != nil {
+		return nil, fmt.Errorf("decode encryption key: %w", err)
+	}
+
 	db, err := infrastructure.NewDatabaseClients(ctx, cfg.Database)
 	if err != nil {
 		return nil, fmt.Errorf("init database: %w", err)
@@ -67,15 +74,16 @@ func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure
 	healthChecker := provider.NewClusterHealthChecker(healthClusterFactory, 60*time.Second)
 
 	return &Infrastructure{
-		Config:      cfg,
-		DB:          db,
-		Pools:       pools,
-		EntClient:   entClient,
-		Pool:        db.Pool,
-		RiverClient: db.RiverClient,
-		AuditLogger: audit.NewLogger(entClient),
-		VMProvider:  vmProvider,
-		HealthCheck: healthChecker,
+		Config:        cfg,
+		EncryptionKey: encryptionKey,
+		DB:            db,
+		Pools:         pools,
+		EntClient:     entClient,
+		Pool:          db.Pool,
+		RiverClient:   db.RiverClient,
+		AuditLogger:   audit.NewLogger(entClient),
+		VMProvider:    vmProvider,
+		HealthCheck:   healthChecker,
 	}, nil
 }
 

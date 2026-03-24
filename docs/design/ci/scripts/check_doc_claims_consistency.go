@@ -30,6 +30,27 @@ var pathRe = regexp.MustCompile(`^\s{2}(/[^:]+):\s*$`)
 func main() {
 	var violations []string
 
+	violations = append(violations, findForbiddenDocClaims(
+		map[string][]string{
+			phase4Checklist: {
+				"`ExternalApprovalProvider` contract defined (`SubmitForApproval`, `CheckStatus`, `CancelRequest`) — in `internal/provider/auth.go`",
+				"**Notification Service (Reserved Interface)** defined (`internal/provider/auth.go`)",
+			},
+			phase4Governance: {
+				"// ExternalApprovalProvider defines the contract for external approval systems",
+				"type ExternalApprovalProvider interface {",
+			},
+			"docs/design/checklist/phase-1-checklist.md": {
+				"**AuthProvider Interface** defined (`internal/provider/auth.go`)",
+				"**ApprovalProvider Interface** defined (`internal/provider/auth.go`)",
+				"**NotificationProvider Interface** defined (`internal/provider/auth.go`)",
+			},
+			"docs/design/checklist/phase-2-checklist.md": {
+				"Interface definitions (`ApprovalProvider` in `internal/provider/auth.go`)",
+			},
+		},
+	)...)
+
 	if !fileExists(memberHandler) {
 		violations = append(violations, checkedClaimViolations(
 			phase5Checklist,
@@ -45,7 +66,7 @@ func main() {
 		}
 	}
 
-	hasCancelPath, err := openAPIHasPath("/approvals/{ticket_id}/cancel")
+	hasCancelPath, err := openAPIHasPath("/tickets/{ticket_id}/cancel")
 	if err != nil {
 		fmt.Printf("FAIL: inspect OpenAPI: %v\n", err)
 		os.Exit(1)
@@ -64,8 +85,8 @@ func main() {
 		)...)
 		violations = append(violations, checkedClaimViolations(
 			phase4Checklist,
-			"/api/v1/approvals/{id}/cancel",
-			"approval cancel endpoint is checked as done, but OpenAPI/handler implementation is missing",
+			"/api/v1/tickets/{id}/cancel",
+			"ticket cancel endpoint is checked as done, but OpenAPI/handler implementation is missing",
 		)...)
 		violations = append(violations, checkedClaimViolations(
 			phase4Checklist,
@@ -180,6 +201,25 @@ func checkedClaimViolations(filePath, contains, msg string) []string {
 		out = append(out, fmt.Sprintf("%s: read error: %v", filePath, err))
 	}
 	return out
+}
+
+func findForbiddenDocClaims(targets map[string][]string) []string {
+	var violations []string
+	for path, forbidden := range targets {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			violations = append(violations, fmt.Sprintf("%s: cannot read file: %v", path, err))
+			continue
+		}
+		content := string(b)
+		for _, marker := range forbidden {
+			if strings.Contains(content, marker) {
+				violations = append(violations,
+					fmt.Sprintf("%s: stale provider-boundary claim still present: %s", path, marker))
+			}
+		}
+	}
+	return violations
 }
 
 func openAPIHasPath(target string) (bool, error) {

@@ -24,7 +24,7 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 
 | Script | Check Content | Level | Blocks CI |
 |--------|---------------|-------|-----------|
-| `shepherd-arch` (golangci-lint module plugin) | Batch1 architecture gates: forbidden imports, no runtime mock wiring, no naked goroutines, River bypass, semaphore pairing, service tx boundary, River job args claim-check | Required | ✅ Yes |
+| `shepherd-arch` (golangci-lint module plugin) | Batch1/2 architecture gates: forbidden imports, no runtime mock wiring, no naked goroutines, River bypass, semaphore pairing, service tx boundary, River job args claim-check, auth-provider core/edge/provider layering | Required | ✅ Yes |
 | `shepherd-arch/k8sintransaction` (Analyzer) | No K8s API calls inside transactions | Required | ✅ Yes |
 | [check_validate_spec.go](./scripts/check_validate_spec.go) | No ValidateSpec calls inside transactions | Required | ✅ Yes |
 | [check_openapi_critical_contract.go](./scripts/check_openapi_critical_contract.go) | Enforce stage-critical OpenAPI contracts (auth/vm/approval/audit/notification + global BearerAuth) | Required | ✅ Yes |
@@ -45,7 +45,7 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 | [check_live_e2e_no_mock.sh](./scripts/check_live_e2e_no_mock.sh) | Block network route-mocking patterns in strict live e2e spec (`master-flow-live.spec.ts`) | Required | ✅ Yes |
 | [check_no_global_platform_admin_gate.go](./scripts/check_no_global_platform_admin_gate.go) | Block route-level global `platform:admin` middleware and legacy rate-limit admin helper; require handler-level granular permissions | Required | ✅ Yes |
 | [check_handler_explicit_rbac_guards.go](./scripts/check_handler_explicit_rbac_guards.go) | Enforce explicit fail-closed RBAC guards for high-risk handlers (`member`, `namespace`, `/templates`, `/instance-sizes`) | Required | ✅ Yes |
-| [check_auth_provider_plugin_boundary.go](./scripts/check_auth_provider_plugin_boundary.go) | Enforce auth-provider runtime/frontend/OpenAPI stay plugin-standard (no OIDC/LDAP hardcoded branches) | Required | ✅ Yes |
+| [check_auth_provider_plugin_boundary.go](./scripts/check_auth_provider_plugin_boundary.go) | Enforce auth-provider runtime/frontend/OpenAPI stay plugin-standard (no OIDC/LDAP hardcoded branches, no enterprise-private naming on public auth/directory surfaces, narrow contract packages stay split from root re-export files) | Required | ✅ Yes |
 | [check_frontend_openapi_usage.go](./scripts/check_frontend_openapi_usage.go) | Enforce each OpenAPI operation is consumed by frontend or explicitly deferred; guard system delete `confirm_name` flow | Required | ✅ Yes |
 | [check_frontend_no_non_english_literals.go](./scripts/check_frontend_no_non_english_literals.go) | Block non-English hardcoded literals in frontend source (except `i18n/locales`) | Required | ✅ Yes |
 | [check_frontend_no_placeholder_pages.go](./scripts/check_frontend_no_placeholder_pages.go) | Block placeholder/stub markers in frontend route pages (`app/**/page.tsx`) | Required | ✅ Yes |
@@ -61,7 +61,7 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 | [check_repository_tests.go](./scripts/check_repository_tests.go) | Repository methods must have tests | Required | ✅ Yes |
 | [check_dead_tests.go](./scripts/check_dead_tests.go) | Orphan/invalid test detection | Warning | ⚠️ No |
 | [check_test_assertions.go](./scripts/check_test_assertions.go) | Tests must have assertions | Required | ✅ Yes |
-| [check_doc_claims_consistency.go](./scripts/check_doc_claims_consistency.go) | Block checklist \"done\" claims that lack implementation evidence | Required | ✅ Yes |
+| [check_doc_claims_consistency.go](./scripts/check_doc_claims_consistency.go) | Block checklist \"done\" claims that lack implementation evidence, and block stale provider-boundary doc claims that collapse approval/notification/runtime auth back into `internal/provider/auth.go` | Required | ✅ Yes |
 | [check_master_flow_api_alignment.go](./scripts/check_master_flow_api_alignment.go) | Enforce every master-flow API path is either in OpenAPI or explicit deferred allowlist | Required | ✅ Yes |
 | [check_master_flow_test_matrix.go](./scripts/check_master_flow_test_matrix.go) | Enforce required master-flow stages have executable tests or explicit deferred entries; when `live_step_markers` are declared, enforce those ASCII flow markers exist in mapped `*-live.spec.ts` files (ADR-0034 strict profile: full stage set) | Required | ✅ Yes |
 | [check_master_flow_completion_readiness.go](./scripts/check_master_flow_completion_readiness.go) | Full-completion claim gate: deferred/exemption allowlists must all be empty | Required (for completion claim) | ✅ Yes |

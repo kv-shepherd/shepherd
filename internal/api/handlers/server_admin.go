@@ -19,10 +19,11 @@ import (
 	"kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/predicate"
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
+	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
-	"kv-shepherd.io/shepherd/internal/provider"
+	"kv-shepherd.io/shepherd/internal/provider/capabilityutil"
 	"kv-shepherd.io/shepherd/internal/service"
 )
 
@@ -35,6 +36,13 @@ type kubeConfig struct {
 		} `yaml:"cluster"`
 		Name string `yaml:"name"`
 	} `yaml:"clusters"`
+}
+
+type clusterUpdateRequest struct {
+	DisplayName *string `json:"display_name"`
+	Environment *string `json:"environment" validate:"omitempty,oneof=test prod"`
+	Enabled     *bool   `json:"enabled"`
+	Kubeconfig  *[]byte `json:"kubeconfig"`
 }
 
 // parseAPIServerURL extracts the first cluster's server URL from kubeconfig YAML bytes.
@@ -112,7 +120,7 @@ func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParam
 		}
 		filtered := make([]*ent.Cluster, 0, len(allClusters))
 		for _, cl := range allClusters {
-			if provider.HasAllCapabilities(cl.EnabledFeatures, requiredFeatures) {
+			if capabilityutil.HasAllCapabilities(cl.EnabledFeatures, requiredFeatures) {
 				filtered = append(filtered, cl)
 			}
 		}
@@ -241,7 +249,7 @@ func (s *Server) CreateCluster(c *gin.Context) {
 		SetID(id.String()).
 		SetName(req.Name).
 		SetAPIServerURL(apiServerURL).
-		SetEncryptedKubeconfig(req.Kubeconfig). // V1: stored as plaintext; Phase 2 adds AES-256-GCM
+		SetEncryptedKubeconfig(req.Kubeconfig). // Sensitive kubeconfig bytes; field name retained for historical compatibility
 		SetStatus(cluster.StatusUNKNOWN).
 		SetCreatedBy(actor)
 	if req.DisplayName != "" {
@@ -317,6 +325,134 @@ func (s *Server) CreateCluster(c *gin.Context) {
 	c.JSON(http.StatusCreated, clusterToAPI(cl, policy, generated.ClusterCompatibility{}))
 }
 
+// UpdateCluster handles PATCH /admin/clusters/{cluster_id}.
+func (s *Server) UpdateCluster(c *gin.Context, clusterID string) {
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	if !ok {
+		return
+	}
+
+	var req clusterUpdateRequest
+	if !bindAndValidateJSON(c, &req) {
+		return
+	}
+
+	existing, err := s.client.Cluster.Get(ctx, clusterID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "CLUSTER_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to load cluster for update", zap.Error(err), zap.String("cluster_id", clusterID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	update := existing.Update()
+	kubeconfigChanged := false
+	enableRefresh := false
+	effectiveEnabled := existing.Enabled
+
+	if req.DisplayName != nil {
+		if value := strings.TrimSpace(*req.DisplayName); value == "" {
+			update = update.ClearDisplayName()
+		} else {
+			update = update.SetDisplayName(value)
+		}
+	}
+	if req.Environment != nil {
+		update = update.SetEnvironment(cluster.Environment(strings.TrimSpace(*req.Environment)))
+	}
+	if req.Enabled != nil {
+		effectiveEnabled = *req.Enabled
+		update = update.SetEnabled(*req.Enabled)
+		if !*req.Enabled {
+			update = update.SetStatus(cluster.StatusUNKNOWN)
+			enableRefresh = false
+		} else if !existing.Enabled {
+			enableRefresh = true
+		}
+	}
+	if req.Kubeconfig != nil {
+		if len(*req.Kubeconfig) == 0 {
+			c.JSON(http.StatusBadRequest, generated.Error{
+				Code:    "INVALID_KUBECONFIG",
+				Message: "kubeconfig cannot be empty",
+			})
+			return
+		}
+
+		apiServerURL, parseErr := parseAPIServerURL(*req.Kubeconfig)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, generated.Error{
+				Code:    "INVALID_KUBECONFIG",
+				Message: parseErr.Error(),
+			})
+			return
+		}
+
+		kubeconfigChanged = true
+		if effectiveEnabled {
+			enableRefresh = true
+		}
+		update = update.
+			SetAPIServerURL(apiServerURL).
+			SetEncryptedKubeconfig(*req.Kubeconfig).
+			SetStatus(cluster.StatusUNKNOWN).
+			ClearKubevirtVersion().
+			SetEnabledFeatures([]string{}).
+			SetStorageClasses([]string{}).
+			ClearStorageClassesUpdatedAt()
+	}
+
+	cl, err := update.Save(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "CLUSTER_NOT_FOUND"})
+			return
+		}
+		if ent.IsConstraintError(err) {
+			c.JSON(http.StatusConflict, generated.Error{Code: "CLUSTER_NAME_EXISTS"})
+			return
+		}
+		logger.Error("failed to update cluster", zap.Error(err), zap.String("cluster_id", clusterID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if s.audit != nil {
+		details := map[string]interface{}{}
+		if req.DisplayName != nil {
+			details["display_name"] = cl.DisplayName
+		}
+		if req.Environment != nil {
+			details["environment"] = string(cl.Environment)
+		}
+		if req.Enabled != nil {
+			details["enabled"] = cl.Enabled
+		}
+		if req.Kubeconfig != nil {
+			details["kubeconfig_replaced"] = true
+			details["api_server_url"] = cl.APIServerURL
+		}
+		_ = s.audit.LogAction(ctx, "cluster.update", "cluster", cl.ID, actor, details)
+	}
+
+	if s.refreshClusterHealth != nil && enableRefresh {
+		if refreshErr := s.refreshClusterHealth(ctx, cl.ID); refreshErr != nil {
+			logger.Warn("cluster health refresh after cluster update failed",
+				zap.String("cluster_id", cl.ID),
+				zap.Bool("kubeconfig_changed", kubeconfigChanged),
+				zap.Error(refreshErr),
+			)
+		} else if refreshed, getErr := s.client.Cluster.Get(ctx, cl.ID); getErr == nil {
+			cl = refreshed
+		}
+	}
+
+	c.JSON(http.StatusOK, clusterToAPI(cl, nil, generated.ClusterCompatibility{}))
+}
+
 // UpdateClusterEnvironment handles PUT /admin/clusters/{cluster_id}/environment.
 func (s *Server) UpdateClusterEnvironment(c *gin.Context, clusterID string) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
@@ -349,6 +485,88 @@ func (s *Server) UpdateClusterEnvironment(c *gin.Context, clusterID string) {
 	}
 
 	c.JSON(http.StatusOK, clusterToAPI(cl, nil, generated.ClusterCompatibility{}))
+}
+
+// DeleteCluster handles DELETE /admin/clusters/{cluster_id}.
+func (s *Server) DeleteCluster(c *gin.Context, clusterID string) {
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	if !ok {
+		return
+	}
+
+	vmCount, err := s.client.VM.Query().
+		Where(entvm.ClusterIDEQ(clusterID)).
+		Count(ctx)
+	if err != nil {
+		logger.Error("failed to count cluster VM references", zap.Error(err), zap.String("cluster_id", clusterID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if vmCount > 0 {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "CLUSTER_IN_USE",
+			Message: "cluster is still referenced by existing virtual machines",
+			Params: map[string]interface{}{
+				"vm_count": vmCount,
+			},
+		})
+		return
+	}
+
+	activeCreateCount, err := s.countActiveCreateTicketsForCluster(ctx, clusterID)
+	if err != nil {
+		logger.Error("failed to count active cluster-bound create requests", zap.Error(err), zap.String("cluster_id", clusterID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if activeCreateCount > 0 {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "CLUSTER_HAS_ACTIVE_REQUESTS",
+			Message: "cluster is still selected by unfinished VM create requests",
+			Params: map[string]interface{}{
+				"active_request_count": activeCreateCount,
+			},
+		})
+		return
+	}
+
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		logger.Error("failed to begin cluster delete transaction", zap.Error(err), zap.String("cluster_id", clusterID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	if _, err := tx.ClusterPolicy.Delete().Where(clusterpolicy.ClusterIDEQ(clusterID)).Exec(ctx); err != nil {
+		logger.Error("failed to delete cluster policy during cluster delete", zap.Error(err), zap.String("cluster_id", clusterID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if err := tx.Cluster.DeleteOneID(clusterID).Exec(ctx); err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "CLUSTER_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to delete cluster", zap.Error(err), zap.String("cluster_id", clusterID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		logger.Error("failed to commit cluster delete transaction", zap.Error(err), zap.String("cluster_id", clusterID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if s.audit != nil {
+		_ = s.audit.LogAction(ctx, "cluster.delete", "cluster", clusterID, actor, nil)
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 // GetClusterPolicy handles GET /admin/clusters/{cluster_id}/policy.
@@ -569,7 +787,7 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 	}
 	if decision := strings.TrimSpace(params.ApprovalDecision); decision != "" {
 		query = query.Where(
-			auditlog.ResourceTypeEQ("approval_ticket"),
+			auditlog.ResourceTypeEQ("ticket"),
 			predicate.AuditLog(func(s *entsql.Selector) {
 				s.Where(sqljson.ValueEQ(auditlog.FieldDetails, decision, sqljson.Path("decision")))
 			}),
@@ -577,7 +795,7 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 	}
 	if reasonCode := strings.TrimSpace(params.PlacementReasonCode); reasonCode != "" {
 		query = query.Where(
-			auditlog.ResourceTypeEQ("approval_ticket"),
+			auditlog.ResourceTypeEQ("ticket"),
 			predicate.AuditLog(func(s *entsql.Selector) {
 				s.Where(sqljson.ValueEQ(
 					auditlog.FieldDetails,
@@ -589,7 +807,7 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 	}
 	if advisoryCode := strings.TrimSpace(params.PlacementAdvisoryCode); advisoryCode != "" {
 		query = query.Where(
-			auditlog.ResourceTypeEQ("approval_ticket"),
+			auditlog.ResourceTypeEQ("ticket"),
 			predicate.AuditLog(func(s *entsql.Selector) {
 				s.Where(sqljson.ValueEQ(
 					auditlog.FieldDetails,
@@ -624,13 +842,15 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 	items := make([]generated.AuditLog, 0, len(logs))
 	for _, l := range logs {
 		items = append(items, generated.AuditLog{
-			Id:           l.ID,
-			Action:       l.Action,
-			Actor:        l.Actor,
-			ResourceType: l.ResourceType,
-			ResourceId:   l.ResourceID,
-			Details:      l.Details,
-			CreatedAt:    l.CreatedAt,
+			Id:               l.ID,
+			Action:           l.Action,
+			Actor:            l.Actor,
+			ResourceType:     l.ResourceType,
+			ResourceId:       l.ResourceID,
+			ApprovalDecision: auditStringField(l.Details, "decision"),
+			PlacementSummary: toAuditPlacementSummary(l.Details),
+			Details:          l.Details,
+			CreatedAt:        l.CreatedAt,
 		})
 	}
 
@@ -644,6 +864,42 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 			TotalPages: totalPages,
 		},
 	})
+}
+
+func toAuditPlacementSummary(details map[string]interface{}) *generated.AuditPlacementSummary {
+	placement, ok := details["placement_evaluation"].(map[string]interface{})
+	if !ok || len(placement) == 0 {
+		return nil
+	}
+
+	summary := &generated.AuditPlacementSummary{
+		SelectedClusterName: auditStringField(placement, "selected_cluster_name"),
+		SelectedClusterId:   auditStringField(placement, "selected_cluster_id"),
+		ReasonCode:          auditStringField(placement, "reason_code"),
+		AdvisoryCode:        auditStringField(placement, "advisory_code"),
+	}
+	if eligible, ok := placement["eligible"].(bool); ok {
+		summary.Eligible = &eligible
+	}
+	if summary.SelectedClusterName == "" &&
+		summary.SelectedClusterId == "" &&
+		summary.ReasonCode == "" &&
+		summary.AdvisoryCode == "" &&
+		summary.Eligible == nil {
+		return nil
+	}
+	return summary
+}
+
+func auditStringField(record map[string]interface{}, key string) string {
+	if record == nil {
+		return ""
+	}
+	value, ok := record[key].(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(value)
 }
 
 // ---- Converters ----

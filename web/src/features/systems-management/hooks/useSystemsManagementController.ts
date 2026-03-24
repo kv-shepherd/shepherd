@@ -6,16 +6,22 @@ import { useState } from 'react';
 
 import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { applyApiFieldErrors } from '@/hooks/applyApiFieldErrors';
+import { SETUP_GUIDE_INVALIDATION_KEYS } from '@/features/setup-guide/queryKeys';
 import { api } from '@/lib/api/client';
+import { translateApiError } from '@/lib/api/errorMessage';
 
 import type { System, SystemCreateRequest, SystemList } from '../types';
 import type { SystemUpdateRequest } from '../types';
 
 interface UseSystemsManagementControllerArgs {
     t: TFunction;
+    onCreateSuccess?: (system: System, context: { isFirstSystem: boolean }) => boolean | void;
 }
 
-export function useSystemsManagementController({ t }: UseSystemsManagementControllerArgs) {
+export function useSystemsManagementController({
+    t,
+    onCreateSuccess,
+}: UseSystemsManagementControllerArgs) {
     const [messageApi, messageContextHolder] = message.useMessage();
     const [createOpen, setCreateOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
@@ -35,13 +41,25 @@ export function useSystemsManagementController({ t }: UseSystemsManagementContro
         () => api.GET('/systems', { params: { query: { page, per_page: pageSize } } })
     );
 
+    const existingSystemsTotal =
+        systemsQuery.data?.pagination?.total ??
+        systemsQuery.data?.items?.length ??
+        0;
+    const shouldContinueToFirstService = existingSystemsTotal === 0;
+
     const createMutation = useApiMutation<SystemCreateRequest, System>(
         (req) => api.POST('/systems', { body: req }),
         {
-            invalidateKeys: [['systems']],
-            onSuccess: () => {
-                messageApi.success(t('message.success'));
+            invalidateKeys: [['systems'], ...SETUP_GUIDE_INVALIDATION_KEYS],
+            onSuccess: (system) => {
                 closeCreateModal();
+                const handled = onCreateSuccess?.(system, {
+                    isFirstSystem: shouldContinueToFirstService,
+                }) ?? false;
+                if (handled) {
+                    return;
+                }
+                messageApi.success(t('message.success'));
             },
             onError: (err) => {
                 if (applyApiFieldErrors(form, err)) {
@@ -64,12 +82,12 @@ export function useSystemsManagementController({ t }: UseSystemsManagementContro
             },
         }),
         {
-            invalidateKeys: [['systems']],
+            invalidateKeys: [['systems'], ...SETUP_GUIDE_INVALIDATION_KEYS],
             onSuccess: () => {
                 messageApi.success(t('message.success'));
                 closeDeleteModal();
             },
-            onError: (err) => messageApi.error(err.message || t('message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err, 'message.error')),
         }
     );
 
@@ -82,7 +100,7 @@ export function useSystemsManagementController({ t }: UseSystemsManagementContro
             body,
         }),
         {
-            invalidateKeys: [['systems']],
+            invalidateKeys: [['systems'], ...SETUP_GUIDE_INVALIDATION_KEYS],
             onSuccess: () => {
                 messageApi.success(t('message.success'));
                 closeEditModal();
@@ -91,7 +109,7 @@ export function useSystemsManagementController({ t }: UseSystemsManagementContro
                 if (applyApiFieldErrors(editForm, err)) {
                     return;
                 }
-                messageApi.error(err.message || t('message.error'));
+                messageApi.error(translateApiError(t, err, 'message.error'));
             },
         }
     );

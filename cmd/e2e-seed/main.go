@@ -19,9 +19,8 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"kv-shepherd.io/shepherd/ent"
-	entapprovalticket "kv-shepherd.io/shepherd/ent/approvalticket"
 	entauthprovider "kv-shepherd.io/shepherd/ent/authprovider"
-	entbatchapprovalticket "kv-shepherd.io/shepherd/ent/batchapprovalticket"
+	entbatchticket "kv-shepherd.io/shepherd/ent/batchticket"
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	entclusterpolicy "kv-shepherd.io/shepherd/ent/clusterpolicy"
 	entdomainevent "kv-shepherd.io/shepherd/ent/domainevent"
@@ -33,6 +32,7 @@ import (
 	entservice "kv-shepherd.io/shepherd/ent/service"
 	entsystem "kv-shepherd.io/shepherd/ent/system"
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entuser "kv-shepherd.io/shepherd/ent/user"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/config"
@@ -168,6 +168,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("resolve cluster: %w", err)
 	}
+	clusterSeedInput, err := resolveClusterSeedInput(fx)
+	if err != nil {
+		return fmt.Errorf("resolve cluster seed input: %w", err)
+	}
 	serviceID, err := resolveServiceID(ctx, client, fx, skipAPIManagedFixtures)
 	if err != nil {
 		return fmt.Errorf("resolve service: %w", err)
@@ -190,11 +194,17 @@ func run() error {
 			return fmt.Errorf("ensure instance size: %w", sizeErr)
 		}
 	}
-	if runningVMErr := ensureVM(ctx, client, fx.RunningVMID, "vm-live", "01", entvm.StatusRUNNING, fx.NamespaceName, clusterID, serviceID, fx.AdminUsername); runningVMErr != nil {
-		return fmt.Errorf("ensure running vm: %w", runningVMErr)
-	}
-	if stoppedVMErr := ensureVM(ctx, client, fx.StoppedVMID, "vm-stopped", "02", entvm.StatusSTOPPED, fx.NamespaceName, clusterID, serviceID, fx.AdminUsername); stoppedVMErr != nil {
-		return fmt.Errorf("ensure stopped vm: %w", stoppedVMErr)
+	if shouldSeedLiveVMFixtures(clusterSeedInput) {
+		if runningVMErr := ensureVM(ctx, client, fx.RunningVMID, "vm-live", "01", entvm.StatusRUNNING, fx.NamespaceName, clusterID, serviceID, fx.AdminUsername); runningVMErr != nil {
+			return fmt.Errorf("ensure running vm: %w", runningVMErr)
+		}
+		if stoppedVMErr := ensureVM(ctx, client, fx.StoppedVMID, "vm-stopped", "02", entvm.StatusSTOPPED, fx.NamespaceName, clusterID, serviceID, fx.AdminUsername); stoppedVMErr != nil {
+			return fmt.Errorf("ensure stopped vm: %w", stoppedVMErr)
+		}
+	} else {
+		if cleanupErr := deleteSeedVMFixtures(ctx, client, fx); cleanupErr != nil {
+			return fmt.Errorf("cleanup stale seed vms: %w", cleanupErr)
+		}
 	}
 
 	// ── Phase 2: Extended fixtures (auth provider, extra user, notifications, approvals) ──
@@ -361,6 +371,21 @@ func firstKubeconfigServer(cfg *clientcmdapi.Config) string {
 		}
 	}
 	return ""
+}
+
+func shouldSeedLiveVMFixtures(input clusterSeedInput) bool {
+	return input.Status == entcluster.StatusHEALTHY &&
+		strings.TrimSpace(input.APIServer) != "" &&
+		strings.TrimSpace(input.APIServer) != defaultClusterAPIURL
+}
+
+func deleteSeedVMFixtures(ctx context.Context, client *ent.Client, fx fixtureConfig) error {
+	_, err := client.VM.Delete().
+		Where(
+			entvm.IDIn(fx.RunningVMID, fx.StoppedVMID),
+		).
+		Exec(ctx)
+	return err
 }
 
 func ensureAdminUser(ctx context.Context, client *ent.Client, fx fixtureConfig) (string, error) {
@@ -1186,34 +1211,34 @@ func ensureApprovalTickets(ctx context.Context, client *ent.Client) error {
 			}
 		}
 
-		// Ensure ApprovalTicket exists and is PENDING
-		ticketExists, err := client.ApprovalTicket.Query().
-			Where(entapprovalticket.IDEQ(ticketID)).
+		// Ensure the ticket exists and is PENDING.
+		ticketExists, err := client.Ticket.Query().
+			Where(entticket.IDEQ(ticketID)).
 			Exist(ctx)
 		if err != nil {
 			return err
 		}
 		if !ticketExists {
-			_, createTicketErr := client.ApprovalTicket.Create().
+			_, createTicketErr := client.Ticket.Create().
 				SetID(ticketID).
 				SetEventID(eventID).
-				SetOperationType(entapprovalticket.OperationTypeCREATE).
-				SetStatus(entapprovalticket.StatusPENDING).
+				SetOperationType(entticket.OperationTypeCREATE).
+				SetStatus(entticket.StatusPENDING).
 				SetRequester("e2e-seed").
 				SetReason(fmt.Sprintf("E2E seed ticket for %s test", suffix)).
 				Save(ctx)
 			if createTicketErr != nil {
-				return fmt.Errorf("create approval ticket %s: %w", ticketID, createTicketErr)
+				return fmt.Errorf("create ticket %s: %w", ticketID, createTicketErr)
 			}
 		} else {
 			// Reset to PENDING if it was previously approved/rejected during a test run
-			_, err := client.ApprovalTicket.UpdateOneID(ticketID).
-				SetStatus(entapprovalticket.StatusPENDING).
+			_, err := client.Ticket.UpdateOneID(ticketID).
+				SetStatus(entticket.StatusPENDING).
 				ClearApprover().
 				ClearRejectReason().
 				Save(ctx)
 			if err != nil {
-				return fmt.Errorf("reset approval ticket %s: %w", ticketID, err)
+				return fmt.Errorf("reset ticket %s: %w", ticketID, err)
 			}
 		}
 	}
@@ -1269,7 +1294,7 @@ func ensureNotifications(ctx context.Context, client *ent.Client, adminID string
 			SetType(n.nType).
 			SetTitle(n.title).
 			SetMessage(fmt.Sprintf("Seeded by e2e-seed for notification testing: %s", n.title)).
-			SetResourceType("approval_ticket").
+			SetResourceType("ticket").
 			SetResourceID("tkt-e2e-seed-approve").
 			SetRead(false).
 			SetUserID(adminID).
@@ -1292,14 +1317,14 @@ func ensureBatchApprovalTickets(
 	namespaceName string,
 ) error {
 	type childFixture struct {
-		status       entapprovalticket.Status
+		status       entticket.Status
 		rejectReason string
 	}
 	type batchFixture struct {
 		id                 string
 		parentEventStatus  entdomainevent.Status
-		parentTicketStatus entapprovalticket.Status
-		projectionStatus   entbatchapprovalticket.Status
+		parentTicketStatus entticket.Status
+		projectionStatus   entbatchticket.Status
 		children           []childFixture
 	}
 
@@ -1331,25 +1356,25 @@ func ensureBatchApprovalTickets(
 		{
 			id:                 "batch-e2e-seed-failed",
 			parentEventStatus:  entdomainevent.StatusFAILED,
-			parentTicketStatus: entapprovalticket.StatusFAILED,
-			projectionStatus:   entbatchapprovalticket.StatusFAILED,
+			parentTicketStatus: entticket.StatusFAILED,
+			projectionStatus:   entbatchticket.StatusFAILED,
 			children: []childFixture{
-				{status: entapprovalticket.StatusSUCCESS},
-				{status: entapprovalticket.StatusFAILED, rejectReason: "seeded failed child for retry"},
-				{status: entapprovalticket.StatusREJECTED, rejectReason: "seeded rejected child for retry"},
+				{status: entticket.StatusSUCCESS},
+				{status: entticket.StatusFAILED, rejectReason: "seeded failed child for retry"},
+				{status: entticket.StatusREJECTED, rejectReason: "seeded rejected child for retry"},
 			},
 		},
 		{
 			id:                 "batch-e2e-seed-pending",
 			parentEventStatus:  entdomainevent.StatusPENDING,
-			parentTicketStatus: entapprovalticket.StatusPENDING,
-			projectionStatus:   entbatchapprovalticket.StatusIN_PROGRESS,
+			parentTicketStatus: entticket.StatusPENDING,
+			projectionStatus:   entbatchticket.StatusIN_PROGRESS,
 			children: []childFixture{
-				{status: entapprovalticket.StatusPENDING},
-				{status: entapprovalticket.StatusPENDING},
-				{status: entapprovalticket.StatusPENDING},
-				{status: entapprovalticket.StatusPENDING},
-				{status: entapprovalticket.StatusPENDING},
+				{status: entticket.StatusPENDING},
+				{status: entticket.StatusPENDING},
+				{status: entticket.StatusPENDING},
+				{status: entticket.StatusPENDING},
+				{status: entticket.StatusPENDING},
 			},
 		},
 	}
@@ -1358,8 +1383,8 @@ func ensureBatchApprovalTickets(
 		parentEventID := fmt.Sprintf("evt-%s-parent", b.id)
 		parentReason := "Seeded by e2e-seed for batch operation testing"
 
-		existingChildren, err := client.ApprovalTicket.Query().
-			Where(entapprovalticket.ParentTicketIDEQ(b.id)).
+		existingChildren, err := client.Ticket.Query().
+			Where(entticket.ParentTicketIDEQ(b.id)).
 			All(ctx)
 		if err != nil {
 			return fmt.Errorf("query existing child tickets for batch %s: %w", b.id, err)
@@ -1370,12 +1395,12 @@ func ensureBatchApprovalTickets(
 		}
 		staleEventIDs = append(staleEventIDs, parentEventID)
 
-		if _, err := client.ApprovalTicket.Delete().
-			Where(entapprovalticket.ParentTicketIDEQ(b.id)).
+		if _, err := client.Ticket.Delete().
+			Where(entticket.ParentTicketIDEQ(b.id)).
 			Exec(ctx); err != nil {
 			return fmt.Errorf("delete existing child tickets for batch %s: %w", b.id, err)
 		}
-		if err := client.ApprovalTicket.DeleteOneID(b.id).Exec(ctx); err != nil && !ent.IsNotFound(err) {
+		if err := client.Ticket.DeleteOneID(b.id).Exec(ctx); err != nil && !ent.IsNotFound(err) {
 			return fmt.Errorf("delete parent ticket for batch %s: %w", b.id, err)
 		}
 		if _, err := client.DomainEvent.Delete().
@@ -1383,7 +1408,7 @@ func ensureBatchApprovalTickets(
 			Exec(ctx); err != nil {
 			return fmt.Errorf("delete stale events for batch %s: %w", b.id, err)
 		}
-		if err := client.BatchApprovalTicket.DeleteOneID(b.id).Exec(ctx); err != nil && !ent.IsNotFound(err) {
+		if err := client.BatchTicket.DeleteOneID(b.id).Exec(ctx); err != nil && !ent.IsNotFound(err) {
 			return fmt.Errorf("delete projection for batch %s: %w", b.id, err)
 		}
 
@@ -1405,16 +1430,16 @@ func ensureBatchApprovalTickets(
 			Save(ctx); err != nil {
 			return fmt.Errorf("create parent event for batch %s: %w", b.id, err)
 		}
-		parentCreate := client.ApprovalTicket.Create().
+		parentCreate := client.Ticket.Create().
 			SetID(b.id).
 			SetEventID(parentEventID).
-			SetOperationType(entapprovalticket.OperationTypeCREATE).
+			SetOperationType(entticket.OperationTypeCREATE).
 			SetStatus(b.parentTicketStatus).
 			SetRequester(createdBy).
 			SetReason(parentReason)
 		// For FAILED parent batches used by retryVMBatch, seed the selected
 		// cluster context to match real approved CREATE tickets.
-		if b.parentTicketStatus != entapprovalticket.StatusPENDING && selectedClusterID != "" {
+		if b.parentTicketStatus != entticket.StatusPENDING && selectedClusterID != "" {
 			parentCreate = parentCreate.SetSelectedClusterID(selectedClusterID)
 			if selectedStorageClass != "" {
 				parentCreate = parentCreate.SetSelectedStorageClass(selectedStorageClass)
@@ -1443,10 +1468,10 @@ func ensureBatchApprovalTickets(
 
 			var childEventStatus entdomainevent.Status
 			switch child.status {
-			case entapprovalticket.StatusSUCCESS:
+			case entticket.StatusSUCCESS:
 				successCount++
 				childEventStatus = entdomainevent.StatusCOMPLETED
-			case entapprovalticket.StatusFAILED, entapprovalticket.StatusREJECTED:
+			case entticket.StatusFAILED, entticket.StatusREJECTED:
 				failedCount++
 				childEventStatus = entdomainevent.StatusFAILED
 			default:
@@ -1466,10 +1491,10 @@ func ensureBatchApprovalTickets(
 				return fmt.Errorf("create child event %s for batch %s: %w", childEventID, b.id, err)
 			}
 
-			childCreate := client.ApprovalTicket.Create().
+			childCreate := client.Ticket.Create().
 				SetID(childTicketID).
 				SetEventID(childEventID).
-				SetOperationType(entapprovalticket.OperationTypeCREATE).
+				SetOperationType(entticket.OperationTypeCREATE).
 				SetStatus(child.status).
 				SetRequester(createdBy).
 				SetReason(childReason).
@@ -1482,8 +1507,8 @@ func ensureBatchApprovalTickets(
 			}
 		}
 
-		if _, err := client.BatchApprovalTicket.Create().
-			SetBatchType(entbatchapprovalticket.BatchTypeBATCH_CREATE).
+		if _, err := client.BatchTicket.Create().
+			SetBatchType(entbatchticket.BatchTypeBATCH_CREATE).
 			SetStatus(b.projectionStatus).
 			SetChildCount(len(b.children)).
 			SetSuccessCount(successCount).

@@ -142,13 +142,53 @@ docker:
 ## ci-checks: Run canonical CI check scripts wired in GitHub Actions
 ci-checks:
 	@echo "Running CI checks..."
+	@$(MAKE) lint-arch
 	@$(MAKE) test-shepherd-linter
+	@bash docs/design/ci/scripts/check_no_new_run_scripts.sh
+	@bash docs/design/ci/scripts/check_no_legacy_batch1_invocations.sh
+	@npm run typecheck --prefix web
+	@npm run test:run --prefix web
+	@bash docs/design/ci/scripts/check_changed_code_has_tests.sh
+	@bash docs/design/ci/scripts/check_no_redis_import.sh
+	@go run docs/design/ci/scripts/check_ent_codegen.go
 	@bash docs/design/ci/scripts/check_manual_di.sh
+	@go run docs/design/ci/scripts/check_no_sqlite_in_tests.go
+	@go run docs/design/ci/scripts/check_no_runtime_placeholders.go
+	@go run docs/design/ci/scripts/check_provider_wiring.go
 	@bash docs/design/ci/scripts/check_sqlc_usage.sh
-	@for script in docs/design/ci/scripts/*.sh; do \
-		echo "Running $$script..."; \
-		bash "$$script" || exit 1; \
-	done
+	@go run docs/design/ci/scripts/check_validate_spec.go
+	@go run docs/design/ci/scripts/check_openapi_critical_contract.go
+	@go run docs/design/ci/scripts/check_openapi_critical_fingerprint.go
+	@bash docs/design/ci/scripts/api-check.sh
+	@go run docs/design/ci/scripts/check_vm_create_status_progression.go
+	@go run docs/design/ci/scripts/check_vm_create_spec_completeness.go
+	@go run docs/design/ci/scripts/check_critical_test_presence.go
+	@go run docs/design/ci/scripts/check_stage5c_behavior_tests.go
+	@go run docs/design/ci/scripts/check_stage3_admin_catalog_baseline.go
+	@go run docs/design/ci/scripts/check_stage4_system_service_baseline.go
+	@go run docs/design/ci/scripts/check_stage5d_delete_baseline.go
+	@go run docs/design/ci/scripts/check_duplicate_guard_scope.go
+	@go run docs/design/ci/scripts/check_environment_isolation_enforcement.go
+	@go run docs/design/ci/scripts/check_stage5e_batch_baseline.go
+	@go run docs/design/ci/scripts/check_stage6_vnc_baseline.go
+	@bash docs/design/ci/scripts/check_live_e2e_no_mock.sh
+	@go run docs/design/ci/scripts/check_no_global_platform_admin_gate.go
+	@go run docs/design/ci/scripts/check_handler_explicit_rbac_guards.go
+	@go run docs/design/ci/scripts/check_auth_provider_plugin_boundary.go
+	@go run docs/design/ci/scripts/check_frontend_openapi_usage.go
+	@go run docs/design/ci/scripts/check_frontend_no_non_english_literals.go
+	@go run docs/design/ci/scripts/check_frontend_no_placeholder_pages.go
+	@go run docs/design/ci/scripts/check_frontend_route_shell_architecture.go
+	@go run docs/design/ci/scripts/check_doc_claims_consistency.go
+	@go run docs/design/ci/scripts/check_master_flow_api_alignment.go
+	@go run docs/design/ci/scripts/check_master_flow_test_matrix.go
+	@go run docs/design/ci/scripts/check_master_flow_traceability.go
+	@go run docs/design/ci/scripts/check_markdown_links.go
+	@bash docs/design/ci/scripts/check_design_doc_governance.sh
+	@go run docs/design/ci/scripts/check_module_noop_hooks.go
+	@go run docs/design/ci/scripts/check_test_assertions.go
+	@go run docs/design/ci/scripts/check_dead_tests.go || true
+	@go run docs/design/ci/scripts/check_repository_tests.go
 
 ## master-flow-strict: Run strict master-flow test-first gate chain (requires DATABASE_URL)
 master-flow-strict:

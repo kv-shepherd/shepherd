@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +40,7 @@ type ServerConfig struct {
 	ReadTimeout      time.Duration `mapstructure:"read_timeout"`
 	WriteTimeout     time.Duration `mapstructure:"write_timeout"`
 	ShutdownTimeout  time.Duration `mapstructure:"shutdown_timeout"`
+	PublicBaseURL    string        `mapstructure:"public_base_url"`
 	AllowedOrigins   []string      `mapstructure:"allowed_origins"`
 	AllowCredentials bool          `mapstructure:"allow_credentials"`
 	// UnsafeAllowAllOrigins disables origin allowlist checks and must only be used in trusted local development.
@@ -162,6 +164,7 @@ func Load() (*Config, error) {
 	v.AutomaticEnv()
 
 	setDefaults(v)
+	bindEnvKeys(v)
 
 	if err := v.ReadInConfig(); err != nil {
 		var notFoundErr viper.ConfigFileNotFoundError
@@ -175,6 +178,8 @@ func Load() (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
+	applyExplicitEnvOverrides(v, &cfg)
+	cfg.Server.AllowedOrigins = mergeAllowedOrigins(cfg.Server.AllowedOrigins, cfg.Server.PublicBaseURL)
 
 	// ADR-0025: Auto-generate secrets on first boot if missing.
 	if err := cfg.ensureSecrets(); err != nil {
@@ -195,6 +200,21 @@ func (c *Config) Validate() error {
 	}
 	if len(c.Security.SessionSecret) < 32 {
 		return fmt.Errorf("security.session_secret must be at least 32 characters")
+	}
+	if baseURL := strings.TrimSpace(c.Server.PublicBaseURL); baseURL != "" {
+		parsed, err := url.Parse(baseURL)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return fmt.Errorf("server.public_base_url must be an absolute http or https URL")
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return fmt.Errorf("server.public_base_url must use http or https")
+		}
+		if parsed.Path != "" && parsed.Path != "/" {
+			return fmt.Errorf("server.public_base_url must not include a path")
+		}
+		if parsed.RawQuery != "" || parsed.Fragment != "" {
+			return fmt.Errorf("server.public_base_url must not include query or fragment")
+		}
 	}
 	if _, err := c.Security.DecodeEncryptionKey(); err != nil {
 		return err
@@ -277,6 +297,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.read_timeout", "30s")
 	v.SetDefault("server.write_timeout", "30s")
 	v.SetDefault("server.shutdown_timeout", "30s")
+	v.SetDefault("server.public_base_url", "")
 	v.SetDefault("server.allowed_origins", []string{"http://localhost:3000", "http://127.0.0.1:3000"})
 	v.SetDefault("server.allow_credentials", true)
 	v.SetDefault("server.unsafe_allow_all_origins", false)
@@ -321,4 +342,111 @@ func setDefaults(v *viper.Viper) {
 	// Worker Pool (ADR-0031)
 	v.SetDefault("worker.general_pool_size", 100)
 	v.SetDefault("worker.k8s_pool_size", 50)
+}
+
+func bindEnvKeys(v *viper.Viper) {
+	for _, key := range []string{
+		"server.port",
+		"server.read_timeout",
+		"server.write_timeout",
+		"server.shutdown_timeout",
+		"server.public_base_url",
+		"server.allowed_origins",
+		"server.allow_credentials",
+		"server.unsafe_allow_all_origins",
+		"database.url",
+		"database.host",
+		"database.port",
+		"database.user",
+		"database.password",
+		"database.database",
+		"database.sslmode",
+		"database.max_conns",
+		"database.min_conns",
+		"database.max_conn_lifetime",
+		"database.max_conn_idle_time",
+		"database.worker_host",
+		"database.worker_port",
+		"database.auto_migrate",
+		"session.lifetime",
+		"session.idle_timeout",
+		"session.cookie",
+		"session.secure",
+		"session.http_only",
+		"k8s.cluster_concurrency",
+		"k8s.operation_timeout",
+		"log.level",
+		"log.format",
+		"river.max_workers",
+		"river.completed_job_retention_period",
+		"security.encryption_key",
+		"security.session_secret",
+		"security.jwt_verification_keys",
+		"security.password_policy.mode",
+		"security.password_policy.require_uppercase",
+		"security.password_policy.require_lowercase",
+		"security.password_policy.require_digit",
+		"security.password_policy.require_special",
+		"worker.general_pool_size",
+		"worker.k8s_pool_size",
+	} {
+		if err := v.BindEnv(key); err != nil {
+			panic(fmt.Sprintf("bind env for %s: %v", key, err))
+		}
+	}
+}
+
+func applyExplicitEnvOverrides(v *viper.Viper, cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if value := strings.TrimSpace(v.GetString("server.public_base_url")); value != "" {
+		cfg.Server.PublicBaseURL = value
+	}
+	if value := strings.TrimSpace(v.GetString("security.session_secret")); value != "" {
+		cfg.Security.SessionSecret = value
+	}
+	if value := strings.TrimSpace(v.GetString("security.encryption_key")); value != "" {
+		cfg.Security.EncryptionKey = value
+	}
+	if v.IsSet("security.jwt_verification_keys") {
+		cfg.Security.JWTVerificationKeys = sanitizeStringSlice(v.GetStringSlice("security.jwt_verification_keys"))
+	}
+}
+
+func mergeAllowedOrigins(origins []string, publicBaseURL string) []string {
+	items := sanitizeStringSlice(origins)
+	origin := publicBaseOrigin(publicBaseURL)
+	if origin == "" {
+		return items
+	}
+	for _, item := range items {
+		if strings.EqualFold(item, origin) {
+			return items
+		}
+	}
+	return append(items, origin)
+}
+
+func publicBaseOrigin(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host
+}
+
+func sanitizeStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		items = append(items, value)
+	}
+	return items
 }

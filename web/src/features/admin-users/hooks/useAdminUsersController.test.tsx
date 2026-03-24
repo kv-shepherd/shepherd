@@ -9,10 +9,12 @@ const {
   useFormMock,
   messageSuccessMock,
   messageErrorMock,
+  apiGetMock,
   addFormState,
   createUserFormState,
   editUserFormState,
   roleBindingCreateFormState,
+  roleBindingsRefetchMock,
 } = vi.hoisted(() => ({
   useApiGetMock: vi.fn(),
   useApiMutationMock: vi.fn(),
@@ -20,6 +22,7 @@ const {
   useFormMock: vi.fn(),
   messageSuccessMock: vi.fn(),
   messageErrorMock: vi.fn(),
+  apiGetMock: vi.fn(),
   addFormState: {
     validateFields: vi.fn(),
     resetFields: vi.fn(),
@@ -40,6 +43,7 @@ const {
     resetFields: vi.fn(),
     setFieldsValue: vi.fn(),
   },
+  roleBindingsRefetchMock: vi.fn(),
 }));
 
 vi.mock('antd', () => ({
@@ -62,6 +66,12 @@ vi.mock('@/hooks/useApiQuery', () => ({
   useApiGet: (...args: unknown[]) => useApiGetMock(...args),
   useApiMutation: (...args: unknown[]) => useApiMutationMock(...args),
   useApiAction: (...args: unknown[]) => useApiActionMock(...args),
+}));
+
+vi.mock('@/lib/api/client', () => ({
+  api: {
+    GET: (...args: unknown[]) => apiGetMock(...args),
+  },
 }));
 
 import { useAdminUsersController } from './useAdminUsersController';
@@ -96,10 +106,9 @@ describe('useAdminUsersController', () => {
       force_password_change: false,
     });
 
-    let queryCall = 0;
-    useApiGetMock.mockImplementation(() => {
-      queryCall += 1;
-      if (queryCall === 1) {
+    useApiGetMock.mockImplementation((queryKey?: unknown[]) => {
+      const head = Array.isArray(queryKey) ? queryKey[0] : undefined;
+      if (head === 'admin-users') {
         return {
           data: {
             items: [
@@ -116,16 +125,32 @@ describe('useAdminUsersController', () => {
           refetch: vi.fn(),
         };
       }
-      if (queryCall === 2) {
+      if (head === 'member-systems') {
         return {
           data: { items: [{ id: 'sys-1', name: 'system-a' }] },
           isLoading: false,
           refetch: vi.fn(),
         };
       }
-      if (queryCall === 3) {
+      if (head === 'system-members') {
         return {
           data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (head === 'user-role-bindings') {
+        return {
+          data: { items: [], pagination: { total: 0 } },
+          isLoading: false,
+          refetch: roleBindingsRefetchMock,
+        };
+      }
+      if (head === 'admin-roles-dropdown') {
+        return {
+          data: {
+            items: [{ id: 'role-1', name: 'PlatformAdmin', display_name: 'Platform Admin', built_in: true }],
+          },
           isLoading: false,
           refetch: vi.fn(),
         };
@@ -133,6 +158,7 @@ describe('useAdminUsersController', () => {
       return {
         data: { items: [], generated_at: new Date().toISOString() },
         isLoading: false,
+        isFetching: false,
         refetch: vi.fn(),
       };
     });
@@ -144,13 +170,13 @@ describe('useAdminUsersController', () => {
     const deleteUserMutate = vi.fn();
 
     const mutationResults = [
-      { mutate: createUserMutate, isPending: false },
-      { mutate: updateUserMutate, isPending: false },
-      { mutate: vi.fn(), isPending: false },
-      { mutate: vi.fn(), isPending: false },
-      { mutate: vi.fn(), isPending: false },
-      { mutate: vi.fn(), isPending: false },
-      { mutate: vi.fn(), isPending: false },
+      { mutate: createUserMutate, mutateAsync: vi.fn(), isPending: false },
+      { mutate: updateUserMutate, mutateAsync: vi.fn(), isPending: false },
+      { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false },
+      { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false },
+      { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false },
+      { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false },
+      { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false },
     ];
     let mutationCall = 0;
     useApiMutationMock.mockImplementation(() => {
@@ -212,5 +238,99 @@ describe('useAdminUsersController', () => {
       result.current.deleteUser('u-2');
     });
     expect(deleteUserMutate).toHaveBeenCalledWith('u-2');
+  });
+
+  it('queries system-scoped member candidates instead of reusing the paginated user directory', async () => {
+    useApiMutationMock.mockImplementation(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }));
+    useApiActionMock.mockImplementation(() => ({ mutate: vi.fn(), isPending: false }));
+    apiGetMock.mockResolvedValue({
+      data: { items: [], pagination: { total: 0, page: 1, per_page: 50, total_pages: 0 } },
+      error: undefined,
+      response: new Response(),
+    });
+
+    const { result } = renderHook(() => useAdminUsersController({ t }));
+
+    act(() => {
+      result.current.setSelectedSystemId('sys-1');
+    });
+    act(() => {
+      result.current.openAddModal();
+    });
+    act(() => {
+      result.current.setMemberCandidateSearch('alice');
+    });
+
+    const candidateCall = [...useApiGetMock.mock.calls]
+      .reverse()
+      .find((call) => Array.isArray(call[0]) && call[0][0] === 'system-member-candidates');
+
+    expect(candidateCall?.[0]).toEqual(['system-member-candidates', 'sys-1', 'alice']);
+    expect(candidateCall?.[2]).toEqual({ enabled: true });
+
+    const fetcher = candidateCall?.[1] as (() => Promise<unknown>) | undefined;
+    await fetcher?.();
+
+    expect(apiGetMock).toHaveBeenCalledWith('/systems/{system_id}/member-candidates', {
+      params: {
+        path: { system_id: 'sys-1' },
+        query: {
+          page: 1,
+          per_page: 50,
+          search: 'alice',
+        },
+      },
+    });
+  });
+
+  it('closes and refreshes role bindings after creating a binding', async () => {
+    const createRoleBindingMutateAsync = vi.fn().mockResolvedValue({
+      id: 'binding-1',
+      role_id: 'role-1',
+    });
+
+    const mutationResults = [
+      { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false },
+      { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false },
+      { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false },
+      { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false },
+      { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false },
+      { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false },
+      { mutate: vi.fn(), mutateAsync: createRoleBindingMutateAsync, isPending: false },
+    ];
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      const result = mutationResults[mutationCall % 7];
+      mutationCall += 1;
+      return result;
+    });
+    useApiActionMock.mockImplementation(() => ({ mutate: vi.fn(), isPending: false }));
+    roleBindingsRefetchMock.mockResolvedValue(undefined);
+    roleBindingCreateFormState.validateFields.mockResolvedValue({
+      role_id: 'role-1',
+      scope_type: 'global',
+    });
+
+    const { result } = renderHook(() => useAdminUsersController({ t }));
+
+    act(() => {
+      result.current.openRoleBindingsModal({
+        id: 'u-1',
+        username: 'user1',
+        display_name: 'User One',
+      });
+      result.current.openRoleBindingCreateModal();
+    });
+
+    await act(async () => {
+      await result.current.submitCreateRoleBinding();
+    });
+
+    expect(createRoleBindingMutateAsync).toHaveBeenCalledWith({
+      role_id: 'role-1',
+      scope_type: 'global',
+    });
+    expect(roleBindingsRefetchMock).toHaveBeenCalled();
+    expect(roleBindingCreateFormState.resetFields).toHaveBeenCalled();
   });
 });

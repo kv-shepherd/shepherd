@@ -46,7 +46,7 @@ func TestQueries_ApproveCreateTicket(t *testing.T) {
 
 	ticketID := "ticket-create-1"
 	eventID := "event-create-1"
-	seedApprovalTicket(ctx, t, pool, ticketID, eventID, "CREATE", "PENDING")
+	seedTicket(ctx, t, pool, ticketID, eventID, "CREATE")
 
 	templateSnapshot := []byte(`{"name":"tpl-v3"}`)
 	instanceSizeSnapshot := []byte(`{"cpu_cores":4,"memory_gi":8}`)
@@ -80,7 +80,7 @@ func TestQueries_ApproveCreateTicket(t *testing.T) {
 	require.NoError(t, pool.QueryRow(
 		ctx,
 		`SELECT status, approver, selected_cluster_id, selected_storage_class, template_snapshot, instance_size_snapshot, placement_evaluation, modified_spec
-         FROM approval_tickets WHERE id=$1`,
+         FROM tickets WHERE id=$1`,
 		ticketID,
 	).Scan(
 		&status,
@@ -121,7 +121,7 @@ func TestQueries_ApproveDeleteTicket(t *testing.T) {
 
 	ticketID := "ticket-delete-1"
 	eventID := "event-delete-1"
-	seedApprovalTicket(ctx, t, pool, ticketID, eventID, "DELETE", "PENDING")
+	seedTicket(ctx, t, pool, ticketID, eventID, "DELETE")
 
 	rows, err := q.ApproveDeleteTicket(ctx, ApproveDeleteTicketParams{
 		Approver: pgtype.Text{String: "admin-delete", Valid: true},
@@ -135,10 +135,36 @@ func TestQueries_ApproveDeleteTicket(t *testing.T) {
 		status   string
 		approver pgtype.Text
 	)
-	require.NoError(t, pool.QueryRow(ctx, `SELECT status, approver FROM approval_tickets WHERE id=$1`, ticketID).Scan(&status, &approver))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status, approver FROM tickets WHERE id=$1`, ticketID).Scan(&status, &approver))
 	require.Equal(t, "APPROVED", status)
 	require.True(t, approver.Valid)
 	require.Equal(t, "admin-delete", approver.String)
+}
+
+func TestQueries_ApproveModifyTicket(t *testing.T) {
+	ctx := context.Background()
+	q, pool := newSQLCTestQueries(t, "approve_modify_ticket")
+
+	ticketID := "ticket-modify-1"
+	eventID := "event-modify-1"
+	seedTicket(ctx, t, pool, ticketID, eventID, "MODIFY")
+
+	rows, err := q.ApproveModifyTicket(ctx, ApproveModifyTicketParams{
+		Approver: pgtype.Text{String: "admin-modify", Valid: true},
+		ID:       ticketID,
+		EventID:  eventID,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, rows)
+
+	var (
+		status   string
+		approver pgtype.Text
+	)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status, approver FROM tickets WHERE id=$1`, ticketID).Scan(&status, &approver))
+	require.Equal(t, "APPROVED", status)
+	require.True(t, approver.Valid)
+	require.Equal(t, "admin-modify", approver.String)
 }
 
 func TestQueries_ApprovePowerTicket(t *testing.T) {
@@ -147,7 +173,7 @@ func TestQueries_ApprovePowerTicket(t *testing.T) {
 
 	ticketID := "ticket-power-1"
 	eventID := "event-power-1"
-	seedApprovalTicket(ctx, t, pool, ticketID, eventID, "POWER", "PENDING")
+	seedTicket(ctx, t, pool, ticketID, eventID, "POWER")
 
 	rows, err := q.ApprovePowerTicket(ctx, ApprovePowerTicketParams{
 		Approver: pgtype.Text{String: "admin-power", Valid: true},
@@ -161,7 +187,7 @@ func TestQueries_ApprovePowerTicket(t *testing.T) {
 		status   string
 		approver pgtype.Text
 	)
-	require.NoError(t, pool.QueryRow(ctx, `SELECT status, approver FROM approval_tickets WHERE id=$1`, ticketID).Scan(&status, &approver))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status, approver FROM tickets WHERE id=$1`, ticketID).Scan(&status, &approver))
 	require.Equal(t, "APPROVED", status)
 	require.True(t, approver.Valid)
 	require.Equal(t, "admin-power", approver.String)
@@ -342,11 +368,11 @@ func seedSystemAndService(ctx context.Context, t *testing.T, pool *pgxpool.Pool,
 	require.NoError(t, err)
 }
 
-func seedApprovalTicket(ctx context.Context, t *testing.T, pool *pgxpool.Pool, ticketID, eventID, opType, status string) {
+func seedTicket(ctx context.Context, t *testing.T, pool *pgxpool.Pool, ticketID, eventID, opType string) {
 	t.Helper()
 	_, err := pool.Exec(
 		ctx,
-		`INSERT INTO approval_tickets (
+		`INSERT INTO tickets (
              id, created_at, updated_at, event_id, operation_type, status, requester,
              approver, reason, reject_reason, selected_cluster_id,
              selected_storage_class, template_snapshot, instance_size_snapshot, modified_spec, parent_ticket_id
@@ -357,7 +383,7 @@ func seedApprovalTicket(ctx context.Context, t *testing.T, pool *pgxpool.Pool, t
 		ticketID,
 		eventID,
 		opType,
-		status,
+		"PENDING",
 	)
 	require.NoError(t, err)
 }

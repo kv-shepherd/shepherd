@@ -9,17 +9,14 @@ import (
 // ApprovalPolicy is the predicate function for approvalpolicy builders.
 type ApprovalPolicy func(*sql.Selector)
 
-// ApprovalTicket is the predicate function for approvalticket builders.
-type ApprovalTicket func(*sql.Selector)
-
 // AuditLog is the predicate function for auditlog builders.
 type AuditLog func(*sql.Selector)
 
 // AuthProvider is the predicate function for authprovider builders.
 type AuthProvider func(*sql.Selector)
 
-// BatchApprovalTicket is the predicate function for batchapprovalticket builders.
-type BatchApprovalTicket func(*sql.Selector)
+// BatchTicket is the predicate function for batchticket builders.
+type BatchTicket func(*sql.Selector)
 
 // Cluster is the predicate function for cluster builders.
 type Cluster func(*sql.Selector)
@@ -27,17 +24,20 @@ type Cluster func(*sql.Selector)
 // ClusterPolicy is the predicate function for clusterpolicy builders.
 type ClusterPolicy func(*sql.Selector)
 
+// DirectorySyncJob is the predicate function for directorysyncjob builders.
+type DirectorySyncJob func(*sql.Selector)
+
 // DomainEvent is the predicate function for domainevent builders.
 type DomainEvent func(*sql.Selector)
 
-// ExternalApprovalSystem is the predicate function for externalapprovalsystem builders.
-type ExternalApprovalSystem func(*sql.Selector)
+// ExternalCohort is the predicate function for externalcohort builders.
+type ExternalCohort func(*sql.Selector)
 
-// IdPGroupMapping is the predicate function for idpgroupmapping builders.
-type IdPGroupMapping func(*sql.Selector)
+// ExternalCohortGrant is the predicate function for externalcohortgrant builders.
+type ExternalCohortGrant func(*sql.Selector)
 
-// IdPSyncedGroup is the predicate function for idpsyncedgroup builders.
-type IdPSyncedGroup func(*sql.Selector)
+// ExternalCohortMapping is the predicate function for externalcohortmapping builders.
+type ExternalCohortMapping func(*sql.Selector)
 
 // InstanceSize is the predicate function for instancesize builders.
 type InstanceSize func(*sql.Selector)
@@ -50,6 +50,9 @@ type Notification func(*sql.Selector)
 
 // PendingAdoption is the predicate function for pendingadoption builders.
 type PendingAdoption func(*sql.Selector)
+
+// PlatformSetting is the predicate function for platformsetting builders.
+type PlatformSetting func(*sql.Selector)
 
 // RateLimitExemption is the predicate function for ratelimitexemption builders.
 type RateLimitExemption func(*sql.Selector)
@@ -78,8 +81,14 @@ type SystemSecret func(*sql.Selector)
 // Template is the predicate function for template builders.
 type Template func(*sql.Selector)
 
+// Ticket is the predicate function for ticket builders.
+type Ticket func(*sql.Selector)
+
 // User is the predicate function for user builders.
 type User func(*sql.Selector)
+
+// UserDirectoryProfile is the predicate function for userdirectoryprofile builders.
+type UserDirectoryProfile func(*sql.Selector)
 
 // VM is the predicate function for vm builders.
 type VM func(*sql.Selector)

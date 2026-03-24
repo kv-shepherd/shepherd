@@ -178,7 +178,7 @@ func requestStrictIgnorePaths(request *http.Request, basePath string) []string {
 			return []string{"$.body.spec_overrides.**"}
 		}
 	case http.MethodPatch:
-		if strings.HasPrefix(path, "/admin/auth-providers/") && !strings.Contains(path, "/group-mappings") {
+		if strings.HasPrefix(path, "/admin/auth-providers/") && !strings.Contains(path, "/cohort-mappings") {
 			return []string{"$.body.config.**"}
 		}
 		if strings.HasPrefix(path, "/admin/instance-sizes/") {
@@ -226,8 +226,11 @@ func responseStrictIgnorePaths(request *http.Request, basePath string) []string 
 		// AuthProviderType.config_schema is free-form JSON Schema content.
 		ignorePaths = append(ignorePaths, "$.body.**.config_schema.**")
 	}
-	if path == "/approvals" || strings.HasPrefix(path, "/approvals/") {
-		// ApprovalTicket.ticket_payload is contextual and intentionally free-form.
+	if path == "/tickets" ||
+		strings.HasPrefix(path, "/tickets/") ||
+		path == "/builtin-approval/tasks" ||
+		strings.HasPrefix(path, "/builtin-approval/tasks/") {
+		// Ticket.ticket_payload is contextual and intentionally free-form.
 		ignorePaths = append(ignorePaths, "$.body.**.ticket_payload.**")
 	}
 	if path == "/audit-logs" {

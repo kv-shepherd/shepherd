@@ -2,10 +2,12 @@
 
 import { Form, message } from 'antd';
 import type { TFunction } from 'i18next';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 
 import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
+import { SETUP_GUIDE_INVALIDATION_KEYS } from '@/features/setup-guide/queryKeys';
 import { api } from '@/lib/api/client';
+import { translateApiError } from '@/lib/api/errorMessage';
 
 import {
     getCapabilityLabels,
@@ -17,6 +19,7 @@ import {
 
 interface UseAdminInstanceSizesControllerArgs {
     t: TFunction;
+    onCreateSuccess?: (instanceSize: InstanceSize, context: { isFirstInstanceSize: boolean }) => boolean | void;
 }
 
 
@@ -50,6 +53,17 @@ interface InstanceSizeFormValues {
 
 type InstanceSizePayload = Record<string, unknown> & {
     name?: string;
+};
+
+const INSTANCE_SIZE_CREATE_INITIAL_VALUES: Partial<InstanceSizeFormValues> = {
+    catalog_scope: 'unclassified',
+    enabled: true,
+    sort_order: 0,
+    dedicated_cpu: false,
+    spec_text: '{}',
+    root_volume_mode_intent: 'auto',
+    dv_access_modes: undefined,
+    dv_volume_mode: undefined,
 };
 
 
@@ -121,7 +135,43 @@ function formToPayload(
     ) as Omit<InstanceSizeCreateRequest, 'name'> & { name?: string };
 }
 
-export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesControllerArgs) {
+function instanceSizeToFormValues(instanceSize: InstanceSize): InstanceSizeFormValues {
+    const hydrated = instanceSize as InstanceSize & {
+        cpu_request?: number;
+        memory_request_gi?: number;
+        sort_order?: number;
+    };
+
+    return {
+        name: instanceSize.name,
+        display_name: instanceSize.display_name,
+        description: instanceSize.description,
+        catalog_scope: instanceSize.catalog_scope,
+        cpu_cores: instanceSize.cpu_cores,
+        memory_gi: instanceSize.memory_gi,
+        disk_gb: instanceSize.disk_gb,
+        dedicated_cpu: instanceSize.dedicated_cpu,
+        cpu_overcommit_enabled: typeof hydrated.cpu_request === 'number' && hydrated.cpu_request > 0,
+        memory_overcommit_enabled: typeof hydrated.memory_request_gi === 'number' && hydrated.memory_request_gi > 0,
+        cpu_request: hydrated.cpu_request,
+        memory_request_gi: hydrated.memory_request_gi,
+        requires_sriov: instanceSize.requires_sriov,
+        root_volume_mode_intent:
+            (instanceSize.dv_access_modes?.length ?? 0) > 0 || instanceSize.dv_volume_mode
+                ? 'explicit'
+                : 'auto',
+        dv_access_modes: instanceSize.dv_access_modes,
+        dv_volume_mode: instanceSize.dv_volume_mode,
+        sort_order: hydrated.sort_order,
+        spec_text: JSON.stringify(instanceSize.spec_overrides ?? {}, null, 2),
+        enabled: instanceSize.enabled,
+    };
+}
+
+export function useAdminInstanceSizesController({
+    t,
+    onCreateSuccess,
+}: UseAdminInstanceSizesControllerArgs) {
     const [messageApi, messageContextHolder] = message.useMessage();
     const [globalSearch, setGlobalSearch] = useState('');
     const deferredSearch = useDeferredValue(globalSearch);
@@ -143,17 +193,27 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
         ['admin-instance-sizes'],
         () => api.GET('/admin/instance-sizes')
     );
+    const existingInstanceSizesTotal =
+        instanceSizesQuery.data?.items?.length ??
+        0;
+    const shouldContinueOnboarding = existingInstanceSizesTotal === 0;
 
     const createMutation = useApiMutation<InstanceSizeCreateRequest, InstanceSize>(
         (body) => api.POST('/admin/instance-sizes', { body }),
         {
-            invalidateKeys: [['admin-instance-sizes']],
-            onSuccess: () => {
-                messageApi.success(t('common:message.success'));
+            invalidateKeys: [['admin-instance-sizes'], ...SETUP_GUIDE_INVALIDATION_KEYS],
+            onSuccess: (instanceSize) => {
                 setCreateOpen(false);
                 createForm.resetFields();
+                const handled = onCreateSuccess?.(instanceSize, {
+                    isFirstInstanceSize: shouldContinueOnboarding,
+                }) ?? false;
+                if (handled) {
+                    return;
+                }
+                messageApi.success(t('common:message.success'));
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -163,27 +223,27 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
             body,
         }),
         {
-            invalidateKeys: [['admin-instance-sizes']],
+            invalidateKeys: [['admin-instance-sizes'], ...SETUP_GUIDE_INVALIDATION_KEYS],
             onSuccess: () => {
                 messageApi.success(t('common:message.success'));
                 setEditOpen(false);
                 setEditingItem(null);
                 editForm.resetFields();
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
     const deleteMutation = useApiAction<string>(
         (id) => api.DELETE('/admin/instance-sizes/{instance_size_id}', { params: { path: { instance_size_id: id } } }),
         {
-            invalidateKeys: [['admin-instance-sizes']],
+            invalidateKeys: [['admin-instance-sizes'], ...SETUP_GUIDE_INVALIDATION_KEYS],
             onSuccess: () => {
                 messageApi.success(t('common:message.success'));
                 setDeleteOpen(false);
                 setDeletingItem(null);
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -201,19 +261,12 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
             getRootVolumeModeLabels(instanceSize).some((label) => label.toLowerCase().includes(query))
         );
     }, [instanceSizesQuery.data?.items, deferredSearch]);
+    const editInitialValues = useMemo(
+        () => (editingItem ? instanceSizeToFormValues(editingItem) : undefined),
+        [editingItem]
+    );
 
     const openCreateModal = () => {
-        createForm.resetFields();
-        createForm.setFieldsValue({
-            catalog_scope: 'unclassified',
-            enabled: true,
-            sort_order: 0,
-            dedicated_cpu: false,
-            spec_text: '{}',
-            root_volume_mode_intent: 'auto',
-            dv_access_modes: undefined,
-            dv_volume_mode: undefined,
-        });
         setCreateOpen(true);
     };
 
@@ -221,65 +274,6 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
         setEditingItem(item);
         setEditOpen(true);
     };
-
-    // Edit modal uses destroyOnHidden, so form fields are unmounted while closed.
-    // Hydrate fields after modal opens to avoid empty required values.
-    useEffect(() => {
-        if (!editOpen || !editingItem) {
-            return;
-        }
-
-        const hydrated = editingItem as InstanceSize & {
-            cpu_request?: number;
-            memory_request_gi?: number;
-            sort_order?: number;
-        };
-
-        let phaseTwoTimer: ReturnType<typeof setTimeout> | null = null;
-
-        // Defer one tick so Modal/Form fields are mounted before hydration.
-        const timer = setTimeout(() => {
-            editForm.resetFields();
-            editForm.setFieldsValue({
-                name: editingItem.name,
-                display_name: editingItem.display_name,
-                description: editingItem.description,
-                catalog_scope: editingItem.catalog_scope,
-                cpu_cores: editingItem.cpu_cores,
-                memory_gi: editingItem.memory_gi,
-                disk_gb: editingItem.disk_gb,
-                dedicated_cpu: editingItem.dedicated_cpu,
-                cpu_overcommit_enabled: !!hydrated.cpu_request,
-                memory_overcommit_enabled: !!hydrated.memory_request_gi,
-                requires_sriov: editingItem.requires_sriov,
-                root_volume_mode_intent:
-                    (editingItem.dv_access_modes?.length ?? 0) > 0 || editingItem.dv_volume_mode
-                        ? 'explicit'
-                        : 'auto',
-                dv_access_modes: editingItem.dv_access_modes,
-                dv_volume_mode: editingItem.dv_volume_mode,
-                sort_order: hydrated.sort_order,
-                // spec_text: DynamicSchemaForm will parse this JSON string on mount
-                spec_text: JSON.stringify(editingItem.spec_overrides ?? {}, null, 2),
-                enabled: editingItem.enabled,
-            });
-
-            // Conditional overcommit fields mount one render later when their
-            // toggle booleans become true. Hydrate request values after mount.
-            phaseTwoTimer = setTimeout(() => {
-                editForm.setFieldsValue({
-                    cpu_request: hydrated.cpu_request,
-                    memory_request_gi: hydrated.memory_request_gi,
-                });
-            }, 0);
-        }, 0);
-        return () => {
-            clearTimeout(timer);
-            if (phaseTwoTimer) {
-                clearTimeout(phaseTwoTimer);
-            }
-        };
-    }, [editForm, editOpen, editingItem]);
 
     const openDeleteModal = (item: InstanceSize) => {
         setDeletingItem(item);
@@ -333,6 +327,8 @@ export function useAdminInstanceSizesController({ t }: UseAdminInstanceSizesCont
         deletingItem,
         createForm,
         editForm,
+        createInitialValues: INSTANCE_SIZE_CREATE_INITIAL_VALUES,
+        editInitialValues,
         openCreateModal,
         openEditModal,
         openDeleteModal,

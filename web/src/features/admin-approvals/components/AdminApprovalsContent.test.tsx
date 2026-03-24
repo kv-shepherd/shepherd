@@ -3,6 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const controllerState = vi.hoisted(() => ({
   overrides: {} as Record<string, unknown>,
+  push: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: controllerState.push,
+  }),
 }));
 
 function rootVolumeModeOptionKey(option: {
@@ -17,13 +24,90 @@ function rootVolumeModeOptionKey(option: {
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string | { defaultValue?: string }) => {
-      if (typeof fallback === "string") {
-        return fallback;
+    t: (
+      key: string,
+      options?: string | { defaultValue?: string; count?: number; index?: number },
+    ) => {
+      if (typeof options === "string") {
+        return options;
       }
-      return fallback?.defaultValue ?? key;
+      const labels: Record<string, string> = {
+        "common:nav.approval_tasks": "Approval Tasks",
+        "empty.pending_title": "No approvals waiting yet",
+        "empty.pending_description": "Finish setup or submit the first VM request to exercise the approval flow.",
+        "empty.open_vm_request": "Open VM Request",
+        "empty.filtered_title": "No approvals match the current filters",
+        "empty.filtered_description": "Reset the queue filters to see the broader approval backlog again.",
+        "summary.overview_title": "Review Overview",
+        "summary.scope_title": "Resource Context",
+        "summary.change_title": "Requested Change",
+        "summary.affected_items_title": "Affected Items",
+        subtitle: "Review and process pending approval tasks",
+        "summary.system": "System",
+        "summary.service": "Service",
+        "summary.namespace": "Namespace",
+        "summary.cluster": "Cluster",
+        "summary.cluster_environment": "Environment",
+        "summary.virtual_machine": "Virtual Machine",
+        "summary.virtual_machine_status": "VM Status",
+        "summary.request_vm_status": "Request-Time Status",
+        "summary.latest_vm_status": "Latest Status",
+        "summary.status_changed": "Changed since request",
+        "summary.template": "Template",
+        "summary.instance_size": "Instance Size",
+        "summary.current_resources": "Current Resources",
+        "summary.target_resources": "Requested Resources",
+        "summary.power_action": "Requested Action",
+        "summary.batch_count": "Affected Requests",
+        "summary.item": "Request",
+        "summary.scope": "Scope",
+        "summary.irreversible_title": "Irreversible request",
+        "summary.irreversible_description":
+          "Approving this request will permanently remove the virtual machine and related resources. Verify the system, service, namespace, cluster, and VM before continuing.",
+        "vm:status.STOPPED": "Stopped",
+      };
+      if (key === "summary.shape_cpu" && typeof options?.count === "number") {
+        return `${options.count} vCPU`;
+      }
+      if (key === "summary.shape_memory" && typeof options?.count === "number") {
+        return `${options.count} Gi memory`;
+      }
+      if (key === "summary.shape_disk" && typeof options?.count === "number") {
+        return `${options.count} Gi disk`;
+      }
+      if (key === "summary.item_fallback" && typeof options?.index === "number") {
+        return `Request #${options.index}`;
+      }
+      return labels[key] ?? options?.defaultValue ?? key;
     },
   }),
+}));
+
+vi.mock("@/features/setup-guide/hooks/useSetupGuide", () => ({
+  useSetupGuide: () => ({
+    systemsTotal: 1,
+    servicesTotal: 1,
+    vmsTotal: 0,
+    namespacesTotal: 1,
+    templatesTotal: 1,
+    instanceSizesTotal: 1,
+    canCreateSystem: true,
+    canCreateService: true,
+    canCreateVM: true,
+    canManageNamespaces: true,
+    canManageTemplates: true,
+    canManageInstanceSizes: true,
+    systemReady: true,
+    serviceReady: true,
+    prerequisitesReady: true,
+    vmRequestReady: true,
+    hasRequestedFirstVM: false,
+    isLoading: false,
+  }),
+}));
+
+vi.mock("@/features/setup-guide/components/SetupGuideCard", () => ({
+  SetupGuideCard: ({ variant }: { variant: string }) => <div>{`setup-guide-${variant}`}</div>,
 }));
 
 vi.mock("../hooks/useAdminApprovalsController", async () => {
@@ -73,8 +157,11 @@ vi.mock("../hooks/useAdminApprovalsController", async () => {
         changeOperationFilter: vi.fn(),
         selectedClusterFilter: "",
         changeSelectedClusterFilter: vi.fn(),
+        placementAdvisoryFilter: "",
+        changePlacementAdvisoryFilter: vi.fn(),
         placementSnapshotFilter: "ALL",
         changePlacementSnapshotFilter: vi.fn(),
+        resetFilters: vi.fn(),
         page: 1,
         pageSize: 20,
         setPage: vi.fn(),
@@ -98,6 +185,7 @@ vi.mock("../hooks/useAdminApprovalsController", async () => {
           pagination: { page: 1, per_page: 20, total: 0, total_pages: 0 },
         },
         isLoading: false,
+        listError: undefined,
         refetch: vi.fn(),
         approveModal: {
           id: "ticket-1",
@@ -316,15 +404,9 @@ describe("AdminApprovalsContent", () => {
 
     render(<AdminApprovalsContent />);
 
-    expect(screen.getByText("Batch Request")).toBeInTheDocument();
-    expect(screen.getAllByText("Ubuntu 22.04").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("M4 Large").length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(
-        "One approval decision will apply to every VM in this batch.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("80 GB").length).toBeGreaterThan(0);
+    expect(screen.getByText("Affected Items")).toBeInTheDocument();
+    expect(screen.getAllByText("Ubuntu 22.04 · M4 Large").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Requested Resources").length).toBeGreaterThan(0);
   }, 10000);
 
   it("keeps storage-class-resolvable clusters selectable and shows detected storage classes", () => {
@@ -416,5 +498,73 @@ describe("AdminApprovalsContent", () => {
 
     expect(screen.getByText("Root Volume Mode")).toBeInTheDocument();
     expect(screen.getAllByText("Block + ReadWriteMany").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the approve modal body scrollable when the content is long", () => {
+    const { container } = render(<AdminApprovalsContent />);
+
+    const modalBody = container.ownerDocument.querySelector(".ant-modal-body");
+    expect(modalBody).not.toBeNull();
+    expect(modalBody).toHaveStyle({
+      maxHeight: "calc(100vh - 220px)",
+      overflowY: "auto",
+      overflowX: "hidden",
+    });
+  });
+
+  it("uses the same title as the approval tasks navigation entry", () => {
+    render(<AdminApprovalsContent />);
+
+    expect(
+      screen.getByRole("heading", { name: "Approval Tasks" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Review and process pending approval tasks"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows irreversible delete approvals with full resource context", () => {
+    controllerState.overrides = {
+      approveModal: {
+        id: "ticket-delete-1",
+        event_id: "event-delete-1",
+        status: "PENDING",
+        operation_type: "DELETE",
+        requester: "alice",
+        reason: "cleanup old VM",
+        target_vm_name: "vm-old-01",
+        summary: {
+          irreversible: true,
+          system_name: "Payments",
+          service_name: "Billing",
+          namespace: "team-prod",
+          cluster_name: "Prod Cluster A",
+          cluster_environment: "prod",
+          vm_name: "vm-old-01",
+          request_vm_status: "STOPPED",
+          latest_vm_status: "NOT_FOUND",
+          template_name: "Ubuntu 22.04",
+          instance_size_name: "M4 Large",
+          current_cpu_cores: 4,
+          current_memory_gi: 8,
+          current_disk_gb: 80,
+        },
+      },
+    };
+
+    render(<AdminApprovalsContent />);
+
+    expect(screen.getByText("Irreversible request")).toBeInTheDocument();
+    expect(screen.getByText("Payments")).toBeInTheDocument();
+    expect(screen.getByText("Billing")).toBeInTheDocument();
+    expect(screen.getByText("Prod Cluster A")).toBeInTheDocument();
+    expect(screen.getByText("vm-old-01")).toBeInTheDocument();
+    expect(screen.getByText("Request-Time Status")).toBeInTheDocument();
+    expect(screen.getByText("Latest Status")).toBeInTheDocument();
+    expect(screen.getByText("Stopped")).toBeInTheDocument();
+    expect(screen.getByText("NOT_FOUND")).toBeInTheDocument();
+    expect(screen.getByText("Ubuntu 22.04")).toBeInTheDocument();
+    expect(screen.getByText("M4 Large")).toBeInTheDocument();
+    expect(screen.getByText("4 vCPU · 8 Gi memory · 80 Gi disk")).toBeInTheDocument();
   });
 });

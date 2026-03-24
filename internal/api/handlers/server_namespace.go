@@ -248,6 +248,26 @@ func (s *Server) DeleteNamespace(c *gin.Context, namespaceID generated.Namespace
 		c.JSON(http.StatusConflict, generated.Error{
 			Code:    "NAMESPACE_IN_USE",
 			Message: "namespace is referenced by existing VM records",
+			Params: map[string]interface{}{
+				"vm_count": vmCount,
+			},
+		})
+		return
+	}
+
+	activeCreateCount, err := s.countActiveCreateTicketsForNamespace(ctx, ns.Name)
+	if err != nil {
+		logger.Error("failed to check namespace active requests", zap.Error(err), zap.String("namespace", ns.Name))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if activeCreateCount > 0 {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "NAMESPACE_HAS_ACTIVE_REQUESTS",
+			Message: "namespace is referenced by active VM create requests",
+			Params: map[string]interface{}{
+				"active_request_count": activeCreateCount,
+			},
 		})
 		return
 	}

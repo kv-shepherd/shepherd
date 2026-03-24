@@ -322,6 +322,64 @@ func (w *ApprovalAtomicWriter) ApproveDeleteAndEnqueue(
 	return nil
 }
 
+// ApproveModifyAndEnqueue atomically:
+// 1) marks ticket APPROVED,
+// 2) marks event PROCESSING,
+// 3) inserts River vm_modify job via InsertTx.
+func (w *ApprovalAtomicWriter) ApproveModifyAndEnqueue(
+	ctx context.Context,
+	ticketID, eventID, approver string,
+) error {
+	if w.pool == nil || w.riverClient == nil || w.queries == nil {
+		return fmt.Errorf("approval atomic writer is not initialized")
+	}
+	if strings.TrimSpace(ticketID) == "" || strings.TrimSpace(eventID) == "" || strings.TrimSpace(approver) == "" {
+		return fmt.Errorf("approve modify input is incomplete")
+	}
+
+	tx, err := w.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin approval modify tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := w.queries.WithTx(tx)
+
+	affected, err := qtx.ApproveModifyTicket(ctx, sqlcrepo.ApproveModifyTicketParams{
+		Approver: pgtype.Text{String: approver, Valid: true},
+		ID:       ticketID,
+		EventID:  eventID,
+	})
+	if err != nil {
+		return fmt.Errorf("approve modify ticket %s: %w", ticketID, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("approve modify ticket %s: not pending or operation type mismatch", ticketID)
+	}
+
+	affected, err = qtx.SetDomainEventStatus(ctx, sqlcrepo.SetDomainEventStatusParams{
+		ID:     eventID,
+		Status: "PROCESSING",
+	})
+	if err != nil {
+		return fmt.Errorf("set event %s to PROCESSING: %w", eventID, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("domain event %s not found", eventID)
+	}
+
+	if _, err := w.riverClient.InsertTx(ctx, tx, jobs.VMModifyArgs{
+		EventID: eventID,
+	}, nil); err != nil {
+		return fmt.Errorf("enqueue vm_modify for event %s: %w", eventID, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit approval modify tx: %w", err)
+	}
+	return nil
+}
+
 // ApprovePowerAndEnqueue atomically:
 // 1) marks ticket APPROVED,
 // 2) inserts River vm_power job via InsertTx.

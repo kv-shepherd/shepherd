@@ -21,6 +21,21 @@ func requireGlobalPermission(c *gin.Context, permission string) bool {
 	return requireAnyGlobalPermission(c, permission)
 }
 
+func hasGlobalPermission(c *gin.Context, permission string) bool {
+	permsRaw, exists := c.Get("permissions")
+	if !exists {
+		return false
+	}
+	permList, ok := permsRaw.([]string)
+	if !ok {
+		return false
+	}
+	if slices.Contains(permList, "platform:admin") {
+		return true
+	}
+	return slices.Contains(permList, permission)
+}
+
 // requireAnyGlobalPermission allows one of the provided permissions.
 func requireAnyGlobalPermission(c *gin.Context, permissions ...string) bool {
 	actor := middleware.GetUserID(c.Request.Context())

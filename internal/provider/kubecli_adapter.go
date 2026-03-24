@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"sync"
@@ -24,16 +25,23 @@ type KubeconfigLoader func(cluster string) ([]byte, error)
 // backed by kubeconfig bytes loaded from persistence.
 func NewClusterClientFactoryFromKubeconfigLoader(loader KubeconfigLoader) ClusterClientFactory {
 	factory := &kubeconfigClusterFactory{
-		loader: loader,
-		cache:  make(map[string]KubeVirtClusterClient),
+		loader:      loader,
+		buildClient: buildClusterClientFromKubeconfig,
+		cache:       make(map[string]kubeconfigClusterCacheEntry),
 	}
 	return factory.get
 }
 
+type kubeconfigClusterCacheEntry struct {
+	kubeconfigHash [sha256.Size]byte
+	client         KubeVirtClusterClient
+}
+
 type kubeconfigClusterFactory struct {
-	loader KubeconfigLoader
-	mu     sync.RWMutex
-	cache  map[string]KubeVirtClusterClient
+	loader      KubeconfigLoader
+	buildClient func(cluster string, kubeconfig []byte) (KubeVirtClusterClient, error)
+	mu          sync.RWMutex
+	cache       map[string]kubeconfigClusterCacheEntry
 }
 
 func (f *kubeconfigClusterFactory) get(cluster string) (KubeVirtClusterClient, error) {
@@ -45,21 +53,48 @@ func (f *kubeconfigClusterFactory) get(cluster string) (KubeVirtClusterClient, e
 		return nil, fmt.Errorf("kubeconfig loader is not configured")
 	}
 
-	f.mu.RLock()
-	if client, ok := f.cache[cluster]; ok {
-		f.mu.RUnlock()
-		return client, nil
-	}
-	f.mu.RUnlock()
-
 	kubeconfig, err := f.loader(cluster)
 	if err != nil {
+		f.evict(cluster)
 		return nil, fmt.Errorf("load kubeconfig for cluster %s: %w", cluster, err)
 	}
 	if len(kubeconfig) == 0 {
+		f.evict(cluster)
 		return nil, fmt.Errorf("cluster %s kubeconfig is empty", cluster)
 	}
 
+	kubeconfigHash := sha256.Sum256(kubeconfig)
+
+	f.mu.RLock()
+	if entry, ok := f.cache[cluster]; ok && entry.kubeconfigHash == kubeconfigHash {
+		f.mu.RUnlock()
+		return entry.client, nil
+	}
+	f.mu.RUnlock()
+
+	client, err := f.buildClient(cluster, kubeconfig)
+	if err != nil {
+		f.evict(cluster)
+		return nil, err
+	}
+
+	f.mu.Lock()
+	f.cache[cluster] = kubeconfigClusterCacheEntry{
+		kubeconfigHash: kubeconfigHash,
+		client:         client,
+	}
+	f.mu.Unlock()
+
+	return client, nil
+}
+
+func (f *kubeconfigClusterFactory) evict(cluster string) {
+	f.mu.Lock()
+	delete(f.cache, cluster)
+	f.mu.Unlock()
+}
+
+func buildClusterClientFromKubeconfig(cluster string, kubeconfig []byte) (KubeVirtClusterClient, error) {
 	restCfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("parse kubeconfig for cluster %s: %w", cluster, err)
@@ -76,16 +111,10 @@ func (f *kubeconfigClusterFactory) get(cluster string) (KubeVirtClusterClient, e
 		return nil, fmt.Errorf("build dynamic client for cluster %s: %w", cluster, err)
 	}
 
-	client := &kubevirtClusterClient{
+	return &kubevirtClusterClient{
 		client:    virtClient,
 		ssaClient: NewKubevirtSSAApplier(dynClient),
-	}
-
-	f.mu.Lock()
-	f.cache[cluster] = client
-	f.mu.Unlock()
-
-	return client, nil
+	}, nil
 }
 
 type kubevirtClusterClient struct {

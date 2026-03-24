@@ -85,7 +85,7 @@ The following features are **explicitly out of scope** for V1:
 | River Jobs | `internal/jobs/vm_create.go`, `vm_delete.go`, `vm_power.go` | ✅ | VMCreate/Delete/Power workers with retry + idempotency guard + audit |
 | EventDispatcher | `internal/domain/dispatcher.go` | ✅ | - |
 | Domain Event Payloads | `internal/domain/event.go` | ✅ | VMCreationPayload, VMDeletePayload, VMPowerPayload |
-| ApprovalGateway | `internal/governance/approval/gateway.go` | ✅ | Approve/Reject/Cancel/ListPending + ADR-0012 atomic writer integration |
+| ApprovalGateway | `internal/governance/approval/provider_router.go`, `internal/governance/ticketing/service.go` | ✅ | Router seam + ticket execution service for Approve/Reject/Cancel/ListPending and ADR-0012 atomic writer integration |
 | ApprovalValidator | `internal/service/approval_validator.go` | ✅ | Cluster health + overcommit + dedicated CPU conflict + capability matching (GPU/SR-IOV/Hugepages) |
 | AuditLogger | `internal/governance/audit/logger.go` | ✅ | LogAction + LogVMOperation |
 | TemplateService | `internal/service/template_service.go` | ✅ | - |
@@ -363,7 +363,7 @@ const getPriorityTier = (createdAt: Date): number => {
 }
 ```
 
-> **User Self-Cancellation**: Users can cancel their own pending requests at any time via `POST /api/v1/approvals/{id}/cancel`. This is independent of timeout - users may cancel to resubmit with different parameters.
+> **User Self-Cancellation**: Users can cancel their own pending requests at any time via `POST /api/v1/tickets/{id}/cancel`. This is independent of timeout - users may cancel to resubmit with different parameters.
 
 ### Admin Modification
 
@@ -686,7 +686,6 @@ Batch operations MUST follow ADR-0015 §19 as the normative model:
   - `GET /api/v1/vms/batch/{id}`
   - `POST /api/v1/vms/batch/{id}/retry`
   - `POST /api/v1/vms/batch/{id}/cancel`
-  - `POST /api/v1/approvals/batch` (compat submit alias)
 - Implemented runtime guards:
   - parent+child atomic submission transaction
   - idempotency key replay to existing `batch_id`
@@ -713,7 +712,6 @@ Batch operations MUST follow ADR-0015 §19 as the normative model:
 | Batch status query | `GET /api/v1/vms/batch/{id}` | Parent summary + child states |
 | Batch retry failed | `POST /api/v1/vms/batch/{id}/retry` | Requeue failed child items only |
 | Batch terminate pending | `POST /api/v1/vms/batch/{id}/cancel` | Cancel not-yet-started children |
-| Batch approval compatibility | `POST /api/v1/approvals/batch` | Supported; normalized into canonical parent-child pipeline |
 | Batch power compatibility | `POST /api/v1/vms/batch/power` | Supported; normalized into canonical parent-child pipeline |
 
 ### Parent-Child Data Model
@@ -1305,19 +1303,19 @@ func (v *TokenValidator) Validate(ctx context.Context, rawToken string) (*Claims
 
 | Table | Purpose |
 |-------|---------|
-| `auth_providers` | OIDC/LDAP provider configuration |
-| `idp_synced_groups` | Groups discovered from IdP |
-| `idp_group_mappings` | IdP group → Shepherd role mapping |
+| `auth_providers` | External auth provider configuration |
+| `external_cohorts` | Observed external cohorts discovered from login or scoped sync |
+| `external_cohort_mappings` | External cohort → Shepherd RBAC mapping policy |
 
 ### 8.4 User Login Flow
 
 See [master-flow.md Stage 2.D](../interaction-flows/master-flow.md#stage-2-d) for complete flow diagram.
 
 Key operations:
-1. Validate OIDC/LDAP credentials
-2. Extract user groups from token/LDAP
-3. Delete old IdP-assigned RoleBindings (`source = 'idp_mapping'`)
-4. Recreate RoleBindings based on current group mappings
+1. Complete provider-owned external auth flow
+2. Upsert canonical user via JIT provisioning
+3. Project observed external cohorts for cataloging and mapping
+4. Reconcile platform RoleBindings from current external cohort mappings
 5. Return session JWT
 
 ---
@@ -1329,25 +1327,15 @@ Key operations:
 ### 9.1 Interface Definition
 
 ```go
-// internal/governance/approval/external.go
+// internal/provider/approval.go
 
-// ExternalApprovalProvider defines the contract for external approval systems
-type ExternalApprovalProvider interface {
-    // SubmitForApproval sends a request to external system
-    SubmitForApproval(ctx context.Context, ticket *ApprovalTicket) (externalID string, err error)
-    
-    // CheckStatus polls external system for decision
-    CheckStatus(ctx context.Context, externalID string) (ExternalDecision, error)
-    
-    // CancelRequest cancels pending external request
-    CancelRequest(ctx context.Context, externalID string) error
-}
-
-type ExternalDecision struct {
-    Status    string    // "pending", "approved", "rejected"
-    Approver  string    // External approver ID
-    Comment   string    // Approval/rejection reason
-    Timestamp time.Time
+// ApprovalProvider defines the provider-owned approval workflow seam.
+// V1 keeps the built-in approval provider behind this contract so core code
+// only depends on canonical submission/decision semantics.
+type ApprovalProvider interface {
+    SubmitForApproval(ctx context.Context, req *ApprovalRequest) (*ApprovalResponse, error)
+    ProcessApproval(ctx context.Context, ticketID string, decision ApprovalDecision) error
+    Type() string
 }
 ```
 
@@ -1494,10 +1482,10 @@ If >50% of resources detected as ghosts, halt and alert.
 - [ ] Environment isolation enforced (via Cluster + RoleBinding.allowed_environments)
 - [ ] Delete confirmation mechanism works (tiered by entity/environment)
 - [x] VNC token security enforced (single-use, time-bounded, AES-256-GCM encrypted)
-- [ ] **IdP Authentication** (V1):
-  - [ ] OIDC login flow works (token validation per checklist)
-  - [ ] LDAP login flow works
-  - [ ] IdP group → role mapping synchronized on login
+- [ ] **External Authentication** (V1):
+  - [ ] Runtime provider login flow works
+  - [ ] JIT user provisioning works
+  - [ ] External cohort → RBAC mapping reconciles on login
 - [ ] **Resource-level RBAC**:
   - [ ] Member management API functional
   - [ ] Permission inheritance chain correct
@@ -1553,10 +1541,10 @@ If >50% of resources detected as ghosts, halt and alert.
 | §16 Global Naming | ✅ Done | [01-contracts.md §1.1](01-contracts.md#11-naming-constraints-adr-0019) | RFC 1035 + ADR-0019 extension |
 | §17 Template Snapshot | ✅ Done | [master-flow.md Stage 5.B](../interaction-flows/master-flow.md#stage-5-b) | ApprovalTicket stores immutable snapshot |
 | §18 VNC Permissions | ⚠️ Partial | Section 6.2 (this doc) | V1 Stage 6 baseline implemented (request/status/open + approval + audit + AES-256-GCM encrypted single-use credential); proxy internals + active revocation remain V2+ |
-| §19 Batch Operations | ⚠️ Partial | Section 5.6 (this doc) | Runtime API + child execution dispatch + two-layer throttling + parent projection persistence + admin override APIs + `/vms/batch/power` compatibility execution implemented (`/vms/batch` submit/query/retry/cancel + `/vms/batch/power` + `/approvals/batch` + `/admin/rate-limits/*`), but frontend queue UX is still pending |
+| §19 Batch Operations | ⚠️ Partial | Section 5.6 (this doc) | Runtime API + child execution dispatch + two-layer throttling + parent projection persistence + admin override APIs + `/vms/batch/power` compatibility execution implemented (`/vms/batch` submit/query/retry/cancel + `/vms/batch/power` + `/admin/rate-limits/*`), but frontend queue UX is still pending |
 | §20 Notification System | ✅ V1 Inbox | Section 6.3 (this doc) | Sync writes; external adapters V2+ |
 | §21 Scope Exclusions | 📋 Reference | ADR-0015 | Lists deferred items |
-| §22 Authentication | ⚠️ Partial | Section 8 (this doc) | Local/JWT core exists; OIDC/LDAP group-mapping flow pending |
+| §22 Authentication | ⚠️ Partial | Section 8 (this doc) | Local/JWT core exists; external runtime provider + JIT + cohort mapping rollout is in progress |
 | External Approval Systems | ⚠️ V1 Interface | - | Standard data interface; plugin layer |
 
 > **Legend**: ✅ Done = Implemented in V1 | ⚠️ Partial = Implemented subset, ADR gap remains | ❌ Deferred = planned but not implemented | ⚠️ V1 Interface = Only data interface defined

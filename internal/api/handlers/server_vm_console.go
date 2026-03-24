@@ -14,9 +14,9 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalpolicy"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
@@ -59,6 +59,7 @@ func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmID generated.VMID) {
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	vm = s.refreshVMLiveState(ctx, vm)
 
 	env, err := s.resolveNamespaceEnvironment(ctx, vm.Namespace)
 	if err != nil {
@@ -162,6 +163,7 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmID generated.VMID) {
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	vm = s.refreshVMLiveState(ctx, vm)
 
 	env, err := s.resolveNamespaceEnvironment(ctx, vm.Namespace)
 	if err != nil {
@@ -228,19 +230,19 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmID generated.VMID) {
 	}
 
 	switch ticket.Status {
-	case approvalticket.StatusPENDING, approvalticket.StatusEXECUTING:
+	case entticket.StatusPENDING, entticket.StatusEXECUTING:
 		c.JSON(http.StatusOK, generated.VMConsoleStatusResponse{
 			Status:   generated.VMConsoleStatusPENDINGAPPROVAL,
 			TicketId: ticket.ID,
 		})
 		return
-	case approvalticket.StatusREJECTED, approvalticket.StatusCANCELLED, approvalticket.StatusFAILED:
+	case entticket.StatusREJECTED, entticket.StatusCANCELLED, entticket.StatusFAILED:
 		c.JSON(http.StatusOK, generated.VMConsoleStatusResponse{
 			Status:   generated.VMConsoleStatusREJECTED,
 			TicketId: ticket.ID,
 		})
 		return
-	case approvalticket.StatusAPPROVED, approvalticket.StatusSUCCESS:
+	case entticket.StatusAPPROVED, entticket.StatusSUCCESS:
 		// Continue below and issue the short-lived VNC URL.
 	default:
 		c.JSON(http.StatusOK, generated.VMConsoleStatusResponse{
@@ -328,6 +330,7 @@ func (s *Server) OpenVMVNC(c *gin.Context, vmID generated.VMID) {
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	vm = s.refreshVMLiveState(ctx, vm)
 	if vm.Status != entvm.StatusRUNNING {
 		c.JSON(http.StatusConflict, generated.Error{Code: "VM_NOT_RUNNING"})
 		return
@@ -366,17 +369,17 @@ func (s *Server) hasPendingVNCRequest(ctx context.Context, vmID, requester strin
 		return false, nil
 	}
 
-	return s.client.ApprovalTicket.Query().
+	return s.client.Ticket.Query().
 		Where(
-			approvalticket.RequesterEQ(requester),
-			approvalticket.OperationTypeEQ(approvalticket.OperationTypeVNC_ACCESS),
-			approvalticket.StatusEQ(approvalticket.StatusPENDING),
-			approvalticket.EventIDIn(eventIDs...),
+			entticket.RequesterEQ(requester),
+			entticket.OperationTypeEQ(entticket.OperationTypeVNC_ACCESS),
+			entticket.StatusEQ(entticket.StatusPENDING),
+			entticket.EventIDIn(eventIDs...),
 		).
 		Exist(ctx)
 }
 
-func (s *Server) latestVNCRequest(ctx context.Context, vmID, requester string) (*ent.ApprovalTicket, error) {
+func (s *Server) latestVNCRequest(ctx context.Context, vmID, requester string) (*ent.Ticket, error) {
 	eventIDs, err := s.client.DomainEvent.Query().
 		Where(
 			domainevent.AggregateTypeEQ("vm"),
@@ -392,13 +395,13 @@ func (s *Server) latestVNCRequest(ctx context.Context, vmID, requester string) (
 		return nil, nil
 	}
 
-	ticket, err := s.client.ApprovalTicket.Query().
+	ticket, err := s.client.Ticket.Query().
 		Where(
-			approvalticket.RequesterEQ(requester),
-			approvalticket.OperationTypeEQ(approvalticket.OperationTypeVNC_ACCESS),
-			approvalticket.EventIDIn(eventIDs...),
+			entticket.RequesterEQ(requester),
+			entticket.OperationTypeEQ(entticket.OperationTypeVNC_ACCESS),
+			entticket.EventIDIn(eventIDs...),
 		).
-		Order(ent.Desc(approvalticket.FieldCreatedAt)).
+		Order(ent.Desc(entticket.FieldCreatedAt)).
 		First(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -447,11 +450,11 @@ func (s *Server) createVNCApprovalRequest(ctx context.Context, vm *ent.VM, actor
 		return "", err
 	}
 
-	if _, err := tx.ApprovalTicket.Create().
+	if _, err := tx.Ticket.Create().
 		SetID(ticketID.String()).
 		SetEventID(eventID.String()).
-		SetOperationType(approvalticket.OperationTypeVNC_ACCESS).
-		SetStatus(approvalticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeVNC_ACCESS).
+		SetStatus(entticket.StatusPENDING).
 		SetRequester(actor).
 		SetReason("vnc access request").
 		Save(ctx); err != nil {

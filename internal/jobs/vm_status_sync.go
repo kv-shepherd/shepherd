@@ -23,11 +23,11 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
-	"kv-shepherd.io/shepherd/internal/provider"
+	infracontract "kv-shepherd.io/shepherd/internal/provider/infracontract"
 	"kv-shepherd.io/shepherd/internal/service"
 )
 
@@ -62,7 +62,7 @@ const (
 // ---------------------------------------------------------------------------
 
 // VMStatusSyncArgs carries only EventID (claim-check pattern, ADR-0009).
-// VM identity is resolved from DB at runtime: EventID -> ApprovalTicket -> VM row.
+// VM identity is resolved from DB at runtime: EventID -> Ticket -> VM row.
 type VMStatusSyncArgs struct {
 	EventID string `json:"event_id"`
 }
@@ -84,7 +84,7 @@ func (VMStatusSyncArgs) Kind() string { return VMStatusSyncJobKind }
 // VMStatusSyncWorker polls K8s for a single VM's status and persists it.
 //
 // Execution flow (ADR-0038 Phase 2):
-//  1. Resolve VM row from EventID (EventID -> ApprovalTicket -> VM)
+//  1. Resolve VM row from EventID (EventID -> Ticket -> VM)
 //  2. Call K8s List (metadata.name filter + resourceVersion) via VMService
 //  3. Map K8s status → DB status; detect tier transition
 //  4. Persist: status, last_k8s_rv, last_polled_at, polling_tier, poll_interval_sec
@@ -162,7 +162,7 @@ func (w *VMStatusSyncWorker) Work(ctx context.Context, job *river.Job[VMStatusSy
 	if vmRow.LastK8sRv != nil {
 		lastRV = strings.TrimSpace(*vmRow.LastK8sRv)
 	}
-	vmList, err := w.vmService.ListVMs(ctx, clusterID, vmRow.Namespace, provider.ListOptions{
+	vmList, err := w.vmService.ListVMs(ctx, clusterID, vmRow.Namespace, infracontract.ListOptions{
 		FieldSelector:     "metadata.name=" + vmRow.Name,
 		Limit:             1,
 		ResourceVersion:   lastRV,
@@ -341,10 +341,10 @@ func (w *VMStatusSyncWorker) scheduleNext(ctx context.Context, eventID string, i
 }
 
 // resolveVMByEventID resolves the current VM row associated with an EventID.
-// Lookup path (claim-check): EventID -> ApprovalTicket -> VM(ticket_id).
+// Lookup path (claim-check): EventID -> Ticket -> VM(ticket_id).
 func (w *VMStatusSyncWorker) resolveVMByEventID(ctx context.Context, eventID string) (*ent.VM, error) {
-	ticket, err := w.entClient.ApprovalTicket.Query().
-		Where(approvalticket.EventIDEQ(eventID)).
+	ticket, err := w.entClient.Ticket.Query().
+		Where(entticket.EventIDEQ(eventID)).
 		Only(ctx)
 	if err != nil {
 		return nil, err
@@ -362,7 +362,7 @@ func (w *VMStatusSyncWorker) resolveVMByEventID(ctx context.Context, eventID str
 // Transitional states → high-frequency; stable states → low-frequency.
 func tierForStatus(status vm.Status) vm.PollingTier {
 	switch status {
-	case vm.StatusCREATING, vm.StatusDELETING, vm.StatusSTOPPING, vm.StatusMIGRATING, vm.StatusPENDING:
+	case vm.StatusCREATING, vm.StatusSTARTING, vm.StatusDELETING, vm.StatusSTOPPING, vm.StatusMIGRATING, vm.StatusPENDING:
 		return vm.PollingTierHigh
 	case vm.StatusRUNNING, vm.StatusSTOPPED, vm.StatusFAILED, vm.StatusPAUSED, vm.StatusUNKNOWN:
 		return vm.PollingTierLow
@@ -388,6 +388,8 @@ func mapDomainStatusToEntVM(status domain.VMStatus) vm.Status {
 	switch status {
 	case domain.VMStatusCreating:
 		return vm.StatusCREATING
+	case domain.VMStatusStarting:
+		return vm.StatusSTARTING
 	case domain.VMStatusRunning:
 		return vm.StatusRUNNING
 	case domain.VMStatusStopping:
@@ -406,22 +408,30 @@ func mapDomainStatusToEntVM(status domain.VMStatus) vm.Status {
 		return vm.StatusPAUSED
 	case domain.VMStatusUnknown:
 		return vm.StatusUNKNOWN
+	case domain.VMStatusNotFound:
+		return vm.StatusNOT_FOUND
 	default:
 		return vm.StatusUNKNOWN
 	}
 }
 
-// reconcileCreateBootstrapStatus prevents premature CREATING→STOPPED/UNKNOWN
-// downgrade during the initial create bootstrap window.
+// reconcileCreateBootstrapStatus prevents premature bootstrap downgrades during
+// the initial create/start convergence window.
 func reconcileCreateBootstrapStatus(vmRow *ent.VM, observed vm.Status, now time.Time) vm.Status {
 	if shouldHoldCreateBootstrapStatus(vmRow, observed, now) {
-		return vm.StatusCREATING
+		return vmRow.Status
 	}
 	return observed
 }
 
+// reconcileMissingVMStatus handles VMs that K8s list returned successfully
+// but the VM was not in the response → resource no longer exists → NOT_FOUND.
 func reconcileMissingVMStatus(vmRow *ent.VM, now time.Time) vm.Status {
-	return reconcileCreateBootstrapStatus(vmRow, vm.StatusUNKNOWN, now)
+	// During bootstrap, hold the current status even if VM is not yet visible.
+	if shouldHoldCreateBootstrapStatus(vmRow, vm.StatusNOT_FOUND, now) {
+		return vmRow.Status
+	}
+	return vm.StatusNOT_FOUND
 }
 
 func shouldHoldCreateBootstrapStatus(vmRow *ent.VM, observed vm.Status, now time.Time) bool {
@@ -431,16 +441,30 @@ func shouldHoldCreateBootstrapStatus(vmRow *ent.VM, observed vm.Status, now time
 	if vmRow.PollingTier != vm.PollingTierHigh {
 		return false
 	}
-	if vmRow.Status != vm.StatusCREATING && vmRow.Status != vm.StatusRUNNING {
+	if vmRow.Status != vm.StatusCREATING && vmRow.Status != vm.StatusSTARTING && vmRow.Status != vm.StatusRUNNING {
 		return false
 	}
-	if observed != vm.StatusSTOPPED && observed != vm.StatusUNKNOWN {
+	if observed != vm.StatusSTOPPED && observed != vm.StatusUNKNOWN && observed != vm.StatusNOT_FOUND {
 		return false
+	}
+	anchor, ok := bootstrapStatusAnchor(vmRow)
+	if !ok {
+		return false
+	}
+	return now.Sub(anchor) <= createBootstrapGraceWindow
+}
+
+func bootstrapStatusAnchor(vmRow *ent.VM) (time.Time, bool) {
+	if vmRow == nil {
+		return time.Time{}, false
+	}
+	if vmRow.HighTierSince != nil && !vmRow.HighTierSince.IsZero() {
+		return *vmRow.HighTierSince, true
 	}
 	if vmRow.CreatedAt.IsZero() {
-		return false
+		return time.Time{}, false
 	}
-	return now.Sub(vmRow.CreatedAt) <= createBootstrapGraceWindow
+	return vmRow.CreatedAt, true
 }
 
 // deriveHighTierSince computes the persisted high-tier entry timestamp.

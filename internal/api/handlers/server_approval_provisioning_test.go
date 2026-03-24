@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"kv-shepherd.io/shepherd/ent/approvalticket"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/domain"
@@ -34,7 +34,7 @@ func TestListApprovals_CREATE_ProvisioningIncludedWhenVMExists(t *testing.T) {
 	mustCreateDomainEvent(t, client, eventID, rawPayload)
 
 	ticketID := "ticket-" + uuid.NewString()
-	mustCreateApprovalTicket(t, client, ticketID, eventID, approvalticket.OperationTypeCREATE, "user-a")
+	mustCreateTicket(t, client, ticketID, eventID, entticket.OperationTypeCREATE, "user-a")
 
 	vmID := "vm-" + uuid.NewString()
 	vmName := "vm" + vmID[len(vmID)-4:]
@@ -97,8 +97,8 @@ func TestListApprovals_CREATE_ProvisioningIncludedWhenVMExists(t *testing.T) {
 		VMService: service.NewVMService(mock),
 	})
 
-	c, w := newAuthedGinContext(t, http.MethodGet, "/approvals", "", "admin-1", []string{"approval:view", "platform:admin"})
-	srv.ListApprovals(c, generated.ListApprovalsParams{})
+	c, w := newAuthedGinContext(t, http.MethodGet, "/tickets", "", "admin-1", []string{"ticket:view", "platform:admin"})
+	srv.ListTickets(c, generated.ListTicketsParams{})
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())

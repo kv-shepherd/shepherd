@@ -21,14 +21,35 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import {
   AuditOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
   DeleteOutlined,
   ExclamationCircleOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
+import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
+import { ActionEmptyState } from "@/components/feedback/ActionEmptyState";
+import { SummaryMetricCard } from "@/components/feedback/SummaryMetricCard";
+import {
+  QueueReviewGlyph,
+  RequestsOverviewGlyph,
+  ServiceWorkspaceGlyph,
+  VirtualMachinesOverviewGlyph,
+} from "@/components/illustrations/DashboardIllustrations";
+import { PageHeader, PageSurface } from "@/components/layouts/PageSection";
+import { SetupGuideCard } from "@/features/setup-guide/components/SetupGuideCard";
+import { useSetupGuide } from "@/features/setup-guide/hooks/useSetupGuide";
+import { translateApiError } from "@/lib/api/errorMessage";
+import {
+  approvalPrimaryAlert,
+  approvalSummaryMeta,
+  approvalSummaryTitle,
+  buildApprovalBatchDisplayItems,
+  buildApprovalChangeItems,
+  buildApprovalOverviewItems,
+  buildApprovalScopeItems,
+  formatApprovalRecordID,
+} from "@/features/approval-shared/summary";
 import { useAdminApprovalsController } from "../hooks/useAdminApprovalsController";
 import {
   ApprovalProvisioningCard,
@@ -45,30 +66,16 @@ import {
   STATUS_COLORS,
   STATUS_FILTER_OPTIONS,
   type ApprovalStatus,
-  type ApprovalTicket,
+  type ApprovalTask,
   type Cluster,
 } from "../types";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 type PayloadRecord = Record<string, unknown>;
 type RootVolumeResolution = NonNullable<
   NonNullable<Cluster["compatibility"]>["root_volume_resolution"]
 >;
 type RootVolumeModeOption = NonNullable<RootVolumeResolution["mode_options"]>[number];
-
-/** Safely convert an unknown ticket_payload field to a displayable string. */
-function toStr(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "string") return value || "—";
-  return String(value);
-}
-
-function formatTicketID(id: string): string {
-  if (id.length <= 14) {
-    return id;
-  }
-  return `${id.slice(0, 8)}…${id.slice(-4)}`;
-}
 
 function asPayloadRecord(value: unknown): PayloadRecord | undefined {
   return typeof value === "object" && value !== null
@@ -85,44 +92,17 @@ function asPayloadRecords(value: unknown): PayloadRecord[] {
     .filter((item): item is PayloadRecord => Boolean(item));
 }
 
-function payloadString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() !== ""
-    ? value.trim()
-    : undefined;
-}
-
-function payloadNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : undefined;
-}
-
 function payloadBool(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
-}
-
-function templateLabel(payload: PayloadRecord | undefined): string {
-  return toStr(
-    payload?.template_label ??
-      payload?.template_display_name ??
-      payload?.template_name ??
-      payload?.template_id,
-  );
-}
-
-function instanceSizeLabel(payload: PayloadRecord | undefined): string {
-  return toStr(
-    payload?.instance_size_label ??
-      payload?.instance_size_display_name ??
-      payload?.instance_size_name ??
-      payload?.instance_size_id,
-  );
 }
 
 function instanceSizeDiskGB(
   payload: PayloadRecord | undefined,
 ): number | undefined {
-  return payloadNumber(payload?.instance_size_disk_gb);
+  return typeof payload?.instance_size_disk_gb === "number" &&
+    Number.isFinite(payload.instance_size_disk_gb)
+    ? payload.instance_size_disk_gb
+    : undefined;
 }
 
 function instanceSizeDedicatedCPU(payload: PayloadRecord | undefined): boolean {
@@ -137,26 +117,6 @@ function batchPayloadItems(
   payload: PayloadRecord | undefined,
 ): PayloadRecord[] {
   return asPayloadRecords(payload?.items);
-}
-
-function batchSummary(
-  payload: PayloadRecord | undefined,
-): PayloadRecord | undefined {
-  return asPayloadRecord(payload?.batch_summary);
-}
-
-function distinctPayloadStrings(
-  items: PayloadRecord[],
-  selector: (item: PayloadRecord) => string,
-): string[] {
-  const values = new Set<string>();
-  for (const item of items) {
-    const value = selector(item).trim();
-    if (value !== "" && value !== "—") {
-      values.add(value);
-    }
-  }
-  return Array.from(values);
 }
 
 function requiresStorageClassSelection(cluster: Cluster): boolean {
@@ -253,37 +213,96 @@ function renderRootVolumeResolutionMessage(
 }
 
 export function AdminApprovalsContent() {
-  const { t } = useTranslation(["approval", "common"]);
+  const router = useRouter();
+  const { t } = useTranslation(["approval", "common", "vm"]);
   const approvals = useAdminApprovalsController({ t });
+  const setupGuide = useSetupGuide();
+  const modalBodyStyles = {
+    maxHeight: "calc(100vh - 220px)",
+    overflowY: "auto" as const,
+    overflowX: "hidden" as const,
+    paddingRight: 8,
+  };
+  const modalViewportStyle = { top: 16 } as const;
+  const approveModalWidth = "min(1040px, calc(100vw - 16px))";
+  const rejectModalWidth = "min(720px, calc(100vw - 16px))";
+  const approvalSectionGridStyles = {
+    display: "grid",
+    gap: 16,
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    marginBottom: 16,
+  } as const;
   const selectedClusterOptionLabel = clusterDisplayLabel(approvals.selectedCluster);
+  const pageItems = approvals.data?.items ?? [];
+  const pendingOnPage = pageItems.filter((ticket) => ticket.status === "PENDING").length;
+  const urgentOnPage = pageItems.filter(
+    (ticket) =>
+      ticket.status === "PENDING" && getPriorityTier(ticket.created_at) === "urgent",
+  ).length;
+  const createOnPage = pageItems.filter(
+    (ticket) => ticket.operation_type === "CREATE",
+  ).length;
+  const provisioningVisible = pageItems.filter((ticket) => Boolean(ticket.provisioning)).length;
+  const isDefaultQueueState =
+    approvals.statusFilter === "PENDING" &&
+    approvals.operationFilter === "ALL" &&
+    approvals.selectedClusterFilter.trim() === "" &&
+    approvals.placementAdvisoryFilter.trim() === "" &&
+    approvals.placementSnapshotFilter === "ALL";
+  const isQueueEmpty = pageItems.length === 0 && !approvals.isLoading;
+  const shouldShowSetupEmpty = isQueueEmpty && isDefaultQueueState;
+  const approveAlert = approvals.approveModal
+    ? approvalPrimaryAlert(approvals.approveModal, t)
+    : null;
+  const approveOverviewItems = approvals.approveModal
+    ? buildApprovalOverviewItems(approvals.approveModal, t)
+    : [];
+  const approveScopeItems = approvals.approveModal
+    ? buildApprovalScopeItems(approvals.approveModal, t)
+    : [];
+  const approveChangeItems = approvals.approveModal
+    ? buildApprovalChangeItems(approvals.approveModal, t)
+    : [];
+  const approveBatchItems = approvals.approveModal
+    ? buildApprovalBatchDisplayItems(approvals.approveModal, t)
+    : [];
 
-  const columns: ColumnsType<ApprovalTicket> = [
+  const columns: ColumnsType<ApprovalTask> = [
     {
-      title: t("ticket_id"),
-      dataIndex: "id",
-      key: "id",
-      width: 120,
-      render: (id: string) => (
-        <Space>
-          <AuditOutlined style={{ color: "#d4380d" }} />
-          <Text copyable={{ text: id }} style={{ fontSize: 12 }}>
-            {formatTicketID(id)}
-          </Text>
-        </Space>
-      ),
+      title: t("request_summary"),
+      key: "request_summary",
+      width: 280,
+      render: (_, record) => {
+        const summaryMeta = approvalSummaryMeta(record, t);
+        return (
+          <Space direction="vertical" size={0}>
+            <Space size={8}>
+              <AuditOutlined style={{ color: "#d4380d" }} />
+              <Text strong>{approvalSummaryTitle(record, t)}</Text>
+            </Space>
+            {summaryMeta.length > 0 && (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {summaryMeta.join(" · ")}
+              </Text>
+            )}
+            <Text copyable={{ text: record.id }} type="secondary" style={{ fontSize: 12 }}>
+              {t("ticket_id")}: {formatApprovalRecordID(record.id)}
+            </Text>
+          </Space>
+        );
+      },
     },
     {
       title: t("operation_type"),
       dataIndex: "operation_type",
       key: "operation_type",
       width: 110,
-      render: (opType: ApprovalTicket["operation_type"], record) => {
+      render: (opType: ApprovalTask["operation_type"], record) => {
         const config =
           OP_TYPE_CONFIG[opType ?? "CREATE"] ?? OP_TYPE_CONFIG.CREATE;
         const Icon = config.icon;
-        const itemCount = batchPayloadItems(
-          record.ticket_payload as PayloadRecord | undefined,
-        ).length;
+        const itemCount = record.summary?.batch_count ||
+          batchPayloadItems(record.ticket_payload as PayloadRecord | undefined).length;
         return (
           <Space size={[0, 4]} wrap>
             <Tag color={config.color} icon={<Icon />}>
@@ -306,12 +325,16 @@ export function AdminApprovalsContent() {
       key: "target_vm",
       width: 160,
       render: (_, record) => {
-        if (record.operation_type === "DELETE" && record.target_vm_name) {
+        const targetVM =
+          record.summary?.vm_name ||
+          record.target_vm_name ||
+          record.summary?.vm_id;
+        if (targetVM) {
           return (
             <Space>
               <DeleteOutlined style={{ color: "#cf1322" }} />
               <Text strong style={{ color: "#cf1322" }}>
-                {record.target_vm_name}
+                {targetVM}
               </Text>
             </Space>
           );
@@ -325,20 +348,23 @@ export function AdminApprovalsContent() {
       width: 180,
       render: (_, record) => {
         const placement = record.placement_evaluation;
-        if (!placement?.selected_cluster_id) {
+        const clusterDisplay =
+          placement?.selected_cluster_name ||
+          placement?.selected_cluster_id ||
+          record.summary?.cluster_name ||
+          record.summary?.cluster_id;
+        if (!clusterDisplay) {
           return <Text type="secondary">—</Text>;
         }
-        const displayName =
-          placement.selected_cluster_name || placement.selected_cluster_id;
         return (
           <Space direction="vertical" size={0}>
-            <Text strong>{displayName}</Text>
-            {placement.advisory_code && (
+            <Text strong>{clusterDisplay}</Text>
+            {placement?.advisory_code && (
               <Text type="warning" style={{ fontSize: 12 }}>
                 {placement.advisory_code}
               </Text>
             )}
-            {placement.selected_cluster_name &&
+            {placement?.selected_cluster_name &&
               placement.selected_cluster_name !==
                 placement.selected_cluster_id && (
                 <Text type="secondary" style={{ fontSize: 12 }}>
@@ -393,7 +419,7 @@ export function AdminApprovalsContent() {
       dataIndex: "status",
       key: "status",
       width: 120,
-      render: (status: ApprovalTicket["status"]) => (
+      render: (status: ApprovalTask["status"]) => (
         <Badge
           status={STATUS_BADGES[status] ?? "default"}
           text={
@@ -444,20 +470,20 @@ export function AdminApprovalsContent() {
           return <Text type="secondary">—</Text>;
         }
         return (
-          <Space>
+          <Space size={4} wrap>
             <Button
               type="primary"
               size="small"
-              icon={<CheckCircleOutlined />}
+              icon={<AuditOutlined />}
               data-testid={`approval-action-approve-${record.id}`}
               onClick={() => approvals.openApproveModal(record)}
             >
-              {t("common:button.approve")}
+              {t("action.review")}
             </Button>
             <Button
-              danger
+              type="link"
               size="small"
-              icon={<CloseCircleOutlined />}
+              danger
               data-testid={`approval-action-reject-${record.id}`}
               onClick={() => approvals.openRejectModal(record)}
             >
@@ -470,8 +496,8 @@ export function AdminApprovalsContent() {
               cancelText={t("common:button.cancel")}
             >
               <Button
+                type="link"
                 size="small"
-                icon={<ExclamationCircleOutlined />}
                 data-testid={`approval-action-cancel-${record.id}`}
                 loading={approvals.cancelPending}
               >
@@ -487,21 +513,11 @@ export function AdminApprovalsContent() {
   return (
     <div data-testid="admin-approvals-page">
       {approvals.messageContextHolder}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 24,
-        }}
-      >
-        <div>
-          <Title level={4} style={{ margin: 0 }}>
-            {t("title")}
-          </Title>
-          <Text type="secondary">{t("subtitle")}</Text>
-        </div>
-        <Space>
+      <PageHeader
+        title={t("common:nav.approval_tasks")}
+        subtitle={t("subtitle")}
+        actions={(
+          <Space>
           <Segmented
             data-testid="approvals-status-filter"
             value={approvals.statusFilter}
@@ -520,15 +536,63 @@ export function AdminApprovalsContent() {
           >
             {t("common:button.refresh")}
           </Button>
-        </Space>
+          </Space>
+        )}
+      />
+      <div className="summary-card-grid">
+        <SummaryMetricCard
+          title={t("summary.pending_title")}
+          value={pendingOnPage}
+          description={t("summary.pending_description")}
+          visual={<QueueReviewGlyph className="summary-metric-card__art" />}
+          accentColor="#D97706"
+          surfaceColor="#FFF4E5"
+        />
+        <SummaryMetricCard
+          title={t("summary.urgent_title")}
+          value={<span style={{ color: urgentOnPage > 0 ? "#d4380d" : undefined }}>{urgentOnPage}</span>}
+          description={t("summary.urgent_description")}
+          visual={<RequestsOverviewGlyph className="summary-metric-card__art" />}
+          accentColor="#CF1322"
+          surfaceColor="#FFF1F0"
+        />
+        <SummaryMetricCard
+          title={t("summary.create_title")}
+          value={createOnPage}
+          description={t("summary.create_description")}
+          visual={<ServiceWorkspaceGlyph className="summary-metric-card__art" />}
+          accentColor="#1D5BFF"
+          surfaceColor="#E6F4FF"
+        />
+        <SummaryMetricCard
+          title={t("summary.provisioning_title")}
+          value={provisioningVisible}
+          description={t("summary.provisioning_description")}
+          visual={<VirtualMachinesOverviewGlyph className="summary-metric-card__art" />}
+          accentColor="#6D4DE3"
+          surfaceColor="#F5EDFF"
+        />
       </div>
-      <Card style={{ borderRadius: 12, marginBottom: 16 }}>
-        <Space wrap size={12}>
+      <PageSurface style={{ marginBottom: 16 }}>
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          {approvals.listError && (
+            <Alert
+              type="error"
+              showIcon
+              message={t("list.load_failed_title")}
+              description={translateApiError(t, approvals.listError)}
+            />
+          )}
+          <Space direction="vertical" size={2}>
+            <Text strong>{t("triage.title")}</Text>
+            <Text type="secondary">{t("triage.description")}</Text>
+          </Space>
+          <Space wrap size={12}>
           <Select
             value={approvals.operationFilter}
             onChange={(value) =>
               approvals.changeOperationFilter(
-                value as "ALL" | ApprovalTicket["operation_type"],
+                value as "ALL" | ApprovalTask["operation_type"],
               )
             }
             options={OPERATION_FILTER_OPTIONS.map((option) => ({
@@ -583,46 +647,82 @@ export function AdminApprovalsContent() {
             )}
             style={{ width: 260 }}
           />
+          </Space>
         </Space>
-      </Card>
+      </PageSurface>
 
-      <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+      <PageSurface flush={true}>
         {/* ADR-0015 §11: Priority tier highlighting styles */}
         <style>{`
                     .approval-row-urgent td { background-color: rgba(255, 77, 79, 0.06) !important; }
                     .approval-row-warning td { background-color: rgba(250, 173, 20, 0.06) !important; }
                 `}</style>
-        <Table<ApprovalTicket>
-          columns={columns}
-          dataSource={approvals.data?.items ?? []}
-          rowKey="id"
-          loading={approvals.isLoading}
-          rowClassName={(record) => {
-            if (record.status !== "PENDING") {
+        {shouldShowSetupEmpty ? (
+          !setupGuide.vmRequestReady ? (
+            <div style={{ padding: 24 }}>
+              <SetupGuideCard variant="vm" surface={false} />
+            </div>
+          ) : (
+            <div style={{ padding: 32 }}>
+              <ActionEmptyState
+                title={t("empty.pending_title")}
+                description={t("empty.pending_description")}
+                visual={<QueueReviewGlyph className="action-empty-state__art" />}
+                actions={(
+                <Button type="primary" onClick={() => router.push("/vms?request=create")}>
+                  {t("empty.open_vm_request")}
+                </Button>
+                )}
+              />
+            </div>
+          )
+        ) : isQueueEmpty ? (
+          <div style={{ padding: 32 }}>
+            <ActionEmptyState
+              title={t("empty.filtered_title")}
+              description={t("empty.filtered_description")}
+              visual={<RequestsOverviewGlyph className="action-empty-state__art" />}
+              actions={(
+              <Button onClick={approvals.resetFilters}>
+                {t("common:button.reset")}
+              </Button>
+              )}
+            />
+          </div>
+        ) : (
+          <Table<ApprovalTask>
+            columns={columns}
+            dataSource={approvals.data?.items ?? []}
+            rowKey="id"
+            loading={approvals.isLoading}
+            scroll={{ x: 1280 }}
+            rowClassName={(record) => {
+              if (record.status !== "PENDING") {
+                return "";
+              }
+              const tier = getPriorityTier(record.created_at);
+              if (tier === "urgent") {
+                return "approval-row-urgent";
+              }
+              if (tier === "warning") {
+                return "approval-row-warning";
+              }
               return "";
-            }
-            const tier = getPriorityTier(record.created_at);
-            if (tier === "urgent") {
-              return "approval-row-urgent";
-            }
-            if (tier === "warning") {
-              return "approval-row-warning";
-            }
-            return "";
-          }}
-          pagination={{
-            current: approvals.page,
-            pageSize: approvals.pageSize,
-            total: approvals.data?.pagination?.total ?? 0,
-            showTotal: (total) => t("common:table.total", { total }),
-            onChange: (page, pageSize) => {
-              approvals.setPage(page);
-              approvals.setPageSize(pageSize);
-            },
-          }}
-          size="middle"
-        />
-      </Card>
+            }}
+            pagination={{
+              current: approvals.page,
+              pageSize: approvals.pageSize,
+              total: approvals.data?.pagination?.total ?? 0,
+              showTotal: (total) => t("common:table.total", { total }),
+              onChange: (page, pageSize) => {
+                approvals.setPage(page);
+                approvals.setPageSize(pageSize);
+              },
+            }}
+            size="middle"
+          />
+        )}
+      </PageSurface>
 
       <Modal
         title={
@@ -630,67 +730,154 @@ export function AdminApprovalsContent() {
             ? t("approve_modal.delete_title")
             : t("approve_modal.title")
         }
+        width={approveModalWidth}
+        style={modalViewportStyle}
         open={Boolean(approvals.approveModal)}
         onOk={() => {
           void approvals.submitApprove();
         }}
         onCancel={approvals.closeApproveModal}
         confirmLoading={approvals.approvePending}
-        forceRender
+        forceRender={true}
+        wrapClassName="admin-approvals-modal"
+        styles={{ body: modalBodyStyles }}
         data-testid="approve-modal"
       >
         <Form
           form={approvals.approveForm}
           layout="vertical"
           name="approve-form"
+          preserve={false}
         >
+          {approveAlert && (
+            <Alert
+              type={approveAlert.type}
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={approveAlert.message}
+              description={approveAlert.description}
+            />
+          )}
+          {(approveOverviewItems.length > 0 ||
+            approveScopeItems.length > 0 ||
+            approveChangeItems.length > 0) && (
+            <div
+              className="admin-approvals-modal__sections"
+              style={approvalSectionGridStyles}
+            >
+              {approveOverviewItems.length > 0 && (
+                <Card size="small" title={t("summary.overview_title")}>
+                  <Descriptions
+                    bordered
+                    size="small"
+                    column={1}
+                    items={approveOverviewItems}
+                  />
+                </Card>
+              )}
+              {approveScopeItems.length > 0 && (
+                <Card size="small" title={t("summary.scope_title")}>
+                  <Descriptions
+                    bordered
+                    size="small"
+                    column={1}
+                    items={approveScopeItems}
+                  />
+                </Card>
+              )}
+              {approveChangeItems.length > 0 && (
+                <Card size="small" title={t("summary.change_title")}>
+                  <Descriptions
+                    bordered
+                    size="small"
+                    column={1}
+                    items={approveChangeItems}
+                  />
+                </Card>
+              )}
+            </div>
+          )}
+          {approveBatchItems.length > 0 && (
+            <Card
+              size="small"
+              style={{ marginBottom: 16 }}
+              title={t("summary.affected_items_title")}
+            >
+              <Table
+                size="small"
+                pagination={false}
+                rowKey="key"
+                dataSource={approveBatchItems}
+                scroll={{ x: 920, y: 280 }}
+                columns={[
+                  {
+                    title: t("summary.item"),
+                    dataIndex: "title",
+                    key: "title",
+                  },
+                  {
+                    title: t("summary.scope"),
+                    dataIndex: "scope",
+                    key: "scope",
+                    render: (value: string | undefined) => value || "—",
+                  },
+                  {
+                    title: t("summary.cluster"),
+                    dataIndex: "cluster",
+                    key: "cluster",
+                    render: (value: string | undefined) => value || "—",
+                  },
+                  {
+                    title: t("summary.request_vm_status"),
+                    dataIndex: "requestStatus",
+                    key: "requestStatus",
+                    render: (value: string | undefined) => value || "—",
+                  },
+                  {
+                    title: t("summary.latest_vm_status"),
+                    dataIndex: "latestStatus",
+                    key: "latestStatus",
+                    render: (value: string | undefined, record) => (
+                      <Space direction="vertical" size={0}>
+                        <span>{value || "—"}</span>
+                        {record.statusChanged && (
+                          <Text type="warning" style={{ fontSize: 12 }}>
+                            {t("summary.status_changed")}
+                          </Text>
+                        )}
+                      </Space>
+                    ),
+                  },
+                  {
+                    title: t("summary.current_resources"),
+                    dataIndex: "currentShape",
+                    key: "currentShape",
+                    render: (value: string | undefined) => value || "—",
+                  },
+                  {
+                    title: t("summary.target_resources"),
+                    dataIndex: "targetShape",
+                    key: "targetShape",
+                    render: (value: string | undefined) => value || "—",
+                  },
+                  {
+                    title: t("summary.power_action"),
+                    dataIndex: "action",
+                    key: "action",
+                    render: (value: string | undefined) => value || "—",
+                  },
+                ]}
+              />
+            </Card>
+          )}
           {approvals.approveModal?.operation_type === "CREATE"
             ? (() => {
                 const payload = asPayloadRecord(
                   approvals.approveModal?.ticket_payload,
                 );
                 const provisioning = approvals.approveModal?.provisioning;
-                const batchItems = batchPayloadItems(payload);
-                const summary = batchSummary(payload);
                 const defaultDiskGB = instanceSizeDiskGB(payload);
                 const dedicatedCPU = instanceSizeDedicatedCPU(payload);
-                const namespaceValues = distinctPayloadStrings(
-                  batchItems,
-                  (item) => payloadString(item.namespace) ?? "",
-                );
-                const templateValues = distinctPayloadStrings(
-                  batchItems,
-                  (item) => templateLabel(item),
-                );
-                const instanceSizeValues = distinctPayloadStrings(
-                  batchItems,
-                  (item) => instanceSizeLabel(item),
-                );
-                const batchTableData = batchItems.map((item, index) => ({
-                  ...item,
-                  __rowKey: `batch-item-${index}`,
-                }));
-                const commonNamespace =
-                  payloadString(payload?.namespace) ??
-                  (namespaceValues.length === 1
-                    ? namespaceValues[0]
-                    : undefined);
-                const commonTemplate =
-                  batchItems.length > 0
-                    ? templateValues.length === 1
-                      ? templateValues[0]
-                      : t("approve_modal.mixed_value", {
-                          defaultValue: "Mixed",
-                        })
-                    : templateLabel(payload);
-                const commonInstanceSize =
-                  batchItems.length > 0
-                    ? instanceSizeValues.length === 1
-                      ? instanceSizeValues[0]
-                      : t("approve_modal.mixed_value", {
-                          defaultValue: "Mixed",
-                        })
-                    : instanceSizeLabel(payload);
                 const rootVolumeResolution =
                   approvals.selectedRootVolumeResolution;
                 const rootVolumeModeOptions = approvals.rootVolumeModeOptions;
@@ -705,229 +892,22 @@ export function AdminApprovalsContent() {
                 );
                 return (
                   <>
-                    {payload && batchItems.length === 0 && (
-                      <Descriptions
-                        bordered
-                        size="small"
-                        column={1}
+                    {approvals.approveCreateContext.hasMixedSelection && (
+                      <Alert
+                        type="warning"
+                        showIcon
                         style={{ marginBottom: 16 }}
-                        title={t(
-                          "approve_modal.request_details",
-                          "Request Details",
+                        message={t("approve_modal.batch_scope_mixed_title", {
+                          defaultValue: "Mixed batch request",
+                        })}
+                        description={t(
+                          "approve_modal.batch_scope_mixed_description",
+                          {
+                            defaultValue:
+                              "This approval applies to every requested VM. Review the affected items table above for per-item differences before selecting placement inputs below.",
+                          },
                         )}
-                      >
-                        <Descriptions.Item
-                          label={t("approve_modal.namespace", "Namespace")}
-                        >
-                          {toStr(payload.namespace)}
-                        </Descriptions.Item>
-                        <Descriptions.Item
-                          label={t("approve_modal.template", "Template")}
-                        >
-                          {templateLabel(payload)}
-                        </Descriptions.Item>
-                        <Descriptions.Item
-                          label={t(
-                            "approve_modal.instance_size",
-                            "Instance Size",
-                          )}
-                        >
-                          {instanceSizeLabel(payload)}
-                        </Descriptions.Item>
-                        <Descriptions.Item
-                          label={t(
-                            "approve_modal.dedicated_cpu",
-                            "Dedicated CPU",
-                          )}
-                        >
-                          {dedicatedCPU ? (
-                            <Tag color="blue">{t("common:yes", "Yes")}</Tag>
-                          ) : (
-                            <Text type="secondary">{t("common:no", "No")}</Text>
-                          )}
-                        </Descriptions.Item>
-                        <Descriptions.Item
-                          label={t(
-                            "approve_modal.default_disk_gb",
-                            "Default Disk",
-                          )}
-                        >
-                          {typeof defaultDiskGB === "number"
-                            ? `${defaultDiskGB} GB`
-                            : "—"}
-                        </Descriptions.Item>
-                      </Descriptions>
-                    )}
-                    {payload && batchItems.length > 0 && (
-                      <>
-                        <Descriptions
-                          bordered
-                          size="small"
-                          column={1}
-                          style={{ marginBottom: 12 }}
-                          title={t(
-                            "approve_modal.batch_scope_title",
-                            "Batch Request",
-                          )}
-                        >
-                          <Descriptions.Item
-                            label={t(
-                              "approve_modal.batch_item_count",
-                              "Requested VMs",
-                            )}
-                          >
-                            {payloadNumber(payload.batch_item_count) ??
-                              batchItems.length}
-                          </Descriptions.Item>
-                          <Descriptions.Item
-                            label={t("approve_modal.namespace", "Namespace")}
-                          >
-                            {commonNamespace ??
-                              t("approve_modal.mixed_value", {
-                                defaultValue: "Mixed",
-                              })}
-                          </Descriptions.Item>
-                          <Descriptions.Item
-                            label={t("approve_modal.template", "Template")}
-                          >
-                            {commonTemplate}
-                          </Descriptions.Item>
-                          <Descriptions.Item
-                            label={t(
-                              "approve_modal.instance_size",
-                              "Instance Size",
-                            )}
-                          >
-                            {commonInstanceSize}
-                          </Descriptions.Item>
-                          {summary && (
-                            <Descriptions.Item
-                              label={t(
-                                "approve_modal.batch_status",
-                                "Batch Status",
-                              )}
-                            >
-                              <Space wrap>
-                                <Tag color="blue">{toStr(summary.status)}</Tag>
-                                <Text type="secondary">
-                                  {t("approve_modal.batch_status_counts", {
-                                    defaultValue:
-                                      "{{success}} success / {{failed}} failed / {{pending}} pending",
-                                    success:
-                                      payloadNumber(summary.success_count) ?? 0,
-                                    failed:
-                                      payloadNumber(summary.failed_count) ?? 0,
-                                    pending:
-                                      payloadNumber(summary.pending_count) ?? 0,
-                                  })}
-                                </Text>
-                              </Space>
-                            </Descriptions.Item>
-                          )}
-                        </Descriptions>
-                        <Alert
-                          type={
-                            approvals.approveCreateContext.hasMixedSelection
-                              ? "warning"
-                              : "info"
-                          }
-                          showIcon
-                          style={{ marginBottom: 12 }}
-                          message={
-                            approvals.approveCreateContext.hasMixedSelection
-                              ? t("approve_modal.batch_scope_mixed_title", {
-                                  defaultValue: "Mixed batch request",
-                                })
-                              : t("approve_modal.batch_scope_description", {
-                                  defaultValue:
-                                    "One approval decision will apply to every VM in this batch.",
-                                })
-                          }
-                          description={
-                            approvals.approveCreateContext.hasMixedSelection
-                              ? t(
-                                  "approve_modal.batch_scope_mixed_description",
-                                  {
-                                    defaultValue:
-                                      "This batch mixes namespaces, templates, or instance sizes. Cluster compatibility hints are broad, but the approval action still applies to the full parent ticket.",
-                                  },
-                                )
-                              : t(
-                                  "approve_modal.batch_scope_simple_description",
-                                  {
-                                    defaultValue:
-                                      "Review the common request details below and verify the item list before approving.",
-                                  },
-                                )
-                          }
-                        />
-                        <Table<PayloadRecord & { __rowKey: string }>
-                          size="small"
-                          pagination={false}
-                          rowKey="__rowKey"
-                          dataSource={batchTableData}
-                          style={{ marginBottom: 16 }}
-                          scroll={{ x: 720 }}
-                          columns={[
-                            {
-                              title: t("approve_modal.batch_item_index", "#"),
-                              key: "index",
-                              width: 70,
-                              render: (_, __, index) => index + 1,
-                            },
-                            {
-                              title: t("approve_modal.namespace", "Namespace"),
-                              key: "namespace",
-                              render: (_, record) => toStr(record.namespace),
-                            },
-                            {
-                              title: t("approve_modal.template", "Template"),
-                              key: "template",
-                              render: (_, record) => templateLabel(record),
-                            },
-                            {
-                              title: t(
-                                "approve_modal.instance_size",
-                                "Instance Size",
-                              ),
-                              key: "instance_size",
-                              render: (_, record) => instanceSizeLabel(record),
-                            },
-                            {
-                              title: t(
-                                "approve_modal.dedicated_cpu",
-                                "Dedicated CPU",
-                              ),
-                              key: "dedicated_cpu",
-                              width: 130,
-                              render: (_, record) =>
-                                instanceSizeDedicatedCPU(record) ? (
-                                  <Tag color="blue">
-                                    {t("common:yes", "Yes")}
-                                  </Tag>
-                                ) : (
-                                  <Text type="secondary">
-                                    {t("common:no", "No")}
-                                  </Text>
-                                ),
-                            },
-                            {
-                              title: t(
-                                "approve_modal.default_disk_gb",
-                                "Default Disk",
-                              ),
-                              key: "disk",
-                              width: 120,
-                              render: (_, record) => {
-                                const diskGB = instanceSizeDiskGB(record);
-                                return typeof diskGB === "number"
-                                  ? `${diskGB} GB`
-                                  : "—";
-                              },
-                            },
-                          ]}
-                        />
-                      </>
+                      />
                     )}
                     {provisioning && (
                       <ApprovalProvisioningCard provisioning={provisioning} />
@@ -1446,46 +1426,6 @@ export function AdminApprovalsContent() {
                 );
               })()
             : null}
-          {approvals.approveModal?.operation_type === "DELETE" && (
-            <div style={{ marginBottom: 16 }}>
-              <Descriptions
-                bordered
-                size="small"
-                column={1}
-                style={{ marginBottom: 12 }}
-              >
-                <Descriptions.Item label={t("approve_modal.delete_target_vm")}>
-                  <Text strong style={{ color: "#cf1322" }}>
-                    {approvals.approveModal.target_vm_name || "—"}
-                  </Text>
-                </Descriptions.Item>
-                <Descriptions.Item label={t("requester")}>
-                  {approvals.approveModal.requester}
-                </Descriptions.Item>
-                {approvals.approveModal.reason && (
-                  <Descriptions.Item label={t("reason")}>
-                    {approvals.approveModal.reason}
-                  </Descriptions.Item>
-                )}
-              </Descriptions>
-              <div
-                style={{
-                  padding: "12px 16px",
-                  background: "#fff2e8",
-                  border: "1px solid #ffbb96",
-                  borderRadius: 8,
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 8,
-                }}
-              >
-                <ExclamationCircleOutlined
-                  style={{ color: "#d4380d", marginTop: 2 }}
-                />
-                <Text type="warning">{t("approve_modal.delete_warning")}</Text>
-              </div>
-            </div>
-          )}
           <Form.Item name="comment" label={t("approve_modal.comment")}>
             <Input.TextArea rows={3} />
           </Form.Item>
@@ -1494,21 +1434,30 @@ export function AdminApprovalsContent() {
 
       <Modal
         title={t("reject_modal.title")}
+        width={rejectModalWidth}
+        style={modalViewportStyle}
         open={Boolean(approvals.rejectModal)}
         onOk={() => {
           void approvals.submitReject();
         }}
         onCancel={approvals.closeRejectModal}
         confirmLoading={approvals.rejectPending}
-        forceRender
+        forceRender={true}
+        wrapClassName="admin-approvals-modal"
+        styles={{ body: modalBodyStyles }}
         data-testid="reject-modal"
       >
-        <Form form={approvals.rejectForm} layout="vertical" name="reject-form">
+        <Form
+          form={approvals.rejectForm}
+          layout="vertical"
+          name="reject-form"
+          preserve={false}
+        >
           <Form.Item
             name="reason"
             label={t("reject_modal.reason")}
             rules={[
-              { required: true, message: "Rejection reason is required" },
+              { required: true, message: t("reject_modal.reason_required") },
             ]}
           >
             <Input.TextArea

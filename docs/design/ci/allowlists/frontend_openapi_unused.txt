@@ -1,2 +1,4 @@
 # OpenAPI operations intentionally not consumed by frontend yet.
 # Format: METHOD /path
+GET /auth/providers/{provider_id}/callback
+POST /auth/providers/{provider_id}/callback

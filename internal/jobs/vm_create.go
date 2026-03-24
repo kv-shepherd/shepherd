@@ -11,15 +11,15 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
-	"kv-shepherd.io/shepherd/internal/provider"
+	infracontract "kv-shepherd.io/shepherd/internal/provider/infracontract"
 	"kv-shepherd.io/shepherd/internal/service"
 )
 
@@ -56,7 +56,7 @@ func (VMCreateArgs) InsertOpts() river.InsertOpts {
 // Execution flow (master-flow.md Stage 5.C):
 //  1. Fetch DomainEvent by EventID (claim-check, ADR-0009)
 //  2. Parse VMCreationPayload
-//  3. Fetch ApprovalTicket for admin-determined fields (cluster, storage)
+//  3. Fetch Ticket for admin-determined fields (cluster, storage)
 //  4. Build effective spec from payload + ticket modifications
 //  5. Idempotency check: detect duplicate VM by event label
 //  6. Execute K8s VM creation via VMService (outside transaction, ADR-0012)
@@ -79,7 +79,7 @@ func (w *VMCreateWorker) findCreatedVMByEvent(
 	ctx context.Context,
 	clusterID, namespace, eventID string,
 ) (*domain.VM, error) {
-	list, err := w.vmService.ListVMs(ctx, clusterID, namespace, provider.ListOptions{
+	list, err := w.vmService.ListVMs(ctx, clusterID, namespace, infracontract.ListOptions{
 		LabelSelector: "shepherd.io/event-id=" + eventID,
 		Limit:         1,
 	})
@@ -103,7 +103,7 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 
 	logger.Info("Processing VM creation job",
 		zap.String("event_id", eventID),
-		zap.Int64("attempt", int64(job.Attempt)),
+		zap.Int64("attempt", jobAttempt(job)),
 	)
 
 	// Step 1: Fetch DomainEvent (claim-check pattern).
@@ -117,13 +117,13 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		)
 		return nil
 	}
-	setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusEXECUTING)
+	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusEXECUTING)
 
 	// Step 2: Parse payload.
 	var payload domain.VMCreationPayload
 	if decodeErr := json.Unmarshal(event.Payload, &payload); decodeErr != nil {
 		_, _ = w.entClient.DomainEvent.UpdateOneID(eventID).SetStatus(domainevent.StatusFAILED).Save(ctx)
-		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
+		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
 		return river.JobCancel(fmt.Errorf("unmarshal payload for event %s: %w", eventID, decodeErr))
 	}
 	markFailed := func(cause error, cancel bool) error {
@@ -135,7 +135,7 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 				zap.Error(saveErr),
 			)
 		}
-		setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
+		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
 		if cancel {
 			return river.JobCancel(cause)
 		}
@@ -146,15 +146,15 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		return markFailed(fmt.Errorf("event %s payload namespace is empty", eventID), true)
 	}
 
-	// Step 3: Fetch approval ticket for admin-determined fields.
-	ticket, err := w.entClient.ApprovalTicket.Query().
-		Where(approvalticket.EventIDEQ(eventID)).
+	// Step 3: Fetch the ticket for admin-determined fields.
+	ticket, err := w.entClient.Ticket.Query().
+		Where(entticket.EventIDEQ(eventID)).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return markFailed(fmt.Errorf("approval ticket missing for event %s", eventID), true)
+			return markFailed(fmt.Errorf("ticket missing for event %s", eventID), true)
 		}
-		return fmt.Errorf("query approval ticket for event %s: %w", eventID, err)
+		return fmt.Errorf("query ticket for event %s: %w", eventID, err)
 	}
 	clusterID := strings.TrimSpace(ticket.SelectedClusterID)
 	if clusterID == "" {
@@ -325,7 +325,7 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 			}
 
 			logAuditVMOp(ctx, w.auditLogger, "create_failed", eventID, "system", eventID)
-			setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusFAILED)
+			setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
 
 			return fmt.Errorf("execute k8s create for event %s: %w", eventID, err)
 		}
@@ -351,7 +351,7 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		Save(ctx); saveErr != nil {
 		return fmt.Errorf("persist COMPLETED status for event %s: %w", eventID, saveErr)
 	}
-	setTicketStatusByEvent(ctx, w.entClient, eventID, approvalticket.StatusSUCCESS)
+	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusSUCCESS)
 
 	logAuditVMOp(ctx, w.auditLogger, "create", createdVMName, "system", eventID)
 

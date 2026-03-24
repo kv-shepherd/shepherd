@@ -319,7 +319,6 @@ describe('useAdminInstanceSizesController', () => {
   });
 
   it('hydrates edit form fields after opening edit modal', async () => {
-    vi.useFakeTimers();
     useApiMutationMock
       .mockReturnValueOnce({ mutate: vi.fn(), isPending: false })
       .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
@@ -347,30 +346,21 @@ describe('useAdminInstanceSizesController', () => {
       });
     });
 
-    await act(async () => {
-      vi.runAllTimers();
-    });
-
-    expect(editFormState.resetFields).toHaveBeenCalled();
-    expect(editFormState.setFieldsValue).toHaveBeenNthCalledWith(1, expect.objectContaining({
+    expect(result.current.editInitialValues).toEqual(expect.objectContaining({
       name: 'm8.large',
       display_name: 'M8 Large',
       catalog_scope: 'all',
       cpu_overcommit_enabled: true,
       memory_overcommit_enabled: true,
+      dedicated_cpu: true,
       sort_order: 30,
-      spec_text: '{}',
-    }));
-    expect(editFormState.setFieldsValue).toHaveBeenNthCalledWith(2, {
       cpu_request: 4,
       memory_request_gi: 12,
-    });
-
-    vi.useRealTimers();
+      spec_text: '{}',
+    }));
   });
 
   it('hydrates fractional cpu overcommit values for edit modals', async () => {
-    vi.useFakeTimers();
     useApiMutationMock
       .mockReturnValueOnce({ mutate: vi.fn(), isPending: false })
       .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
@@ -398,21 +388,14 @@ describe('useAdminInstanceSizesController', () => {
       });
     });
 
-    await act(async () => {
-      vi.runAllTimers();
-    });
-
-    expect(editFormState.setFieldsValue).toHaveBeenNthCalledWith(1, expect.objectContaining({
+    expect(result.current.editInitialValues).toEqual(expect.objectContaining({
+      name: 'e2e-small',
       cpu_overcommit_enabled: true,
       memory_overcommit_enabled: true,
       dedicated_cpu: false,
-    }));
-    expect(editFormState.setFieldsValue).toHaveBeenNthCalledWith(2, {
       cpu_request: 0.5,
       memory_request_gi: 1,
-    });
-
-    vi.useRealTimers();
+    }));
   });
 
   it('normalizes dedicated cpu create payload by clearing cpu overcommit request', async () => {

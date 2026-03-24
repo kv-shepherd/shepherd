@@ -33,7 +33,7 @@ type Params struct {
 	Type         string // One of Type* constants above
 	Title        string // Human-readable title
 	Message      string // Body text
-	ResourceType string // e.g. "approval_ticket", "vm"
+	ResourceType string // e.g. "ticket", "vm"
 	ResourceID   string // ID of the related resource for navigation
 }
 

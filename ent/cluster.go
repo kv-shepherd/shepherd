@@ -29,9 +29,9 @@ type Cluster struct {
 	DisplayName string `json:"display_name,omitempty"`
 	// APIServerURL holds the value of the "api_server_url" field.
 	APIServerURL string `json:"api_server_url,omitempty"`
-	// EncryptedKubeconfig holds the value of the "encrypted_kubeconfig" field.
+	// Sensitive kubeconfig bytes; field name retained for historical compatibility
 	EncryptedKubeconfig []byte `json:"-"`
-	// EncryptionKeyID holds the value of the "encryption_key_id" field.
+	// Reserved for future key rotation support
 	EncryptionKeyID string `json:"encryption_key_id,omitempty"`
 	// Status holds the value of the "status" field.
 	Status cluster.Status `json:"status,omitempty"`

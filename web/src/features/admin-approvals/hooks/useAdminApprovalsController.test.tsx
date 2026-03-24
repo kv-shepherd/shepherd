@@ -167,7 +167,7 @@ describe("useAdminApprovalsController", () => {
     });
     useApiGetMock.mockImplementation((queryKey: unknown[]) => {
       const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
-      if (key === "approvals") {
+      if (key === "builtin-approval-tasks") {
         return {
           data: {
             items: [
@@ -264,7 +264,7 @@ describe("useAdminApprovalsController", () => {
 
     const approvalsCall = [...useApiGetMock.mock.calls]
       .reverse()
-      .find((call) => Array.isArray(call[0]) && call[0][0] === "approvals");
+      .find((call) => Array.isArray(call[0]) && call[0][0] === "builtin-approval-tasks");
     const approvalsQueryFn = approvalsCall?.[1];
     expect(approvalsQueryFn).toBeTypeOf("function");
 
@@ -272,7 +272,7 @@ describe("useAdminApprovalsController", () => {
       await approvalsQueryFn();
     });
 
-    expect(apiGetMock).toHaveBeenCalledWith("/approvals", {
+    expect(apiGetMock).toHaveBeenCalledWith("/builtin-approval/tasks", {
       params: {
         query: {
           status: "PENDING",
@@ -295,7 +295,7 @@ describe("useAdminApprovalsController", () => {
     };
     useApiGetMock.mockImplementation((queryKey: unknown[]) => {
       const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
-      if (key === "approvals") {
+      if (key === "builtin-approval-tasks") {
         return {
           data: { items: [] },
           isLoading: false,
@@ -408,7 +408,7 @@ describe("useAdminApprovalsController", () => {
     watchedValues.selected_dv_volume_mode = "Block";
     useApiGetMock.mockImplementation((queryKey: unknown[]) => {
       const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
-      if (key === "approvals") {
+      if (key === "builtin-approval-tasks") {
         return {
           data: { items: [] },
           isLoading: false,
@@ -512,7 +512,7 @@ describe("useAdminApprovalsController", () => {
 
     useApiGetMock.mockImplementation((queryKey: unknown[]) => {
       const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
-      if (key === "approvals") {
+      if (key === "builtin-approval-tasks") {
         return {
           data: { items: [] },
           isLoading: false,
@@ -591,7 +591,7 @@ describe("useAdminApprovalsController", () => {
 
     useApiGetMock.mockImplementation((queryKey: unknown[]) => {
       const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
-      if (key === "approvals") {
+      if (key === "builtin-approval-tasks") {
         return {
           data: { items: [] },
           isLoading: false,
@@ -675,7 +675,7 @@ describe("useAdminApprovalsController", () => {
         return { data: undefined, isLoading: false, error: undefined };
       }
       const [key, , stage] = queryKey;
-      if (key === "approvals") {
+      if (key === "builtin-approval-tasks") {
         return {
           data: { items: [] },
           isLoading: false,
@@ -795,7 +795,7 @@ describe("useAdminApprovalsController", () => {
         return { data: undefined, isLoading: false, error: undefined };
       }
       const [key, , stage] = queryKey;
-      if (key === "approvals") {
+      if (key === "builtin-approval-tasks") {
         return {
           data: { items: [] },
           isLoading: false,
@@ -898,7 +898,7 @@ describe("useAdminApprovalsController", () => {
 
     useApiGetMock.mockImplementation((queryKey: unknown[]) => {
       const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
-      if (key === "approvals") {
+      if (key === "builtin-approval-tasks") {
         return {
           data: { items: [] },
           isLoading: false,
@@ -1065,7 +1065,7 @@ describe("useAdminApprovalsController", () => {
 
     useApiGetMock.mockImplementation((queryKey: unknown[]) => {
       const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
-      if (key === "approvals") {
+      if (key === "builtin-approval-tasks") {
         return {
           data: { items: [] },
           isLoading: false,
@@ -1156,7 +1156,7 @@ describe("useAdminApprovalsController", () => {
     watchedValues.selected_storage_class = "";
     useApiGetMock.mockImplementation((queryKey: unknown[]) => {
       const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
-      if (key === "approvals") {
+      if (key === "builtin-approval-tasks") {
         return {
           data: { items: [] },
           isLoading: false,

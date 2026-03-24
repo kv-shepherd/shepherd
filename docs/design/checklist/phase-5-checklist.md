@@ -118,7 +118,7 @@
   - [x] Templates management (admin: CRUD list/forms + column filters + useDeferredValue search)
   - [x] Instance Sizes management (admin: CRUD list/forms + capability filters + sort)
   - [x] Users management page (admin) — user directory + system member CRUD (`web/src/app/(protected)/admin/users/page.tsx`)
-  - [x] Auth Providers management page (admin) — OIDC/LDAP provider CRUD + test connection + group sync + group mappings
+  - [x] Auth Providers management page (admin) — schema-driven provider CRUD + test connection + sample fields + directory preview/sync + external cohort mappings
   - [x] Rate Limits management page (admin) — exemptions/overrides admin management
   - [x] Permissions browser page (admin) — permission list
   - [x] RBAC management page (admin) — roles + role bindings

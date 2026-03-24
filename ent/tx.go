@@ -14,26 +14,26 @@ type Tx struct {
 	config
 	// ApprovalPolicy is the client for interacting with the ApprovalPolicy builders.
 	ApprovalPolicy *ApprovalPolicyClient
-	// ApprovalTicket is the client for interacting with the ApprovalTicket builders.
-	ApprovalTicket *ApprovalTicketClient
 	// AuditLog is the client for interacting with the AuditLog builders.
 	AuditLog *AuditLogClient
 	// AuthProvider is the client for interacting with the AuthProvider builders.
 	AuthProvider *AuthProviderClient
-	// BatchApprovalTicket is the client for interacting with the BatchApprovalTicket builders.
-	BatchApprovalTicket *BatchApprovalTicketClient
+	// BatchTicket is the client for interacting with the BatchTicket builders.
+	BatchTicket *BatchTicketClient
 	// Cluster is the client for interacting with the Cluster builders.
 	Cluster *ClusterClient
 	// ClusterPolicy is the client for interacting with the ClusterPolicy builders.
 	ClusterPolicy *ClusterPolicyClient
+	// DirectorySyncJob is the client for interacting with the DirectorySyncJob builders.
+	DirectorySyncJob *DirectorySyncJobClient
 	// DomainEvent is the client for interacting with the DomainEvent builders.
 	DomainEvent *DomainEventClient
-	// ExternalApprovalSystem is the client for interacting with the ExternalApprovalSystem builders.
-	ExternalApprovalSystem *ExternalApprovalSystemClient
-	// IdPGroupMapping is the client for interacting with the IdPGroupMapping builders.
-	IdPGroupMapping *IdPGroupMappingClient
-	// IdPSyncedGroup is the client for interacting with the IdPSyncedGroup builders.
-	IdPSyncedGroup *IdPSyncedGroupClient
+	// ExternalCohort is the client for interacting with the ExternalCohort builders.
+	ExternalCohort *ExternalCohortClient
+	// ExternalCohortGrant is the client for interacting with the ExternalCohortGrant builders.
+	ExternalCohortGrant *ExternalCohortGrantClient
+	// ExternalCohortMapping is the client for interacting with the ExternalCohortMapping builders.
+	ExternalCohortMapping *ExternalCohortMappingClient
 	// InstanceSize is the client for interacting with the InstanceSize builders.
 	InstanceSize *InstanceSizeClient
 	// NamespaceRegistry is the client for interacting with the NamespaceRegistry builders.
@@ -42,6 +42,8 @@ type Tx struct {
 	Notification *NotificationClient
 	// PendingAdoption is the client for interacting with the PendingAdoption builders.
 	PendingAdoption *PendingAdoptionClient
+	// PlatformSetting is the client for interacting with the PlatformSetting builders.
+	PlatformSetting *PlatformSettingClient
 	// RateLimitExemption is the client for interacting with the RateLimitExemption builders.
 	RateLimitExemption *RateLimitExemptionClient
 	// RateLimitUserOverride is the client for interacting with the RateLimitUserOverride builders.
@@ -60,8 +62,12 @@ type Tx struct {
 	SystemSecret *SystemSecretClient
 	// Template is the client for interacting with the Template builders.
 	Template *TemplateClient
+	// Ticket is the client for interacting with the Ticket builders.
+	Ticket *TicketClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
+	// UserDirectoryProfile is the client for interacting with the UserDirectoryProfile builders.
+	UserDirectoryProfile *UserDirectoryProfileClient
 	// VM is the client for interacting with the VM builders.
 	VM *VMClient
 	// VMRevision is the client for interacting with the VMRevision builders.
@@ -198,20 +204,21 @@ func (tx *Tx) Client() *Client {
 
 func (tx *Tx) init() {
 	tx.ApprovalPolicy = NewApprovalPolicyClient(tx.config)
-	tx.ApprovalTicket = NewApprovalTicketClient(tx.config)
 	tx.AuditLog = NewAuditLogClient(tx.config)
 	tx.AuthProvider = NewAuthProviderClient(tx.config)
-	tx.BatchApprovalTicket = NewBatchApprovalTicketClient(tx.config)
+	tx.BatchTicket = NewBatchTicketClient(tx.config)
 	tx.Cluster = NewClusterClient(tx.config)
 	tx.ClusterPolicy = NewClusterPolicyClient(tx.config)
+	tx.DirectorySyncJob = NewDirectorySyncJobClient(tx.config)
 	tx.DomainEvent = NewDomainEventClient(tx.config)
-	tx.ExternalApprovalSystem = NewExternalApprovalSystemClient(tx.config)
-	tx.IdPGroupMapping = NewIdPGroupMappingClient(tx.config)
-	tx.IdPSyncedGroup = NewIdPSyncedGroupClient(tx.config)
+	tx.ExternalCohort = NewExternalCohortClient(tx.config)
+	tx.ExternalCohortGrant = NewExternalCohortGrantClient(tx.config)
+	tx.ExternalCohortMapping = NewExternalCohortMappingClient(tx.config)
 	tx.InstanceSize = NewInstanceSizeClient(tx.config)
 	tx.NamespaceRegistry = NewNamespaceRegistryClient(tx.config)
 	tx.Notification = NewNotificationClient(tx.config)
 	tx.PendingAdoption = NewPendingAdoptionClient(tx.config)
+	tx.PlatformSetting = NewPlatformSettingClient(tx.config)
 	tx.RateLimitExemption = NewRateLimitExemptionClient(tx.config)
 	tx.RateLimitUserOverride = NewRateLimitUserOverrideClient(tx.config)
 	tx.ResourceRoleBinding = NewResourceRoleBindingClient(tx.config)
@@ -221,7 +228,9 @@ func (tx *Tx) init() {
 	tx.System = NewSystemClient(tx.config)
 	tx.SystemSecret = NewSystemSecretClient(tx.config)
 	tx.Template = NewTemplateClient(tx.config)
+	tx.Ticket = NewTicketClient(tx.config)
 	tx.User = NewUserClient(tx.config)
+	tx.UserDirectoryProfile = NewUserDirectoryProfileClient(tx.config)
 	tx.VM = NewVMClient(tx.config)
 	tx.VMRevision = NewVMRevisionClient(tx.config)
 }

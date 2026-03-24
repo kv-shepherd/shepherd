@@ -40,6 +40,10 @@ const (
 	EdgeRoleBindings = "role_bindings"
 	// EdgeNotifications holds the string denoting the notifications edge name in mutations.
 	EdgeNotifications = "notifications"
+	// EdgeDirectoryProfile holds the string denoting the directory_profile edge name in mutations.
+	EdgeDirectoryProfile = "directory_profile"
+	// EdgeExternalCohortGrants holds the string denoting the external_cohort_grants edge name in mutations.
+	EdgeExternalCohortGrants = "external_cohort_grants"
 	// Table holds the table name of the user in the database.
 	Table = "users"
 	// RoleBindingsTable is the table that holds the role_bindings relation/edge.
@@ -56,6 +60,20 @@ const (
 	NotificationsInverseTable = "notifications"
 	// NotificationsColumn is the table column denoting the notifications relation/edge.
 	NotificationsColumn = "user_notifications"
+	// DirectoryProfileTable is the table that holds the directory_profile relation/edge.
+	DirectoryProfileTable = "user_directory_profiles"
+	// DirectoryProfileInverseTable is the table name for the UserDirectoryProfile entity.
+	// It exists in this package in order to avoid circular dependency with the "userdirectoryprofile" package.
+	DirectoryProfileInverseTable = "user_directory_profiles"
+	// DirectoryProfileColumn is the table column denoting the directory_profile relation/edge.
+	DirectoryProfileColumn = "user_id"
+	// ExternalCohortGrantsTable is the table that holds the external_cohort_grants relation/edge.
+	ExternalCohortGrantsTable = "external_cohort_grants"
+	// ExternalCohortGrantsInverseTable is the table name for the ExternalCohortGrant entity.
+	// It exists in this package in order to avoid circular dependency with the "externalcohortgrant" package.
+	ExternalCohortGrantsInverseTable = "external_cohort_grants"
+	// ExternalCohortGrantsColumn is the table column denoting the external_cohort_grants relation/edge.
+	ExternalCohortGrantsColumn = "user_id"
 )
 
 // Columns holds all SQL columns for user fields.
@@ -191,6 +209,27 @@ func ByNotifications(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newNotificationsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByDirectoryProfileField orders the results by directory_profile field.
+func ByDirectoryProfileField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newDirectoryProfileStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByExternalCohortGrantsCount orders the results by external_cohort_grants count.
+func ByExternalCohortGrantsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newExternalCohortGrantsStep(), opts...)
+	}
+}
+
+// ByExternalCohortGrants orders the results by external_cohort_grants terms.
+func ByExternalCohortGrants(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newExternalCohortGrantsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newRoleBindingsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -203,5 +242,19 @@ func newNotificationsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(NotificationsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, NotificationsTable, NotificationsColumn),
+	)
+}
+func newDirectoryProfileStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(DirectoryProfileInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2O, false, DirectoryProfileTable, DirectoryProfileColumn),
+	)
+}
+func newExternalCohortGrantsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ExternalCohortGrantsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ExternalCohortGrantsTable, ExternalCohortGrantsColumn),
 	)
 }

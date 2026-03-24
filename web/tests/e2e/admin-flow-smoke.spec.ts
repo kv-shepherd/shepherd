@@ -14,13 +14,15 @@
  * Implementation notes:
  *   - Ant Design Modal with forceRender keeps content in DOM (display:none).
  *     We use `.ant-modal-content:visible` to target only the open modal.
- *   - Approvals API path is /approvals (not /admin/approvals) with ?status=PENDING.
- *   - Approve/Reject API paths are /approvals/{id}/approve and /approvals/{id}/reject.
+ *   - Built-in approval API path is /builtin-approval/tasks with ?status=PENDING.
+ *   - Approve/Reject API paths are /builtin-approval/tasks/{id}/approve|reject.
  *   - Reject modal has a required "reason" field.
  *   - Auth is injected via addInitScript so the app skips the login redirect.
  */
 
 import { expect, test, type Page } from '@playwright/test';
+
+import { getAntModal, selectAntOption } from './lib/helpers';
 
 // ---------------------------------------------------------------------------
 // Auth helpers
@@ -136,9 +138,8 @@ async function mountBaselineMock(page: Page) {
             return json({ id: 'ns-1', name: 'prod-shop', environment: 'prod', description: 'Production shop namespace', enabled: true, created_at: new Date().toISOString() });
         }
 
-        // ── Approvals (path: /approvals, NOT /admin/approvals) ─────────────────
-        // The hook calls api.GET('/approvals', { params: { query: { status: 'PENDING', ... } } })
-        if (method === 'GET' && path.endsWith('/approvals')) {
+        // ── Built-in approval tasks ─────────────────────────────────────────────
+        if (method === 'GET' && path.endsWith('/builtin-approval/tasks')) {
             return json({
                 items: [
                     {
@@ -155,8 +156,8 @@ async function mountBaselineMock(page: Page) {
             });
         }
 
-        // ── Approval actions (POST /approvals/{id}/approve|reject|cancel) ───────
-        if (method === 'POST' && path.includes('/approvals/')) {
+        // ── Built-in approval actions (POST /builtin-approval/tasks/{id}/...) ───
+        if (method === 'POST' && path.includes('/builtin-approval/tasks/')) {
             return json({ ok: true }, 200);
         }
 
@@ -181,6 +182,24 @@ async function mountBaselineMock(page: Page) {
 function visibleModal(page: Page) {
     return page.locator('.ant-modal-content:visible');
 }
+
+const VALID_KUBECONFIG_YAML = `apiVersion: v1
+kind: Config
+clusters:
+  - name: e2e
+    cluster:
+      server: https://k8s.example.com
+users:
+  - name: e2e
+    user:
+      token: test-token
+contexts:
+  - name: e2e
+    context:
+      cluster: e2e
+      user: e2e
+current-context: e2e
+`;
 
 // ---------------------------------------------------------------------------
 // Test suite
@@ -207,34 +226,28 @@ test.describe('admin-flow mock smoke interactions', () => {
     });
 
     test('Stage 2.A – custom role create modal opens and submits', async ({ page }) => {
+        let capturedPermissionCount = -1;
         await page.route('**/api/v1/admin/roles**', async (route) => {
             if (route.request().method() !== 'POST') return route.fallback();
+            const body = route.request().postDataJSON() as { permissions?: string[] };
+            capturedPermissionCount = Array.isArray(body.permissions) ? body.permissions.length : 0;
             await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'role-new', name: 'TestRole', built_in: false }) });
         });
-        const createRequestPromise = page.waitForRequest((request) =>
-            request.method() === 'POST' &&
-            new URL(request.url()).pathname.endsWith('/api/v1/admin/roles')
-        );
 
         await page.goto('/admin/rbac');
+        await expect(page.getByText('View systems')).toBeVisible();
+        await expect(page.getByText('Request virtual machines')).toBeVisible();
         await page.getByTestId('rbac-role-create-button').click();
 
-        const modal = visibleModal(page);
+        const modal = getAntModal(page, 'rbac-role-create-modal');
         await expect(modal).toBeVisible();
         await modal.getByRole('textbox').first().fill('TestRole');
+        const permissionSelect = modal.getByRole('combobox').first();
+        await selectAntOption(page, permissionSelect, 'system:read');
+        await selectAntOption(page, permissionSelect, 'vm:create');
+        await modal.getByRole('button', { name: /ok|create|save|submit/i }).click();
 
-        // Permissions is required; choose one option from the visible dropdown.
-        const permissionsSelect = modal.locator('.ant-select').first();
-        await permissionsSelect.click();
-        const firstOption = page.locator('.ant-select-dropdown:visible .ant-select-item-option').first();
-        await expect(firstOption).toBeVisible({ timeout: 5000 });
-        await firstOption.click();
-        await modal.getByRole('button', { name: 'OK' }).click();
-
-        const createRequest = await createRequestPromise;
-        const requestBody = createRequest.postDataJSON() as { permissions?: string[] };
-        expect(Array.isArray(requestBody.permissions)).toBeTruthy();
-        expect(requestBody.permissions?.length ?? 0).toBeGreaterThan(0);
+        await expect.poll(() => capturedPermissionCount, { timeout: 5000 }).toBe(2);
     });
 
     test('Stage 2.A – custom role delete modal opens and submits', async ({ page }) => {
@@ -325,12 +338,12 @@ test.describe('admin-flow mock smoke interactions', () => {
         await page.goto('/admin/clusters');
         await page.getByTestId('cluster-create-button').click();
 
-        const modal = visibleModal(page);
+        const modal = getAntModal(page, 'cluster-create-modal');
         await expect(modal).toBeVisible();
 
         await modal.getByRole('textbox').first().fill('cluster-test-01');
-        await modal.locator('textarea').last().fill('dGVzdC1rdWJlY29uZmlnLWJhc2U2NA==');
-        await modal.getByRole('button', { name: 'OK' }).click();
+        await modal.locator('textarea').last().fill(VALID_KUBECONFIG_YAML);
+        await modal.getByRole('button', { name: /ok|create|save|submit/i }).click();
 
         await expect.poll(() => captured.some((r) => r.method === 'POST'), { timeout: 5000 }).toBeTruthy();
     });
@@ -401,10 +414,6 @@ test.describe('admin-flow mock smoke interactions', () => {
     });
 
     test('Stage 3 – namespace delete requires confirm_name and calls API', async ({ page }) => {
-        const deleteRequestPromise = page.waitForRequest((request) =>
-            request.method() === 'DELETE' &&
-            new URL(request.url()).pathname.endsWith('/api/v1/admin/namespaces/ns-1')
-        );
         // openDeleteModal first calls GET /admin/namespaces/{id} to fetch details
         await page.route('**/api/v1/admin/namespaces/ns-1**', async (route) => {
             const method = route.request().method();
@@ -432,14 +441,17 @@ test.describe('admin-flow mock smoke interactions', () => {
         const deleteBtn = modal.getByRole('button', { name: /delete/i });
         await expect(deleteBtn).toBeDisabled();
 
-        // Use pressSequentially to trigger React synthetic onChange event
-        const confirmInput = page.getByTestId('namespace-delete-confirm-input');
-        await confirmInput.click();
-        await confirmInput.pressSequentially('prod-shop', { delay: 50 });
+        const confirmInput = modal.getByTestId('namespace-delete-confirm-input');
+        await expect(confirmInput).toBeVisible();
+        await confirmInput.fill('prod-shop');
 
         // Wait for React state to update and button to become enabled
         await expect(deleteBtn).toBeEnabled({ timeout: 5000 });
 
+        const deleteRequestPromise = page.waitForRequest((request) =>
+            request.method() === 'DELETE' &&
+            new URL(request.url()).pathname.endsWith('/api/v1/admin/namespaces/ns-1')
+        );
         await deleteBtn.click();
         const deleteRequest = await deleteRequestPromise;
         expect(new URL(deleteRequest.url()).searchParams.get('confirm_name')).toBe('prod-shop');
@@ -448,7 +460,7 @@ test.describe('admin-flow mock smoke interactions', () => {
     // ── Stage 5.B: Approval / Rejection workflow ──────────────────────────────
 
     test('Stage 5.B – Approvals page renders pending ticket with approve/reject buttons', async ({ page }) => {
-        await page.goto('/admin/approvals');
+        await page.goto('/admin/approval-tasks');
         // Wait for the table to load with mock data
         await expect(page.locator('tr').filter({ hasText: 'alice' }).first()).toBeVisible({ timeout: 10000 });
         await expect(page.getByTestId('approval-action-approve-ticket-pending-1')).toBeVisible();
@@ -456,16 +468,15 @@ test.describe('admin-flow mock smoke interactions', () => {
         await expect(page.getByTestId('approval-action-cancel-ticket-pending-1')).toBeVisible();
     });
 
-    test('Stage 5.B – approve button opens modal and POSTs to /approvals/{id}/approve', async ({ page }) => {
+    test('Stage 5.B – approve button opens modal and POSTs to /builtin-approval/tasks/{id}/approve', async ({ page }) => {
         const captured: Array<{ method: string; path: string }> = [];
-        // Approval actions go to /approvals/{id}/approve (not /admin/approvals)
-        await page.route('**/api/v1/approvals/**', async (route) => {
+        await page.route('**/api/v1/builtin-approval/tasks/**', async (route) => {
             const req = route.request();
             captured.push({ method: req.method(), path: new URL(req.url()).pathname });
             await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
         });
 
-        await page.goto('/admin/approvals');
+        await page.goto('/admin/approval-tasks');
         await expect(page.getByTestId('approval-action-approve-ticket-pending-1')).toBeVisible({ timeout: 10000 });
         await page.getByTestId('approval-action-approve-ticket-pending-1').click();
 
@@ -480,15 +491,15 @@ test.describe('admin-flow mock smoke interactions', () => {
         ).toBeTruthy();
     });
 
-    test('Stage 5.B – reject button opens modal and POSTs to /approvals/{id}/reject', async ({ page }) => {
+    test('Stage 5.B – reject button opens modal and POSTs to /builtin-approval/tasks/{id}/reject', async ({ page }) => {
         const captured: Array<{ method: string; path: string }> = [];
-        await page.route('**/api/v1/approvals/**', async (route) => {
+        await page.route('**/api/v1/builtin-approval/tasks/**', async (route) => {
             const req = route.request();
             captured.push({ method: req.method(), path: new URL(req.url()).pathname });
             await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
         });
 
-        await page.goto('/admin/approvals');
+        await page.goto('/admin/approval-tasks');
         await expect(page.getByTestId('approval-action-reject-ticket-pending-1')).toBeVisible({ timeout: 10000 });
         await page.getByTestId('approval-action-reject-ticket-pending-1').click();
 

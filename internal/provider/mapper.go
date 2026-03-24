@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 
 	"kv-shepherd.io/shepherd/internal/domain"
@@ -100,7 +101,7 @@ func mapVMStatus(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineIn
 		case kubevirtv1.VirtualMachineStatusStopped:
 			return domain.VMStatusStopped
 		case kubevirtv1.VirtualMachineStatusStarting:
-			return domain.VMStatusCreating
+			return domain.VMStatusStarting
 		case kubevirtv1.VirtualMachineStatusStopping:
 			return domain.VMStatusStopping
 		case kubevirtv1.VirtualMachineStatusProvisioning:
@@ -175,16 +176,55 @@ func mapVMSpec(vm *kubevirtv1.VirtualMachine) domain.VMSpec {
 		return spec
 	}
 
-	domainRes := vm.Spec.Template.Spec.Domain.Resources
+	templateSpec := vm.Spec.Template.Spec
+	domainSpec := templateSpec.Domain
+	domainRes := domainSpec.Resources
 
-	// CPU
-	if req, ok := domainRes.Requests["cpu"]; ok {
-		spec.CPU = float64(req.MilliValue()) / 1000.0
+	// CPU topology.
+	if domainSpec.CPU != nil {
+		sockets := int(domainSpec.CPU.Sockets)
+		if sockets <= 0 {
+			sockets = 1
+		}
+		coresPerSocket := int(domainSpec.CPU.Cores)
+		if coresPerSocket <= 0 {
+			coresPerSocket = 1
+		}
+		threads := int(domainSpec.CPU.Threads)
+		if threads <= 0 {
+			threads = 1
+		}
+		spec.CurrentCPUSockets = sockets
+		spec.CurrentCPUCoresPerSocket = coresPerSocket
+		spec.CurrentCPUThreads = threads
+		spec.CPU = float64(sockets * coresPerSocket * threads)
 	}
 
-	// Memory (bytes → Gi)
-	if req, ok := domainRes.Requests["memory"]; ok {
+	if spec.CPU == 0 {
+		// Fall back to requests/limits when CPU topology is absent.
+		if req, ok := domainRes.Requests[corev1.ResourceCPU]; ok {
+			spec.CPU = float64(req.MilliValue()) / 1000.0
+		} else if limit, ok := domainRes.Limits[corev1.ResourceCPU]; ok {
+			spec.CPU = float64(limit.MilliValue()) / 1000.0
+		}
+	}
+
+	// Memory (bytes → Gi). Prefer guest memory when explicitly configured.
+	if domainSpec.Memory != nil && domainSpec.Memory.Guest != nil {
+		spec.MemoryGi = float64(domainSpec.Memory.Guest.Value()) / (1024 * 1024 * 1024)
+	} else if req, ok := domainRes.Requests[corev1.ResourceMemory]; ok {
 		spec.MemoryGi = float64(req.Value()) / (1024 * 1024 * 1024)
+	} else if limit, ok := domainRes.Limits[corev1.ResourceMemory]; ok {
+		spec.MemoryGi = float64(limit.Value()) / (1024 * 1024 * 1024)
+	}
+
+	mapVMLiveDiskSpec(vm, &spec)
+
+	// The VM-level live-update support check is completed by the handler/worker
+	// after cluster capability evaluation. Here we only capture whether the VM
+	// topology uses a root DataVolume that can be targeted by a patch.
+	if spec.RootDataVolumeName != "" {
+		spec.DiskHotplugSupported = true
 	}
 
 	// Labels
@@ -193,4 +233,72 @@ func mapVMSpec(vm *kubevirtv1.VirtualMachine) domain.VMSpec {
 	}
 
 	return spec
+}
+
+func mapVMLiveDiskSpec(vm *kubevirtv1.VirtualMachine, spec *domain.VMSpec) {
+	if vm == nil || spec == nil || vm.Spec.Template == nil {
+		return
+	}
+
+	rootVolumeName := ""
+	if len(vm.Spec.Template.Spec.Domain.Devices.Disks) > 0 {
+		rootVolumeName = vm.Spec.Template.Spec.Domain.Devices.Disks[0].Name
+	}
+	if rootVolumeName == "" {
+		return
+	}
+
+	var rootDataVolumeName string
+	for i := range vm.Spec.Template.Spec.Volumes {
+		volume := &vm.Spec.Template.Spec.Volumes[i]
+		if volume.Name != rootVolumeName {
+			continue
+		}
+		if volume.DataVolume != nil {
+			rootDataVolumeName = volume.DataVolume.Name
+		}
+		break
+	}
+	if rootDataVolumeName == "" {
+		// Fallback for containerDisk-based templates with a data emptyDisk.
+		for i := range vm.Spec.Template.Spec.Volumes {
+			volume := &vm.Spec.Template.Spec.Volumes[i]
+			if volume.EmptyDisk == nil || volume.EmptyDisk.Capacity.IsZero() {
+				continue
+			}
+			spec.DiskGB = quantityBytesToGi(volume.EmptyDisk.Capacity.Value())
+			return
+		}
+		return
+	}
+
+	spec.RootDataVolumeName = rootDataVolumeName
+
+	for i := range vm.Spec.DataVolumeTemplates {
+		template := &vm.Spec.DataVolumeTemplates[i]
+		if template.Name != rootDataVolumeName {
+			continue
+		}
+		if template.Spec.PVC != nil {
+			spec.RootVolumeUsesPVCSpec = true
+			if qty, ok := template.Spec.PVC.Resources.Requests[corev1.ResourceStorage]; ok {
+				spec.DiskGB = quantityBytesToGi(qty.Value())
+			}
+			return
+		}
+		if template.Spec.Storage != nil {
+			if qty, ok := template.Spec.Storage.Resources.Requests[corev1.ResourceStorage]; ok {
+				spec.DiskGB = quantityBytesToGi(qty.Value())
+			}
+			return
+		}
+	}
+}
+
+func quantityBytesToGi(bytes int64) int {
+	const gib = int64(1024 * 1024 * 1024)
+	if bytes <= 0 {
+		return 0
+	}
+	return int((bytes + gib - 1) / gib)
 }

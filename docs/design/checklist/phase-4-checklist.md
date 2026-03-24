@@ -64,7 +64,7 @@
 | ✅ i18n: target_vm + delete modal | `web/src/i18n/locales/{en,zh-CN}/approval.json` | target_vm, delete_target_vm keys |
 | ✅ NotificationSender interface | `internal/notification/sender.go` | Sender interface + InboxSender (sync DB write) |
 | ✅ Notification triggers | `internal/notification/triggers.go` | OnTicketSubmitted/Approved/Rejected + OnVMStatusChanged |
-| ✅ Gateway notification integration | `internal/governance/approval/gateway.go` | SetNotifier + trigger calls on approve/reject |
+| ✅ Gateway notification integration | `internal/governance/ticketing/service.go` | SetNotifier + trigger calls on approve/reject |
 | ✅ Handler notification calls | `internal/api/handlers/server_vm.go` | OnTicketSubmitted on CreateVM/DeleteVM |
 | ✅ DI wiring | `internal/app/modules/approval.go` | InboxSender → Triggers → Gateway.SetNotifier |
 | ✅ Frontend NotificationBell | `web/src/components/ui/NotificationBell.tsx` | Badge + Popover + mark-read + 30s polling |
@@ -81,7 +81,7 @@
 |-----------|------|-------|--------|
 | VM Status Enum | `internal/domain/vm.go` | 35-49 | ✅ Fixed |
 | CreateVM UseCase | `internal/usecase/create_vm.go` | 78-145 | ✅ Aligned |
-| ApprovalGateway | `internal/governance/approval/gateway.go` | full | ✅ ADR-0012 atomic writer integration |
+| ApprovalGateway | `internal/governance/approval/provider_router.go`, `internal/governance/ticketing/service.go` | full | ✅ Router seam + ticket execution service with ADR-0012 atomic writer integration |
 | ApprovalValidator | `internal/service/approval_validator.go` | 27-220 | ✅ Dedicated CPU + capability matching complete |
 | ApprovalAtomicWriter | `internal/usecase/approval_atomic.go` | full | ✅ `sqlc + InsertTx` atomic commit |
 | VM Naming | `internal/service/vm_naming.go` | 29-50 | ⚠️ Legacy helper (gateway no longer depends on it) |
@@ -230,12 +230,12 @@
   - [x] Color coding: 0-3d normal, 4-7d yellow, 7+d red (ADR-0015 §11)
 - [x] **User Self-Cancellation (HTTP API)** implemented
   - OpenAPI route + handler + `Gateway.Cancel` error mapping are now wired
-- [x] `POST /api/v1/approvals/{id}/cancel` implemented and contract-defined
+- [x] `POST /api/v1/tickets/{id}/cancel` implemented and contract-defined
 - [x] **AuditLogger** implemented (`internal/governance/audit/logger.go`)
-- [x] **Approval API** endpoints complete (list/approve/reject/cancel)
+- [x] **Approval/Ticket API** endpoints complete (list/approve/reject + ticket cancel)
 - [x] Policy matching logic implemented (`ApprovalRequirementService`: operation + environment + priority matching with default matrix fallback)
 - [ ] **Extensible Approval Handler Architecture** designed (deferred)
-- [x] **Notification Service (Reserved Interface)** defined (`internal/provider/auth.go`)
+- [x] **Notification Service (Reserved Interface)** defined (`internal/provider/notificationcontract/contract.go`, thin re-export in `internal/provider/notification.go`)
 - [x] **Notification Integration** implemented — Gateway calls `OnTicketApproved`/`OnTicketRejected`, handlers call `OnTicketSubmitted`
 - [x] **External State Management** (no pre-approval job insertion — River jobs only after approval)
 
@@ -250,7 +250,7 @@
 
 ## External Approval Provider Boundary (V1 Interface Only)
 
-- [x] `ExternalApprovalProvider` contract defined (`SubmitForApproval`, `CheckStatus`, `CancelRequest`) — in `internal/provider/auth.go`
+- [x] `ApprovalProvider` contract defined (`SubmitForApproval`, `ProcessApproval`) — in `internal/provider/approvalcontract/contract.go` (thin re-export in `internal/provider/approval.go`)
 - [x] `external_approval_systems` schema + migration present for adapter registry
 - [x] V1 runtime keeps built-in approval as required go-live path
 - [x] External approval adapters are explicitly treated as V2+ plugin roadmap capability
@@ -321,7 +321,7 @@
   - [x] `GET /api/v1/vms/batch/{id}` status query
   - [x] `POST /api/v1/vms/batch/{id}/retry` retry failed children
   - [x] `POST /api/v1/vms/batch/{id}/cancel` terminate pending children
-  - [x] Compatibility endpoints fully normalized into same parent-child + execution pipeline (`/approvals/batch` + `/vms/batch/power`)
+  - [x] Batch submit/query/retry/cancel and `/vms/batch/power` are normalized into the same parent-child + execution pipeline
 - [x] **Frontend Batch Queue UX**
   - [x] Parent row + child detail panel implemented
   - [x] Status polling uses backend `status_url` until terminal state

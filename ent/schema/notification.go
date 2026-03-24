@@ -46,7 +46,7 @@ func (Notification) Fields() []ent.Field {
 			MaxLen(2048),
 		field.String("resource_type").
 			Optional().
-			Comment("Related resource type (e.g. vm, approval_ticket)"),
+			Comment("Related resource type (e.g. vm, ticket)"),
 		field.String("resource_id").
 			Optional().
 			Comment("Related resource ID for navigation"),

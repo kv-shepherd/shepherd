@@ -1,12 +1,18 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 
+	"kv-shepherd.io/shepherd/ent"
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	entclusterpolicy "kv-shepherd.io/shepherd/ent/clusterpolicy"
+	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
+	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/provider"
@@ -1259,5 +1265,329 @@ func TestListClusters_IncludesDetectedStorageClasses(t *testing.T) {
 	}
 	if got := resp.Items[0].DefaultStorageClass; got != "fast-sc" {
 		t.Fatalf("default_storage_class = %q, want fast-sc", got)
+	}
+}
+
+func TestUpdateCluster_ReplacesKubeconfigAndRefreshesHealth(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	_, err := client.Cluster.Create().
+		SetID("cl-update").
+		SetName("cluster-old").
+		SetDisplayName("Cluster Old").
+		SetAPIServerURL("https://old.example.com").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\nclusters:\n- name: old\n  cluster:\n    server: https://old.example.com\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetKubevirtVersion("1.1.0").
+		SetEnabledFeatures([]string{"LiveMigration"}).
+		SetStorageClasses([]string{"fast-sc"}).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+
+	srv.refreshClusterHealth = func(ctx context.Context, clusterID string) error {
+		_, updateErr := client.Cluster.UpdateOneID(clusterID).
+			SetStatus(entcluster.StatusHEALTHY).
+			SetKubevirtVersion("1.2.0").
+			SetEnabledFeatures([]string{"GPU"}).
+			SetStorageClasses([]string{"gold-sc"}).
+			Save(ctx)
+		return updateErr
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/clusters/cl-update",
+		`{
+			"display_name":"Cluster New",
+			"environment":"prod",
+			"enabled":true,
+			"kubeconfig":"YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCmNsdXN0ZXJzOgotIG5hbWU6IG5ldwogIGNsdXN0ZXI6CiAgICBzZXJ2ZXI6IGh0dHBzOi8vbmV3LmV4YW1wbGUuY29tCg=="
+		}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.UpdateCluster(c, "cl-update")
+	if w.Code != http.StatusOK {
+		t.Fatalf("update cluster status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.Cluster
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := resp.Name; got != "cluster-old" {
+		t.Fatalf("response name = %q, want cluster-old", got)
+	}
+	if got := resp.ApiServerUrl; got != "https://new.example.com" {
+		t.Fatalf("response api_server_url = %q, want https://new.example.com", got)
+	}
+	if got := resp.Status; got != generated.ClusterStatus(entcluster.StatusHEALTHY) {
+		t.Fatalf("response status = %q, want HEALTHY", got)
+	}
+	if got := resp.KubevirtVersion; got != "1.2.0" {
+		t.Fatalf("response kubevirt_version = %q, want 1.2.0", got)
+	}
+
+	stored, err := client.Cluster.Get(ctx, "cl-update")
+	if err != nil {
+		t.Fatalf("load updated cluster: %v", err)
+	}
+	if got := stored.Name; got != "cluster-old" {
+		t.Fatalf("stored name = %q, want cluster-old", got)
+	}
+	if got := stored.APIServerURL; got != "https://new.example.com" {
+		t.Fatalf("stored api_server_url = %q, want https://new.example.com", got)
+	}
+	if got := stored.Environment; got != entcluster.EnvironmentProd {
+		t.Fatalf("stored environment = %q, want prod", got)
+	}
+	if got := stored.DisplayName; got != "Cluster New" {
+		t.Fatalf("stored display_name = %q, want Cluster New", got)
+	}
+}
+
+func TestUpdateCluster_DisablingClusterForcesUnknownStatus(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	_, err := client.Cluster.Create().
+		SetID("cl-disable").
+		SetName("cluster-disable").
+		SetAPIServerURL("https://cluster.example.com").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/clusters/cl-disable",
+		`{"enabled":false}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.UpdateCluster(c, "cl-disable")
+	if w.Code != http.StatusOK {
+		t.Fatalf("disable cluster status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	stored, err := client.Cluster.Get(ctx, "cl-disable")
+	if err != nil {
+		t.Fatalf("load disabled cluster: %v", err)
+	}
+	if stored.Enabled {
+		t.Fatal("enabled = true, want false")
+	}
+	if got := stored.Status; got != entcluster.StatusUNKNOWN {
+		t.Fatalf("status = %q, want UNKNOWN", got)
+	}
+}
+
+func TestDeleteCluster_RejectsClusterStillUsedByVMs(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	_, err := client.Cluster.Create().
+		SetID("cl-in-use").
+		SetName("cluster-in-use").
+		SetAPIServerURL("https://cluster.example.com").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+	system, err := client.System.Create().
+		SetID("sys-1").
+		SetName("system-a").
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create system: %v", err)
+	}
+	serviceEnt, err := client.Service.Create().
+		SetID("svc-1").
+		SetName("servicea").
+		SetSystem(system).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+	_, err = client.VM.Create().
+		SetID("vm-1").
+		SetName("vm-a").
+		SetInstance("01").
+		SetNamespace("ns-a").
+		SetClusterID("cl-in-use").
+		SetStatus(entvm.StatusRUNNING).
+		SetCreatedBy("test").
+		SetService(serviceEnt).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create vm: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/clusters/cl-in-use",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.DeleteCluster(c, "cl-in-use")
+	if w.Code != http.StatusConflict {
+		t.Fatalf("delete cluster status = %d, want %d, body=%s", w.Code, http.StatusConflict, w.Body.String())
+	}
+
+	var resp generated.Error
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if resp.Code != "CLUSTER_IN_USE" {
+		t.Fatalf("error code = %q, want CLUSTER_IN_USE", resp.Code)
+	}
+	if _, err := client.Cluster.Get(ctx, "cl-in-use"); err != nil {
+		t.Fatalf("cluster should still exist: %v", err)
+	}
+}
+
+func TestDeleteCluster_RejectsClusterSelectedByActiveRequests(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	_, err := client.Cluster.Create().
+		SetID("cl-active-req").
+		SetName("cluster-active-req").
+		SetAPIServerURL("https://cluster.example.com").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+
+	payload, err := json.Marshal(domain.VMCreationPayload{
+		RequesterID:    "user-a",
+		ServiceID:      "svc-a",
+		TemplateID:     "tpl-a",
+		InstanceSizeID: "size-a",
+		Namespace:      "ns-a",
+		Reason:         "pending request",
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if _, err := client.DomainEvent.Create().
+		SetID("ev-active-req").
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("svc-a").
+		SetPayload(payload).
+		SetStatus(domainevent.StatusPENDING).
+		SetCreatedBy("user-a").
+		Save(ctx); err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	if _, err := client.Ticket.Create().
+		SetID("ticket-active-req").
+		SetEventID("ev-active-req").
+		SetOperationType(entticket.OperationTypeCREATE).
+		SetStatus(entticket.StatusEXECUTING).
+		SetRequester("user-a").
+		SetSelectedClusterID("cl-active-req").
+		SetReason("pending request").
+		Save(ctx); err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/clusters/cl-active-req",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.DeleteCluster(c, "cl-active-req")
+	if w.Code != http.StatusConflict {
+		t.Fatalf("delete cluster status = %d, want %d, body=%s", w.Code, http.StatusConflict, w.Body.String())
+	}
+
+	var resp generated.Error
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if resp.Code != "CLUSTER_HAS_ACTIVE_REQUESTS" {
+		t.Fatalf("error code = %q, want CLUSTER_HAS_ACTIVE_REQUESTS", resp.Code)
+	}
+}
+
+func TestDeleteCluster_DeletesClusterAndPolicyWhenUnused(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	_, err := client.Cluster.Create().
+		SetID("cl-delete").
+		SetName("cluster-delete").
+		SetAPIServerURL("https://cluster.example.com").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+	_, err = client.ClusterPolicy.Create().
+		SetID("policy-delete").
+		SetClusterID("cl-delete").
+		SetAllowCPUOvercommit(true).
+		SetAllowMemoryOvercommit(true).
+		SetAllowDedicatedCPU(false).
+		SetAllowGpu(false).
+		SetAllowSriov(false).
+		SetAllowHugepages(false).
+		SetAllowCdiClone(true).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster policy: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/clusters/cl-delete",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.DeleteCluster(c, "cl-delete")
+	if got := c.Writer.Status(); got != http.StatusNoContent {
+		t.Fatalf("delete cluster status = %d, want %d, body=%s", got, http.StatusNoContent, w.Body.String())
+	}
+
+	if _, err := client.Cluster.Get(ctx, "cl-delete"); !ent.IsNotFound(err) {
+		t.Fatalf("cluster get err = %v, want not found", err)
+	}
+	if _, err := client.ClusterPolicy.Query().
+		Where(entclusterpolicy.ClusterIDEQ("cl-delete")).
+		Only(ctx); !ent.IsNotFound(err) {
+		t.Fatalf("cluster policy err = %v, want not found", err)
 	}
 }

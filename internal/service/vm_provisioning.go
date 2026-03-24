@@ -10,6 +10,7 @@ import (
 
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/provider"
+	infracontract "kv-shepherd.io/shepherd/internal/provider/infracontract"
 )
 
 const maxProvisioningEvents = 5
@@ -24,7 +25,7 @@ func (s *VMService) GetProvisioningStatus(
 	if s == nil || s.infra == nil {
 		return nil, nil
 	}
-	observer, ok := s.infra.(provider.ProvisioningQueryProvider)
+	observer, ok := s.infra.(infracontract.ProvisioningQueryProvider)
 	if !ok {
 		return nil, nil
 	}

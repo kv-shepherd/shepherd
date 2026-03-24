@@ -175,6 +175,8 @@ paths:
                 $ref: '#/components/schemas/System'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     patch:
       tags: [systems]
       summary: Update system description
@@ -274,6 +276,28 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /systems/{system_id}/member-candidates:
+    get:
+      tags: [systems, admin]
+      summary: List addable system member candidates
+      operationId: listSystemMemberCandidates
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Addable user candidates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /systems/{system_id}/members/{user_id}:
     patch:
       tags: [systems]
@@ -317,6 +341,23 @@ paths:
           $ref: '#/components/responses/NotFound'
 
   # ── Services ────────────────────────────────────────
+  /services:
+    get:
+      tags: [services]
+      summary: List services across visible systems
+      operationId: listServicesOverview
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/SystemIDFilter'
+      responses:
+        '200':
+          description: Service list across visible systems
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceList'
+
   /systems/{system_id}/services:
     get:
       tags: [services]
@@ -422,6 +463,30 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /systems/{system_id}/services/{service_id}/context:
+    get:
+      tags: [services]
+      summary: Get service workspace context
+      description: |
+        Returns the service detail workspace context as a single server-shaped payload,
+        including service metadata, recent visible virtual machines, and the current
+        actor's recent create requests for this service.
+      operationId: getServiceWorkspaceContext
+      parameters:
+        - $ref: '#/components/parameters/SystemID'
+        - $ref: '#/components/parameters/ServiceID'
+      responses:
+        '200':
+          description: Service workspace context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceWorkspaceContext'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   # ── VMs ─────────────────────────────────────────────
   /vms:
     get:
@@ -507,7 +572,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApprovalTicketResponse'
+                $ref: '#/components/schemas/TicketResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
 
@@ -674,11 +739,93 @@ paths:
         - $ref: '#/components/parameters/ConfirmName'
       responses:
         '202':
-          description: Deletion accepted (approval ticket created)
+          description: Deletion accepted (ticket created)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeleteVMResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vm_id}/request-prefill:
+    get:
+      tags: [vms]
+      summary: Get reusable VM request prefill
+      description: |
+        Returns the reusable CREATE-request context captured for an existing VM,
+        so the UI can open a prefilled "request similar VM" flow without
+        implying a direct KubeVirt clone.
+      operationId: getVMRequestPrefill
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '200':
+          description: Reusable VM request prefill
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMRequestPrefill'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vm_id}/modify-context:
+    get:
+      tags: [vms]
+      summary: Get VM live-modify context
+      description: |
+        Returns the current live VM resource envelope together with per-field
+        online-update support flags so the UI can build a safe modify request.
+      operationId: getVMModifyContext
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '200':
+          description: Live-modify context
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMModifyContext'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vm_id}/modify-request:
+    post:
+      tags: [vms]
+      summary: Submit a VM resource change request
+      description: |
+        Submits a CPU/memory/disk change request for a single VM.
+        The request always goes through approval and is validated for online-only
+        expansion semantics before the ticket is created.
+      operationId: createVMModifyRequest
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMModifyRequest'
+      responses:
+        '202':
+          description: Modification request accepted (ticket created)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -764,6 +911,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
         '409':
           $ref: '#/components/responses/Conflict'
 
@@ -774,7 +923,7 @@ paths:
       description: |
         Stage 6 VNC access entrypoint.
         test env: direct token issuance.
-        prod env: create approval ticket and return pending status.
+        prod env: create ticket and return pending status.
       operationId: requestVMConsoleAccess
       parameters:
         - $ref: '#/components/parameters/VMID'
@@ -845,12 +994,12 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
-  # ── Approval ────────────────────────────────────────
-  /approvals:
+  # ── Tickets ─────────────────────────────────────────
+  /tickets:
     get:
-      tags: [approval]
-      summary: List approval tickets
-      operationId: listApprovals
+      tags: [tickets]
+      summary: List work-order tickets
+      operationId: listTickets
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -859,15 +1008,22 @@ paths:
           schema:
             type: string
             enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
+        - name: mine
+          in: query
+          description: |
+            When true, return only tickets requested by the current
+            authenticated user. This does not require ticket:view.
+          schema:
+            type: boolean
         - name: operation_type
           in: query
-          description: Filter by approval operation type.
+          description: Filter by ticket operation type.
           schema:
             type: string
-            enum: [CREATE, DELETE, POWER, VNC_ACCESS]
+            enum: [CREATE, MODIFY, DELETE, POWER, VNC_ACCESS]
         - name: selected_cluster_id
           in: query
-          description: Filter by the cluster selected during CREATE approval.
+          description: Filter by the cluster selected during CREATE execution planning.
           schema:
             type: string
         - name: placement_advisory_code
@@ -883,46 +1039,61 @@ paths:
             enum: [present, missing]
       responses:
         '200':
-          description: Approval ticket list
+          description: Ticket list
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApprovalTicketList'
+                $ref: '#/components/schemas/TicketList'
 
-  /approvals/batch:
-    post:
-      tags: [approval]
-      summary: Submit batch approval request (compatibility endpoint)
-      description: |
-        Compatibility endpoint normalized into Stage 5.E VM batch pipeline.
-      operationId: submitApprovalBatch
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VMBatchSubmitRequest'
+  # ── Built-In Approval Provider ─────────────────────
+  /builtin-approval/tasks:
+    get:
+      tags: [builtin-approval]
+      summary: List built-in approval tasks
+      operationId: listBuiltinApprovalTasks
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
+        - name: operation_type
+          in: query
+          description: Filter by task operation type.
+          schema:
+            type: string
+            enum: [CREATE, MODIFY, DELETE, POWER, VNC_ACCESS]
+        - name: selected_cluster_id
+          in: query
+          description: Filter by the cluster selected during CREATE execution planning.
+          schema:
+            type: string
+        - name: placement_advisory_code
+          in: query
+          description: Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets.
+          schema:
+            type: string
+        - name: placement_snapshot
+          in: query
+          description: Filter by whether a placement evaluation snapshot exists on the task.
+          schema:
+            type: string
+            enum: [present, missing]
       responses:
-        '202':
-          description: Batch request accepted
+        '200':
+          description: Built-in approval task list
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VMBatchSubmitResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '429':
-          description: Rate limit exceeded
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/TicketList'
 
-  /approvals/{ticket_id}/approve:
+  /builtin-approval/tasks/{ticket_id}/approve:
     post:
-      tags: [approval]
-      summary: Approve a request
-      operationId: approveTicket
+      tags: [builtin-approval]
+      summary: Approve a built-in approval task
+      operationId: approveBuiltinApprovalTask
       parameters:
         - $ref: '#/components/parameters/TicketID'
       requestBody:
@@ -933,17 +1104,17 @@ paths:
               $ref: '#/components/schemas/ApprovalDecisionRequest'
       responses:
         '204':
-          description: Request approved
+          description: Task approved
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /approvals/{ticket_id}/reject:
+  /builtin-approval/tasks/{ticket_id}/reject:
     post:
-      tags: [approval]
-      summary: Reject a request
-      operationId: rejectTicket
+      tags: [builtin-approval]
+      summary: Reject a built-in approval task
+      operationId: rejectBuiltinApprovalTask
       parameters:
         - $ref: '#/components/parameters/TicketID'
       requestBody:
@@ -954,15 +1125,15 @@ paths:
               $ref: '#/components/schemas/RejectDecisionRequest'
       responses:
         '204':
-          description: Request rejected
+          description: Task rejected
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /approvals/{ticket_id}/cancel:
+  /tickets/{ticket_id}/cancel:
     post:
-      tags: [approval]
+      tags: [tickets]
       summary: Cancel own pending request
       operationId: cancelTicket
       parameters:
@@ -1112,6 +1283,54 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /admin/clusters/{cluster_id}:
+    patch:
+      tags: [clusters, admin]
+      summary: Update cluster metadata or credentials
+      operationId: updateCluster
+      parameters:
+        - name: cluster_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterUpdateRequest'
+      responses:
+        '200':
+          description: Cluster updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [clusters, admin]
+      summary: Delete an unused cluster
+      operationId: deleteCluster
+      parameters:
+        - name: cluster_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Cluster deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /admin/users:
     get:
       tags: [admin]
@@ -1120,6 +1339,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
       responses:
         '200':
           description: User list
@@ -1341,6 +1561,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/AuthProviderTypeList'
 
+  /admin/platform-settings/external-auth:
+    get:
+      tags: [auth-providers, admin]
+      summary: Get platform-wide external authentication settings
+      operationId: getExternalAuthPlatformSettings
+      responses:
+        '200':
+          description: Platform external authentication settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalAuthPlatformSettings'
+    put:
+      tags: [auth-providers, admin]
+      summary: Update platform-wide external authentication settings
+      operationId: updateExternalAuthPlatformSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalAuthPlatformSettingsUpdateRequest'
+      responses:
+        '200':
+          description: Updated platform external authentication settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalAuthPlatformSettings'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /admin/auth-providers:
     get:
       tags: [auth-providers, admin]
@@ -1445,11 +1697,28 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/auth-providers/{provider_id}/sync:
+  /admin/auth-providers/{provider_id}/cohorts:
+    get:
+      tags: [auth-providers, admin]
+      summary: List discovered external cohorts for an auth provider
+      operationId: listAuthProviderCohorts
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: External cohort list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalCohortList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/auth-providers/{provider_id}/cohorts/sync:
     post:
       tags: [auth-providers, admin]
-      summary: Sync external groups for an auth provider
-      operationId: syncAuthProviderGroups
+      summary: Sync external cohorts for an auth provider
+      operationId: syncAuthProviderCohorts
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
@@ -1457,39 +1726,87 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AuthProviderGroupSyncRequest'
+              $ref: '#/components/schemas/ExternalCohortSyncRequest'
       responses:
         '200':
-          description: Synced group list
+          description: Synced cohort list
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthProviderGroupSyncResponse'
+                $ref: '#/components/schemas/ExternalCohortSyncResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/auth-providers/{provider_id}/group-mappings:
+  /admin/auth-providers/{provider_id}/directory/descriptor:
     get:
       tags: [auth-providers, admin]
-      summary: List IdP group mappings for an auth provider
-      operationId: listAuthProviderGroupMappings
+      summary: Get directory sync capability descriptor for an auth provider
+      operationId: getAuthProviderDirectoryDescriptor
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       responses:
         '200':
-          description: Group mapping list
+          description: Directory sync capability descriptor
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/IdPGroupMappingList'
+                $ref: '#/components/schemas/DirectorySyncDescriptor'
         '404':
           $ref: '#/components/responses/NotFound'
+        '501':
+          description: Auth provider does not implement directory sync
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/auth-providers/{provider_id}/runtime:
+    get:
+      tags: [auth-providers, admin]
+      summary: Get runtime login descriptor for an auth provider
+      operationId: getAuthProviderRuntimeDescriptor
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: Runtime login capability descriptor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProviderRuntimeDescriptor'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/auth-providers/{provider_id}/directory/schedule:
+    get:
+      tags: [auth-providers, admin]
+      summary: Get scheduled directory enrichment status for an auth provider
+      operationId: getAuthProviderDirectorySchedule
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: Scheduled enrichment plan and runtime status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectoryEnrichmentScheduleStatus'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Auth provider does not implement directory sync
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/auth-providers/{provider_id}/directory/preview:
     post:
       tags: [auth-providers, admin]
-      summary: Create IdP group mapping
-      operationId: createAuthProviderGroupMapping
+      summary: Preview canonical directory import result
+      operationId: previewAuthProviderDirectory
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
@@ -1497,14 +1814,140 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IdPGroupMappingCreateRequest'
+              $ref: '#/components/schemas/DirectorySyncPreviewRequest'
       responses:
-        '201':
-          description: Group mapping created
+        '200':
+          description: Canonical preview result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/IdPGroupMapping'
+                $ref: '#/components/schemas/DirectorySyncPreview'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Auth provider does not implement directory sync preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/auth-providers/{provider_id}/directory/sync:
+    post:
+      tags: [auth-providers, admin]
+      summary: Trigger asynchronous directory sync job
+      operationId: syncAuthProviderDirectory
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DirectorySyncRequest'
+      responses:
+        '202':
+          description: Directory sync job enqueued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectorySyncStartResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Auth provider does not implement directory sync
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/auth-providers/{provider_id}/directory/sync-jobs:
+    get:
+      tags: [auth-providers, admin]
+      summary: List directory sync jobs for an auth provider
+      operationId: listAuthProviderDirectorySyncJobs
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Directory sync job list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectorySyncJobList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Auth provider does not implement directory sync
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/auth-providers/{provider_id}/directory/sync-jobs/{job_id}:
+    get:
+      tags: [auth-providers, admin]
+      summary: Get one directory sync job summary
+      operationId: getAuthProviderDirectorySyncJob
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+        - $ref: '#/components/parameters/DirectorySyncJobID'
+      responses:
+        '200':
+          description: Directory sync job summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectorySyncJobDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Auth provider does not implement directory sync
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/auth-providers/{provider_id}/cohort-mappings:
+    get:
+      tags: [auth-providers, admin]
+      summary: List external cohort mappings for an auth provider
+      operationId: listAuthProviderCohortMappings
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      responses:
+        '200':
+          description: Cohort mapping list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalCohortMappingList'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [auth-providers, admin]
+      summary: Create external cohort mapping
+      operationId: createAuthProviderCohortMapping
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalCohortMappingCreateRequest'
+      responses:
+        '201':
+          description: Cohort mapping created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalCohortMapping'
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
@@ -1512,11 +1955,11 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
-  /admin/auth-providers/{provider_id}/group-mappings/{mapping_id}:
+  /admin/auth-providers/{provider_id}/cohort-mappings/{mapping_id}:
     patch:
       tags: [auth-providers, admin]
-      summary: Update IdP group mapping
-      operationId: updateAuthProviderGroupMapping
+      summary: Update external cohort mapping
+      operationId: updateAuthProviderCohortMapping
       parameters:
         - $ref: '#/components/parameters/ProviderID'
         - $ref: '#/components/parameters/MappingID'
@@ -1525,14 +1968,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IdPGroupMappingUpdateRequest'
+              $ref: '#/components/schemas/ExternalCohortMappingUpdateRequest'
       responses:
         '200':
-          description: Group mapping updated
+          description: Cohort mapping updated
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/IdPGroupMapping'
+                $ref: '#/components/schemas/ExternalCohortMapping'
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
@@ -1541,14 +1984,14 @@ paths:
           $ref: '#/components/responses/Conflict'
     delete:
       tags: [auth-providers, admin]
-      summary: Delete IdP group mapping
-      operationId: deleteAuthProviderGroupMapping
+      summary: Delete external cohort mapping
+      operationId: deleteAuthProviderCohortMapping
       parameters:
         - $ref: '#/components/parameters/ProviderID'
         - $ref: '#/components/parameters/MappingID'
       responses:
         '204':
-          description: Group mapping deleted
+          description: Cohort mapping deleted
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1825,6 +2268,135 @@ paths:
                 $ref: '#/components/schemas/InstanceSizeList'
 
   # ── Auth ────────────────────────────────────────────
+  /auth/providers:
+    get:
+      tags: [auth, auth-providers]
+      summary: List enabled external login providers
+      operationId: listLoginAuthProviders
+      security: []
+      responses:
+        '200':
+          description: Enabled login-capable auth providers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginAuthProviderList'
+
+  /auth/providers/{provider_id}/login/start:
+    post:
+      tags: [auth, auth-providers]
+      summary: Start external auth-provider login
+      operationId: startLoginAuthProvider
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthProviderLoginStartRequest'
+      responses:
+        '200':
+          description: Provider login redirect initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthProviderLoginStartResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /auth/providers/{provider_id}/login/submit:
+    post:
+      tags: [auth, auth-providers]
+      summary: Submit credential-based auth-provider login
+      operationId: submitLoginAuthProvider
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthProviderCredentialLoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /auth/providers/{provider_id}/callback:
+    get:
+      tags: [auth, auth-providers]
+      summary: Complete external auth-provider login callback
+      operationId: completeLoginAuthProviderGet
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Login callback HTML bridge
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: Login callback failed
+          content:
+            text/html:
+              schema:
+                type: string
+    post:
+      tags: [auth, auth-providers]
+      summary: Complete external auth-provider login callback
+      operationId: completeLoginAuthProviderPost
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProviderID'
+      requestBody:
+        required: false
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                state:
+                  type: string
+      responses:
+        '200':
+          description: Login callback HTML bridge
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: Login callback failed
+          content:
+            text/html:
+              schema:
+                type: string
+
   /auth/login:
     post:
       tags: [auth]
@@ -2208,6 +2780,12 @@ components:
         minimum: 1
         maximum: 100
         default: 20
+    Search:
+      name: search
+      in: query
+      description: Case-insensitive search text
+      schema:
+        type: string
     SortBy:
       name: sort_by
       in: query
@@ -2226,6 +2804,12 @@ components:
       name: system_id
       in: path
       required: true
+      schema:
+        type: string
+    SystemIDFilter:
+      name: system_id
+      in: query
+      description: Filter services by parent system id
       schema:
         type: string
     VMID:
@@ -2290,6 +2874,12 @@ components:
         type: string
     MappingID:
       name: mapping_id
+      in: path
+      required: true
+      schema:
+        type: string
+    DirectorySyncJobID:
+      name: job_id
       in: path
       required: true
       schema:
@@ -2559,7 +3149,7 @@ components:
     # ── Service ─────────────────────────────────────
     Service:
       type: object
-      required: [id, name, system_id, created_at]
+      required: [id, name, system_id, system_name, created_at]
       properties:
         id:
           type: string
@@ -2569,8 +3159,12 @@ components:
           type: string
         system_id:
           type: string
+        system_name:
+          type: string
+          description: Parent system display name for UI presentation
         next_instance_index:
           type: integer
+          description: Next allocatable per-service instance index
         created_at:
           type: string
           format: date-time
@@ -2609,6 +3203,32 @@ components:
         pagination:
           $ref: '#/components/schemas/Pagination'
 
+    ServiceWorkspaceSummary:
+      type: object
+      required: [visible_vm_count, recent_request_count]
+      properties:
+        visible_vm_count:
+          type: integer
+        recent_request_count:
+          type: integer
+
+    ServiceWorkspaceContext:
+      type: object
+      required: [service, summary, visible_vms, recent_requests]
+      properties:
+        service:
+          $ref: '#/components/schemas/Service'
+        summary:
+          $ref: '#/components/schemas/ServiceWorkspaceSummary'
+        visible_vms:
+          type: array
+          items:
+            $ref: '#/components/schemas/VM'
+        recent_requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ticket'
+
     # ── VM ──────────────────────────────────────────
     VM:
       type: object
@@ -2622,9 +3242,12 @@ components:
           type: string
         cluster_id:
           type: string
+        cluster_name:
+          type: string
+          description: Display name of the cluster (populated from cluster registry)
         status:
           type: string
-          enum: [CREATING, RUNNING, STOPPING, STOPPED, DELETING, FAILED, PENDING, MIGRATING, PAUSED, UNKNOWN]
+          enum: [CREATING, STARTING, RUNNING, STOPPING, STOPPED, DELETING, FAILED, PENDING, MIGRATING, PAUSED, UNKNOWN, NOT_FOUND]
         hostname:
           type: string
         service_id:
@@ -2745,6 +3368,96 @@ components:
           type: string
         # ⚠️ cluster_id is intentionally ABSENT — see ADR-0017
 
+    VMRequestPrefill:
+      type: object
+      required: [system_id, service_id, template_id, instance_size_id, namespace, reason, batch_count]
+      properties:
+        system_id:
+          type: string
+          format: uuid
+        service_id:
+          type: string
+          format: uuid
+        template_id:
+          type: string
+          format: uuid
+        instance_size_id:
+          type: string
+          format: uuid
+        namespace:
+          type: string
+        reason:
+          type: string
+        batch_count:
+          type: integer
+          minimum: 1
+
+    VMModifyRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        target_cpu_cores:
+          type: number
+          format: double
+          description: |
+            Desired total vCPU count after the change. Online CPU changes are
+            validated against the current socket topology and may only expand.
+        target_memory_gi:
+          type: number
+          format: double
+          description: Desired total guest memory in Gi after the change.
+        target_disk_gb:
+          type: integer
+          description: Desired total root-volume size in Gi after the change.
+
+    VMModifyContext:
+      type: object
+      required:
+        - vm_id
+        - vm_name
+        - namespace
+        - current_cpu_cores
+        - current_memory_gi
+        - current_disk_gb
+        - cpu_supported
+        - memory_supported
+        - disk_supported
+      properties:
+        vm_id:
+          type: string
+        vm_name:
+          type: string
+        namespace:
+          type: string
+        cluster_id:
+          type: string
+        cluster_name:
+          type: string
+        current_cpu_cores:
+          type: number
+          format: double
+        current_memory_gi:
+          type: number
+          format: double
+        current_disk_gb:
+          type: integer
+        cpu_supported:
+          type: boolean
+        cpu_reason:
+          type: string
+        memory_supported:
+          type: boolean
+        memory_reason:
+          type: string
+        disk_supported:
+          type: boolean
+        disk_reason:
+          type: string
+
     VMRequestContext:
       type: object
       required: [templates, instance_sizes, namespaces]
@@ -2844,7 +3557,7 @@ components:
 
     VMBatchOperation:
       type: string
-      enum: [CREATE, DELETE, POWER]
+      enum: [CREATE, MODIFY, DELETE, POWER]
 
     VMBatchPowerAction:
       type: string
@@ -2859,7 +3572,7 @@ components:
       properties:
         vm_id:
           type: string
-          description: Required for DELETE operation
+          description: Required for DELETE and MODIFY operations
         service_id:
           type: string
           format: uuid
@@ -2875,6 +3588,17 @@ components:
         namespace:
           type: string
           description: Required for CREATE operation
+        target_cpu_cores:
+          type: number
+          format: double
+          description: Required for MODIFY when changing CPU.
+        target_memory_gi:
+          type: number
+          format: double
+          description: Required for MODIFY when changing memory.
+        target_disk_gb:
+          type: integer
+          description: Required for MODIFY when changing disk.
         reason:
           type: string
 
@@ -3060,7 +3784,7 @@ components:
           description: Relative websocket/proxy path for noVNC bootstrap.
 
     # ── Approval ────────────────────────────────────
-    ApprovalTicketResponse:
+    TicketResponse:
       type: object
       required: [ticket_id, status]
       properties:
@@ -3071,10 +3795,137 @@ components:
           enum: [PENDING]
         operation_type:
           type: string
-          enum: [CREATE, DELETE, POWER, VNC_ACCESS]
+          enum: [CREATE, MODIFY, DELETE, POWER, VNC_ACCESS]
           description: Type of operation this ticket represents (ADR-0015)
 
-    ApprovalTicket:
+    TicketItemSummary:
+      type: object
+      properties:
+        system_id:
+          type: string
+        system_name:
+          type: string
+        service_id:
+          type: string
+        service_name:
+          type: string
+        namespace:
+          type: string
+        cluster_id:
+          type: string
+        cluster_name:
+          type: string
+        cluster_environment:
+          type: string
+        vm_id:
+          type: string
+        vm_name:
+          type: string
+        request_vm_status:
+          type: string
+          description: VM status captured when the approval request was created.
+        latest_vm_status:
+          type: string
+          description: Latest VM status resolved when the ticket was fetched.
+        vm_status:
+          type: string
+          description: Deprecated alias for latest_vm_status.
+        template_id:
+          type: string
+        template_name:
+          type: string
+        instance_size_id:
+          type: string
+        instance_size_name:
+          type: string
+        current_cpu_cores:
+          type: number
+          format: double
+        current_memory_gi:
+          type: number
+          format: double
+        current_disk_gb:
+          type: integer
+        target_cpu_cores:
+          type: number
+          format: double
+        target_memory_gi:
+          type: number
+          format: double
+        target_disk_gb:
+          type: integer
+        power_action:
+          type: string
+
+    TicketSummary:
+      type: object
+      properties:
+        system_id:
+          type: string
+        system_name:
+          type: string
+        service_id:
+          type: string
+        service_name:
+          type: string
+        namespace:
+          type: string
+        cluster_id:
+          type: string
+        cluster_name:
+          type: string
+        cluster_environment:
+          type: string
+        vm_id:
+          type: string
+        vm_name:
+          type: string
+        request_vm_status:
+          type: string
+          description: VM status captured when the approval request was created.
+        latest_vm_status:
+          type: string
+          description: Latest VM status resolved when the ticket was fetched.
+        vm_status:
+          type: string
+          description: Deprecated alias for latest_vm_status.
+        template_id:
+          type: string
+        template_name:
+          type: string
+        instance_size_id:
+          type: string
+        instance_size_name:
+          type: string
+        batch_count:
+          type: integer
+          minimum: 1
+        current_cpu_cores:
+          type: number
+          format: double
+        current_memory_gi:
+          type: number
+          format: double
+        current_disk_gb:
+          type: integer
+        target_cpu_cores:
+          type: number
+          format: double
+        target_memory_gi:
+          type: number
+          format: double
+        target_disk_gb:
+          type: integer
+        power_action:
+          type: string
+        irreversible:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketItemSummary'
+
+    Ticket:
       type: object
       required: [id, event_id, status, requester]
       properties:
@@ -3087,7 +3938,7 @@ components:
           enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
         operation_type:
           type: string
-          enum: [CREATE, DELETE, POWER, VNC_ACCESS]
+          enum: [CREATE, MODIFY, DELETE, POWER, VNC_ACCESS]
           description: Type of operation this ticket represents (ADR-0015)
         requester:
           type: string
@@ -3103,6 +3954,12 @@ components:
         target_vm_name:
           type: string
           description: For DELETE tickets, the VM name (for display)
+        summary:
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: '#/components/schemas/TicketSummary'
+        request_prefill:
+          $ref: '#/components/schemas/VMRequestPrefill'
         ticket_payload:
           type: ["object", "null"]
           description: Contextual payload of the original request depending on operation_type
@@ -3119,13 +3976,13 @@ components:
           type: string
           format: date-time
 
-    ApprovalTicketList:
+    TicketList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/ApprovalTicket'
+            $ref: '#/components/schemas/Ticket'
         pagination:
           $ref: '#/components/schemas/Pagination'
 
@@ -3326,6 +4183,26 @@ components:
         root_volume_resolution:
           $ref: '#/components/schemas/RootVolumeResolution'
 
+    PlacementResourceOverride:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        cpu_request:
+          type: number
+          format: double
+        cpu_limit:
+          type: number
+          format: double
+        memory_request_gi:
+          type: number
+          format: double
+        memory_limit_gi:
+          type: number
+          format: double
+        disk_gb:
+          type: integer
+
     PlacementEvaluation:
       type: object
       required: [selected_cluster_id, eligible, evaluated_at]
@@ -3371,8 +4248,7 @@ components:
         advisory_message:
           type: string
         override:
-          type: object
-          additionalProperties: true
+          $ref: '#/components/schemas/PlacementResourceOverride'
         evaluated_at:
           type: string
           format: date-time
@@ -3398,7 +4274,24 @@ components:
             validate: "required"
           type: string
           format: byte
-          description: Base64-encoded kubeconfig (stored encrypted, ADR-0012)
+          description: Kubeconfig bytes encoded as base64 for API transport. Base64 is transport encoding only, not encryption.
+
+    ClusterUpdateRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        environment:
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,oneof=test prod"
+          type: string
+          enum: [test, prod]
+        enabled:
+          type: boolean
+        kubeconfig:
+          type: string
+          format: byte
+          description: Optional replacement kubeconfig bytes encoded as base64 for API transport. Base64 is transport encoding only, not encryption.
 
     ClusterEnvironmentUpdate:
       type: object
@@ -3927,6 +4820,104 @@ components:
           type: string
           format: password
 
+    AuthLoginMode:
+      type: object
+      required: [key, display_name]
+      properties:
+        key:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        interaction:
+          type: string
+          enum: [redirect, credentials]
+        request_schema:
+          type: object
+          additionalProperties: true
+        default:
+          type: boolean
+
+    AuthProviderRuntimeDescriptor:
+      type: object
+      required: [supported, supports_redirect, supports_credentials, requires_public_base_url]
+      properties:
+        supported:
+          type: boolean
+        display_name:
+          type: string
+        description:
+          type: string
+        supports_redirect:
+          type: boolean
+        supports_credentials:
+          type: boolean
+        requires_public_base_url:
+          type: boolean
+        login_modes:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthLoginMode'
+
+    LoginAuthProvider:
+      type: object
+      required: [id, name, auth_type]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        auth_type:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        login_modes:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthLoginMode'
+
+    LoginAuthProviderList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LoginAuthProvider'
+
+    AuthProviderLoginStartRequest:
+      type: object
+      required: [return_to]
+      properties:
+        login_mode:
+          type: string
+        return_to:
+          type: string
+          format: uri
+
+    AuthProviderLoginStartResponse:
+      type: object
+      required: [redirect_url]
+      properties:
+        redirect_url:
+          type: string
+          format: uri
+
+    AuthProviderCredentialLoginRequest:
+      type: object
+      required: [credentials]
+      properties:
+        login_mode:
+          type: string
+        credentials:
+          type: object
+          additionalProperties: true
+        return_to:
+          type: string
+          format: uri
+
     LoginResponse:
       type: object
       required: [token]
@@ -4132,15 +5123,23 @@ components:
           type: string
         role_name:
           type: string
+        role_display_name:
+          type: string
         scope_type:
           type: string
         scope_id:
+          type: string
+        scope_display_name:
           type: string
         allowed_environments:
           type: array
           items:
             type: string
             enum: [test, prod]
+        managed:
+          type: boolean
+        managed_source:
+          type: string
         created_by:
           type: string
         created_at:
@@ -4283,6 +5282,27 @@ components:
         message:
           type: string
 
+    ExternalAuthPlatformSettings:
+      type: object
+      required: [runtime_login_ready, source]
+      properties:
+        public_base_url:
+          type: string
+        effective_public_base_url:
+          type: string
+        source:
+          type: string
+          enum: [platform_setting, server_config, unset]
+        runtime_login_ready:
+          type: boolean
+
+    ExternalAuthPlatformSettingsUpdateRequest:
+      type: object
+      properties:
+        public_base_url:
+          type: string
+          description: Empty string clears the persisted override and falls back to deployment config.
+
     AuthProviderSampleField:
       type: object
       required: [field, value_type, unique_count]
@@ -4310,15 +5330,19 @@ components:
           items:
             $ref: '#/components/schemas/AuthProviderSampleField'
 
-    AuthProviderGroupSyncRequest:
+    ExternalCohortSyncRequest:
       type: object
-      required: [source_field, groups]
+      required: [cohort_kind, source_field, cohorts]
       properties:
+        cohort_kind:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
         source_field:
           x-oapi-codegen-extra-tags:
             validate: "required"
           type: string
-        groups:
+        cohorts:
           x-oapi-codegen-extra-tags:
             validate: "required,min=1"
           type: array
@@ -4326,17 +5350,19 @@ components:
           items:
             type: string
 
-    IdPSyncedGroup:
+    ExternalCohort:
       type: object
-      required: [id, provider_id, external_group_id, group_name]
+      required: [id, provider_id, cohort_kind, cohort_key, display_name]
       properties:
         id:
           type: string
         provider_id:
           type: string
-        external_group_id:
+        cohort_kind:
           type: string
-        group_name:
+        cohort_key:
+          type: string
+        display_name:
           type: string
         source_field:
           type: string
@@ -4347,25 +5373,296 @@ components:
           type: string
           format: date-time
 
-    AuthProviderGroupSyncResponse:
+    ExternalCohortList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/IdPSyncedGroup'
+            $ref: '#/components/schemas/ExternalCohort'
 
-    IdPGroupMapping:
+    ExternalCohortSyncResponse:
       type: object
-      required: [id, provider_id, external_group_id, role_id]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalCohort'
+
+    DirectorySyncDescriptor:
+      type: object
+      required: [display_name, supports_preview]
+      properties:
+        display_name:
+          type: string
+        description:
+          type: string
+        supports_preview:
+          type: boolean
+        request_schema:
+          type: object
+          additionalProperties: true
+
+    DirectoryEnrichmentScheduleStatus:
+      type: object
+      required: [supported, enabled]
+      properties:
+        supported:
+          type: boolean
+        enabled:
+          type: boolean
+        mode:
+          type: string
+          enum: [enrich_existing_only]
+        join_key_type:
+          type: string
+          enum: [username]
+        schedule_cron:
+          type: string
+        schedule_timezone:
+          type: string
+        next_run_at:
+          type: string
+          format: date-time
+        last_job_id:
+          type: string
+        last_job_status:
+          type: string
+          enum: [pending, running, completed, failed]
+        last_job_created_at:
+          type: string
+          format: date-time
+        last_job_completed_at:
+          type: string
+          format: date-time
+        pending_job_id:
+          type: string
+        pending_job_status:
+          type: string
+          enum: [pending, running]
+
+    DirectorySyncConflict:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          enum: [same_external_identity, username_conflict, email_conflict, ambiguous_existing_user]
+        field:
+          type: string
+        existing_user_id:
+          type: string
+        message:
+          type: string
+
+    DirectoryUserRecord:
+      type: object
+      required: [external_id, username, display_name]
+      properties:
+        external_id:
+          type: string
+        username:
+          type: string
+        display_name:
+          type: string
+        email:
+          type: string
+        cohorts:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectoryExternalCohort'
+        attributes:
+          type: object
+          additionalProperties: true
+
+    DirectoryExternalCohort:
+      type: object
+      required: [kind, key]
+      properties:
+        kind:
+          type: string
+        key:
+          type: string
+        display_name:
+          type: string
+
+    DirectorySyncPreviewItem:
+      type: object
+      required: [record, match]
+      properties:
+        record:
+          $ref: '#/components/schemas/DirectoryUserRecord'
+        match:
+          $ref: '#/components/schemas/DirectorySyncPreviewMatch'
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectorySyncConflict'
+        warnings:
+          type: array
+          items:
+            type: string
+
+    DirectorySyncPreviewMatch:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [create, update, blocked]
+        existing_user_id:
+          type: string
+        matched_by:
+          type: string
+          enum: [external_id]
+
+    DirectorySyncPreview:
+      type: object
+      required: [total_count, items]
+      properties:
+        total_count:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectorySyncPreviewItem'
+
+    DirectorySyncPreviewRequest:
+      type: object
+      required: [provider_request]
+      properties:
+        provider_request:
+          type: object
+          additionalProperties: true
+        conflict_resolution:
+          type: string
+          default: skip
+          enum: [skip]
+
+    DirectorySyncRequest:
+      type: object
+      required: [provider_request]
+      properties:
+        provider_request:
+          type: object
+          additionalProperties: true
+        conflict_resolution:
+          type: string
+          default: skip
+          enum: [skip]
+
+    DirectorySyncStartResponse:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+
+    DirectoryActionSummary:
+      type: object
+      required: [create_count, update_count, blocked_count]
+      properties:
+        create_count:
+          type: integer
+        update_count:
+          type: integer
+        blocked_count:
+          type: integer
+
+    DirectorySyncJob:
+      type: object
+      required:
+        [
+          id,
+          provider_id,
+          status,
+          conflict_resolution,
+          total_entries,
+          result_summary,
+          error_count,
+          errors,
+          triggered_by,
+          created_at,
+          updated_at
+        ]
       properties:
         id:
           type: string
         provider_id:
           type: string
-        external_group_id:
+        status:
           type: string
-        group_name:
+          enum: [pending, running, completed, failed]
+        conflict_resolution:
+          type: string
+          enum: [skip]
+        sync_mode:
+          type: string
+          enum: [manual_import, scheduled_enrichment]
+        join_key_type:
+          type: string
+        total_entries:
+          type: integer
+        result_summary:
+          $ref: '#/components/schemas/DirectoryActionSummary'
+        error_count:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+        triggered_by:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DirectorySyncJobDetail:
+      allOf:
+        - $ref: '#/components/schemas/DirectorySyncJob'
+        - type: object
+          required: [request_snapshot]
+          properties:
+            request_snapshot:
+              type: object
+              additionalProperties: true
+
+    DirectorySyncJobList:
+      type: object
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectorySyncJob'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    ExternalCohortMapping:
+      type: object
+      required: [id, provider_id, cohort_kind, cohort_key, role_id]
+      properties:
+        id:
+          type: string
+        provider_id:
+          type: string
+        cohort_kind:
+          type: string
+        cohort_key:
+          type: string
+        cohort_display_name:
           type: string
         role_id:
           type: string
@@ -4387,25 +5684,29 @@ components:
           type: string
           format: date-time
 
-    IdPGroupMappingList:
+    ExternalCohortMappingList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/IdPGroupMapping'
+            $ref: '#/components/schemas/ExternalCohortMapping'
         pagination:
           $ref: '#/components/schemas/Pagination'
 
-    IdPGroupMappingCreateRequest:
+    ExternalCohortMappingCreateRequest:
       type: object
-      required: [external_group_id, role_id]
+      required: [cohort_kind, cohort_key, role_id]
       properties:
-        external_group_id:
+        cohort_kind:
           x-oapi-codegen-extra-tags:
             validate: "required"
           type: string
-        group_name:
+        cohort_key:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+        cohort_display_name:
           type: string
         role_id:
           x-oapi-codegen-extra-tags:
@@ -4421,7 +5722,7 @@ components:
             type: string
             enum: [test, prod]
 
-    IdPGroupMappingUpdateRequest:
+    ExternalCohortMappingUpdateRequest:
       type: object
       properties:
         role_id:
@@ -4455,6 +5756,12 @@ components:
       required: [user_id, exempted_by, created_at, updated_at]
       properties:
         user_id:
+          type: string
+        username:
+          type: string
+        display_name:
+          type: string
+        email:
           type: string
         exempted_by:
           type: string
@@ -4519,6 +5826,12 @@ components:
       required: [user_id, exempted, effective_max_pending_parents, effective_max_pending_children, effective_cooldown_seconds, current_pending_parents, current_pending_children, cooldown_remaining_seconds]
       properties:
         user_id:
+          type: string
+        username:
+          type: string
+        display_name:
+          type: string
+        email:
           type: string
         exempted:
           type: boolean
@@ -4635,12 +5948,33 @@ components:
           type: string
         actor:
           type: string
+        approval_decision:
+          type: string
+        placement_summary:
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: '#/components/schemas/AuditPlacementSummary'
         details:
           type: object
           additionalProperties: true
         created_at:
           type: string
           format: date-time
+
+    AuditPlacementSummary:
+      type: object
+      properties:
+        selected_cluster_name:
+          type: string
+        selected_cluster_id:
+          type: string
+        eligible:
+          x-go-type-skip-optional-pointer: false
+          type: ["boolean", "null"]
+        reason_code:
+          type: string
+        advisory_code:
+          type: string
 
     AuditLogList:
       type: object

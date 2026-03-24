@@ -6,129 +6,17 @@
 // Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/provider
 package provider
 
-import (
-	"context"
+import infracontract "kv-shepherd.io/shepherd/internal/provider/infracontract"
 
-	"kv-shepherd.io/shepherd/internal/domain"
-)
-
-// InfrastructureProvider is the base interface for all infrastructure providers.
-type InfrastructureProvider interface {
-	// Metadata
-	Name() string
-	Type() string
-
-	// VM Lifecycle
-	GetVM(ctx context.Context, cluster, namespace, name string) (*domain.VM, error)
-	ListVMs(ctx context.Context, cluster, namespace string, opts ListOptions) (*domain.VMList, error)
-	CreateVM(ctx context.Context, cluster, namespace string, spec *domain.VMSpec) (*domain.VM, error)
-	UpdateVM(ctx context.Context, cluster, namespace, name string, spec *domain.VMSpec) (*domain.VM, error)
-	DeleteVM(ctx context.Context, cluster, namespace, name string) error
-
-	// VM Power Operations
-	StartVM(ctx context.Context, cluster, namespace, name string) error
-	StopVM(ctx context.Context, cluster, namespace, name string) error
-	RestartVM(ctx context.Context, cluster, namespace, name string) error
-	PauseVM(ctx context.Context, cluster, namespace, name string) error
-	UnpauseVM(ctx context.Context, cluster, namespace, name string) error
-
-	// Dry Run Validation (ADR-0011)
-	ValidateSpec(ctx context.Context, cluster, namespace string, spec *domain.VMSpec) (*domain.ValidationResult, error)
-}
-
-// NamespaceProvisioner ensures a target namespace exists before namespaced
-// resources are validated or created on the cluster.
-type NamespaceProvisioner interface {
-	EnsureNamespace(ctx context.Context, cluster, namespace string) error
-}
-
-// ProvisioningQueryProvider exposes CDI/PVC/event read paths used for boot-disk observability.
-type ProvisioningQueryProvider interface {
-	GetDataVolume(ctx context.Context, cluster, namespace, name string) (*domain.DataVolume, error)
-	GetPersistentVolumeClaim(ctx context.Context, cluster, namespace, name string) (*domain.PersistentVolumeClaim, error)
-	GetStorageClass(ctx context.Context, cluster, name string) (*domain.StorageClass, error)
-	GetStorageProfile(ctx context.Context, cluster, name string) (*domain.StorageProfile, error)
-	ListEventsForObject(ctx context.Context, cluster string, ref domain.ObjectReference) ([]domain.ProvisioningEvent, error)
-}
-
-// PVCClonePreflightProvider exposes source PVC checks needed before approving
-// CDI clone-backed VM creation.
-type PVCClonePreflightProvider interface {
-	GetPersistentVolumeClaim(ctx context.Context, cluster, namespace, name string) (*domain.PersistentVolumeClaim, error)
-	GetStorageClass(ctx context.Context, cluster, name string) (*domain.StorageClass, error)
-	GetStorageProfile(ctx context.Context, cluster, name string) (*domain.StorageProfile, error)
-	ListPodsUsingPVC(ctx context.Context, cluster, namespace, claimName string) ([]domain.ObjectReference, error)
-	CanClonePVCSource(ctx context.Context, cluster, namespace string) (bool, string, error)
-}
-
-// SnapshotProvider provides snapshot capabilities (RFC-0013).
-type SnapshotProvider interface {
-	CreateSnapshot(ctx context.Context, cluster, namespace, vmName, snapshotName string) (*domain.Snapshot, error)
-	GetSnapshot(ctx context.Context, cluster, namespace, name string) (*domain.Snapshot, error)
-	ListSnapshots(ctx context.Context, cluster, namespace, vmName string) ([]*domain.Snapshot, error)
-	DeleteSnapshot(ctx context.Context, cluster, namespace, name string) error
-	RestoreFromSnapshot(ctx context.Context, cluster, namespace, snapshotName, targetVMName string) (*domain.VM, error)
-}
-
-// CloneProvider provides clone capabilities (RFC-0014).
-type CloneProvider interface {
-	CloneVM(ctx context.Context, cluster, namespace, sourceVM, targetName string) (*domain.VM, error)
-	CloneFromSnapshot(ctx context.Context, cluster, namespace, snapshotName, targetName string) (*domain.VM, error)
-	GetClone(ctx context.Context, cluster, namespace, name string) (*domain.Clone, error)
-	ListClones(ctx context.Context, cluster, namespace string) ([]*domain.Clone, error)
-}
-
-// MigrationProvider provides live migration capabilities.
-type MigrationProvider interface {
-	MigrateVM(ctx context.Context, cluster, namespace, name string) (*domain.Migration, error)
-	GetMigration(ctx context.Context, cluster, namespace, name string) (*domain.Migration, error)
-	ListMigrations(ctx context.Context, cluster, namespace string) ([]*domain.Migration, error)
-	CancelMigration(ctx context.Context, cluster, namespace, name string) error
-}
-
-// InstanceTypeProvider provides instance type and preference capabilities.
-type InstanceTypeProvider interface {
-	ListInstanceTypes(ctx context.Context, cluster, namespace string) ([]*domain.InstanceType, error)
-	ListClusterInstanceTypes(ctx context.Context, cluster string) ([]*domain.InstanceType, error)
-	ListPreferences(ctx context.Context, cluster, namespace string) ([]*domain.Preference, error)
-	ListClusterPreferences(ctx context.Context, cluster string) ([]*domain.Preference, error)
-}
-
-// ConsoleProvider provides console access capabilities (RFC-0011).
-type ConsoleProvider interface {
-	GetVNCConnection(ctx context.Context, cluster, namespace, name string) (*domain.ConsoleConnection, error)
-	GetSerialConsole(ctx context.Context, cluster, namespace, name string) (*domain.ConsoleConnection, error)
-}
-
-// KubeVirtProvider is the combined interface for KubeVirt operations.
-type KubeVirtProvider interface {
-	InfrastructureProvider
-	SnapshotProvider
-	CloneProvider
-	MigrationProvider
-	InstanceTypeProvider
-	ConsoleProvider
-}
-
-// ListOptions contains options for list operations.
-type ListOptions struct {
-	LabelSelector string
-	FieldSelector string
-	Limit         int
-	Continue      string
-
-	// ResourceVersion is the K8s resourceVersion from the previous API response.
-	// ADR-0038: When set, K8s routes the request through the watch cache
-	// instead of reading directly from etcd. Use "" for the first request.
-	ResourceVersion string
-
-	// SkipVMIEnrichment skips the additional VMI list used for status enrichment.
-	// ADR-0038 polling path sets this to true to avoid extra K8s API pressure.
-	SkipVMIEnrichment bool
-}
-
-// CredentialProvider provides cluster credentials (Strategy Pattern).
-type CredentialProvider interface {
-	GetRESTConfig(ctx context.Context, clusterName string) (interface{}, error)
-	Type() string
-}
+type InfrastructureProvider = infracontract.InfrastructureProvider
+type NamespaceProvisioner = infracontract.NamespaceProvisioner
+type ProvisioningQueryProvider = infracontract.ProvisioningQueryProvider
+type PVCClonePreflightProvider = infracontract.PVCClonePreflightProvider
+type SnapshotProvider = infracontract.SnapshotProvider
+type CloneProvider = infracontract.CloneProvider
+type MigrationProvider = infracontract.MigrationProvider
+type InstanceTypeProvider = infracontract.InstanceTypeProvider
+type ConsoleProvider = infracontract.ConsoleProvider
+type KubeVirtProvider = infracontract.KubeVirtProvider
+type ListOptions = infracontract.ListOptions
+type CredentialProvider = infracontract.CredentialProvider

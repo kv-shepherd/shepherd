@@ -6,14 +6,15 @@ import { useMemo, useState } from "react";
 
 import { useApiAction, useApiGet, useApiMutation } from "@/hooks/useApiQuery";
 import { api } from "@/lib/api/client";
+import { translateApiError } from "@/lib/api/errorMessage";
 import type { components } from "@/types/api.gen";
 
 import type {
   ApprovalDecisionRequest,
   ApprovalStatus,
-  ApprovalTicket,
+  ApprovalTask,
   Cluster,
-  ApprovalTicketList,
+  ApprovalTaskList,
   ClusterList,
   RejectDecisionRequest,
 } from "../types";
@@ -45,7 +46,7 @@ export function useAdminApprovalsController({
     "PENDING",
   );
   const [operationFilter, setOperationFilter] = useState<
-    "ALL" | ApprovalTicket["operation_type"]
+    "ALL" | ApprovalTask["operation_type"]
   >("ALL");
   const [selectedClusterFilter, setSelectedClusterFilter] = useState("");
   const [placementAdvisoryFilter, setPlacementAdvisoryFilter] = useState("");
@@ -54,8 +55,8 @@ export function useAdminApprovalsController({
   >("ALL");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [approveModal, setApproveModal] = useState<ApprovalTicket | null>(null);
-  const [rejectModal, setRejectModal] = useState<ApprovalTicket | null>(null);
+  const [approveModal, setApproveModal] = useState<ApprovalTask | null>(null);
+  const [rejectModal, setRejectModal] = useState<ApprovalTask | null>(null);
   const [approveForm] = Form.useForm<ApprovalDecisionFormValues>();
   const [rejectForm] = Form.useForm<RejectDecisionRequest>();
   const watchedSelectedClusterId = Form.useWatch(
@@ -81,9 +82,9 @@ export function useAdminApprovalsController({
   const trimmedSelectedClusterFilter = selectedClusterFilter.trim();
   const trimmedPlacementAdvisoryFilter = placementAdvisoryFilter.trim();
 
-  const approvalListQuery = useApiGet<ApprovalTicketList>(
+  const approvalListQuery = useApiGet<ApprovalTaskList>(
     [
-      "approvals",
+      "builtin-approval-tasks",
       statusFilter,
       operationFilter,
       trimmedSelectedClusterFilter,
@@ -93,7 +94,7 @@ export function useAdminApprovalsController({
       pageSize,
     ],
     () =>
-      api.GET("/approvals", {
+      api.GET("/builtin-approval/tasks", {
         params: {
           query: {
             ...(statusFilter !== "ALL" ? { status: statusFilter } : {}),
@@ -345,9 +346,9 @@ export function useAdminApprovalsController({
   const selectedRootVolumeResolution =
     selectedCluster?.compatibility?.root_volume_resolution;
 
-  const showApprovalError = (rawMessage?: string) => {
+  const showApprovalError = (error?: Error | { code?: string; message?: string; params?: Record<string, unknown> }) => {
     messageApi.error({
-      content: rawMessage || t("common:message.error"),
+      content: translateApiError(t, error),
       duration: APPROVAL_ERROR_MESSAGE_DURATION_SECONDS,
     });
   };
@@ -357,17 +358,17 @@ export function useAdminApprovalsController({
     unknown
   >(
     ({ ticketId, body }) =>
-      api.POST("/approvals/{ticket_id}/approve", {
+      api.POST("/builtin-approval/tasks/{ticket_id}/approve", {
         params: { path: { ticket_id: ticketId } },
         body,
       }),
     {
-      invalidateKeys: [["approvals"], ["vms"]],
+      invalidateKeys: [["builtin-approval-tasks"], ["tickets"], ["vms"]],
       onSuccess: () => {
         messageApi.success(t("common:message.success"));
         closeApproveModal();
       },
-      onError: (err) => showApprovalError(err.message),
+      onError: (err) => showApprovalError(err),
     },
   );
 
@@ -376,29 +377,29 @@ export function useAdminApprovalsController({
     unknown
   >(
     ({ ticketId, body }) =>
-      api.POST("/approvals/{ticket_id}/reject", {
+      api.POST("/builtin-approval/tasks/{ticket_id}/reject", {
         params: { path: { ticket_id: ticketId } },
         body,
       }),
     {
-      invalidateKeys: [["approvals"]],
+      invalidateKeys: [["builtin-approval-tasks"], ["tickets"]],
       onSuccess: () => {
         messageApi.success(t("common:message.success"));
         closeRejectModal();
       },
-      onError: (err) => showApprovalError(err.message),
+      onError: (err) => showApprovalError(err),
     },
   );
 
   const cancelMutation = useApiAction<string>(
     (ticketId) =>
-      api.POST("/approvals/{ticket_id}/cancel", {
+      api.POST("/tickets/{ticket_id}/cancel", {
         params: { path: { ticket_id: ticketId } },
       }),
     {
-      invalidateKeys: [["approvals"]],
+      invalidateKeys: [["builtin-approval-tasks"], ["tickets"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
-      onError: (err) => showApprovalError(err.message),
+      onError: (err) => showApprovalError(err),
     },
   );
 
@@ -408,7 +409,7 @@ export function useAdminApprovalsController({
   };
 
   const changeOperationFilter = (
-    value: "ALL" | ApprovalTicket["operation_type"],
+    value: "ALL" | ApprovalTask["operation_type"],
   ) => {
     setOperationFilter(value);
     setPage(1);
@@ -431,7 +432,16 @@ export function useAdminApprovalsController({
     setPage(1);
   };
 
-  const openApproveModal = (ticket: ApprovalTicket) => {
+  const resetFilters = () => {
+    setStatusFilter("PENDING");
+    setOperationFilter("ALL");
+    setSelectedClusterFilter("");
+    setPlacementAdvisoryFilter("");
+    setPlacementSnapshotFilter("ALL");
+    setPage(1);
+  };
+
+  const openApproveModal = (ticket: ApprovalTask) => {
     setApproveModal(ticket);
   };
 
@@ -440,7 +450,7 @@ export function useAdminApprovalsController({
     approveForm.resetFields();
   };
 
-  const openRejectModal = (ticket: ApprovalTicket) => {
+  const openRejectModal = (ticket: ApprovalTask) => {
     setRejectModal(ticket);
   };
 
@@ -568,12 +578,14 @@ export function useAdminApprovalsController({
     changePlacementAdvisoryFilter,
     placementSnapshotFilter,
     changePlacementSnapshotFilter,
+    resetFilters,
     page,
     pageSize,
     setPage,
     setPageSize,
     data: approvalListQuery.data,
     isLoading: approvalListQuery.isLoading,
+    listError: approvalListQuery.error,
     refetch: approvalListQuery.refetch,
     approveModal,
     rejectModal,

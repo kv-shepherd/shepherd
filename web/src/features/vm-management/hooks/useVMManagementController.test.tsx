@@ -11,6 +11,7 @@ const {
   postRestartMutate,
   requestConsoleMutate,
   createMutate,
+  createModifyMutate,
   createBatchMutate,
   vmBatchMutate,
   vmBatchPowerMutate,
@@ -45,6 +46,7 @@ const {
     postRestartMutate: vi.fn(),
     requestConsoleMutate: vi.fn(),
     createMutate: vi.fn(),
+    createModifyMutate: vi.fn(),
     createBatchMutate: vi.fn(),
     vmBatchMutate: vi.fn(),
     vmBatchPowerMutate: vi.fn(),
@@ -56,6 +58,7 @@ const {
       validateFields: vi.fn(),
       resetFields: vi.fn(),
       setFieldValue: vi.fn(),
+      setFieldsValue: vi.fn(),
       getFieldsValue: vi.fn(),
     },
     useWatchMock: vi.fn(
@@ -106,15 +109,39 @@ vi.mock("@/lib/api/client", () => ({
   },
 }));
 
+vi.mock("@/stores/auth", () => ({
+  useAuthStore: (selector: (state: { user: { id: string; username: string } }) => unknown) =>
+    selector({ user: { id: "u-alice", username: "alice" } }),
+}));
+
 import { useVMManagementController } from "./useVMManagementController";
+import { buildVMRequestDraftStorageKey } from "../draftStorage";
 
 describe("useVMManagementController", () => {
   const t = ((key: string) => key) as unknown as TFunction;
 
+  const getMutationOptions = (slot: number) =>
+    useApiMutationMock.mock.calls[slot]?.[1] as
+      | {
+          onSuccess?: (data: Record<string, unknown>) => void;
+          onError?: (error: {
+            code?: string;
+            params?: Record<string, unknown>;
+          }) => void;
+        }
+      | undefined;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     window.sessionStorage.clear();
     useWatchMock.mockClear();
+    watchValues.template_id = "tpl-1";
+    watchValues.instance_size_id = "size-1";
+    watchValues.namespace = "prod";
+    watchValues.reason = "scale up";
+    watchValues.service_id = "svc-1";
+    watchValues.batch_count = 1;
     formState.getFieldsValue.mockReturnValue({
       service_id: "svc-1",
       template_id: "tpl-1",
@@ -127,7 +154,7 @@ describe("useVMManagementController", () => {
     let getCall = 0;
     useApiGetMock.mockImplementation(() => {
       getCall += 1;
-      const slot = ((getCall - 1) % 8) + 1;
+      const slot = ((getCall - 1) % 9) + 1;
       if (slot === 1)
         return { data: { items: [] }, isLoading: false, refetch: vi.fn() };
       if (slot === 2)
@@ -166,58 +193,78 @@ describe("useVMManagementController", () => {
       }
       if (slot === 6) return { data: { items: [] }, isLoading: false };
       if (slot === 7) return { data: { items: [] }, isLoading: false };
-      return {
-        data: {
-          batch_id: "batch-live-1",
-          operation: "CREATE",
-          status: "PARTIAL_SUCCESS",
-          child_count: 3,
-          success_count: 1,
-          failed_count: 1,
-          pending_count: 1,
-          created_by: "owner-1",
-          created_at: "2026-02-15T00:00:00Z",
-          updated_at: "2026-02-15T00:00:00Z",
-          children: [
-            {
-              ticket_id: "ticket-failed-1",
-              event_id: "ev-1",
-              status: "FAILED",
-              resource_name: "vm-a",
-              attempt_count: 2,
-            },
-            {
-              ticket_id: "ticket-pending-1",
-              event_id: "ev-2",
-              status: "PENDING",
-              resource_name: "vm-b",
-              attempt_count: 0,
-            },
-            {
-              ticket_id: "ticket-success-1",
-              event_id: "ev-3",
-              status: "SUCCESS",
-              resource_name: "vm-c",
-              attempt_count: 1,
-            },
-          ],
-        },
-        isLoading: false,
-        refetch: batchStatusRefetchMock,
-      };
+      if (slot === 8) {
+        return {
+          data: {
+            batch_id: "batch-live-1",
+            operation: "CREATE",
+            status: "PARTIAL_SUCCESS",
+            child_count: 3,
+            success_count: 1,
+            failed_count: 1,
+            pending_count: 1,
+            created_by: "owner-1",
+            created_at: "2026-02-15T00:00:00Z",
+            updated_at: "2026-02-15T00:00:00Z",
+            children: [
+              {
+                ticket_id: "ticket-failed-1",
+                event_id: "ev-1",
+                status: "FAILED",
+                resource_name: "vm-a",
+                attempt_count: 2,
+              },
+              {
+                ticket_id: "ticket-pending-1",
+                event_id: "ev-2",
+                status: "PENDING",
+                resource_name: "vm-b",
+                attempt_count: 0,
+              },
+              {
+                ticket_id: "ticket-success-1",
+                event_id: "ev-3",
+                status: "SUCCESS",
+                resource_name: "vm-c",
+                attempt_count: 1,
+              },
+            ],
+          },
+          isLoading: false,
+          refetch: batchStatusRefetchMock,
+        };
+      }
+      if (slot === 9) {
+        return {
+          data: {
+            vm_id: "vm-1",
+            vm_name: "vm-one",
+            namespace: "prod",
+            current_cpu_cores: 2,
+            current_memory_gi: 4,
+            current_disk_gb: 20,
+            cpu_supported: true,
+            memory_supported: true,
+            disk_supported: true,
+          },
+          isLoading: false,
+        };
+      }
+      return { data: undefined, isLoading: false };
     });
 
     let mutationCall = 0;
     useApiMutationMock.mockImplementation(() => {
       mutationCall += 1;
-      const slot = ((mutationCall - 1) % 8) + 1;
+      const slot = ((mutationCall - 1) % 9) + 1;
       if (slot === 1) return { mutate: createMutate, isPending: false };
-      if (slot === 2) return { mutate: createBatchMutate, isPending: false };
-      if (slot === 3) return { mutate: vmBatchMutate, isPending: false };
-      if (slot === 4) return { mutate: vmBatchPowerMutate, isPending: false };
-      if (slot === 5) return { mutate: retryBatchMutate, isPending: false };
-      if (slot === 6) return { mutate: cancelBatchMutate, isPending: false };
-      if (slot === 7) return { mutate: requestConsoleMutate, isPending: false };
+      if (slot === 2) return { mutate: createModifyMutate, isPending: false };
+      if (slot === 3) return { mutate: createBatchMutate, isPending: false };
+      if (slot === 4) return { mutate: vmBatchMutate, isPending: false };
+      if (slot === 5) return { mutate: vmBatchPowerMutate, isPending: false };
+      if (slot === 6) return { mutate: retryBatchMutate, isPending: false };
+      if (slot === 7) return { mutate: cancelBatchMutate, isPending: false };
+      if (slot === 8) return { mutate: requestConsoleMutate, isPending: false };
       return { mutate: deleteMutate, isPending: false };
     });
 
@@ -245,6 +292,23 @@ describe("useVMManagementController", () => {
             response: new Response(),
           });
         }
+        if (path === "/vms/{vm_id}/modify-context") {
+          return Promise.resolve({
+            data: {
+              vm_id: "vm-1",
+              vm_name: "vm-one",
+              namespace: "prod",
+              current_cpu_cores: 2,
+              current_memory_gi: 4,
+              current_disk_gb: 20,
+              cpu_supported: true,
+              memory_supported: true,
+              disk_supported: true,
+            },
+            error: undefined,
+            response: new Response(),
+          });
+        }
         if (path === "/vms/{vm_id}/console/status") {
           return Promise.resolve({
             data: { status: "PENDING_APPROVAL" },
@@ -258,6 +322,21 @@ describe("useVMManagementController", () => {
               status: "SESSION_READY",
               vm_id: "vm-1",
               websocket_path: "/api/v1/vms/vm-1/vnc",
+            },
+            error: undefined,
+            response: new Response(),
+          });
+        }
+        if (path === "/vms/{vm_id}/request-prefill") {
+          return Promise.resolve({
+            data: {
+              system_id: "sys-1",
+              service_id: "svc-prefill",
+              template_id: "tpl-prefill",
+              instance_size_id: "size-prefill",
+              namespace: "prefill-ns",
+              reason: "reuse vm request",
+              batch_count: 2,
             },
             error: undefined,
             response: new Response(),
@@ -279,10 +358,7 @@ describe("useVMManagementController", () => {
       result.current.openWizard();
       result.current.onSystemChange("sys-1");
     });
-    expect(formState.setFieldValue).toHaveBeenCalledWith(
-      "service_id",
-      undefined,
-    );
+    expect(formState.resetFields).toHaveBeenCalledWith(["service_id"]);
 
     await act(async () => {
       await result.current.goToNextWizardStep();
@@ -299,6 +375,205 @@ describe("useVMManagementController", () => {
       namespace: "prod",
       reason: "scale up",
     });
+  });
+
+  it("prefills system and service when wizard is opened from a scoped entry point", () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => {
+      result.current.openWizard({ systemId: "sys-1", serviceId: "svc-2" });
+    });
+
+    expect(formState.resetFields).toHaveBeenCalled();
+    expect(formState.setFieldsValue).toHaveBeenCalledWith({
+      batch_count: 1,
+      service_id: "svc-2",
+      template_id: undefined,
+      instance_size_id: undefined,
+      namespace: undefined,
+      reason: undefined,
+    });
+  });
+
+  it("opens the request modal in full-form mode with prefilled request values", () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => {
+      result.current.openWizard({
+        requestMode: "full",
+        systemId: "sys-1",
+        serviceId: "svc-2",
+        templateId: "tpl-2",
+        instanceSizeId: "size-2",
+        namespace: "team-prod",
+        reason: "reuse request",
+        batchCount: 3,
+      });
+    });
+
+    expect(result.current.requestMode).toBe("full");
+    expect(formState.setFieldsValue).toHaveBeenCalledWith({
+      batch_count: 3,
+      service_id: "svc-2",
+      template_id: "tpl-2",
+      instance_size_id: "size-2",
+      namespace: "team-prod",
+      reason: "reuse request",
+    });
+  });
+
+  it("opens a full-form request using reusable parameters from an existing vm", async () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    await act(async () => {
+      await result.current.openSimilarRequest("vm-1");
+    });
+
+    expect(apiGetMock).toHaveBeenCalledWith("/vms/{vm_id}/request-prefill", {
+      params: { path: { vm_id: "vm-1" } },
+    });
+    expect(result.current.requestMode).toBe("full");
+    expect(formState.resetFields).toHaveBeenCalled();
+    expect(formState.setFieldsValue).toHaveBeenCalledWith({
+      batch_count: 2,
+      service_id: "svc-prefill",
+      template_id: "tpl-prefill",
+      instance_size_id: "size-prefill",
+      namespace: "prefill-ns",
+      reason: "reuse vm request",
+    });
+  });
+
+  it("warns when a vm does not expose reusable request context", async () => {
+    apiGetMock.mockResolvedValueOnce({
+      data: undefined,
+      error: {
+        code: "VM_REQUEST_PREFILL_UNAVAILABLE",
+        message: "no reusable request context",
+      },
+      response: new Response(),
+    });
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    await act(async () => {
+      await result.current.openSimilarRequest("vm-404");
+    });
+
+    expect(messageWarningMock).toHaveBeenCalledWith(
+      "request_similar.unavailable",
+    );
+  });
+
+  it("autosaves a meaningful vm request draft while the wizard is open", async () => {
+    vi.useFakeTimers();
+    watchValues.service_id = "svc-2";
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => {
+      result.current.openWizard({ systemId: "sys-1", serviceId: "svc-2" });
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+
+    expect(
+      window.localStorage.getItem(buildVMRequestDraftStorageKey("u-alice")),
+    ).toContain('"systemId":"sys-1"');
+    expect(
+      window.localStorage.getItem(buildVMRequestDraftStorageKey("u-alice")),
+    ).toContain('"serviceId":"svc-2"');
+
+    watchValues.service_id = "svc-1";
+    vi.useRealTimers();
+  });
+
+  it("restores a saved draft back into the wizard form", () => {
+    window.localStorage.setItem(
+      buildVMRequestDraftStorageKey("u-alice"),
+      JSON.stringify({
+        version: 1,
+        systemId: "sys-1",
+        serviceId: "svc-restore",
+        templateId: "tpl-restore",
+        instanceSizeId: "size-restore",
+        namespace: "restore-ns",
+        reason: "restore reason",
+        batchCount: 3,
+        wizardStep: 2,
+        requestMode: "full",
+        updatedAt: "2026-03-16T12:00:00Z",
+      }),
+    );
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => {
+      result.current.resumeDraft();
+    });
+
+    expect(result.current.requestMode).toBe("full");
+    expect(formState.resetFields).toHaveBeenCalled();
+    expect(formState.setFieldsValue).toHaveBeenCalledWith({
+      service_id: "svc-restore",
+      template_id: "tpl-restore",
+      instance_size_id: "size-restore",
+      namespace: "restore-ns",
+      reason: "restore reason",
+      batch_count: 3,
+    });
+  });
+
+  it("validates all required fields before submitting in full-form mode", async () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => {
+      result.current.openWizard({ requestMode: "full" });
+    });
+
+    await act(async () => {
+      await result.current.submitWizard();
+    });
+
+    expect(formState.validateFields).toHaveBeenCalledWith([
+      "service_id",
+      "template_id",
+      "instance_size_id",
+      "namespace",
+      "reason",
+      "batch_count",
+    ]);
+    expect(createMutate).toHaveBeenCalledWith({
+      service_id: "svc-1",
+      template_id: "tpl-1",
+      instance_size_id: "size-1",
+      namespace: "prod",
+      reason: "scale up",
+    });
+  });
+
+  it("discards a saved draft from local storage", () => {
+    window.localStorage.setItem(
+      buildVMRequestDraftStorageKey("u-alice"),
+      JSON.stringify({
+        version: 1,
+        serviceId: "svc-restore",
+        reason: "restore reason",
+        batchCount: 1,
+        wizardStep: 1,
+        updatedAt: "2026-03-16T12:00:00Z",
+      }),
+    );
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => {
+      result.current.discardDraft();
+    });
+
+    expect(
+      window.localStorage.getItem(buildVMRequestDraftStorageKey("u-alice")),
+    ).toBeNull();
   });
 
   it("requests placement hint when namespace, template, and size are selected", async () => {
@@ -506,7 +781,7 @@ describe("useVMManagementController", () => {
   it("uses status_url for active batch tracking when batch submit succeeds", () => {
     const { result } = renderHook(() => useVMManagementController({ t }));
 
-    const createBatchOptions = useApiMutationMock.mock.calls[1]?.[1] as {
+    const createBatchOptions = getMutationOptions(2) as {
       onSuccess?: (data: {
         batch_id: string;
         status: string;
@@ -560,7 +835,7 @@ describe("useVMManagementController", () => {
 
     const { result } = renderHook(() => useVMManagementController({ t }));
 
-    const createBatchOptions = useApiMutationMock.mock.calls[1]?.[1] as {
+    const createBatchOptions = getMutationOptions(2) as {
       onError?: (error: {
         code: string;
         params?: Record<string, unknown>;
@@ -595,7 +870,7 @@ describe("useVMManagementController", () => {
   it("records affected child ticket ids for retry/cancel feedback", () => {
     const { result } = renderHook(() => useVMManagementController({ t }));
 
-    const createBatchOptions = useApiMutationMock.mock.calls[1]?.[1] as {
+    const createBatchOptions = getMutationOptions(2) as {
       onSuccess?: (data: {
         batch_id: string;
         status: string;
@@ -603,7 +878,7 @@ describe("useVMManagementController", () => {
         retry_after_seconds: number;
       }) => void;
     };
-    const retryOptions = useApiMutationMock.mock.calls[4]?.[1] as {
+    const retryOptions = getMutationOptions(5) as {
       onSuccess?: (data: {
         batch_id: string;
         status: string;
@@ -611,7 +886,7 @@ describe("useVMManagementController", () => {
         affected_ticket_ids?: string[];
       }) => void;
     };
-    const cancelOptions = useApiMutationMock.mock.calls[5]?.[1] as {
+    const cancelOptions = getMutationOptions(6) as {
       onSuccess?: (data: {
         batch_id: string;
         status: string;
@@ -662,5 +937,44 @@ describe("useVMManagementController", () => {
       affectedCount: 1,
       affectedTicketIDs: ["ticket-pending-1"],
     });
+  });
+
+  it("rejects modify submit when no target resource is provided", async () => {
+    formState.getFieldsValue.mockReturnValue({
+      reason: "scale up",
+    });
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => {
+      result.current.openModifyModal("vm-1", "vm-one");
+    });
+
+    await act(async () => {
+      await result.current.submitModify();
+    });
+
+    expect(createModifyMutate).not.toHaveBeenCalled();
+    expect(messageWarningMock).toHaveBeenCalledWith("modify.target_required");
+  });
+
+  it("rejects single-vm modify requests that do not expand the current resource", async () => {
+    formState.getFieldsValue.mockReturnValue({
+      reason: "scale up",
+      target_memory_gi: 4,
+    });
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => {
+      result.current.openModifyModal("vm-1", "vm-one");
+    });
+
+    await act(async () => {
+      await result.current.submitModify();
+    });
+
+    expect(createModifyMutate).not.toHaveBeenCalled();
+    expect(messageWarningMock).toHaveBeenCalledWith(
+      "modify.target_memory_expand_only",
+    );
   });
 });

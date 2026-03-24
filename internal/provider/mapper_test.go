@@ -18,9 +18,9 @@ func TestMapVMStatus_UsesPrintableStatusMappings(t *testing.T) {
 		want      domain.VMStatus
 	}{
 		{
-			name:      "starting_maps_to_creating",
+			name:      "starting_maps_to_starting",
 			printable: kubevirtv1.VirtualMachineStatusStarting,
-			want:      domain.VMStatusCreating,
+			want:      domain.VMStatusStarting,
 		},
 		{
 			name:      "waiting_for_volume_binding_maps_to_pending",

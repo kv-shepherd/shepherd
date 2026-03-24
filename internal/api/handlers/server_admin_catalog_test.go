@@ -9,7 +9,10 @@ import (
 	"github.com/google/uuid"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/domainevent"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/internal/api/generated"
+	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
@@ -191,6 +194,134 @@ func TestAdminInstanceSizeCRUD(t *testing.T) {
 	}
 }
 
+func TestDeleteAdminTemplate_RejectsActiveCreateRequests(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminCatalogTestServer(t)
+	ctx := t.Context()
+
+	tpl, err := client.Template.Create().
+		SetID("tpl-active-req").
+		SetName("ubuntu-active-req").
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+
+	payload, err := json.Marshal(domain.VMCreationPayload{
+		RequesterID:    "user-a",
+		ServiceID:      "svc-a",
+		TemplateID:     tpl.ID,
+		InstanceSizeID: "size-a",
+		Namespace:      "prod-a",
+		Reason:         "pending request",
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if _, err := client.DomainEvent.Create().
+		SetID("ev-template-active-req").
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("svc-a").
+		SetPayload(payload).
+		SetStatus(domainevent.StatusPENDING).
+		SetCreatedBy("user-a").
+		Save(ctx); err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	if _, err := client.Ticket.Create().
+		SetID("ticket-template-active-req").
+		SetEventID("ev-template-active-req").
+		SetOperationType(entticket.OperationTypeCREATE).
+		SetStatus(entticket.StatusAPPROVED).
+		SetRequester("user-a").
+		SetReason("pending request").
+		Save(ctx); err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+
+	deleteCtx, deleteW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/templates/"+tpl.ID,
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.DeleteAdminTemplate(deleteCtx, tpl.ID)
+	if deleteW.Code != http.StatusConflict {
+		t.Fatalf("delete status = %d, want %d, body=%s", deleteW.Code, http.StatusConflict, deleteW.Body.String())
+	}
+	assertErrorCode(t, deleteW.Body.Bytes(), "TEMPLATE_HAS_ACTIVE_REQUESTS")
+}
+
+func TestDeleteAdminInstanceSize_RejectsActiveCreateRequests(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminCatalogTestServer(t)
+	ctx := t.Context()
+
+	size, err := client.InstanceSize.Create().
+		SetID("size-active-req").
+		SetName("m4-active-req").
+		SetCPUCores(4).
+		SetMemoryGi(8).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create instance size: %v", err)
+	}
+
+	payload, err := json.Marshal(domain.VMCreationPayload{
+		RequesterID:    "user-a",
+		ServiceID:      "svc-a",
+		TemplateID:     "tpl-a",
+		InstanceSizeID: size.ID,
+		Namespace:      "prod-a",
+		Reason:         "pending request",
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if _, err := client.DomainEvent.Create().
+		SetID("ev-size-active-req").
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("svc-a").
+		SetPayload(payload).
+		SetStatus(domainevent.StatusPENDING).
+		SetCreatedBy("user-a").
+		Save(ctx); err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	if _, err := client.Ticket.Create().
+		SetID("ticket-size-active-req").
+		SetEventID("ev-size-active-req").
+		SetOperationType(entticket.OperationTypeCREATE).
+		SetStatus(entticket.StatusEXECUTING).
+		SetRequester("user-a").
+		SetReason("pending request").
+		Save(ctx); err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+
+	deleteCtx, deleteW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/instance-sizes/"+size.ID,
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.DeleteAdminInstanceSize(deleteCtx, size.ID)
+	if deleteW.Code != http.StatusConflict {
+		t.Fatalf("delete status = %d, want %d, body=%s", deleteW.Code, http.StatusConflict, deleteW.Body.String())
+	}
+	assertErrorCode(t, deleteW.Body.Bytes(), "INSTANCE_SIZE_HAS_ACTIVE_REQUESTS")
+}
+
 func TestAdminInstanceSizeUpdate_EmptyDvAccessModesClearsExplicitRootVolumeMode(t *testing.T) {
 	t.Parallel()
 
@@ -354,7 +485,10 @@ func newAdminCatalogTestServer(t *testing.T) (*Server, *ent.Client) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	client := testutil.OpenEntPostgres(t, "admin_catalog")
-	return NewServer(ServerDeps{EntClient: client}), client
+	return NewServer(ServerDeps{
+		EntClient:     client,
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	}), client
 }
 
 func mustDecodeJSON(t *testing.T, payload []byte, out any) {

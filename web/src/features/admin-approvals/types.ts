@@ -5,17 +5,18 @@ import {
     DesktopOutlined,
     PlusCircleOutlined,
     PoweroffOutlined,
+    SettingOutlined,
 } from '@ant-design/icons';
 
 import type { components } from '@/types/api.gen';
 
-export type ApprovalTicket = components['schemas']['ApprovalTicket'];
-export type ApprovalTicketList = components['schemas']['ApprovalTicketList'];
+export type ApprovalTask = components['schemas']['Ticket'];
+export type ApprovalTaskList = components['schemas']['TicketList'];
 export type ApprovalDecisionRequest = components['schemas']['ApprovalDecisionRequest'];
 export type RejectDecisionRequest = components['schemas']['RejectDecisionRequest'];
 export type ClusterList = components['schemas']['ClusterList'];
 export type Cluster = components['schemas']['Cluster'];
-export type ApprovalStatus = NonNullable<ApprovalTicket['status']>;
+export type ApprovalStatus = NonNullable<ApprovalTask['status']>;
 
 export const STATUS_COLORS: Record<string, string> = {
     PENDING: 'gold',
@@ -39,6 +40,7 @@ export const STATUS_BADGES: Record<string, 'processing' | 'success' | 'error' | 
 
 export const OP_TYPE_CONFIG: Record<string, { color: string; icon: ElementType }> = {
     CREATE: { color: 'blue', icon: PlusCircleOutlined },
+    MODIFY: { color: 'gold', icon: SettingOutlined },
     DELETE: { color: 'red', icon: DeleteOutlined },
     POWER: { color: 'orange', icon: PoweroffOutlined },
     VNC_ACCESS: { color: 'geekblue', icon: DesktopOutlined },
@@ -64,15 +66,15 @@ export const STATUS_FILTER_OPTIONS: Array<{ key: ApprovalStatus | 'ALL'; i18nKey
     { key: 'EXECUTING', i18nKey: 'filter.executing' },
     { key: 'SUCCESS', i18nKey: 'filter.success' },
     { key: 'FAILED', i18nKey: 'filter.failed' },
-    { key: 'APPROVED', i18nKey: 'filter.approved' },
     { key: 'REJECTED', i18nKey: 'filter.rejected' },
     { key: 'CANCELLED', i18nKey: 'filter.cancelled' },
     { key: 'ALL', i18nKey: 'filter.all' },
 ];
 
-export const OPERATION_FILTER_OPTIONS: Array<{ key: ApprovalTicket['operation_type'] | 'ALL'; i18nKey: string }> = [
+export const OPERATION_FILTER_OPTIONS: Array<{ key: ApprovalTask['operation_type'] | 'ALL'; i18nKey: string }> = [
     { key: 'ALL', i18nKey: 'filter.operation_all' },
     { key: 'CREATE', i18nKey: 'op_type.CREATE' },
+    { key: 'MODIFY', i18nKey: 'op_type.MODIFY' },
     { key: 'DELETE', i18nKey: 'op_type.DELETE' },
     { key: 'POWER', i18nKey: 'op_type.POWER' },
     { key: 'VNC_ACCESS', i18nKey: 'op_type.VNC_ACCESS' },

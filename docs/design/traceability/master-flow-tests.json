@@ -128,8 +128,8 @@
       "id": "stage-2-e",
       "tests": [
         "internal/app/modules/approval_test.go",
-        "internal/governance/approval/gateway_behavior_test.go",
-        "internal/governance/approval/gateway_test.go",
+        "internal/governance/approval/provider_router_test.go",
+        "internal/governance/ticketing/service_behavior_test.go",
         "web/src/features/admin-approvals/hooks/useAdminApprovalsController.test.tsx",
         "web/tests/e2e/master-flow-live.spec.ts"
       ],
@@ -269,8 +269,8 @@
     {
       "id": "stage-5-b",
       "tests": [
-        "internal/governance/approval/gateway_behavior_test.go",
-        "internal/governance/approval/gateway_test.go",
+        "internal/governance/approval/provider_router_test.go",
+        "internal/governance/ticketing/service_behavior_test.go",
         "internal/service/approval_validator_test.go",
         "web/src/features/admin-approvals/hooks/useAdminApprovalsController.test.tsx",
         "web/tests/e2e/master-flow-live.spec.ts"
@@ -340,7 +340,7 @@
         "internal/service/vnc_policy_test.go",
         "internal/service/vnc_token_test.go",
         "internal/api/handlers/server_vm_console_behavior_test.go",
-        "internal/governance/approval/gateway_behavior_test.go",
+        "internal/governance/ticketing/service_behavior_test.go",
         "web/src/features/vm-management/hooks/useVMManagementController.test.tsx",
         "web/tests/e2e/master-flow-live.spec.ts"
       ],

@@ -22,7 +22,7 @@
 | Platform RBAC | `users`, `roles`, `permissions`, `role_permissions`, `role_bindings`, `resource_role_bindings` | Platform-level access control |
 | Event and async | `domain_events`, River tables (`river_job`, `river_*`) | Claim-check and async execution |
 | Audit and notifications | `audit_logs`, `notifications` | Compliance and user feedback |
-| Auth provider integration | `auth_providers`, `idp_synced_groups`, `idp_group_mappings`, `external_approval_systems` | Enterprise auth and external approvals |
+| Auth provider integration | `auth_providers`, `external_cohorts`, `external_cohort_mappings`, `external_cohort_grants`, `user_directory_profiles`, `directory_sync_jobs` | External auth runtime, optional directory sync, and cohort-to-RBAC projection |
 | Security/bootstrap | `system_secrets`, session/auth tables | Secret bootstrap and auth runtime |
 | Recovery and compensation | `pending_adoptions` | Resource adoption compensation capability |
 | Rate limiting | `rate_limit_counter`, `rate_limit_exemption` | ADR-0015 two-layer limits support |

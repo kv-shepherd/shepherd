@@ -401,7 +401,7 @@ func TestApplyModifiedSpecOverrides_ResourceOverrideKeys(t *testing.T) {
 		Image:    "test-image:1",
 	}
 
-	// Simulate modifiedSpec as written by gateway.go when enable_override=true.
+	// Simulate modifiedSpec as written by the ticket service when enable_override=true.
 	applyModifiedSpecOverrides(spec, map[string]interface{}{
 		"enable_override":   true,
 		"cpu_limit":         8.0,

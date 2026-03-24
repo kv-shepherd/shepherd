@@ -16,7 +16,7 @@ type fileRequirement struct {
 func main() {
 	requirements := []fileRequirement{
 		{
-			path: "internal/governance/approval/gateway.go",
+			path: "internal/governance/ticketing/service.go",
 			patternGroups: [][]string{
 				{
 					`(?s)ValidateApproval\(ctx,.*payload\.Namespace`,

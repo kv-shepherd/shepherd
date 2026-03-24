@@ -31,36 +31,10 @@ const (
 	ApprovalDecisionRequestSelectedDvVolumeModeFilesystem ApprovalDecisionRequestSelectedDvVolumeMode = "Filesystem"
 )
 
-// Defines values for ApprovalTicketOperationType.
+// Defines values for AuthLoginModeInteraction.
 const (
-	ApprovalTicketOperationTypeCREATE    ApprovalTicketOperationType = "CREATE"
-	ApprovalTicketOperationTypeDELETE    ApprovalTicketOperationType = "DELETE"
-	ApprovalTicketOperationTypePOWER     ApprovalTicketOperationType = "POWER"
-	ApprovalTicketOperationTypeVNCACCESS ApprovalTicketOperationType = "VNC_ACCESS"
-)
-
-// Defines values for ApprovalTicketStatus.
-const (
-	ApprovalTicketStatusAPPROVED  ApprovalTicketStatus = "APPROVED"
-	ApprovalTicketStatusCANCELLED ApprovalTicketStatus = "CANCELLED"
-	ApprovalTicketStatusEXECUTING ApprovalTicketStatus = "EXECUTING"
-	ApprovalTicketStatusFAILED    ApprovalTicketStatus = "FAILED"
-	ApprovalTicketStatusPENDING   ApprovalTicketStatus = "PENDING"
-	ApprovalTicketStatusREJECTED  ApprovalTicketStatus = "REJECTED"
-	ApprovalTicketStatusSUCCESS   ApprovalTicketStatus = "SUCCESS"
-)
-
-// Defines values for ApprovalTicketResponseOperationType.
-const (
-	ApprovalTicketResponseOperationTypeCREATE    ApprovalTicketResponseOperationType = "CREATE"
-	ApprovalTicketResponseOperationTypeDELETE    ApprovalTicketResponseOperationType = "DELETE"
-	ApprovalTicketResponseOperationTypePOWER     ApprovalTicketResponseOperationType = "POWER"
-	ApprovalTicketResponseOperationTypeVNCACCESS ApprovalTicketResponseOperationType = "VNC_ACCESS"
-)
-
-// Defines values for ApprovalTicketResponseStatus.
-const (
-	ApprovalTicketResponseStatusPENDING ApprovalTicketResponseStatus = "PENDING"
+	Credentials AuthLoginModeInteraction = "credentials"
+	Redirect    AuthLoginModeInteraction = "redirect"
 )
 
 // Defines values for AuthProviderSampleFieldValueType.
@@ -124,9 +98,115 @@ const (
 	StorageClasses        ClusterPolicySummaryScopedControls = "storage_classes"
 )
 
+// Defines values for ClusterUpdateRequestEnvironment.
+const (
+	ClusterUpdateRequestEnvironmentProd ClusterUpdateRequestEnvironment = "prod"
+	ClusterUpdateRequestEnvironmentTest ClusterUpdateRequestEnvironment = "test"
+)
+
 // Defines values for DeleteVMResponseStatus.
 const (
 	DeleteVMResponseStatusPENDING DeleteVMResponseStatus = "PENDING"
+)
+
+// Defines values for DirectoryEnrichmentScheduleStatusJoinKeyType.
+const (
+	Username DirectoryEnrichmentScheduleStatusJoinKeyType = "username"
+)
+
+// Defines values for DirectoryEnrichmentScheduleStatusLastJobStatus.
+const (
+	DirectoryEnrichmentScheduleStatusLastJobStatusCompleted DirectoryEnrichmentScheduleStatusLastJobStatus = "completed"
+	DirectoryEnrichmentScheduleStatusLastJobStatusFailed    DirectoryEnrichmentScheduleStatusLastJobStatus = "failed"
+	DirectoryEnrichmentScheduleStatusLastJobStatusPending   DirectoryEnrichmentScheduleStatusLastJobStatus = "pending"
+	DirectoryEnrichmentScheduleStatusLastJobStatusRunning   DirectoryEnrichmentScheduleStatusLastJobStatus = "running"
+)
+
+// Defines values for DirectoryEnrichmentScheduleStatusMode.
+const (
+	EnrichExistingOnly DirectoryEnrichmentScheduleStatusMode = "enrich_existing_only"
+)
+
+// Defines values for DirectoryEnrichmentScheduleStatusPendingJobStatus.
+const (
+	DirectoryEnrichmentScheduleStatusPendingJobStatusPending DirectoryEnrichmentScheduleStatusPendingJobStatus = "pending"
+	DirectoryEnrichmentScheduleStatusPendingJobStatusRunning DirectoryEnrichmentScheduleStatusPendingJobStatus = "running"
+)
+
+// Defines values for DirectorySyncConflictCode.
+const (
+	AmbiguousExistingUser DirectorySyncConflictCode = "ambiguous_existing_user"
+	EmailConflict         DirectorySyncConflictCode = "email_conflict"
+	SameExternalIdentity  DirectorySyncConflictCode = "same_external_identity"
+	UsernameConflict      DirectorySyncConflictCode = "username_conflict"
+)
+
+// Defines values for DirectorySyncJobConflictResolution.
+const (
+	DirectorySyncJobConflictResolutionSkip DirectorySyncJobConflictResolution = "skip"
+)
+
+// Defines values for DirectorySyncJobStatus.
+const (
+	DirectorySyncJobStatusCompleted DirectorySyncJobStatus = "completed"
+	DirectorySyncJobStatusFailed    DirectorySyncJobStatus = "failed"
+	DirectorySyncJobStatusPending   DirectorySyncJobStatus = "pending"
+	DirectorySyncJobStatusRunning   DirectorySyncJobStatus = "running"
+)
+
+// Defines values for DirectorySyncJobSyncMode.
+const (
+	DirectorySyncJobSyncModeManualImport        DirectorySyncJobSyncMode = "manual_import"
+	DirectorySyncJobSyncModeScheduledEnrichment DirectorySyncJobSyncMode = "scheduled_enrichment"
+)
+
+// Defines values for DirectorySyncJobDetailConflictResolution.
+const (
+	DirectorySyncJobDetailConflictResolutionSkip DirectorySyncJobDetailConflictResolution = "skip"
+)
+
+// Defines values for DirectorySyncJobDetailStatus.
+const (
+	DirectorySyncJobDetailStatusCompleted DirectorySyncJobDetailStatus = "completed"
+	DirectorySyncJobDetailStatusFailed    DirectorySyncJobDetailStatus = "failed"
+	DirectorySyncJobDetailStatusPending   DirectorySyncJobDetailStatus = "pending"
+	DirectorySyncJobDetailStatusRunning   DirectorySyncJobDetailStatus = "running"
+)
+
+// Defines values for DirectorySyncJobDetailSyncMode.
+const (
+	DirectorySyncJobDetailSyncModeManualImport        DirectorySyncJobDetailSyncMode = "manual_import"
+	DirectorySyncJobDetailSyncModeScheduledEnrichment DirectorySyncJobDetailSyncMode = "scheduled_enrichment"
+)
+
+// Defines values for DirectorySyncPreviewMatchAction.
+const (
+	Blocked DirectorySyncPreviewMatchAction = "blocked"
+	Create  DirectorySyncPreviewMatchAction = "create"
+	Update  DirectorySyncPreviewMatchAction = "update"
+)
+
+// Defines values for DirectorySyncPreviewMatchMatchedBy.
+const (
+	ExternalId DirectorySyncPreviewMatchMatchedBy = "external_id"
+)
+
+// Defines values for DirectorySyncPreviewRequestConflictResolution.
+const (
+	DirectorySyncPreviewRequestConflictResolutionSkip DirectorySyncPreviewRequestConflictResolution = "skip"
+)
+
+// Defines values for DirectorySyncRequestConflictResolution.
+const (
+	DirectorySyncRequestConflictResolutionSkip DirectorySyncRequestConflictResolution = "skip"
+)
+
+// Defines values for DirectorySyncStartResponseStatus.
+const (
+	Completed DirectorySyncStartResponseStatus = "completed"
+	Failed    DirectorySyncStartResponseStatus = "failed"
+	Pending   DirectorySyncStartResponseStatus = "pending"
+	Running   DirectorySyncStartResponseStatus = "running"
 )
 
 // Defines values for DynamicSchemaResponseSource.
@@ -134,6 +214,31 @@ const (
 	Cache    DynamicSchemaResponseSource = "cache"
 	Embedded DynamicSchemaResponseSource = "embedded"
 	Remote   DynamicSchemaResponseSource = "remote"
+)
+
+// Defines values for ExternalAuthPlatformSettingsSource.
+const (
+	PlatformSetting ExternalAuthPlatformSettingsSource = "platform_setting"
+	ServerConfig    ExternalAuthPlatformSettingsSource = "server_config"
+	Unset           ExternalAuthPlatformSettingsSource = "unset"
+)
+
+// Defines values for ExternalCohortMappingAllowedEnvironments.
+const (
+	ExternalCohortMappingAllowedEnvironmentsProd ExternalCohortMappingAllowedEnvironments = "prod"
+	ExternalCohortMappingAllowedEnvironmentsTest ExternalCohortMappingAllowedEnvironments = "test"
+)
+
+// Defines values for ExternalCohortMappingCreateRequestAllowedEnvironments.
+const (
+	ExternalCohortMappingCreateRequestAllowedEnvironmentsProd ExternalCohortMappingCreateRequestAllowedEnvironments = "prod"
+	ExternalCohortMappingCreateRequestAllowedEnvironmentsTest ExternalCohortMappingCreateRequestAllowedEnvironments = "test"
+)
+
+// Defines values for ExternalCohortMappingUpdateRequestAllowedEnvironments.
+const (
+	ExternalCohortMappingUpdateRequestAllowedEnvironmentsProd ExternalCohortMappingUpdateRequestAllowedEnvironments = "prod"
+	ExternalCohortMappingUpdateRequestAllowedEnvironmentsTest ExternalCohortMappingUpdateRequestAllowedEnvironments = "test"
 )
 
 // Defines values for GlobalRoleBindingAllowedEnvironments.
@@ -153,24 +258,6 @@ const (
 	HealthStatusDegraded HealthStatus = "degraded"
 	HealthStatusError    HealthStatus = "error"
 	HealthStatusOk       HealthStatus = "ok"
-)
-
-// Defines values for IdPGroupMappingAllowedEnvironments.
-const (
-	IdPGroupMappingAllowedEnvironmentsProd IdPGroupMappingAllowedEnvironments = "prod"
-	IdPGroupMappingAllowedEnvironmentsTest IdPGroupMappingAllowedEnvironments = "test"
-)
-
-// Defines values for IdPGroupMappingCreateRequestAllowedEnvironments.
-const (
-	IdPGroupMappingCreateRequestAllowedEnvironmentsProd IdPGroupMappingCreateRequestAllowedEnvironments = "prod"
-	IdPGroupMappingCreateRequestAllowedEnvironmentsTest IdPGroupMappingCreateRequestAllowedEnvironments = "test"
-)
-
-// Defines values for IdPGroupMappingUpdateRequestAllowedEnvironments.
-const (
-	IdPGroupMappingUpdateRequestAllowedEnvironmentsProd IdPGroupMappingUpdateRequestAllowedEnvironments = "prod"
-	IdPGroupMappingUpdateRequestAllowedEnvironmentsTest IdPGroupMappingUpdateRequestAllowedEnvironments = "test"
 )
 
 // Defines values for InstanceSizeCatalogScope.
@@ -366,6 +453,40 @@ const (
 	Containerdisk  TemplateUpdateRequestSourceType = "containerdisk"
 )
 
+// Defines values for TicketOperationType.
+const (
+	TicketOperationTypeCREATE    TicketOperationType = "CREATE"
+	TicketOperationTypeDELETE    TicketOperationType = "DELETE"
+	TicketOperationTypeMODIFY    TicketOperationType = "MODIFY"
+	TicketOperationTypePOWER     TicketOperationType = "POWER"
+	TicketOperationTypeVNCACCESS TicketOperationType = "VNC_ACCESS"
+)
+
+// Defines values for TicketStatus.
+const (
+	TicketStatusAPPROVED  TicketStatus = "APPROVED"
+	TicketStatusCANCELLED TicketStatus = "CANCELLED"
+	TicketStatusEXECUTING TicketStatus = "EXECUTING"
+	TicketStatusFAILED    TicketStatus = "FAILED"
+	TicketStatusPENDING   TicketStatus = "PENDING"
+	TicketStatusREJECTED  TicketStatus = "REJECTED"
+	TicketStatusSUCCESS   TicketStatus = "SUCCESS"
+)
+
+// Defines values for TicketResponseOperationType.
+const (
+	TicketResponseOperationTypeCREATE    TicketResponseOperationType = "CREATE"
+	TicketResponseOperationTypeDELETE    TicketResponseOperationType = "DELETE"
+	TicketResponseOperationTypeMODIFY    TicketResponseOperationType = "MODIFY"
+	TicketResponseOperationTypePOWER     TicketResponseOperationType = "POWER"
+	TicketResponseOperationTypeVNCACCESS TicketResponseOperationType = "VNC_ACCESS"
+)
+
+// Defines values for TicketResponseStatus.
+const (
+	TicketResponseStatusPENDING TicketResponseStatus = "PENDING"
+)
+
 // Defines values for VMEnvironment.
 const (
 	VMEnvironmentProd VMEnvironment = "prod"
@@ -378,9 +499,11 @@ const (
 	VMStatusDELETING  VMStatus = "DELETING"
 	VMStatusFAILED    VMStatus = "FAILED"
 	VMStatusMIGRATING VMStatus = "MIGRATING"
+	VMStatusNOTFOUND  VMStatus = "NOT_FOUND"
 	VMStatusPAUSED    VMStatus = "PAUSED"
 	VMStatusPENDING   VMStatus = "PENDING"
 	VMStatusRUNNING   VMStatus = "RUNNING"
+	VMStatusSTARTING  VMStatus = "STARTING"
 	VMStatusSTOPPED   VMStatus = "STOPPED"
 	VMStatusSTOPPING  VMStatus = "STOPPING"
 	VMStatusUNKNOWN   VMStatus = "UNKNOWN"
@@ -411,6 +534,7 @@ const (
 const (
 	VMBatchOperationCREATE VMBatchOperation = "CREATE"
 	VMBatchOperationDELETE VMBatchOperation = "DELETE"
+	VMBatchOperationMODIFY VMBatchOperation = "MODIFY"
 	VMBatchOperationPOWER  VMBatchOperation = "POWER"
 )
 
@@ -518,33 +642,34 @@ const (
 
 // Defines values for ListNamespacesParamsEnvironment.
 const (
-	Prod ListNamespacesParamsEnvironment = "prod"
-	Test ListNamespacesParamsEnvironment = "test"
+	ListNamespacesParamsEnvironmentProd ListNamespacesParamsEnvironment = "prod"
+	ListNamespacesParamsEnvironmentTest ListNamespacesParamsEnvironment = "test"
 )
 
-// Defines values for ListApprovalsParamsStatus.
+// Defines values for ListBuiltinApprovalTasksParamsStatus.
 const (
-	APPROVED  ListApprovalsParamsStatus = "APPROVED"
-	CANCELLED ListApprovalsParamsStatus = "CANCELLED"
-	EXECUTING ListApprovalsParamsStatus = "EXECUTING"
-	FAILED    ListApprovalsParamsStatus = "FAILED"
-	PENDING   ListApprovalsParamsStatus = "PENDING"
-	REJECTED  ListApprovalsParamsStatus = "REJECTED"
-	SUCCESS   ListApprovalsParamsStatus = "SUCCESS"
+	ListBuiltinApprovalTasksParamsStatusAPPROVED  ListBuiltinApprovalTasksParamsStatus = "APPROVED"
+	ListBuiltinApprovalTasksParamsStatusCANCELLED ListBuiltinApprovalTasksParamsStatus = "CANCELLED"
+	ListBuiltinApprovalTasksParamsStatusEXECUTING ListBuiltinApprovalTasksParamsStatus = "EXECUTING"
+	ListBuiltinApprovalTasksParamsStatusFAILED    ListBuiltinApprovalTasksParamsStatus = "FAILED"
+	ListBuiltinApprovalTasksParamsStatusPENDING   ListBuiltinApprovalTasksParamsStatus = "PENDING"
+	ListBuiltinApprovalTasksParamsStatusREJECTED  ListBuiltinApprovalTasksParamsStatus = "REJECTED"
+	ListBuiltinApprovalTasksParamsStatusSUCCESS   ListBuiltinApprovalTasksParamsStatus = "SUCCESS"
 )
 
-// Defines values for ListApprovalsParamsOperationType.
+// Defines values for ListBuiltinApprovalTasksParamsOperationType.
 const (
-	ListApprovalsParamsOperationTypeCREATE    ListApprovalsParamsOperationType = "CREATE"
-	ListApprovalsParamsOperationTypeDELETE    ListApprovalsParamsOperationType = "DELETE"
-	ListApprovalsParamsOperationTypePOWER     ListApprovalsParamsOperationType = "POWER"
-	ListApprovalsParamsOperationTypeVNCACCESS ListApprovalsParamsOperationType = "VNC_ACCESS"
+	ListBuiltinApprovalTasksParamsOperationTypeCREATE    ListBuiltinApprovalTasksParamsOperationType = "CREATE"
+	ListBuiltinApprovalTasksParamsOperationTypeDELETE    ListBuiltinApprovalTasksParamsOperationType = "DELETE"
+	ListBuiltinApprovalTasksParamsOperationTypeMODIFY    ListBuiltinApprovalTasksParamsOperationType = "MODIFY"
+	ListBuiltinApprovalTasksParamsOperationTypePOWER     ListBuiltinApprovalTasksParamsOperationType = "POWER"
+	ListBuiltinApprovalTasksParamsOperationTypeVNCACCESS ListBuiltinApprovalTasksParamsOperationType = "VNC_ACCESS"
 )
 
-// Defines values for ListApprovalsParamsPlacementSnapshot.
+// Defines values for ListBuiltinApprovalTasksParamsPlacementSnapshot.
 const (
-	Missing ListApprovalsParamsPlacementSnapshot = "missing"
-	Present ListApprovalsParamsPlacementSnapshot = "present"
+	ListBuiltinApprovalTasksParamsPlacementSnapshotMissing ListBuiltinApprovalTasksParamsPlacementSnapshot = "missing"
+	ListBuiltinApprovalTasksParamsPlacementSnapshotPresent ListBuiltinApprovalTasksParamsPlacementSnapshot = "present"
 )
 
 // Defines values for GetDynamicSchemaParamsEntityType.
@@ -556,6 +681,32 @@ const (
 const (
 	ListSystemsParamsSortOrderAsc  ListSystemsParamsSortOrder = "asc"
 	ListSystemsParamsSortOrderDesc ListSystemsParamsSortOrder = "desc"
+)
+
+// Defines values for ListTicketsParamsStatus.
+const (
+	ListTicketsParamsStatusAPPROVED  ListTicketsParamsStatus = "APPROVED"
+	ListTicketsParamsStatusCANCELLED ListTicketsParamsStatus = "CANCELLED"
+	ListTicketsParamsStatusEXECUTING ListTicketsParamsStatus = "EXECUTING"
+	ListTicketsParamsStatusFAILED    ListTicketsParamsStatus = "FAILED"
+	ListTicketsParamsStatusPENDING   ListTicketsParamsStatus = "PENDING"
+	ListTicketsParamsStatusREJECTED  ListTicketsParamsStatus = "REJECTED"
+	ListTicketsParamsStatusSUCCESS   ListTicketsParamsStatus = "SUCCESS"
+)
+
+// Defines values for ListTicketsParamsOperationType.
+const (
+	CREATE    ListTicketsParamsOperationType = "CREATE"
+	DELETE    ListTicketsParamsOperationType = "DELETE"
+	MODIFY    ListTicketsParamsOperationType = "MODIFY"
+	POWER     ListTicketsParamsOperationType = "POWER"
+	VNCACCESS ListTicketsParamsOperationType = "VNC_ACCESS"
+)
+
+// Defines values for ListTicketsParamsPlacementSnapshot.
+const (
+	ListTicketsParamsPlacementSnapshotMissing ListTicketsParamsPlacementSnapshot = "missing"
+	ListTicketsParamsPlacementSnapshotPresent ListTicketsParamsPlacementSnapshot = "present"
 )
 
 // Defines values for ListVMsParamsSortOrder.
@@ -606,67 +757,17 @@ type ApprovalDecisionRequest struct {
 // ApprovalDecisionRequestSelectedDvVolumeMode Explicit volumeMode selected during approval when root volume provisioning intent cannot be auto-resolved uniquely.
 type ApprovalDecisionRequestSelectedDvVolumeMode string
 
-// ApprovalTicket defines model for ApprovalTicket.
-type ApprovalTicket struct {
-	Approver  string    `json:"approver,omitempty,omitzero"`
-	CreatedAt time.Time `json:"created_at,omitempty,omitzero"`
-	EventId   string    `json:"event_id"`
-	Id        string    `json:"id"`
-
-	// OperationType Type of operation this ticket represents (ADR-0015)
-	OperationType       ApprovalTicketOperationType `json:"operation_type,omitempty,omitzero"`
-	PlacementEvaluation *PlacementEvaluation        `json:"placement_evaluation,omitempty"`
-	Provisioning        *ProvisioningStatus         `json:"provisioning,omitempty"`
-	Reason              string                      `json:"reason,omitempty,omitzero"`
-	RejectReason        string                      `json:"reject_reason,omitempty,omitzero"`
-	Requester           string                      `json:"requester"`
-	Status              ApprovalTicketStatus        `json:"status"`
-
-	// TargetVmId For DELETE tickets, the VM being deleted
-	TargetVmId string `json:"target_vm_id,omitempty,omitzero"`
-
-	// TargetVmName For DELETE tickets, the VM name (for display)
-	TargetVmName string `json:"target_vm_name,omitempty,omitzero"`
-
-	// TicketPayload Contextual payload of the original request depending on operation_type
-	TicketPayload map[string]interface{} `json:"ticket_payload,omitzero"`
-}
-
-// ApprovalTicketOperationType Type of operation this ticket represents (ADR-0015)
-type ApprovalTicketOperationType string
-
-// ApprovalTicketStatus defines model for ApprovalTicket.Status.
-type ApprovalTicketStatus string
-
-// ApprovalTicketList defines model for ApprovalTicketList.
-type ApprovalTicketList struct {
-	Items      []ApprovalTicket `json:"items,omitempty,omitzero"`
-	Pagination Pagination       `json:"pagination,omitempty,omitzero"`
-}
-
-// ApprovalTicketResponse defines model for ApprovalTicketResponse.
-type ApprovalTicketResponse struct {
-	// OperationType Type of operation this ticket represents (ADR-0015)
-	OperationType ApprovalTicketResponseOperationType `json:"operation_type,omitempty,omitzero"`
-	Status        ApprovalTicketResponseStatus        `json:"status"`
-	TicketId      string                              `json:"ticket_id"`
-}
-
-// ApprovalTicketResponseOperationType Type of operation this ticket represents (ADR-0015)
-type ApprovalTicketResponseOperationType string
-
-// ApprovalTicketResponseStatus defines model for ApprovalTicketResponse.Status.
-type ApprovalTicketResponseStatus string
-
 // AuditLog defines model for AuditLog.
 type AuditLog struct {
-	Action       string                 `json:"action"`
-	Actor        string                 `json:"actor"`
-	CreatedAt    time.Time              `json:"created_at"`
-	Details      map[string]interface{} `json:"details,omitempty,omitzero"`
-	Id           string                 `json:"id"`
-	ResourceId   string                 `json:"resource_id"`
-	ResourceType string                 `json:"resource_type"`
+	Action           string                 `json:"action"`
+	Actor            string                 `json:"actor"`
+	ApprovalDecision string                 `json:"approval_decision,omitempty,omitzero"`
+	CreatedAt        time.Time              `json:"created_at"`
+	Details          map[string]interface{} `json:"details,omitempty,omitzero"`
+	Id               string                 `json:"id"`
+	PlacementSummary *AuditPlacementSummary `json:"placement_summary,omitempty"`
+	ResourceId       string                 `json:"resource_id"`
+	ResourceType     string                 `json:"resource_type"`
 }
 
 // AuditLogList defines model for AuditLogList.
@@ -674,6 +775,28 @@ type AuditLogList struct {
 	Items      []AuditLog `json:"items,omitempty,omitzero"`
 	Pagination Pagination `json:"pagination,omitempty,omitzero"`
 }
+
+// AuditPlacementSummary defines model for AuditPlacementSummary.
+type AuditPlacementSummary struct {
+	AdvisoryCode        string `json:"advisory_code,omitempty,omitzero"`
+	Eligible            *bool  `json:"eligible"`
+	ReasonCode          string `json:"reason_code,omitempty,omitzero"`
+	SelectedClusterId   string `json:"selected_cluster_id,omitempty,omitzero"`
+	SelectedClusterName string `json:"selected_cluster_name,omitempty,omitzero"`
+}
+
+// AuthLoginMode defines model for AuthLoginMode.
+type AuthLoginMode struct {
+	Default       bool                     `json:"default,omitempty,omitzero"`
+	Description   string                   `json:"description,omitempty,omitzero"`
+	DisplayName   string                   `json:"display_name"`
+	Interaction   AuthLoginModeInteraction `json:"interaction,omitempty,omitzero"`
+	Key           string                   `json:"key"`
+	RequestSchema map[string]interface{}   `json:"request_schema,omitempty,omitzero"`
+}
+
+// AuthLoginModeInteraction defines model for AuthLoginMode.Interaction.
+type AuthLoginModeInteraction string
 
 // AuthProvider defines model for AuthProvider.
 type AuthProvider struct {
@@ -705,21 +828,39 @@ type AuthProviderCreateRequest struct {
 	SortOrder int                    `json:"sort_order,omitempty,omitzero"`
 }
 
-// AuthProviderGroupSyncRequest defines model for AuthProviderGroupSyncRequest.
-type AuthProviderGroupSyncRequest struct {
-	Groups      []string `json:"groups" validate:"required,min=1"`
-	SourceField string   `json:"source_field" validate:"required"`
-}
-
-// AuthProviderGroupSyncResponse defines model for AuthProviderGroupSyncResponse.
-type AuthProviderGroupSyncResponse struct {
-	Items []IdPSyncedGroup `json:"items,omitempty,omitzero"`
+// AuthProviderCredentialLoginRequest defines model for AuthProviderCredentialLoginRequest.
+type AuthProviderCredentialLoginRequest struct {
+	Credentials map[string]interface{} `json:"credentials"`
+	LoginMode   string                 `json:"login_mode,omitempty,omitzero"`
+	ReturnTo    string                 `json:"return_to,omitempty,omitzero"`
 }
 
 // AuthProviderList defines model for AuthProviderList.
 type AuthProviderList struct {
 	Items      []AuthProvider `json:"items,omitempty,omitzero"`
 	Pagination Pagination     `json:"pagination,omitempty,omitzero"`
+}
+
+// AuthProviderLoginStartRequest defines model for AuthProviderLoginStartRequest.
+type AuthProviderLoginStartRequest struct {
+	LoginMode string `json:"login_mode,omitempty,omitzero"`
+	ReturnTo  string `json:"return_to"`
+}
+
+// AuthProviderLoginStartResponse defines model for AuthProviderLoginStartResponse.
+type AuthProviderLoginStartResponse struct {
+	RedirectUrl string `json:"redirect_url"`
+}
+
+// AuthProviderRuntimeDescriptor defines model for AuthProviderRuntimeDescriptor.
+type AuthProviderRuntimeDescriptor struct {
+	Description           string          `json:"description,omitempty,omitzero"`
+	DisplayName           string          `json:"display_name,omitempty,omitzero"`
+	LoginModes            []AuthLoginMode `json:"login_modes,omitempty,omitzero"`
+	RequiresPublicBaseUrl bool            `json:"requires_public_base_url"`
+	Supported             bool            `json:"supported"`
+	SupportsCredentials   bool            `json:"supports_credentials"`
+	SupportsRedirect      bool            `json:"supports_redirect"`
 }
 
 // AuthProviderSampleField defines model for AuthProviderSampleField.
@@ -827,7 +968,7 @@ type ClusterCreateRequest struct {
 	DisplayName string                          `json:"display_name,omitempty,omitzero"`
 	Environment ClusterCreateRequestEnvironment `json:"environment,omitempty,omitzero" validate:"oneof=test prod"`
 
-	// Kubeconfig Base64-encoded kubeconfig (stored encrypted, ADR-0012)
+	// Kubeconfig Kubeconfig bytes encoded as base64 for API transport. Base64 is transport encoding only, not encryption.
 	Kubeconfig []byte `json:"kubeconfig" validate:"required"`
 	Name       string `json:"name" validate:"required"`
 }
@@ -914,6 +1055,19 @@ type ClusterPolicyUpsertRequest struct {
 	AllowedStorageClasses        []string `json:"allowed_storage_classes,omitempty,omitzero"`
 }
 
+// ClusterUpdateRequest defines model for ClusterUpdateRequest.
+type ClusterUpdateRequest struct {
+	DisplayName string                          `json:"display_name,omitempty,omitzero"`
+	Enabled     bool                            `json:"enabled,omitempty,omitzero"`
+	Environment ClusterUpdateRequestEnvironment `json:"environment,omitempty,omitzero" validate:"omitempty,oneof=test prod"`
+
+	// Kubeconfig Optional replacement kubeconfig bytes encoded as base64 for API transport. Base64 is transport encoding only, not encryption.
+	Kubeconfig []byte `json:"kubeconfig,omitempty,omitzero"`
+}
+
+// ClusterUpdateRequestEnvironment defines model for ClusterUpdateRequest.Environment.
+type ClusterUpdateRequestEnvironment string
+
 // DeleteVMResponse defines model for DeleteVMResponse.
 type DeleteVMResponse struct {
 	EventId  string                 `json:"event_id"`
@@ -923,6 +1077,195 @@ type DeleteVMResponse struct {
 
 // DeleteVMResponseStatus defines model for DeleteVMResponse.Status.
 type DeleteVMResponseStatus string
+
+// DirectoryActionSummary defines model for DirectoryActionSummary.
+type DirectoryActionSummary struct {
+	BlockedCount int `json:"blocked_count"`
+	CreateCount  int `json:"create_count"`
+	UpdateCount  int `json:"update_count"`
+}
+
+// DirectoryEnrichmentScheduleStatus defines model for DirectoryEnrichmentScheduleStatus.
+type DirectoryEnrichmentScheduleStatus struct {
+	Enabled            bool                                              `json:"enabled"`
+	JoinKeyType        DirectoryEnrichmentScheduleStatusJoinKeyType      `json:"join_key_type,omitempty,omitzero"`
+	LastJobCompletedAt time.Time                                         `json:"last_job_completed_at,omitempty,omitzero"`
+	LastJobCreatedAt   time.Time                                         `json:"last_job_created_at,omitempty,omitzero"`
+	LastJobId          string                                            `json:"last_job_id,omitempty,omitzero"`
+	LastJobStatus      DirectoryEnrichmentScheduleStatusLastJobStatus    `json:"last_job_status,omitempty,omitzero"`
+	Mode               DirectoryEnrichmentScheduleStatusMode             `json:"mode,omitempty,omitzero"`
+	NextRunAt          time.Time                                         `json:"next_run_at,omitempty,omitzero"`
+	PendingJobId       string                                            `json:"pending_job_id,omitempty,omitzero"`
+	PendingJobStatus   DirectoryEnrichmentScheduleStatusPendingJobStatus `json:"pending_job_status,omitempty,omitzero"`
+	ScheduleCron       string                                            `json:"schedule_cron,omitempty,omitzero"`
+	ScheduleTimezone   string                                            `json:"schedule_timezone,omitempty,omitzero"`
+	Supported          bool                                              `json:"supported"`
+}
+
+// DirectoryEnrichmentScheduleStatusJoinKeyType defines model for DirectoryEnrichmentScheduleStatus.JoinKeyType.
+type DirectoryEnrichmentScheduleStatusJoinKeyType string
+
+// DirectoryEnrichmentScheduleStatusLastJobStatus defines model for DirectoryEnrichmentScheduleStatus.LastJobStatus.
+type DirectoryEnrichmentScheduleStatusLastJobStatus string
+
+// DirectoryEnrichmentScheduleStatusMode defines model for DirectoryEnrichmentScheduleStatus.Mode.
+type DirectoryEnrichmentScheduleStatusMode string
+
+// DirectoryEnrichmentScheduleStatusPendingJobStatus defines model for DirectoryEnrichmentScheduleStatus.PendingJobStatus.
+type DirectoryEnrichmentScheduleStatusPendingJobStatus string
+
+// DirectoryExternalCohort defines model for DirectoryExternalCohort.
+type DirectoryExternalCohort struct {
+	DisplayName string `json:"display_name,omitempty,omitzero"`
+	Key         string `json:"key"`
+	Kind        string `json:"kind"`
+}
+
+// DirectorySyncConflict defines model for DirectorySyncConflict.
+type DirectorySyncConflict struct {
+	Code           DirectorySyncConflictCode `json:"code"`
+	ExistingUserId string                    `json:"existing_user_id,omitempty,omitzero"`
+	Field          string                    `json:"field,omitempty,omitzero"`
+	Message        string                    `json:"message,omitempty,omitzero"`
+}
+
+// DirectorySyncConflictCode defines model for DirectorySyncConflict.Code.
+type DirectorySyncConflictCode string
+
+// DirectorySyncDescriptor defines model for DirectorySyncDescriptor.
+type DirectorySyncDescriptor struct {
+	Description     string                 `json:"description,omitempty,omitzero"`
+	DisplayName     string                 `json:"display_name"`
+	RequestSchema   map[string]interface{} `json:"request_schema,omitempty,omitzero"`
+	SupportsPreview bool                   `json:"supports_preview"`
+}
+
+// DirectorySyncJob defines model for DirectorySyncJob.
+type DirectorySyncJob struct {
+	CompletedAt        time.Time                          `json:"completed_at,omitempty,omitzero"`
+	ConflictResolution DirectorySyncJobConflictResolution `json:"conflict_resolution"`
+	CreatedAt          time.Time                          `json:"created_at"`
+	ErrorCount         int                                `json:"error_count"`
+	Errors             []string                           `json:"errors"`
+	Id                 string                             `json:"id"`
+	JoinKeyType        string                             `json:"join_key_type,omitempty,omitzero"`
+	ProviderId         string                             `json:"provider_id"`
+	ResultSummary      DirectoryActionSummary             `json:"result_summary"`
+	StartedAt          time.Time                          `json:"started_at,omitempty,omitzero"`
+	Status             DirectorySyncJobStatus             `json:"status"`
+	SyncMode           DirectorySyncJobSyncMode           `json:"sync_mode,omitempty,omitzero"`
+	TotalEntries       int                                `json:"total_entries"`
+	TriggeredBy        string                             `json:"triggered_by"`
+	UpdatedAt          time.Time                          `json:"updated_at"`
+}
+
+// DirectorySyncJobConflictResolution defines model for DirectorySyncJob.ConflictResolution.
+type DirectorySyncJobConflictResolution string
+
+// DirectorySyncJobStatus defines model for DirectorySyncJob.Status.
+type DirectorySyncJobStatus string
+
+// DirectorySyncJobSyncMode defines model for DirectorySyncJob.SyncMode.
+type DirectorySyncJobSyncMode string
+
+// DirectorySyncJobDetail defines model for DirectorySyncJobDetail.
+type DirectorySyncJobDetail struct {
+	CompletedAt        time.Time                                `json:"completed_at,omitempty,omitzero"`
+	ConflictResolution DirectorySyncJobDetailConflictResolution `json:"conflict_resolution"`
+	CreatedAt          time.Time                                `json:"created_at"`
+	ErrorCount         int                                      `json:"error_count"`
+	Errors             []string                                 `json:"errors"`
+	Id                 string                                   `json:"id"`
+	JoinKeyType        string                                   `json:"join_key_type,omitempty,omitzero"`
+	ProviderId         string                                   `json:"provider_id"`
+	RequestSnapshot    map[string]interface{}                   `json:"request_snapshot"`
+	ResultSummary      DirectoryActionSummary                   `json:"result_summary"`
+	StartedAt          time.Time                                `json:"started_at,omitempty,omitzero"`
+	Status             DirectorySyncJobDetailStatus             `json:"status"`
+	SyncMode           DirectorySyncJobDetailSyncMode           `json:"sync_mode,omitempty,omitzero"`
+	TotalEntries       int                                      `json:"total_entries"`
+	TriggeredBy        string                                   `json:"triggered_by"`
+	UpdatedAt          time.Time                                `json:"updated_at"`
+}
+
+// DirectorySyncJobDetailConflictResolution defines model for DirectorySyncJobDetail.ConflictResolution.
+type DirectorySyncJobDetailConflictResolution string
+
+// DirectorySyncJobDetailStatus defines model for DirectorySyncJobDetail.Status.
+type DirectorySyncJobDetailStatus string
+
+// DirectorySyncJobDetailSyncMode defines model for DirectorySyncJobDetail.SyncMode.
+type DirectorySyncJobDetailSyncMode string
+
+// DirectorySyncJobList defines model for DirectorySyncJobList.
+type DirectorySyncJobList struct {
+	Items      []DirectorySyncJob `json:"items"`
+	Pagination Pagination         `json:"pagination"`
+}
+
+// DirectorySyncPreview defines model for DirectorySyncPreview.
+type DirectorySyncPreview struct {
+	Items      []DirectorySyncPreviewItem `json:"items"`
+	TotalCount int                        `json:"total_count"`
+}
+
+// DirectorySyncPreviewItem defines model for DirectorySyncPreviewItem.
+type DirectorySyncPreviewItem struct {
+	Conflicts []DirectorySyncConflict   `json:"conflicts,omitempty,omitzero"`
+	Match     DirectorySyncPreviewMatch `json:"match"`
+	Record    DirectoryUserRecord       `json:"record"`
+	Warnings  []string                  `json:"warnings,omitempty,omitzero"`
+}
+
+// DirectorySyncPreviewMatch defines model for DirectorySyncPreviewMatch.
+type DirectorySyncPreviewMatch struct {
+	Action         DirectorySyncPreviewMatchAction    `json:"action"`
+	ExistingUserId string                             `json:"existing_user_id,omitempty,omitzero"`
+	MatchedBy      DirectorySyncPreviewMatchMatchedBy `json:"matched_by,omitempty,omitzero"`
+}
+
+// DirectorySyncPreviewMatchAction defines model for DirectorySyncPreviewMatch.Action.
+type DirectorySyncPreviewMatchAction string
+
+// DirectorySyncPreviewMatchMatchedBy defines model for DirectorySyncPreviewMatch.MatchedBy.
+type DirectorySyncPreviewMatchMatchedBy string
+
+// DirectorySyncPreviewRequest defines model for DirectorySyncPreviewRequest.
+type DirectorySyncPreviewRequest struct {
+	ConflictResolution DirectorySyncPreviewRequestConflictResolution `json:"conflict_resolution,omitempty,omitzero"`
+	ProviderRequest    map[string]interface{}                        `json:"provider_request"`
+}
+
+// DirectorySyncPreviewRequestConflictResolution defines model for DirectorySyncPreviewRequest.ConflictResolution.
+type DirectorySyncPreviewRequestConflictResolution string
+
+// DirectorySyncRequest defines model for DirectorySyncRequest.
+type DirectorySyncRequest struct {
+	ConflictResolution DirectorySyncRequestConflictResolution `json:"conflict_resolution,omitempty,omitzero"`
+	ProviderRequest    map[string]interface{}                 `json:"provider_request"`
+}
+
+// DirectorySyncRequestConflictResolution defines model for DirectorySyncRequest.ConflictResolution.
+type DirectorySyncRequestConflictResolution string
+
+// DirectorySyncStartResponse defines model for DirectorySyncStartResponse.
+type DirectorySyncStartResponse struct {
+	JobId  string                           `json:"job_id"`
+	Status DirectorySyncStartResponseStatus `json:"status"`
+}
+
+// DirectorySyncStartResponseStatus defines model for DirectorySyncStartResponse.Status.
+type DirectorySyncStartResponseStatus string
+
+// DirectoryUserRecord defines model for DirectoryUserRecord.
+type DirectoryUserRecord struct {
+	Attributes  map[string]interface{}    `json:"attributes,omitempty,omitzero"`
+	Cohorts     []DirectoryExternalCohort `json:"cohorts,omitempty,omitzero"`
+	DisplayName string                    `json:"display_name"`
+	Email       string                    `json:"email,omitempty,omitzero"`
+	ExternalId  string                    `json:"external_id"`
+	Username    string                    `json:"username"`
+}
 
 // DynamicSchemaResponse defines model for DynamicSchemaResponse.
 type DynamicSchemaResponse struct {
@@ -965,6 +1308,102 @@ type Error struct {
 	Params  map[string]interface{} `json:"params,omitempty,omitzero"`
 }
 
+// ExternalAuthPlatformSettings defines model for ExternalAuthPlatformSettings.
+type ExternalAuthPlatformSettings struct {
+	EffectivePublicBaseUrl string                             `json:"effective_public_base_url,omitempty,omitzero"`
+	PublicBaseUrl          string                             `json:"public_base_url,omitempty,omitzero"`
+	RuntimeLoginReady      bool                               `json:"runtime_login_ready"`
+	Source                 ExternalAuthPlatformSettingsSource `json:"source"`
+}
+
+// ExternalAuthPlatformSettingsSource defines model for ExternalAuthPlatformSettings.Source.
+type ExternalAuthPlatformSettingsSource string
+
+// ExternalAuthPlatformSettingsUpdateRequest defines model for ExternalAuthPlatformSettingsUpdateRequest.
+type ExternalAuthPlatformSettingsUpdateRequest struct {
+	// PublicBaseUrl Empty string clears the persisted override and falls back to deployment config.
+	PublicBaseUrl string `json:"public_base_url,omitempty,omitzero"`
+}
+
+// ExternalCohort defines model for ExternalCohort.
+type ExternalCohort struct {
+	CohortKey    string    `json:"cohort_key"`
+	CohortKind   string    `json:"cohort_kind"`
+	CreatedAt    time.Time `json:"created_at,omitempty,omitzero"`
+	DisplayName  string    `json:"display_name"`
+	Id           string    `json:"id"`
+	LastSyncedAt time.Time `json:"last_synced_at,omitempty,omitzero"`
+	ProviderId   string    `json:"provider_id"`
+	SourceField  string    `json:"source_field,omitempty,omitzero"`
+}
+
+// ExternalCohortList defines model for ExternalCohortList.
+type ExternalCohortList struct {
+	Items []ExternalCohort `json:"items,omitempty,omitzero"`
+}
+
+// ExternalCohortMapping defines model for ExternalCohortMapping.
+type ExternalCohortMapping struct {
+	AllowedEnvironments []ExternalCohortMappingAllowedEnvironments `json:"allowed_environments,omitempty,omitzero"`
+	CohortDisplayName   string                                     `json:"cohort_display_name,omitempty,omitzero"`
+	CohortKey           string                                     `json:"cohort_key"`
+	CohortKind          string                                     `json:"cohort_kind"`
+	CreatedAt           time.Time                                  `json:"created_at,omitempty,omitzero"`
+	Id                  string                                     `json:"id"`
+	ProviderId          string                                     `json:"provider_id"`
+	RoleId              string                                     `json:"role_id"`
+	RoleName            string                                     `json:"role_name,omitempty,omitzero"`
+	ScopeId             string                                     `json:"scope_id,omitempty,omitzero"`
+	ScopeType           string                                     `json:"scope_type,omitempty,omitzero"`
+	UpdatedAt           time.Time                                  `json:"updated_at,omitempty,omitzero"`
+}
+
+// ExternalCohortMappingAllowedEnvironments defines model for ExternalCohortMapping.AllowedEnvironments.
+type ExternalCohortMappingAllowedEnvironments string
+
+// ExternalCohortMappingCreateRequest defines model for ExternalCohortMappingCreateRequest.
+type ExternalCohortMappingCreateRequest struct {
+	AllowedEnvironments []ExternalCohortMappingCreateRequestAllowedEnvironments `json:"allowed_environments,omitempty,omitzero"`
+	CohortDisplayName   string                                                  `json:"cohort_display_name,omitempty,omitzero"`
+	CohortKey           string                                                  `json:"cohort_key" validate:"required"`
+	CohortKind          string                                                  `json:"cohort_kind" validate:"required"`
+	RoleId              string                                                  `json:"role_id" validate:"required"`
+	ScopeId             string                                                  `json:"scope_id,omitempty,omitzero"`
+	ScopeType           string                                                  `json:"scope_type,omitempty,omitzero"`
+}
+
+// ExternalCohortMappingCreateRequestAllowedEnvironments defines model for ExternalCohortMappingCreateRequest.AllowedEnvironments.
+type ExternalCohortMappingCreateRequestAllowedEnvironments string
+
+// ExternalCohortMappingList defines model for ExternalCohortMappingList.
+type ExternalCohortMappingList struct {
+	Items      []ExternalCohortMapping `json:"items,omitempty,omitzero"`
+	Pagination Pagination              `json:"pagination,omitempty,omitzero"`
+}
+
+// ExternalCohortMappingUpdateRequest defines model for ExternalCohortMappingUpdateRequest.
+type ExternalCohortMappingUpdateRequest struct {
+	AllowedEnvironments []ExternalCohortMappingUpdateRequestAllowedEnvironments `json:"allowed_environments,omitempty,omitzero"`
+	RoleId              string                                                  `json:"role_id,omitempty,omitzero"`
+	ScopeId             string                                                  `json:"scope_id,omitempty,omitzero"`
+	ScopeType           string                                                  `json:"scope_type,omitempty,omitzero"`
+}
+
+// ExternalCohortMappingUpdateRequestAllowedEnvironments defines model for ExternalCohortMappingUpdateRequest.AllowedEnvironments.
+type ExternalCohortMappingUpdateRequestAllowedEnvironments string
+
+// ExternalCohortSyncRequest defines model for ExternalCohortSyncRequest.
+type ExternalCohortSyncRequest struct {
+	CohortKind  string   `json:"cohort_kind" validate:"required"`
+	Cohorts     []string `json:"cohorts" validate:"required,min=1"`
+	SourceField string   `json:"source_field" validate:"required"`
+}
+
+// ExternalCohortSyncResponse defines model for ExternalCohortSyncResponse.
+type ExternalCohortSyncResponse struct {
+	Items []ExternalCohort `json:"items,omitempty,omitzero"`
+}
+
 // FieldError defines model for FieldError.
 type FieldError struct {
 	Code    string `json:"code"`
@@ -978,8 +1417,12 @@ type GlobalRoleBinding struct {
 	CreatedAt           time.Time                              `json:"created_at,omitempty,omitzero"`
 	CreatedBy           string                                 `json:"created_by,omitempty,omitzero"`
 	Id                  string                                 `json:"id"`
+	Managed             bool                                   `json:"managed,omitempty,omitzero"`
+	ManagedSource       string                                 `json:"managed_source,omitempty,omitzero"`
+	RoleDisplayName     string                                 `json:"role_display_name,omitempty,omitzero"`
 	RoleId              string                                 `json:"role_id"`
 	RoleName            string                                 `json:"role_name"`
+	ScopeDisplayName    string                                 `json:"scope_display_name,omitempty,omitzero"`
 	ScopeId             string                                 `json:"scope_id,omitempty,omitzero"`
 	ScopeType           string                                 `json:"scope_type"`
 	UserId              string                                 `json:"user_id"`
@@ -1020,65 +1463,6 @@ type Health_Checks struct {
 
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
-
-// IdPGroupMapping defines model for IdPGroupMapping.
-type IdPGroupMapping struct {
-	AllowedEnvironments []IdPGroupMappingAllowedEnvironments `json:"allowed_environments,omitempty,omitzero"`
-	CreatedAt           time.Time                            `json:"created_at,omitempty,omitzero"`
-	ExternalGroupId     string                               `json:"external_group_id"`
-	GroupName           string                               `json:"group_name,omitempty,omitzero"`
-	Id                  string                               `json:"id"`
-	ProviderId          string                               `json:"provider_id"`
-	RoleId              string                               `json:"role_id"`
-	RoleName            string                               `json:"role_name,omitempty,omitzero"`
-	ScopeId             string                               `json:"scope_id,omitempty,omitzero"`
-	ScopeType           string                               `json:"scope_type,omitempty,omitzero"`
-	UpdatedAt           time.Time                            `json:"updated_at,omitempty,omitzero"`
-}
-
-// IdPGroupMappingAllowedEnvironments defines model for IdPGroupMapping.AllowedEnvironments.
-type IdPGroupMappingAllowedEnvironments string
-
-// IdPGroupMappingCreateRequest defines model for IdPGroupMappingCreateRequest.
-type IdPGroupMappingCreateRequest struct {
-	AllowedEnvironments []IdPGroupMappingCreateRequestAllowedEnvironments `json:"allowed_environments,omitempty,omitzero"`
-	ExternalGroupId     string                                            `json:"external_group_id" validate:"required"`
-	GroupName           string                                            `json:"group_name,omitempty,omitzero"`
-	RoleId              string                                            `json:"role_id" validate:"required"`
-	ScopeId             string                                            `json:"scope_id,omitempty,omitzero"`
-	ScopeType           string                                            `json:"scope_type,omitempty,omitzero"`
-}
-
-// IdPGroupMappingCreateRequestAllowedEnvironments defines model for IdPGroupMappingCreateRequest.AllowedEnvironments.
-type IdPGroupMappingCreateRequestAllowedEnvironments string
-
-// IdPGroupMappingList defines model for IdPGroupMappingList.
-type IdPGroupMappingList struct {
-	Items      []IdPGroupMapping `json:"items,omitempty,omitzero"`
-	Pagination Pagination        `json:"pagination,omitempty,omitzero"`
-}
-
-// IdPGroupMappingUpdateRequest defines model for IdPGroupMappingUpdateRequest.
-type IdPGroupMappingUpdateRequest struct {
-	AllowedEnvironments []IdPGroupMappingUpdateRequestAllowedEnvironments `json:"allowed_environments,omitempty,omitzero"`
-	RoleId              string                                            `json:"role_id,omitempty,omitzero"`
-	ScopeId             string                                            `json:"scope_id,omitempty,omitzero"`
-	ScopeType           string                                            `json:"scope_type,omitempty,omitzero"`
-}
-
-// IdPGroupMappingUpdateRequestAllowedEnvironments defines model for IdPGroupMappingUpdateRequest.AllowedEnvironments.
-type IdPGroupMappingUpdateRequestAllowedEnvironments string
-
-// IdPSyncedGroup defines model for IdPSyncedGroup.
-type IdPSyncedGroup struct {
-	CreatedAt       time.Time `json:"created_at,omitempty,omitzero"`
-	ExternalGroupId string    `json:"external_group_id"`
-	GroupName       string    `json:"group_name"`
-	Id              string    `json:"id"`
-	LastSyncedAt    time.Time `json:"last_synced_at,omitempty,omitzero"`
-	ProviderId      string    `json:"provider_id"`
-	SourceField     string    `json:"source_field,omitempty,omitzero"`
-}
 
 // InstanceSize defines model for InstanceSize.
 type InstanceSize struct {
@@ -1192,6 +1576,21 @@ type InstanceSizeUpdateRequestCatalogScope string
 
 // InstanceSizeUpdateRequestDvVolumeMode defines model for InstanceSizeUpdateRequest.DvVolumeMode.
 type InstanceSizeUpdateRequestDvVolumeMode string
+
+// LoginAuthProvider defines model for LoginAuthProvider.
+type LoginAuthProvider struct {
+	AuthType    string          `json:"auth_type"`
+	Description string          `json:"description,omitempty,omitzero"`
+	DisplayName string          `json:"display_name,omitempty,omitzero"`
+	Id          string          `json:"id"`
+	LoginModes  []AuthLoginMode `json:"login_modes,omitempty,omitzero"`
+	Name        string          `json:"name"`
+}
+
+// LoginAuthProviderList defines model for LoginAuthProviderList.
+type LoginAuthProviderList struct {
+	Items []LoginAuthProvider `json:"items,omitempty,omitzero"`
+}
 
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
@@ -1322,7 +1721,7 @@ type PlacementEvaluation struct {
 	EffectiveStorageClass       string                                        `json:"effective_storage_class,omitempty,omitzero"`
 	Eligible                    bool                                          `json:"eligible"`
 	EvaluatedAt                 time.Time                                     `json:"evaluated_at"`
-	Override                    map[string]interface{}                        `json:"override,omitempty,omitzero"`
+	Override                    PlacementResourceOverride                     `json:"override,omitempty,omitzero"`
 	ReasonCode                  string                                        `json:"reason_code,omitempty,omitzero"`
 	ReasonMessage               string                                        `json:"reason_message,omitempty,omitzero"`
 	RequestedDvAccessModes      []string                                      `json:"requested_dv_access_modes,omitempty,omitzero"`
@@ -1346,6 +1745,16 @@ type PlacementEvaluationRootVolumeResolutionState string
 
 // PlacementEvaluationSelectedClusterEnvironment defines model for PlacementEvaluation.SelectedClusterEnvironment.
 type PlacementEvaluationSelectedClusterEnvironment string
+
+// PlacementResourceOverride defines model for PlacementResourceOverride.
+type PlacementResourceOverride struct {
+	CpuLimit        float64 `json:"cpu_limit,omitempty,omitzero"`
+	CpuRequest      float64 `json:"cpu_request,omitempty,omitzero"`
+	DiskGb          int     `json:"disk_gb,omitempty,omitzero"`
+	Enabled         bool    `json:"enabled,omitempty,omitzero"`
+	MemoryLimitGi   float64 `json:"memory_limit_gi,omitempty,omitzero"`
+	MemoryRequestGi float64 `json:"memory_request_gi,omitempty,omitzero"`
+}
 
 // ProvisioningCondition defines model for ProvisioningCondition.
 type ProvisioningCondition struct {
@@ -1390,12 +1799,15 @@ type ProvisioningStatus struct {
 
 // RateLimitExemption defines model for RateLimitExemption.
 type RateLimitExemption struct {
-	CreatedAt  time.Time `json:"created_at"`
-	ExemptedBy string    `json:"exempted_by"`
-	ExpiresAt  time.Time `json:"expires_at,omitempty,omitzero"`
-	Reason     string    `json:"reason,omitempty,omitzero"`
-	UpdatedAt  time.Time `json:"updated_at"`
-	UserId     string    `json:"user_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	DisplayName string    `json:"display_name,omitempty,omitzero"`
+	Email       string    `json:"email,omitempty,omitzero"`
+	ExemptedBy  string    `json:"exempted_by"`
+	ExpiresAt   time.Time `json:"expires_at,omitempty,omitzero"`
+	Reason      string    `json:"reason,omitempty,omitzero"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	UserId      string    `json:"user_id"`
+	Username    string    `json:"username,omitempty,omitzero"`
 }
 
 // RateLimitExemptionCreateRequest defines model for RateLimitExemptionCreateRequest.
@@ -1443,12 +1855,15 @@ type RateLimitUserStatus struct {
 	CooldownRemainingSeconds    int       `json:"cooldown_remaining_seconds"`
 	CurrentPendingChildren      int       `json:"current_pending_children"`
 	CurrentPendingParents       int       `json:"current_pending_parents"`
+	DisplayName                 string    `json:"display_name,omitempty,omitzero"`
 	EffectiveCooldownSeconds    int       `json:"effective_cooldown_seconds"`
 	EffectiveMaxPendingChildren int       `json:"effective_max_pending_children"`
 	EffectiveMaxPendingParents  int       `json:"effective_max_pending_parents"`
+	Email                       string    `json:"email,omitempty,omitzero"`
 	Exempted                    bool      `json:"exempted"`
 	ExemptionExpiresAt          time.Time `json:"exemption_expires_at,omitzero"`
 	UserId                      string    `json:"user_id"`
+	Username                    string    `json:"username,omitempty,omitzero"`
 }
 
 // RejectDecisionRequest defines model for RejectDecisionRequest.
@@ -1526,12 +1941,17 @@ type SchemaMask struct {
 
 // Service defines model for Service.
 type Service struct {
-	CreatedAt         time.Time `json:"created_at"`
-	Description       string    `json:"description,omitempty,omitzero"`
-	Id                string    `json:"id"`
-	Name              string    `json:"name"`
-	NextInstanceIndex int       `json:"next_instance_index,omitempty,omitzero"`
-	SystemId          string    `json:"system_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	Description string    `json:"description,omitempty,omitzero"`
+	Id          string    `json:"id"`
+	Name        string    `json:"name"`
+
+	// NextInstanceIndex Next allocatable per-service instance index
+	NextInstanceIndex int    `json:"next_instance_index,omitempty,omitzero"`
+	SystemId          string `json:"system_id"`
+
+	// SystemName Parent system display name for UI presentation
+	SystemName string `json:"system_name"`
 }
 
 // ServiceCreateRequest defines model for ServiceCreateRequest.
@@ -1551,6 +1971,20 @@ type ServiceList struct {
 type ServiceUpdateRequest struct {
 	// Description Markdown supported
 	Description string `json:"description" validate:"required"`
+}
+
+// ServiceWorkspaceContext defines model for ServiceWorkspaceContext.
+type ServiceWorkspaceContext struct {
+	RecentRequests []Ticket                `json:"recent_requests"`
+	Service        Service                 `json:"service"`
+	Summary        ServiceWorkspaceSummary `json:"summary"`
+	VisibleVms     []VM                    `json:"visible_vms"`
+}
+
+// ServiceWorkspaceSummary defines model for ServiceWorkspaceSummary.
+type ServiceWorkspaceSummary struct {
+	RecentRequestCount int `json:"recent_request_count"`
+	VisibleVmCount     int `json:"visible_vm_count"`
 }
 
 // StorageClaimPropertySet defines model for StorageClaimPropertySet.
@@ -1727,6 +2161,131 @@ type TemplateUpdateRequestCatalogScope string
 // TemplateUpdateRequestSourceType defines model for TemplateUpdateRequest.SourceType.
 type TemplateUpdateRequestSourceType string
 
+// Ticket defines model for Ticket.
+type Ticket struct {
+	Approver  string    `json:"approver,omitempty,omitzero"`
+	CreatedAt time.Time `json:"created_at,omitempty,omitzero"`
+	EventId   string    `json:"event_id"`
+	Id        string    `json:"id"`
+
+	// OperationType Type of operation this ticket represents (ADR-0015)
+	OperationType       TicketOperationType  `json:"operation_type,omitempty,omitzero"`
+	PlacementEvaluation *PlacementEvaluation `json:"placement_evaluation,omitempty"`
+	Provisioning        *ProvisioningStatus  `json:"provisioning,omitempty"`
+	Reason              string               `json:"reason,omitempty,omitzero"`
+	RejectReason        string               `json:"reject_reason,omitempty,omitzero"`
+	RequestPrefill      VMRequestPrefill     `json:"request_prefill,omitempty,omitzero"`
+	Requester           string               `json:"requester"`
+	Status              TicketStatus         `json:"status"`
+	Summary             *TicketSummary       `json:"summary,omitempty"`
+
+	// TargetVmId For DELETE tickets, the VM being deleted
+	TargetVmId string `json:"target_vm_id,omitempty,omitzero"`
+
+	// TargetVmName For DELETE tickets, the VM name (for display)
+	TargetVmName string `json:"target_vm_name,omitempty,omitzero"`
+
+	// TicketPayload Contextual payload of the original request depending on operation_type
+	TicketPayload map[string]interface{} `json:"ticket_payload,omitzero"`
+}
+
+// TicketOperationType Type of operation this ticket represents (ADR-0015)
+type TicketOperationType string
+
+// TicketStatus defines model for Ticket.Status.
+type TicketStatus string
+
+// TicketItemSummary defines model for TicketItemSummary.
+type TicketItemSummary struct {
+	ClusterEnvironment string  `json:"cluster_environment,omitempty,omitzero"`
+	ClusterId          string  `json:"cluster_id,omitempty,omitzero"`
+	ClusterName        string  `json:"cluster_name,omitempty,omitzero"`
+	CurrentCpuCores    float64 `json:"current_cpu_cores,omitempty,omitzero"`
+	CurrentDiskGb      int     `json:"current_disk_gb,omitempty,omitzero"`
+	CurrentMemoryGi    float64 `json:"current_memory_gi,omitempty,omitzero"`
+	InstanceSizeId     string  `json:"instance_size_id,omitempty,omitzero"`
+	InstanceSizeName   string  `json:"instance_size_name,omitempty,omitzero"`
+
+	// LatestVmStatus Latest VM status resolved when the ticket was fetched.
+	LatestVmStatus string `json:"latest_vm_status,omitempty,omitzero"`
+	Namespace      string `json:"namespace,omitempty,omitzero"`
+	PowerAction    string `json:"power_action,omitempty,omitzero"`
+
+	// RequestVmStatus VM status captured when the approval request was created.
+	RequestVmStatus string  `json:"request_vm_status,omitempty,omitzero"`
+	ServiceId       string  `json:"service_id,omitempty,omitzero"`
+	ServiceName     string  `json:"service_name,omitempty,omitzero"`
+	SystemId        string  `json:"system_id,omitempty,omitzero"`
+	SystemName      string  `json:"system_name,omitempty,omitzero"`
+	TargetCpuCores  float64 `json:"target_cpu_cores,omitempty,omitzero"`
+	TargetDiskGb    int     `json:"target_disk_gb,omitempty,omitzero"`
+	TargetMemoryGi  float64 `json:"target_memory_gi,omitempty,omitzero"`
+	TemplateId      string  `json:"template_id,omitempty,omitzero"`
+	TemplateName    string  `json:"template_name,omitempty,omitzero"`
+	VmId            string  `json:"vm_id,omitempty,omitzero"`
+	VmName          string  `json:"vm_name,omitempty,omitzero"`
+
+	// VmStatus Deprecated alias for latest_vm_status.
+	VmStatus string `json:"vm_status,omitempty,omitzero"`
+}
+
+// TicketList defines model for TicketList.
+type TicketList struct {
+	Items      []Ticket   `json:"items,omitempty,omitzero"`
+	Pagination Pagination `json:"pagination,omitempty,omitzero"`
+}
+
+// TicketResponse defines model for TicketResponse.
+type TicketResponse struct {
+	// OperationType Type of operation this ticket represents (ADR-0015)
+	OperationType TicketResponseOperationType `json:"operation_type,omitempty,omitzero"`
+	Status        TicketResponseStatus        `json:"status"`
+	TicketId      string                      `json:"ticket_id"`
+}
+
+// TicketResponseOperationType Type of operation this ticket represents (ADR-0015)
+type TicketResponseOperationType string
+
+// TicketResponseStatus defines model for TicketResponse.Status.
+type TicketResponseStatus string
+
+// TicketSummary defines model for TicketSummary.
+type TicketSummary struct {
+	BatchCount         int                 `json:"batch_count,omitempty,omitzero"`
+	ClusterEnvironment string              `json:"cluster_environment,omitempty,omitzero"`
+	ClusterId          string              `json:"cluster_id,omitempty,omitzero"`
+	ClusterName        string              `json:"cluster_name,omitempty,omitzero"`
+	CurrentCpuCores    float64             `json:"current_cpu_cores,omitempty,omitzero"`
+	CurrentDiskGb      int                 `json:"current_disk_gb,omitempty,omitzero"`
+	CurrentMemoryGi    float64             `json:"current_memory_gi,omitempty,omitzero"`
+	InstanceSizeId     string              `json:"instance_size_id,omitempty,omitzero"`
+	InstanceSizeName   string              `json:"instance_size_name,omitempty,omitzero"`
+	Irreversible       bool                `json:"irreversible,omitempty,omitzero"`
+	Items              []TicketItemSummary `json:"items,omitempty,omitzero"`
+
+	// LatestVmStatus Latest VM status resolved when the ticket was fetched.
+	LatestVmStatus string `json:"latest_vm_status,omitempty,omitzero"`
+	Namespace      string `json:"namespace,omitempty,omitzero"`
+	PowerAction    string `json:"power_action,omitempty,omitzero"`
+
+	// RequestVmStatus VM status captured when the approval request was created.
+	RequestVmStatus string  `json:"request_vm_status,omitempty,omitzero"`
+	ServiceId       string  `json:"service_id,omitempty,omitzero"`
+	ServiceName     string  `json:"service_name,omitempty,omitzero"`
+	SystemId        string  `json:"system_id,omitempty,omitzero"`
+	SystemName      string  `json:"system_name,omitempty,omitzero"`
+	TargetCpuCores  float64 `json:"target_cpu_cores,omitempty,omitzero"`
+	TargetDiskGb    int     `json:"target_disk_gb,omitempty,omitzero"`
+	TargetMemoryGi  float64 `json:"target_memory_gi,omitempty,omitzero"`
+	TemplateId      string  `json:"template_id,omitempty,omitzero"`
+	TemplateName    string  `json:"template_name,omitempty,omitzero"`
+	VmId            string  `json:"vm_id,omitempty,omitzero"`
+	VmName          string  `json:"vm_name,omitempty,omitzero"`
+
+	// VmStatus Deprecated alias for latest_vm_status.
+	VmStatus string `json:"vm_status,omitempty,omitzero"`
+}
+
 // UnreadCount defines model for UnreadCount.
 type UnreadCount struct {
 	Count int `json:"count"`
@@ -1781,9 +2340,12 @@ type UserUpdateRequest struct {
 
 // VM defines model for VM.
 type VM struct {
-	ClusterId string    `json:"cluster_id,omitempty,omitzero"`
-	CreatedAt time.Time `json:"created_at,omitempty,omitzero"`
-	CreatedBy string    `json:"created_by,omitempty,omitzero"`
+	ClusterId string `json:"cluster_id,omitempty,omitzero"`
+
+	// ClusterName Display name of the cluster (populated from cluster registry)
+	ClusterName string    `json:"cluster_name,omitempty,omitzero"`
+	CreatedAt   time.Time `json:"created_at,omitempty,omitzero"`
+	CreatedBy   string    `json:"created_by,omitempty,omitzero"`
 
 	// Environment Inherited from cluster environment (ADR-0015 §15)
 	Environment  VMEnvironment       `json:"environment,omitempty,omitzero"`
@@ -1826,10 +2388,19 @@ type VMBatchChildItem struct {
 	// ServiceId Required for CREATE operation
 	ServiceId openapi_types.UUID `json:"service_id,omitempty,omitzero"`
 
+	// TargetCpuCores Required for MODIFY when changing CPU.
+	TargetCpuCores float64 `json:"target_cpu_cores,omitempty,omitzero"`
+
+	// TargetDiskGb Required for MODIFY when changing disk.
+	TargetDiskGb int `json:"target_disk_gb,omitempty,omitzero"`
+
+	// TargetMemoryGi Required for MODIFY when changing memory.
+	TargetMemoryGi float64 `json:"target_memory_gi,omitempty,omitzero"`
+
 	// TemplateId Required for CREATE operation
 	TemplateId openapi_types.UUID `json:"template_id,omitempty,omitzero"`
 
-	// VmId Required for DELETE operation
+	// VmId Required for DELETE and MODIFY operations
 	VmId string `json:"vm_id,omitempty,omitzero"`
 }
 
@@ -1966,6 +2537,39 @@ type VMList struct {
 	Pagination Pagination `json:"pagination,omitempty,omitzero"`
 }
 
+// VMModifyContext defines model for VMModifyContext.
+type VMModifyContext struct {
+	ClusterId       string  `json:"cluster_id,omitempty,omitzero"`
+	ClusterName     string  `json:"cluster_name,omitempty,omitzero"`
+	CpuReason       string  `json:"cpu_reason,omitempty,omitzero"`
+	CpuSupported    bool    `json:"cpu_supported"`
+	CurrentCpuCores float64 `json:"current_cpu_cores"`
+	CurrentDiskGb   int     `json:"current_disk_gb"`
+	CurrentMemoryGi float64 `json:"current_memory_gi"`
+	DiskReason      string  `json:"disk_reason,omitempty,omitzero"`
+	DiskSupported   bool    `json:"disk_supported"`
+	MemoryReason    string  `json:"memory_reason,omitempty,omitzero"`
+	MemorySupported bool    `json:"memory_supported"`
+	Namespace       string  `json:"namespace"`
+	VmId            string  `json:"vm_id"`
+	VmName          string  `json:"vm_name"`
+}
+
+// VMModifyRequest defines model for VMModifyRequest.
+type VMModifyRequest struct {
+	Reason string `json:"reason" validate:"required"`
+
+	// TargetCpuCores Desired total vCPU count after the change. Online CPU changes are
+	// validated against the current socket topology and may only expand.
+	TargetCpuCores float64 `json:"target_cpu_cores,omitempty,omitzero"`
+
+	// TargetDiskGb Desired total root-volume size in Gi after the change.
+	TargetDiskGb int `json:"target_disk_gb,omitempty,omitzero"`
+
+	// TargetMemoryGi Desired total guest memory in Gi after the change.
+	TargetMemoryGi float64 `json:"target_memory_gi,omitempty,omitzero"`
+}
+
 // VMPlacementHint defines model for VMPlacementHint.
 type VMPlacementHint struct {
 	AdvisoryCounts         []VMPlacementHintAdvisoryCount     `json:"advisory_counts,omitempty,omitzero"`
@@ -2031,6 +2635,17 @@ type VMRequestContext struct {
 	Templates     []Template      `json:"templates"`
 }
 
+// VMRequestPrefill defines model for VMRequestPrefill.
+type VMRequestPrefill struct {
+	BatchCount     int                `json:"batch_count"`
+	InstanceSizeId openapi_types.UUID `json:"instance_size_id"`
+	Namespace      string             `json:"namespace"`
+	Reason         string             `json:"reason"`
+	ServiceId      openapi_types.UUID `json:"service_id"`
+	SystemId       openapi_types.UUID `json:"system_id"`
+	TemplateId     openapi_types.UUID `json:"template_id"`
+}
+
 // VMVNCSessionResponse defines model for VMVNCSessionResponse.
 type VMVNCSessionResponse struct {
 	Status VMVNCSessionResponseStatus `json:"status"`
@@ -2051,6 +2666,9 @@ type Confirm = bool
 
 // ConfirmName defines model for ConfirmName.
 type ConfirmName = string
+
+// DirectorySyncJobID defines model for DirectorySyncJobID.
+type DirectorySyncJobID = string
 
 // InstanceSizeID defines model for InstanceSizeID.
 type InstanceSizeID = string
@@ -2079,6 +2697,9 @@ type RoleBindingID = string
 // RoleID defines model for RoleID.
 type RoleID = string
 
+// Search defines model for Search.
+type Search = string
+
 // ServiceID defines model for ServiceID.
 type ServiceID = string
 
@@ -2090,6 +2711,9 @@ type SortOrder string
 
 // SystemID defines model for SystemID.
 type SystemID = string
+
+// SystemIDFilter defines model for SystemIDFilter.
+type SystemIDFilter = string
 
 // TemplateID defines model for TemplateID.
 type TemplateID = string
@@ -2120,6 +2744,15 @@ type NotFound = Error
 
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
+
+// ListAuthProviderDirectorySyncJobsParams defines parameters for ListAuthProviderDirectorySyncJobs.
+type ListAuthProviderDirectorySyncJobsParams struct {
+	// Page Page number (1-indexed)
+	Page Page `form:"page,omitempty" json:"page,omitempty,omitzero"`
+
+	// PerPage Items per page
+	PerPage PerPage `form:"per_page,omitempty" json:"per_page,omitempty,omitzero"`
+}
 
 // ListClustersParams defines parameters for ListClusters.
 type ListClustersParams struct {
@@ -2219,38 +2852,10 @@ type ListUsersParams struct {
 
 	// PerPage Items per page
 	PerPage PerPage `form:"per_page,omitempty" json:"per_page,omitempty,omitzero"`
+
+	// Search Case-insensitive search text
+	Search Search `form:"search,omitempty" json:"search,omitempty,omitzero"`
 }
-
-// ListApprovalsParams defines parameters for ListApprovals.
-type ListApprovalsParams struct {
-	// Page Page number (1-indexed)
-	Page Page `form:"page,omitempty" json:"page,omitempty,omitzero"`
-
-	// PerPage Items per page
-	PerPage PerPage                   `form:"per_page,omitempty" json:"per_page,omitempty,omitzero"`
-	Status  ListApprovalsParamsStatus `form:"status,omitempty" json:"status,omitempty,omitzero"`
-
-	// OperationType Filter by approval operation type.
-	OperationType ListApprovalsParamsOperationType `form:"operation_type,omitempty" json:"operation_type,omitempty,omitzero"`
-
-	// SelectedClusterId Filter by the cluster selected during CREATE approval.
-	SelectedClusterId string `form:"selected_cluster_id,omitempty" json:"selected_cluster_id,omitempty,omitzero"`
-
-	// PlacementAdvisoryCode Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets.
-	PlacementAdvisoryCode string `form:"placement_advisory_code,omitempty" json:"placement_advisory_code,omitempty,omitzero"`
-
-	// PlacementSnapshot Filter by whether a placement evaluation snapshot exists on the ticket.
-	PlacementSnapshot ListApprovalsParamsPlacementSnapshot `form:"placement_snapshot,omitempty" json:"placement_snapshot,omitempty,omitzero"`
-}
-
-// ListApprovalsParamsStatus defines parameters for ListApprovals.
-type ListApprovalsParamsStatus string
-
-// ListApprovalsParamsOperationType defines parameters for ListApprovals.
-type ListApprovalsParamsOperationType string
-
-// ListApprovalsParamsPlacementSnapshot defines parameters for ListApprovals.
-type ListApprovalsParamsPlacementSnapshot string
 
 // ListAuditLogsParams defines parameters for ListAuditLogs.
 type ListAuditLogsParams struct {
@@ -2274,6 +2879,49 @@ type ListAuditLogsParams struct {
 	PlacementAdvisoryCode string `form:"placement_advisory_code,omitempty" json:"placement_advisory_code,omitempty,omitzero"`
 }
 
+// CompleteLoginAuthProviderGetParams defines parameters for CompleteLoginAuthProviderGet.
+type CompleteLoginAuthProviderGetParams struct {
+	Code  string `form:"code,omitempty" json:"code,omitempty,omitzero"`
+	State string `form:"state,omitempty" json:"state,omitempty,omitzero"`
+}
+
+// CompleteLoginAuthProviderPostFormdataBody defines parameters for CompleteLoginAuthProviderPost.
+type CompleteLoginAuthProviderPostFormdataBody struct {
+	Code  string `form:"code,omitempty" json:"code,omitempty,omitzero"`
+	State string `form:"state,omitempty" json:"state,omitempty,omitzero"`
+}
+
+// ListBuiltinApprovalTasksParams defines parameters for ListBuiltinApprovalTasks.
+type ListBuiltinApprovalTasksParams struct {
+	// Page Page number (1-indexed)
+	Page Page `form:"page,omitempty" json:"page,omitempty,omitzero"`
+
+	// PerPage Items per page
+	PerPage PerPage                              `form:"per_page,omitempty" json:"per_page,omitempty,omitzero"`
+	Status  ListBuiltinApprovalTasksParamsStatus `form:"status,omitempty" json:"status,omitempty,omitzero"`
+
+	// OperationType Filter by task operation type.
+	OperationType ListBuiltinApprovalTasksParamsOperationType `form:"operation_type,omitempty" json:"operation_type,omitempty,omitzero"`
+
+	// SelectedClusterId Filter by the cluster selected during CREATE execution planning.
+	SelectedClusterId string `form:"selected_cluster_id,omitempty" json:"selected_cluster_id,omitempty,omitzero"`
+
+	// PlacementAdvisoryCode Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets.
+	PlacementAdvisoryCode string `form:"placement_advisory_code,omitempty" json:"placement_advisory_code,omitempty,omitzero"`
+
+	// PlacementSnapshot Filter by whether a placement evaluation snapshot exists on the task.
+	PlacementSnapshot ListBuiltinApprovalTasksParamsPlacementSnapshot `form:"placement_snapshot,omitempty" json:"placement_snapshot,omitempty,omitzero"`
+}
+
+// ListBuiltinApprovalTasksParamsStatus defines parameters for ListBuiltinApprovalTasks.
+type ListBuiltinApprovalTasksParamsStatus string
+
+// ListBuiltinApprovalTasksParamsOperationType defines parameters for ListBuiltinApprovalTasks.
+type ListBuiltinApprovalTasksParamsOperationType string
+
+// ListBuiltinApprovalTasksParamsPlacementSnapshot defines parameters for ListBuiltinApprovalTasks.
+type ListBuiltinApprovalTasksParamsPlacementSnapshot string
+
 // ListNotificationsParams defines parameters for ListNotifications.
 type ListNotificationsParams struct {
 	// Page Page number (1-indexed)
@@ -2288,6 +2936,18 @@ type ListNotificationsParams struct {
 
 // GetDynamicSchemaParamsEntityType defines parameters for GetDynamicSchema.
 type GetDynamicSchemaParamsEntityType string
+
+// ListServicesOverviewParams defines parameters for ListServicesOverview.
+type ListServicesOverviewParams struct {
+	// Page Page number (1-indexed)
+	Page Page `form:"page,omitempty" json:"page,omitempty,omitzero"`
+
+	// PerPage Items per page
+	PerPage PerPage `form:"per_page,omitempty" json:"per_page,omitempty,omitzero"`
+
+	// SystemId Filter services by parent system id
+	SystemId SystemIDFilter `form:"system_id,omitempty" json:"system_id,omitempty,omitzero"`
+}
 
 // ListSystemsParams defines parameters for ListSystems.
 type ListSystemsParams struct {
@@ -2314,6 +2974,18 @@ type DeleteSystemParams struct {
 	ConfirmName string `form:"confirm_name" json:"confirm_name"`
 }
 
+// ListSystemMemberCandidatesParams defines parameters for ListSystemMemberCandidates.
+type ListSystemMemberCandidatesParams struct {
+	// Page Page number (1-indexed)
+	Page Page `form:"page,omitempty" json:"page,omitempty,omitzero"`
+
+	// PerPage Items per page
+	PerPage PerPage `form:"per_page,omitempty" json:"per_page,omitempty,omitzero"`
+
+	// Search Case-insensitive search text
+	Search Search `form:"search,omitempty" json:"search,omitempty,omitzero"`
+}
+
 // ListServicesParams defines parameters for ListServices.
 type ListServicesParams struct {
 	// Page Page number (1-indexed)
@@ -2337,6 +3009,41 @@ type ListTemplatesParams struct {
 	// PerPage Items per page
 	PerPage PerPage `form:"per_page,omitempty" json:"per_page,omitempty,omitzero"`
 }
+
+// ListTicketsParams defines parameters for ListTickets.
+type ListTicketsParams struct {
+	// Page Page number (1-indexed)
+	Page Page `form:"page,omitempty" json:"page,omitempty,omitzero"`
+
+	// PerPage Items per page
+	PerPage PerPage                 `form:"per_page,omitempty" json:"per_page,omitempty,omitzero"`
+	Status  ListTicketsParamsStatus `form:"status,omitempty" json:"status,omitempty,omitzero"`
+
+	// Mine When true, return only tickets requested by the current
+	// authenticated user. This does not require ticket:view.
+	Mine bool `form:"mine,omitempty" json:"mine,omitempty,omitzero"`
+
+	// OperationType Filter by ticket operation type.
+	OperationType ListTicketsParamsOperationType `form:"operation_type,omitempty" json:"operation_type,omitempty,omitzero"`
+
+	// SelectedClusterId Filter by the cluster selected during CREATE execution planning.
+	SelectedClusterId string `form:"selected_cluster_id,omitempty" json:"selected_cluster_id,omitempty,omitzero"`
+
+	// PlacementAdvisoryCode Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets.
+	PlacementAdvisoryCode string `form:"placement_advisory_code,omitempty" json:"placement_advisory_code,omitempty,omitzero"`
+
+	// PlacementSnapshot Filter by whether a placement evaluation snapshot exists on the ticket.
+	PlacementSnapshot ListTicketsParamsPlacementSnapshot `form:"placement_snapshot,omitempty" json:"placement_snapshot,omitempty,omitzero"`
+}
+
+// ListTicketsParamsStatus defines parameters for ListTickets.
+type ListTicketsParamsStatus string
+
+// ListTicketsParamsOperationType defines parameters for ListTickets.
+type ListTicketsParamsOperationType string
+
+// ListTicketsParamsPlacementSnapshot defines parameters for ListTickets.
+type ListTicketsParamsPlacementSnapshot string
 
 // ListVMsParams defines parameters for ListVMs.
 type ListVMsParams struct {
@@ -2404,17 +3111,26 @@ type CreateAuthProviderJSONRequestBody = AuthProviderCreateRequest
 // UpdateAuthProviderJSONRequestBody defines body for UpdateAuthProvider for application/json ContentType.
 type UpdateAuthProviderJSONRequestBody = AuthProviderUpdateRequest
 
-// CreateAuthProviderGroupMappingJSONRequestBody defines body for CreateAuthProviderGroupMapping for application/json ContentType.
-type CreateAuthProviderGroupMappingJSONRequestBody = IdPGroupMappingCreateRequest
+// CreateAuthProviderCohortMappingJSONRequestBody defines body for CreateAuthProviderCohortMapping for application/json ContentType.
+type CreateAuthProviderCohortMappingJSONRequestBody = ExternalCohortMappingCreateRequest
 
-// UpdateAuthProviderGroupMappingJSONRequestBody defines body for UpdateAuthProviderGroupMapping for application/json ContentType.
-type UpdateAuthProviderGroupMappingJSONRequestBody = IdPGroupMappingUpdateRequest
+// UpdateAuthProviderCohortMappingJSONRequestBody defines body for UpdateAuthProviderCohortMapping for application/json ContentType.
+type UpdateAuthProviderCohortMappingJSONRequestBody = ExternalCohortMappingUpdateRequest
 
-// SyncAuthProviderGroupsJSONRequestBody defines body for SyncAuthProviderGroups for application/json ContentType.
-type SyncAuthProviderGroupsJSONRequestBody = AuthProviderGroupSyncRequest
+// SyncAuthProviderCohortsJSONRequestBody defines body for SyncAuthProviderCohorts for application/json ContentType.
+type SyncAuthProviderCohortsJSONRequestBody = ExternalCohortSyncRequest
+
+// PreviewAuthProviderDirectoryJSONRequestBody defines body for PreviewAuthProviderDirectory for application/json ContentType.
+type PreviewAuthProviderDirectoryJSONRequestBody = DirectorySyncPreviewRequest
+
+// SyncAuthProviderDirectoryJSONRequestBody defines body for SyncAuthProviderDirectory for application/json ContentType.
+type SyncAuthProviderDirectoryJSONRequestBody = DirectorySyncRequest
 
 // CreateClusterJSONRequestBody defines body for CreateCluster for application/json ContentType.
 type CreateClusterJSONRequestBody = ClusterCreateRequest
+
+// UpdateClusterJSONRequestBody defines body for UpdateCluster for application/json ContentType.
+type UpdateClusterJSONRequestBody = ClusterUpdateRequest
 
 // UpdateClusterEnvironmentJSONRequestBody defines body for UpdateClusterEnvironment for application/json ContentType.
 type UpdateClusterEnvironmentJSONRequestBody = ClusterEnvironmentUpdate
@@ -2433,6 +3149,9 @@ type CreateNamespaceJSONRequestBody = NamespaceCreateRequest
 
 // UpdateNamespaceJSONRequestBody defines body for UpdateNamespace for application/json ContentType.
 type UpdateNamespaceJSONRequestBody = NamespaceUpdateRequest
+
+// UpdateExternalAuthPlatformSettingsJSONRequestBody defines body for UpdateExternalAuthPlatformSettings for application/json ContentType.
+type UpdateExternalAuthPlatformSettingsJSONRequestBody = ExternalAuthPlatformSettingsUpdateRequest
 
 // CreateRateLimitExemptionJSONRequestBody defines body for CreateRateLimitExemption for application/json ContentType.
 type CreateRateLimitExemptionJSONRequestBody = RateLimitExemptionCreateRequest
@@ -2461,20 +3180,26 @@ type UpdateUserJSONRequestBody = UserUpdateRequest
 // CreateUserRoleBindingJSONRequestBody defines body for CreateUserRoleBinding for application/json ContentType.
 type CreateUserRoleBindingJSONRequestBody = GlobalRoleBindingCreateRequest
 
-// SubmitApprovalBatchJSONRequestBody defines body for SubmitApprovalBatch for application/json ContentType.
-type SubmitApprovalBatchJSONRequestBody = VMBatchSubmitRequest
-
-// ApproveTicketJSONRequestBody defines body for ApproveTicket for application/json ContentType.
-type ApproveTicketJSONRequestBody = ApprovalDecisionRequest
-
-// RejectTicketJSONRequestBody defines body for RejectTicket for application/json ContentType.
-type RejectTicketJSONRequestBody = RejectDecisionRequest
-
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = ChangePasswordRequest
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
+
+// CompleteLoginAuthProviderPostFormdataRequestBody defines body for CompleteLoginAuthProviderPost for application/x-www-form-urlencoded ContentType.
+type CompleteLoginAuthProviderPostFormdataRequestBody CompleteLoginAuthProviderPostFormdataBody
+
+// StartLoginAuthProviderJSONRequestBody defines body for StartLoginAuthProvider for application/json ContentType.
+type StartLoginAuthProviderJSONRequestBody = AuthProviderLoginStartRequest
+
+// SubmitLoginAuthProviderJSONRequestBody defines body for SubmitLoginAuthProvider for application/json ContentType.
+type SubmitLoginAuthProviderJSONRequestBody = AuthProviderCredentialLoginRequest
+
+// ApproveBuiltinApprovalTaskJSONRequestBody defines body for ApproveBuiltinApprovalTask for application/json ContentType.
+type ApproveBuiltinApprovalTaskJSONRequestBody = ApprovalDecisionRequest
+
+// RejectBuiltinApprovalTaskJSONRequestBody defines body for RejectBuiltinApprovalTask for application/json ContentType.
+type RejectBuiltinApprovalTaskJSONRequestBody = RejectDecisionRequest
 
 // CreateSystemJSONRequestBody defines body for CreateSystem for application/json ContentType.
 type CreateSystemJSONRequestBody = SystemCreateRequest
@@ -2502,6 +3227,9 @@ type SubmitVMBatchPowerJSONRequestBody = VMBatchPowerRequest
 
 // CreateVMRequestJSONRequestBody defines body for CreateVMRequest for application/json ContentType.
 type CreateVMRequestJSONRequestBody = VMCreateRequest
+
+// CreateVMModifyRequestJSONRequestBody defines body for CreateVMModifyRequest for application/json ContentType.
+type CreateVMModifyRequestJSONRequestBody = VMModifyRequest
 
 // PowerVMJSONRequestBody defines body for PowerVM for application/json ContentType.
 type PowerVMJSONRequestBody = VMPowerRequest
@@ -2589,24 +3317,48 @@ type ServerInterface interface {
 	// Update authentication provider
 	// (PATCH /admin/auth-providers/{provider_id})
 	UpdateAuthProvider(c *gin.Context, providerId ProviderID)
-	// List IdP group mappings for an auth provider
-	// (GET /admin/auth-providers/{provider_id}/group-mappings)
-	ListAuthProviderGroupMappings(c *gin.Context, providerId ProviderID)
-	// Create IdP group mapping
-	// (POST /admin/auth-providers/{provider_id}/group-mappings)
-	CreateAuthProviderGroupMapping(c *gin.Context, providerId ProviderID)
-	// Delete IdP group mapping
-	// (DELETE /admin/auth-providers/{provider_id}/group-mappings/{mapping_id})
-	DeleteAuthProviderGroupMapping(c *gin.Context, providerId ProviderID, mappingId MappingID)
-	// Update IdP group mapping
-	// (PATCH /admin/auth-providers/{provider_id}/group-mappings/{mapping_id})
-	UpdateAuthProviderGroupMapping(c *gin.Context, providerId ProviderID, mappingId MappingID)
+	// List external cohort mappings for an auth provider
+	// (GET /admin/auth-providers/{provider_id}/cohort-mappings)
+	ListAuthProviderCohortMappings(c *gin.Context, providerId ProviderID)
+	// Create external cohort mapping
+	// (POST /admin/auth-providers/{provider_id}/cohort-mappings)
+	CreateAuthProviderCohortMapping(c *gin.Context, providerId ProviderID)
+	// Delete external cohort mapping
+	// (DELETE /admin/auth-providers/{provider_id}/cohort-mappings/{mapping_id})
+	DeleteAuthProviderCohortMapping(c *gin.Context, providerId ProviderID, mappingId MappingID)
+	// Update external cohort mapping
+	// (PATCH /admin/auth-providers/{provider_id}/cohort-mappings/{mapping_id})
+	UpdateAuthProviderCohortMapping(c *gin.Context, providerId ProviderID, mappingId MappingID)
+	// List discovered external cohorts for an auth provider
+	// (GET /admin/auth-providers/{provider_id}/cohorts)
+	ListAuthProviderCohorts(c *gin.Context, providerId ProviderID)
+	// Sync external cohorts for an auth provider
+	// (POST /admin/auth-providers/{provider_id}/cohorts/sync)
+	SyncAuthProviderCohorts(c *gin.Context, providerId ProviderID)
+	// Get directory sync capability descriptor for an auth provider
+	// (GET /admin/auth-providers/{provider_id}/directory/descriptor)
+	GetAuthProviderDirectoryDescriptor(c *gin.Context, providerId ProviderID)
+	// Preview canonical directory import result
+	// (POST /admin/auth-providers/{provider_id}/directory/preview)
+	PreviewAuthProviderDirectory(c *gin.Context, providerId ProviderID)
+	// Get scheduled directory enrichment status for an auth provider
+	// (GET /admin/auth-providers/{provider_id}/directory/schedule)
+	GetAuthProviderDirectorySchedule(c *gin.Context, providerId ProviderID)
+	// Trigger asynchronous directory sync job
+	// (POST /admin/auth-providers/{provider_id}/directory/sync)
+	SyncAuthProviderDirectory(c *gin.Context, providerId ProviderID)
+	// List directory sync jobs for an auth provider
+	// (GET /admin/auth-providers/{provider_id}/directory/sync-jobs)
+	ListAuthProviderDirectorySyncJobs(c *gin.Context, providerId ProviderID, params ListAuthProviderDirectorySyncJobsParams)
+	// Get one directory sync job summary
+	// (GET /admin/auth-providers/{provider_id}/directory/sync-jobs/{job_id})
+	GetAuthProviderDirectorySyncJob(c *gin.Context, providerId ProviderID, jobId DirectorySyncJobID)
+	// Get runtime login descriptor for an auth provider
+	// (GET /admin/auth-providers/{provider_id}/runtime)
+	GetAuthProviderRuntimeDescriptor(c *gin.Context, providerId ProviderID)
 	// Fetch sample identity data fields for mapping
 	// (GET /admin/auth-providers/{provider_id}/sample)
 	GetAuthProviderSample(c *gin.Context, providerId ProviderID)
-	// Sync external groups for an auth provider
-	// (POST /admin/auth-providers/{provider_id}/sync)
-	SyncAuthProviderGroups(c *gin.Context, providerId ProviderID)
 	// Test authentication provider connectivity
 	// (POST /admin/auth-providers/{provider_id}/test-connection)
 	TestAuthProviderConnection(c *gin.Context, providerId ProviderID)
@@ -2616,6 +3368,12 @@ type ServerInterface interface {
 	// Register a cluster
 	// (POST /admin/clusters)
 	CreateCluster(c *gin.Context)
+	// Delete an unused cluster
+	// (DELETE /admin/clusters/{cluster_id})
+	DeleteCluster(c *gin.Context, clusterId string)
+	// Update cluster metadata or credentials
+	// (PATCH /admin/clusters/{cluster_id})
+	UpdateCluster(c *gin.Context, clusterId string)
 	// Update cluster environment
 	// (PUT /admin/clusters/{cluster_id}/environment)
 	UpdateClusterEnvironment(c *gin.Context, clusterId string)
@@ -2655,6 +3413,12 @@ type ServerInterface interface {
 	// List supported permission keys
 	// (GET /admin/permissions)
 	ListPermissions(c *gin.Context)
+	// Get platform-wide external authentication settings
+	// (GET /admin/platform-settings/external-auth)
+	GetExternalAuthPlatformSettings(c *gin.Context)
+	// Update platform-wide external authentication settings
+	// (PUT /admin/platform-settings/external-auth)
+	UpdateExternalAuthPlatformSettings(c *gin.Context)
 	// List rate-limit exemptions
 	// (GET /admin/rate-limits/exemptions)
 	ListRateLimitExemptions(c *gin.Context, params ListRateLimitExemptionsParams)
@@ -2715,21 +3479,6 @@ type ServerInterface interface {
 	// Delete a user's global role binding
 	// (DELETE /admin/users/{user_id}/role-bindings/{binding_id})
 	DeleteUserRoleBinding(c *gin.Context, userId UserID, bindingId RoleBindingID)
-	// List approval tickets
-	// (GET /approvals)
-	ListApprovals(c *gin.Context, params ListApprovalsParams)
-	// Submit batch approval request (compatibility endpoint)
-	// (POST /approvals/batch)
-	SubmitApprovalBatch(c *gin.Context)
-	// Approve a request
-	// (POST /approvals/{ticket_id}/approve)
-	ApproveTicket(c *gin.Context, ticketId TicketID)
-	// Cancel own pending request
-	// (POST /approvals/{ticket_id}/cancel)
-	CancelTicket(c *gin.Context, ticketId TicketID)
-	// Reject a request
-	// (POST /approvals/{ticket_id}/reject)
-	RejectTicket(c *gin.Context, ticketId TicketID)
 	// List audit logs
 	// (GET /audit-logs)
 	ListAuditLogs(c *gin.Context, params ListAuditLogsParams)
@@ -2742,6 +3491,30 @@ type ServerInterface interface {
 	// Get current user info
 	// (GET /auth/me)
 	GetCurrentUser(c *gin.Context)
+	// List enabled external login providers
+	// (GET /auth/providers)
+	ListLoginAuthProviders(c *gin.Context)
+	// Complete external auth-provider login callback
+	// (GET /auth/providers/{provider_id}/callback)
+	CompleteLoginAuthProviderGet(c *gin.Context, providerId ProviderID, params CompleteLoginAuthProviderGetParams)
+	// Complete external auth-provider login callback
+	// (POST /auth/providers/{provider_id}/callback)
+	CompleteLoginAuthProviderPost(c *gin.Context, providerId ProviderID)
+	// Start external auth-provider login
+	// (POST /auth/providers/{provider_id}/login/start)
+	StartLoginAuthProvider(c *gin.Context, providerId ProviderID)
+	// Submit credential-based auth-provider login
+	// (POST /auth/providers/{provider_id}/login/submit)
+	SubmitLoginAuthProvider(c *gin.Context, providerId ProviderID)
+	// List built-in approval tasks
+	// (GET /builtin-approval/tasks)
+	ListBuiltinApprovalTasks(c *gin.Context, params ListBuiltinApprovalTasksParams)
+	// Approve a built-in approval task
+	// (POST /builtin-approval/tasks/{ticket_id}/approve)
+	ApproveBuiltinApprovalTask(c *gin.Context, ticketId TicketID)
+	// Reject a built-in approval task
+	// (POST /builtin-approval/tasks/{ticket_id}/reject)
+	RejectBuiltinApprovalTask(c *gin.Context, ticketId TicketID)
 	// Liveness probe
 	// (GET /health/live)
 	GetLiveness(c *gin.Context)
@@ -2766,6 +3539,9 @@ type ServerInterface interface {
 	// Retrieve dynamic schema and UI mask for an entity
 	// (GET /schemas/{entity_type})
 	GetDynamicSchema(c *gin.Context, entityType GetDynamicSchemaParamsEntityType)
+	// List services across visible systems
+	// (GET /services)
+	ListServicesOverview(c *gin.Context, params ListServicesOverviewParams)
 	// List systems
 	// (GET /systems)
 	ListSystems(c *gin.Context, params ListSystemsParams)
@@ -2781,6 +3557,9 @@ type ServerInterface interface {
 	// Update system description
 	// (PATCH /systems/{system_id})
 	UpdateSystem(c *gin.Context, systemId SystemID)
+	// List addable system member candidates
+	// (GET /systems/{system_id}/member-candidates)
+	ListSystemMemberCandidates(c *gin.Context, systemId SystemID, params ListSystemMemberCandidatesParams)
 	// List system members
 	// (GET /systems/{system_id}/members)
 	ListSystemMembers(c *gin.Context, systemId SystemID)
@@ -2808,9 +3587,18 @@ type ServerInterface interface {
 	// Update service description
 	// (PATCH /systems/{system_id}/services/{service_id})
 	UpdateService(c *gin.Context, systemId SystemID, serviceId ServiceID)
+	// Get service workspace context
+	// (GET /systems/{system_id}/services/{service_id}/context)
+	GetServiceWorkspaceContext(c *gin.Context, systemId SystemID, serviceId ServiceID)
 	// List templates
 	// (GET /templates)
 	ListTemplates(c *gin.Context, params ListTemplatesParams)
+	// List work-order tickets
+	// (GET /tickets)
+	ListTickets(c *gin.Context, params ListTicketsParams)
+	// Cancel own pending request
+	// (POST /tickets/{ticket_id}/cancel)
+	CancelTicket(c *gin.Context, ticketId TicketID)
 	// List VMs
 	// (GET /vms)
 	ListVMs(c *gin.Context, params ListVMsParams)
@@ -2850,9 +3638,18 @@ type ServerInterface interface {
 	// Get VM console access status
 	// (GET /vms/{vm_id}/console/status)
 	GetVMConsoleStatus(c *gin.Context, vmId VMID)
+	// Get VM live-modify context
+	// (GET /vms/{vm_id}/modify-context)
+	GetVMModifyContext(c *gin.Context, vmId VMID)
+	// Submit a VM resource change request
+	// (POST /vms/{vm_id}/modify-request)
+	CreateVMModifyRequest(c *gin.Context, vmId VMID)
 	// Unified VM power action (start / stop / restart)
 	// (POST /vms/{vm_id}/power)
 	PowerVM(c *gin.Context, vmId VMID)
+	// Get reusable VM request prefill
+	// (GET /vms/{vm_id}/request-prefill)
+	GetVMRequestPrefill(c *gin.Context, vmId VMID)
 	// Restart VM
 	// (POST /vms/{vm_id}/restart)
 	RestartVM(c *gin.Context, vmId VMID)
@@ -2973,8 +3770,8 @@ func (siw *ServerInterfaceWrapper) UpdateAuthProvider(c *gin.Context) {
 	siw.Handler.UpdateAuthProvider(c, providerId)
 }
 
-// ListAuthProviderGroupMappings operation middleware
-func (siw *ServerInterfaceWrapper) ListAuthProviderGroupMappings(c *gin.Context) {
+// ListAuthProviderCohortMappings operation middleware
+func (siw *ServerInterfaceWrapper) ListAuthProviderCohortMappings(c *gin.Context) {
 
 	var err error
 
@@ -2996,11 +3793,11 @@ func (siw *ServerInterfaceWrapper) ListAuthProviderGroupMappings(c *gin.Context)
 		}
 	}
 
-	siw.Handler.ListAuthProviderGroupMappings(c, providerId)
+	siw.Handler.ListAuthProviderCohortMappings(c, providerId)
 }
 
-// CreateAuthProviderGroupMapping operation middleware
-func (siw *ServerInterfaceWrapper) CreateAuthProviderGroupMapping(c *gin.Context) {
+// CreateAuthProviderCohortMapping operation middleware
+func (siw *ServerInterfaceWrapper) CreateAuthProviderCohortMapping(c *gin.Context) {
 
 	var err error
 
@@ -3022,11 +3819,11 @@ func (siw *ServerInterfaceWrapper) CreateAuthProviderGroupMapping(c *gin.Context
 		}
 	}
 
-	siw.Handler.CreateAuthProviderGroupMapping(c, providerId)
+	siw.Handler.CreateAuthProviderCohortMapping(c, providerId)
 }
 
-// DeleteAuthProviderGroupMapping operation middleware
-func (siw *ServerInterfaceWrapper) DeleteAuthProviderGroupMapping(c *gin.Context) {
+// DeleteAuthProviderCohortMapping operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAuthProviderCohortMapping(c *gin.Context) {
 
 	var err error
 
@@ -3057,11 +3854,11 @@ func (siw *ServerInterfaceWrapper) DeleteAuthProviderGroupMapping(c *gin.Context
 		}
 	}
 
-	siw.Handler.DeleteAuthProviderGroupMapping(c, providerId, mappingId)
+	siw.Handler.DeleteAuthProviderCohortMapping(c, providerId, mappingId)
 }
 
-// UpdateAuthProviderGroupMapping operation middleware
-func (siw *ServerInterfaceWrapper) UpdateAuthProviderGroupMapping(c *gin.Context) {
+// UpdateAuthProviderCohortMapping operation middleware
+func (siw *ServerInterfaceWrapper) UpdateAuthProviderCohortMapping(c *gin.Context) {
 
 	var err error
 
@@ -3092,7 +3889,269 @@ func (siw *ServerInterfaceWrapper) UpdateAuthProviderGroupMapping(c *gin.Context
 		}
 	}
 
-	siw.Handler.UpdateAuthProviderGroupMapping(c, providerId, mappingId)
+	siw.Handler.UpdateAuthProviderCohortMapping(c, providerId, mappingId)
+}
+
+// ListAuthProviderCohorts operation middleware
+func (siw *ServerInterfaceWrapper) ListAuthProviderCohorts(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListAuthProviderCohorts(c, providerId)
+}
+
+// SyncAuthProviderCohorts operation middleware
+func (siw *ServerInterfaceWrapper) SyncAuthProviderCohorts(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SyncAuthProviderCohorts(c, providerId)
+}
+
+// GetAuthProviderDirectoryDescriptor operation middleware
+func (siw *ServerInterfaceWrapper) GetAuthProviderDirectoryDescriptor(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAuthProviderDirectoryDescriptor(c, providerId)
+}
+
+// PreviewAuthProviderDirectory operation middleware
+func (siw *ServerInterfaceWrapper) PreviewAuthProviderDirectory(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PreviewAuthProviderDirectory(c, providerId)
+}
+
+// GetAuthProviderDirectorySchedule operation middleware
+func (siw *ServerInterfaceWrapper) GetAuthProviderDirectorySchedule(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAuthProviderDirectorySchedule(c, providerId)
+}
+
+// SyncAuthProviderDirectory operation middleware
+func (siw *ServerInterfaceWrapper) SyncAuthProviderDirectory(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SyncAuthProviderDirectory(c, providerId)
+}
+
+// ListAuthProviderDirectorySyncJobs operation middleware
+func (siw *ServerInterfaceWrapper) ListAuthProviderDirectorySyncJobs(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAuthProviderDirectorySyncJobsParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", c.Request.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "per_page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "per_page", c.Request.URL.Query(), &params.PerPage)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter per_page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListAuthProviderDirectorySyncJobs(c, providerId, params)
+}
+
+// GetAuthProviderDirectorySyncJob operation middleware
+func (siw *ServerInterfaceWrapper) GetAuthProviderDirectorySyncJob(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "job_id" -------------
+	var jobId DirectorySyncJobID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "job_id", c.Param("job_id"), &jobId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter job_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAuthProviderDirectorySyncJob(c, providerId, jobId)
+}
+
+// GetAuthProviderRuntimeDescriptor operation middleware
+func (siw *ServerInterfaceWrapper) GetAuthProviderRuntimeDescriptor(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAuthProviderRuntimeDescriptor(c, providerId)
 }
 
 // GetAuthProviderSample operation middleware
@@ -3119,32 +4178,6 @@ func (siw *ServerInterfaceWrapper) GetAuthProviderSample(c *gin.Context) {
 	}
 
 	siw.Handler.GetAuthProviderSample(c, providerId)
-}
-
-// SyncAuthProviderGroups operation middleware
-func (siw *ServerInterfaceWrapper) SyncAuthProviderGroups(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "provider_id" -------------
-	var providerId ProviderID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.SyncAuthProviderGroups(c, providerId)
 }
 
 // TestAuthProviderConnection operation middleware
@@ -3318,6 +4351,58 @@ func (siw *ServerInterfaceWrapper) CreateCluster(c *gin.Context) {
 	}
 
 	siw.Handler.CreateCluster(c)
+}
+
+// DeleteCluster operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCluster(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "cluster_id" -------------
+	var clusterId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "cluster_id", c.Param("cluster_id"), &clusterId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cluster_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteCluster(c, clusterId)
+}
+
+// UpdateCluster operation middleware
+func (siw *ServerInterfaceWrapper) UpdateCluster(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "cluster_id" -------------
+	var clusterId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "cluster_id", c.Param("cluster_id"), &clusterId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cluster_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateCluster(c, clusterId)
 }
 
 // UpdateClusterEnvironment operation middleware
@@ -3650,6 +4735,36 @@ func (siw *ServerInterfaceWrapper) ListPermissions(c *gin.Context) {
 	siw.Handler.ListPermissions(c)
 }
 
+// GetExternalAuthPlatformSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetExternalAuthPlatformSettings(c *gin.Context) {
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetExternalAuthPlatformSettings(c)
+}
+
+// UpdateExternalAuthPlatformSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdateExternalAuthPlatformSettings(c *gin.Context) {
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateExternalAuthPlatformSettings(c)
+}
+
 // ListRateLimitExemptions operation middleware
 func (siw *ServerInterfaceWrapper) ListRateLimitExemptions(c *gin.Context) {
 
@@ -3979,6 +5094,14 @@ func (siw *ServerInterfaceWrapper) ListUsers(c *gin.Context) {
 		return
 	}
 
+	// ------------- Optional query parameter "search" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "search", c.Request.URL.Query(), &params.Search)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter search: %w", err), http.StatusBadRequest)
+		return
+	}
+
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
 		if c.IsAborted() {
@@ -4143,175 +5266,6 @@ func (siw *ServerInterfaceWrapper) DeleteUserRoleBinding(c *gin.Context) {
 	siw.Handler.DeleteUserRoleBinding(c, userId, bindingId)
 }
 
-// ListApprovals operation middleware
-func (siw *ServerInterfaceWrapper) ListApprovals(c *gin.Context) {
-
-	var err error
-
-	c.Set(BearerAuthScopes, []string{})
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListApprovalsParams
-
-	// ------------- Optional query parameter "page" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "page", c.Request.URL.Query(), &params.Page)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "per_page" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "per_page", c.Request.URL.Query(), &params.PerPage)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter per_page: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "status" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "status", c.Request.URL.Query(), &params.Status)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "operation_type" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "operation_type", c.Request.URL.Query(), &params.OperationType)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operation_type: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "selected_cluster_id" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "selected_cluster_id", c.Request.URL.Query(), &params.SelectedClusterId)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter selected_cluster_id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "placement_advisory_code" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "placement_advisory_code", c.Request.URL.Query(), &params.PlacementAdvisoryCode)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter placement_advisory_code: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Optional query parameter "placement_snapshot" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "placement_snapshot", c.Request.URL.Query(), &params.PlacementSnapshot)
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter placement_snapshot: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ListApprovals(c, params)
-}
-
-// SubmitApprovalBatch operation middleware
-func (siw *ServerInterfaceWrapper) SubmitApprovalBatch(c *gin.Context) {
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.SubmitApprovalBatch(c)
-}
-
-// ApproveTicket operation middleware
-func (siw *ServerInterfaceWrapper) ApproveTicket(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "ticket_id" -------------
-	var ticketId TicketID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "ticket_id", c.Param("ticket_id"), &ticketId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter ticket_id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ApproveTicket(c, ticketId)
-}
-
-// CancelTicket operation middleware
-func (siw *ServerInterfaceWrapper) CancelTicket(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "ticket_id" -------------
-	var ticketId TicketID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "ticket_id", c.Param("ticket_id"), &ticketId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter ticket_id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.CancelTicket(c, ticketId)
-}
-
-// RejectTicket operation middleware
-func (siw *ServerInterfaceWrapper) RejectTicket(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "ticket_id" -------------
-	var ticketId TicketID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "ticket_id", c.Param("ticket_id"), &ticketId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter ticket_id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.RejectTicket(c, ticketId)
-}
-
 // ListAuditLogs operation middleware
 func (siw *ServerInterfaceWrapper) ListAuditLogs(c *gin.Context) {
 
@@ -4445,6 +5399,262 @@ func (siw *ServerInterfaceWrapper) GetCurrentUser(c *gin.Context) {
 	}
 
 	siw.Handler.GetCurrentUser(c)
+}
+
+// ListLoginAuthProviders operation middleware
+func (siw *ServerInterfaceWrapper) ListLoginAuthProviders(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListLoginAuthProviders(c)
+}
+
+// CompleteLoginAuthProviderGet operation middleware
+func (siw *ServerInterfaceWrapper) CompleteLoginAuthProviderGet(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CompleteLoginAuthProviderGetParams
+
+	// ------------- Optional query parameter "code" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "code", c.Request.URL.Query(), &params.Code)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter code: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "state", c.Request.URL.Query(), &params.State)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter state: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CompleteLoginAuthProviderGet(c, providerId, params)
+}
+
+// CompleteLoginAuthProviderPost operation middleware
+func (siw *ServerInterfaceWrapper) CompleteLoginAuthProviderPost(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CompleteLoginAuthProviderPost(c, providerId)
+}
+
+// StartLoginAuthProvider operation middleware
+func (siw *ServerInterfaceWrapper) StartLoginAuthProvider(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.StartLoginAuthProvider(c, providerId)
+}
+
+// SubmitLoginAuthProvider operation middleware
+func (siw *ServerInterfaceWrapper) SubmitLoginAuthProvider(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "provider_id" -------------
+	var providerId ProviderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_id", c.Param("provider_id"), &providerId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter provider_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SubmitLoginAuthProvider(c, providerId)
+}
+
+// ListBuiltinApprovalTasks operation middleware
+func (siw *ServerInterfaceWrapper) ListBuiltinApprovalTasks(c *gin.Context) {
+
+	var err error
+
+	c.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListBuiltinApprovalTasksParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", c.Request.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "per_page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "per_page", c.Request.URL.Query(), &params.PerPage)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter per_page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "status", c.Request.URL.Query(), &params.Status)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "operation_type" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "operation_type", c.Request.URL.Query(), &params.OperationType)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operation_type: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "selected_cluster_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "selected_cluster_id", c.Request.URL.Query(), &params.SelectedClusterId)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter selected_cluster_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "placement_advisory_code" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "placement_advisory_code", c.Request.URL.Query(), &params.PlacementAdvisoryCode)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter placement_advisory_code: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "placement_snapshot" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "placement_snapshot", c.Request.URL.Query(), &params.PlacementSnapshot)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter placement_snapshot: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListBuiltinApprovalTasks(c, params)
+}
+
+// ApproveBuiltinApprovalTask operation middleware
+func (siw *ServerInterfaceWrapper) ApproveBuiltinApprovalTask(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "ticket_id" -------------
+	var ticketId TicketID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ticket_id", c.Param("ticket_id"), &ticketId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter ticket_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ApproveBuiltinApprovalTask(c, ticketId)
+}
+
+// RejectBuiltinApprovalTask operation middleware
+func (siw *ServerInterfaceWrapper) RejectBuiltinApprovalTask(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "ticket_id" -------------
+	var ticketId TicketID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ticket_id", c.Param("ticket_id"), &ticketId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter ticket_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RejectBuiltinApprovalTask(c, ticketId)
 }
 
 // GetLiveness operation middleware
@@ -4612,6 +5822,50 @@ func (siw *ServerInterfaceWrapper) GetDynamicSchema(c *gin.Context) {
 	siw.Handler.GetDynamicSchema(c, entityType)
 }
 
+// ListServicesOverview operation middleware
+func (siw *ServerInterfaceWrapper) ListServicesOverview(c *gin.Context) {
+
+	var err error
+
+	c.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListServicesOverviewParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", c.Request.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "per_page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "per_page", c.Request.URL.Query(), &params.PerPage)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter per_page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "system_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "system_id", c.Request.URL.Query(), &params.SystemId)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter system_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListServicesOverview(c, params)
+}
+
 // ListSystems operation middleware
 func (siw *ServerInterfaceWrapper) ListSystems(c *gin.Context) {
 
@@ -4773,6 +6027,59 @@ func (siw *ServerInterfaceWrapper) UpdateSystem(c *gin.Context) {
 	}
 
 	siw.Handler.UpdateSystem(c, systemId)
+}
+
+// ListSystemMemberCandidates operation middleware
+func (siw *ServerInterfaceWrapper) ListSystemMemberCandidates(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "system_id" -------------
+	var systemId SystemID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "system_id", c.Param("system_id"), &systemId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter system_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSystemMemberCandidatesParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", c.Request.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "per_page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "per_page", c.Request.URL.Query(), &params.PerPage)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter per_page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "search" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "search", c.Request.URL.Query(), &params.Search)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter search: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListSystemMemberCandidates(c, systemId, params)
 }
 
 // ListSystemMembers operation middleware
@@ -5084,6 +6391,41 @@ func (siw *ServerInterfaceWrapper) UpdateService(c *gin.Context) {
 	siw.Handler.UpdateService(c, systemId, serviceId)
 }
 
+// GetServiceWorkspaceContext operation middleware
+func (siw *ServerInterfaceWrapper) GetServiceWorkspaceContext(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "system_id" -------------
+	var systemId SystemID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "system_id", c.Param("system_id"), &systemId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter system_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "service_id" -------------
+	var serviceId ServiceID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "service_id", c.Param("service_id"), &serviceId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter service_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetServiceWorkspaceContext(c, systemId, serviceId)
+}
+
 // ListTemplates operation middleware
 func (siw *ServerInterfaceWrapper) ListTemplates(c *gin.Context) {
 
@@ -5118,6 +6460,116 @@ func (siw *ServerInterfaceWrapper) ListTemplates(c *gin.Context) {
 	}
 
 	siw.Handler.ListTemplates(c, params)
+}
+
+// ListTickets operation middleware
+func (siw *ServerInterfaceWrapper) ListTickets(c *gin.Context) {
+
+	var err error
+
+	c.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTicketsParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", c.Request.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "per_page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "per_page", c.Request.URL.Query(), &params.PerPage)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter per_page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "status", c.Request.URL.Query(), &params.Status)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "mine" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "mine", c.Request.URL.Query(), &params.Mine)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter mine: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "operation_type" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "operation_type", c.Request.URL.Query(), &params.OperationType)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operation_type: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "selected_cluster_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "selected_cluster_id", c.Request.URL.Query(), &params.SelectedClusterId)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter selected_cluster_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "placement_advisory_code" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "placement_advisory_code", c.Request.URL.Query(), &params.PlacementAdvisoryCode)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter placement_advisory_code: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "placement_snapshot" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "placement_snapshot", c.Request.URL.Query(), &params.PlacementSnapshot)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter placement_snapshot: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListTickets(c, params)
+}
+
+// CancelTicket operation middleware
+func (siw *ServerInterfaceWrapper) CancelTicket(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "ticket_id" -------------
+	var ticketId TicketID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ticket_id", c.Param("ticket_id"), &ticketId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter ticket_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelTicket(c, ticketId)
 }
 
 // ListVMs operation middleware
@@ -5530,6 +6982,58 @@ func (siw *ServerInterfaceWrapper) GetVMConsoleStatus(c *gin.Context) {
 	siw.Handler.GetVMConsoleStatus(c, vmId)
 }
 
+// GetVMModifyContext operation middleware
+func (siw *ServerInterfaceWrapper) GetVMModifyContext(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "vm_id" -------------
+	var vmId VMID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "vm_id", c.Param("vm_id"), &vmId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter vm_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetVMModifyContext(c, vmId)
+}
+
+// CreateVMModifyRequest operation middleware
+func (siw *ServerInterfaceWrapper) CreateVMModifyRequest(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "vm_id" -------------
+	var vmId VMID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "vm_id", c.Param("vm_id"), &vmId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter vm_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateVMModifyRequest(c, vmId)
+}
+
 // PowerVM operation middleware
 func (siw *ServerInterfaceWrapper) PowerVM(c *gin.Context) {
 
@@ -5554,6 +7058,32 @@ func (siw *ServerInterfaceWrapper) PowerVM(c *gin.Context) {
 	}
 
 	siw.Handler.PowerVM(c, vmId)
+}
+
+// GetVMRequestPrefill operation middleware
+func (siw *ServerInterfaceWrapper) GetVMRequestPrefill(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "vm_id" -------------
+	var vmId VMID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "vm_id", c.Param("vm_id"), &vmId, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter vm_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetVMRequestPrefill(c, vmId)
 }
 
 // RestartVM operation middleware
@@ -5692,15 +7222,25 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/admin/auth-providers", wrapper.CreateAuthProvider)
 	router.DELETE(options.BaseURL+"/admin/auth-providers/:provider_id", wrapper.DeleteAuthProvider)
 	router.PATCH(options.BaseURL+"/admin/auth-providers/:provider_id", wrapper.UpdateAuthProvider)
-	router.GET(options.BaseURL+"/admin/auth-providers/:provider_id/group-mappings", wrapper.ListAuthProviderGroupMappings)
-	router.POST(options.BaseURL+"/admin/auth-providers/:provider_id/group-mappings", wrapper.CreateAuthProviderGroupMapping)
-	router.DELETE(options.BaseURL+"/admin/auth-providers/:provider_id/group-mappings/:mapping_id", wrapper.DeleteAuthProviderGroupMapping)
-	router.PATCH(options.BaseURL+"/admin/auth-providers/:provider_id/group-mappings/:mapping_id", wrapper.UpdateAuthProviderGroupMapping)
+	router.GET(options.BaseURL+"/admin/auth-providers/:provider_id/cohort-mappings", wrapper.ListAuthProviderCohortMappings)
+	router.POST(options.BaseURL+"/admin/auth-providers/:provider_id/cohort-mappings", wrapper.CreateAuthProviderCohortMapping)
+	router.DELETE(options.BaseURL+"/admin/auth-providers/:provider_id/cohort-mappings/:mapping_id", wrapper.DeleteAuthProviderCohortMapping)
+	router.PATCH(options.BaseURL+"/admin/auth-providers/:provider_id/cohort-mappings/:mapping_id", wrapper.UpdateAuthProviderCohortMapping)
+	router.GET(options.BaseURL+"/admin/auth-providers/:provider_id/cohorts", wrapper.ListAuthProviderCohorts)
+	router.POST(options.BaseURL+"/admin/auth-providers/:provider_id/cohorts/sync", wrapper.SyncAuthProviderCohorts)
+	router.GET(options.BaseURL+"/admin/auth-providers/:provider_id/directory/descriptor", wrapper.GetAuthProviderDirectoryDescriptor)
+	router.POST(options.BaseURL+"/admin/auth-providers/:provider_id/directory/preview", wrapper.PreviewAuthProviderDirectory)
+	router.GET(options.BaseURL+"/admin/auth-providers/:provider_id/directory/schedule", wrapper.GetAuthProviderDirectorySchedule)
+	router.POST(options.BaseURL+"/admin/auth-providers/:provider_id/directory/sync", wrapper.SyncAuthProviderDirectory)
+	router.GET(options.BaseURL+"/admin/auth-providers/:provider_id/directory/sync-jobs", wrapper.ListAuthProviderDirectorySyncJobs)
+	router.GET(options.BaseURL+"/admin/auth-providers/:provider_id/directory/sync-jobs/:job_id", wrapper.GetAuthProviderDirectorySyncJob)
+	router.GET(options.BaseURL+"/admin/auth-providers/:provider_id/runtime", wrapper.GetAuthProviderRuntimeDescriptor)
 	router.GET(options.BaseURL+"/admin/auth-providers/:provider_id/sample", wrapper.GetAuthProviderSample)
-	router.POST(options.BaseURL+"/admin/auth-providers/:provider_id/sync", wrapper.SyncAuthProviderGroups)
 	router.POST(options.BaseURL+"/admin/auth-providers/:provider_id/test-connection", wrapper.TestAuthProviderConnection)
 	router.GET(options.BaseURL+"/admin/clusters", wrapper.ListClusters)
 	router.POST(options.BaseURL+"/admin/clusters", wrapper.CreateCluster)
+	router.DELETE(options.BaseURL+"/admin/clusters/:cluster_id", wrapper.DeleteCluster)
+	router.PATCH(options.BaseURL+"/admin/clusters/:cluster_id", wrapper.UpdateCluster)
 	router.PUT(options.BaseURL+"/admin/clusters/:cluster_id/environment", wrapper.UpdateClusterEnvironment)
 	router.GET(options.BaseURL+"/admin/clusters/:cluster_id/policy", wrapper.GetClusterPolicy)
 	router.PUT(options.BaseURL+"/admin/clusters/:cluster_id/policy", wrapper.UpsertClusterPolicy)
@@ -5714,6 +7254,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/admin/namespaces/:namespace_id", wrapper.GetNamespace)
 	router.PUT(options.BaseURL+"/admin/namespaces/:namespace_id", wrapper.UpdateNamespace)
 	router.GET(options.BaseURL+"/admin/permissions", wrapper.ListPermissions)
+	router.GET(options.BaseURL+"/admin/platform-settings/external-auth", wrapper.GetExternalAuthPlatformSettings)
+	router.PUT(options.BaseURL+"/admin/platform-settings/external-auth", wrapper.UpdateExternalAuthPlatformSettings)
 	router.GET(options.BaseURL+"/admin/rate-limits/exemptions", wrapper.ListRateLimitExemptions)
 	router.POST(options.BaseURL+"/admin/rate-limits/exemptions", wrapper.CreateRateLimitExemption)
 	router.DELETE(options.BaseURL+"/admin/rate-limits/exemptions/:user_id", wrapper.DeleteRateLimitExemption)
@@ -5734,15 +7276,18 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/admin/users/:user_id/role-bindings", wrapper.ListUserRoleBindings)
 	router.POST(options.BaseURL+"/admin/users/:user_id/role-bindings", wrapper.CreateUserRoleBinding)
 	router.DELETE(options.BaseURL+"/admin/users/:user_id/role-bindings/:binding_id", wrapper.DeleteUserRoleBinding)
-	router.GET(options.BaseURL+"/approvals", wrapper.ListApprovals)
-	router.POST(options.BaseURL+"/approvals/batch", wrapper.SubmitApprovalBatch)
-	router.POST(options.BaseURL+"/approvals/:ticket_id/approve", wrapper.ApproveTicket)
-	router.POST(options.BaseURL+"/approvals/:ticket_id/cancel", wrapper.CancelTicket)
-	router.POST(options.BaseURL+"/approvals/:ticket_id/reject", wrapper.RejectTicket)
 	router.GET(options.BaseURL+"/audit-logs", wrapper.ListAuditLogs)
 	router.POST(options.BaseURL+"/auth/change-password", wrapper.ChangePassword)
 	router.POST(options.BaseURL+"/auth/login", wrapper.Login)
 	router.GET(options.BaseURL+"/auth/me", wrapper.GetCurrentUser)
+	router.GET(options.BaseURL+"/auth/providers", wrapper.ListLoginAuthProviders)
+	router.GET(options.BaseURL+"/auth/providers/:provider_id/callback", wrapper.CompleteLoginAuthProviderGet)
+	router.POST(options.BaseURL+"/auth/providers/:provider_id/callback", wrapper.CompleteLoginAuthProviderPost)
+	router.POST(options.BaseURL+"/auth/providers/:provider_id/login/start", wrapper.StartLoginAuthProvider)
+	router.POST(options.BaseURL+"/auth/providers/:provider_id/login/submit", wrapper.SubmitLoginAuthProvider)
+	router.GET(options.BaseURL+"/builtin-approval/tasks", wrapper.ListBuiltinApprovalTasks)
+	router.POST(options.BaseURL+"/builtin-approval/tasks/:ticket_id/approve", wrapper.ApproveBuiltinApprovalTask)
+	router.POST(options.BaseURL+"/builtin-approval/tasks/:ticket_id/reject", wrapper.RejectBuiltinApprovalTask)
 	router.GET(options.BaseURL+"/health/live", wrapper.GetLiveness)
 	router.GET(options.BaseURL+"/health/ready", wrapper.GetReadiness)
 	router.GET(options.BaseURL+"/instance-sizes", wrapper.ListInstanceSizes)
@@ -5751,11 +7296,13 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/notifications/unread-count", wrapper.GetUnreadCount)
 	router.PATCH(options.BaseURL+"/notifications/:notification_id/read", wrapper.MarkNotificationRead)
 	router.GET(options.BaseURL+"/schemas/:entity_type", wrapper.GetDynamicSchema)
+	router.GET(options.BaseURL+"/services", wrapper.ListServicesOverview)
 	router.GET(options.BaseURL+"/systems", wrapper.ListSystems)
 	router.POST(options.BaseURL+"/systems", wrapper.CreateSystem)
 	router.DELETE(options.BaseURL+"/systems/:system_id", wrapper.DeleteSystem)
 	router.GET(options.BaseURL+"/systems/:system_id", wrapper.GetSystem)
 	router.PATCH(options.BaseURL+"/systems/:system_id", wrapper.UpdateSystem)
+	router.GET(options.BaseURL+"/systems/:system_id/member-candidates", wrapper.ListSystemMemberCandidates)
 	router.GET(options.BaseURL+"/systems/:system_id/members", wrapper.ListSystemMembers)
 	router.POST(options.BaseURL+"/systems/:system_id/members", wrapper.AddSystemMember)
 	router.DELETE(options.BaseURL+"/systems/:system_id/members/:user_id", wrapper.DeleteSystemMember)
@@ -5765,7 +7312,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.DELETE(options.BaseURL+"/systems/:system_id/services/:service_id", wrapper.DeleteService)
 	router.GET(options.BaseURL+"/systems/:system_id/services/:service_id", wrapper.GetService)
 	router.PATCH(options.BaseURL+"/systems/:system_id/services/:service_id", wrapper.UpdateService)
+	router.GET(options.BaseURL+"/systems/:system_id/services/:service_id/context", wrapper.GetServiceWorkspaceContext)
 	router.GET(options.BaseURL+"/templates", wrapper.ListTemplates)
+	router.GET(options.BaseURL+"/tickets", wrapper.ListTickets)
+	router.POST(options.BaseURL+"/tickets/:ticket_id/cancel", wrapper.CancelTicket)
 	router.GET(options.BaseURL+"/vms", wrapper.ListVMs)
 	router.GET(options.BaseURL+"/vms/batch", wrapper.ListVMBatches)
 	router.POST(options.BaseURL+"/vms/batch", wrapper.SubmitVMBatch)
@@ -5779,7 +7329,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/vms/:vm_id", wrapper.GetVM)
 	router.POST(options.BaseURL+"/vms/:vm_id/console/request", wrapper.RequestVMConsoleAccess)
 	router.GET(options.BaseURL+"/vms/:vm_id/console/status", wrapper.GetVMConsoleStatus)
+	router.GET(options.BaseURL+"/vms/:vm_id/modify-context", wrapper.GetVMModifyContext)
+	router.POST(options.BaseURL+"/vms/:vm_id/modify-request", wrapper.CreateVMModifyRequest)
 	router.POST(options.BaseURL+"/vms/:vm_id/power", wrapper.PowerVM)
+	router.GET(options.BaseURL+"/vms/:vm_id/request-prefill", wrapper.GetVMRequestPrefill)
 	router.POST(options.BaseURL+"/vms/:vm_id/restart", wrapper.RestartVM)
 	router.POST(options.BaseURL+"/vms/:vm_id/start", wrapper.StartVM)
 	router.POST(options.BaseURL+"/vms/:vm_id/stop", wrapper.StopVM)
@@ -5789,253 +7342,314 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

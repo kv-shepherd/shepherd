@@ -13,6 +13,11 @@
 import type { paths } from '@/types/api.gen';
 import createClient from 'openapi-fetch';
 import { AUTH_STORAGE_KEY } from '@/stores/auth';
+import {
+  getRequestPath,
+  shouldAttachAuthHeader,
+  shouldRedirectToLoginOnUnauthorized,
+} from './authPolicy';
 
 // Use relative path to leverage Next.js rewrites (see next.config.ts)
 // This fixes access from remote IPs (e.g. 10.x.x.x) by proxying through the Next.js server
@@ -32,6 +37,10 @@ export const api = createClient<paths>({
 api.use({
   async onRequest({ request }) {
     if (typeof window !== 'undefined') {
+      const requestPath = getRequestPath(request, window.location.origin);
+      if (!shouldAttachAuthHeader(requestPath)) {
+        return request;
+      }
       try {
         const stored = localStorage.getItem(AUTH_STORAGE_KEY);
         if (stored) {
@@ -55,22 +64,21 @@ api.use({
 api.use({
   async onResponse({ request, response }) {
     if (response.status === 401 && typeof window !== 'undefined') {
-      const requestPath = (() => {
-        try {
-          return new URL(request.url, window.location.origin).pathname;
-        } catch {
-          return '';
-        }
-      })();
-      // Keep invalid-login UX on /login: backend 401 should surface inline error,
-      // not trigger global logout redirect.
-      if (requestPath.endsWith('/auth/login')) {
-        return response;
-      }
+      const requestPath = getRequestPath(request, window.location.origin);
 
       const { useAuthStore } = await import('@/stores/auth');
       useAuthStore.getState().logout();
-      window.location.href = '/login';
+      try {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+      } catch {
+        // ignore storage errors
+      }
+
+      if (!shouldRedirectToLoginOnUnauthorized(requestPath, window.location.pathname)) {
+        return response;
+      }
+
+      window.location.replace('/login');
     }
     return response;
   },

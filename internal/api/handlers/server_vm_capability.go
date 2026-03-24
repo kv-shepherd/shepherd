@@ -23,7 +23,7 @@ import (
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	entinstancesize "kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
-	"kv-shepherd.io/shepherd/internal/provider"
+	"kv-shepherd.io/shepherd/internal/provider/capabilityutil"
 )
 
 // featureGateForRequiresGPU is the KubeVirt feature gate that must be in enabled_features
@@ -96,7 +96,7 @@ func (s *Server) resolveCapabilityWarning(ctx context.Context, instanceSizeID st
 	}
 
 	for _, cl := range clusters {
-		if provider.HasAllCapabilities(cl.EnabledFeatures, required) {
+		if capabilityutil.HasAllCapabilities(cl.EnabledFeatures, required) {
 			return "" // At least one cluster can handle this → no warning
 		}
 	}

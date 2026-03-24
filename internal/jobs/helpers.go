@@ -12,25 +12,25 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
-	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
+	entbatchticket "kv-shepherd.io/shepherd/ent/batchticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
-// setTicketStatusByEvent updates the approval ticket status associated with a
+// setTicketStatusByEvent updates the ticket status associated with a
 // domain event. This is a best-effort operation: failures are logged but
 // not propagated, since the ticket status is an auxiliary concern.
-func setTicketStatusByEvent(ctx context.Context, client *ent.Client, eventID string, status approvalticket.Status) {
+func setTicketStatusByEvent(ctx context.Context, client *ent.Client, eventID string, status entticket.Status) {
 	if client == nil || eventID == "" {
 		return
 	}
-	if _, err := client.ApprovalTicket.Update().
-		Where(approvalticket.EventIDEQ(eventID)).
+	if _, err := client.Ticket.Update().
+		Where(entticket.EventIDEQ(eventID)).
 		SetStatus(status).
 		Save(ctx); err != nil {
-		logger.Warn("failed to update approval ticket status by event",
+		logger.Warn("failed to update ticket status by event",
 			zap.String("event_id", eventID),
 			zap.String("status", status.String()),
 			zap.Error(err),
@@ -59,8 +59,8 @@ func syncParentBatchStatusByChildEvent(ctx context.Context, client *ent.Client, 
 	if client == nil || childEventID == "" {
 		return
 	}
-	child, err := client.ApprovalTicket.Query().
-		Where(approvalticket.EventIDEQ(childEventID)).
+	child, err := client.Ticket.Query().
+		Where(entticket.EventIDEQ(childEventID)).
 		Only(ctx)
 	if err != nil {
 		if !ent.IsNotFound(err) {
@@ -79,8 +79,8 @@ func syncParentBatchStatusByChildEvent(ctx context.Context, client *ent.Client, 
 }
 
 func syncParentBatchStatus(ctx context.Context, client *ent.Client, parentTicketID string) {
-	children, err := client.ApprovalTicket.Query().
-		Where(approvalticket.ParentTicketIDEQ(parentTicketID)).
+	children, err := client.Ticket.Query().
+		Where(entticket.ParentTicketIDEQ(parentTicketID)).
 		All(ctx)
 	if err != nil {
 		logger.Warn("failed to query child tickets for parent batch status sync",
@@ -101,39 +101,39 @@ func syncParentBatchStatus(ctx context.Context, client *ent.Client, parentTicket
 	)
 	for _, child := range children {
 		switch child.Status {
-		case approvalticket.StatusSUCCESS:
+		case entticket.StatusSUCCESS:
 			successCount++
-		case approvalticket.StatusFAILED, approvalticket.StatusREJECTED:
+		case entticket.StatusFAILED, entticket.StatusREJECTED:
 			failedCount++
-		case approvalticket.StatusCANCELLED:
+		case entticket.StatusCANCELLED:
 			cancelledCount++
 		default:
 			activeCount++
 		}
 	}
 
-	parentStatus := approvalticket.StatusEXECUTING
-	projectionStatus := batchapprovalticket.StatusIN_PROGRESS
+	parentStatus := entticket.StatusEXECUTING
+	projectionStatus := entbatchticket.StatusIN_PROGRESS
 	switch {
 	case activeCount > 0:
-		parentStatus = approvalticket.StatusEXECUTING
-		projectionStatus = batchapprovalticket.StatusIN_PROGRESS
+		parentStatus = entticket.StatusEXECUTING
+		projectionStatus = entbatchticket.StatusIN_PROGRESS
 	case successCount == len(children):
-		parentStatus = approvalticket.StatusSUCCESS
-		projectionStatus = batchapprovalticket.StatusCOMPLETED
+		parentStatus = entticket.StatusSUCCESS
+		projectionStatus = entbatchticket.StatusCOMPLETED
 	case cancelledCount == len(children):
-		parentStatus = approvalticket.StatusCANCELLED
-		projectionStatus = batchapprovalticket.StatusCANCELLED
+		parentStatus = entticket.StatusCANCELLED
+		projectionStatus = entbatchticket.StatusCANCELLED
 	case successCount > 0 && (failedCount+cancelledCount) > 0:
-		parentStatus = approvalticket.StatusFAILED
-		projectionStatus = batchapprovalticket.StatusPARTIAL_SUCCESS
+		parentStatus = entticket.StatusFAILED
+		projectionStatus = entbatchticket.StatusPARTIAL_SUCCESS
 	default:
 		// Includes terminal mixed outcomes (PARTIAL_SUCCESS in API view).
-		parentStatus = approvalticket.StatusFAILED
-		projectionStatus = batchapprovalticket.StatusFAILED
+		parentStatus = entticket.StatusFAILED
+		projectionStatus = entbatchticket.StatusFAILED
 	}
 
-	parent, err := client.ApprovalTicket.UpdateOneID(parentTicketID).
+	parent, err := client.Ticket.UpdateOneID(parentTicketID).
 		SetStatus(parentStatus).
 		Save(ctx)
 	if err != nil {
@@ -147,11 +147,11 @@ func syncParentBatchStatus(ctx context.Context, client *ent.Client, parentTicket
 
 	eventStatus := domainevent.StatusPROCESSING
 	switch parentStatus {
-	case approvalticket.StatusSUCCESS:
+	case entticket.StatusSUCCESS:
 		eventStatus = domainevent.StatusCOMPLETED
-	case approvalticket.StatusFAILED:
+	case entticket.StatusFAILED:
 		eventStatus = domainevent.StatusFAILED
-	case approvalticket.StatusCANCELLED:
+	case entticket.StatusCANCELLED:
 		eventStatus = domainevent.StatusCANCELLED
 	default:
 		eventStatus = domainevent.StatusPROCESSING
@@ -167,7 +167,7 @@ func syncParentBatchStatus(ctx context.Context, client *ent.Client, parentTicket
 		)
 	}
 
-	if _, err := client.BatchApprovalTicket.UpdateOneID(parentTicketID).
+	if _, err := client.BatchTicket.UpdateOneID(parentTicketID).
 		SetChildCount(len(children)).
 		SetSuccessCount(successCount).
 		SetFailedCount(failedCount).

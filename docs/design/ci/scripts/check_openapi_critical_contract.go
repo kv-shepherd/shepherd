@@ -144,7 +144,7 @@ func checkPathContracts(root *yaml.Node, violations *[]string) {
 			op:               "post",
 			operationID:      "createVMRequest",
 			requestSchemaRef: "#/components/schemas/VMCreateRequest",
-			responses:        []requiredResponseContract{{code: "202", schemaRef: "#/components/schemas/ApprovalTicketResponse"}},
+			responses:        []requiredResponseContract{{code: "202", schemaRef: "#/components/schemas/TicketResponse"}},
 		},
 		{
 			path:        "/vms/{vm_id}",
@@ -180,27 +180,33 @@ func checkPathContracts(root *yaml.Node, violations *[]string) {
 			responses:   []requiredResponseContract{{code: "200", schemaRef: "#/components/schemas/VMVNCSessionResponse"}},
 		},
 		{
-			path:        "/approvals",
+			path:        "/tickets",
 			op:          "get",
-			operationID: "listApprovals",
-			responses:   []requiredResponseContract{{code: "200", schemaRef: "#/components/schemas/ApprovalTicketList"}},
+			operationID: "listTickets",
+			responses:   []requiredResponseContract{{code: "200", schemaRef: "#/components/schemas/TicketList"}},
 		},
 		{
-			path:             "/approvals/{ticket_id}/approve",
+			path:        "/builtin-approval/tasks",
+			op:          "get",
+			operationID: "listBuiltinApprovalTasks",
+			responses:   []requiredResponseContract{{code: "200", schemaRef: "#/components/schemas/TicketList"}},
+		},
+		{
+			path:             "/builtin-approval/tasks/{ticket_id}/approve",
 			op:               "post",
-			operationID:      "approveTicket",
+			operationID:      "approveBuiltinApprovalTask",
 			requestSchemaRef: "#/components/schemas/ApprovalDecisionRequest",
 			responses:        []requiredResponseContract{{code: "204", noContent: true}},
 		},
 		{
-			path:             "/approvals/{ticket_id}/reject",
+			path:             "/builtin-approval/tasks/{ticket_id}/reject",
 			op:               "post",
-			operationID:      "rejectTicket",
+			operationID:      "rejectBuiltinApprovalTask",
 			requestSchemaRef: "#/components/schemas/RejectDecisionRequest",
 			responses:        []requiredResponseContract{{code: "204", noContent: true}},
 		},
 		{
-			path:        "/approvals/{ticket_id}/cancel",
+			path:        "/tickets/{ticket_id}/cancel",
 			op:          "post",
 			operationID: "cancelTicket",
 			responses:   []requiredResponseContract{{code: "204", noContent: true}},
@@ -351,10 +357,10 @@ func checkSchemaContracts(root *yaml.Node, violations *[]string) {
 		"VM",
 		"VMList",
 		"VMCreateRequest",
-		"ApprovalTicketResponse",
+		"TicketResponse",
 		"DeleteVMResponse",
-		"ApprovalTicket",
-		"ApprovalTicketList",
+		"Ticket",
+		"TicketList",
 		"ApprovalDecisionRequest",
 		"RejectDecisionRequest",
 		"LoginRequest",
@@ -381,14 +387,14 @@ func checkSchemaContracts(root *yaml.Node, violations *[]string) {
 	if schema, ok := mapValue(schemas, "VMCreateRequest"); ok {
 		checkVMCreateRequestSchema(schema, violations)
 	}
-	if schema, ok := mapValue(schemas, "ApprovalTicketResponse"); ok {
-		checkApprovalTicketResponseSchema(schema, violations)
+	if schema, ok := mapValue(schemas, "TicketResponse"); ok {
+		checkTicketResponseSchema(schema, violations)
 	}
 	if schema, ok := mapValue(schemas, "DeleteVMResponse"); ok {
 		checkDeleteVMResponseSchema(schema, violations)
 	}
-	if schema, ok := mapValue(schemas, "ApprovalTicket"); ok {
-		checkApprovalTicketSchema(schema, violations)
+	if schema, ok := mapValue(schemas, "Ticket"); ok {
+		checkTicketSchema(schema, violations)
 	}
 	if schema, ok := mapValue(schemas, "RejectDecisionRequest"); ok {
 		checkRejectDecisionRequestSchema(schema, violations)
@@ -468,16 +474,16 @@ func checkVMCreateRequestSchema(schema *yaml.Node, violations *[]string) {
 	}
 }
 
-func checkApprovalTicketResponseSchema(schema *yaml.Node, violations *[]string) {
-	requireSchemaRequiredFields("ApprovalTicketResponse", schema, []string{"ticket_id", "status"}, violations)
+func checkTicketResponseSchema(schema *yaml.Node, violations *[]string) {
+	requireSchemaRequiredFields("TicketResponse", schema, []string{"ticket_id", "status"}, violations)
 
 	status, ok := schemaProperty(schema, "status")
 	if !ok {
-		*violations = append(*violations, "components.schemas.ApprovalTicketResponse.properties.status is missing")
+		*violations = append(*violations, "components.schemas.TicketResponse.properties.status is missing")
 		return
 	}
 	if !enumContains(status, "PENDING") {
-		*violations = append(*violations, "components.schemas.ApprovalTicketResponse.properties.status.enum must include PENDING")
+		*violations = append(*violations, "components.schemas.TicketResponse.properties.status.enum must include PENDING")
 	}
 }
 
@@ -494,27 +500,27 @@ func checkDeleteVMResponseSchema(schema *yaml.Node, violations *[]string) {
 	}
 }
 
-func checkApprovalTicketSchema(schema *yaml.Node, violations *[]string) {
-	requireSchemaRequiredFields("ApprovalTicket", schema, []string{"id", "event_id", "status", "requester"}, violations)
+func checkTicketSchema(schema *yaml.Node, violations *[]string) {
+	requireSchemaRequiredFields("Ticket", schema, []string{"id", "event_id", "status", "requester"}, violations)
 
 	operationType, ok := schemaProperty(schema, "operation_type")
 	if !ok {
-		*violations = append(*violations, "components.schemas.ApprovalTicket.properties.operation_type is missing")
+		*violations = append(*violations, "components.schemas.Ticket.properties.operation_type is missing")
 	} else {
 		for _, v := range []string{"CREATE", "DELETE"} {
 			if !enumContains(operationType, v) {
-				*violations = append(*violations, fmt.Sprintf("components.schemas.ApprovalTicket.properties.operation_type.enum must include %s", v))
+				*violations = append(*violations, fmt.Sprintf("components.schemas.Ticket.properties.operation_type.enum must include %s", v))
 			}
 		}
 	}
 
 	status, ok := schemaProperty(schema, "status")
 	if !ok {
-		*violations = append(*violations, "components.schemas.ApprovalTicket.properties.status is missing")
+		*violations = append(*violations, "components.schemas.Ticket.properties.status is missing")
 	} else {
 		for _, v := range []string{"PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXECUTING", "SUCCESS", "FAILED"} {
 			if !enumContains(status, v) {
-				*violations = append(*violations, fmt.Sprintf("components.schemas.ApprovalTicket.properties.status.enum must include %s", v))
+				*violations = append(*violations, fmt.Sprintf("components.schemas.Ticket.properties.status.enum must include %s", v))
 			}
 		}
 	}

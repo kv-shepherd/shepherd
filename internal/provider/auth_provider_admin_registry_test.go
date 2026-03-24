@@ -1,65 +1,141 @@
 package provider
 
-import (
-	"context"
-	"slices"
-	"testing"
-)
+import "testing"
 
-type testAuthProviderAdapter struct {
-	typeKey string
+func TestGenericAuthProviderSupportsDirectorySyncCapability(t *testing.T) {
+	adapter := ResolveAuthProviderAdminAdapter("generic")
+	if adapter == nil {
+		t.Fatal("generic auth provider adapter is nil")
+	}
+
+	directoryCapability, ok := adapter.(DirectorySyncCapability)
+	if !ok {
+		t.Fatal("generic auth provider adapter does not implement DirectorySyncCapability")
+	}
+
+	descriptor := directoryCapability.DescribeDirectorySync()
+	if !descriptor.SupportsPreview {
+		t.Fatal("generic directory sync descriptor should support preview")
+	}
+	if len(descriptor.RequestSchema) == 0 {
+		t.Fatal("generic directory sync descriptor request_schema is empty")
+	}
+	if _, ok := adapter.(ScheduledDirectoryEnrichmentCapability); !ok {
+		t.Fatal("generic auth provider adapter does not implement ScheduledDirectoryEnrichmentCapability")
+	}
 }
 
-func (a *testAuthProviderAdapter) Type() string { return a.typeKey }
+func TestGenericAuthProviderDirectorySyncFiltersSampleUsers(t *testing.T) {
+	adapter := ResolveAuthProviderAdminAdapter("generic")
+	directoryCapability, ok := adapter.(DirectorySyncCapability)
+	if !ok {
+		t.Fatal("generic auth provider adapter does not implement DirectorySyncCapability")
+	}
 
-func (a *testAuthProviderAdapter) ValidateConfig(config map[string]interface{}) error {
-	return nil
+	records, err := directoryCapability.ListDirectoryUsers(t.Context(), map[string]interface{}{
+		"sample_users": []interface{}{
+			map[string]interface{}{
+				"external_id":  "ext-1",
+				"username":     "alice",
+				"display_name": "Alice",
+				"email":        "alice@example.com",
+				"groups":       []interface{}{"dev", "ops"},
+			},
+			map[string]interface{}{
+				"external_id":  "ext-2",
+				"username":     "bob",
+				"display_name": "Bob",
+				"email":        "bob@example.com",
+			},
+		},
+	}, map[string]interface{}{
+		"selected_usernames": []interface{}{"alice"},
+		"limit":              float64(1),
+	})
+	if err != nil {
+		t.Fatalf("list directory users: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("records len = %d, want 1", len(records))
+	}
+	if records[0].Username != "alice" || records[0].ExternalID != "ext-1" {
+		t.Fatalf("record = %#v", records[0])
+	}
+	if len(records[0].Cohorts) != 2 {
+		t.Fatalf("record.Cohorts = %#v, want 2 cohorts", records[0].Cohorts)
+	}
+	if records[0].Cohorts[0].Kind != "group" || records[0].Cohorts[0].Key != "dev" {
+		t.Fatalf("first cohort = %#v, want group:dev", records[0].Cohorts[0])
+	}
 }
 
-func (a *testAuthProviderAdapter) TestConnection(_ context.Context, _ map[string]interface{}) (ok bool, message string, err error) {
-	// Keep CI assertion parser from treating this interface method as an empty Test* function.
-	if a == nil {
-		var t testing.T
-		t.Fatal("nil adapter")
+func TestGenericAuthProviderDirectorySyncRejectsInvalidRequestShape(t *testing.T) {
+	adapter := ResolveAuthProviderAdminAdapter("generic")
+	directoryCapability, ok := adapter.(DirectorySyncCapability)
+	if !ok {
+		t.Fatal("generic auth provider adapter does not implement DirectorySyncCapability")
 	}
-	return true, "ok", nil
+
+	if _, err := directoryCapability.ListDirectoryUsers(t.Context(), nil, map[string]interface{}{
+		"limit": "invalid",
+	}); err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
 }
 
-func (a *testAuthProviderAdapter) SampleFields(_ context.Context, _ map[string]interface{}) ([]AuthProviderSampleField, error) {
-	return nil, nil
+func TestGenericAuthProviderBuildsScheduledDirectoryEnrichmentPlan(t *testing.T) {
+	adapter := ResolveAuthProviderAdminAdapter("generic")
+	scheduledCapability, ok := adapter.(ScheduledDirectoryEnrichmentCapability)
+	if !ok {
+		t.Fatal("generic auth provider adapter does not implement ScheduledDirectoryEnrichmentCapability")
+	}
+
+	plan, err := scheduledCapability.BuildScheduledDirectoryEnrichmentPlan(t.Context(), map[string]interface{}{
+		"enrichment_enabled": true,
+		"schedule_cron":      "15 * * * *",
+		"schedule_timezone":  "Asia/Shanghai",
+		"join_key_type":      string(DirectoryJoinKeyUsername),
+		"scheduled_provider_request": map[string]interface{}{
+			"selected_usernames": []interface{}{"alice"},
+			"limit":              float64(1),
+		},
+	})
+	if err != nil {
+		t.Fatalf("build scheduled enrichment plan: %v", err)
+	}
+	if !plan.Enabled {
+		t.Fatal("plan.Enabled = false, want true")
+	}
+	if plan.Mode != DirectoryEnrichmentModeEnrichExistingOnly {
+		t.Fatalf("plan.Mode = %q, want %q", plan.Mode, DirectoryEnrichmentModeEnrichExistingOnly)
+	}
+	if plan.JoinKeyType != DirectoryJoinKeyUsername {
+		t.Fatalf("plan.JoinKeyType = %q, want %q", plan.JoinKeyType, DirectoryJoinKeyUsername)
+	}
+	if plan.ScheduleCron != "15 * * * *" {
+		t.Fatalf("plan.ScheduleCron = %q, want %q", plan.ScheduleCron, "15 * * * *")
+	}
+	if plan.ScheduleTimezone != "Asia/Shanghai" {
+		t.Fatalf("plan.ScheduleTimezone = %q, want %q", plan.ScheduleTimezone, "Asia/Shanghai")
+	}
+	if _, ok := plan.ProviderRequest["selected_usernames"]; !ok {
+		t.Fatalf("plan.ProviderRequest = %#v, want selected_usernames", plan.ProviderRequest)
+	}
 }
 
-func TestAuthProviderAdminRegistryBuiltinsAndStrictRegistration(t *testing.T) {
-	t.Parallel()
-
-	r := newAuthProviderAdminRegistry()
-	types := r.List()
-	if len(types) < 4 {
-		t.Fatalf("expected built-in provider types, got %d", len(types))
+func TestUpstreamAssertionAuthProviderSupportsRuntimeCapability(t *testing.T) {
+	adapter := ResolveAuthProviderAdminAdapter("upstream_assertion")
+	if adapter == nil {
+		t.Fatal("upstream_assertion auth provider adapter is nil")
 	}
-
-	keys := make([]string, 0, len(types))
-	for _, item := range types {
-		keys = append(keys, item.Type)
+	if _, ok := adapter.(AuthRuntimeCapability); !ok {
+		t.Fatal("upstream_assertion auth provider adapter does not implement AuthRuntimeCapability")
 	}
-	for _, expected := range []string{"generic", "oidc", "ldap", "sso"} {
-		if !slices.Contains(keys, expected) {
-			t.Fatalf("missing built-in auth provider type %q in %#v", expected, keys)
-		}
+	describer, ok := adapter.(AuthRuntimeDescriber)
+	if !ok {
+		t.Fatal("upstream_assertion auth provider adapter does not implement AuthRuntimeDescriber")
 	}
-
-	if adapter := r.Resolve("unknown-provider"); adapter != nil {
-		t.Fatal("expected unknown provider type to resolve to nil adapter")
-	}
-
-	if err := r.Register(&testAuthProviderAdapter{typeKey: "custom"}); err != nil {
-		t.Fatalf("register custom adapter failed: %v", err)
-	}
-	if adapter := r.Resolve("custom"); adapter == nil {
-		t.Fatal("expected registered custom adapter to resolve")
-	}
-
-	if err := r.Register(&testAuthProviderAdapter{typeKey: "custom"}); err == nil {
-		t.Fatal("expected duplicate adapter registration to fail")
+	if got := describer.DescribeRuntimeAuth().DisplayName; got == "" {
+		t.Fatal("runtime descriptor display name is empty")
 	}
 }

@@ -26,7 +26,7 @@ type Notification struct {
 	Title string `json:"title,omitempty"`
 	// Message holds the value of the "message" field.
 	Message string `json:"message,omitempty"`
-	// Related resource type (e.g. vm, approval_ticket)
+	// Related resource type (e.g. vm, ticket)
 	ResourceType string `json:"resource_type,omitempty"`
 	// Related resource ID for navigation
 	ResourceID string `json:"resource_id,omitempty"`

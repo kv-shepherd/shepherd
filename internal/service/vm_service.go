@@ -17,16 +17,17 @@ import (
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	"kv-shepherd.io/shepherd/internal/provider"
+	infracontract "kv-shepherd.io/shepherd/internal/provider/infracontract"
 )
 
 // VMService handles VM business logic.
 // Depends on narrow interfaces (ADR-0024), not monolithic KubeVirtProvider.
 type VMService struct {
-	infra provider.InfrastructureProvider
+	infra infracontract.InfrastructureProvider
 }
 
 // NewVMService creates a new VMService.
-func NewVMService(infra provider.InfrastructureProvider) *VMService {
+func NewVMService(infra infracontract.InfrastructureProvider) *VMService {
 	return &VMService{infra: infra}
 }
 
@@ -61,7 +62,7 @@ func (s *VMService) GetVM(ctx context.Context, cluster, namespace, name string) 
 }
 
 // ListVMs lists VMs with filtering.
-func (s *VMService) ListVMs(ctx context.Context, cluster, namespace string, opts provider.ListOptions) (*domain.VMList, error) {
+func (s *VMService) ListVMs(ctx context.Context, cluster, namespace string, opts infracontract.ListOptions) (*domain.VMList, error) {
 	list, err := s.infra.ListVMs(ctx, cluster, namespace, opts)
 	if err != nil {
 		return nil, fmt.Errorf("list vms: %w", err)
@@ -96,13 +97,43 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, cluster, namespace str
 	return vm, nil
 }
 
+// ExecuteK8sUpdate applies a narrow SSA patch or full desired spec to an existing VM.
+func (s *VMService) ExecuteK8sUpdate(ctx context.Context, cluster, namespace, name string, spec *domain.VMSpec) (*domain.VM, error) {
+	if spec == nil {
+		return nil, fmt.Errorf("update vm: spec is nil")
+	}
+	if namespace == "" {
+		return nil, fmt.Errorf("update vm: namespace is required")
+	}
+	if name == "" {
+		return nil, fmt.Errorf("update vm: name is required")
+	}
+	if spec.Name == "" {
+		spec.Name = name
+	}
+	if err := ensureRenderedYAML(namespace, spec); err != nil {
+		return nil, fmt.Errorf("render vm yaml: %w", err)
+	}
+	vm, err := s.infra.UpdateVM(ctx, cluster, namespace, name, spec)
+	if err != nil {
+		logger.Error("K8s VM update failed",
+			zap.String("cluster", cluster),
+			zap.String("namespace", namespace),
+			zap.String("name", name),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("execute k8s update: %w", err)
+	}
+	return vm, nil
+}
+
 // GetStorageProfile returns the CDI StorageProfile for a target storage class.
 // It is used by approval-time root-volume resolution and clone advisories.
 func (s *VMService) GetStorageProfile(ctx context.Context, cluster, name string) (*domain.StorageProfile, error) {
 	if s == nil || s.infra == nil {
 		return nil, fmt.Errorf("vm infrastructure provider is not configured")
 	}
-	query, ok := s.infra.(provider.ProvisioningQueryProvider)
+	query, ok := s.infra.(infracontract.ProvisioningQueryProvider)
 	if !ok {
 		return nil, fmt.Errorf("vm infrastructure provider does not expose storage profile queries")
 	}
@@ -113,7 +144,7 @@ func (s *VMService) ensureNamespaceReady(ctx context.Context, cluster, namespace
 	if s == nil || s.infra == nil {
 		return fmt.Errorf("vm infrastructure provider is not configured")
 	}
-	provisioner, ok := s.infra.(provider.NamespaceProvisioner)
+	provisioner, ok := s.infra.(infracontract.NamespaceProvisioner)
 	if !ok {
 		return fmt.Errorf("vm infrastructure provider does not support namespace provisioning")
 	}

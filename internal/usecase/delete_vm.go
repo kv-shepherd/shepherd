@@ -1,7 +1,7 @@
 // Package usecase — DeleteVMUseCase orchestrates the VM deletion approval flow.
 //
-// ADR-0015 §5.D: VM deletion requires approval ticket.
-// ADR-0012: Atomic transaction for DomainEvent + ApprovalTicket.
+// ADR-0015 §5.D: VM deletion requires a ticket.
+// ADR-0012: Atomic transaction for DomainEvent + Ticket.
 //
 // Import Path (ADR-0016): kv-shepherd.io/shepherd/internal/usecase
 package usecase
@@ -15,9 +15,9 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
@@ -42,8 +42,8 @@ type DeleteVMOutput struct {
 }
 
 // DeleteVMUseCase orchestrates VM deletion through the approval flow.
-// ADR-0015 §5.D: VM deletion requires an approval ticket with operation_type=DELETE.
-// Flow: User confirms deletion → DomainEvent + ApprovalTicket created → Admin approves → River job executes K8s delete.
+// ADR-0015 §5.D: VM deletion requires a ticket with operation_type=DELETE.
+// Flow: User confirms deletion → DomainEvent + Ticket created → Admin approves → River job executes K8s delete.
 type DeleteVMUseCase struct {
 	entClient   *ent.Client
 	auditLogger *audit.Logger
@@ -62,8 +62,8 @@ func (uc *DeleteVMUseCase) WithAuditLogger(al *audit.Logger) *DeleteVMUseCase {
 
 // Execute runs the VM deletion request use case.
 // Phase 1: Validates VM state and confirmation.
-// Phase 2: Creates DomainEvent + ApprovalTicket (operation_type=DELETE) in atomic transaction.
-// Phase 3: After admin approval, Gateway enqueues River job for K8s deletion.
+// Phase 2: Creates DomainEvent + Ticket (operation_type=DELETE) in atomic transaction.
+// Phase 3: After admin approval, the core ticket service enqueues the River job for K8s deletion.
 func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*DeleteVMOutput, error) {
 	// Step 1: Fetch VM and validate state.
 	vm, err := uc.entClient.VM.Get(ctx, input.VMID)
@@ -83,10 +83,15 @@ func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*D
 		return nil, validationErr
 	}
 
-	// Step 3: State guard — only STOPPED or FAILED VMs can be deleted.
-	if vm.Status != entvm.StatusSTOPPED && vm.Status != entvm.StatusFAILED {
+	// Step 3: State guard — STOPPED, FAILED, NOT_FOUND, or UNKNOWN VMs can be deleted.
+	// NOT_FOUND: K8s resource no longer exists — safe to clean up DB record.
+	// UNKNOWN: cluster unreachable — allow deletion request (K8s cleanup may fail but DB will be cleaned).
+	switch vm.Status {
+	case entvm.StatusSTOPPED, entvm.StatusFAILED, entvm.StatusNOT_FOUND, entvm.StatusUNKNOWN:
+		// allowed
+	default:
 		return nil, apperrors.Conflict("INVALID_STATE_TRANSITION",
-			fmt.Sprintf("cannot delete VM in %s state, must be STOPPED or FAILED", vm.Status))
+			fmt.Sprintf("cannot delete VM in %s state, must be STOPPED, FAILED, NOT_FOUND, or UNKNOWN", vm.Status))
 	}
 
 	// Step 4: Duplicate pending guard — same resource + same operation.
@@ -107,18 +112,19 @@ func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*D
 
 	// Step 5: Build domain event payload.
 	payload := domain.VMDeletePayload{
-		VMID:      input.VMID,
-		VMName:    vm.Name,
-		ClusterID: vm.ClusterID,
-		Namespace: vm.Namespace,
-		Actor:     input.RequestedBy,
+		VMID:            input.VMID,
+		VMName:          vm.Name,
+		ClusterID:       vm.ClusterID,
+		Namespace:       vm.Namespace,
+		RequestVMStatus: string(vm.Status),
+		Actor:           input.RequestedBy,
 	}
 	payloadBytes, err := payload.ToJSON()
 	if err != nil {
 		return nil, fmt.Errorf("marshal delete payload: %w", err)
 	}
 
-	// Step 6: Atomic transaction — DomainEvent + ApprovalTicket (ADR-0012).
+	// Step 6: Atomic transaction — DomainEvent + Ticket (ADR-0012).
 	reason := input.Reason
 	if reason == "" {
 		reason = fmt.Sprintf("Request to delete VM %s", vm.Name)
@@ -140,16 +146,16 @@ func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*D
 		}
 		eventID = event.ID
 
-		// Create approval ticket with operation_type=DELETE.
-		ticket, err := tx.ApprovalTicket.Create().
+		// Create the deletion ticket with operation_type=DELETE.
+		ticket, err := tx.Ticket.Create().
 			SetID(generateID()).
 			SetEventID(event.ID).
-			SetOperationType(approvalticket.OperationTypeDELETE).
+			SetOperationType(entticket.OperationTypeDELETE).
 			SetRequester(input.RequestedBy).
 			SetReason(reason).
 			Save(ctx)
 		if err != nil {
-			return fmt.Errorf("create approval ticket: %w", err)
+			return fmt.Errorf("create ticket: %w", err)
 		}
 		ticketID = ticket.ID
 
@@ -162,7 +168,7 @@ func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*D
 
 	// Step 7: Audit log (best-effort, outside transaction).
 	if uc.auditLogger != nil {
-		_ = uc.auditLogger.LogAction(ctx, "vm.delete_requested", "approval_ticket", ticketID, input.RequestedBy, map[string]interface{}{
+		_ = uc.auditLogger.LogAction(ctx, "vm.delete_requested", "ticket", ticketID, input.RequestedBy, map[string]interface{}{
 			"vm_id":   input.VMID,
 			"vm_name": vm.Name,
 		})
@@ -249,7 +255,7 @@ func validateDeleteConfirmationByEnvironment(
 func (uc *DeleteVMUseCase) findPendingDeleteDuplicate(
 	ctx context.Context,
 	vmID string,
-) (*ent.ApprovalTicket, error) {
+) (*ent.Ticket, error) {
 	events, err := uc.entClient.DomainEvent.Query().
 		Where(
 			domainevent.EventTypeEQ(string(domain.EventVMDeletionRequested)),
@@ -275,11 +281,11 @@ func (uc *DeleteVMUseCase) findPendingDeleteDuplicate(
 			continue
 		}
 
-		ticket, err := uc.entClient.ApprovalTicket.Query().
+		ticket, err := uc.entClient.Ticket.Query().
 			Where(
-				approvalticket.EventIDEQ(event.ID),
-				approvalticket.OperationTypeEQ(approvalticket.OperationTypeDELETE),
-				approvalticket.StatusEQ(approvalticket.StatusPENDING),
+				entticket.EventIDEQ(event.ID),
+				entticket.OperationTypeEQ(entticket.OperationTypeDELETE),
+				entticket.StatusEQ(entticket.StatusPENDING),
 			).
 			Only(ctx)
 		if err != nil {

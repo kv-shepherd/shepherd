@@ -79,6 +79,19 @@ func TestPermissionEnforcement_ListUsers_RequiresUserOrRbacPermission(t *testing
 	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
 }
 
+func TestPermissionEnforcement_ListSystemMemberCandidates_RequiresRbacManage(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(t, http.MethodGet, "/systems/sys-1/member-candidates", "", "user-a", []string{"system:read"})
+
+	srv.ListSystemMemberCandidates(c, "sys-1", generated.ListSystemMemberCandidatesParams{})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
 func TestPermissionEnforcement_ListNamespaces_RequiresClusterPermission(t *testing.T) {
 	t.Parallel()
 
@@ -177,6 +190,19 @@ func TestPermissionEnforcement_ListServices_RequiresServiceRead(t *testing.T) {
 	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
 }
 
+func TestPermissionEnforcement_ListServicesOverview_RequiresServiceRead(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(t, http.MethodGet, "/services", "", "user-a", []string{"system:read"})
+
+	srv.ListServicesOverview(c, generated.ListServicesOverviewParams{})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
 func TestPermissionEnforcement_CreateService_RequiresServiceCreate(t *testing.T) {
 	t.Parallel()
 
@@ -191,6 +217,19 @@ func TestPermissionEnforcement_CreateService_RequiresServiceCreate(t *testing.T)
 	)
 
 	srv.CreateService(c, "sys-1")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestPermissionEnforcement_GetServiceWorkspaceContext_RequiresServiceRead(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(t, http.MethodGet, "/systems/sys-1/services/svc-1/context", "", "user-a", []string{"system:read"})
+
+	srv.GetServiceWorkspaceContext(c, "sys-1", "svc-1")
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
 	}

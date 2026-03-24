@@ -18,12 +18,16 @@
  *   deleteAdminTemplate         – DELETE /admin/templates/{id}               → 204
  *   updateAdminInstanceSize     – PATCH /admin/instance-sizes/{id}           → InstanceSize
  *   deleteAdminInstanceSize     – DELETE /admin/instance-sizes/{id}          → 204
- *   testAuthProviderConnection  – POST /admin/auth-providers/{id}/test-connection → AuthProviderConnectionTestResult
- *   syncAuthProviderGroups      – POST /admin/auth-providers/{id}/sync       → AuthProviderGroupSyncResponse
- *   getAuthProviderSample       – GET /admin/auth-providers/{id}/sample      → (schema check)
- *   createAuthProviderGroupMapping  – POST /admin/auth-providers/{id}/group-mappings → IdPGroupMapping
- *   updateAuthProviderGroupMapping  – PATCH /admin/auth-providers/{id}/group-mappings/{id} → IdPGroupMapping
- *   deleteAuthProviderGroupMapping  – DELETE /admin/auth-providers/{id}/group-mappings/{id} → 204
+ *   testAuthProviderConnection      – POST /admin/auth-providers/{id}/test-connection → AuthProviderConnectionTestResult
+ *   getAuthProviderSample           – GET /admin/auth-providers/{id}/sample            → AuthProviderSampleResponse
+ *   getAuthProviderDirectoryDescriptor – GET /admin/auth-providers/{id}/directory/descriptor → DirectorySyncDescriptor
+ *   previewAuthProviderDirectory    – POST /admin/auth-providers/{id}/directory/preview → DirectorySyncPreview
+ *   triggerAuthProviderDirectorySync – POST /admin/auth-providers/{id}/directory/sync   → DirectorySyncTriggerResponse
+ *   listAuthProviderDirectorySyncJobs – GET /admin/auth-providers/{id}/directory/sync-jobs → DirectorySyncJobList
+ *   getAuthProviderDirectorySyncJob – GET /admin/auth-providers/{id}/directory/sync-jobs/{id} → DirectorySyncJob
+ *   createAuthProviderCohortMapping – POST /admin/auth-providers/{id}/cohort-mappings  → ExternalCohortMapping
+ *   updateAuthProviderCohortMapping – PATCH /admin/auth-providers/{id}/cohort-mappings/{id} → ExternalCohortMapping
+ *   deleteAuthProviderCohortMapping – DELETE /admin/auth-providers/{id}/cohort-mappings/{id} → 204
  *   createRateLimitExemption    – POST /admin/rate-limits/exemptions         → 200
  *   deleteRateLimitExemption    – DELETE /admin/rate-limits/exemptions/{id}  → 204
  *   listRateLimitExemptions     – GET /admin/rate-limits/exemptions          → RateLimitExemptionList
@@ -71,6 +75,64 @@ async function getAdminAuthHeaders(request: APIRequestContext): Promise<{ Author
     });
     activePassword = auth.password;
     return { Authorization: `Bearer ${auth.token}` };
+}
+
+async function createGenericAuthProvider(
+    request: APIRequestContext,
+    headers: { Authorization: string },
+    overrides?: {
+        name?: string;
+        config?: Record<string, unknown>;
+    }
+): Promise<{ id: string; name: string }> {
+    const name = overrides?.name ?? `e2e-auth-${Date.now().toString(36).slice(-6)}`;
+    const createResp = await request.post('/api/v1/admin/auth-providers', {
+        headers,
+        data: {
+            name,
+            auth_type: 'generic',
+            enabled: true,
+            config: {
+                test_endpoint: 'https://idp.example.com/healthz',
+                sample_users: [
+                    {
+                        external_id: 'e2e-alice',
+                        username: 'alice',
+                        display_name: 'Alice Example',
+                        email: 'alice@example.com',
+                        groups: ['ops'],
+                        department: 'platform',
+                    },
+                    {
+                        external_id: 'e2e-bob',
+                        username: 'bob',
+                        display_name: 'Bob Example',
+                        email: 'bob@example.com',
+                        groups: ['dev'],
+                        department: 'engineering',
+                    },
+                ],
+                ...(overrides?.config ?? {}),
+            },
+        },
+    });
+    expect(createResp.status(), `POST /admin/auth-providers returned ${createResp.status()}`).toBe(201);
+    const created = await validateApiResponse('AuthProvider', createResp) as { id?: string; name?: string };
+    const id = created.id ?? '';
+    expect(id, 'Created auth provider id is required').toBeTruthy();
+    return { id, name };
+}
+
+async function deleteAuthProviderIfPresent(
+    request: APIRequestContext,
+    headers: { Authorization: string },
+    providerID: string
+): Promise<void> {
+    if (!providerID) {
+        return;
+    }
+    const resp = await request.delete(`/api/v1/admin/auth-providers/${providerID}`, { headers });
+    expect([204, 404], `DELETE /admin/auth-providers/${providerID} returned ${resp.status()}`).toContain(resp.status());
 }
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
@@ -483,162 +545,171 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         expect((await deleteRespPromise).status()).toBe(204);
     });
 
-    // ── Auth Provider: update + test-connection + sync + sample + group-mapping CRUD
+    // ── Auth Provider: update + test-connection + sample + directory sync + cohort-mapping CRUD
 
     test('updateAuthProvider – PATCH /admin/auth-providers/{id} conforms to AuthProvider schema', async ({ page }) => {
         // operationId: updateAuthProvider
-        // Get first provider (use validateApiResponse for single-read safety)
-        const listRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'GET'
-        );
+        const headers = await getAdminAuthHeaders(page.request);
+        const provider = await createGenericAuthProvider(page.request, headers);
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
-        const listBody = await validateApiResponse('AuthProviderList', await listRespPromise) as { items?: Array<{ id?: string }> };
-        const items = listBody.items ?? [];
-        expect(items.length, 'No auth providers found — seed data must include at least one provider').toBeGreaterThan(0);
-        const providerID = items[0]?.id ?? '';
-        expect(providerID).toBeTruthy();
 
         // ── PATCH /admin/auth-providers/{id} → AuthProvider ──────────────────────
         const updateRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}`) && r.request().method() === 'PATCH'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${provider.id}`) && r.request().method() === 'PATCH'
         );
-        await page.getByTestId(`auth-provider-action-edit-${providerID}`).click();
+        await page.getByTestId(`auth-provider-action-edit-${provider.id}`).click();
         const editModal = getAntModal(page, 'auth-provider-edit-modal');
         await expect(editModal).toBeVisible();
         await editModal.getByLabel(/\*?\s*name/i).fill(`upd-auth-${Date.now().toString(36).slice(-5)}`);
-        await editModal.getByLabel(/provider config/i).fill('{"test_endpoint":"https://idp.example.com/healthz"}');
+        await editModal.getByLabel(/test endpoint/i).fill('https://idp.example.com/readyz');
         await editModal.getByRole('button', { name: 'OK' }).click();
 
         await expectSchema(updateRespPromise, 'AuthProvider', 200);
+        await deleteAuthProviderIfPresent(page.request, headers, provider.id);
     });
 
     test('testAuthProviderConnection – POST /admin/auth-providers/{id}/test-connection conforms to AuthProviderConnectionTestResult schema', async ({ page }) => {
         // operationId: testAuthProviderConnection
-        const listRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'GET'
-        );
+        const headers = await getAdminAuthHeaders(page.request);
+        const provider = await createGenericAuthProvider(page.request, headers);
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
-        const listBody = await validateApiResponse('AuthProviderList', await listRespPromise) as { items?: Array<{ id?: string }> };
-        const providerID = listBody.items?.[0]?.id ?? '';
-        expect(providerID, 'No auth providers found').toBeTruthy();
 
         // ── POST /admin/auth-providers/{id}/test-connection ───────────────────────
         const testRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), `/api/v1/admin/auth-providers/${providerID}/test-connection`) && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/admin/auth-providers/${provider.id}/test-connection`) && r.request().method() === 'POST'
         );
-        await page.getByTestId(`auth-provider-action-test-${providerID}`).click();
+        await page.getByTestId(`auth-provider-action-test-${provider.id}`).click();
         await expectSchema(testRespPromise, 'AuthProviderConnectionTestResult', 200);
+        await deleteAuthProviderIfPresent(page.request, headers, provider.id);
     });
 
-    test('syncAuthProviderGroups – POST /admin/auth-providers/{id}/sync conforms to AuthProviderGroupSyncResponse schema', async ({ page }) => {
-        // operationId: syncAuthProviderGroups
-        const listRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'GET'
-        );
-        await page.goto('/admin/auth-providers');
-        await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
-        const listBody = await validateApiResponse('AuthProviderList', await listRespPromise) as { items?: Array<{ id?: string }> };
-        const providerID = listBody.items?.[0]?.id ?? '';
-        expect(providerID, 'No auth providers found').toBeTruthy();
+    test('getAuthProviderDirectoryDescriptor + previewAuthProviderDirectory + triggerAuthProviderDirectorySync', async ({ request }) => {
+        // operationId: getAuthProviderDirectoryDescriptor, previewAuthProviderDirectory, triggerAuthProviderDirectorySync,
+        //              listAuthProviderDirectorySyncJobs, getAuthProviderDirectorySyncJob
+        const headers = await getAdminAuthHeaders(request);
+        const provider = await createGenericAuthProvider(request, headers);
 
-        // ── POST /admin/auth-providers/{id}/sync ──────────────────────────────────
-        // The sync button is inside the mappings modal, so open it first.
-        await page.getByTestId(`auth-provider-action-mappings-${providerID}`).click();
-        const mappingsPage = getAntModal(page, 'auth-provider-mappings-page');
-        await expect(mappingsPage).toBeVisible();
+        const descriptorResp = await request.get(`/api/v1/admin/auth-providers/${provider.id}/directory/descriptor`, {
+            headers,
+        });
+        expect(descriptorResp.status(), `GET /directory/descriptor returned ${descriptorResp.status()}`).toBe(200);
+        await validateApiResponse('DirectorySyncDescriptor', descriptorResp);
 
-        await mappingsPage.locator('textarea').first().fill('group1\ngroup2');
+        const previewResp = await request.post(`/api/v1/admin/auth-providers/${provider.id}/directory/preview`, {
+            headers,
+            data: {
+                provider_request: {
+                    usernames: ['alice'],
+                },
+            },
+        });
+        expect(previewResp.status(), `POST /directory/preview returned ${previewResp.status()}`).toBe(200);
+        await validateApiResponse('DirectorySyncPreview', previewResp);
 
-        const syncRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), `/api/v1/admin/auth-providers/${providerID}/sync`) && r.request().method() === 'POST'
-        );
-        await page.getByTestId(`auth-provider-action-sync-${providerID}`).click();
-        const confirmBtn = page.locator('.ant-popover:visible, .ant-modal-content:visible')
-            .getByRole('button', { name: /confirm|ok|sync/i }).first();
-        if (await confirmBtn.count() > 0) await confirmBtn.click();
-        await expectSchema(syncRespPromise, 'AuthProviderGroupSyncResponse', 200);
+        const triggerResp = await request.post(`/api/v1/admin/auth-providers/${provider.id}/directory/sync`, {
+            headers,
+            data: {
+                provider_request: {
+                    usernames: ['alice'],
+                },
+            },
+        });
+        expect(triggerResp.status(), `POST /directory/sync returned ${triggerResp.status()}`).toBe(202);
+        const triggerBody = await validateApiResponse('DirectorySyncTriggerResponse', triggerResp) as { job_id?: string };
+        const jobID = triggerBody.job_id ?? '';
+        expect(jobID, 'Directory sync trigger response must include job_id').toBeTruthy();
+
+        const jobsResp = await request.get(`/api/v1/admin/auth-providers/${provider.id}/directory/sync-jobs`, {
+            headers,
+        });
+        expect(jobsResp.status(), `GET /directory/sync-jobs returned ${jobsResp.status()}`).toBe(200);
+        await validateApiResponse('DirectorySyncJobList', jobsResp);
+
+        const jobResp = await request.get(`/api/v1/admin/auth-providers/${provider.id}/directory/sync-jobs/${jobID}`, {
+            headers,
+        });
+        expect(jobResp.status(), `GET /directory/sync-jobs/{job_id} returned ${jobResp.status()}`).toBe(200);
+        await validateApiResponse('DirectorySyncJob', jobResp);
+
+        await deleteAuthProviderIfPresent(request, headers, provider.id);
     });
 
     test('getAuthProviderSample – GET /admin/auth-providers/{id}/sample returns 200', async ({ page }) => {
         // operationId: getAuthProviderSample
-        const listRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'GET'
-        );
+        const headers = await getAdminAuthHeaders(page.request);
+        const provider = await createGenericAuthProvider(page.request, headers);
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
-        const listBody = await validateApiResponse('AuthProviderList', await listRespPromise) as { items?: Array<{ id?: string }> };
-        const providerID = listBody.items?.[0]?.id ?? '';
-        expect(providerID, 'No auth providers found').toBeTruthy();
 
         // ── GET /admin/auth-providers/{id}/sample ─────────────────────────────────
         // The sample is fetched automatically when the mappings modal is opened.
         const sampleRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), `/api/v1/admin/auth-providers/${providerID}/sample`) && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/admin/auth-providers/${provider.id}/sample`) && r.request().method() === 'GET'
         );
-        await page.getByTestId(`auth-provider-action-mappings-${providerID}`).click();
+        await page.getByTestId(`auth-provider-action-mappings-${provider.id}`).click();
         const mappingsPage = getAntModal(page, 'auth-provider-mappings-page');
         await expect(mappingsPage).toBeVisible();
 
 
         const sampleResp = await sampleRespPromise;
-        expect(sampleResp.status(), `GET /admin/auth-providers/${providerID}/sample returned ${sampleResp.status()}`).toBe(200);
+        expect(sampleResp.status(), `GET /admin/auth-providers/${provider.id}/sample returned ${sampleResp.status()}`).toBe(200);
         // ── CONTRACT CHECK: AuthProviderSampleResponse schema ─────────────────────
         await validateApiResponse('AuthProviderSampleResponse', sampleResp);
+        await deleteAuthProviderIfPresent(page.request, headers, provider.id);
     });
 
-    test('createAuthProviderGroupMapping + updateAuthProviderGroupMapping + deleteAuthProviderGroupMapping', async ({ page }) => {
-        // operationId: createAuthProviderGroupMapping, updateAuthProviderGroupMapping, deleteAuthProviderGroupMapping
-        const listRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/auth-providers') && r.request().method() === 'GET'
-        );
+    test('createAuthProviderCohortMapping + updateAuthProviderCohortMapping + deleteAuthProviderCohortMapping', async ({ page }) => {
+        // operationId: createAuthProviderCohortMapping, updateAuthProviderCohortMapping, deleteAuthProviderCohortMapping
+        const headers = await getAdminAuthHeaders(page.request);
+        const provider = await createGenericAuthProvider(page.request, headers);
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
-        const listBody = await validateApiResponse('AuthProviderList', await listRespPromise) as { items?: Array<{ id?: string }> };
-        const providerID = listBody.items?.[0]?.id ?? '';
-        expect(providerID, 'No auth providers found').toBeTruthy();
 
-        // Navigate to group mappings
-        await page.getByTestId(`auth-provider-action-mappings-${providerID}`).click();
+        // Navigate to cohort mappings
+        await page.getByTestId(`auth-provider-action-mappings-${provider.id}`).click();
         const mappingsPage = getAntModal(page, 'auth-provider-mappings-page');
         await expect(mappingsPage).toBeVisible();
 
-        // ── POST /admin/auth-providers/{id}/group-mappings → IdPGroupMapping ──────
+        // ── POST /admin/auth-providers/{id}/cohort-mappings → ExternalCohortMapping ─
         const createRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/group-mappings`) && r.request().method() === 'POST'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${provider.id}/cohort-mappings`) && r.request().method() === 'POST'
         );
-        await page.getByTestId('group-mapping-create-button').click();
-        const createModal = getAntModal(page, 'group-mapping-create-modal');
+        await page.getByTestId('cohort-mapping-create-button').click();
+        const createModal = getAntModal(page, 'cohort-mapping-create-modal');
         await expect(createModal).toBeVisible();
-        await createModal.getByRole('textbox').first().fill(`e2e-group-${Date.now().toString(36).slice(-5)}`);
+        await createModal.getByLabel(/cohort kind/i).fill('group');
+        await createModal.getByLabel(/cohort key/i).fill(`e2e-group-${Date.now().toString(36).slice(-5)}`);
+        await createModal.getByLabel(/cohort label/i).fill('E2E Group');
         await selectAntOption(page, createModal.locator('.ant-select-selector').first());
         await createModal.getByRole('button', { name: 'OK' }).click();
 
-        const { body: created } = await expectSchema(createRespPromise, 'IdPGroupMapping', 201);
+        const { body: created } = await expectSchema(createRespPromise, 'ExternalCohortMapping', 201);
         const mappingID = (created as { id?: string }).id ?? '';
-        expect(mappingID, 'POST group-mappings response missing id').toBeTruthy();
+        expect(mappingID, 'POST cohort-mappings response missing id').toBeTruthy();
 
-        // ── PATCH /admin/auth-providers/{id}/group-mappings/{id} → IdPGroupMapping
+        // ── PATCH /admin/auth-providers/{id}/cohort-mappings/{id} → ExternalCohortMapping
         const updateRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/group-mappings/${mappingID}`) && r.request().method() === 'PATCH'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${provider.id}/cohort-mappings/${mappingID}`) && r.request().method() === 'PATCH'
         );
-        await page.getByTestId(`group-mapping-action-edit-${mappingID}`).click();
-        const editModal = getAntModal(page, 'group-mapping-edit-modal');
+        await page.getByTestId(`cohort-mapping-action-edit-${mappingID}`).click();
+        const editModal = getAntModal(page, 'cohort-mapping-edit-modal');
         await expect(editModal).toBeVisible();
-        await selectAntOption(page, editModal.locator('.ant-select-selector').first());
+        await editModal.getByLabel(/cohort label/i).fill('Updated E2E Group');
         await editModal.getByRole('button', { name: 'OK' }).click();
 
-        await expectSchema(updateRespPromise, 'IdPGroupMapping', 200);
+        await expectSchema(updateRespPromise, 'ExternalCohortMapping', 200);
 
-        // ── DELETE /admin/auth-providers/{id}/group-mappings/{id} → 204 ──────────
+        // ── DELETE /admin/auth-providers/{id}/cohort-mappings/{id} → 204 ─────────
         const deleteRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/group-mappings/${mappingID}`) && r.request().method() === 'DELETE'
+            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${provider.id}/cohort-mappings/${mappingID}`) && r.request().method() === 'DELETE'
         );
-        await page.getByTestId(`group-mapping-action-delete-${mappingID}`).click();
+        await page.getByTestId(`cohort-mapping-action-delete-${mappingID}`).click();
         const confirmBtn = page.getByRole('button', { name: /confirm|ok/i }).last();
         await confirmBtn.click();
         expect((await deleteRespPromise).status()).toBe(204);
+        await deleteAuthProviderIfPresent(page.request, headers, provider.id);
     });
 
     // ── Rate Limit: full coverage ─────────────────────────────────────────────

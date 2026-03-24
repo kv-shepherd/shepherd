@@ -78,7 +78,7 @@ func TestBuiltInRoles_CanonicalPermissionSets(t *testing.T) {
 		"vm:read", "vm:create", "vm:operate", "vm:delete",
 		"vnc:access", "rbac:manage",
 	)
-	assertHasPerm("role-approver", "approval:approve", "approval:view", "vm:read", "service:read", "system:read")
+	assertHasPerm("role-approver", "builtin_approval:approve", "builtin_approval:view", "vm:read", "service:read", "system:read")
 	assertHasPerm("role-operator", "vm:operate", "vm:create", "vm:read", "vnc:access")
 	assertHasPerm("role-viewer", "vm:read", "system:read", "service:read")
 }

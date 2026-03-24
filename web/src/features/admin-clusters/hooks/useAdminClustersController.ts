@@ -2,31 +2,51 @@
 
 import { Form, message } from "antd";
 import type { TFunction } from "i18next";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { useApiGet, useApiMutation } from "@/hooks/useApiQuery";
+import { useApiAction, useApiGet, useApiMutation } from "@/hooks/useApiQuery";
 import { api } from "@/lib/api/client";
+import { translateApiError } from "@/lib/api/errorMessage";
 import type { components } from "@/types/api.gen";
 
 import type {
   Cluster,
-  ClusterCreateRequest,
   ClusterList,
   ClusterPolicy,
   ClusterPolicyUpsertRequest,
+  ClusterCreateRequest,
+  ClusterUpdateRequest,
 } from "../types";
+import { encodeKubeconfigForTransport } from "../kubeconfig";
 
 interface UseAdminClustersControllerArgs {
   t: TFunction;
 }
 
 type NamespaceRegistryList = components["schemas"]["NamespaceRegistryList"];
+type ClusterEnvironment = "test" | "prod";
+
+interface ClusterEditorFormValues {
+  display_name?: string;
+  environment: ClusterEnvironment;
+  enabled: boolean;
+  kubeconfig_text?: string;
+}
+
+interface ClusterCreateFormValues extends ClusterEditorFormValues {
+  name: string;
+}
 
 export function useAdminClustersController({
   t,
 }: UseAdminClustersControllerArgs) {
   const [messageApi, messageContextHolder] = message.useMessage();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingClusterId, setEditingClusterId] = useState("");
+  const [editingClusterName, setEditingClusterName] = useState("");
+  const [editingCluster, setEditingCluster] = useState<Cluster | null>(null);
+  const [deletingClusterId, setDeletingClusterId] = useState("");
   const [envModalOpen, setEnvModalOpen] = useState(false);
   const [policyModalOpen, setPolicyModalOpen] = useState(false);
   const [policyLoading, setPolicyLoading] = useState(false);
@@ -40,7 +60,9 @@ export function useAdminClustersController({
   const [selectedClusterStorageClasses, setSelectedClusterStorageClasses] =
     useState<string[]>([]);
   const selectedClusterIdRef = useRef("");
-  const [form] = Form.useForm<ClusterCreateRequest>();
+  const editingClusterIdRef = useRef("");
+  const [form] = Form.useForm<ClusterCreateFormValues>();
+  const [editForm] = Form.useForm<ClusterEditorFormValues>();
   const [envForm] = Form.useForm<{ environment: "test" | "prod" }>();
   const [policyForm] = Form.useForm<ClusterPolicyUpsertRequest>();
 
@@ -74,7 +96,27 @@ export function useAdminClustersController({
         closeCreateModal();
       },
       onError: (err) =>
-        messageApi.error(err.message || t("common:message.error")),
+        messageApi.error(translateApiError(t, err)),
+    },
+  );
+
+  const updateMutation = useApiMutation<
+    { clusterId: string; body: ClusterUpdateRequest },
+    Cluster
+  >(
+    ({ clusterId, body }) =>
+      api.PATCH("/admin/clusters/{cluster_id}", {
+        params: { path: { cluster_id: clusterId } },
+        body,
+      }),
+    {
+      invalidateKeys: [["admin-clusters"]],
+      onSuccess: () => {
+        messageApi.success(t("common:message.success"));
+        closeEditModal();
+      },
+      onError: (err) =>
+        messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -91,7 +133,7 @@ export function useAdminClustersController({
       invalidateKeys: [["admin-clusters"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
       onError: (err) =>
-        messageApi.error(err.message || t("common:message.error")),
+        messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -108,12 +150,31 @@ export function useAdminClustersController({
       invalidateKeys: [["admin-clusters"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
       onError: (err) =>
-        messageApi.error(err.message || t("common:message.error")),
+        messageApi.error(translateApiError(t, err)),
+    },
+  );
+
+  const deleteMutation = useApiAction<string>(
+    (clusterId) =>
+      api.DELETE("/admin/clusters/{cluster_id}", {
+        params: { path: { cluster_id: clusterId } },
+      }),
+    {
+      invalidateKeys: [["admin-clusters"]],
+      onSuccess: () => messageApi.success(t("common:message.success")),
+      onError: (err) =>
+        messageApi.error(translateApiError(t, err)),
     },
   );
 
   const openCreateModal = () => {
     setCreateOpen(true);
+    form.setFieldsValue({
+      display_name: "",
+      environment: "test",
+      enabled: true,
+      kubeconfig_text: "",
+    });
   };
 
   const closeCreateModal = () => {
@@ -123,7 +184,32 @@ export function useAdminClustersController({
 
   const submitCreate = async () => {
     const values = await form.validateFields();
-    createMutation.mutate(values);
+    createMutation.mutate(clusterEditorFormToCreateRequest(values));
+  };
+
+  const openEditModal = (cluster: Cluster) => {
+    editingClusterIdRef.current = cluster.id;
+    setEditingCluster(cluster);
+    setEditingClusterId(cluster.id);
+    setEditingClusterName(cluster.display_name ?? cluster.name ?? cluster.id);
+    setEditOpen(true);
+  };
+
+  const closeEditModal = () => {
+    setEditOpen(false);
+    editingClusterIdRef.current = "";
+    setEditingCluster(null);
+    setEditingClusterId("");
+    setEditingClusterName("");
+    editForm.resetFields();
+  };
+
+  const submitEdit = async () => {
+    const values = await editForm.validateFields();
+    await updateMutation.mutateAsync({
+      clusterId: editingClusterIdRef.current,
+      body: clusterEditorFormToUpdateRequest(values),
+    });
   };
 
   const updateEnvironment = (
@@ -178,7 +264,7 @@ export function useAdminClustersController({
         setPolicyLoading(false);
         return;
       }
-      messageApi.error(error.message || t("common:message.error"));
+      messageApi.error(translateApiError(t, error));
       closePolicyModal();
       setPolicyLoading(false);
       return;
@@ -210,19 +296,53 @@ export function useAdminClustersController({
     closePolicyModal();
   };
 
+  const deleteCluster = async (clusterId: string) => {
+    setDeletingClusterId(clusterId);
+    try {
+      await deleteMutation.mutateAsync(clusterId);
+    } finally {
+      setDeletingClusterId("");
+    }
+  };
+
+  useEffect(() => {
+    if (!editOpen || editingCluster == null) {
+      return;
+    }
+
+    editForm.setFieldsValue({
+      display_name: editingCluster.display_name ?? "",
+      environment: (editingCluster.environment ?? "test") as ClusterEnvironment,
+      enabled: editingCluster.enabled !== false,
+      kubeconfig_text: "",
+    });
+  }, [editForm, editOpen, editingCluster]);
+
   return {
     messageContextHolder,
     createOpen,
     form,
+    editOpen,
+    editForm,
+    editingClusterId,
+    editingClusterName,
+    editingCluster,
+    deletingClusterId,
     data: clusterListQuery.data,
     isLoading: clusterListQuery.isLoading,
     refetch: clusterListQuery.refetch,
     openCreateModal,
     closeCreateModal,
     submitCreate,
+    openEditModal,
+    closeEditModal,
+    submitEdit,
+    editPending: updateMutation.isPending,
     updateEnvironment,
     createPending: createMutation.isPending,
     updateEnvironmentPending: updateEnvironmentMutation.isPending,
+    deleteCluster,
+    deletePending: deleteMutation.isPending,
     envModalOpen,
     selectedClusterId,
     selectedClusterName,
@@ -246,6 +366,38 @@ export function useAdminClustersController({
     submitPolicyUpdate,
     upsertPolicyPending: upsertPolicyMutation.isPending,
   };
+}
+
+function clusterEditorFormToCreateRequest(
+  values: ClusterCreateFormValues,
+): ClusterCreateRequest {
+  const kubeconfigText = (values.kubeconfig_text ?? "").trim();
+  return {
+    name: values.name.trim(),
+    display_name: trimmedOrUndefined(values.display_name),
+    environment: values.environment,
+    kubeconfig: encodeKubeconfigForTransport(kubeconfigText),
+  };
+}
+
+function clusterEditorFormToUpdateRequest(
+  values: ClusterEditorFormValues,
+): ClusterUpdateRequest {
+  const body: ClusterUpdateRequest = {
+    display_name: values.display_name?.trim() ?? "",
+    environment: values.environment,
+    enabled: values.enabled,
+  };
+  const kubeconfigText = (values.kubeconfig_text ?? "").trim();
+  if (kubeconfigText !== "") {
+    body.kubeconfig = encodeKubeconfigForTransport(kubeconfigText);
+  }
+  return body;
+}
+
+function trimmedOrUndefined(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
 }
 
 function defaultClusterPolicyFormValues(): ClusterPolicyUpsertRequest {

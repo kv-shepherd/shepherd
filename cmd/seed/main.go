@@ -110,7 +110,7 @@ func builtInRoles() []builtInRole {
 			ID: "role-approver", Name: "Approver", DisplayName: "Approver",
 			Description: "Reviews and approves/rejects VM creation requests",
 			Permissions: []string{
-				"approval:approve", "approval:view",
+				"builtin_approval:approve", "builtin_approval:view",
 				"vm:read", "service:read", "system:read",
 			},
 		},

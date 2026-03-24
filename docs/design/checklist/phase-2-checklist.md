@@ -168,7 +168,7 @@
 - [x] Approval ticket data model (Ent schema)
 - [x] Approval policy data model (Ent schema)
 - [x] State machine definition (PENDING → APPROVED/REJECTED/CANCELLED)
-- [x] Interface definitions (`ApprovalProvider` in `internal/provider/auth.go`)
+- [x] Interface definitions (`ApprovalProvider` in `internal/provider/approvalcontract/contract.go`, thin re-export in `internal/provider/approval.go`)
 - [ ] Database migration scripts (Atlas — Phase 4)
 
 ---

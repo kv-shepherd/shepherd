@@ -7,10 +7,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ApiErrorResponse } from "@/hooks/useApiQuery";
 import { useApiAction, useApiGet, useApiMutation } from "@/hooks/useApiQuery";
 import { api } from "@/lib/api/client";
+import { translateApiError } from "@/lib/api/errorMessage";
+import {
+  clearStoredActiveBatchState,
+  readStoredActiveBatchState,
+  saveStoredActiveBatchState,
+} from "@/lib/storage/activeBatchTracking";
+import { useAuthStore } from "@/stores/auth";
 
 import type {
-  ApprovalTicketResponse,
   DeleteVMResponse,
+  TicketResponse,
   InstanceSize,
   InstanceSizeList,
   ServiceList,
@@ -26,16 +33,31 @@ import type {
   VMConsoleRequestResponse,
   VMCreateRequest,
   VMPlacementHint,
+  VMRequestDraft,
   VMList,
+  VMModifyContext,
+  VMModifyRequest,
   VMRequestContext,
   VMVNCSessionResponse,
+  VMRequestLaunchPrefill,
+  VMRequestMode,
+  VMRequestPrefill,
 } from "../types";
+import {
+  clearVMRequestDraft,
+  hasMeaningfulVMRequestDraft,
+  loadVMRequestDraft,
+  resolveVMRequestDraftOwner,
+  saveVMRequestDraft,
+  VM_REQUEST_DRAFT_CHANGED_EVENT,
+} from "../draftStorage";
 
 interface UseVMManagementControllerArgs {
   t: TFunction;
 }
 
 type VMCreateFormValues = VMCreateRequest & { batch_count?: number };
+type VMModifyFormValues = VMModifyRequest;
 
 const TERMINAL_BATCH_STATUSES = new Set([
   "COMPLETED",
@@ -54,12 +76,7 @@ interface BatchActionFeedback {
   affectedTicketIDs: string[];
 }
 
-const ACTIVE_BATCH_STORAGE_KEY = "shepherd-active-batch";
-
-interface StoredActiveBatchState {
-  batch_id: string;
-  status_url: string;
-}
+const VM_REQUEST_DRAFT_SAVE_DEBOUNCE_MS = 400;
 
 const buildNoVNCURL = (websocketPath: string): string => {
   const cleaned = websocketPath.startsWith("/")
@@ -89,6 +106,41 @@ const normalizeRetryAfterSeconds = (value: unknown): number => {
   return Math.max(0, Math.ceil(n));
 };
 
+const normalizeDraftString = (value: unknown): string | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+};
+
+const normalizeDraftBatchCount = (value: unknown): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 1) {
+    return 1;
+  }
+  return Math.max(1, Math.floor(n));
+};
+
+const normalizeDraftWizardStep = (value: unknown): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(4, Math.floor(n)));
+};
+
+const normalizeDraftRequestMode = (value: unknown): VMRequestMode =>
+  value === "full" ? "full" : "guided";
+
+const normalizeOptionalTargetNumber = (value: unknown): number | undefined => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) {
+    return undefined;
+  }
+  return n;
+};
+
 const extractRetryAfterSeconds = (error: ApiErrorResponse): number => {
   if (typeof error.retry_after_seconds === "number") {
     return normalizeRetryAfterSeconds(error.retry_after_seconds);
@@ -103,51 +155,25 @@ const extractRetryAfterSeconds = (error: ApiErrorResponse): number => {
   return 0;
 };
 
-const summarizeTicketIDs = (ids: string[]): string => {
-  if (ids.length <= 3) {
-    return ids.join(", ");
-  }
-  const remain = ids.length - 3;
-  return `${ids.slice(0, 3).join(", ")} +${remain}`;
-};
-
-const readStoredActiveBatchState = (): StoredActiveBatchState => {
-  if (typeof window === "undefined") {
-    return { batch_id: "", status_url: "" };
-  }
-
-  const raw = window.sessionStorage.getItem(ACTIVE_BATCH_STORAGE_KEY);
-  if (!raw) {
-    return { batch_id: "", status_url: "" };
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as {
-      batch_id?: string;
-      status_url?: string;
-    };
-    return {
-      batch_id:
-        typeof parsed.batch_id === "string" ? parsed.batch_id.trim() : "",
-      status_url:
-        typeof parsed.status_url === "string" ? parsed.status_url.trim() : "",
-    };
-  } catch {
-    window.sessionStorage.removeItem(ACTIVE_BATCH_STORAGE_KEY);
-    return { batch_id: "", status_url: "" };
-  }
-};
-
 export function useVMManagementController({
   t,
 }: UseVMManagementControllerArgs) {
   const [messageApi, messageContextHolder] = message.useMessage();
+  const user = useAuthStore((state) => state.user);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
+  const [requestMode, setRequestMode] = useState<VMRequestMode>("guided");
   const [selectedSystemId, setSelectedSystemId] = useState("");
+  const [savedDraft, setSavedDraft] = useState<VMRequestDraft | null>(null);
   const [selectedVMIDs, setSelectedVMIDs] = useState<string[]>([]);
+  const [modifyOpen, setModifyOpen] = useState(false);
+  const [modifyScope, setModifyScope] = useState<"single" | "batch">("single");
+  const [modifyTargetVM, setModifyTargetVM] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [activeBatchID, setActiveBatchID] = useState(
     () => readStoredActiveBatchState().batch_id,
   );
@@ -162,9 +188,14 @@ export function useVMManagementController({
     useState<BatchActionFeedback | null>(null);
   const batchActionTargetIDsRef = useRef<string[]>([]);
   const [form] = Form.useForm<VMCreateFormValues>();
+  const [modifyForm] = Form.useForm<VMModifyFormValues>();
   const watchOptions = useMemo(
     () => ({ form, preserve: true as const }),
     [form],
+  );
+  const modifyWatchOptions = useMemo(
+    () => ({ form: modifyForm, preserve: true as const }),
+    [modifyForm],
   );
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletingVM, setDeletingVM] = useState<{
@@ -180,6 +211,19 @@ export function useVMManagementController({
   const reasonValue = Form.useWatch("reason", watchOptions);
   const serviceIdValue = Form.useWatch("service_id", watchOptions);
   const batchCountValue = Form.useWatch("batch_count", watchOptions) ?? 1;
+  const modifyTargetCPUValue = Form.useWatch(
+    "target_cpu_cores",
+    modifyWatchOptions,
+  );
+  const modifyTargetMemoryValue = Form.useWatch(
+    "target_memory_gi",
+    modifyWatchOptions,
+  );
+  const modifyTargetDiskValue = Form.useWatch(
+    "target_disk_gb",
+    modifyWatchOptions,
+  );
+  const draftOwner = resolveVMRequestDraftOwner(user);
 
   const vmListQuery = useApiGet<VMList>(["vms", page, pageSize], () =>
     api.GET("/vms", { params: { query: { page, per_page: pageSize } } }),
@@ -274,6 +318,16 @@ export function useVMManagementController({
       },
     },
   );
+  const modifyContextQuery = useApiGet<VMModifyContext>(
+    ["vm-modify-context", modifyTargetVM?.id],
+    () =>
+      api.GET("/vms/{vm_id}/modify-context", {
+        params: { path: { vm_id: modifyTargetVM?.id ?? "" } },
+      }),
+    {
+      enabled: modifyOpen && modifyScope === "single" && Boolean(modifyTargetVM?.id),
+    },
+  );
 
   const selectedTemplate = useMemo(() => {
     const templates =
@@ -298,6 +352,14 @@ export function useVMManagementController({
     requestContextQuery.data,
     instanceSizesFallbackQuery.data,
   ]);
+  const selectedSystem = useMemo(
+    () => systemsQuery.data?.items?.find((item) => item.id === selectedSystemId),
+    [selectedSystemId, systemsQuery.data],
+  );
+  const selectedService = useMemo(
+    () => servicesQuery.data?.items?.find((item) => item.id === serviceIdValue),
+    [serviceIdValue, servicesQuery.data],
+  );
 
   const templatesData = useMemo<TemplateList | undefined>(() => {
     if (requestContextQuery.data) {
@@ -314,21 +376,106 @@ export function useVMManagementController({
   }, [requestContextQuery.data, instanceSizesFallbackQuery.data]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
     if (activeBatchID.trim() === "") {
-      window.sessionStorage.removeItem(ACTIVE_BATCH_STORAGE_KEY);
+      clearStoredActiveBatchState();
       return;
     }
-    window.sessionStorage.setItem(
-      ACTIVE_BATCH_STORAGE_KEY,
-      JSON.stringify({
-        batch_id: activeBatchID,
-        status_url: activeBatchStatusURL,
-      }),
-    );
+    saveStoredActiveBatchState({
+      batch_id: activeBatchID,
+      status_url: activeBatchStatusURL,
+    });
   }, [activeBatchID, activeBatchStatusURL]);
+
+  useEffect(() => {
+    setSavedDraft(loadVMRequestDraft(draftOwner));
+  }, [draftOwner]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || draftOwner === "") {
+      return;
+    }
+
+    const refreshDraft = () => {
+      setSavedDraft(loadVMRequestDraft(draftOwner));
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage) {
+        return;
+      }
+      refreshDraft();
+    };
+
+    window.addEventListener(VM_REQUEST_DRAFT_CHANGED_EVENT, refreshDraft);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(VM_REQUEST_DRAFT_CHANGED_EVENT, refreshDraft);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [draftOwner]);
+
+  const draftSnapshot = useMemo<VMRequestDraft | null>(() => {
+    if (!wizardOpen || draftOwner === "") {
+      return null;
+    }
+
+    const draft: VMRequestDraft = {
+      version: 1,
+      systemId: normalizeDraftString(selectedSystemId),
+      systemLabel: normalizeDraftString(selectedSystem?.name),
+      serviceId: normalizeDraftString(serviceIdValue),
+      serviceLabel: normalizeDraftString(selectedService?.name),
+      templateId: normalizeDraftString(selectedTemplateId),
+      templateLabel: normalizeDraftString(
+        selectedTemplate?.display_name ?? selectedTemplate?.name,
+      ),
+      instanceSizeId: normalizeDraftString(selectedSizeId),
+      instanceSizeLabel: normalizeDraftString(
+        selectedSize?.display_name ?? selectedSize?.name,
+      ),
+      namespace: normalizeDraftString(namespaceValue),
+      reason: normalizeDraftString(reasonValue),
+      batchCount: normalizeDraftBatchCount(batchCountValue),
+      wizardStep: normalizeDraftWizardStep(wizardStep),
+      requestMode,
+      updatedAt: new Date().toISOString(),
+    };
+
+    return hasMeaningfulVMRequestDraft(draft) ? draft : null;
+  }, [
+    batchCountValue,
+    draftOwner,
+    namespaceValue,
+    reasonValue,
+    selectedService?.name,
+    selectedSize?.display_name,
+    selectedSize?.name,
+    selectedSizeId,
+    selectedSystem?.name,
+    selectedSystemId,
+    selectedTemplate?.display_name,
+    selectedTemplate?.name,
+    selectedTemplateId,
+    serviceIdValue,
+    requestMode,
+    wizardOpen,
+    wizardStep,
+  ]);
+
+  useEffect(() => {
+    if (!draftSnapshot || draftOwner === "") {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      saveVMRequestDraft(draftOwner, draftSnapshot);
+      setSavedDraft(draftSnapshot);
+    }, VM_REQUEST_DRAFT_SAVE_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [draftOwner, draftSnapshot]);
 
   useEffect(() => {
     if (batchRateLimitUntilMs <= Date.now()) {
@@ -419,40 +566,106 @@ export function useVMManagementController({
     return setBatchRateLimitCooldown(extractRetryAfterSeconds(err));
   };
 
+  const applyDraftToWizard = (draft: VMRequestDraft) => {
+    setWizardOpen(true);
+    setWizardStep(normalizeDraftWizardStep(draft.wizardStep));
+    setRequestMode(normalizeDraftRequestMode(draft.requestMode));
+    setSelectedSystemId(draft.systemId ?? "");
+    form.resetFields();
+    form.setFieldsValue({
+      service_id: draft.serviceId,
+      template_id: draft.templateId,
+      instance_size_id: draft.instanceSizeId,
+      namespace: draft.namespace,
+      reason: draft.reason,
+      batch_count: normalizeDraftBatchCount(draft.batchCount),
+    });
+  };
+
+  const applyPrefillToWizard = (prefill?: VMRequestLaunchPrefill) => {
+    setWizardOpen(true);
+    setWizardStep(0);
+    setRequestMode(prefill?.requestMode ?? "guided");
+    setSelectedSystemId(prefill?.systemId ?? "");
+    form.resetFields();
+    form.setFieldsValue({
+      batch_count: normalizeDraftBatchCount(prefill?.batchCount),
+      service_id: prefill?.serviceId,
+      template_id: prefill?.templateId,
+      instance_size_id: prefill?.instanceSizeId,
+      namespace: prefill?.namespace,
+      reason: prefill?.reason,
+    });
+  };
+
+  const clearSavedDraft = () => {
+    if (draftOwner === "") {
+      return;
+    }
+    clearVMRequestDraft(draftOwner);
+    setSavedDraft(null);
+  };
+
   const createVMRequest = useApiMutation<
     VMCreateRequest,
-    ApprovalTicketResponse
+    TicketResponse
   >((req) => api.POST("/vms/request", { body: req }), {
-    invalidateKeys: [["vms"], ["approvals"]],
+    invalidateKeys: [["vms"], ["tickets"], ["builtin-approval-tasks"]],
     onSuccess: () => {
+      clearSavedDraft();
       messageApi.success(t("request_submitted"));
       setWizardOpen(false);
       setWizardStep(0);
+      setRequestMode("guided");
       setSelectedSystemId("");
       form.resetFields();
     },
     onError: (err) =>
-      messageApi.error(err.message || t("common:message.error")),
+      messageApi.error(translateApiError(t, err)),
   });
+
+  const createVMModifyRequest = useApiMutation<
+    { vmId: string; body: VMModifyRequest },
+    TicketResponse
+  >(
+    ({ vmId, body }) =>
+      api.POST("/vms/{vm_id}/modify-request", {
+        params: { path: { vm_id: vmId } },
+        body,
+      }),
+    {
+      invalidateKeys: [["tickets"], ["builtin-approval-tasks"], ["vms"]],
+      onSuccess: () => {
+        messageApi.success(t("modify.request_submitted"));
+        setModifyOpen(false);
+        setModifyTargetVM(null);
+        modifyForm.resetFields();
+      },
+      onError: (err) =>
+        messageApi.error(translateApiError(t, err)),
+    },
+  );
 
   const submitCreateBatch = useApiMutation<
     VMBatchSubmitRequest,
     VMBatchSubmitResponse
-  >((req) => api.POST("/approvals/batch", { body: req }), {
-    invalidateKeys: [["vms"], ["approvals"]],
+  >((req) => api.POST("/vms/batch", { body: req }), {
+    invalidateKeys: [["vms"], ["tickets"], ["builtin-approval-tasks"]],
     onSuccess: (resp) => {
       trackBatchSubmission(resp);
+      clearSavedDraft();
       setWizardOpen(false);
       setWizardStep(0);
+      setRequestMode("guided");
       setSelectedSystemId("");
       form.resetFields();
-      messageApi.success(t("batch.submitted", { batch_id: resp.batch_id }));
+      messageApi.success(t("batch.submitted"));
     },
     onError: (err) => {
       if (onBatchMutationRateLimit(err)) {
         return;
       }
-      messageApi.error(err.message || t("common:message.error"));
+      messageApi.error(translateApiError(t, err));
     },
   });
 
@@ -460,16 +673,16 @@ export function useVMManagementController({
     VMBatchSubmitRequest,
     VMBatchSubmitResponse
   >((req) => api.POST("/vms/batch", { body: req }), {
-    invalidateKeys: [["vms"], ["approvals"]],
+    invalidateKeys: [["vms"], ["tickets"], ["builtin-approval-tasks"]],
     onSuccess: (resp) => {
       trackBatchSubmission(resp);
-      messageApi.success(t("batch.submitted", { batch_id: resp.batch_id }));
+      messageApi.success(t("batch.submitted"));
     },
     onError: (err) => {
       if (onBatchMutationRateLimit(err)) {
         return;
       }
-      messageApi.error(err.message || t("common:message.error"));
+      messageApi.error(translateApiError(t, err));
     },
   });
 
@@ -480,13 +693,13 @@ export function useVMManagementController({
     invalidateKeys: [["vms"]],
     onSuccess: (resp) => {
       trackBatchSubmission(resp);
-      messageApi.success(t("batch.submitted", { batch_id: resp.batch_id }));
+      messageApi.success(t("batch.submitted"));
     },
     onError: (err) => {
       if (onBatchMutationRateLimit(err)) {
         return;
       }
-      messageApi.error(err.message || t("common:message.error"));
+      messageApi.error(translateApiError(t, err));
     },
   });
 
@@ -511,22 +724,13 @@ export function useVMManagementController({
           affectedCount: resp.affected_count,
           affectedTicketIDs,
         });
-        if (affectedTicketIDs.length > 0) {
-          messageApi.success(
-            t("batch.retry_submitted_detail", {
-              count: resp.affected_count,
-              tickets: summarizeTicketIDs(affectedTicketIDs),
-            }),
-          );
-        } else {
-          messageApi.success(t("batch.retry_submitted"));
-        }
+        messageApi.success(t("batch.retry_submitted"));
       },
       onError: (err) => {
         if (onBatchMutationRateLimit(err)) {
           return;
         }
-        messageApi.error(err.message || t("common:message.error"));
+        messageApi.error(translateApiError(t, err));
       },
     },
   );
@@ -552,22 +756,13 @@ export function useVMManagementController({
           affectedCount: resp.affected_count,
           affectedTicketIDs,
         });
-        if (affectedTicketIDs.length > 0) {
-          messageApi.success(
-            t("batch.cancel_submitted_detail", {
-              count: resp.affected_count,
-              tickets: summarizeTicketIDs(affectedTicketIDs),
-            }),
-          );
-        } else {
-          messageApi.success(t("batch.cancel_submitted"));
-        }
+        messageApi.success(t("batch.cancel_submitted"));
       },
       onError: (err) => {
         if (onBatchMutationRateLimit(err)) {
           return;
         }
-        messageApi.error(err.message || t("common:message.error"));
+        messageApi.error(translateApiError(t, err));
       },
     },
   );
@@ -579,7 +774,7 @@ export function useVMManagementController({
       invalidateKeys: [["vms"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
       onError: (err) =>
-        messageApi.error(err.message || t("common:message.error")),
+        messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -590,7 +785,7 @@ export function useVMManagementController({
       invalidateKeys: [["vms"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
       onError: (err) =>
-        messageApi.error(err.message || t("common:message.error")),
+        messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -601,7 +796,7 @@ export function useVMManagementController({
       invalidateKeys: [["vms"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
       onError: (err) =>
-        messageApi.error(err.message || t("common:message.error")),
+        messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -613,7 +808,7 @@ export function useVMManagementController({
     {
       invalidateKeys: [["approvals"]],
       onError: (err) =>
-        messageApi.error(err.message || t("common:message.error")),
+        messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -630,15 +825,13 @@ export function useVMManagementController({
       }),
     {
       invalidateKeys: [["vms"], ["approvals"]],
-      onSuccess: (resp) => {
-        messageApi.success(
-          t("delete_request_submitted", { ticket_id: resp.ticket_id }),
-        );
+      onSuccess: () => {
+        messageApi.success(t("delete_request_submitted"));
         setDeleteOpen(false);
         setTimeout(() => setDeletingVM(null), 300);
       },
       onError: (err) =>
-        messageApi.error(err.message || t("common:message.error")),
+        messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -669,6 +862,131 @@ export function useVMManagementController({
     deleteVM.mutate({ vmId: deletingVM.id, vmName: deletingVM.name });
   };
 
+  const openModifyModal = (vmId: string, vmName: string) => {
+    setModifyScope("single");
+    setModifyTargetVM({ id: vmId, name: vmName });
+    modifyForm.resetFields();
+    setModifyOpen(true);
+  };
+
+  const openBatchModifyModal = () => {
+    if (selectedVMIDs.length === 0) {
+      messageApi.warning(t("batch.no_selection"));
+      return;
+    }
+    modifyForm.resetFields();
+    setModifyTargetVM(null);
+    setModifyScope("batch");
+    setModifyOpen(true);
+  };
+
+  const closeModifyModal = () => {
+    setModifyOpen(false);
+    setModifyTargetVM(null);
+    modifyForm.resetFields();
+  };
+
+  const modifyHasRequestedTarget =
+    normalizeOptionalTargetNumber(modifyTargetCPUValue) !== undefined ||
+    normalizeOptionalTargetNumber(modifyTargetMemoryValue) !== undefined ||
+    normalizeOptionalTargetNumber(modifyTargetDiskValue) !== undefined;
+
+  const modifySubmitDisabled =
+    !modifyHasRequestedTarget ||
+    (modifyScope === "single" &&
+      (modifyContextQuery.isLoading || !modifyContextQuery.data));
+
+  const submitModify = async () => {
+    try {
+      await modifyForm.validateFields();
+    } catch {
+      return;
+    }
+
+    const values = modifyForm.getFieldsValue(true);
+    const targetCPU = normalizeOptionalTargetNumber(values.target_cpu_cores);
+    const targetMemory = normalizeOptionalTargetNumber(values.target_memory_gi);
+    const targetDisk = normalizeOptionalTargetNumber(values.target_disk_gb);
+    if (targetCPU === undefined && targetMemory === undefined && targetDisk === undefined) {
+      messageApi.warning(t("modify.target_required"));
+      return;
+    }
+
+    const targetVM = modifyScope === "single" ? modifyTargetVM : null;
+    if (modifyScope === "single") {
+      const modifyContext = modifyContextQuery.data;
+      if (!targetVM || !modifyContext) {
+        messageApi.warning(t("modify.context_unavailable"));
+        return;
+      }
+      if (
+        targetCPU !== undefined &&
+        targetCPU <= Number(modifyContext.current_cpu_cores ?? 0)
+      ) {
+        messageApi.warning(
+          t("modify.target_cpu_expand_only", {
+            current: modifyContext.current_cpu_cores,
+          }),
+        );
+        return;
+      }
+      if (
+        targetMemory !== undefined &&
+        targetMemory <= Number(modifyContext.current_memory_gi ?? 0)
+      ) {
+        messageApi.warning(
+          t("modify.target_memory_expand_only", {
+            current: modifyContext.current_memory_gi,
+          }),
+        );
+        return;
+      }
+      if (
+        targetDisk !== undefined &&
+        targetDisk <= Number(modifyContext.current_disk_gb ?? 0)
+      ) {
+        messageApi.warning(
+          t("modify.target_disk_expand_only", {
+            current: modifyContext.current_disk_gb,
+          }),
+        );
+        return;
+      }
+    }
+
+    const body: VMModifyRequest = {
+      reason: values.reason,
+      target_cpu_cores: Number(targetCPU ?? 0),
+      target_memory_gi: Number(targetMemory ?? 0),
+      target_disk_gb: Number(targetDisk ?? 0),
+    };
+
+    if (modifyScope === "single") {
+      createVMModifyRequest.mutate({ vmId: targetVM!.id, body });
+      return;
+    }
+
+    if (batchRateLimited) {
+      messageApi.warning(
+        t("batch.rate_limited_wait", { seconds: batchRetryAfterSeconds }),
+      );
+      return;
+    }
+    submitVMBatch.mutate({
+      operation: "MODIFY",
+      reason: values.reason,
+      items: selectedVMIDs.map((vmId) => ({
+        vm_id: vmId,
+        reason: values.reason,
+        target_cpu_cores: Number(targetCPU ?? 0),
+        target_memory_gi: Number(targetMemory ?? 0),
+        target_disk_gb: Number(targetDisk ?? 0),
+      })),
+    });
+    setModifyOpen(false);
+    modifyForm.resetFields();
+  };
+
   const wizardSteps = [
     { title: t("wizard.step.service") },
     { title: t("wizard.step.template") },
@@ -677,24 +995,32 @@ export function useVMManagementController({
     { title: t("wizard.step.confirm") },
   ];
 
-  const openWizard = () => {
-    setWizardOpen(true);
-    setWizardStep(0);
-    setSelectedSystemId("");
-    form.resetFields();
-    form.setFieldValue("batch_count", 1);
+  const openWizard = (prefill?: VMRequestLaunchPrefill) => {
+    applyPrefillToWizard(prefill);
+  };
+
+  const resumeDraft = () => {
+    const draft = loadVMRequestDraft(draftOwner);
+    if (!draft) {
+      messageApi.info(t("draft.missing"));
+      setSavedDraft(null);
+      return;
+    }
+    setSavedDraft(draft);
+    applyDraftToWizard(draft);
   };
 
   const closeWizard = () => {
     setWizardOpen(false);
     setWizardStep(0);
+    setRequestMode("guided");
     setSelectedSystemId("");
     form.resetFields();
   };
 
   const onSystemChange = (systemId: string) => {
     setSelectedSystemId(systemId);
-    form.setFieldValue("service_id", undefined);
+    form.resetFields(["service_id"]);
   };
 
   const goToNextWizardStep = async () => {
@@ -720,7 +1046,22 @@ export function useVMManagementController({
     }
   };
 
-  const submitWizard = () => {
+  const submitWizard = async () => {
+    if (requestMode === "full") {
+      try {
+        await form.validateFields([
+          "service_id",
+          "template_id",
+          "instance_size_id",
+          "namespace",
+          "reason",
+          "batch_count",
+        ]);
+      } catch {
+        return;
+      }
+    }
+
     // Include unmounted previous-step fields; default getFieldsValue() only
     // returns currently mounted fields and would drop wizard data on step 5.
     const values = form.getFieldsValue(true);
@@ -827,6 +1168,33 @@ export function useVMManagementController({
     return data;
   };
 
+  const openSimilarRequest = async (vmID: string) => {
+    const { data, error } = await api.GET("/vms/{vm_id}/request-prefill", {
+      params: { path: { vm_id: vmID } },
+    });
+
+    if (error || !data) {
+      if (error?.code === "VM_REQUEST_PREFILL_UNAVAILABLE") {
+        messageApi.warning(t("request_similar.unavailable"));
+        return;
+      }
+      messageApi.error(translateApiError(t, error));
+      return;
+    }
+
+    const prefill = data as VMRequestPrefill;
+    applyPrefillToWizard({
+      systemId: prefill.system_id,
+      serviceId: prefill.service_id,
+      templateId: prefill.template_id,
+      instanceSizeId: prefill.instance_size_id,
+      namespace: prefill.namespace,
+      reason: prefill.reason,
+      batchCount: prefill.batch_count,
+      requestMode: "full",
+    });
+  };
+
   return {
     messageContextHolder,
     page,
@@ -836,6 +1204,8 @@ export function useVMManagementController({
     wizardOpen,
     wizardStep,
     setWizardStep,
+    requestMode,
+    setRequestMode,
     form,
     selectedSystemId,
     selectedTemplate,
@@ -858,13 +1228,29 @@ export function useVMManagementController({
     sizesData,
     namespaceOptions: requestContextQuery.data?.namespaces ?? [],
     createVMRequest,
+    createVMModifyRequest,
+    savedDraft,
     openWizard,
+    openSimilarRequest,
+    resumeDraft,
     closeWizard,
+    discardDraft: clearSavedDraft,
     onSystemChange,
     goToNextWizardStep,
     submitWizard,
     selectedVMIDs,
     setSelectedVMIDs,
+    modifyOpen,
+    modifyScope,
+    modifyForm,
+    modifyTargetVM,
+    modifyContext: modifyContextQuery.data,
+    modifyContextLoading: modifyContextQuery.isLoading,
+    openModifyModal,
+    openBatchModifyModal,
+    closeModifyModal,
+    submitModify,
+    modifySubmitDisabled,
     activeBatchID,
     activeBatchStatusURL,
     batchStatus: batchStatusQuery.data,
@@ -884,9 +1270,7 @@ export function useVMManagementController({
       setActiveBatchStatusURL("");
       setBatchAutoPolling(false);
       setLastBatchActionFeedback(null);
-      if (typeof window !== "undefined") {
-        window.sessionStorage.removeItem(ACTIVE_BATCH_STORAGE_KEY);
-      }
+      clearStoredActiveBatchState();
     },
     retryBatch: () => {
       if (!activeBatchID) {
@@ -920,6 +1304,8 @@ export function useVMManagementController({
       submitVMBatch.isPending ||
       submitVMBatchPower.isPending ||
       submitCreateBatch.isPending,
+    modifySubmitPending:
+      createVMModifyRequest.isPending || submitVMBatch.isPending,
     batchActionPending:
       retryBatchMutation.isPending || cancelBatchMutation.isPending,
     startVM: (vmId: string) => startVM.mutate(vmId),

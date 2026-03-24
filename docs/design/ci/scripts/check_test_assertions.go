@@ -96,6 +96,11 @@ func main() {
 				if !ok {
 					continue
 				}
+				// Methods on test doubles (for example TestConnection on a stub adapter)
+				// are not test functions and should not be treated as such.
+				if funcDecl.Recv != nil {
+					continue
+				}
 
 				// Only check Test* functions.
 				if !strings.HasPrefix(funcDecl.Name.Name, "Test") {

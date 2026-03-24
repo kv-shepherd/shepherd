@@ -6,6 +6,8 @@ import (
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
+
+	"kv-shepherd.io/shepherd/internal/provider/capabilityutil"
 )
 
 // ClusterCapabilities represents detected capabilities for a cluster (ADR-0014).
@@ -109,20 +111,7 @@ func (d *CapabilityDetector) Detect(ctx context.Context, client KubeVirtClusterC
 // Operates on raw []string from DB (Cluster.enabled_features), avoiding ClusterCapabilities allocation.
 // Used by ListCompatibleClusters API handler (ADR-0014 Layer 3 / P2-A).
 func HasAllCapabilities(clusterFeatures, required []string) bool {
-	if len(required) == 0 {
-		return true
-	}
-	featureSet := make(map[string]struct{}, len(clusterFeatures))
-	for _, f := range clusterFeatures {
-		featureSet[strings.ToLower(strings.TrimSpace(f))] = struct{}{}
-	}
-	for _, req := range required {
-		lower := strings.ToLower(strings.TrimSpace(req))
-		if _, ok := featureSet[lower]; !ok {
-			return false
-		}
-	}
-	return true
+	return capabilityutil.HasAllCapabilities(clusterFeatures, required)
 }
 
 // gaEntry maps a minimum KubeVirt version to the features that became GA at that version.

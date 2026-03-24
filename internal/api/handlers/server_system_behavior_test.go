@@ -11,10 +11,13 @@ import (
 	"github.com/google/uuid"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/domainevent"
 	rrb "kv-shepherd.io/shepherd/ent/resourcerolebinding"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
+	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
@@ -41,6 +44,193 @@ func TestSystemHandler_ListSystems_RespectsResourceBindings(t *testing.T) {
 	}
 	if resp.Items[0].Id != sysVisible.ID {
 		t.Fatalf("visible system id = %s, want %s", resp.Items[0].Id, sysVisible.ID)
+	}
+}
+
+func TestSystemHandler_ListServicesOverview_RespectsVisibilityAndFilter(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+
+	sysVisibleA := mustCreateSystem(t, client, "sys-visible-a", "shop", "owner-1")
+	sysVisibleB := mustCreateSystem(t, client, "sys-visible-b", "payments", "owner-1")
+	sysHidden := mustCreateSystem(t, client, "sys-hidden", "finance", "owner-2")
+
+	svcVisibleA := mustCreateService(t, client, "svc-visible-a", "redis", sysVisibleA.ID, "cache")
+	_ = mustCreateService(t, client, "svc-visible-b", "api", sysVisibleB.ID, "backend")
+	_ = mustCreateService(t, client, "svc-hidden", "db", sysHidden.ID, "database")
+
+	mustCreateSystemBinding(t, client, "user-a", sysVisibleA.ID, "viewer")
+	mustCreateSystemBinding(t, client, "user-a", sysVisibleB.ID, "viewer")
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/services?page=1&per_page=20",
+		"",
+		"user-a",
+		[]string{"service:read"},
+	)
+	srv.ListServicesOverview(c, generated.ListServicesOverviewParams{Page: 1, PerPage: 20})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.ServiceList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 2 {
+		t.Fatalf("items len = %d, want 2", got)
+	}
+
+	visibleSystems := map[string]string{}
+	for _, item := range resp.Items {
+		visibleSystems[item.Id] = item.SystemName
+	}
+	if got := visibleSystems[svcVisibleA.ID]; got != sysVisibleA.Name {
+		t.Fatalf("service %s system_name = %q, want %q", svcVisibleA.ID, got, sysVisibleA.Name)
+	}
+	if _, ok := visibleSystems["svc-hidden"]; ok {
+		t.Fatal("hidden service unexpectedly visible in overview")
+	}
+
+	filteredContext, filteredWriter := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/services?page=1&per_page=20&system_id="+sysVisibleB.ID,
+		"",
+		"user-a",
+		[]string{"service:read"},
+	)
+	srv.ListServicesOverview(filteredContext, generated.ListServicesOverviewParams{
+		Page:     1,
+		PerPage:  20,
+		SystemId: sysVisibleB.ID,
+	})
+
+	if filteredWriter.Code != http.StatusOK {
+		t.Fatalf("filtered status = %d, want %d body=%s", filteredWriter.Code, http.StatusOK, filteredWriter.Body.String())
+	}
+	mustDecodeJSON(t, filteredWriter.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("filtered items len = %d, want 1", got)
+	}
+	if got := resp.Items[0].SystemId; got != sysVisibleB.ID {
+		t.Fatalf("filtered system_id = %q, want %q", got, sysVisibleB.ID)
+	}
+}
+
+func TestSystemHandler_GetService_IncludesSystemName(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+	sys := mustCreateSystem(t, client, "sys-1", "shop", "owner-1")
+	svc := mustCreateService(t, client, "svc-1", "redis", sys.ID, "old")
+	mustCreateSystemBinding(t, client, "owner-1", sys.ID, "viewer")
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/systems/"+sys.ID+"/services/"+svc.ID,
+		"",
+		"owner-1",
+		[]string{"service:read"},
+	)
+	srv.GetService(c, sys.ID, svc.ID)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.Service
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if resp.SystemName != sys.Name {
+		t.Fatalf("system_name = %q, want %q", resp.SystemName, sys.Name)
+	}
+}
+
+func TestSystemHandler_GetServiceWorkspaceContext_ShapesServiceVMsAndOwnRequests(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+	sys := mustCreateSystem(t, client, "sys-1", "shop", "owner-1")
+	svc := mustCreateService(t, client, "svc-1", "redis", sys.ID, "service workspace")
+	otherSvc := mustCreateService(t, client, "svc-2", "api", sys.ID, "other service")
+	mustCreateVMForService(t, client, "vm-1", "shop-redis-01", svc.ID)
+	mustCreateVMForService(t, client, "vm-2", "shop-api-01", otherSvc.ID)
+	mustCreateSystemBinding(t, client, "owner-1", sys.ID, "viewer")
+
+	makeCreateTicket := func(ticketID, eventID, requester, aggregateID string) {
+		t.Helper()
+
+		payload, err := json.Marshal(domain.VMCreationPayload{
+			RequesterID:    requester,
+			ServiceID:      aggregateID,
+			TemplateID:     uuid.NewString(),
+			InstanceSizeID: uuid.NewString(),
+			Namespace:      "prod-shop",
+			Reason:         "Need a VM",
+		})
+		if err != nil {
+			t.Fatalf("marshal payload: %v", err)
+		}
+		if _, err := client.DomainEvent.Create().
+			SetID(eventID).
+			SetEventType(string(domain.EventVMCreationRequested)).
+			SetAggregateType("service").
+			SetAggregateID(aggregateID).
+			SetPayload(payload).
+			SetStatus(domainevent.StatusPENDING).
+			SetCreatedBy(requester).
+			Save(t.Context()); err != nil {
+			t.Fatalf("create domain event: %v", err)
+		}
+		if _, err := client.Ticket.Create().
+			SetID(ticketID).
+			SetEventID(eventID).
+			SetOperationType(entticket.OperationTypeCREATE).
+			SetStatus(entticket.StatusPENDING).
+			SetRequester(requester).
+			SetReason("Need a VM").
+			Save(t.Context()); err != nil {
+			t.Fatalf("create ticket: %v", err)
+		}
+	}
+
+	makeCreateTicket("ticket-own", "event-own", "owner-1", svc.ID)
+	makeCreateTicket("ticket-other-user", "event-other-user", "owner-2", svc.ID)
+	makeCreateTicket("ticket-other-service", "event-other-service", "owner-1", otherSvc.ID)
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/systems/"+sys.ID+"/services/"+svc.ID+"/context",
+		"",
+		"owner-1",
+		[]string{"service:read", "vm:read", "platform:admin"},
+	)
+	srv.GetServiceWorkspaceContext(c, sys.ID, svc.ID)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.ServiceWorkspaceContext
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := resp.Service.SystemName; got != sys.Name {
+		t.Fatalf("service.system_name = %q, want %q", got, sys.Name)
+	}
+	if got := resp.Summary.VisibleVmCount; got != 1 {
+		t.Fatalf("summary.visible_vm_count = %d, want 1", got)
+	}
+	if got := resp.Summary.RecentRequestCount; got != 1 {
+		t.Fatalf("summary.recent_request_count = %d, want 1", got)
+	}
+	if got := len(resp.VisibleVms); got != 1 {
+		t.Fatalf("visible_vms len = %d, want 1", got)
+	}
+	if got := resp.VisibleVms[0].ServiceId; got != svc.ID {
+		t.Fatalf("visible_vms[0].service_id = %q, want %q", got, svc.ID)
+	}
+	if got := len(resp.RecentRequests); got != 1 {
+		t.Fatalf("recent_requests len = %d, want 1", got)
+	}
+	if got := resp.RecentRequests[0].Requester; got != "owner-1" {
+		t.Fatalf("recent_requests[0].requester = %q, want owner-1", got)
 	}
 }
 
@@ -267,6 +457,12 @@ func TestSystemHandler_DeleteService_ConflictWhenVMsExist(t *testing.T) {
 		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusConflict, w.Body.String())
 	}
 	assertErrorCode(t, w.Body.Bytes(), "SERVICE_HAS_VMS")
+
+	var resp generated.Error
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := resp.Params["vm_count"]; got != float64(1) {
+		t.Fatalf("vm_count = %#v, want 1", got)
+	}
 }
 
 func TestSystemHandler_DeleteService_Success(t *testing.T) {
@@ -291,6 +487,61 @@ func TestSystemHandler_DeleteService_Success(t *testing.T) {
 	if _, err := client.Service.Get(t.Context(), svc.ID); !ent.IsNotFound(err) {
 		t.Fatalf("service still exists after delete, err=%v", err)
 	}
+}
+
+func TestSystemHandler_DeleteService_ConflictWhenActiveCreateRequestsExist(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+	sys := mustCreateSystem(t, client, "sys-del", "shop", "owner-1")
+	svc := mustCreateService(t, client, "svc-del", "redis", sys.ID, "svc")
+	mustCreateSystemBinding(t, client, "owner-1", sys.ID, "owner")
+
+	payload, err := json.Marshal(domain.VMCreationPayload{
+		RequesterID:    "owner-1",
+		ServiceID:      svc.ID,
+		TemplateID:     uuid.NewString(),
+		InstanceSizeID: uuid.NewString(),
+		Namespace:      "prod-shop",
+		Reason:         "create before delete",
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	eventID := "ev-" + uuid.NewString()
+	if _, err := client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID(svc.ID).
+		SetPayload(payload).
+		SetStatus(domainevent.StatusPENDING).
+		SetCreatedBy("owner-1").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	if _, err := client.Ticket.Create().
+		SetID("ticket-" + uuid.NewString()).
+		SetEventID(eventID).
+		SetOperationType(entticket.OperationTypeCREATE).
+		SetStatus(entticket.StatusPENDING).
+		SetRequester("owner-1").
+		SetReason("create before delete").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/systems/"+sys.ID+"/services/"+svc.ID+"?confirm=true",
+		"",
+		"owner-1",
+		[]string{"service:delete"},
+	)
+	srv.DeleteService(c, sys.ID, svc.ID, generated.DeleteServiceParams{Confirm: true})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusConflict, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "SERVICE_HAS_ACTIVE_REQUESTS")
 }
 
 func newSystemBehaviorTestServer(t *testing.T) (*Server, *ent.Client) {

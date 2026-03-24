@@ -6,20 +6,21 @@ import (
 	"time"
 
 	"kv-shepherd.io/shepherd/ent/approvalpolicy"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/auditlog"
 	"kv-shepherd.io/shepherd/ent/authprovider"
-	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
+	"kv-shepherd.io/shepherd/ent/batchticket"
 	"kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/clusterpolicy"
+	"kv-shepherd.io/shepherd/ent/directorysyncjob"
 	"kv-shepherd.io/shepherd/ent/domainevent"
-	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
-	"kv-shepherd.io/shepherd/ent/idpgroupmapping"
-	"kv-shepherd.io/shepherd/ent/idpsyncedgroup"
+	"kv-shepherd.io/shepherd/ent/externalcohort"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
+	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
 	"kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	"kv-shepherd.io/shepherd/ent/notification"
 	"kv-shepherd.io/shepherd/ent/pendingadoption"
+	"kv-shepherd.io/shepherd/ent/platformsetting"
 	"kv-shepherd.io/shepherd/ent/ratelimitexemption"
 	"kv-shepherd.io/shepherd/ent/ratelimituseroverride"
 	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
@@ -30,7 +31,9 @@ import (
 	"kv-shepherd.io/shepherd/ent/system"
 	"kv-shepherd.io/shepherd/ent/systemsecret"
 	"kv-shepherd.io/shepherd/ent/template"
+	"kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/ent/user"
+	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
 	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/ent/vmrevision"
 )
@@ -74,29 +77,6 @@ func init() {
 	approvalpolicyDescCreatedBy := approvalpolicyFields[8].Descriptor()
 	// approvalpolicy.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	approvalpolicy.CreatedByValidator = approvalpolicyDescCreatedBy.Validators[0].(func(string) error)
-	approvalticketMixin := schema.ApprovalTicket{}.Mixin()
-	approvalticketMixinFields0 := approvalticketMixin[0].Fields()
-	_ = approvalticketMixinFields0
-	approvalticketFields := schema.ApprovalTicket{}.Fields()
-	_ = approvalticketFields
-	// approvalticketDescCreatedAt is the schema descriptor for created_at field.
-	approvalticketDescCreatedAt := approvalticketMixinFields0[0].Descriptor()
-	// approvalticket.DefaultCreatedAt holds the default value on creation for the created_at field.
-	approvalticket.DefaultCreatedAt = approvalticketDescCreatedAt.Default.(func() time.Time)
-	// approvalticketDescUpdatedAt is the schema descriptor for updated_at field.
-	approvalticketDescUpdatedAt := approvalticketMixinFields0[1].Descriptor()
-	// approvalticket.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	approvalticket.DefaultUpdatedAt = approvalticketDescUpdatedAt.Default.(func() time.Time)
-	// approvalticket.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	approvalticket.UpdateDefaultUpdatedAt = approvalticketDescUpdatedAt.UpdateDefault.(func() time.Time)
-	// approvalticketDescEventID is the schema descriptor for event_id field.
-	approvalticketDescEventID := approvalticketFields[1].Descriptor()
-	// approvalticket.EventIDValidator is a validator for the "event_id" field. It is called by the builders before save.
-	approvalticket.EventIDValidator = approvalticketDescEventID.Validators[0].(func(string) error)
-	// approvalticketDescRequester is the schema descriptor for requester field.
-	approvalticketDescRequester := approvalticketFields[4].Descriptor()
-	// approvalticket.RequesterValidator is a validator for the "requester" field. It is called by the builders before save.
-	approvalticket.RequesterValidator = approvalticketDescRequester.Validators[0].(func(string) error)
 	auditlogMixin := schema.AuditLog{}.Mixin()
 	auditlogMixinFields0 := auditlogMixin[0].Fields()
 	_ = auditlogMixinFields0
@@ -157,49 +137,49 @@ func init() {
 	authproviderDescCreatedBy := authproviderFields[6].Descriptor()
 	// authprovider.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	authprovider.CreatedByValidator = authproviderDescCreatedBy.Validators[0].(func(string) error)
-	batchapprovalticketMixin := schema.BatchApprovalTicket{}.Mixin()
-	batchapprovalticketMixinFields0 := batchapprovalticketMixin[0].Fields()
-	_ = batchapprovalticketMixinFields0
-	batchapprovalticketFields := schema.BatchApprovalTicket{}.Fields()
-	_ = batchapprovalticketFields
-	// batchapprovalticketDescCreatedAt is the schema descriptor for created_at field.
-	batchapprovalticketDescCreatedAt := batchapprovalticketMixinFields0[0].Descriptor()
-	// batchapprovalticket.DefaultCreatedAt holds the default value on creation for the created_at field.
-	batchapprovalticket.DefaultCreatedAt = batchapprovalticketDescCreatedAt.Default.(func() time.Time)
-	// batchapprovalticketDescUpdatedAt is the schema descriptor for updated_at field.
-	batchapprovalticketDescUpdatedAt := batchapprovalticketMixinFields0[1].Descriptor()
-	// batchapprovalticket.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	batchapprovalticket.DefaultUpdatedAt = batchapprovalticketDescUpdatedAt.Default.(func() time.Time)
-	// batchapprovalticket.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	batchapprovalticket.UpdateDefaultUpdatedAt = batchapprovalticketDescUpdatedAt.UpdateDefault.(func() time.Time)
-	// batchapprovalticketDescChildCount is the schema descriptor for child_count field.
-	batchapprovalticketDescChildCount := batchapprovalticketFields[2].Descriptor()
-	// batchapprovalticket.DefaultChildCount holds the default value on creation for the child_count field.
-	batchapprovalticket.DefaultChildCount = batchapprovalticketDescChildCount.Default.(int)
-	// batchapprovalticket.ChildCountValidator is a validator for the "child_count" field. It is called by the builders before save.
-	batchapprovalticket.ChildCountValidator = batchapprovalticketDescChildCount.Validators[0].(func(int) error)
-	// batchapprovalticketDescSuccessCount is the schema descriptor for success_count field.
-	batchapprovalticketDescSuccessCount := batchapprovalticketFields[3].Descriptor()
-	// batchapprovalticket.DefaultSuccessCount holds the default value on creation for the success_count field.
-	batchapprovalticket.DefaultSuccessCount = batchapprovalticketDescSuccessCount.Default.(int)
-	// batchapprovalticket.SuccessCountValidator is a validator for the "success_count" field. It is called by the builders before save.
-	batchapprovalticket.SuccessCountValidator = batchapprovalticketDescSuccessCount.Validators[0].(func(int) error)
-	// batchapprovalticketDescFailedCount is the schema descriptor for failed_count field.
-	batchapprovalticketDescFailedCount := batchapprovalticketFields[4].Descriptor()
-	// batchapprovalticket.DefaultFailedCount holds the default value on creation for the failed_count field.
-	batchapprovalticket.DefaultFailedCount = batchapprovalticketDescFailedCount.Default.(int)
-	// batchapprovalticket.FailedCountValidator is a validator for the "failed_count" field. It is called by the builders before save.
-	batchapprovalticket.FailedCountValidator = batchapprovalticketDescFailedCount.Validators[0].(func(int) error)
-	// batchapprovalticketDescPendingCount is the schema descriptor for pending_count field.
-	batchapprovalticketDescPendingCount := batchapprovalticketFields[5].Descriptor()
-	// batchapprovalticket.DefaultPendingCount holds the default value on creation for the pending_count field.
-	batchapprovalticket.DefaultPendingCount = batchapprovalticketDescPendingCount.Default.(int)
-	// batchapprovalticket.PendingCountValidator is a validator for the "pending_count" field. It is called by the builders before save.
-	batchapprovalticket.PendingCountValidator = batchapprovalticketDescPendingCount.Validators[0].(func(int) error)
-	// batchapprovalticketDescCreatedBy is the schema descriptor for created_by field.
-	batchapprovalticketDescCreatedBy := batchapprovalticketFields[8].Descriptor()
-	// batchapprovalticket.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
-	batchapprovalticket.CreatedByValidator = batchapprovalticketDescCreatedBy.Validators[0].(func(string) error)
+	batchticketMixin := schema.BatchTicket{}.Mixin()
+	batchticketMixinFields0 := batchticketMixin[0].Fields()
+	_ = batchticketMixinFields0
+	batchticketFields := schema.BatchTicket{}.Fields()
+	_ = batchticketFields
+	// batchticketDescCreatedAt is the schema descriptor for created_at field.
+	batchticketDescCreatedAt := batchticketMixinFields0[0].Descriptor()
+	// batchticket.DefaultCreatedAt holds the default value on creation for the created_at field.
+	batchticket.DefaultCreatedAt = batchticketDescCreatedAt.Default.(func() time.Time)
+	// batchticketDescUpdatedAt is the schema descriptor for updated_at field.
+	batchticketDescUpdatedAt := batchticketMixinFields0[1].Descriptor()
+	// batchticket.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	batchticket.DefaultUpdatedAt = batchticketDescUpdatedAt.Default.(func() time.Time)
+	// batchticket.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	batchticket.UpdateDefaultUpdatedAt = batchticketDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// batchticketDescChildCount is the schema descriptor for child_count field.
+	batchticketDescChildCount := batchticketFields[2].Descriptor()
+	// batchticket.DefaultChildCount holds the default value on creation for the child_count field.
+	batchticket.DefaultChildCount = batchticketDescChildCount.Default.(int)
+	// batchticket.ChildCountValidator is a validator for the "child_count" field. It is called by the builders before save.
+	batchticket.ChildCountValidator = batchticketDescChildCount.Validators[0].(func(int) error)
+	// batchticketDescSuccessCount is the schema descriptor for success_count field.
+	batchticketDescSuccessCount := batchticketFields[3].Descriptor()
+	// batchticket.DefaultSuccessCount holds the default value on creation for the success_count field.
+	batchticket.DefaultSuccessCount = batchticketDescSuccessCount.Default.(int)
+	// batchticket.SuccessCountValidator is a validator for the "success_count" field. It is called by the builders before save.
+	batchticket.SuccessCountValidator = batchticketDescSuccessCount.Validators[0].(func(int) error)
+	// batchticketDescFailedCount is the schema descriptor for failed_count field.
+	batchticketDescFailedCount := batchticketFields[4].Descriptor()
+	// batchticket.DefaultFailedCount holds the default value on creation for the failed_count field.
+	batchticket.DefaultFailedCount = batchticketDescFailedCount.Default.(int)
+	// batchticket.FailedCountValidator is a validator for the "failed_count" field. It is called by the builders before save.
+	batchticket.FailedCountValidator = batchticketDescFailedCount.Validators[0].(func(int) error)
+	// batchticketDescPendingCount is the schema descriptor for pending_count field.
+	batchticketDescPendingCount := batchticketFields[5].Descriptor()
+	// batchticket.DefaultPendingCount holds the default value on creation for the pending_count field.
+	batchticket.DefaultPendingCount = batchticketDescPendingCount.Default.(int)
+	// batchticket.PendingCountValidator is a validator for the "pending_count" field. It is called by the builders before save.
+	batchticket.PendingCountValidator = batchticketDescPendingCount.Validators[0].(func(int) error)
+	// batchticketDescCreatedBy is the schema descriptor for created_by field.
+	batchticketDescCreatedBy := batchticketFields[8].Descriptor()
+	// batchticket.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
+	batchticket.CreatedByValidator = batchticketDescCreatedBy.Validators[0].(func(string) error)
 	clusterMixin := schema.Cluster{}.Mixin()
 	clusterMixinFields0 := clusterMixin[0].Fields()
 	_ = clusterMixinFields0
@@ -292,6 +272,57 @@ func init() {
 	clusterpolicyDescCreatedBy := clusterpolicyFields[12].Descriptor()
 	// clusterpolicy.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	clusterpolicy.CreatedByValidator = clusterpolicyDescCreatedBy.Validators[0].(func(string) error)
+	directorysyncjobMixin := schema.DirectorySyncJob{}.Mixin()
+	directorysyncjobMixinFields0 := directorysyncjobMixin[0].Fields()
+	_ = directorysyncjobMixinFields0
+	directorysyncjobFields := schema.DirectorySyncJob{}.Fields()
+	_ = directorysyncjobFields
+	// directorysyncjobDescCreatedAt is the schema descriptor for created_at field.
+	directorysyncjobDescCreatedAt := directorysyncjobMixinFields0[0].Descriptor()
+	// directorysyncjob.DefaultCreatedAt holds the default value on creation for the created_at field.
+	directorysyncjob.DefaultCreatedAt = directorysyncjobDescCreatedAt.Default.(func() time.Time)
+	// directorysyncjobDescUpdatedAt is the schema descriptor for updated_at field.
+	directorysyncjobDescUpdatedAt := directorysyncjobMixinFields0[1].Descriptor()
+	// directorysyncjob.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	directorysyncjob.DefaultUpdatedAt = directorysyncjobDescUpdatedAt.Default.(func() time.Time)
+	// directorysyncjob.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	directorysyncjob.UpdateDefaultUpdatedAt = directorysyncjobDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// directorysyncjobDescAuthProviderID is the schema descriptor for auth_provider_id field.
+	directorysyncjobDescAuthProviderID := directorysyncjobFields[1].Descriptor()
+	// directorysyncjob.AuthProviderIDValidator is a validator for the "auth_provider_id" field. It is called by the builders before save.
+	directorysyncjob.AuthProviderIDValidator = directorysyncjobDescAuthProviderID.Validators[0].(func(string) error)
+	// directorysyncjobDescConflictResolution is the schema descriptor for conflict_resolution field.
+	directorysyncjobDescConflictResolution := directorysyncjobFields[4].Descriptor()
+	// directorysyncjob.DefaultConflictResolution holds the default value on creation for the conflict_resolution field.
+	directorysyncjob.DefaultConflictResolution = directorysyncjobDescConflictResolution.Default.(string)
+	// directorysyncjobDescJoinKeyType is the schema descriptor for join_key_type field.
+	directorysyncjobDescJoinKeyType := directorysyncjobFields[6].Descriptor()
+	// directorysyncjob.DefaultJoinKeyType holds the default value on creation for the join_key_type field.
+	directorysyncjob.DefaultJoinKeyType = directorysyncjobDescJoinKeyType.Default.(string)
+	// directorysyncjobDescTotalEntries is the schema descriptor for total_entries field.
+	directorysyncjobDescTotalEntries := directorysyncjobFields[7].Descriptor()
+	// directorysyncjob.DefaultTotalEntries holds the default value on creation for the total_entries field.
+	directorysyncjob.DefaultTotalEntries = directorysyncjobDescTotalEntries.Default.(int)
+	// directorysyncjobDescCreateCount is the schema descriptor for create_count field.
+	directorysyncjobDescCreateCount := directorysyncjobFields[8].Descriptor()
+	// directorysyncjob.DefaultCreateCount holds the default value on creation for the create_count field.
+	directorysyncjob.DefaultCreateCount = directorysyncjobDescCreateCount.Default.(int)
+	// directorysyncjobDescUpdateCount is the schema descriptor for update_count field.
+	directorysyncjobDescUpdateCount := directorysyncjobFields[9].Descriptor()
+	// directorysyncjob.DefaultUpdateCount holds the default value on creation for the update_count field.
+	directorysyncjob.DefaultUpdateCount = directorysyncjobDescUpdateCount.Default.(int)
+	// directorysyncjobDescBlockedCount is the schema descriptor for blocked_count field.
+	directorysyncjobDescBlockedCount := directorysyncjobFields[10].Descriptor()
+	// directorysyncjob.DefaultBlockedCount holds the default value on creation for the blocked_count field.
+	directorysyncjob.DefaultBlockedCount = directorysyncjobDescBlockedCount.Default.(int)
+	// directorysyncjobDescErrorCount is the schema descriptor for error_count field.
+	directorysyncjobDescErrorCount := directorysyncjobFields[11].Descriptor()
+	// directorysyncjob.DefaultErrorCount holds the default value on creation for the error_count field.
+	directorysyncjob.DefaultErrorCount = directorysyncjobDescErrorCount.Default.(int)
+	// directorysyncjobDescTriggeredBy is the schema descriptor for triggered_by field.
+	directorysyncjobDescTriggeredBy := directorysyncjobFields[13].Descriptor()
+	// directorysyncjob.TriggeredByValidator is a validator for the "triggered_by" field. It is called by the builders before save.
+	directorysyncjob.TriggeredByValidator = directorysyncjobDescTriggeredBy.Validators[0].(func(string) error)
 	domaineventMixin := schema.DomainEvent{}.Mixin()
 	domaineventMixinFields0 := domaineventMixin[0].Fields()
 	_ = domaineventMixinFields0
@@ -317,91 +348,103 @@ func init() {
 	domaineventDescCreatedBy := domaineventFields[6].Descriptor()
 	// domainevent.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	domainevent.CreatedByValidator = domaineventDescCreatedBy.Validators[0].(func(string) error)
-	externalapprovalsystemMixin := schema.ExternalApprovalSystem{}.Mixin()
-	externalapprovalsystemMixinFields0 := externalapprovalsystemMixin[0].Fields()
-	_ = externalapprovalsystemMixinFields0
-	externalapprovalsystemFields := schema.ExternalApprovalSystem{}.Fields()
-	_ = externalapprovalsystemFields
-	// externalapprovalsystemDescCreatedAt is the schema descriptor for created_at field.
-	externalapprovalsystemDescCreatedAt := externalapprovalsystemMixinFields0[0].Descriptor()
-	// externalapprovalsystem.DefaultCreatedAt holds the default value on creation for the created_at field.
-	externalapprovalsystem.DefaultCreatedAt = externalapprovalsystemDescCreatedAt.Default.(func() time.Time)
-	// externalapprovalsystemDescUpdatedAt is the schema descriptor for updated_at field.
-	externalapprovalsystemDescUpdatedAt := externalapprovalsystemMixinFields0[1].Descriptor()
-	// externalapprovalsystem.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	externalapprovalsystem.DefaultUpdatedAt = externalapprovalsystemDescUpdatedAt.Default.(func() time.Time)
-	// externalapprovalsystem.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	externalapprovalsystem.UpdateDefaultUpdatedAt = externalapprovalsystemDescUpdatedAt.UpdateDefault.(func() time.Time)
-	// externalapprovalsystemDescName is the schema descriptor for name field.
-	externalapprovalsystemDescName := externalapprovalsystemFields[1].Descriptor()
-	// externalapprovalsystem.NameValidator is a validator for the "name" field. It is called by the builders before save.
-	externalapprovalsystem.NameValidator = externalapprovalsystemDescName.Validators[0].(func(string) error)
-	// externalapprovalsystemDescEnabled is the schema descriptor for enabled field.
-	externalapprovalsystemDescEnabled := externalapprovalsystemFields[4].Descriptor()
-	// externalapprovalsystem.DefaultEnabled holds the default value on creation for the enabled field.
-	externalapprovalsystem.DefaultEnabled = externalapprovalsystemDescEnabled.Default.(bool)
-	// externalapprovalsystemDescCreatedBy is the schema descriptor for created_by field.
-	externalapprovalsystemDescCreatedBy := externalapprovalsystemFields[5].Descriptor()
-	// externalapprovalsystem.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
-	externalapprovalsystem.CreatedByValidator = externalapprovalsystemDescCreatedBy.Validators[0].(func(string) error)
-	idpgroupmappingMixin := schema.IdPGroupMapping{}.Mixin()
-	idpgroupmappingMixinFields0 := idpgroupmappingMixin[0].Fields()
-	_ = idpgroupmappingMixinFields0
-	idpgroupmappingFields := schema.IdPGroupMapping{}.Fields()
-	_ = idpgroupmappingFields
-	// idpgroupmappingDescCreatedAt is the schema descriptor for created_at field.
-	idpgroupmappingDescCreatedAt := idpgroupmappingMixinFields0[0].Descriptor()
-	// idpgroupmapping.DefaultCreatedAt holds the default value on creation for the created_at field.
-	idpgroupmapping.DefaultCreatedAt = idpgroupmappingDescCreatedAt.Default.(func() time.Time)
-	// idpgroupmappingDescUpdatedAt is the schema descriptor for updated_at field.
-	idpgroupmappingDescUpdatedAt := idpgroupmappingMixinFields0[1].Descriptor()
-	// idpgroupmapping.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	idpgroupmapping.DefaultUpdatedAt = idpgroupmappingDescUpdatedAt.Default.(func() time.Time)
-	// idpgroupmapping.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	idpgroupmapping.UpdateDefaultUpdatedAt = idpgroupmappingDescUpdatedAt.UpdateDefault.(func() time.Time)
-	// idpgroupmappingDescProviderID is the schema descriptor for provider_id field.
-	idpgroupmappingDescProviderID := idpgroupmappingFields[1].Descriptor()
-	// idpgroupmapping.ProviderIDValidator is a validator for the "provider_id" field. It is called by the builders before save.
-	idpgroupmapping.ProviderIDValidator = idpgroupmappingDescProviderID.Validators[0].(func(string) error)
-	// idpgroupmappingDescExternalGroupID is the schema descriptor for external_group_id field.
-	idpgroupmappingDescExternalGroupID := idpgroupmappingFields[2].Descriptor()
-	// idpgroupmapping.ExternalGroupIDValidator is a validator for the "external_group_id" field. It is called by the builders before save.
-	idpgroupmapping.ExternalGroupIDValidator = idpgroupmappingDescExternalGroupID.Validators[0].(func(string) error)
-	// idpgroupmappingDescRoleID is the schema descriptor for role_id field.
-	idpgroupmappingDescRoleID := idpgroupmappingFields[3].Descriptor()
-	// idpgroupmapping.RoleIDValidator is a validator for the "role_id" field. It is called by the builders before save.
-	idpgroupmapping.RoleIDValidator = idpgroupmappingDescRoleID.Validators[0].(func(string) error)
-	// idpgroupmappingDescCreatedBy is the schema descriptor for created_by field.
-	idpgroupmappingDescCreatedBy := idpgroupmappingFields[7].Descriptor()
-	// idpgroupmapping.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
-	idpgroupmapping.CreatedByValidator = idpgroupmappingDescCreatedBy.Validators[0].(func(string) error)
-	idpsyncedgroupMixin := schema.IdPSyncedGroup{}.Mixin()
-	idpsyncedgroupMixinFields0 := idpsyncedgroupMixin[0].Fields()
-	_ = idpsyncedgroupMixinFields0
-	idpsyncedgroupFields := schema.IdPSyncedGroup{}.Fields()
-	_ = idpsyncedgroupFields
-	// idpsyncedgroupDescCreatedAt is the schema descriptor for created_at field.
-	idpsyncedgroupDescCreatedAt := idpsyncedgroupMixinFields0[0].Descriptor()
-	// idpsyncedgroup.DefaultCreatedAt holds the default value on creation for the created_at field.
-	idpsyncedgroup.DefaultCreatedAt = idpsyncedgroupDescCreatedAt.Default.(func() time.Time)
-	// idpsyncedgroupDescUpdatedAt is the schema descriptor for updated_at field.
-	idpsyncedgroupDescUpdatedAt := idpsyncedgroupMixinFields0[1].Descriptor()
-	// idpsyncedgroup.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	idpsyncedgroup.DefaultUpdatedAt = idpsyncedgroupDescUpdatedAt.Default.(func() time.Time)
-	// idpsyncedgroup.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	idpsyncedgroup.UpdateDefaultUpdatedAt = idpsyncedgroupDescUpdatedAt.UpdateDefault.(func() time.Time)
-	// idpsyncedgroupDescProviderID is the schema descriptor for provider_id field.
-	idpsyncedgroupDescProviderID := idpsyncedgroupFields[1].Descriptor()
-	// idpsyncedgroup.ProviderIDValidator is a validator for the "provider_id" field. It is called by the builders before save.
-	idpsyncedgroup.ProviderIDValidator = idpsyncedgroupDescProviderID.Validators[0].(func(string) error)
-	// idpsyncedgroupDescExternalGroupID is the schema descriptor for external_group_id field.
-	idpsyncedgroupDescExternalGroupID := idpsyncedgroupFields[2].Descriptor()
-	// idpsyncedgroup.ExternalGroupIDValidator is a validator for the "external_group_id" field. It is called by the builders before save.
-	idpsyncedgroup.ExternalGroupIDValidator = idpsyncedgroupDescExternalGroupID.Validators[0].(func(string) error)
-	// idpsyncedgroupDescGroupName is the schema descriptor for group_name field.
-	idpsyncedgroupDescGroupName := idpsyncedgroupFields[3].Descriptor()
-	// idpsyncedgroup.GroupNameValidator is a validator for the "group_name" field. It is called by the builders before save.
-	idpsyncedgroup.GroupNameValidator = idpsyncedgroupDescGroupName.Validators[0].(func(string) error)
+	externalcohortMixin := schema.ExternalCohort{}.Mixin()
+	externalcohortMixinFields0 := externalcohortMixin[0].Fields()
+	_ = externalcohortMixinFields0
+	externalcohortFields := schema.ExternalCohort{}.Fields()
+	_ = externalcohortFields
+	// externalcohortDescCreatedAt is the schema descriptor for created_at field.
+	externalcohortDescCreatedAt := externalcohortMixinFields0[0].Descriptor()
+	// externalcohort.DefaultCreatedAt holds the default value on creation for the created_at field.
+	externalcohort.DefaultCreatedAt = externalcohortDescCreatedAt.Default.(func() time.Time)
+	// externalcohortDescUpdatedAt is the schema descriptor for updated_at field.
+	externalcohortDescUpdatedAt := externalcohortMixinFields0[1].Descriptor()
+	// externalcohort.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	externalcohort.DefaultUpdatedAt = externalcohortDescUpdatedAt.Default.(func() time.Time)
+	// externalcohort.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	externalcohort.UpdateDefaultUpdatedAt = externalcohortDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// externalcohortDescProviderID is the schema descriptor for provider_id field.
+	externalcohortDescProviderID := externalcohortFields[1].Descriptor()
+	// externalcohort.ProviderIDValidator is a validator for the "provider_id" field. It is called by the builders before save.
+	externalcohort.ProviderIDValidator = externalcohortDescProviderID.Validators[0].(func(string) error)
+	// externalcohortDescCohortKind is the schema descriptor for cohort_kind field.
+	externalcohortDescCohortKind := externalcohortFields[2].Descriptor()
+	// externalcohort.CohortKindValidator is a validator for the "cohort_kind" field. It is called by the builders before save.
+	externalcohort.CohortKindValidator = externalcohortDescCohortKind.Validators[0].(func(string) error)
+	// externalcohortDescCohortKey is the schema descriptor for cohort_key field.
+	externalcohortDescCohortKey := externalcohortFields[3].Descriptor()
+	// externalcohort.CohortKeyValidator is a validator for the "cohort_key" field. It is called by the builders before save.
+	externalcohort.CohortKeyValidator = externalcohortDescCohortKey.Validators[0].(func(string) error)
+	// externalcohortDescDisplayName is the schema descriptor for display_name field.
+	externalcohortDescDisplayName := externalcohortFields[4].Descriptor()
+	// externalcohort.DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
+	externalcohort.DisplayNameValidator = externalcohortDescDisplayName.Validators[0].(func(string) error)
+	externalcohortgrantMixin := schema.ExternalCohortGrant{}.Mixin()
+	externalcohortgrantMixinFields0 := externalcohortgrantMixin[0].Fields()
+	_ = externalcohortgrantMixinFields0
+	externalcohortgrantFields := schema.ExternalCohortGrant{}.Fields()
+	_ = externalcohortgrantFields
+	// externalcohortgrantDescCreatedAt is the schema descriptor for created_at field.
+	externalcohortgrantDescCreatedAt := externalcohortgrantMixinFields0[0].Descriptor()
+	// externalcohortgrant.DefaultCreatedAt holds the default value on creation for the created_at field.
+	externalcohortgrant.DefaultCreatedAt = externalcohortgrantDescCreatedAt.Default.(func() time.Time)
+	// externalcohortgrantDescUpdatedAt is the schema descriptor for updated_at field.
+	externalcohortgrantDescUpdatedAt := externalcohortgrantMixinFields0[1].Descriptor()
+	// externalcohortgrant.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	externalcohortgrant.DefaultUpdatedAt = externalcohortgrantDescUpdatedAt.Default.(func() time.Time)
+	// externalcohortgrant.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	externalcohortgrant.UpdateDefaultUpdatedAt = externalcohortgrantDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// externalcohortgrantDescUserID is the schema descriptor for user_id field.
+	externalcohortgrantDescUserID := externalcohortgrantFields[1].Descriptor()
+	// externalcohortgrant.UserIDValidator is a validator for the "user_id" field. It is called by the builders before save.
+	externalcohortgrant.UserIDValidator = externalcohortgrantDescUserID.Validators[0].(func(string) error)
+	// externalcohortgrantDescProviderID is the schema descriptor for provider_id field.
+	externalcohortgrantDescProviderID := externalcohortgrantFields[2].Descriptor()
+	// externalcohortgrant.ProviderIDValidator is a validator for the "provider_id" field. It is called by the builders before save.
+	externalcohortgrant.ProviderIDValidator = externalcohortgrantDescProviderID.Validators[0].(func(string) error)
+	// externalcohortgrantDescBindingKey is the schema descriptor for binding_key field.
+	externalcohortgrantDescBindingKey := externalcohortgrantFields[3].Descriptor()
+	// externalcohortgrant.BindingKeyValidator is a validator for the "binding_key" field. It is called by the builders before save.
+	externalcohortgrant.BindingKeyValidator = externalcohortgrantDescBindingKey.Validators[0].(func(string) error)
+	// externalcohortgrantDescRoleBindingID is the schema descriptor for role_binding_id field.
+	externalcohortgrantDescRoleBindingID := externalcohortgrantFields[4].Descriptor()
+	// externalcohortgrant.RoleBindingIDValidator is a validator for the "role_binding_id" field. It is called by the builders before save.
+	externalcohortgrant.RoleBindingIDValidator = externalcohortgrantDescRoleBindingID.Validators[0].(func(string) error)
+	externalcohortmappingMixin := schema.ExternalCohortMapping{}.Mixin()
+	externalcohortmappingMixinFields0 := externalcohortmappingMixin[0].Fields()
+	_ = externalcohortmappingMixinFields0
+	externalcohortmappingFields := schema.ExternalCohortMapping{}.Fields()
+	_ = externalcohortmappingFields
+	// externalcohortmappingDescCreatedAt is the schema descriptor for created_at field.
+	externalcohortmappingDescCreatedAt := externalcohortmappingMixinFields0[0].Descriptor()
+	// externalcohortmapping.DefaultCreatedAt holds the default value on creation for the created_at field.
+	externalcohortmapping.DefaultCreatedAt = externalcohortmappingDescCreatedAt.Default.(func() time.Time)
+	// externalcohortmappingDescUpdatedAt is the schema descriptor for updated_at field.
+	externalcohortmappingDescUpdatedAt := externalcohortmappingMixinFields0[1].Descriptor()
+	// externalcohortmapping.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	externalcohortmapping.DefaultUpdatedAt = externalcohortmappingDescUpdatedAt.Default.(func() time.Time)
+	// externalcohortmapping.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	externalcohortmapping.UpdateDefaultUpdatedAt = externalcohortmappingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// externalcohortmappingDescProviderID is the schema descriptor for provider_id field.
+	externalcohortmappingDescProviderID := externalcohortmappingFields[1].Descriptor()
+	// externalcohortmapping.ProviderIDValidator is a validator for the "provider_id" field. It is called by the builders before save.
+	externalcohortmapping.ProviderIDValidator = externalcohortmappingDescProviderID.Validators[0].(func(string) error)
+	// externalcohortmappingDescCohortKind is the schema descriptor for cohort_kind field.
+	externalcohortmappingDescCohortKind := externalcohortmappingFields[2].Descriptor()
+	// externalcohortmapping.CohortKindValidator is a validator for the "cohort_kind" field. It is called by the builders before save.
+	externalcohortmapping.CohortKindValidator = externalcohortmappingDescCohortKind.Validators[0].(func(string) error)
+	// externalcohortmappingDescCohortKey is the schema descriptor for cohort_key field.
+	externalcohortmappingDescCohortKey := externalcohortmappingFields[3].Descriptor()
+	// externalcohortmapping.CohortKeyValidator is a validator for the "cohort_key" field. It is called by the builders before save.
+	externalcohortmapping.CohortKeyValidator = externalcohortmappingDescCohortKey.Validators[0].(func(string) error)
+	// externalcohortmappingDescRoleID is the schema descriptor for role_id field.
+	externalcohortmappingDescRoleID := externalcohortmappingFields[4].Descriptor()
+	// externalcohortmapping.RoleIDValidator is a validator for the "role_id" field. It is called by the builders before save.
+	externalcohortmapping.RoleIDValidator = externalcohortmappingDescRoleID.Validators[0].(func(string) error)
+	// externalcohortmappingDescCreatedBy is the schema descriptor for created_by field.
+	externalcohortmappingDescCreatedBy := externalcohortmappingFields[8].Descriptor()
+	// externalcohortmapping.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
+	externalcohortmapping.CreatedByValidator = externalcohortmappingDescCreatedBy.Validators[0].(func(string) error)
 	instancesizeMixin := schema.InstanceSize{}.Mixin()
 	instancesizeMixinFields0 := instancesizeMixin[0].Fields()
 	_ = instancesizeMixinFields0
@@ -598,6 +641,29 @@ func init() {
 	pendingadoptionDescResourceType := pendingadoptionFields[4].Descriptor()
 	// pendingadoption.ResourceTypeValidator is a validator for the "resource_type" field. It is called by the builders before save.
 	pendingadoption.ResourceTypeValidator = pendingadoptionDescResourceType.Validators[0].(func(string) error)
+	platformsettingMixin := schema.PlatformSetting{}.Mixin()
+	platformsettingMixinFields0 := platformsettingMixin[0].Fields()
+	_ = platformsettingMixinFields0
+	platformsettingFields := schema.PlatformSetting{}.Fields()
+	_ = platformsettingFields
+	// platformsettingDescCreatedAt is the schema descriptor for created_at field.
+	platformsettingDescCreatedAt := platformsettingMixinFields0[0].Descriptor()
+	// platformsetting.DefaultCreatedAt holds the default value on creation for the created_at field.
+	platformsetting.DefaultCreatedAt = platformsettingDescCreatedAt.Default.(func() time.Time)
+	// platformsettingDescUpdatedAt is the schema descriptor for updated_at field.
+	platformsettingDescUpdatedAt := platformsettingMixinFields0[1].Descriptor()
+	// platformsetting.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	platformsetting.DefaultUpdatedAt = platformsettingDescUpdatedAt.Default.(func() time.Time)
+	// platformsetting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	platformsetting.UpdateDefaultUpdatedAt = platformsettingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// platformsettingDescKey is the schema descriptor for key field.
+	platformsettingDescKey := platformsettingFields[1].Descriptor()
+	// platformsetting.KeyValidator is a validator for the "key" field. It is called by the builders before save.
+	platformsetting.KeyValidator = platformsettingDescKey.Validators[0].(func(string) error)
+	// platformsettingDescUpdatedBy is the schema descriptor for updated_by field.
+	platformsettingDescUpdatedBy := platformsettingFields[3].Descriptor()
+	// platformsetting.UpdatedByValidator is a validator for the "updated_by" field. It is called by the builders before save.
+	platformsetting.UpdatedByValidator = platformsettingDescUpdatedBy.Validators[0].(func(string) error)
 	ratelimitexemptionMixin := schema.RateLimitExemption{}.Mixin()
 	ratelimitexemptionMixinFields0 := ratelimitexemptionMixin[0].Fields()
 	_ = ratelimitexemptionMixinFields0
@@ -855,6 +921,29 @@ func init() {
 	templateDescCreatedBy := templateFields[13].Descriptor()
 	// template.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	template.CreatedByValidator = templateDescCreatedBy.Validators[0].(func(string) error)
+	ticketMixin := schema.Ticket{}.Mixin()
+	ticketMixinFields0 := ticketMixin[0].Fields()
+	_ = ticketMixinFields0
+	ticketFields := schema.Ticket{}.Fields()
+	_ = ticketFields
+	// ticketDescCreatedAt is the schema descriptor for created_at field.
+	ticketDescCreatedAt := ticketMixinFields0[0].Descriptor()
+	// ticket.DefaultCreatedAt holds the default value on creation for the created_at field.
+	ticket.DefaultCreatedAt = ticketDescCreatedAt.Default.(func() time.Time)
+	// ticketDescUpdatedAt is the schema descriptor for updated_at field.
+	ticketDescUpdatedAt := ticketMixinFields0[1].Descriptor()
+	// ticket.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	ticket.DefaultUpdatedAt = ticketDescUpdatedAt.Default.(func() time.Time)
+	// ticket.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	ticket.UpdateDefaultUpdatedAt = ticketDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// ticketDescEventID is the schema descriptor for event_id field.
+	ticketDescEventID := ticketFields[1].Descriptor()
+	// ticket.EventIDValidator is a validator for the "event_id" field. It is called by the builders before save.
+	ticket.EventIDValidator = ticketDescEventID.Validators[0].(func(string) error)
+	// ticketDescRequester is the schema descriptor for requester field.
+	ticketDescRequester := ticketFields[4].Descriptor()
+	// ticket.RequesterValidator is a validator for the "requester" field. It is called by the builders before save.
+	ticket.RequesterValidator = ticketDescRequester.Validators[0].(func(string) error)
 	userMixin := schema.User{}.Mixin()
 	userMixinFields0 := userMixin[0].Fields()
 	_ = userMixinFields0
@@ -900,6 +989,21 @@ func init() {
 	userDescEnabled := userFields[8].Descriptor()
 	// user.DefaultEnabled holds the default value on creation for the enabled field.
 	user.DefaultEnabled = userDescEnabled.Default.(bool)
+	userdirectoryprofileMixin := schema.UserDirectoryProfile{}.Mixin()
+	userdirectoryprofileMixinFields0 := userdirectoryprofileMixin[0].Fields()
+	_ = userdirectoryprofileMixinFields0
+	userdirectoryprofileFields := schema.UserDirectoryProfile{}.Fields()
+	_ = userdirectoryprofileFields
+	// userdirectoryprofileDescCreatedAt is the schema descriptor for created_at field.
+	userdirectoryprofileDescCreatedAt := userdirectoryprofileMixinFields0[0].Descriptor()
+	// userdirectoryprofile.DefaultCreatedAt holds the default value on creation for the created_at field.
+	userdirectoryprofile.DefaultCreatedAt = userdirectoryprofileDescCreatedAt.Default.(func() time.Time)
+	// userdirectoryprofileDescUpdatedAt is the schema descriptor for updated_at field.
+	userdirectoryprofileDescUpdatedAt := userdirectoryprofileMixinFields0[1].Descriptor()
+	// userdirectoryprofile.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	userdirectoryprofile.DefaultUpdatedAt = userdirectoryprofileDescUpdatedAt.Default.(func() time.Time)
+	// userdirectoryprofile.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	userdirectoryprofile.UpdateDefaultUpdatedAt = userdirectoryprofileDescUpdatedAt.UpdateDefault.(func() time.Time)
 	vmMixin := schema.VM{}.Mixin()
 	vmMixinFields0 := vmMixin[0].Fields()
 	_ = vmMixinFields0

@@ -14,12 +14,12 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalpolicy"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
@@ -27,7 +27,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/jobs"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
-	"kv-shepherd.io/shepherd/internal/provider"
+	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/usecase"
 )
@@ -90,6 +90,11 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 	if params.Namespace != "" {
 		query = query.Where(entvm.NamespaceEQ(params.Namespace))
 	}
+	// Exclude VM tombstones (DELETING status = K8s deleted, DB hard-delete failed).
+	// Unless the user explicitly filters by DELETING status.
+	if params.Status == "" || entvm.Status(params.Status) != entvm.StatusDELETING {
+		query = query.Where(entvm.StatusNEQ(entvm.StatusDELETING))
+	}
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
 	offset := (page - 1) * perPage
@@ -119,6 +124,7 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	vms = s.refreshVMLiveStates(ctx, vms)
 
 	// Batch-fetch cluster environments to fill VM.environment (ADR-0015 §15).
 	// Collect unique non-empty cluster IDs from this page.
@@ -132,18 +138,20 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 			}
 		}
 	}
-	clusterEnvMap := make(map[string]string) // cluster_id → environment string
+	clusterEnvMap := make(map[string]string)  // cluster_id → environment string
+	clusterNameMap := make(map[string]string) // cluster_id → display name fallback chain
 	if len(clusterIDs) > 0 {
 		clusters, clusterErr := s.client.Cluster.Query().
 			Where(entcluster.IDIn(clusterIDs...)).
-			Select(entcluster.FieldID, entcluster.FieldEnvironment).
+			Select(entcluster.FieldID, entcluster.FieldEnvironment, entcluster.FieldDisplayName, entcluster.FieldName).
 			All(ctx)
 		if clusterErr != nil {
 			// Non-fatal: log and continue without environment info.
-			logger.Warn("failed to fetch cluster environments for VM list", zap.Error(clusterErr))
+			logger.Warn("failed to fetch cluster info for VM list", zap.Error(clusterErr))
 		} else {
 			for _, cl := range clusters {
 				clusterEnvMap[cl.ID] = string(cl.Environment)
+				clusterNameMap[cl.ID] = firstNonEmptyString(cl.DisplayName, cl.Name, cl.ID)
 			}
 		}
 	}
@@ -151,7 +159,8 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 	items := make([]generated.VM, 0, len(vms))
 	for _, vm := range vms {
 		env := clusterEnvMap[vm.ClusterID]
-		items = append(items, vmToAPI(vm, env, nil))
+		name := clusterNameMap[vm.ClusterID]
+		items = append(items, vmToAPI(vm, env, name, nil))
 	}
 
 	totalPages := (total + perPage - 1) / perPage
@@ -568,12 +577,11 @@ func (s *Server) CreateVMRequest(c *gin.Context) {
 		return
 	}
 
-	// Stage 2.E: Route the submission through the approval provider router.
-	// V1: router always selects the built-in provider (no-op other than logging).
-	// V2+: an external provider adapter can delegate to a third-party system here.
+	// Stage 2.E: route submission through the approval provider seam.
+	// V1 uses the built-in provider implementation behind this router.
 	// Non-fatal: ticket is already PENDING in DB; log the error but do not unwind the user response.
 	if s.approvalRouter != nil {
-		if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &provider.ApprovalRequest{
+		if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &approvalcontract.ApprovalRequest{
 			EventID:   output.TicketID, // ticket_id echoed as event_id for provider correlation
 			Requester: actor,
 			Action:    "create",
@@ -604,9 +612,9 @@ func (s *Server) CreateVMRequest(c *gin.Context) {
 		)
 	}
 
-	c.JSON(http.StatusAccepted, generated.ApprovalTicketResponse{
+	c.JSON(http.StatusAccepted, generated.TicketResponse{
 		TicketId: output.TicketID,
-		Status:   generated.ApprovalTicketResponseStatusPENDING,
+		Status:   generated.TicketResponseStatusPENDING,
 	})
 }
 
@@ -643,29 +651,137 @@ func (s *Server) GetVM(c *gin.Context, vmID generated.VMID) {
 		c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
 		return
 	}
+	vm = s.refreshVMLiveState(ctx, vm)
 
-	// Fetch cluster environment for this VM (ADR-0015 §15).
-	var clusterEnv string
+	// Fetch cluster info for this VM (ADR-0015 §15).
+	var clusterEnv, clusterName string
 	if vm.ClusterID != "" {
 		cl, clErr := s.client.Cluster.Get(ctx, vm.ClusterID)
 		if clErr != nil {
-			// Non-fatal: log and continue without environment info.
-			logger.Warn("failed to fetch cluster environment for VM",
+			// Non-fatal: log and continue without cluster info.
+			logger.Warn("failed to fetch cluster info for VM",
 				zap.Error(clErr),
 				zap.String("cluster_id", vm.ClusterID),
 			)
 		} else {
 			clusterEnv = string(cl.Environment)
+			clusterName = firstNonEmptyString(cl.DisplayName, cl.Name, cl.ID)
 		}
 	}
 
-	c.JSON(http.StatusOK, vmToAPI(vm, clusterEnv, s.loadVMProvisioning(ctx, vm)))
+	c.JSON(http.StatusOK, vmToAPI(vm, clusterEnv, clusterName, s.loadVMProvisioning(ctx, vm)))
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+// GetVMRequestPrefill handles GET /vms/{vm_id}/request-prefill.
+// Returns reusable CREATE-request context for "request similar VM" flows.
+func (s *Server) GetVMRequestPrefill(c *gin.Context, vmID generated.VMID) {
+	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "vm:create") {
+		return
+	}
+
+	vm, err := s.client.VM.Get(ctx, vmID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to get VM for request prefill", zap.Error(err), zap.String("vm_id", vmID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	visibility, err := s.resolveNamespaceVisibility(c)
+	if err != nil {
+		logger.Error("failed to resolve VM namespace visibility for request prefill", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	visible, err := s.isNamespaceVisible(ctx, vm.Namespace, visibility)
+	if err != nil {
+		logger.Error("failed to check VM namespace visibility for request prefill", zap.Error(err), zap.String("vm_id", vmID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if !visible {
+		c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
+		return
+	}
+
+	if strings.TrimSpace(vm.TicketID) == "" {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "VM_REQUEST_PREFILL_UNAVAILABLE",
+			Message: "vm does not carry reusable create-request context",
+		})
+		return
+	}
+
+	ticket, err := s.client.Ticket.Get(ctx, vm.TicketID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "VM_REQUEST_PREFILL_UNAVAILABLE",
+				Message: "ticket backing this vm is not available",
+			})
+			return
+		}
+		logger.Error("failed to get ticket for vm request prefill", zap.Error(err), zap.String("vm_id", vmID), zap.String("ticket_id", vm.TicketID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	event, err := s.client.DomainEvent.Get(ctx, ticket.EventID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "VM_REQUEST_PREFILL_UNAVAILABLE",
+				Message: "domain event backing this vm is not available",
+			})
+			return
+		}
+		logger.Error("failed to get domain event for vm request prefill", zap.Error(err), zap.String("vm_id", vmID), zap.String("event_id", ticket.EventID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		logger.Warn("failed to decode vm request prefill payload", zap.Error(err), zap.String("vm_id", vmID), zap.String("event_id", event.ID))
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "VM_REQUEST_PREFILL_UNAVAILABLE",
+			Message: "request payload is not reusable",
+		})
+		return
+	}
+
+	systemIDByServiceID := s.loadApprovalPrefillSystemByServiceID(ctx, map[string][]byte{
+		event.ID: event.Payload,
+	})
+	prefill := buildApprovalRequestPrefill(payload, systemIDByServiceID)
+	if prefill == nil {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "VM_REQUEST_PREFILL_UNAVAILABLE",
+			Message: "request payload does not expose a reusable create-request shape",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, prefill)
 }
 
 // DeleteVM handles DELETE /vms/{vm_id}.
-// ADR-0015 §5.D: VM deletion requires approval ticket.
-// Flow: confirmation gate → create DomainEvent + ApprovalTicket (operation_type=DELETE) → return 202.
-// Admin approval triggers River job execution via Gateway.approveDelete.
+// ADR-0015 §5.D: VM deletion requires a ticket.
+// Flow: confirmation gate → create DomainEvent + Ticket (operation_type=DELETE) → return 202.
+// Admin approval triggers River job execution via the core ticket service.
 func (s *Server) DeleteVM(c *gin.Context, vmID generated.VMID, params generated.DeleteVMParams) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "vm:delete") {
@@ -704,10 +820,10 @@ func (s *Server) DeleteVM(c *gin.Context, vmID generated.VMID, params generated.
 
 	_ = result.Status // Keep use case output field for backward compatibility.
 
-	// Stage 2.E: Route the delete submission through the approval provider router.
+	// Stage 2.E: route delete submission through the approval provider seam.
 	// Same semantics as CreateVMRequest: ticket is already PENDING; router call is best-effort.
 	if s.approvalRouter != nil {
-		if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &provider.ApprovalRequest{
+		if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &approvalcontract.ApprovalRequest{
 			EventID:   result.TicketID,
 			Requester: actor,
 			Action:    "delete",
@@ -747,6 +863,7 @@ func (s *Server) StartVM(c *gin.Context, vmID generated.VMID) {
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	vm = s.refreshVMLiveState(c.Request.Context(), vm)
 
 	// State guard: only STOPPED or PAUSED VMs can be started.
 	if vm.Status != entvm.StatusSTOPPED && vm.Status != entvm.StatusPAUSED {
@@ -794,6 +911,7 @@ func (s *Server) mustGetRunningVMForPowerOp(c *gin.Context, vmID generated.VMID,
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return nil
 	}
+	vm = s.refreshVMLiveState(c.Request.Context(), vm)
 
 	if vm.Status != entvm.StatusRUNNING {
 		c.JSON(http.StatusConflict, generated.Error{
@@ -845,7 +963,7 @@ func (s *Server) handleVMPower(c *gin.Context, vm *ent.VM, operation string, eve
 	}
 
 	if s.approvalRouter != nil {
-		if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &provider.ApprovalRequest{
+		if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &approvalcontract.ApprovalRequest{
 			EventID:   ticketID,
 			Requester: actor,
 			Action:    "power_" + operation,
@@ -908,12 +1026,13 @@ func (s *Server) createVMPowerApprovalRequest(
 	}
 
 	payloadBytes, err := json.Marshal(domain.VMPowerPayload{
-		VMID:      vm.ID,
-		VMName:    vm.Name,
-		ClusterID: vm.ClusterID,
-		Namespace: vm.Namespace,
-		Operation: operation,
-		Actor:     actor,
+		VMID:            vm.ID,
+		VMName:          vm.Name,
+		ClusterID:       vm.ClusterID,
+		Namespace:       vm.Namespace,
+		RequestVMStatus: string(vm.Status),
+		Operation:       operation,
+		Actor:           actor,
 	})
 	if err != nil {
 		return "", "", err
@@ -931,11 +1050,11 @@ func (s *Server) createVMPowerApprovalRequest(
 		return "", "", err
 	}
 
-	if _, err := tx.ApprovalTicket.Create().
+	if _, err := tx.Ticket.Create().
 		SetID(ticketUUID.String()).
 		SetEventID(eventUUID.String()).
-		SetOperationType(approvalticket.OperationTypePOWER).
-		SetStatus(approvalticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypePOWER).
+		SetStatus(entticket.StatusPENDING).
 		SetRequester(actor).
 		SetReason("vm " + operation + " request").
 		Save(ctx); err != nil {
@@ -968,12 +1087,13 @@ func (s *Server) enqueueVMPowerOp(c *gin.Context, vm *ent.VM, operation string, 
 	actor := middleware.GetUserID(ctx)
 
 	payload := domain.VMPowerPayload{
-		VMID:      vm.ID,
-		VMName:    vm.Name,
-		ClusterID: vm.ClusterID,
-		Namespace: vm.Namespace,
-		Operation: operation,
-		Actor:     actor,
+		VMID:            vm.ID,
+		VMName:          vm.Name,
+		ClusterID:       vm.ClusterID,
+		Namespace:       vm.Namespace,
+		RequestVMStatus: string(vm.Status),
+		Operation:       operation,
+		Actor:           actor,
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -1030,19 +1150,23 @@ func (s *Server) enqueueVMPowerOp(c *gin.Context, vm *ent.VM, operation string, 
 // vmToAPI converts an Ent VM entity to the generated API VM type.
 // clusterEnv is the environment string ("test" or "prod") from the associated Cluster;
 // pass an empty string when the cluster is not yet assigned.
-func vmToAPI(vm *ent.VM, clusterEnv string, provisioning *generated.ProvisioningStatus) generated.VM {
+func vmToAPI(vm *ent.VM, clusterEnv, clusterName string, provisioning *generated.ProvisioningStatus) generated.VM {
 	apiVM := generated.VM{
-		Id:        vm.ID,
-		Name:      vm.Name,
-		Namespace: vm.Namespace,
-		Status:    generated.VMStatus(vm.Status),
-		ClusterId: vm.ClusterID,
-		Hostname:  vm.Hostname,
-		Instance:  vm.Instance,
+		Id:          vm.ID,
+		Name:        vm.Name,
+		Namespace:   vm.Namespace,
+		Status:      generated.VMStatus(vm.Status),
+		ClusterId:   vm.ClusterID,
+		ClusterName: clusterName,
+		Hostname:    vm.Hostname,
+		Instance:    vm.Instance,
 		// ServiceId: not directly available (FK edge), omitted if not eagerly loaded
 		TicketId:  vm.TicketID,
 		CreatedBy: vm.CreatedBy,
 		CreatedAt: vm.CreatedAt,
+	}
+	if vm.Edges.Service != nil {
+		apiVM.ServiceId = vm.Edges.Service.ID
 	}
 	// Populate environment from cluster (ADR-0015 §15).
 	if clusterEnv != "" {
@@ -1075,6 +1199,7 @@ func (s *Server) PowerVM(c *gin.Context, vmID generated.VMID) {
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	vm = s.refreshVMLiveState(c.Request.Context(), vm)
 
 	// Route by action, applying the same state-machine guards as the dedicated endpoints.
 	switch req.Action {

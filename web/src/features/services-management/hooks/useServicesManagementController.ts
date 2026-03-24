@@ -2,11 +2,13 @@
 
 import { Form, message } from 'antd';
 import type { TFunction } from 'i18next';
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { applyApiFieldErrors } from '@/hooks/applyApiFieldErrors';
+import { SETUP_GUIDE_INVALIDATION_KEYS } from '@/features/setup-guide/queryKeys';
 import { api } from '@/lib/api/client';
+import { translateApiError } from '@/lib/api/errorMessage';
 
 import type {
     Service,
@@ -18,14 +20,20 @@ import type {
 
 interface UseServicesManagementControllerArgs {
     t: TFunction;
+    onCreateSuccess?: (service: Service, context: { isFirstService: boolean }) => boolean | void;
 }
 
-export function useServicesManagementController({ t }: UseServicesManagementControllerArgs) {
+const ALL_SYSTEMS_FILTER = '__all__';
+
+export function useServicesManagementController({
+    t,
+    onCreateSuccess,
+}: UseServicesManagementControllerArgs) {
     const [messageApi, messageContextHolder] = message.useMessage();
     const [createOpen, setCreateOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
     const [editingService, setEditingService] = useState<Service | null>(null);
-    const [selectedSystemId, setSelectedSystemId] = useState('');
+    const [selectedSystemId, setSelectedSystemId] = useState(ALL_SYSTEMS_FILTER);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [form] = Form.useForm<ServiceCreateRequest & { system_id: string }>();
@@ -36,18 +44,29 @@ export function useServicesManagementController({ t }: UseServicesManagementCont
         () => api.GET('/systems', { params: { query: { per_page: 100 } } })
     );
 
-    const activeSystemId = selectedSystemId || systemsQuery.data?.items?.[0]?.id || '';
+    const allSystems = useMemo(
+        () => systemsQuery.data?.items ?? [],
+        [systemsQuery.data?.items],
+    );
+    const activeSystemId = selectedSystemId;
 
     const servicesQuery = useApiGet<ServiceList>(
         ['services', activeSystemId, page, pageSize],
-        () => api.GET('/systems/{system_id}/services', {
+        () => api.GET('/services', {
             params: {
-                path: { system_id: activeSystemId },
-                query: { page, per_page: pageSize },
+                query: {
+                    page,
+                    per_page: pageSize,
+                    ...(activeSystemId !== ALL_SYSTEMS_FILTER ? { system_id: activeSystemId } : {}),
+                },
             },
         }),
-        { enabled: Boolean(activeSystemId) }
     );
+    const existingServicesTotal =
+        servicesQuery.data?.pagination?.total ??
+        servicesQuery.data?.items?.length ??
+        0;
+    const shouldContinueOnboarding = existingServicesTotal === 0;
 
     const createMutation = useApiMutation<
         { system_id: string; body: ServiceCreateRequest },
@@ -58,16 +77,24 @@ export function useServicesManagementController({ t }: UseServicesManagementCont
             body,
         }),
         {
-            invalidateKeys: [['services']],
-            onSuccess: () => {
-                messageApi.success(t('message.success'));
+            invalidateKeys: [['services'], ...SETUP_GUIDE_INVALIDATION_KEYS],
+            onSuccess: (service) => {
                 closeCreateModal();
+                const handled = onCreateSuccess?.(service, {
+                    isFirstService: shouldContinueOnboarding,
+                }) ?? false;
+                if (handled) {
+                    return;
+                }
+                messageApi.success(t('message.success'));
             },
             onError: (err) => {
                 if (applyApiFieldErrors(form, err)) {
                     return;
                 }
-                messageApi.error(err.code === 'CONFLICT' ? t('services.error.name_exists') : t('message.error'));
+                messageApi.error(
+                    err.code === 'CONFLICT' ? t('services.error.name_exists') : translateApiError(t, err, 'message.error'),
+                );
             },
         }
     );
@@ -83,9 +110,9 @@ export function useServicesManagementController({ t }: UseServicesManagementCont
             },
         }),
         {
-            invalidateKeys: [['services']],
+            invalidateKeys: [['services'], ...SETUP_GUIDE_INVALIDATION_KEYS],
             onSuccess: () => messageApi.success(t('message.success')),
-            onError: (err) => messageApi.error(err.message || t('message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err, 'message.error')),
         }
     );
 
@@ -98,7 +125,7 @@ export function useServicesManagementController({ t }: UseServicesManagementCont
             body,
         }),
         {
-            invalidateKeys: [['services']],
+            invalidateKeys: [['services'], ...SETUP_GUIDE_INVALIDATION_KEYS],
             onSuccess: () => {
                 messageApi.success(t('message.success'));
                 closeEditModal();
@@ -107,7 +134,7 @@ export function useServicesManagementController({ t }: UseServicesManagementCont
                 if (applyApiFieldErrors(editForm, err)) {
                     return;
                 }
-                messageApi.error(err.message || t('message.error'));
+                messageApi.error(translateApiError(t, err, 'message.error'));
             },
         }
     );
@@ -117,10 +144,19 @@ export function useServicesManagementController({ t }: UseServicesManagementCont
         setPage(1);
     };
 
-    const openCreateModal = () => {
+    const openCreateModal = useCallback((systemId?: string) => {
         setCreateOpen(true);
-        form.setFieldValue('system_id', activeSystemId || undefined);
-    };
+        const targetSystemId = systemId ?? (
+            activeSystemId !== ALL_SYSTEMS_FILTER
+                ? activeSystemId
+                : allSystems[0]?.id
+        );
+        if (targetSystemId) {
+            setSelectedSystemId(targetSystemId);
+            setPage(1);
+        }
+        form.setFieldValue('system_id', targetSystemId || undefined);
+    }, [activeSystemId, allSystems, form]);
 
     const closeCreateModal = () => {
         setCreateOpen(false);

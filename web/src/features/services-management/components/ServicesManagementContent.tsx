@@ -3,6 +3,7 @@
 import {
     Button,
     Card,
+    Descriptions,
     Form,
     Input,
     Modal,
@@ -16,27 +17,85 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import React, { useState } from 'react';
-import { CloudOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, UploadOutlined, FileTextOutlined } from '@ant-design/icons';
+import { CloudOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, UploadOutlined, FileTextOutlined, DesktopOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
-import dayjs from 'dayjs';
+import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
 import { PermissionGuard } from '@/components/auth/PermissionGuard';
+import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
+import {
+    RequestsOverviewGlyph,
+    ServiceWorkspaceGlyph,
+    VirtualMachinesOverviewGlyph,
+} from '@/components/illustrations/DashboardIllustrations';
+import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
+import {
+    buildDashboardSetupResumeHref,
+    resolveNextSetupAction,
+} from '@/features/setup-guide/flow';
+import { SetupGuideCard } from '@/features/setup-guide/components/SetupGuideCard';
+import { useAutoOpenIntent } from '@/features/setup-guide/hooks/useAutoOpenIntent';
+import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
+import { useApiGet } from '@/hooks/useApiQuery';
+import { api } from '@/lib/api/client';
+import { approvalSummaryMeta, approvalSummaryTitle, formatApprovalRecordID } from '@/features/approval-shared/summary';
 import { useServicesManagementController } from '../hooks/useServicesManagementController';
-import type { Service } from '../types';
+import type { Ticket, Service, ServiceWorkspaceContext, VM } from '../types';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 export function ServicesManagementContent() {
-    const { t } = useTranslation('common');
-    const services = useServicesManagementController({ t });
+    const { t } = useTranslation(['common', 'vm', 'approval']);
+    const router = useRouter();
+    const setupGuide = useSetupGuide();
+    const services = useServicesManagementController({
+        t,
+        onCreateSuccess: (_, context) => {
+            if (!context.isFirstService) {
+                return false;
+            }
+            const nextAction = resolveNextSetupAction(setupGuide, 'service');
+            if (!nextAction) {
+                return false;
+            }
+            router.push(buildDashboardSetupResumeHref(nextAction));
+            return true;
+        },
+    });
 
     const [createPreviewMode, setCreatePreviewMode] = useState(false);
     const [editPreviewMode, setEditPreviewMode] = useState(false);
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailService, setDetailService] = useState<Service | null>(null);
+
+    useAutoOpenIntent('create-service', (params) => {
+        services.openCreateModal(params.get('system_id') ?? undefined);
+    });
+
+    const serviceContextQuery = useApiGet<ServiceWorkspaceContext>(
+        ['service-workspace-context', detailService?.system_id, detailService?.id],
+        () => api.GET('/systems/{system_id}/services/{service_id}/context', {
+            params: {
+                path: {
+                    system_id: detailService!.system_id,
+                    service_id: detailService!.id,
+                },
+            },
+        }),
+        { enabled: detailOpen && Boolean(detailService?.id) }
+    );
+
+    const detailSystemName = serviceContextQuery.data?.service.system_name
+        ?? detailService?.system_name
+        ?? services.systemsData?.items?.find((system) => system.id === detailService?.system_id)?.name
+        ?? '—';
+
+    const serviceRelatedVMs = serviceContextQuery.data?.visible_vms ?? [];
+    const serviceRelatedRequests = serviceContextQuery.data?.recent_requests ?? [];
 
     const columns: ColumnsType<Service> = [
         {
@@ -51,6 +110,20 @@ export function ServicesManagementContent() {
             ),
         },
         {
+            title: t('services.system_column'),
+            dataIndex: 'system_name',
+            key: 'system_name',
+            width: 180,
+            render: (_: string | undefined, record) => (
+                <Space direction="vertical" size={0}>
+                    <Text strong>{record.system_name || record.system_id}</Text>
+                    {record.system_name && record.system_id && record.system_name !== record.system_id ? (
+                        <Text type="secondary" style={{ fontSize: 12 }}>{record.system_id}</Text>
+                    ) : null}
+                </Space>
+            ),
+        },
+        {
             title: t('table.description'),
             dataIndex: 'description',
             key: 'description',
@@ -58,11 +131,11 @@ export function ServicesManagementContent() {
             render: (desc: string) => <Text type="secondary">{desc || '—'}</Text>,
         },
         {
-            title: t('services.instance_index'),
+            title: t('services.next_instance_index'),
             dataIndex: 'next_instance_index',
             key: 'next_instance_index',
-            width: 130,
-            render: (idx: number) => <Tag color="blue">{idx ?? 0}</Tag>,
+            width: 180,
+            render: (idx: number) => <Tag color="blue">#{idx ?? 0}</Tag>,
         },
         {
             title: t('table.created_at'),
@@ -70,17 +143,17 @@ export function ServicesManagementContent() {
             key: 'created_at',
             width: 160,
             render: (date: string) => (
-                <Text type="secondary">{dayjs(date).format('YYYY-MM-DD HH:mm')}</Text>
+                <Text type="secondary"><LocalDateTimeText value={date} /></Text>
             ),
         },
         {
             title: t('table.actions'),
             key: 'actions',
-            width: 160,
+            width: 320,
             render: (_, record) => (
                 <Space>
                     <Button
-                        type="text"
+                        type="link"
                         size="small"
                         data-testid={`service-action-detail-${record.id}`}
                         icon={<EyeOutlined />}
@@ -88,16 +161,38 @@ export function ServicesManagementContent() {
                             setDetailService(record);
                             setDetailOpen(true);
                         }}
-                    />
+                    >
+                        {t('button.detail', 'Details')}
+                    </Button>
                     <PermissionGuard permission="service:create">
                         <Button
-                            type="text"
+                            type="link"
                             size="small"
                             data-testid={`service-action-edit-${record.id}`}
                             icon={<EditOutlined />}
                             loading={services.updatePending && services.editingService?.id === record.id}
                             onClick={() => services.openEditModal(record)}
-                        />
+                        >
+                            {t('button.edit')}
+                        </Button>
+                    </PermissionGuard>
+                    <PermissionGuard permission="vm:create">
+                        <Button
+                            type="link"
+                            size="small"
+                            data-testid={`service-action-request-vm-${record.id}`}
+                            icon={<DesktopOutlined />}
+                            onClick={() => {
+                                const params = new URLSearchParams({
+                                    request: 'create',
+                                    system_id: record.system_id,
+                                    service_id: record.id,
+                                });
+                                router.push(`/vms?${params.toString()}`);
+                            }}
+                        >
+                            {t('services.request_vm')}
+                        </Button>
                     </PermissionGuard>
                     <PermissionGuard permission="service:delete">
                         <Popconfirm
@@ -107,13 +202,15 @@ export function ServicesManagementContent() {
                             cancelText={t('button.cancel')}
                         >
                             <Button
-                                type="text"
+                                type="link"
                                 size="small"
                                 data-testid={`service-action-delete-${record.id}`}
                                 danger
                                 icon={<DeleteOutlined />}
                                 loading={services.deletePending}
-                            />
+                            >
+                                {t('button.delete')}
+                            </Button>
                         </Popconfirm>
                     </PermissionGuard>
                 </Space>
@@ -124,22 +221,27 @@ export function ServicesManagementContent() {
     return (
         <div>
             {services.messageContextHolder}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                <div>
-                    <Title level={4} style={{ margin: 0 }}>{t('nav.services')}</Title>
-                    <Text type="secondary">{t('services.subtitle')}</Text>
-                </div>
-                <Space>
+            <PageHeader
+                title={t('nav.services')}
+                subtitle={t('services.subtitle')}
+                actions={(
+                    <Space>
                     <Select
                         data-testid="services-system-selector"
                         style={{ width: 200 }}
                         placeholder={t('services.select_system')}
                         value={services.activeSystemId || undefined}
                         onChange={services.changeSystem}
-                        options={services.systemsData?.items?.map((system) => ({
-                            label: system.name,
-                            value: system.id,
-                        }))}
+                        options={[
+                            {
+                                label: t('services.all_systems'),
+                                value: '__all__',
+                            },
+                            ...(services.systemsData?.items?.map((system) => ({
+                                label: system.name,
+                                value: system.id,
+                            })) ?? []),
+                        ]}
                     />
                     <Button icon={<ReloadOutlined />} onClick={() => services.refetch()}>
                         {t('button.refresh')}
@@ -149,33 +251,40 @@ export function ServicesManagementContent() {
                             type="primary"
                             icon={<PlusOutlined />}
                             data-testid="service-create-button"
-                            onClick={services.openCreateModal}
+                            onClick={() => {
+                                services.openCreateModal();
+                            }}
                         >
                             {t('button.create')}
                         </Button>
                     </PermissionGuard>
-                </Space>
-            </div>
+                    </Space>
+                )}
+            />
 
-            <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
-                <Table<Service>
-                    columns={columns}
-                    dataSource={services.servicesData?.items ?? []}
-                    rowKey="id"
-                    loading={services.isLoading}
-                    pagination={{
-                        current: services.page,
-                        pageSize: services.pageSize,
-                        total: services.servicesData?.pagination?.total ?? 0,
-                        showTotal: (total) => t('table.total', { total }),
-                        onChange: (page, pageSize) => {
-                            services.setPage(page);
-                            services.setPageSize(pageSize);
-                        },
-                    }}
-                    size="middle"
-                />
-            </Card>
+            {(services.servicesData?.items?.length ?? 0) === 0 && !services.isLoading ? (
+                <SetupGuideCard variant="services" />
+            ) : (
+                <PageSurface flush={true}>
+                    <Table<Service>
+                        columns={columns}
+                        dataSource={services.servicesData?.items ?? []}
+                        rowKey="id"
+                        loading={services.isLoading}
+                        pagination={{
+                            current: services.page,
+                            pageSize: services.pageSize,
+                            total: services.servicesData?.pagination?.total ?? 0,
+                            showTotal: (total) => t('table.total', { total }),
+                            onChange: (page, pageSize) => {
+                                services.setPage(page);
+                                services.setPageSize(pageSize);
+                            },
+                        }}
+                        size="middle"
+                    />
+                </PageSurface>
+            )}
 
             <Modal
                 title={t('services.modal.create_title')}
@@ -185,7 +294,7 @@ export function ServicesManagementContent() {
                 }}
                 onCancel={services.closeCreateModal}
                 confirmLoading={services.createPending}
-                destroyOnHidden={true}
+                forceRender={true}
                 data-testid="service-create-modal"
             >
                 <Form form={services.form} layout="vertical" name="create-service">
@@ -193,7 +302,6 @@ export function ServicesManagementContent() {
                         name="system_id"
                         label={t('services.form.system_label')}
                         rules={[{ required: true, message: t('services.validation.system_required') }]}
-                        initialValue={services.activeSystemId}
                     >
                         <Select
                             placeholder={t('services.select_system')}
@@ -269,7 +377,7 @@ export function ServicesManagementContent() {
                 }}
                 onCancel={services.closeEditModal}
                 confirmLoading={services.updatePending}
-                destroyOnHidden={true}
+                forceRender={true}
                 data-testid="service-edit-modal"
             >
                 <Form form={services.editForm} layout="vertical" name="edit-service">
@@ -325,24 +433,208 @@ export function ServicesManagementContent() {
                 open={detailOpen}
                 onCancel={() => setDetailOpen(false)}
                 footer={[
+                    <Button
+                        key="request-vm"
+                        type="primary"
+                        onClick={() => {
+                            if (!detailService) {
+                                return;
+                            }
+                            const params = new URLSearchParams({
+                                request: 'create',
+                                system_id: detailService.system_id,
+                                service_id: detailService.id,
+                            });
+                            setDetailOpen(false);
+                            router.push(`/vms?${params.toString()}`);
+                        }}
+                    >
+                        {t('services.request_vm')}
+                    </Button>,
+                    <Button
+                        key="open-requests"
+                        onClick={() => {
+                            setDetailOpen(false);
+                            router.push('/tickets?tab=history');
+                        }}
+                    >
+                        {t('services.open_my_requests')}
+                    </Button>,
                     <Button key="close" onClick={() => setDetailOpen(false)}>
                         {t('button.close', 'Close')}
                     </Button>
                 ]}
-                destroyOnHidden
-                width={800}
+                forceRender                width={960}
             >
-                {detailService?.description ? (
-                    <div className="markdown-preview" style={{ padding: '16px', background: '#fafafa', borderRadius: 8, marginTop: 16 }}>
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-                            {detailService.description}
-                        </ReactMarkdown>
-                    </div>
-                ) : (
-                    <div style={{ padding: '24px', textAlign: 'center', color: '#999' }}>
-                        *No description provided*
-                    </div>
-                )}
+                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                    <Card size="small" title={t('services.context_title')}>
+                        <Descriptions size="small" column={2}>
+                            <Descriptions.Item label={t('services.context_system')}>
+                                {detailSystemName}
+                            </Descriptions.Item>
+                            <Descriptions.Item label={t('services.context_next_index')}>
+                                <Tag color="blue">{serviceContextQuery.data?.service.next_instance_index ?? detailService?.next_instance_index ?? 0}</Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label={t('table.created_at')}>
+                                <LocalDateTimeText value={serviceContextQuery.data?.service.created_at ?? detailService?.created_at} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label={t('services.context_summary')}>
+                                {t('services.context_summary_value', {
+                                    vmCount: serviceContextQuery.data?.summary.visible_vm_count ?? 0,
+                                    requestCount: serviceContextQuery.data?.summary.recent_request_count ?? 0,
+                                })}
+                            </Descriptions.Item>
+                        </Descriptions>
+                    </Card>
+
+                    <Card size="small" title={t('table.description')}>
+                        {(serviceContextQuery.data?.service.description ?? detailService?.description) ? (
+                            <div className="markdown-preview" style={{ padding: '8px 0' }}>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+                                    {serviceContextQuery.data?.service.description ?? detailService?.description ?? ''}
+                                </ReactMarkdown>
+                            </div>
+                        ) : (
+                            <ActionEmptyState
+                                compact={true}
+                                title={t('table.description')}
+                                description={t('services.empty_description')}
+                                visual={<ServiceWorkspaceGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                            />
+                        )}
+                    </Card>
+
+                    <Card
+                        size="small"
+                        title={t('services.related_vms_title')}
+                        extra={(
+                            <Button size="small" onClick={() => router.push('/vms')}>
+                                {t('services.open_vm_workspace')}
+                            </Button>
+                        )}
+                    >
+                        <Table<VM>
+                            rowKey="id"
+                            size="small"
+                            loading={serviceContextQuery.isLoading}
+                            pagination={false}
+                            dataSource={serviceRelatedVMs}
+                            locale={{
+                                emptyText: (
+                                    <ActionEmptyState
+                                        compact={true}
+                                        title={t('services.related_vms_title')}
+                                        description={t('services.related_vms_empty')}
+                                        visual={<VirtualMachinesOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                                    />
+                                ),
+                            }}
+                            columns={[
+                                {
+                                    title: t('table.name'),
+                                    dataIndex: 'name',
+                                    key: 'name',
+                                    render: (name: string) => <Text strong>{name}</Text>,
+                                },
+                                {
+                                    title: t('field.namespace', { ns: 'vm' }),
+                                    dataIndex: 'namespace',
+                                    key: 'namespace',
+                                },
+                                {
+                                    title: t('table.status'),
+                                    dataIndex: 'status',
+                                    key: 'status',
+                                    render: (status: string) => <Tag>{status}</Tag>,
+                                },
+                                {
+                                    title: t('table.actions'),
+                                    key: 'actions',
+                                    render: (_, record) => (
+                                        <Button
+                                            type="link"
+                                            size="small"
+                                            onClick={() => router.push(`/vms/${record.id}`)}
+                                        >
+                                            {t('services.open_vm_detail')}
+                                        </Button>
+                                    ),
+                                },
+                            ]}
+                        />
+                    </Card>
+
+                    <Card
+                        size="small"
+                        title={t('services.related_requests_title')}
+                        extra={(
+                            <Button size="small" onClick={() => router.push('/tickets?tab=history')}>
+                                {t('services.open_my_requests')}
+                            </Button>
+                        )}
+                    >
+                        <Table<Ticket>
+                            rowKey="id"
+                            size="small"
+                            loading={serviceContextQuery.isLoading}
+                            pagination={false}
+                            dataSource={serviceRelatedRequests}
+                            locale={{
+                                emptyText: (
+                                    <ActionEmptyState
+                                        compact={true}
+                                        title={t('services.related_requests_title')}
+                                        description={t('services.related_requests_empty')}
+                                        visual={<RequestsOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                                    />
+                                ),
+                            }}
+                            columns={[
+                                {
+                                    title: t('request_summary', { ns: 'approval' }),
+                                    key: 'request_summary',
+                                    render: (_, record) => {
+                                        const summaryMeta = approvalSummaryMeta(record, t);
+                                        return (
+                                            <Space direction="vertical" size={0}>
+                                                <Space size={8}>
+                                                    <FileTextOutlined style={{ color: '#1677ff' }} />
+                                                    <Text strong>{approvalSummaryTitle(record, t)}</Text>
+                                                </Space>
+                                                {summaryMeta.length > 0 && (
+                                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                                        {summaryMeta.join(' · ')}
+                                                    </Text>
+                                                )}
+                                                <Text copyable={{ text: record.id }} type="secondary" style={{ fontSize: 12 }}>
+                                                    {t('ticket_id', { ns: 'approval' })}: {formatApprovalRecordID(record.id)}
+                                                </Text>
+                                            </Space>
+                                        );
+                                    },
+                                },
+                                {
+                                    title: t('operation_type', { ns: 'approval' }),
+                                    dataIndex: 'operation_type',
+                                    key: 'operation_type',
+                                    render: (value: string) => <Tag>{value || '—'}</Tag>,
+                                },
+                                {
+                                    title: t('table.status'),
+                                    dataIndex: 'status',
+                                    key: 'status',
+                                    render: (status: string) => <Tag>{status}</Tag>,
+                                },
+                                {
+                                    title: t('table.created_at'),
+                                    dataIndex: 'created_at',
+                                    key: 'created_at',
+                                    render: (date: string) => <LocalDateTimeText value={date} />,
+                                },
+                            ]}
+                        />
+                    </Card>
+                </Space>
             </Modal>
         </div>
     );

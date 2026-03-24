@@ -2,10 +2,12 @@
 
 import { Form, message } from 'antd';
 import type { TFunction } from 'i18next';
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 
 import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
+import { translateApiError } from '@/lib/api/errorMessage';
+import { useScopeTargetCatalog } from '@/features/rbac-shared/useScopeTargetCatalog';
 
 import type {
     GlobalRoleBinding,
@@ -39,12 +41,14 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
     const [perPage, setPerPage] = useState(20);
     const [selectedSystemId, setSelectedSystemId] = useState<string>();
     const [addOpen, setAddOpen] = useState(false);
+    const [memberCandidateSearch, setMemberCandidateSearch] = useState('');
     const [createUserOpen, setCreateUserOpen] = useState(false);
     const [editUserOpen, setEditUserOpen] = useState(false);
     const [deletingUserId, setDeletingUserId] = useState<string>('');
     const [editingUserId, setEditingUserId] = useState<string>('');
     // Role bindings drawer
     const [roleBindingsUserId, setRoleBindingsUserId] = useState<string>('');
+    const [roleBindingsUserLabel, setRoleBindingsUserLabel] = useState('');
     const [roleBindingCreateOpen, setRoleBindingCreateOpen] = useState(false);
     const [deletingBindingId, setDeletingBindingId] = useState<string>('');
 
@@ -52,6 +56,8 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
     const [createUserForm] = Form.useForm<UserCreateRequest>();
     const [editUserForm] = Form.useForm<UserUpdateRequest>();
     const [roleBindingCreateForm] = Form.useForm<GlobalRoleBindingCreateRequest>();
+    const deferredMemberCandidateSearch = useDeferredValue(memberCandidateSearch.trim());
+    const { scopeTargetOptionsByType, scopeTargetLoadingByType } = useScopeTargetCatalog(roleBindingCreateOpen);
 
     const usersQuery = useApiGet<UserList>(
         ['admin-users', page, perPage],
@@ -69,6 +75,21 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         { enabled: Boolean(selectedSystemId) }
     );
 
+    const memberCandidatesQuery = useApiGet<UserList>(
+        ['system-member-candidates', selectedSystemId, deferredMemberCandidateSearch],
+        () => api.GET('/systems/{system_id}/member-candidates', {
+            params: {
+                path: { system_id: selectedSystemId! },
+                query: {
+                    page: 1,
+                    per_page: 50,
+                    ...(deferredMemberCandidateSearch ? { search: deferredMemberCandidateSearch } : {}),
+                },
+            },
+        }),
+        { enabled: addOpen && Boolean(selectedSystemId) }
+    );
+
     const rateLimitStatusQuery = useApiGet<RateLimitStatusList>(
         ['admin-rate-limit-status'],
         () => api.GET('/admin/rate-limits/status')
@@ -82,8 +103,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
 
     const rolesQuery = useApiGet<RoleList>(
         ['admin-roles-dropdown'],
-        () => api.GET('/admin/roles'),
-        { enabled: roleBindingCreateOpen }
+        () => api.GET('/admin/roles')
     );
 
     const createUserMutation = useApiMutation<UserCreateRequest, User>(
@@ -95,7 +115,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
                 setCreateUserOpen(false);
                 createUserForm.resetFields();
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -112,7 +132,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
                 setEditingUserId('');
                 editUserForm.resetFields();
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -126,7 +146,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
             },
             onError: (err) => {
                 setDeletingUserId('');
-                messageApi.error(err.message || t('common:message.error'));
+                messageApi.error(translateApiError(t, err));
             },
         }
     );
@@ -134,12 +154,12 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
     const addMemberMutation = useApiMutation<SystemMemberCreateRequest, SystemMember>(
         (req) => api.POST('/systems/{system_id}/members', { params: { path: { system_id: selectedSystemId! } }, body: req }),
         {
-            invalidateKeys: [['system-members', selectedSystemId]],
+            invalidateKeys: [['system-members', selectedSystemId], ['system-member-candidates', selectedSystemId]],
             onSuccess: () => {
                 messageApi.success(t('common:message.success'));
                 closeAddModal();
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -154,7 +174,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         {
             invalidateKeys: [['system-members', selectedSystemId]],
             onSuccess: () => messageApi.success(t('common:message.success')),
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -165,7 +185,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         {
             invalidateKeys: [['system-members', selectedSystemId]],
             onSuccess: () => messageApi.success(t('common:message.success')),
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -174,7 +194,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         {
             invalidateKeys: [['admin-rate-limit-status']],
             onSuccess: () => messageApi.success(t('common:message.success')),
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -185,7 +205,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         {
             invalidateKeys: [['admin-rate-limit-status']],
             onSuccess: () => messageApi.success(t('common:message.success')),
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -200,7 +220,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         {
             invalidateKeys: [['admin-rate-limit-status']],
             onSuccess: () => messageApi.success(t('common:message.success')),
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -211,12 +231,8 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         }),
         {
             invalidateKeys: [['user-role-bindings', roleBindingsUserId]],
-            onSuccess: () => {
-                messageApi.success(t('common:message.success'));
-                setRoleBindingCreateOpen(false);
-                roleBindingCreateForm.resetFields();
-            },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onSuccess: () => messageApi.success(t('common:message.success')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -232,7 +248,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
             },
             onError: (err) => {
                 setDeletingBindingId('');
-                messageApi.error(err.message || t('common:message.error'));
+                messageApi.error(translateApiError(t, err));
             },
         }
     );
@@ -242,11 +258,13 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
             messageApi.warning(t('users.members.select_system_first'));
             return;
         }
+        setMemberCandidateSearch('');
         setAddOpen(true);
     };
 
     const closeAddModal = () => {
         setAddOpen(false);
+        setMemberCandidateSearch('');
         addForm.resetFields();
     };
 
@@ -334,18 +352,21 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         updateUserOverrideMutation.mutate({ userId: userID, body });
     };
 
-    const openRoleBindingsModal = (userId: string) => {
-        setRoleBindingsUserId(userId);
+    const openRoleBindingsModal = (user: Pick<User, 'id' | 'username' | 'display_name'>) => {
+        setRoleBindingsUserId(user.id);
+        setRoleBindingsUserLabel(formatUserDisplayLabel(user));
     };
 
     const closeRoleBindingsModal = () => {
         setRoleBindingsUserId('');
+        setRoleBindingsUserLabel('');
         setRoleBindingCreateOpen(false);
         roleBindingCreateForm.resetFields();
     };
 
     const openRoleBindingCreateModal = () => {
         roleBindingCreateForm.resetFields();
+        roleBindingCreateForm.setFieldsValue({ scope_type: 'global' });
         setRoleBindingCreateOpen(true);
     };
 
@@ -356,7 +377,10 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
 
     const submitCreateRoleBinding = async () => {
         const values = await roleBindingCreateForm.validateFields();
-        createRoleBindingMutation.mutate(values);
+        await createRoleBindingMutation.mutateAsync(values);
+        await roleBindingsQuery.refetch();
+        setRoleBindingCreateOpen(false);
+        roleBindingCreateForm.resetFields();
     };
 
     const deleteRoleBinding = (bindingId: string) => {
@@ -380,6 +404,11 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         members: membersQuery.data,
         membersLoading: membersQuery.isLoading,
         refetchMembers: membersQuery.refetch,
+        memberCandidates: memberCandidatesQuery.data,
+        memberCandidatesLoading: memberCandidatesQuery.isLoading || memberCandidatesQuery.isFetching,
+        refetchMemberCandidates: memberCandidatesQuery.refetch,
+        memberCandidateSearch,
+        setMemberCandidateSearch,
         addOpen,
         addForm,
         openAddModal,
@@ -415,10 +444,13 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         deleteUserPending: deleteUserMutation.isPending,
         // Role bindings
         roleBindingsUserId,
+        roleBindingsUserLabel,
         roleBindings: roleBindingsQuery.data,
         roleBindingsLoading: roleBindingsQuery.isLoading,
         roles: rolesQuery.data,
         rolesLoading: rolesQuery.isLoading,
+        scopeTargetOptionsByType,
+        scopeTargetLoadingByType,
         roleBindingCreateOpen,
         roleBindingCreateForm,
         deletingBindingId,
@@ -431,4 +463,8 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         createRoleBindingPending: createRoleBindingMutation.isPending,
         deleteRoleBindingPending: deleteRoleBindingMutation.isPending,
     };
+}
+
+function formatUserDisplayLabel(user: Pick<User, 'username' | 'display_name'>) {
+    return user.display_name?.trim() || user.username;
 }

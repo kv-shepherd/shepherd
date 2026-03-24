@@ -12,13 +12,14 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalpolicy"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
@@ -52,16 +53,16 @@ func TestVMConsole_Request_TestEnvironmentIssuesDirectVNCURL(t *testing.T) {
 		t.Fatalf("ticket_id = %q, want empty in test env", toStringValue(resp["ticket_id"]))
 	}
 
-	count, err := client.ApprovalTicket.Query().Count(t.Context())
+	count, err := client.Ticket.Query().Count(t.Context())
 	if err != nil {
-		t.Fatalf("count approval tickets: %v", err)
+		t.Fatalf("count tickets: %v", err)
 	}
 	if count != 0 {
-		t.Fatalf("approval ticket count = %d, want 0", count)
+		t.Fatalf("ticket count = %d, want 0", count)
 	}
 }
 
-func TestVMConsole_Request_ProductionCreatesPendingApprovalTicket(t *testing.T) {
+func TestVMConsole_Request_ProductionCreatesPendingTicket(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newVMConsoleBehaviorTestServer(t)
@@ -86,12 +87,12 @@ func TestVMConsole_Request_ProductionCreatesPendingApprovalTicket(t *testing.T) 
 		t.Fatalf("vnc_url = %q, want empty in prod pending response", toStringValue(resp["vnc_url"]))
 	}
 
-	ticket, err := client.ApprovalTicket.Get(t.Context(), ticketID)
+	ticket, err := client.Ticket.Get(t.Context(), ticketID)
 	if err != nil {
-		t.Fatalf("get created approval ticket: %v", err)
+		t.Fatalf("get created ticket: %v", err)
 	}
-	if ticket.Status != approvalticket.StatusPENDING {
-		t.Fatalf("ticket status = %q, want %q", ticket.Status, approvalticket.StatusPENDING)
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %q, want %q", ticket.Status, entticket.StatusPENDING)
 	}
 	if ticket.Requester != "actor-1" {
 		t.Fatalf("ticket requester = %q, want %q", ticket.Requester, "actor-1")
@@ -131,12 +132,12 @@ func TestVMConsole_Request_ProductionExplicitNoApprovalIssuesDirectVNCURL(t *tes
 		t.Fatalf("vnc_url = %q, want %q", vncURL, "/api/v1/vms/"+vm.ID+"/vnc")
 	}
 
-	count, err := client.ApprovalTicket.Query().Count(t.Context())
+	count, err := client.Ticket.Query().Count(t.Context())
 	if err != nil {
-		t.Fatalf("count approval tickets: %v", err)
+		t.Fatalf("count tickets: %v", err)
 	}
 	if count != 0 {
-		t.Fatalf("approval ticket count = %d, want 0", count)
+		t.Fatalf("ticket count = %d, want 0", count)
 	}
 }
 
@@ -194,6 +195,43 @@ func TestVMConsole_Request_RejectsNonRunningVM(t *testing.T) {
 	assertErrorCode(t, w.Body.Bytes(), "VM_NOT_RUNNING")
 }
 
+func TestVMConsole_Request_RejectsWhenLiveStatusIsNotRunning(t *testing.T) {
+	t.Parallel()
+
+	_ = logger.Init("error", "json")
+	client := testutil.OpenEntPostgres(t, "vm_console_live_status")
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentTest, entvm.StatusRUNNING)
+
+	mock := provider.NewMockProvider()
+	mock.Seed([]*domain.VM{{
+		Name:            vm.Name,
+		Namespace:       vm.Namespace,
+		Cluster:         vm.ClusterID,
+		Status:          domain.VMStatusStopped,
+		ResourceVersion: "rv-console-live-1",
+	}})
+
+	srv := NewServer(ServerDeps{
+		EntClient:    client,
+		ApprovalReqs: service.NewApprovalRequirementService(client),
+		VMService:    service.NewVMService(mock),
+		JWTCfg: middleware.JWTConfig{
+			SigningKey: []byte("test-vnc-signing-key-123456789012345678901234"),
+			Issuer:     "shepherd-test",
+			ExpiresIn:  2 * time.Hour,
+		},
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	})
+
+	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
+	srv.RequestVMConsoleAccess(c, vm.ID)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusConflict, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "VM_NOT_RUNNING")
+}
+
 func TestVMConsole_Status_ProductionPendingAndApproved(t *testing.T) {
 	t.Parallel()
 
@@ -219,8 +257,8 @@ func TestVMConsole_Status_ProductionPendingAndApproved(t *testing.T) {
 		t.Fatalf("pending response status = %q, want %q", got, "PENDING_APPROVAL")
 	}
 
-	if _, err := client.ApprovalTicket.UpdateOneID(ticketID).
-		SetStatus(approvalticket.StatusAPPROVED).
+	if _, err := client.Ticket.UpdateOneID(ticketID).
+		SetStatus(entticket.StatusAPPROVED).
 		SetApprover("admin-1").
 		Save(t.Context()); err != nil {
 		t.Fatalf("approve seeded ticket: %v", err)
@@ -388,15 +426,15 @@ func mustSeedPendingVNCRequest(t *testing.T, client *ent.Client, vmID, clusterID
 		t.Fatalf("create vnc domain event: %v", err)
 	}
 
-	if _, err := client.ApprovalTicket.Create().
+	if _, err := client.Ticket.Create().
 		SetID(ticketID).
 		SetEventID(eventID).
 		SetRequester(actor).
-		SetStatus(approvalticket.StatusPENDING).
-		SetOperationType(approvalticket.OperationType("VNC_ACCESS")).
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationType("VNC_ACCESS")).
 		SetReason("vnc access request").
 		Save(t.Context()); err != nil {
-		t.Fatalf("create vnc approval ticket: %v", err)
+		t.Fatalf("create vnc ticket: %v", err)
 	}
 
 	return ticketID
@@ -427,7 +465,7 @@ func mustCreateVNCApprovalPolicy(
 
 func mustTicketEventID(t *testing.T, client *ent.Client, ticketID string) string {
 	t.Helper()
-	ticket, err := client.ApprovalTicket.Get(t.Context(), ticketID)
+	ticket, err := client.Ticket.Get(t.Context(), ticketID)
 	if err != nil {
 		t.Fatalf("get ticket %s: %v", ticketID, err)
 	}

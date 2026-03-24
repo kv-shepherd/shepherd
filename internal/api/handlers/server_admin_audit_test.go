@@ -20,7 +20,7 @@ func TestListAuditLogs_FiltersByApprovalDecisionAndPlacementReason(t *testing.T)
 		_, err := client.AuditLog.Create().
 			SetID("audit-" + uuid.NewString()).
 			SetAction(action).
-			SetResourceType("approval_ticket").
+			SetResourceType("ticket").
 			SetResourceID(resourceID).
 			SetActor("admin-1").
 			SetDetails(details).
@@ -76,6 +76,15 @@ func TestListAuditLogs_FiltersByApprovalDecisionAndPlacementReason(t *testing.T)
 	if resp.Items[0].ResourceId != "ticket-1" {
 		t.Fatalf("resource_id = %q, want ticket-1", resp.Items[0].ResourceId)
 	}
+	if resp.Items[0].ApprovalDecision != "validation_failed" {
+		t.Fatalf("approval_decision = %q, want validation_failed", resp.Items[0].ApprovalDecision)
+	}
+	if resp.Items[0].PlacementSummary == nil {
+		t.Fatal("placement_summary = nil, want non-nil")
+	}
+	if resp.Items[0].PlacementSummary.ReasonCode != "CLUSTER_POLICY_DENIED" {
+		t.Fatalf("placement_summary.reason_code = %q, want CLUSTER_POLICY_DENIED", resp.Items[0].PlacementSummary.ReasonCode)
+	}
 	if resp.Items[0].Details == nil {
 		t.Fatal("details = nil, want non-nil")
 	}
@@ -99,7 +108,7 @@ func TestListAuditLogs_FiltersByPlacementAdvisoryCode(t *testing.T) {
 		_, err := client.AuditLog.Create().
 			SetID("audit-" + uuid.NewString()).
 			SetAction(action).
-			SetResourceType("approval_ticket").
+			SetResourceType("ticket").
 			SetResourceID(resourceID).
 			SetActor("admin-1").
 			SetDetails(details).
@@ -147,6 +156,15 @@ func TestListAuditLogs_FiltersByPlacementAdvisoryCode(t *testing.T) {
 	}
 	if resp.Items[0].ResourceId != "ticket-1" {
 		t.Fatalf("resource_id = %q, want ticket-1", resp.Items[0].ResourceId)
+	}
+	if resp.Items[0].PlacementSummary == nil {
+		t.Fatal("placement_summary = nil, want non-nil")
+	}
+	if resp.Items[0].PlacementSummary.AdvisoryCode != "PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY" {
+		t.Fatalf(
+			"placement_summary.advisory_code = %q, want PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY",
+			resp.Items[0].PlacementSummary.AdvisoryCode,
+		)
 	}
 	if resp.Items[0].Details == nil {
 		t.Fatal("details = nil, want non-nil")

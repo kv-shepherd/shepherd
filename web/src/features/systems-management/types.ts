@@ -8,6 +8,7 @@ export type SystemMember = components['schemas']['SystemMember'];
 export type SystemMemberList = components['schemas']['SystemMemberList'];
 export type SystemMemberCreateRequest = components['schemas']['SystemMemberCreateRequest'];
 export type SystemMemberRoleUpdateRequest = components['schemas']['SystemMemberRoleUpdateRequest'];
+export type UserList = components['schemas']['UserList'];
 
 /** RFC 1035 label validation */
 export const RFC1035_PATTERN = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;

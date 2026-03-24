@@ -15,8 +15,8 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/authprovider"
-	"kv-shepherd.io/shepherd/ent/idpgroupmapping"
-	"kv-shepherd.io/shepherd/ent/idpsyncedgroup"
+	"kv-shepherd.io/shepherd/ent/externalcohort"
+	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
 	"kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
@@ -24,7 +24,7 @@ import (
 	entuser "kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
-	providerregistry "kv-shepherd.io/shepherd/internal/provider"
+	adminglobal "kv-shepherd.io/shepherd/internal/provider/adminglobal"
 	"kv-shepherd.io/shepherd/internal/service"
 )
 
@@ -149,21 +149,21 @@ const (
 )
 
 var permissionCatalog = map[string]string{
-	"approval:approve":             "Approve or reject approval tickets",
-	"approval:view":                "View approval tickets",
+	"builtin_approval:approve":     "Approve or reject built-in approval tasks",
+	"builtin_approval:view":        "View built-in approval tasks",
 	"audit:read":                   "Read audit logs",
 	"auth_provider:configure":      "Create authentication providers",
 	"auth_provider:delete":         "Delete authentication providers",
 	"auth_provider:manage":         "Manage authentication providers (compat)",
-	"auth_provider:mapping_create": "Create IdP group mappings",
-	"auth_provider:mapping_delete": "Delete IdP group mappings",
-	"auth_provider:mapping_update": "Update IdP group mappings",
+	"auth_provider:mapping_create": "Create external cohort mappings",
+	"auth_provider:mapping_delete": "Delete external cohort mappings",
+	"auth_provider:mapping_update": "Update external cohort mappings",
 	"auth_provider:read":           "Read authentication provider configuration",
-	"auth_provider:sync":           "Sync external groups for authentication providers",
+	"auth_provider:sync":           "Sync external cohorts for authentication providers",
 	"auth_provider:update":         "Update authentication providers",
 	"cluster:manage":               "Manage clusters (compat)",
 	"cluster:read":                 "Read clusters",
-	"cluster:write":                "Create or update clusters",
+	"cluster:write":                "Create, update, or delete clusters",
 	"instance_size:read":           "Read instance size catalog",
 	"instance_size:write":          "Create/update/delete instance sizes",
 	"platform:admin":               "Full platform management capability",
@@ -176,6 +176,7 @@ var permissionCatalog = map[string]string{
 	"system:delete":                "Delete systems",
 	"system:read":                  "Read system information",
 	"system:write":                 "Update system information",
+	"ticket:view":                  "View platform work-order tickets",
 	"template:manage":              "Manage templates (compat)",
 	"template:read":                "Read template catalog",
 	"template:write":               "Create/update/delete templates",
@@ -497,11 +498,35 @@ func (s *Server) DeleteAdminTemplate(c *gin.Context, templateID generated.Templa
 		return
 	}
 
-	if err := s.client.Template.DeleteOneID(templateID).Exec(ctx); err != nil {
+	tpl, err := s.client.Template.Get(ctx, templateID)
+	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "TEMPLATE_NOT_FOUND"})
 			return
 		}
+		logger.Error("failed to get admin template for delete", zap.Error(err), zap.String("template_id", templateID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	activeCreateCount, err := s.countActiveCreateTicketsForTemplate(ctx, tpl.ID)
+	if err != nil {
+		logger.Error("failed to check template active requests", zap.Error(err), zap.String("template_id", tpl.ID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if activeCreateCount > 0 {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "TEMPLATE_HAS_ACTIVE_REQUESTS",
+			Message: "template is referenced by active VM create requests",
+			Params: map[string]interface{}{
+				"active_request_count": activeCreateCount,
+			},
+		})
+		return
+	}
+
+	if err := s.client.Template.DeleteOneID(templateID).Exec(ctx); err != nil {
 		logger.Error("failed to delete admin template", zap.Error(err), zap.String("template_id", templateID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -837,11 +862,35 @@ func (s *Server) DeleteAdminInstanceSize(c *gin.Context, instanceSizeID generate
 		return
 	}
 
-	if err := s.client.InstanceSize.DeleteOneID(instanceSizeID).Exec(ctx); err != nil {
+	sz, err := s.client.InstanceSize.Get(ctx, instanceSizeID)
+	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "INSTANCE_SIZE_NOT_FOUND"})
 			return
 		}
+		logger.Error("failed to get admin instance size for delete", zap.Error(err), zap.String("instance_size_id", instanceSizeID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	activeCreateCount, err := s.countActiveCreateTicketsForInstanceSize(ctx, sz.ID)
+	if err != nil {
+		logger.Error("failed to check instance size active requests", zap.Error(err), zap.String("instance_size_id", sz.ID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if activeCreateCount > 0 {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "INSTANCE_SIZE_HAS_ACTIVE_REQUESTS",
+			Message: "instance size is referenced by active VM create requests",
+			Params: map[string]interface{}{
+				"active_request_count": activeCreateCount,
+			},
+		})
+		return
+	}
+
+	if err := s.client.InstanceSize.DeleteOneID(instanceSizeID).Exec(ctx); err != nil {
 		logger.Error("failed to delete admin instance size", zap.Error(err), zap.String("instance_size_id", instanceSizeID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -1104,7 +1153,7 @@ func (s *Server) ListAuthProviderTypes(c *gin.Context) {
 		return
 	}
 
-	types := providerregistry.ListAuthProviderAdminAdapterTypes()
+	types := adminglobal.List()
 	items := make([]generated.AuthProviderType, 0, len(types))
 	for _, tp := range types {
 		items = append(items, generated.AuthProviderType{
@@ -1142,7 +1191,13 @@ func (s *Server) ListAuthProviders(c *gin.Context) {
 
 	items := make([]generated.AuthProvider, 0, len(providers))
 	for _, provider := range providers {
-		items = append(items, authProviderToAPI(provider))
+		item, convErr := s.authProviderToAPI(provider)
+		if convErr != nil {
+			logger.Error("failed to sanitize auth provider config", zap.Error(convErr), zap.String("provider_id", provider.ID))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+		items = append(items, item)
 	}
 
 	c.JSON(http.StatusOK, generated.AuthProviderList{Items: items})
@@ -1186,7 +1241,13 @@ func (s *Server) CreateAuthProvider(c *gin.Context) {
 		SetAuthType(authType).
 		SetCreatedBy(actor)
 	if req.Config != nil {
-		create = create.SetConfig(req.Config)
+		storedConfig, codecErr := s.authProviderConfig.EncryptForStorage(authType, req.Config)
+		if codecErr != nil {
+			logger.Error("failed to encrypt auth provider config", zap.Error(codecErr), zap.String("auth_type", authType))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+		create = create.SetConfig(storedConfig)
 	}
 	if req.Enabled != nil {
 		create = create.SetEnabled(*req.Enabled)
@@ -1212,7 +1273,13 @@ func (s *Server) CreateAuthProvider(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusCreated, authProviderToAPI(provider))
+	resp, convErr := s.authProviderToAPI(provider)
+	if convErr != nil {
+		logger.Error("failed to sanitize created auth provider config", zap.Error(convErr), zap.String("provider_id", provider.ID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	c.JSON(http.StatusCreated, resp)
 }
 
 // UpdateAuthProvider handles PATCH /admin/auth-providers/{provider_id}.
@@ -1227,6 +1294,17 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerID generated.Provide
 		return
 	}
 
+	existing, err := s.client.AuthProvider.Get(ctx, providerID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to query auth provider for update", zap.Error(err), zap.String("provider_id", providerID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
 	update := s.client.AuthProvider.UpdateOneID(providerID)
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -1237,21 +1315,23 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerID generated.Provide
 		update = update.SetName(name)
 	}
 	if req.Config != nil {
-		existing, err := s.client.AuthProvider.Get(ctx, providerID)
-		if err != nil {
-			if ent.IsNotFound(err) {
-				c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
-				return
-			}
-			logger.Error("failed to query auth provider for update validation", zap.Error(err), zap.String("provider_id", providerID))
+		mergedConfig, mergeErr := s.authProviderConfig.MergeForUpdate(existing.AuthType, existing.Config, *req.Config)
+		if mergeErr != nil {
+			logger.Error("failed to merge auth provider config update", zap.Error(mergeErr), zap.String("provider_id", providerID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
-		if err := validateAuthProviderConfig(existing.AuthType, *req.Config); err != nil {
-			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
+		plainConfig, decryptErr := s.authProviderConfig.DecryptForUse(existing.AuthType, mergedConfig)
+		if decryptErr != nil {
+			logger.Error("failed to decrypt merged auth provider config", zap.Error(decryptErr), zap.String("provider_id", providerID))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
-		update = update.SetConfig(*req.Config)
+		if validateErr := validateAuthProviderConfig(existing.AuthType, plainConfig); validateErr != nil {
+			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: validateErr.Error()})
+			return
+		}
+		update = update.SetConfig(mergedConfig)
 	}
 	if req.Enabled != nil {
 		update = update.SetEnabled(*req.Enabled)
@@ -1279,7 +1359,13 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerID generated.Provide
 		_ = s.audit.LogAction(ctx, "auth_provider.update", "auth_provider", provider.ID, actor, nil)
 	}
 
-	c.JSON(http.StatusOK, authProviderToAPI(provider))
+	resp, convErr := s.authProviderToAPI(provider)
+	if convErr != nil {
+		logger.Error("failed to sanitize updated auth provider config", zap.Error(convErr), zap.String("provider_id", provider.ID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // DeleteAuthProvider handles DELETE /admin/auth-providers/{provider_id}.
@@ -1335,7 +1421,14 @@ func (s *Server) TestAuthProviderConnection(c *gin.Context, providerID generated
 		return
 	}
 
-	okConn, message, err := testAuthProviderConnection(ctx, provider.AuthType, provider.Config)
+	runtimeConfig, cfgErr := s.authProviderConfig.DecryptForUse(provider.AuthType, provider.Config)
+	if cfgErr != nil {
+		logger.Error("failed to decrypt auth provider config for test connection", zap.Error(cfgErr), zap.String("provider_id", providerID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	okConn, message, err := testAuthProviderConnection(ctx, provider.AuthType, runtimeConfig)
 	if err != nil {
 		logger.Error("failed to test auth provider connection", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -1370,17 +1463,36 @@ func (s *Server) GetAuthProviderSample(c *gin.Context, providerID generated.Prov
 		return
 	}
 
-	syncedGroups, err := s.client.IdPSyncedGroup.Query().
-		Where(idpsyncedgroup.ProviderIDEQ(providerID)).
-		Order(ent.Asc(idpsyncedgroup.FieldGroupName)).
+	syncedCohorts, err := s.client.ExternalCohort.Query().
+		Where(externalcohort.ProviderIDEQ(providerID)).
+		Order(ent.Asc(externalcohort.FieldCohortKind), ent.Asc(externalcohort.FieldDisplayName)).
 		All(ctx)
 	if err != nil {
-		logger.Error("failed to query synced groups for sample", zap.Error(err), zap.String("provider_id", providerID))
+		logger.Error("failed to query synced cohorts for sample", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
-	fields, err := buildAuthProviderSampleFields(ctx, provider.AuthType, provider.Config, syncedGroups)
+	runtimeConfig, cfgErr := s.authProviderConfig.DecryptForUse(provider.AuthType, provider.Config)
+	if cfgErr != nil {
+		logger.Error("failed to decrypt auth provider config for sample fields", zap.Error(cfgErr), zap.String("provider_id", providerID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	observedUsers, err := s.client.User.Query().
+		Where(entuser.AuthProviderIDEQ(providerID)).
+		WithDirectoryProfile().
+		Order(ent.Desc(entuser.FieldLastLoginAt), ent.Desc(entuser.FieldUpdatedAt)).
+		Limit(50).
+		All(ctx)
+	if err != nil {
+		logger.Error("failed to query observed auth provider users for sample fields", zap.Error(err), zap.String("provider_id", providerID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	fields, err := buildAuthProviderSampleFields(ctx, provider.AuthType, runtimeConfig, syncedCohorts, observedUsers)
 	if err != nil {
 		logger.Error("failed to build auth provider sample fields", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -1392,107 +1504,8 @@ func (s *Server) GetAuthProviderSample(c *gin.Context, providerID generated.Prov
 	})
 }
 
-// SyncAuthProviderGroups handles POST /admin/auth-providers/{provider_id}/sync.
-func (s *Server) SyncAuthProviderGroups(c *gin.Context, providerID generated.ProviderID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:sync", "auth_provider:manage")
-	if !ok {
-		return
-	}
-
-	if _, err := s.client.AuthProvider.Get(ctx, providerID); err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to get auth provider for group sync", zap.Error(err), zap.String("provider_id", providerID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	var req generated.AuthProviderGroupSyncRequest
-	if !bindAndValidateJSON(c, &req) {
-		return
-	}
-	sourceField := strings.TrimSpace(req.SourceField)
-	if sourceField == "" {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "source_field is required"})
-		return
-	}
-	groups := normalizeStringList(req.Groups)
-	if len(groups) == 0 {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "groups must not be empty"})
-		return
-	}
-
-	now := time.Now().UTC()
-	for _, grp := range groups {
-		existing, err := s.client.IdPSyncedGroup.Query().
-			Where(
-				idpsyncedgroup.ProviderIDEQ(providerID),
-				idpsyncedgroup.ExternalGroupIDEQ(grp),
-			).
-			Only(ctx)
-		if err != nil && !ent.IsNotFound(err) {
-			logger.Error("failed to query synced group", zap.Error(err), zap.String("provider_id", providerID), zap.String("group", grp))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		}
-
-		if ent.IsNotFound(err) {
-			id, _ := uuid.NewV7()
-			_, err = s.client.IdPSyncedGroup.Create().
-				SetID(id.String()).
-				SetProviderID(providerID).
-				SetExternalGroupID(grp).
-				SetGroupName(grp).
-				SetSourceField(sourceField).
-				SetLastSyncedAt(now).
-				Save(ctx)
-			if err != nil {
-				logger.Error("failed to create synced group", zap.Error(err), zap.String("provider_id", providerID), zap.String("group", grp))
-				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-				return
-			}
-			continue
-		}
-
-		if _, err := existing.Update().
-			SetGroupName(grp).
-			SetSourceField(sourceField).
-			SetLastSyncedAt(now).
-			Save(ctx); err != nil {
-			logger.Error("failed to update synced group", zap.Error(err), zap.String("provider_id", providerID), zap.String("group", grp))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		}
-	}
-
-	syncedGroups, err := s.client.IdPSyncedGroup.Query().
-		Where(idpsyncedgroup.ProviderIDEQ(providerID)).
-		Order(ent.Asc(idpsyncedgroup.FieldGroupName)).
-		All(ctx)
-	if err != nil {
-		logger.Error("failed to list synced groups after sync", zap.Error(err), zap.String("provider_id", providerID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "auth_provider.sync", "auth_provider", providerID, actor, map[string]interface{}{
-			"source_field": sourceField,
-			"group_count":  len(groups),
-		})
-	}
-
-	items := make([]generated.IdPSyncedGroup, 0, len(syncedGroups))
-	for _, grp := range syncedGroups {
-		items = append(items, syncedGroupToAPI(grp))
-	}
-	c.JSON(http.StatusOK, generated.AuthProviderGroupSyncResponse{Items: items})
-}
-
-// ListAuthProviderGroupMappings handles GET /admin/auth-providers/{provider_id}/group-mappings.
-func (s *Server) ListAuthProviderGroupMappings(c *gin.Context, providerID generated.ProviderID) {
+// ListAuthProviderCohorts handles GET /admin/auth-providers/{provider_id}/cohorts.
+func (s *Server) ListAuthProviderCohorts(c *gin.Context, providerID generated.ProviderID) {
 	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
 	if !ok {
 		return
@@ -1503,17 +1516,148 @@ func (s *Server) ListAuthProviderGroupMappings(c *gin.Context, providerID genera
 			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get auth provider for mapping list", zap.Error(err), zap.String("provider_id", providerID))
+		logger.Error("failed to get auth provider for cohort list", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
-	mappings, err := s.client.IdPGroupMapping.Query().
-		Where(idpgroupmapping.ProviderIDEQ(providerID)).
-		Order(ent.Asc(idpgroupmapping.FieldExternalGroupID)).
+	cohorts, err := s.listExternalCohorts(ctx, providerID)
+	if err != nil {
+		logger.Error("failed to list external cohorts", zap.Error(err), zap.String("provider_id", providerID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	items := make([]generated.ExternalCohort, 0, len(cohorts))
+	for _, cohort := range cohorts {
+		items = append(items, externalCohortToAPI(cohort))
+	}
+	c.JSON(http.StatusOK, generated.ExternalCohortList{Items: items})
+}
+
+// SyncAuthProviderCohorts handles POST /admin/auth-providers/{provider_id}/cohorts/sync.
+func (s *Server) SyncAuthProviderCohorts(c *gin.Context, providerID generated.ProviderID) {
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:sync", "auth_provider:manage")
+	if !ok {
+		return
+	}
+
+	if _, err := s.client.AuthProvider.Get(ctx, providerID); err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to get auth provider for cohort sync", zap.Error(err), zap.String("provider_id", providerID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	var req generated.ExternalCohortSyncRequest
+	if !bindAndValidateJSON(c, &req) {
+		return
+	}
+	cohortKind := strings.TrimSpace(req.CohortKind)
+	sourceField := strings.TrimSpace(req.SourceField)
+	if cohortKind == "" || sourceField == "" {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "cohort_kind and source_field are required"})
+		return
+	}
+	cohortKeys := normalizeStringList(req.Cohorts)
+	if len(cohortKeys) == 0 {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "cohorts must not be empty"})
+		return
+	}
+
+	now := time.Now().UTC()
+	for _, cohortKey := range cohortKeys {
+		existing, err := s.client.ExternalCohort.Query().
+			Where(
+				externalcohort.ProviderIDEQ(providerID),
+				externalcohort.CohortKindEQ(cohortKind),
+				externalcohort.CohortKeyEQ(cohortKey),
+			).
+			Only(ctx)
+		if err != nil && !ent.IsNotFound(err) {
+			logger.Error("failed to query synced cohort", zap.Error(err), zap.String("provider_id", providerID), zap.String("cohort_kind", cohortKind), zap.String("cohort_key", cohortKey))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+
+		if ent.IsNotFound(err) {
+			id, _ := uuid.NewV7()
+			_, err = s.client.ExternalCohort.Create().
+				SetID(id.String()).
+				SetProviderID(providerID).
+				SetCohortKind(cohortKind).
+				SetCohortKey(cohortKey).
+				SetDisplayName(cohortKey).
+				SetSourceField(sourceField).
+				SetLastSyncedAt(now).
+				Save(ctx)
+			if err != nil {
+				logger.Error("failed to create synced cohort", zap.Error(err), zap.String("provider_id", providerID), zap.String("cohort_kind", cohortKind), zap.String("cohort_key", cohortKey))
+				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+				return
+			}
+			continue
+		}
+
+		if _, err := existing.Update().
+			SetDisplayName(cohortKey).
+			SetSourceField(sourceField).
+			SetLastSyncedAt(now).
+			Save(ctx); err != nil {
+			logger.Error("failed to update synced cohort", zap.Error(err), zap.String("provider_id", providerID), zap.String("cohort_kind", cohortKind), zap.String("cohort_key", cohortKey))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+	}
+
+	syncedCohorts, err := s.listExternalCohorts(ctx, providerID)
+	if err != nil {
+		logger.Error("failed to list synced cohorts after sync", zap.Error(err), zap.String("provider_id", providerID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if s.audit != nil {
+		_ = s.audit.LogAction(ctx, "auth_provider.sync", "auth_provider", providerID, actor, map[string]interface{}{
+			"cohort_kind":  cohortKind,
+			"source_field": sourceField,
+			"cohort_count": len(cohortKeys),
+		})
+	}
+
+	items := make([]generated.ExternalCohort, 0, len(syncedCohorts))
+	for _, cohort := range syncedCohorts {
+		items = append(items, externalCohortToAPI(cohort))
+	}
+	c.JSON(http.StatusOK, generated.ExternalCohortSyncResponse{Items: items})
+}
+
+// ListAuthProviderCohortMappings handles GET /admin/auth-providers/{provider_id}/cohort-mappings.
+func (s *Server) ListAuthProviderCohortMappings(c *gin.Context, providerID generated.ProviderID) {
+	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
+	if !ok {
+		return
+	}
+
+	if _, err := s.client.AuthProvider.Get(ctx, providerID); err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to get auth provider for cohort mapping list", zap.Error(err), zap.String("provider_id", providerID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	mappings, err := s.client.ExternalCohortMapping.Query().
+		Where(externalcohortmapping.ProviderIDEQ(providerID)).
+		Order(ent.Asc(externalcohortmapping.FieldCohortKind), ent.Asc(externalcohortmapping.FieldCohortKey)).
 		All(ctx)
 	if err != nil {
-		logger.Error("failed to list idp group mappings", zap.Error(err), zap.String("provider_id", providerID))
+		logger.Error("failed to list external cohort mappings", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1524,22 +1668,22 @@ func (s *Server) ListAuthProviderGroupMappings(c *gin.Context, providerID genera
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
-	groupNameByID, err := s.syncedGroupNameMapByProvider(ctx, providerID)
+	cohortDisplayNameByRef, err := s.externalCohortDisplayNameMapByProvider(ctx, providerID)
 	if err != nil {
-		logger.Error("failed to resolve group names for mappings", zap.Error(err), zap.String("provider_id", providerID))
+		logger.Error("failed to resolve cohort display names for mappings", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
-	items := make([]generated.IdPGroupMapping, 0, len(mappings))
+	items := make([]generated.ExternalCohortMapping, 0, len(mappings))
 	for _, m := range mappings {
-		items = append(items, idpGroupMappingToAPI(m, roleNameByID[m.RoleID], groupNameByID[m.ExternalGroupID]))
+		items = append(items, externalCohortMappingToAPI(m, roleNameByID[m.RoleID], cohortDisplayNameByRef[externalCohortRefKey(m.CohortKind, m.CohortKey)]))
 	}
-	c.JSON(http.StatusOK, generated.IdPGroupMappingList{Items: items})
+	c.JSON(http.StatusOK, generated.ExternalCohortMappingList{Items: items})
 }
 
-// CreateAuthProviderGroupMapping handles POST /admin/auth-providers/{provider_id}/group-mappings.
-func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerID generated.ProviderID) {
+// CreateAuthProviderCohortMapping handles POST /admin/auth-providers/{provider_id}/cohort-mappings.
+func (s *Server) CreateAuthProviderCohortMapping(c *gin.Context, providerID generated.ProviderID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_create", "auth_provider:manage")
 	if !ok {
 		return
@@ -1550,20 +1694,21 @@ func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerID gener
 			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get auth provider for mapping create", zap.Error(err), zap.String("provider_id", providerID))
+		logger.Error("failed to get auth provider for cohort mapping create", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
-	var req generated.IdPGroupMappingCreateRequest
+	var req generated.ExternalCohortMappingCreateRequest
 	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
-	externalGroupID := strings.TrimSpace(req.ExternalGroupId)
+	cohortKind := strings.TrimSpace(req.CohortKind)
+	cohortKey := strings.TrimSpace(req.CohortKey)
 	roleID := strings.TrimSpace(req.RoleId)
-	if externalGroupID == "" || roleID == "" {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "external_group_id and role_id are required"})
+	if cohortKind == "" || cohortKey == "" || roleID == "" {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "cohort_kind, cohort_key, and role_id are required"})
 		return
 	}
 	roleEnt, err := s.client.Role.Get(ctx, roleID)
@@ -1572,7 +1717,7 @@ func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerID gener
 			c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to query role for idp mapping create", zap.Error(err), zap.String("role_id", roleID))
+		logger.Error("failed to query role for cohort mapping create", zap.Error(err), zap.String("role_id", roleID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1582,23 +1727,24 @@ func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerID gener
 		scopeType = "global"
 	}
 	scopeID := strings.TrimSpace(req.ScopeId)
-	allowedEnvs := normalizeIDPAllowedEnvironmentsCreate(req.AllowedEnvironments)
+	allowedEnvs := normalizeExternalCohortAllowedEnvironmentsCreate(req.AllowedEnvironments)
 
-	groupName := strings.TrimSpace(req.GroupName)
-	if groupName == "" {
-		groupName = externalGroupID
+	cohortDisplayName := strings.TrimSpace(req.CohortDisplayName)
+	if cohortDisplayName == "" {
+		cohortDisplayName = cohortKey
 	}
-	if syncErr := s.ensureSyncedGroup(ctx, providerID, externalGroupID, groupName); syncErr != nil {
-		logger.Error("failed to ensure synced group before mapping create", zap.Error(syncErr), zap.String("provider_id", providerID), zap.String("group", externalGroupID))
+	if syncErr := s.ensureExternalCohort(ctx, providerID, cohortKind, cohortKey, cohortDisplayName); syncErr != nil {
+		logger.Error("failed to ensure external cohort before mapping create", zap.Error(syncErr), zap.String("provider_id", providerID), zap.String("cohort_kind", cohortKind), zap.String("cohort_key", cohortKey))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	id, _ := uuid.NewV7()
-	mapping, err := s.client.IdPGroupMapping.Create().
+	mapping, err := s.client.ExternalCohortMapping.Create().
 		SetID(id.String()).
 		SetProviderID(providerID).
-		SetExternalGroupID(externalGroupID).
+		SetCohortKind(cohortKind).
+		SetCohortKey(cohortKey).
 		SetRoleID(roleID).
 		SetScopeType(scopeType).
 		SetScopeID(scopeID).
@@ -1607,10 +1753,10 @@ func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerID gener
 		Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			c.JSON(http.StatusConflict, generated.Error{Code: "IDP_GROUP_MAPPING_EXISTS"})
+			c.JSON(http.StatusConflict, generated.Error{Code: "EXTERNAL_COHORT_MAPPING_EXISTS"})
 			return
 		}
-		logger.Error("failed to create idp mapping", zap.Error(err), zap.String("provider_id", providerID), zap.String("group", externalGroupID))
+		logger.Error("failed to create external cohort mapping", zap.Error(err), zap.String("provider_id", providerID), zap.String("cohort_kind", cohortKind), zap.String("cohort_key", cohortKey))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1621,30 +1767,30 @@ func (s *Server) CreateAuthProviderGroupMapping(c *gin.Context, providerID gener
 		})
 	}
 
-	c.JSON(http.StatusCreated, idpGroupMappingToAPI(mapping, roleEnt.Name, groupName))
+	c.JSON(http.StatusCreated, externalCohortMappingToAPI(mapping, roleEnt.Name, cohortDisplayName))
 }
 
-// UpdateAuthProviderGroupMapping handles PATCH /admin/auth-providers/{provider_id}/group-mappings/{mapping_id}.
-func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerID generated.ProviderID, mappingID generated.MappingID) {
+// UpdateAuthProviderCohortMapping handles PATCH /admin/auth-providers/{provider_id}/cohort-mappings/{mapping_id}.
+func (s *Server) UpdateAuthProviderCohortMapping(c *gin.Context, providerID generated.ProviderID, mappingID generated.MappingID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_update", "auth_provider:manage")
 	if !ok {
 		return
 	}
 
-	var req generated.IdPGroupMappingUpdateRequest
+	var req generated.ExternalCohortMappingUpdateRequest
 	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
-	mapping, err := s.client.IdPGroupMapping.Query().
-		Where(idpgroupmapping.IDEQ(mappingID), idpgroupmapping.ProviderIDEQ(providerID)).
+	mapping, err := s.client.ExternalCohortMapping.Query().
+		Where(externalcohortmapping.IDEQ(mappingID), externalcohortmapping.ProviderIDEQ(providerID)).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "IDP_GROUP_MAPPING_NOT_FOUND"})
+			c.JSON(http.StatusNotFound, generated.Error{Code: "EXTERNAL_COHORT_MAPPING_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to query idp mapping for update", zap.Error(err), zap.String("mapping_id", mappingID))
+		logger.Error("failed to query external cohort mapping for update", zap.Error(err), zap.String("mapping_id", mappingID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1658,7 +1804,7 @@ func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerID gener
 				c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_NOT_FOUND"})
 				return
 			}
-			logger.Error("failed to query role for idp mapping update", zap.Error(roleErr), zap.String("role_id", roleID))
+			logger.Error("failed to query role for external cohort mapping update", zap.Error(roleErr), zap.String("role_id", roleID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -1673,16 +1819,16 @@ func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerID gener
 		update = update.SetScopeID(strings.TrimSpace(req.ScopeId))
 	}
 	if req.AllowedEnvironments != nil {
-		update = update.SetAllowedEnvironments(normalizeIDPAllowedEnvironmentsUpdate(req.AllowedEnvironments))
+		update = update.SetAllowedEnvironments(normalizeExternalCohortAllowedEnvironmentsUpdate(req.AllowedEnvironments))
 	}
 
 	updated, err := update.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			c.JSON(http.StatusConflict, generated.Error{Code: "IDP_GROUP_MAPPING_EXISTS"})
+			c.JSON(http.StatusConflict, generated.Error{Code: "EXTERNAL_COHORT_MAPPING_EXISTS"})
 			return
 		}
-		logger.Error("failed to update idp mapping", zap.Error(err), zap.String("mapping_id", mappingID))
+		logger.Error("failed to update external cohort mapping", zap.Error(err), zap.String("mapping_id", mappingID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1690,9 +1836,9 @@ func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerID gener
 	if roleName == "" {
 		roleName = roleNameByID(ctx, s.client, updated.RoleID)
 	}
-	groupName := syncedGroupNameByExternalID(ctx, s.client, providerID, updated.ExternalGroupID)
-	if groupName == "" {
-		groupName = updated.ExternalGroupID
+	cohortDisplayName := externalCohortDisplayNameByRef(ctx, s.client, providerID, updated.CohortKind, updated.CohortKey)
+	if cohortDisplayName == "" {
+		cohortDisplayName = updated.CohortKey
 	}
 
 	if s.audit != nil {
@@ -1701,26 +1847,26 @@ func (s *Server) UpdateAuthProviderGroupMapping(c *gin.Context, providerID gener
 		})
 	}
 
-	c.JSON(http.StatusOK, idpGroupMappingToAPI(updated, roleName, groupName))
+	c.JSON(http.StatusOK, externalCohortMappingToAPI(updated, roleName, cohortDisplayName))
 }
 
-// DeleteAuthProviderGroupMapping handles DELETE /admin/auth-providers/{provider_id}/group-mappings/{mapping_id}.
-func (s *Server) DeleteAuthProviderGroupMapping(c *gin.Context, providerID generated.ProviderID, mappingID generated.MappingID) {
+// DeleteAuthProviderCohortMapping handles DELETE /admin/auth-providers/{provider_id}/cohort-mappings/{mapping_id}.
+func (s *Server) DeleteAuthProviderCohortMapping(c *gin.Context, providerID generated.ProviderID, mappingID generated.MappingID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_delete", "auth_provider:manage")
 	if !ok {
 		return
 	}
 
-	count, err := s.client.IdPGroupMapping.Delete().
-		Where(idpgroupmapping.IDEQ(mappingID), idpgroupmapping.ProviderIDEQ(providerID)).
+	count, err := s.client.ExternalCohortMapping.Delete().
+		Where(externalcohortmapping.IDEQ(mappingID), externalcohortmapping.ProviderIDEQ(providerID)).
 		Exec(ctx)
 	if err != nil {
-		logger.Error("failed to delete idp mapping", zap.Error(err), zap.String("mapping_id", mappingID))
+		logger.Error("failed to delete external cohort mapping", zap.Error(err), zap.String("mapping_id", mappingID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 	if count == 0 {
-		c.JSON(http.StatusNotFound, generated.Error{Code: "IDP_GROUP_MAPPING_NOT_FOUND"})
+		c.JSON(http.StatusNotFound, generated.Error{Code: "EXTERNAL_COHORT_MAPPING_NOT_FOUND"})
 		return
 	}
 
@@ -1734,7 +1880,7 @@ func (s *Server) DeleteAuthProviderGroupMapping(c *gin.Context, providerID gener
 }
 
 func testAuthProviderConnection(ctx context.Context, authType string, config map[string]interface{}) (ok bool, message string, err error) {
-	adapter := providerregistry.ResolveAuthProviderAdminAdapter(authType)
+	adapter := adminglobal.Resolve(authType)
 	if adapter == nil {
 		return false, "no adapter registered", nil
 	}
@@ -1751,11 +1897,12 @@ func buildAuthProviderSampleFields(
 	ctx context.Context,
 	authType string,
 	config map[string]interface{},
-	syncedGroups []*ent.IdPSyncedGroup,
+	syncedCohorts []*ent.ExternalCohort,
+	observedUsers []*ent.User,
 ) ([]generated.AuthProviderSampleField, error) {
 	acc := map[string]*sampleFieldAccumulator{}
 
-	if adapter := providerregistry.ResolveAuthProviderAdminAdapter(authType); adapter != nil {
+	if adapter := adminglobal.Resolve(authType); adapter != nil {
 		pluginFields, err := adapter.SampleFields(ctx, config)
 		if err != nil {
 			return nil, err
@@ -1788,12 +1935,30 @@ func buildAuthProviderSampleFields(
 			}
 		}
 	}
-	if len(syncedGroups) > 0 {
-		groups := make([]interface{}, 0, len(syncedGroups))
-		for _, grp := range syncedGroups {
-			groups = append(groups, grp.ExternalGroupID)
+	if len(syncedCohorts) > 0 {
+		cohorts := make([]interface{}, 0, len(syncedCohorts))
+		for _, cohort := range syncedCohorts {
+			cohorts = append(cohorts, cohort.CohortKind+":"+cohort.CohortKey)
 		}
-		addSampleValue(acc, "groups", groups)
+		addSampleValue(acc, "cohorts", cohorts)
+	}
+	for _, observed := range observedUsers {
+		if observed == nil {
+			continue
+		}
+		addSampleValue(acc, "external_id", observed.ExternalID)
+		addSampleValue(acc, "username", observed.Username)
+		addSampleValue(acc, "display_name", observed.DisplayName)
+		addSampleValue(acc, "email", observed.Email)
+		addSampleValue(acc, "enabled", observed.Enabled)
+		if profile := observed.Edges.DirectoryProfile; profile != nil {
+			for fieldName, raw := range profile.Attributes {
+				if strings.EqualFold(strings.TrimSpace(fieldName), "external_cohorts") {
+					continue
+				}
+				addSampleValue(acc, fieldName, raw)
+			}
+		}
 	}
 
 	fields := make([]generated.AuthProviderSampleField, 0, len(acc))
@@ -1904,23 +2069,23 @@ func cloneStringSlice(items []string) []string {
 	return out
 }
 
-func normalizeIDPAllowedEnvironmentsCreate(raw []generated.IdPGroupMappingCreateRequestAllowedEnvironments) []string {
+func normalizeExternalCohortAllowedEnvironmentsCreate(raw []generated.ExternalCohortMappingCreateRequestAllowedEnvironments) []string {
 	plain := make([]string, 0, len(raw))
 	for _, env := range raw {
 		plain = append(plain, string(env))
 	}
-	return normalizeIDPAllowedEnvironments(plain)
+	return normalizeExternalCohortAllowedEnvironments(plain)
 }
 
-func normalizeIDPAllowedEnvironmentsUpdate(raw []generated.IdPGroupMappingUpdateRequestAllowedEnvironments) []string {
+func normalizeExternalCohortAllowedEnvironmentsUpdate(raw []generated.ExternalCohortMappingUpdateRequestAllowedEnvironments) []string {
 	plain := make([]string, 0, len(raw))
 	for _, env := range raw {
 		plain = append(plain, string(env))
 	}
-	return normalizeIDPAllowedEnvironments(plain)
+	return normalizeExternalCohortAllowedEnvironments(plain)
 }
 
-func normalizeIDPAllowedEnvironments(raw []string) []string {
+func normalizeExternalCohortAllowedEnvironments(raw []string) []string {
 	const (
 		envTest = "test"
 		envProd = "prod"
@@ -1943,9 +2108,13 @@ func normalizeIDPAllowedEnvironments(raw []string) []string {
 	return out
 }
 
-func (s *Server) ensureSyncedGroup(ctx context.Context, providerID, externalGroupID, groupName string) error {
-	_, err := s.client.IdPSyncedGroup.Query().
-		Where(idpsyncedgroup.ProviderIDEQ(providerID), idpsyncedgroup.ExternalGroupIDEQ(externalGroupID)).
+func (s *Server) ensureExternalCohort(ctx context.Context, providerID, cohortKind, cohortKey, displayName string) error {
+	_, err := s.client.ExternalCohort.Query().
+		Where(
+			externalcohort.ProviderIDEQ(providerID),
+			externalcohort.CohortKindEQ(cohortKind),
+			externalcohort.CohortKeyEQ(cohortKey),
+		).
 		Only(ctx)
 	if err == nil {
 		return nil
@@ -1954,17 +2123,18 @@ func (s *Server) ensureSyncedGroup(ctx context.Context, providerID, externalGrou
 		return err
 	}
 	id, _ := uuid.NewV7()
-	_, err = s.client.IdPSyncedGroup.Create().
+	_, err = s.client.ExternalCohort.Create().
 		SetID(id.String()).
 		SetProviderID(providerID).
-		SetExternalGroupID(externalGroupID).
-		SetGroupName(groupName).
+		SetCohortKind(cohortKind).
+		SetCohortKey(cohortKey).
+		SetDisplayName(displayName).
 		SetLastSyncedAt(time.Now().UTC()).
 		Save(ctx)
 	return err
 }
 
-func (s *Server) roleNameMapByMappings(ctx context.Context, mappings []*ent.IdPGroupMapping) (map[string]string, error) {
+func (s *Server) roleNameMapByMappings(ctx context.Context, mappings []*ent.ExternalCohortMapping) (map[string]string, error) {
 	roleIDs := make([]string, 0, len(mappings))
 	seen := make(map[string]struct{}, len(mappings))
 	for _, m := range mappings {
@@ -1988,16 +2158,16 @@ func (s *Server) roleNameMapByMappings(ctx context.Context, mappings []*ent.IdPG
 	return out, nil
 }
 
-func (s *Server) syncedGroupNameMapByProvider(ctx context.Context, providerID string) (map[string]string, error) {
-	groups, err := s.client.IdPSyncedGroup.Query().
-		Where(idpsyncedgroup.ProviderIDEQ(providerID)).
+func (s *Server) externalCohortDisplayNameMapByProvider(ctx context.Context, providerID string) (map[string]string, error) {
+	cohorts, err := s.client.ExternalCohort.Query().
+		Where(externalcohort.ProviderIDEQ(providerID)).
 		All(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]string, len(groups))
-	for _, g := range groups {
-		out[g.ExternalGroupID] = g.GroupName
+	out := make(map[string]string, len(cohorts))
+	for _, cohort := range cohorts {
+		out[externalCohortRefKey(cohort.CohortKind, cohort.CohortKey)] = cohort.DisplayName
 	}
 	return out, nil
 }
@@ -2010,44 +2180,61 @@ func roleNameByID(ctx context.Context, client *ent.Client, roleID string) string
 	return r.Name
 }
 
-func syncedGroupNameByExternalID(ctx context.Context, client *ent.Client, providerID, externalGroupID string) string {
-	grp, err := client.IdPSyncedGroup.Query().
+func externalCohortDisplayNameByRef(ctx context.Context, client *ent.Client, providerID, cohortKind, cohortKey string) string {
+	cohort, err := client.ExternalCohort.Query().
 		Where(
-			idpsyncedgroup.ProviderIDEQ(providerID),
-			idpsyncedgroup.ExternalGroupIDEQ(externalGroupID),
+			externalcohort.ProviderIDEQ(providerID),
+			externalcohort.CohortKindEQ(cohortKind),
+			externalcohort.CohortKeyEQ(cohortKey),
 		).
 		Only(ctx)
 	if err != nil {
 		return ""
 	}
-	return grp.GroupName
+	return cohort.DisplayName
 }
 
-func syncedGroupToAPI(g *ent.IdPSyncedGroup) generated.IdPSyncedGroup {
+func externalCohortRefKey(kind, key string) string {
+	return strings.TrimSpace(strings.ToLower(kind)) + "|" + strings.TrimSpace(key)
+}
+
+func (s *Server) listExternalCohorts(ctx context.Context, providerID string) ([]*ent.ExternalCohort, error) {
+	return s.client.ExternalCohort.Query().
+		Where(externalcohort.ProviderIDEQ(providerID)).
+		Order(ent.Asc(externalcohort.FieldCohortKind), ent.Asc(externalcohort.FieldDisplayName)).
+		All(ctx)
+}
+
+func externalCohortToAPI(item *ent.ExternalCohort) generated.ExternalCohort {
 	last := time.Time{}
-	if g.LastSyncedAt != nil {
-		last = *g.LastSyncedAt
+	if item.LastSyncedAt != nil {
+		last = *item.LastSyncedAt
 	}
-	return generated.IdPSyncedGroup{
-		Id:              g.ID,
-		ProviderId:      g.ProviderID,
-		ExternalGroupId: g.ExternalGroupID,
-		GroupName:       g.GroupName,
-		SourceField:     g.SourceField,
-		LastSyncedAt:    last,
+	return generated.ExternalCohort{
+		Id:           item.ID,
+		ProviderId:   item.ProviderID,
+		CohortKind:   item.CohortKind,
+		CohortKey:    item.CohortKey,
+		DisplayName:  item.DisplayName,
+		SourceField:  item.SourceField,
+		LastSyncedAt: last,
 	}
 }
 
-func idpGroupMappingToAPI(m *ent.IdPGroupMapping, roleName, groupName string) generated.IdPGroupMapping {
-	allowed := make([]generated.IdPGroupMappingAllowedEnvironments, 0, len(m.AllowedEnvironments))
+func externalCohortMappingToAPI(
+	m *ent.ExternalCohortMapping,
+	roleName, cohortDisplayName string,
+) generated.ExternalCohortMapping {
+	allowed := make([]generated.ExternalCohortMappingAllowedEnvironments, 0, len(m.AllowedEnvironments))
 	for _, env := range m.AllowedEnvironments {
-		allowed = append(allowed, generated.IdPGroupMappingAllowedEnvironments(env))
+		allowed = append(allowed, generated.ExternalCohortMappingAllowedEnvironments(env))
 	}
-	return generated.IdPGroupMapping{
+	return generated.ExternalCohortMapping{
 		Id:                  m.ID,
 		ProviderId:          m.ProviderID,
-		ExternalGroupId:     m.ExternalGroupID,
-		GroupName:           groupName,
+		CohortKind:          m.CohortKind,
+		CohortKey:           m.CohortKey,
+		CohortDisplayName:   cohortDisplayName,
 		RoleId:              m.RoleID,
 		RoleName:            roleName,
 		ScopeType:           m.ScopeType,
@@ -2341,7 +2528,7 @@ func parseAuthProviderType(raw string) (string, error) {
 }
 
 func validateAuthProviderConfig(authType string, config map[string]interface{}) error {
-	adapter := providerregistry.ResolveAuthProviderAdminAdapter(authType)
+	adapter := adminglobal.Resolve(authType)
 	if adapter == nil {
 		return fmt.Errorf("no adapter registered for auth_type=%s", authType)
 	}
@@ -2364,18 +2551,26 @@ func roleToAPI(r *ent.Role) generated.Role {
 	}
 }
 
-func authProviderToAPI(p *ent.AuthProvider) generated.AuthProvider {
+func (s *Server) authProviderToAPI(p *ent.AuthProvider) (generated.AuthProvider, error) {
+	config := p.Config
+	if s != nil && s.authProviderConfig != nil {
+		sanitized, err := s.authProviderConfig.SanitizeForAPI(p.AuthType, p.Config)
+		if err != nil {
+			return generated.AuthProvider{}, err
+		}
+		config = sanitized
+	}
 	return generated.AuthProvider{
 		Id:        p.ID,
 		Name:      p.Name,
 		AuthType:  p.AuthType,
-		Config:    p.Config,
+		Config:    config,
 		Enabled:   p.Enabled,
 		SortOrder: p.SortOrder,
 		CreatedBy: p.CreatedBy,
 		CreatedAt: p.CreatedAt,
 		UpdatedAt: p.UpdatedAt,
-	}
+	}, nil
 }
 
 // validateTemplateSource enforces the canonical template boot-source taxonomy.

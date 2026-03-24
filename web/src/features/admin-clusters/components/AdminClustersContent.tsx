@@ -4,16 +4,17 @@ import {
   Alert,
   Badge,
   Button,
-  Card,
   Divider,
   Form,
   Input,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -22,34 +23,55 @@ import {
   PlusOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import dayjs from "dayjs";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
+import { ActionEmptyState } from "@/components/feedback/ActionEmptyState";
+import { SummaryMetricCard } from "@/components/feedback/SummaryMetricCard";
+import {
+  HealthOverviewGlyph,
+  NotificationInboxGlyph,
+  QueueReviewGlyph,
+  SystemsOverviewGlyph,
+} from "@/components/illustrations/DashboardIllustrations";
+import { PageHeader, PageSurface } from "@/components/layouts/PageSection";
+import { LocalDateTimeText } from "@/components/ui/LocalDateTimeText";
 import {
   HUGEPAGES_PRESET_OPTIONS,
   isValidHugepagesPageSizeValue,
   normalizeHugepagesPageSizeList,
 } from "@/lib/hugepages";
+import { extractKubeconfigServer } from "../kubeconfig";
 import { useAdminClustersController } from "../hooks/useAdminClustersController";
 import { CLUSTER_STATUS_MAP, type Cluster } from "../types";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 export function AdminClustersContent() {
   const { t } = useTranslation(["admin", "common"]);
   const clusters = useAdminClustersController({ t });
+  const clusterItems = clusters.data?.items ?? [];
+  const clusterSummary = {
+    total: clusterItems.length,
+    healthy: clusterItems.filter((cluster) => cluster.status === "HEALTHY").length,
+    prod: clusterItems.filter((cluster) => cluster.environment === "prod").length,
+    disabled: clusterItems.filter((cluster) => !cluster.enabled).length,
+  };
 
   const columns: ColumnsType<Cluster> = [
     {
-      title: t("common:table.name"),
+      title: t("clusters.table.cluster", "Cluster"),
       dataIndex: "display_name",
       key: "name",
+      width: 260,
+      minWidth: 240,
       render: (displayName: string, record: Cluster) => (
-        <Space>
+        <Space size={8} align="start">
           <ClusterOutlined style={{ color: "#1677ff" }} />
-          <div>
-            <Text strong>{displayName ?? record.name}</Text>
+          <div style={{ minWidth: 0 }}>
+            <Text strong ellipsis={{ tooltip: displayName ?? record.name }}>
+              {displayName ?? record.name}
+            </Text>
             <br />
             <Text type="secondary" style={{ fontSize: 12 }}>
               {record.name}
@@ -68,7 +90,11 @@ export function AdminClustersContent() {
         return (
           <Badge
             status={config.badge}
-            text={<Tag color={config.color}>{status}</Tag>}
+            text={(
+              <Tag color={config.color}>
+                {t(`clusters.status.${status.toLowerCase()}`, status)}
+              </Tag>
+            )}
           />
         );
       },
@@ -103,17 +129,26 @@ export function AdminClustersContent() {
       width: 90,
       render: (enabled: boolean) => (
         <Tag color={enabled ? "green" : "default"}>
-          {enabled ? "Yes" : "No"}
+          {enabled
+            ? t("clusters.enabled_yes", "Enabled")
+            : t("clusters.enabled_no", "Disabled")}
         </Tag>
       ),
     },
     {
-      title: t("clusters.api_server"),
+      title: t("clusters.table.endpoint", "API endpoint"),
       dataIndex: "api_server_url",
       key: "api_server_url",
-      ellipsis: true,
+      width: 320,
+      minWidth: 300,
+      ellipsis: { showTitle: false },
       render: (url: string) => (
-        <Text type="secondary" copyable>
+        <Text
+          type="secondary"
+          copyable={{ text: url }}
+          ellipsis={{ tooltip: url }}
+          style={{ maxWidth: 300 }}
+        >
           {url}
         </Text>
       ),
@@ -122,11 +157,13 @@ export function AdminClustersContent() {
       title: t("clusters.enabled_features"),
       dataIndex: "enabled_features",
       key: "enabled_features",
+      width: 240,
+      minWidth: 220,
       render: (features: Cluster["enabled_features"]) => {
         if (!features || features.length === 0) {
           return <Text type="secondary">—</Text>;
         }
-        const MAX_VISIBLE = 3;
+        const MAX_VISIBLE = 4;
         const visible = features.slice(0, MAX_VISIBLE);
         const overflow = features.length - MAX_VISIBLE;
         return (
@@ -136,7 +173,11 @@ export function AdminClustersContent() {
                 {f}
               </Tag>
             ))}
-            {overflow > 0 && <Tag color="default">+{overflow}</Tag>}
+            {overflow > 0 && (
+              <Tooltip title={features.join(", ")}>
+                <Tag color="default">+{overflow}</Tag>
+              </Tooltip>
+            )}
           </Space>
         );
       },
@@ -241,26 +282,61 @@ export function AdminClustersContent() {
       dataIndex: "created_at",
       key: "created_at",
       width: 160,
-      render: (date: string) => (
-        <Text type="secondary">
-          {date ? dayjs(date).format("YYYY-MM-DD HH:mm") : "—"}
-        </Text>
-      ),
+      render: (date: string) => <LocalDateTimeText value={date} />,
     },
     {
       title: t("common:table.actions", "Actions"),
       key: "actions",
-      width: 160,
+      width: 240,
+      align: "right",
       render: (_, record: Cluster) => (
-        <Button
-          size="small"
-          data-testid={`cluster-action-edit-policy-${record.id}`}
-          onClick={() => {
-            void clusters.openPolicyModal(record);
-          }}
-        >
-          {t("clusters.edit_policy", "Edit Policy")}
-        </Button>
+        <Space size={0} split={<Divider type="vertical" />}>
+          <Button
+            type="link"
+            size="small"
+            data-testid={`cluster-action-edit-${record.id}`}
+            onClick={() => {
+              clusters.openEditModal(record);
+            }}
+          >
+            {t("common:button.edit")}
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            data-testid={`cluster-action-edit-policy-${record.id}`}
+            onClick={() => {
+              void clusters.openPolicyModal(record);
+            }}
+          >
+            {t("clusters.edit_policy", "Edit Policy")}
+          </Button>
+          <Popconfirm
+            title={t("clusters.delete_confirm_title", "Delete cluster?")}
+            description={t(
+              "clusters.delete_confirm_description",
+              "Only unused clusters can be deleted. Existing virtual machines must be removed first.",
+            )}
+            okText={t("common:button.delete")}
+            cancelText={t("common:button.cancel")}
+            onConfirm={() => {
+              void clusters.deleteCluster(record.id);
+            }}
+          >
+            <Button
+              type="link"
+              size="small"
+              danger
+              loading={
+                clusters.deletePending &&
+                clusters.deletingClusterId === record.id
+              }
+              data-testid={`cluster-action-delete-${record.id}`}
+            >
+              {t("common:button.delete")}
+            </Button>
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -268,21 +344,11 @@ export function AdminClustersContent() {
   return (
     <div data-testid="admin-clusters-page">
       {clusters.messageContextHolder}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 24,
-        }}
-      >
-        <div>
-          <Title level={4} style={{ margin: 0 }}>
-            {t("clusters.title")}
-          </Title>
-          <Text type="secondary">{t("clusters.subtitle")}</Text>
-        </div>
-        <Space>
+      <PageHeader
+        title={t("clusters.title")}
+        subtitle={t("clusters.subtitle")}
+        actions={(
+          <Space>
           <Button
             icon={<ReloadOutlined />}
             data-testid="clusters-refresh-btn"
@@ -298,24 +364,71 @@ export function AdminClustersContent() {
           >
             {t("clusters.add")}
           </Button>
-        </Space>
+          </Space>
+        )}
+      />
+
+      <div className="summary-card-grid">
+        <SummaryMetricCard
+          title={t("clusters.summary.total_title", "Registered clusters")}
+          value={clusterSummary.total}
+          description={t("clusters.summary.total_description", "All cluster connections currently registered with the platform.")}
+          visual={<SystemsOverviewGlyph className="summary-metric-card__art" />}
+          accentColor="#1D5BFF"
+          surfaceColor="#E6F4FF"
+        />
+        <SummaryMetricCard
+          title={t("clusters.summary.healthy_title", "Healthy")}
+          value={clusterSummary.healthy}
+          description={t("clusters.summary.healthy_description", "Clusters currently passing connectivity and KubeVirt health checks.")}
+          visual={<HealthOverviewGlyph className="summary-metric-card__art" />}
+          accentColor="#0F8F57"
+          surfaceColor="#E8FFF2"
+        />
+        <SummaryMetricCard
+          title={t("clusters.summary.prod_title", "Production")}
+          value={clusterSummary.prod}
+          description={t("clusters.summary.prod_description", "Clusters tagged for production placement and governance rules.")}
+          visual={<QueueReviewGlyph className="summary-metric-card__art" />}
+          accentColor="#D66A1F"
+          surfaceColor="#FFF4E5"
+        />
+        <SummaryMetricCard
+          title={t("clusters.summary.disabled_title", "Disabled")}
+          value={clusterSummary.disabled}
+          description={t("clusters.summary.disabled_description", "Registered clusters currently held out of placement decisions.")}
+          visual={<NotificationInboxGlyph className="summary-metric-card__art" />}
+          accentColor="#6D4DE3"
+          surfaceColor="#F5EDFF"
+        />
       </div>
 
-      <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+      <PageSurface flush={true}>
         <Table<Cluster>
           columns={columns}
-          dataSource={clusters.data?.items ?? []}
+          dataSource={clusterItems}
           rowKey="id"
           loading={clusters.isLoading}
+          tableLayout="auto"
           pagination={{
             total: clusters.data?.pagination?.total ?? 0,
             pageSize: 20,
             showTotal: (total) => t("common:table.total", { total }),
           }}
-          scroll={{ x: 1560 }}
+          scroll={{ x: 1840 }}
           size="middle"
+          locale={{
+            emptyText: (
+              <ActionEmptyState
+                compact={true}
+                title={t("clusters.empty", "No clusters registered")}
+                description={t("clusters.empty_description", "Add the first cluster before routing approvals, placement decisions, or live VM operations to a KubeVirt target.")}
+                visual={<HealthOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+              />
+            ),
+          }}
         />
-      </Card>
+      </PageSurface>
 
       <Modal
         title={t("clusters.add")}
@@ -325,10 +438,16 @@ export function AdminClustersContent() {
         }}
         onCancel={clusters.closeCreateModal}
         confirmLoading={clusters.createPending}
-        forceRender
+        forceRender={true}
         data-testid="cluster-create-modal"
       >
-        <Form form={clusters.form} layout="vertical" name="create-cluster">
+        <Form
+          form={clusters.form}
+          layout="vertical"
+          name="create-cluster"
+          preserve={false}
+          initialValues={{ environment: "test", enabled: true }}
+        >
           <Form.Item
             name="name"
             label={t("common:table.name")}
@@ -336,13 +455,15 @@ export function AdminClustersContent() {
           >
             <Input placeholder="e.g. cluster-prod-01" />
           </Form.Item>
-          <Form.Item name="display_name" label="Display Name">
+          <Form.Item
+            name="display_name"
+            label={t("clusters.display_name", "Display Name")}
+          >
             <Input placeholder="e.g. Production Cluster" />
           </Form.Item>
           <Form.Item
             name="environment"
             label={t("clusters.environment")}
-            initialValue="test"
             rules={[
               { required: true, message: t("clusters.environment_required") },
             ]}
@@ -355,14 +476,150 @@ export function AdminClustersContent() {
             />
           </Form.Item>
           <Form.Item
-            name="kubeconfig"
-            label="Kubeconfig (Base64)"
-            rules={[{ required: true, message: "Kubeconfig is required" }]}
-            extra="Base64-encoded kubeconfig (stored encrypted, ADR-0012)"
+            name="kubeconfig_text"
+            label={t("clusters.kubeconfig", "Kubeconfig")}
+            rules={[
+              {
+                required: true,
+                message: t(
+                  "clusters.kubeconfig_required",
+                  "Kubeconfig is required",
+                ),
+              },
+              {
+                validator: async (_, value: string | undefined) => {
+                  if (!value?.trim()) {
+                    return;
+                  }
+                  try {
+                    extractKubeconfigServer(value);
+                  } catch (error) {
+                    throw new Error(
+                      error instanceof Error
+                        ? error.message
+                        : t(
+                            "clusters.kubeconfig_invalid",
+                            "Invalid kubeconfig YAML",
+                          ),
+                    );
+                  }
+                },
+              },
+            ]}
+            extra={t(
+              "clusters.kubeconfig_create_help",
+              "Paste the kubeconfig YAML. The API transports it as base64 bytes, but base64 is not encryption.",
+            )}
           >
             <Input.TextArea
               rows={6}
-              placeholder="Paste base64-encoded kubeconfig content..."
+              placeholder={t(
+                "clusters.kubeconfig_placeholder",
+                "Paste kubeconfig YAML content...",
+              )}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+      <Modal
+        title={t("clusters.edit_title", {
+          cluster: clusters.editingClusterName || clusters.editingClusterId,
+          defaultValue: "Edit Cluster: {{cluster}}",
+        })}
+        open={clusters.editOpen}
+        onOk={() => {
+          void clusters.submitEdit();
+        }}
+        onCancel={clusters.closeEditModal}
+        confirmLoading={clusters.editPending}
+        forceRender={true}
+        data-testid="cluster-edit-modal"
+      >
+        <Form
+          form={clusters.editForm}
+          layout="vertical"
+          name="edit-cluster"
+          preserve={false}
+          initialValues={{ environment: "test", enabled: true }}
+        >
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={t(
+              "clusters.kubeconfig_update_title",
+              "Replace kubeconfig only when credentials or target endpoint changed",
+            )}
+            description={t(
+              "clusters.kubeconfig_update_help",
+              "Leave kubeconfig empty to keep the existing credential. If you provide a new kubeconfig, health detection will run again.",
+            )}
+          />
+          <Form.Item label={t("common:table.name")}>
+            <Input value={clusters.editingCluster?.name ?? ""} disabled />
+          </Form.Item>
+          <Form.Item
+            name="display_name"
+            label={t("clusters.display_name", "Display Name")}
+          >
+            <Input placeholder="e.g. Production Cluster" />
+          </Form.Item>
+          <Form.Item
+            name="environment"
+            label={t("clusters.environment")}
+            rules={[
+              { required: true, message: t("clusters.environment_required") },
+            ]}
+          >
+            <Select
+              options={[
+                { value: "test", label: t("clusters.env_test") },
+                { value: "prod", label: t("clusters.env_prod") },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="enabled"
+            label={t("clusters.enabled")}
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            name="kubeconfig_text"
+            label={t("clusters.kubeconfig", "Kubeconfig")}
+            rules={[
+              {
+                validator: async (_, value: string | undefined) => {
+                  if (!value?.trim()) {
+                    return;
+                  }
+                  try {
+                    extractKubeconfigServer(value);
+                  } catch (error) {
+                    throw new Error(
+                      error instanceof Error
+                        ? error.message
+                        : t(
+                            "clusters.kubeconfig_invalid",
+                            "Invalid kubeconfig YAML",
+                          ),
+                    );
+                  }
+                },
+              },
+            ]}
+            extra={t(
+              "clusters.kubeconfig_replace_optional",
+              "Optional. Paste a new kubeconfig YAML only when you want to replace the stored credential.",
+            )}
+          >
+            <Input.TextArea
+              rows={6}
+              placeholder={t(
+                "clusters.kubeconfig_placeholder",
+                "Paste kubeconfig YAML content...",
+              )}
             />
           </Form.Item>
         </Form>
@@ -375,7 +632,7 @@ export function AdminClustersContent() {
         }}
         onCancel={clusters.closeEnvModal}
         confirmLoading={clusters.updateEnvironmentPending}
-        destroyOnHidden={true}
+        forceRender={true}
         data-testid="cluster-environment-modal"
       >
         <Form form={clusters.envForm} layout="vertical" preserve={false}>
@@ -405,7 +662,7 @@ export function AdminClustersContent() {
         onCancel={clusters.closePolicyModal}
         confirmLoading={clusters.upsertPolicyPending}
         okButtonProps={{ disabled: clusters.policyLoading }}
-        destroyOnHidden={true}
+        forceRender={true}
         width={720}
         data-testid="cluster-policy-modal"
       >

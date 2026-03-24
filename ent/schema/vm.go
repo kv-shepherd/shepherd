@@ -39,6 +39,7 @@ func (VM) Fields() []ent.Field {
 			Values(
 				// Primary lifecycle states (master-flow.md Part 4)
 				"CREATING", // Post-approval, being provisioned
+				"STARTING", // Existing VM starting from stopped/paused state
 				"RUNNING",  // VM is running
 				"STOPPING", // Graceful shutdown in progress
 				"STOPPED",  // VM is stopped
@@ -48,7 +49,8 @@ func (VM) Fields() []ent.Field {
 				"PENDING",   // K8s scheduler waiting
 				"MIGRATING", // Live migration in progress
 				"PAUSED",    // VM paused
-				"UNKNOWN",   // Status undetermined
+				"UNKNOWN",   // Cluster unreachable or API error
+				"NOT_FOUND", // Cluster responded OK but VM resource no longer exists in K8s
 			).
 			Default("CREATING"), // VM row created at approval → initial status is CREATING
 		field.String("hostname").
@@ -56,7 +58,7 @@ func (VM) Fields() []ent.Field {
 		field.String("created_by").
 			NotEmpty(),
 		field.String("ticket_id").
-			Optional(), // Reference to approval ticket
+			Optional(), // Reference to the originating ticket
 		field.String("root_volume_storage_class").
 			Optional().
 			Comment("Resolved root-volume storageClass captured at approval time"),

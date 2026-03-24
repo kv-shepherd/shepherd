@@ -32,7 +32,7 @@
 | Frontend: Templates | `web/src/app/admin/templates/page.tsx` | ✅ | CRUD + column filters + deferred search + JSON spec editor |
 | Frontend: Instance Sizes | `web/src/app/admin/instance-sizes/page.tsx` | ✅ | CRUD + capability filters + sort + JSON spec_overrides editor |
 | Frontend: Users | `web/src/app/(protected)/admin/users/page.tsx` | ✅ | User directory + system member management |
-| Frontend: Auth Providers | `web/src/app/(protected)/admin/auth-providers/page.tsx` | ✅ | OIDC/LDAP provider CRUD + test connection + group sync |
+| Frontend: Auth Providers | `web/src/app/(protected)/admin/auth-providers/page.tsx` | ✅ | Schema-driven provider CRUD + test connection + sample fields + directory preview/sync + external cohort mappings |
 | Frontend: Rate Limits | `web/src/app/(protected)/admin/rate-limits/page.tsx` | ✅ | Exemptions/overrides admin management |
 | Frontend: Permissions | `web/src/app/(protected)/admin/permissions/page.tsx` | ✅ | Permission browser |
 | Frontend: RBAC | `web/src/app/(protected)/admin/rbac/page.tsx` | ✅ | Role + role binding management |
@@ -173,7 +173,7 @@ Phase 5 bridges the backend to a usable product by implementing:
 - Templates management (admin: CRUD, column filters, deferred search)
 - Instance Sizes management (admin: CRUD, capability filters, sort)
 - Users management (admin)
-- Auth Providers management (admin: CRUD + test connection + group sync)
+- Auth Providers management (admin: CRUD + test connection + sample fields + directory preview/sync + external cohort mappings)
 - Rate Limits management (admin: exemptions/overrides)
 - Permissions browser (admin)
 - RBAC management (admin: roles + role bindings)

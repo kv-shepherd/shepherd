@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"math"
 
@@ -11,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/predicate"
 	"kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
@@ -20,13 +22,14 @@ import (
 // RoleBindingQuery is the builder for querying RoleBinding entities.
 type RoleBindingQuery struct {
 	config
-	ctx        *QueryContext
-	order      []rolebinding.OrderOption
-	inters     []Interceptor
-	predicates []predicate.RoleBinding
-	withUser   *UserQuery
-	withRole   *RoleQuery
-	withFKs    bool
+	ctx                      *QueryContext
+	order                    []rolebinding.OrderOption
+	inters                   []Interceptor
+	predicates               []predicate.RoleBinding
+	withUser                 *UserQuery
+	withRole                 *RoleQuery
+	withExternalCohortGrants *ExternalCohortGrantQuery
+	withFKs                  bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -100,6 +103,28 @@ func (_q *RoleBindingQuery) QueryRole() *RoleQuery {
 			sqlgraph.From(rolebinding.Table, rolebinding.FieldID, selector),
 			sqlgraph.To(role.Table, role.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, rolebinding.RoleTable, rolebinding.RoleColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryExternalCohortGrants chains the current query on the "external_cohort_grants" edge.
+func (_q *RoleBindingQuery) QueryExternalCohortGrants() *ExternalCohortGrantQuery {
+	query := (&ExternalCohortGrantClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rolebinding.Table, rolebinding.FieldID, selector),
+			sqlgraph.To(externalcohortgrant.Table, externalcohortgrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rolebinding.ExternalCohortGrantsTable, rolebinding.ExternalCohortGrantsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -294,13 +319,14 @@ func (_q *RoleBindingQuery) Clone() *RoleBindingQuery {
 		return nil
 	}
 	return &RoleBindingQuery{
-		config:     _q.config,
-		ctx:        _q.ctx.Clone(),
-		order:      append([]rolebinding.OrderOption{}, _q.order...),
-		inters:     append([]Interceptor{}, _q.inters...),
-		predicates: append([]predicate.RoleBinding{}, _q.predicates...),
-		withUser:   _q.withUser.Clone(),
-		withRole:   _q.withRole.Clone(),
+		config:                   _q.config,
+		ctx:                      _q.ctx.Clone(),
+		order:                    append([]rolebinding.OrderOption{}, _q.order...),
+		inters:                   append([]Interceptor{}, _q.inters...),
+		predicates:               append([]predicate.RoleBinding{}, _q.predicates...),
+		withUser:                 _q.withUser.Clone(),
+		withRole:                 _q.withRole.Clone(),
+		withExternalCohortGrants: _q.withExternalCohortGrants.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -326,6 +352,17 @@ func (_q *RoleBindingQuery) WithRole(opts ...func(*RoleQuery)) *RoleBindingQuery
 		opt(query)
 	}
 	_q.withRole = query
+	return _q
+}
+
+// WithExternalCohortGrants tells the query-builder to eager-load the nodes that are connected to
+// the "external_cohort_grants" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *RoleBindingQuery) WithExternalCohortGrants(opts ...func(*ExternalCohortGrantQuery)) *RoleBindingQuery {
+	query := (&ExternalCohortGrantClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withExternalCohortGrants = query
 	return _q
 }
 
@@ -408,9 +445,10 @@ func (_q *RoleBindingQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 		nodes       = []*RoleBinding{}
 		withFKs     = _q.withFKs
 		_spec       = _q.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [3]bool{
 			_q.withUser != nil,
 			_q.withRole != nil,
+			_q.withExternalCohortGrants != nil,
 		}
 	)
 	if _q.withUser != nil || _q.withRole != nil {
@@ -446,6 +484,15 @@ func (_q *RoleBindingQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*
 	if query := _q.withRole; query != nil {
 		if err := _q.loadRole(ctx, query, nodes, nil,
 			func(n *RoleBinding, e *Role) { n.Edges.Role = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withExternalCohortGrants; query != nil {
+		if err := _q.loadExternalCohortGrants(ctx, query, nodes,
+			func(n *RoleBinding) { n.Edges.ExternalCohortGrants = []*ExternalCohortGrant{} },
+			func(n *RoleBinding, e *ExternalCohortGrant) {
+				n.Edges.ExternalCohortGrants = append(n.Edges.ExternalCohortGrants, e)
+			}); err != nil {
 			return nil, err
 		}
 	}
@@ -513,6 +560,36 @@ func (_q *RoleBindingQuery) loadRole(ctx context.Context, query *RoleQuery, node
 		for i := range nodes {
 			assign(nodes[i], n)
 		}
+	}
+	return nil
+}
+func (_q *RoleBindingQuery) loadExternalCohortGrants(ctx context.Context, query *ExternalCohortGrantQuery, nodes []*RoleBinding, init func(*RoleBinding), assign func(*RoleBinding, *ExternalCohortGrant)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[string]*RoleBinding)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(externalcohortgrant.FieldRoleBindingID)
+	}
+	query.Where(predicate.ExternalCohortGrant(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(rolebinding.ExternalCohortGrantsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.RoleBindingID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "role_binding_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
 	}
 	return nil
 }

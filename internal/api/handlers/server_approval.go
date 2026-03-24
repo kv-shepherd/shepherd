@@ -11,21 +11,24 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqljson"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
-	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
+	entbatchticket "kv-shepherd.io/shepherd/ent/batchticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	entinstancesize "kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/predicate"
+	entservice "kv-shepherd.io/shepherd/ent/service"
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
-	"kv-shepherd.io/shepherd/internal/governance/approval"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
 )
 
 // vmTargetInfo holds extracted VM information from a DELETE domain event payload.
@@ -34,55 +37,111 @@ type vmTargetInfo struct {
 	VMName string
 }
 
-// ListApprovals handles GET /approvals.
-func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsParams) {
+type ticketListOptions struct {
+	mine                  bool
+	page                  int
+	perPage               int
+	status                string
+	operationType         string
+	selectedClusterID     string
+	placementAdvisoryCode string
+	placementSnapshot     string
+}
+
+// ListTickets handles GET /tickets.
+func (s *Server) ListTickets(c *gin.Context, params generated.ListTicketsParams) {
 	ctx := c.Request.Context()
-	if !requireGlobalPermission(c, "approval:view") {
+	actor := strings.TrimSpace(middleware.GetUserID(ctx))
+	if actor == "" {
+		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+		return
+	}
+	if !params.Mine && !requireGlobalPermission(c, "ticket:view") {
 		return
 	}
 
-	query := s.client.ApprovalTicket.Query()
-	query = query.Where(approvalticket.ParentTicketIDIsNil())
+	s.writeTicketListResponse(c, actor, ticketListOptions{
+		mine:                  params.Mine,
+		page:                  params.Page,
+		perPage:               params.PerPage,
+		status:                string(params.Status),
+		operationType:         string(params.OperationType),
+		selectedClusterID:     params.SelectedClusterId,
+		placementAdvisoryCode: params.PlacementAdvisoryCode,
+		placementSnapshot:     string(params.PlacementSnapshot),
+	})
+}
+
+// ListBuiltinApprovalTasks handles GET /builtin-approval/tasks.
+func (s *Server) ListBuiltinApprovalTasks(c *gin.Context, params generated.ListBuiltinApprovalTasksParams) {
+	ctx := c.Request.Context()
+	actor := strings.TrimSpace(middleware.GetUserID(ctx))
+	if actor == "" {
+		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+		return
+	}
+	if !requireGlobalPermission(c, "builtin_approval:view") {
+		return
+	}
+
+	s.writeTicketListResponse(c, actor, ticketListOptions{
+		page:                  params.Page,
+		perPage:               params.PerPage,
+		status:                string(params.Status),
+		operationType:         string(params.OperationType),
+		selectedClusterID:     params.SelectedClusterId,
+		placementAdvisoryCode: params.PlacementAdvisoryCode,
+		placementSnapshot:     string(params.PlacementSnapshot),
+	})
+}
+
+func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options ticketListOptions) {
+	ctx := c.Request.Context()
+	query := s.client.Ticket.Query()
+	query = query.Where(entticket.ParentTicketIDIsNil())
+	if options.mine {
+		query = query.Where(entticket.RequesterEQ(actor))
+	}
 
 	// Filter by status (omitzero: empty string = not specified).
-	if params.Status != "" {
-		query = query.Where(approvalticket.StatusEQ(approvalticket.Status(params.Status)))
+	if options.status != "" {
+		query = query.Where(entticket.StatusEQ(entticket.Status(options.status)))
 	}
-	if params.OperationType != "" {
-		query = query.Where(approvalticket.OperationTypeEQ(approvalticket.OperationType(params.OperationType)))
+	if options.operationType != "" {
+		query = query.Where(entticket.OperationTypeEQ(entticket.OperationType(options.operationType)))
 	}
-	if params.SelectedClusterId != "" {
-		query = query.Where(approvalticket.SelectedClusterIDEQ(params.SelectedClusterId))
+	if options.selectedClusterID != "" {
+		query = query.Where(entticket.SelectedClusterIDEQ(options.selectedClusterID))
 	}
-	if params.PlacementAdvisoryCode != "" {
+	if options.placementAdvisoryCode != "" {
 		query = query.Where(
-			predicate.ApprovalTicket(func(s *entsql.Selector) {
+			predicate.Ticket(func(s *entsql.Selector) {
 				s.Where(sqljson.ValueEQ(
-					approvalticket.FieldPlacementEvaluation,
-					params.PlacementAdvisoryCode,
+					entticket.FieldPlacementEvaluation,
+					options.placementAdvisoryCode,
 					sqljson.Path("advisory_code"),
 				))
 			}),
 		)
 	}
-	switch params.PlacementSnapshot {
+	switch options.placementSnapshot {
 	case "":
-	case generated.Present:
-		query = query.Where(approvalticket.PlacementEvaluationNotNil())
-	case generated.Missing:
-		query = query.Where(approvalticket.PlacementEvaluationIsNil())
+	case "present":
+		query = query.Where(entticket.PlacementEvaluationNotNil())
+	case "missing":
+		query = query.Where(entticket.PlacementEvaluationIsNil())
 	}
 
-	page, perPage := defaultPagination(params.Page, params.PerPage)
+	page, perPage := defaultPagination(options.page, options.perPage)
 	offset := (page - 1) * perPage
 
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
 		if isRequestContextCanceled(err) {
-			logger.Debug("request canceled while counting approval tickets", zap.Error(err))
+			logger.Debug("request canceled while counting approval tasks", zap.Error(err))
 			return
 		}
-		logger.Error("failed to count approval tickets", zap.Error(err))
+		logger.Error("failed to count approval tasks", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -90,14 +149,14 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 	tickets, err := query.
 		Offset(offset).
 		Limit(perPage).
-		Order(ent.Asc(approvalticket.FieldCreatedAt)).
+		Order(ent.Asc(entticket.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
 		if isRequestContextCanceled(err) {
-			logger.Debug("request canceled while listing approval tickets", zap.Error(err), zap.Int("page", page))
+			logger.Debug("request canceled while listing approval tasks", zap.Error(err), zap.Int("page", page))
 			return
 		}
-		logger.Error("failed to list approval tickets", zap.Error(err), zap.Int("page", page))
+		logger.Error("failed to list approval tasks", zap.Error(err), zap.Int("page", page))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -105,14 +164,14 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 	// Collect all event IDs to batch-fetch domain events.
 	// DELETE tickets: extract target VM info; all tickets: include raw payload.
 	allEventIDs := make([]string, 0, len(tickets))
-	deleteEventIDSet := make(map[string]struct{})
+	vmTargetEventIDSet := make(map[string]struct{})
 	createTicketIDs := make([]string, 0)
 	for _, t := range tickets {
 		allEventIDs = append(allEventIDs, t.EventID)
-		if t.OperationType == approvalticket.OperationTypeDELETE {
-			deleteEventIDSet[t.EventID] = struct{}{}
+		if t.OperationType == entticket.OperationTypeDELETE || t.OperationType == entticket.OperationTypeMODIFY {
+			vmTargetEventIDSet[t.EventID] = struct{}{}
 		}
-		if t.OperationType == approvalticket.OperationTypeCREATE {
+		if t.OperationType == entticket.OperationTypeCREATE {
 			createTicketIDs = append(createTicketIDs, t.ID)
 		}
 	}
@@ -127,14 +186,14 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 			All(ctx)
 		if err != nil {
 			// Non-fatal: log and continue without event info.
-			logger.Warn("failed to fetch domain events for approval tickets", zap.Error(err))
+			logger.Warn("failed to fetch domain events for approval tasks", zap.Error(err))
 		} else {
 			for _, ev := range events {
 				eventByID[ev.ID] = ev
 				// Store raw payload for all tickets.
 				eventPayloadMap[ev.ID] = ev.Payload
-				// Extract VM target info only for DELETE tickets.
-				if _, isDelete := deleteEventIDSet[ev.ID]; !isDelete {
+				// Extract VM target info for VM-targeting tickets (DELETE / MODIFY).
+				if _, isVMTarget := vmTargetEventIDSet[ev.ID]; !isVMTarget {
 					continue
 				}
 				var vmPayload struct {
@@ -152,7 +211,22 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 	}
 
 	templateIDs, instanceSizeIDs := collectApprovalCatalogLookupIDs(eventPayloadMap)
-	templateByID, instanceSizeByID := s.loadApprovalCatalogLookups(ctx, templateIDs, instanceSizeIDs)
+	vmByID, vmTemplateIDs, vmInstanceSizeIDs := s.loadApprovalVMContexts(
+		ctx,
+		collectApprovalSummaryVMIDs(eventPayloadMap),
+	)
+	templateIDs = append(templateIDs, vmTemplateIDs...)
+	instanceSizeIDs = append(instanceSizeIDs, vmInstanceSizeIDs...)
+	templateByID, instanceSizeByID := s.loadApprovalCatalogLookups(
+		ctx,
+		sortedStringSet(sliceToStringSet(templateIDs)),
+		sortedStringSet(sliceToStringSet(instanceSizeIDs)),
+	)
+	serviceByID := s.loadApprovalServiceLookups(
+		ctx,
+		collectApprovalPrefillServiceIDs(eventPayloadMap),
+	)
+	systemIDByServiceID := buildApprovalSystemIDByServiceID(serviceByID)
 	batchProjectionByID := s.loadApprovalBatchProjections(ctx, tickets, eventByID)
 
 	createVMByTicketID := make(map[string]*ent.VM)
@@ -161,7 +235,7 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 			Where(entvm.TicketIDIn(createTicketIDs...)).
 			All(ctx)
 		if err != nil {
-			logger.Warn("failed to fetch VMs for create approval tickets", zap.Error(err))
+			logger.Warn("failed to fetch VMs for create approval tasks", zap.Error(err))
 		} else {
 			for _, vm := range vms {
 				if vm == nil || vm.TicketID == "" {
@@ -172,7 +246,7 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 		}
 	}
 
-	items := make([]generated.ApprovalTicket, 0, len(tickets))
+	items := make([]generated.Ticket, 0, len(tickets))
 	for _, t := range tickets {
 		// Deserialize raw event payload into map for ticket_payload field.
 		var payloadMap map[string]interface{}
@@ -186,12 +260,25 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 		}
 		enrichApprovalPayload(payloadMap, templateByID, instanceSizeByID, batchProjectionByID[t.ID])
 		var provisioning *generated.ProvisioningStatus
-		if t.OperationType == approvalticket.OperationTypeCREATE {
+		if t.OperationType == entticket.OperationTypeCREATE {
 			provisioning = s.loadVMProvisioning(ctx, createVMByTicketID[t.ID])
 		}
-		item := ticketToAPI(t, payloadMap, provisioning)
-		// Enrich DELETE tickets with target VM info.
-		if t.OperationType == approvalticket.OperationTypeDELETE {
+		item := ticketToAPI(
+			t,
+			payloadMap,
+			provisioning,
+			buildTicketSummary(
+				t,
+				payloadMap,
+				templateByID,
+				instanceSizeByID,
+				serviceByID,
+				vmByID,
+			),
+			buildApprovalRequestPrefill(payloadMap, systemIDByServiceID),
+		)
+		// Enrich VM-targeting tickets with target VM info.
+		if t.OperationType == entticket.OperationTypeDELETE || t.OperationType == entticket.OperationTypeMODIFY {
 			if info, ok := vmInfoMap[t.EventID]; ok {
 				item.TargetVmId = info.VMID
 				item.TargetVmName = info.VMName
@@ -201,7 +288,7 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 	}
 
 	totalPages := (total + perPage - 1) / perPage
-	c.JSON(http.StatusOK, generated.ApprovalTicketList{
+	c.JSON(http.StatusOK, generated.TicketList{
 		Items: items,
 		Pagination: generated.Pagination{
 			Page:       page,
@@ -212,10 +299,10 @@ func (s *Server) ListApprovals(c *gin.Context, params generated.ListApprovalsPar
 	})
 }
 
-// ApproveTicket handles POST /approvals/{ticket_id}/approve.
-func (s *Server) ApproveTicket(c *gin.Context, ticketID generated.TicketID) {
+// ApproveBuiltinApprovalTask handles POST /builtin-approval/tasks/{ticket_id}/approve.
+func (s *Server) ApproveBuiltinApprovalTask(c *gin.Context, ticketID generated.TicketID) {
 	ctx := c.Request.Context()
-	if !requireGlobalPermission(c, "approval:approve") {
+	if !requireGlobalPermission(c, "builtin_approval:approve") {
 		return
 	}
 	actor := middleware.GetUserID(ctx)
@@ -229,24 +316,34 @@ func (s *Server) ApproveTicket(c *gin.Context, ticketID generated.TicketID) {
 		return
 	}
 
-	opts := approval.ApproveOpts{
-		ClusterID:       req.SelectedClusterId,
-		StorageClass:    req.SelectedStorageClass,
-		DVAccessModes:   req.SelectedDvAccessModes,
-		DVVolumeMode:    string(req.SelectedDvVolumeMode),
-		EnableOverride:  req.EnableOverride,
-		CPURequest:      float64(req.CpuRequest),
-		CPULimit:        float64(req.CpuLimit),
-		MemoryRequestGi: float64(req.MemoryRequestGi),
-		MemoryLimitGi:   float64(req.MemoryLimitGi),
-		DiskGB:          req.DiskGb,
+	if s.approvalRouter == nil {
+		logger.Error("approval provider is not configured", zap.String("ticket_id", ticketID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
 	}
 
-	if err := s.gateway.Approve(ctx, ticketID, actor, opts); err != nil {
+	if err := s.approvalRouter.ProcessApproval(ctx, ticketID, approvalcontract.ApprovalDecision{
+		Approved: true,
+		Approver: actor,
+		Execution: approvalcontract.ApprovalExecutionOptions{
+			ClusterID:       req.SelectedClusterId,
+			StorageClass:    req.SelectedStorageClass,
+			DVAccessModes:   req.SelectedDvAccessModes,
+			DVVolumeMode:    string(req.SelectedDvVolumeMode),
+			EnableOverride:  req.EnableOverride,
+			CPURequest:      float64(req.CpuRequest),
+			CPULimit:        float64(req.CpuLimit),
+			MemoryRequestGi: float64(req.MemoryRequestGi),
+			MemoryLimitGi:   float64(req.MemoryLimitGi),
+			DiskGB:          req.DiskGb,
+		},
+	}); err != nil {
 		if appErr, ok := apperrors.IsAppError(err); ok {
 			c.JSON(appErr.HTTPStatus, generated.Error{
-				Code:    appErr.Code,
-				Message: appErr.Message,
+				Code:        appErr.Code,
+				Message:     appErr.Message,
+				Params:      appErr.Params,
+				FieldErrors: appFieldErrorsToAPI(appErr.FieldErrors),
 			})
 			return
 		}
@@ -262,10 +359,10 @@ func (s *Server) ApproveTicket(c *gin.Context, ticketID generated.TicketID) {
 	c.Status(http.StatusNoContent)
 }
 
-// RejectTicket handles POST /approvals/{ticket_id}/reject.
-func (s *Server) RejectTicket(c *gin.Context, ticketID generated.TicketID) {
+// RejectBuiltinApprovalTask handles POST /builtin-approval/tasks/{ticket_id}/reject.
+func (s *Server) RejectBuiltinApprovalTask(c *gin.Context, ticketID generated.TicketID) {
 	ctx := c.Request.Context()
-	if !requireGlobalPermission(c, "approval:approve") {
+	if !requireGlobalPermission(c, "builtin_approval:approve") {
 		return
 	}
 	actor := middleware.GetUserID(ctx)
@@ -279,11 +376,23 @@ func (s *Server) RejectTicket(c *gin.Context, ticketID generated.TicketID) {
 		return
 	}
 
-	if err := s.gateway.Reject(ctx, ticketID, actor, req.Reason); err != nil {
+	if s.approvalRouter == nil {
+		logger.Error("approval provider is not configured", zap.String("ticket_id", ticketID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if err := s.approvalRouter.ProcessApproval(ctx, ticketID, approvalcontract.ApprovalDecision{
+		Approved:     false,
+		Approver:     actor,
+		RejectReason: req.Reason,
+	}); err != nil {
 		if appErr, ok := apperrors.IsAppError(err); ok {
 			c.JSON(appErr.HTTPStatus, generated.Error{
-				Code:    appErr.Code,
-				Message: appErr.Message,
+				Code:        appErr.Code,
+				Message:     appErr.Message,
+				Params:      appErr.Params,
+				FieldErrors: appFieldErrorsToAPI(appErr.FieldErrors),
 			})
 			return
 		}
@@ -299,23 +408,28 @@ func (s *Server) RejectTicket(c *gin.Context, ticketID generated.TicketID) {
 	c.Status(http.StatusNoContent)
 }
 
-// CancelTicket handles POST /approvals/{ticket_id}/cancel.
+// CancelTicket handles POST /tickets/{ticket_id}/cancel.
 func (s *Server) CancelTicket(c *gin.Context, ticketID generated.TicketID) {
 	ctx := c.Request.Context()
-	if !requireAnyGlobalPermission(c, "approval:approve", "vm:create", "vm:delete", "vnc:access") {
-		return
-	}
 	actor := middleware.GetUserID(ctx)
 	if actor == "" {
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
 		return
 	}
 
-	if err := s.gateway.Cancel(ctx, ticketID, actor); err != nil {
+	if s.ticketService == nil {
+		logger.Error("ticket service is not configured", zap.String("ticket_id", ticketID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if err := s.ticketService.Cancel(ctx, ticketID, actor); err != nil {
 		if appErr, ok := apperrors.IsAppError(err); ok {
 			c.JSON(appErr.HTTPStatus, generated.Error{
-				Code:    appErr.Code,
-				Message: appErr.Message,
+				Code:        appErr.Code,
+				Message:     appErr.Message,
+				Params:      appErr.Params,
+				FieldErrors: appFieldErrorsToAPI(appErr.FieldErrors),
 			})
 			return
 		}
@@ -333,26 +447,30 @@ func (s *Server) CancelTicket(c *gin.Context, ticketID generated.TicketID) {
 
 // ---- Converter ----
 
-// ticketToAPI converts an Ent ApprovalTicket to the generated API type.
+// ticketToAPI converts an Ent Ticket to the generated ticket API type.
 // ticketPayload is the deserialized DomainEvent payload (may be nil for older/missing events).
 func ticketToAPI(
-	t *ent.ApprovalTicket,
+	t *ent.Ticket,
 	ticketPayload map[string]interface{},
 	provisioning *generated.ProvisioningStatus,
-) generated.ApprovalTicket {
+	summary *generated.TicketSummary,
+	requestPrefill *generated.VMRequestPrefill,
+) generated.Ticket {
 	var placementEvaluation *generated.PlacementEvaluation
 	if len(t.PlacementEvaluation) > 0 {
 		placementEvaluation = placementEvaluationToAPI(t.PlacementEvaluation)
 	}
-	return generated.ApprovalTicket{
+	return generated.Ticket{
 		Id:                  t.ID,
 		EventId:             t.EventID,
-		OperationType:       generated.ApprovalTicketOperationType(t.OperationType),
+		OperationType:       generated.TicketOperationType(t.OperationType),
 		Requester:           t.Requester,
-		Status:              generated.ApprovalTicketStatus(t.Status),
+		Status:              generated.TicketStatus(t.Status),
 		Approver:            t.Approver,
 		Reason:              t.Reason,
 		RejectReason:        t.RejectReason,
+		Summary:             summary,
+		RequestPrefill:      derefApprovalRequestPrefill(requestPrefill),
 		TicketPayload:       ticketPayload,
 		Provisioning:        provisioning,
 		PlacementEvaluation: placementEvaluation,
@@ -414,12 +532,61 @@ func placementEvaluationToAPI(snapshot map[string]interface{}) *generated.Placem
 		result.AdvisoryMessage = value
 	}
 	if value, ok := snapshot["override"].(map[string]interface{}); ok {
-		result.Override = value
+		if override := placementOverrideToAPI(value); override != nil {
+			result.Override = *override
+		}
 	}
 	if value, ok := snapshot["evaluated_at"].(string); ok {
 		if parsed, err := time.Parse(time.RFC3339, value); err == nil {
 			result.EvaluatedAt = parsed
 		}
+	}
+	return result
+}
+
+func appFieldErrorsToAPI(fieldErrors []apperrors.FieldError) []generated.FieldError {
+	if len(fieldErrors) == 0 {
+		return nil
+	}
+	result := make([]generated.FieldError, 0, len(fieldErrors))
+	for _, fieldError := range fieldErrors {
+		result = append(result, generated.FieldError{
+			Code:    fieldError.Code,
+			Field:   fieldError.Field,
+			Message: fieldError.Message,
+		})
+	}
+	return result
+}
+
+func placementOverrideToAPI(snapshot map[string]interface{}) *generated.PlacementResourceOverride {
+	if len(snapshot) == 0 {
+		return nil
+	}
+	result := &generated.PlacementResourceOverride{}
+	if value, ok := snapshot["enabled"].(bool); ok {
+		result.Enabled = value
+	}
+	if value, ok := snapshot["cpu_request"].(float64); ok {
+		result.CpuRequest = value
+	}
+	if value, ok := snapshot["cpu_limit"].(float64); ok {
+		result.CpuLimit = value
+	}
+	if value, ok := snapshot["memory_request_gi"].(float64); ok {
+		result.MemoryRequestGi = value
+	}
+	if value, ok := snapshot["memory_limit_gi"].(float64); ok {
+		result.MemoryLimitGi = value
+	}
+	switch value := snapshot["disk_gb"].(type) {
+	case int:
+		result.DiskGb = value
+	case float64:
+		result.DiskGb = int(value)
+	}
+	if *result == (generated.PlacementResourceOverride{}) {
+		return nil
 	}
 	return result
 }
@@ -493,6 +660,46 @@ func collectCatalogIDsFromPayload(
 	}
 }
 
+func collectApprovalPrefillServiceIDs(eventPayloadMap map[string][]byte) []string {
+	serviceIDSet := make(map[string]struct{})
+	for _, raw := range eventPayloadMap {
+		if len(raw) == 0 {
+			continue
+		}
+		var payload map[string]interface{}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			continue
+		}
+		collectServiceIDsFromPayload(payload, serviceIDSet)
+	}
+	return sortedStringSet(serviceIDSet)
+}
+
+func collectServiceIDsFromPayload(
+	payload map[string]interface{},
+	serviceIDs map[string]struct{},
+) {
+	if len(payload) == 0 {
+		return
+	}
+	if serviceID := trimPayloadString(payload["service_id"]); serviceID != "" {
+		serviceIDs[serviceID] = struct{}{}
+	}
+	items, ok := payload["items"].([]interface{})
+	if !ok {
+		return
+	}
+	for _, item := range items {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if serviceID := trimPayloadString(itemMap["service_id"]); serviceID != "" {
+			serviceIDs[serviceID] = struct{}{}
+		}
+	}
+}
+
 func sortedStringSet(values map[string]struct{}) []string {
 	if len(values) == 0 {
 		return nil
@@ -511,6 +718,134 @@ func trimPayloadString(value interface{}) string {
 		return ""
 	}
 	return strings.TrimSpace(str)
+}
+
+func trimPayloadPositiveInt(value interface{}) int {
+	switch v := value.(type) {
+	case int:
+		if v > 0 {
+			return v
+		}
+	case float64:
+		if v >= 1 {
+			return int(v)
+		}
+	}
+	return 0
+}
+
+func parsePrefillUUID(value string) (openapi_types.UUID, bool) {
+	parsed, err := uuid.Parse(value)
+	if err != nil {
+		return openapi_types.UUID{}, false
+	}
+	return parsed, true
+}
+
+func approvalPrefillItemFromPayload(
+	item map[string]interface{},
+	systemIDByServiceID map[string]string,
+) (*generated.VMRequestPrefill, bool) {
+	serviceID := trimPayloadString(item["service_id"])
+	templateID := trimPayloadString(item["template_id"])
+	instanceSizeID := trimPayloadString(item["instance_size_id"])
+	namespace := trimPayloadString(item["namespace"])
+	reason := trimPayloadString(item["reason"])
+	systemID := systemIDByServiceID[serviceID]
+	if serviceID == "" || systemID == "" || templateID == "" || instanceSizeID == "" || namespace == "" || reason == "" {
+		return nil, false
+	}
+	systemUUID, ok := parsePrefillUUID(systemID)
+	if !ok {
+		return nil, false
+	}
+	serviceUUID, ok := parsePrefillUUID(serviceID)
+	if !ok {
+		return nil, false
+	}
+	templateUUID, ok := parsePrefillUUID(templateID)
+	if !ok {
+		return nil, false
+	}
+	instanceSizeUUID, ok := parsePrefillUUID(instanceSizeID)
+	if !ok {
+		return nil, false
+	}
+	return &generated.VMRequestPrefill{
+		SystemId:       systemUUID,
+		ServiceId:      serviceUUID,
+		TemplateId:     templateUUID,
+		InstanceSizeId: instanceSizeUUID,
+		Namespace:      namespace,
+		Reason:         reason,
+		BatchCount:     1,
+	}, true
+}
+
+func sameApprovalPrefillShape(a, b *generated.VMRequestPrefill) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return a.SystemId == b.SystemId &&
+		a.ServiceId == b.ServiceId &&
+		a.TemplateId == b.TemplateId &&
+		a.InstanceSizeId == b.InstanceSizeId &&
+		a.Namespace == b.Namespace &&
+		a.Reason == b.Reason
+}
+
+func buildApprovalRequestPrefill(
+	payload map[string]interface{},
+	systemIDByServiceID map[string]string,
+) *generated.VMRequestPrefill {
+	if len(payload) == 0 {
+		return nil
+	}
+	if direct, ok := approvalPrefillItemFromPayload(payload, systemIDByServiceID); ok {
+		return direct
+	}
+
+	items, ok := payload["items"].([]interface{})
+	if !ok || len(items) == 0 {
+		return nil
+	}
+
+	firstItem, ok := items[0].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	prefill, ok := approvalPrefillItemFromPayload(firstItem, systemIDByServiceID)
+	if !ok {
+		return nil
+	}
+
+	for _, raw := range items[1:] {
+		itemMap, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		nextPrefill, ok := approvalPrefillItemFromPayload(itemMap, systemIDByServiceID)
+		if !ok || !sameApprovalPrefillShape(prefill, nextPrefill) {
+			return nil
+		}
+	}
+
+	if topLevelReason := trimPayloadString(payload["reason"]); topLevelReason != "" {
+		prefill.Reason = topLevelReason
+	}
+	if batchCount := trimPayloadPositiveInt(payload["batch_item_count"]); batchCount > 0 {
+		prefill.BatchCount = batchCount
+	} else {
+		prefill.BatchCount = len(items)
+	}
+	return prefill
+}
+
+func derefApprovalRequestPrefill(prefill *generated.VMRequestPrefill) generated.VMRequestPrefill {
+	if prefill == nil {
+		return generated.VMRequestPrefill{}
+	}
+	return *prefill
 }
 
 func (s *Server) loadApprovalCatalogLookups(
@@ -548,11 +883,39 @@ func (s *Server) loadApprovalCatalogLookups(
 	return templateByID, instanceSizeByID
 }
 
+func (s *Server) loadApprovalPrefillSystemByServiceID(
+	ctx context.Context,
+	eventPayloadMap map[string][]byte,
+) map[string]string {
+	serviceIDs := collectApprovalPrefillServiceIDs(eventPayloadMap)
+	byServiceID := make(map[string]string, len(serviceIDs))
+	if len(serviceIDs) == 0 {
+		return byServiceID
+	}
+
+	services, err := s.client.Service.Query().
+		Where(entservice.IDIn(serviceIDs...)).
+		WithSystem().
+		All(ctx)
+	if err != nil {
+		logger.Warn("failed to fetch services for approval request prefill", zap.Error(err))
+		return byServiceID
+	}
+
+	for _, svc := range services {
+		if svc == nil || svc.ID == "" || svc.Edges.System == nil {
+			continue
+		}
+		byServiceID[svc.ID] = svc.Edges.System.ID
+	}
+	return byServiceID
+}
+
 func (s *Server) loadApprovalBatchProjections(
 	ctx context.Context,
-	tickets []*ent.ApprovalTicket,
+	tickets []*ent.Ticket,
 	eventByID map[string]*ent.DomainEvent,
-) map[string]*ent.BatchApprovalTicket {
+) map[string]*ent.BatchTicket {
 	parentIDs := make([]string, 0)
 	for _, ticket := range tickets {
 		if ticket == nil {
@@ -565,16 +928,16 @@ func (s *Server) loadApprovalBatchProjections(
 		parentIDs = append(parentIDs, ticket.ID)
 	}
 	if len(parentIDs) == 0 {
-		return map[string]*ent.BatchApprovalTicket{}
+		return map[string]*ent.BatchTicket{}
 	}
-	rows, err := s.client.BatchApprovalTicket.Query().
-		Where(batchapprovalticket.IDIn(parentIDs...)).
+	rows, err := s.client.BatchTicket.Query().
+		Where(entbatchticket.IDIn(parentIDs...)).
 		All(ctx)
 	if err != nil {
 		logger.Warn("failed to fetch batch projections for approval list", zap.Error(err))
-		return map[string]*ent.BatchApprovalTicket{}
+		return map[string]*ent.BatchTicket{}
 	}
-	byID := make(map[string]*ent.BatchApprovalTicket, len(rows))
+	byID := make(map[string]*ent.BatchTicket, len(rows))
 	for _, row := range rows {
 		byID[row.ID] = row
 	}
@@ -585,7 +948,7 @@ func enrichApprovalPayload(
 	payload map[string]interface{},
 	templateByID map[string]*ent.Template,
 	instanceSizeByID map[string]*ent.InstanceSize,
-	batchProjection *ent.BatchApprovalTicket,
+	batchProjection *ent.BatchTicket,
 ) {
 	if len(payload) == 0 {
 		return

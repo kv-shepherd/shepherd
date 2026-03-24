@@ -1,167 +1,153 @@
 package jobs
 
 import (
-	"errors"
-	"fmt"
+	"context"
+	"os"
+	"strings"
 	"testing"
 
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	"github.com/google/uuid"
+	"github.com/riverqueue/river"
+	"github.com/stretchr/testify/require"
+
+	"kv-shepherd.io/shepherd/ent/domainevent"
+	entvm "kv-shepherd.io/shepherd/ent/vm"
+	"kv-shepherd.io/shepherd/internal/domain"
+	"kv-shepherd.io/shepherd/internal/provider"
+	"kv-shepherd.io/shepherd/internal/service"
+	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
-func TestIsIdempotentPowerConflict(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name      string
-		operation string
-		err       error
-		want      bool
-	}{
-		{
-			name:      "start already running",
-			operation: "start",
-			err:       errors.New("Operation cannot be fulfilled: VM is already running"),
-			want:      true,
-		},
-		{
-			name:      "stop already stopped",
-			operation: "stop",
-			err:       errors.New("Operation cannot be fulfilled: VM is already stopped"),
-			want:      true,
-		},
-		{
-			name:      "stop not running",
-			operation: "stop",
-			err:       errors.New("Operation cannot be fulfilled: VM is not running"),
-			want:      true,
-		},
-		{
-			name:      "restart not running is not idempotent",
-			operation: "restart",
-			err:       errors.New("Operation cannot be fulfilled: VM is not running"),
-			want:      false,
-		},
-		{
-			name:      "start generic error",
-			operation: "start",
-			err:       errors.New("connection refused"),
-			want:      false,
-		},
-		{
-			name:      "start manual start unsupported is idempotent",
-			operation: "start",
-			err: errors.New(
-				"Operation cannot be fulfilled on virtualmachine.kubevirt.io \"vm-1\": Always does not support manual start requests",
-			),
-			want: true,
-		},
-		{
-			name:      "stop manual stop unsupported is idempotent",
-			operation: "stop",
-			err: errors.New(
-				"Operation cannot be fulfilled on virtualmachine.kubevirt.io \"vm-1\": Halted does not support manual stop requests",
-			),
-			want: true,
-		},
-		{
-			name:      "nil error",
-			operation: "start",
-			err:       nil,
-			want:      false,
-		},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := isIdempotentPowerConflict(tt.operation, tt.err)
-			if got != tt.want {
-				t.Fatalf("isIdempotentPowerConflict(%q, %v) = %v, want %v", tt.operation, tt.err, got, tt.want)
-			}
-		})
-	}
+type transitionalPowerProvider struct {
+	*provider.MockProvider
 }
 
-func TestIsTerminalPowerError(t *testing.T) {
+func (p *transitionalPowerProvider) StartVM(ctx context.Context, cluster, namespace, name string) error {
+	vm, err := p.GetVM(ctx, cluster, namespace, name)
+	if err != nil {
+		return err
+	}
+	vm.Status = domain.VMStatusStarting
+	vm.ResourceVersion = "rv-start-1"
+	return nil
+}
+
+func (p *transitionalPowerProvider) StopVM(ctx context.Context, cluster, namespace, name string) error {
+	vm, err := p.GetVM(ctx, cluster, namespace, name)
+	if err != nil {
+		return err
+	}
+	vm.Status = domain.VMStatusStopping
+	vm.ResourceVersion = "rv-stop-1"
+	return nil
+}
+
+func (p *transitionalPowerProvider) RestartVM(ctx context.Context, cluster, namespace, name string) error {
+	vm, err := p.GetVM(ctx, cluster, namespace, name)
+	if err != nil {
+		return err
+	}
+	vm.Status = domain.VMStatusStopping
+	vm.ResourceVersion = "rv-restart-1"
+	return nil
+}
+
+func TestFallbackPowerOperationStatus_ReturnsTransitionalStates(t *testing.T) {
 	t.Parallel()
 
-	notFoundErr := k8serrors.NewNotFound(
-		schema.GroupResource{Group: "kubevirt.io", Resource: "virtualmachine"},
-		"vm-stopped",
-	)
+	require.Equal(t, entvm.StatusSTARTING, fallbackPowerOperationStatus(powerOpStart))
+	require.Equal(t, entvm.StatusSTOPPING, fallbackPowerOperationStatus(powerOpStop))
+	require.Equal(t, entvm.StatusSTOPPING, fallbackPowerOperationStatus(powerOpRestart))
+}
 
-	tests := []struct {
-		name      string
-		operation string
-		err       error
-		want      bool
-	}{
-		{
-			name:      "k8s status notfound",
-			operation: "start",
-			err:       notFoundErr,
-			want:      true,
-		},
-		{
-			name:      "wrapped k8s status notfound",
-			operation: "start",
-			err:       fmt.Errorf("start vm failed: %w", notFoundErr),
-			want:      true,
-		},
-		{
-			name:      "message fallback virtualmachine not found",
-			operation: "start",
-			err:       errors.New("virtualmachine.kubevirt.io \"vm-stopped\" not found"),
-			want:      true,
-		},
-		{
-			name:      "restart halted state conflict",
-			operation: "restart",
-			err:       errors.New("Operation cannot be fulfilled on virtualmachine.kubevirt.io \"vm-1\": VM is not running: Halted"),
-			want:      true,
-		},
-		{
-			name:      "restart runstrategy halted manual restart unsupported",
-			operation: "restart",
-			err:       errors.New("Operation cannot be fulfilled on virtualmachine.kubevirt.io \"vm-1\": RunStategy Halted does not support manual restart requests"),
-			want:      true,
-		},
-		{
-			name:      "cluster missing is not target vm notfound",
-			operation: "start",
-			err:       errors.New("get client for cluster demo: cluster demo not found"),
-			want:      false,
-		},
-		{
-			name:      "transient network error",
-			operation: "restart",
-			err:       errors.New("dial tcp 10.0.0.1:443: i/o timeout"),
-			want:      false,
-		},
-		{
-			name:      "start not running should not be terminal",
-			operation: "start",
-			err:       errors.New("Operation cannot be fulfilled: VM is not running"),
-			want:      false,
-		},
-		{
-			name:      "nil error",
-			operation: "restart",
-			err:       nil,
-			want:      false,
-		},
+func TestVMPowerWorker_UsesObservedLiveStatusAfterStop(t *testing.T) {
+	t.Parallel()
+	if strings.TrimSpace(os.Getenv("TEST_DATABASE_URL")) == "" && strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
+		t.Skip("PostgreSQL test DSN is not configured")
 	}
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := isTerminalPowerError(tt.operation, tt.err)
-			if got != tt.want {
-				t.Fatalf("isTerminalPowerError(%q, %v) = %v, want %v", tt.operation, tt.err, got, tt.want)
-			}
-		})
-	}
+	client := testutil.OpenEntPostgres(t, "vm_power_live_status")
+	ctx := t.Context()
+
+	system, err := client.System.Create().
+		SetID("sys-" + uuid.NewString()).
+		SetName("sys" + uuid.NewString()[:8]).
+		SetCreatedBy("seed").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc, err := client.Service.Create().
+		SetID("svc-" + uuid.NewString()).
+		SetName("svc" + uuid.NewString()[:8]).
+		SetSystem(system).
+		Save(ctx)
+	require.NoError(t, err)
+
+	vmID := "vm-" + uuid.NewString()
+	vmName := "vm-" + uuid.NewString()[:8]
+	_, err = client.VM.Create().
+		SetID(vmID).
+		SetName(vmName).
+		SetInstance("01").
+		SetNamespace("prod-ns").
+		SetClusterID("cluster-a").
+		SetStatus(entvm.StatusRUNNING).
+		SetCreatedBy("seed").
+		SetServiceID(svc.ID).
+		Save(ctx)
+	require.NoError(t, err)
+
+	payloadBytes, err := domain.VMPowerPayload{
+		VMID:      vmID,
+		VMName:    vmName,
+		ClusterID: "cluster-a",
+		Namespace: "prod-ns",
+		Operation: powerOpStop,
+		Actor:     "seed",
+	}.ToJSON()
+	require.NoError(t, err)
+
+	eventID := "ev-" + uuid.NewString()
+	_, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMStopRequested)).
+		SetAggregateType("vm").
+		SetAggregateID(vmID).
+		SetPayload(payloadBytes).
+		SetStatus(domainevent.StatusPENDING).
+		SetCreatedBy("seed").
+		Save(ctx)
+	require.NoError(t, err)
+
+	mock := &transitionalPowerProvider{MockProvider: provider.NewMockProvider()}
+	mock.Seed([]*domain.VM{{
+		Name:            vmName,
+		Namespace:       "prod-ns",
+		Cluster:         "cluster-a",
+		Status:          domain.VMStatusRunning,
+		ResourceVersion: "rv-before-1",
+	}})
+
+	worker := NewVMPowerWorker(client, service.NewVMService(mock), nil)
+	err = worker.Work(ctx, &river.Job[VMPowerArgs]{
+		Args: VMPowerArgs{
+			EventID:   eventID,
+			Operation: powerOpStop,
+		},
+	})
+	require.NoError(t, err)
+
+	stored, err := client.VM.Get(ctx, vmID)
+	require.NoError(t, err)
+	require.Equal(t, entvm.StatusSTOPPING, stored.Status)
+	require.Equal(t, entvm.PollingTierHigh, stored.PollingTier)
+	require.Equal(t, highTierIntervalSec, stored.PollIntervalSec)
+	require.NotNil(t, stored.LastK8sRv)
+	require.Equal(t, "rv-stop-1", *stored.LastK8sRv)
+	require.NotNil(t, stored.LastPolledAt)
+	require.NotNil(t, stored.HighTierSince)
+
+	event, err := client.DomainEvent.Get(ctx, eventID)
+	require.NoError(t, err)
+	require.Equal(t, domainevent.StatusCOMPLETED, event.Status)
 }

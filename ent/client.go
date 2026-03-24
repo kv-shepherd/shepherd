@@ -16,20 +16,21 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"kv-shepherd.io/shepherd/ent/approvalpolicy"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/auditlog"
 	"kv-shepherd.io/shepherd/ent/authprovider"
-	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
+	"kv-shepherd.io/shepherd/ent/batchticket"
 	"kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/clusterpolicy"
+	"kv-shepherd.io/shepherd/ent/directorysyncjob"
 	"kv-shepherd.io/shepherd/ent/domainevent"
-	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
-	"kv-shepherd.io/shepherd/ent/idpgroupmapping"
-	"kv-shepherd.io/shepherd/ent/idpsyncedgroup"
+	"kv-shepherd.io/shepherd/ent/externalcohort"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
+	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
 	"kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	"kv-shepherd.io/shepherd/ent/notification"
 	"kv-shepherd.io/shepherd/ent/pendingadoption"
+	"kv-shepherd.io/shepherd/ent/platformsetting"
 	"kv-shepherd.io/shepherd/ent/ratelimitexemption"
 	"kv-shepherd.io/shepherd/ent/ratelimituseroverride"
 	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
@@ -39,7 +40,9 @@ import (
 	"kv-shepherd.io/shepherd/ent/system"
 	"kv-shepherd.io/shepherd/ent/systemsecret"
 	"kv-shepherd.io/shepherd/ent/template"
+	"kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/ent/user"
+	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
 	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/ent/vmrevision"
 )
@@ -51,26 +54,26 @@ type Client struct {
 	Schema *migrate.Schema
 	// ApprovalPolicy is the client for interacting with the ApprovalPolicy builders.
 	ApprovalPolicy *ApprovalPolicyClient
-	// ApprovalTicket is the client for interacting with the ApprovalTicket builders.
-	ApprovalTicket *ApprovalTicketClient
 	// AuditLog is the client for interacting with the AuditLog builders.
 	AuditLog *AuditLogClient
 	// AuthProvider is the client for interacting with the AuthProvider builders.
 	AuthProvider *AuthProviderClient
-	// BatchApprovalTicket is the client for interacting with the BatchApprovalTicket builders.
-	BatchApprovalTicket *BatchApprovalTicketClient
+	// BatchTicket is the client for interacting with the BatchTicket builders.
+	BatchTicket *BatchTicketClient
 	// Cluster is the client for interacting with the Cluster builders.
 	Cluster *ClusterClient
 	// ClusterPolicy is the client for interacting with the ClusterPolicy builders.
 	ClusterPolicy *ClusterPolicyClient
+	// DirectorySyncJob is the client for interacting with the DirectorySyncJob builders.
+	DirectorySyncJob *DirectorySyncJobClient
 	// DomainEvent is the client for interacting with the DomainEvent builders.
 	DomainEvent *DomainEventClient
-	// ExternalApprovalSystem is the client for interacting with the ExternalApprovalSystem builders.
-	ExternalApprovalSystem *ExternalApprovalSystemClient
-	// IdPGroupMapping is the client for interacting with the IdPGroupMapping builders.
-	IdPGroupMapping *IdPGroupMappingClient
-	// IdPSyncedGroup is the client for interacting with the IdPSyncedGroup builders.
-	IdPSyncedGroup *IdPSyncedGroupClient
+	// ExternalCohort is the client for interacting with the ExternalCohort builders.
+	ExternalCohort *ExternalCohortClient
+	// ExternalCohortGrant is the client for interacting with the ExternalCohortGrant builders.
+	ExternalCohortGrant *ExternalCohortGrantClient
+	// ExternalCohortMapping is the client for interacting with the ExternalCohortMapping builders.
+	ExternalCohortMapping *ExternalCohortMappingClient
 	// InstanceSize is the client for interacting with the InstanceSize builders.
 	InstanceSize *InstanceSizeClient
 	// NamespaceRegistry is the client for interacting with the NamespaceRegistry builders.
@@ -79,6 +82,8 @@ type Client struct {
 	Notification *NotificationClient
 	// PendingAdoption is the client for interacting with the PendingAdoption builders.
 	PendingAdoption *PendingAdoptionClient
+	// PlatformSetting is the client for interacting with the PlatformSetting builders.
+	PlatformSetting *PlatformSettingClient
 	// RateLimitExemption is the client for interacting with the RateLimitExemption builders.
 	RateLimitExemption *RateLimitExemptionClient
 	// RateLimitUserOverride is the client for interacting with the RateLimitUserOverride builders.
@@ -97,8 +102,12 @@ type Client struct {
 	SystemSecret *SystemSecretClient
 	// Template is the client for interacting with the Template builders.
 	Template *TemplateClient
+	// Ticket is the client for interacting with the Ticket builders.
+	Ticket *TicketClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
+	// UserDirectoryProfile is the client for interacting with the UserDirectoryProfile builders.
+	UserDirectoryProfile *UserDirectoryProfileClient
 	// VM is the client for interacting with the VM builders.
 	VM *VMClient
 	// VMRevision is the client for interacting with the VMRevision builders.
@@ -115,20 +124,21 @@ func NewClient(opts ...Option) *Client {
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.ApprovalPolicy = NewApprovalPolicyClient(c.config)
-	c.ApprovalTicket = NewApprovalTicketClient(c.config)
 	c.AuditLog = NewAuditLogClient(c.config)
 	c.AuthProvider = NewAuthProviderClient(c.config)
-	c.BatchApprovalTicket = NewBatchApprovalTicketClient(c.config)
+	c.BatchTicket = NewBatchTicketClient(c.config)
 	c.Cluster = NewClusterClient(c.config)
 	c.ClusterPolicy = NewClusterPolicyClient(c.config)
+	c.DirectorySyncJob = NewDirectorySyncJobClient(c.config)
 	c.DomainEvent = NewDomainEventClient(c.config)
-	c.ExternalApprovalSystem = NewExternalApprovalSystemClient(c.config)
-	c.IdPGroupMapping = NewIdPGroupMappingClient(c.config)
-	c.IdPSyncedGroup = NewIdPSyncedGroupClient(c.config)
+	c.ExternalCohort = NewExternalCohortClient(c.config)
+	c.ExternalCohortGrant = NewExternalCohortGrantClient(c.config)
+	c.ExternalCohortMapping = NewExternalCohortMappingClient(c.config)
 	c.InstanceSize = NewInstanceSizeClient(c.config)
 	c.NamespaceRegistry = NewNamespaceRegistryClient(c.config)
 	c.Notification = NewNotificationClient(c.config)
 	c.PendingAdoption = NewPendingAdoptionClient(c.config)
+	c.PlatformSetting = NewPlatformSettingClient(c.config)
 	c.RateLimitExemption = NewRateLimitExemptionClient(c.config)
 	c.RateLimitUserOverride = NewRateLimitUserOverrideClient(c.config)
 	c.ResourceRoleBinding = NewResourceRoleBindingClient(c.config)
@@ -138,7 +148,9 @@ func (c *Client) init() {
 	c.System = NewSystemClient(c.config)
 	c.SystemSecret = NewSystemSecretClient(c.config)
 	c.Template = NewTemplateClient(c.config)
+	c.Ticket = NewTicketClient(c.config)
 	c.User = NewUserClient(c.config)
+	c.UserDirectoryProfile = NewUserDirectoryProfileClient(c.config)
 	c.VM = NewVMClient(c.config)
 	c.VMRevision = NewVMRevisionClient(c.config)
 }
@@ -231,35 +243,38 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:                    ctx,
-		config:                 cfg,
-		ApprovalPolicy:         NewApprovalPolicyClient(cfg),
-		ApprovalTicket:         NewApprovalTicketClient(cfg),
-		AuditLog:               NewAuditLogClient(cfg),
-		AuthProvider:           NewAuthProviderClient(cfg),
-		BatchApprovalTicket:    NewBatchApprovalTicketClient(cfg),
-		Cluster:                NewClusterClient(cfg),
-		ClusterPolicy:          NewClusterPolicyClient(cfg),
-		DomainEvent:            NewDomainEventClient(cfg),
-		ExternalApprovalSystem: NewExternalApprovalSystemClient(cfg),
-		IdPGroupMapping:        NewIdPGroupMappingClient(cfg),
-		IdPSyncedGroup:         NewIdPSyncedGroupClient(cfg),
-		InstanceSize:           NewInstanceSizeClient(cfg),
-		NamespaceRegistry:      NewNamespaceRegistryClient(cfg),
-		Notification:           NewNotificationClient(cfg),
-		PendingAdoption:        NewPendingAdoptionClient(cfg),
-		RateLimitExemption:     NewRateLimitExemptionClient(cfg),
-		RateLimitUserOverride:  NewRateLimitUserOverrideClient(cfg),
-		ResourceRoleBinding:    NewResourceRoleBindingClient(cfg),
-		Role:                   NewRoleClient(cfg),
-		RoleBinding:            NewRoleBindingClient(cfg),
-		Service:                NewServiceClient(cfg),
-		System:                 NewSystemClient(cfg),
-		SystemSecret:           NewSystemSecretClient(cfg),
-		Template:               NewTemplateClient(cfg),
-		User:                   NewUserClient(cfg),
-		VM:                     NewVMClient(cfg),
-		VMRevision:             NewVMRevisionClient(cfg),
+		ctx:                   ctx,
+		config:                cfg,
+		ApprovalPolicy:        NewApprovalPolicyClient(cfg),
+		AuditLog:              NewAuditLogClient(cfg),
+		AuthProvider:          NewAuthProviderClient(cfg),
+		BatchTicket:           NewBatchTicketClient(cfg),
+		Cluster:               NewClusterClient(cfg),
+		ClusterPolicy:         NewClusterPolicyClient(cfg),
+		DirectorySyncJob:      NewDirectorySyncJobClient(cfg),
+		DomainEvent:           NewDomainEventClient(cfg),
+		ExternalCohort:        NewExternalCohortClient(cfg),
+		ExternalCohortGrant:   NewExternalCohortGrantClient(cfg),
+		ExternalCohortMapping: NewExternalCohortMappingClient(cfg),
+		InstanceSize:          NewInstanceSizeClient(cfg),
+		NamespaceRegistry:     NewNamespaceRegistryClient(cfg),
+		Notification:          NewNotificationClient(cfg),
+		PendingAdoption:       NewPendingAdoptionClient(cfg),
+		PlatformSetting:       NewPlatformSettingClient(cfg),
+		RateLimitExemption:    NewRateLimitExemptionClient(cfg),
+		RateLimitUserOverride: NewRateLimitUserOverrideClient(cfg),
+		ResourceRoleBinding:   NewResourceRoleBindingClient(cfg),
+		Role:                  NewRoleClient(cfg),
+		RoleBinding:           NewRoleBindingClient(cfg),
+		Service:               NewServiceClient(cfg),
+		System:                NewSystemClient(cfg),
+		SystemSecret:          NewSystemSecretClient(cfg),
+		Template:              NewTemplateClient(cfg),
+		Ticket:                NewTicketClient(cfg),
+		User:                  NewUserClient(cfg),
+		UserDirectoryProfile:  NewUserDirectoryProfileClient(cfg),
+		VM:                    NewVMClient(cfg),
+		VMRevision:            NewVMRevisionClient(cfg),
 	}, nil
 }
 
@@ -277,35 +292,38 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:                    ctx,
-		config:                 cfg,
-		ApprovalPolicy:         NewApprovalPolicyClient(cfg),
-		ApprovalTicket:         NewApprovalTicketClient(cfg),
-		AuditLog:               NewAuditLogClient(cfg),
-		AuthProvider:           NewAuthProviderClient(cfg),
-		BatchApprovalTicket:    NewBatchApprovalTicketClient(cfg),
-		Cluster:                NewClusterClient(cfg),
-		ClusterPolicy:          NewClusterPolicyClient(cfg),
-		DomainEvent:            NewDomainEventClient(cfg),
-		ExternalApprovalSystem: NewExternalApprovalSystemClient(cfg),
-		IdPGroupMapping:        NewIdPGroupMappingClient(cfg),
-		IdPSyncedGroup:         NewIdPSyncedGroupClient(cfg),
-		InstanceSize:           NewInstanceSizeClient(cfg),
-		NamespaceRegistry:      NewNamespaceRegistryClient(cfg),
-		Notification:           NewNotificationClient(cfg),
-		PendingAdoption:        NewPendingAdoptionClient(cfg),
-		RateLimitExemption:     NewRateLimitExemptionClient(cfg),
-		RateLimitUserOverride:  NewRateLimitUserOverrideClient(cfg),
-		ResourceRoleBinding:    NewResourceRoleBindingClient(cfg),
-		Role:                   NewRoleClient(cfg),
-		RoleBinding:            NewRoleBindingClient(cfg),
-		Service:                NewServiceClient(cfg),
-		System:                 NewSystemClient(cfg),
-		SystemSecret:           NewSystemSecretClient(cfg),
-		Template:               NewTemplateClient(cfg),
-		User:                   NewUserClient(cfg),
-		VM:                     NewVMClient(cfg),
-		VMRevision:             NewVMRevisionClient(cfg),
+		ctx:                   ctx,
+		config:                cfg,
+		ApprovalPolicy:        NewApprovalPolicyClient(cfg),
+		AuditLog:              NewAuditLogClient(cfg),
+		AuthProvider:          NewAuthProviderClient(cfg),
+		BatchTicket:           NewBatchTicketClient(cfg),
+		Cluster:               NewClusterClient(cfg),
+		ClusterPolicy:         NewClusterPolicyClient(cfg),
+		DirectorySyncJob:      NewDirectorySyncJobClient(cfg),
+		DomainEvent:           NewDomainEventClient(cfg),
+		ExternalCohort:        NewExternalCohortClient(cfg),
+		ExternalCohortGrant:   NewExternalCohortGrantClient(cfg),
+		ExternalCohortMapping: NewExternalCohortMappingClient(cfg),
+		InstanceSize:          NewInstanceSizeClient(cfg),
+		NamespaceRegistry:     NewNamespaceRegistryClient(cfg),
+		Notification:          NewNotificationClient(cfg),
+		PendingAdoption:       NewPendingAdoptionClient(cfg),
+		PlatformSetting:       NewPlatformSettingClient(cfg),
+		RateLimitExemption:    NewRateLimitExemptionClient(cfg),
+		RateLimitUserOverride: NewRateLimitUserOverrideClient(cfg),
+		ResourceRoleBinding:   NewResourceRoleBindingClient(cfg),
+		Role:                  NewRoleClient(cfg),
+		RoleBinding:           NewRoleBindingClient(cfg),
+		Service:               NewServiceClient(cfg),
+		System:                NewSystemClient(cfg),
+		SystemSecret:          NewSystemSecretClient(cfg),
+		Template:              NewTemplateClient(cfg),
+		Ticket:                NewTicketClient(cfg),
+		User:                  NewUserClient(cfg),
+		UserDirectoryProfile:  NewUserDirectoryProfileClient(cfg),
+		VM:                    NewVMClient(cfg),
+		VMRevision:            NewVMRevisionClient(cfg),
 	}, nil
 }
 
@@ -335,12 +353,13 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.ApprovalPolicy, c.ApprovalTicket, c.AuditLog, c.AuthProvider,
-		c.BatchApprovalTicket, c.Cluster, c.ClusterPolicy, c.DomainEvent,
-		c.ExternalApprovalSystem, c.IdPGroupMapping, c.IdPSyncedGroup, c.InstanceSize,
-		c.NamespaceRegistry, c.Notification, c.PendingAdoption, c.RateLimitExemption,
-		c.RateLimitUserOverride, c.ResourceRoleBinding, c.Role, c.RoleBinding,
-		c.Service, c.System, c.SystemSecret, c.Template, c.User, c.VM, c.VMRevision,
+		c.ApprovalPolicy, c.AuditLog, c.AuthProvider, c.BatchTicket, c.Cluster,
+		c.ClusterPolicy, c.DirectorySyncJob, c.DomainEvent, c.ExternalCohort,
+		c.ExternalCohortGrant, c.ExternalCohortMapping, c.InstanceSize,
+		c.NamespaceRegistry, c.Notification, c.PendingAdoption, c.PlatformSetting,
+		c.RateLimitExemption, c.RateLimitUserOverride, c.ResourceRoleBinding, c.Role,
+		c.RoleBinding, c.Service, c.System, c.SystemSecret, c.Template, c.Ticket,
+		c.User, c.UserDirectoryProfile, c.VM, c.VMRevision,
 	} {
 		n.Use(hooks...)
 	}
@@ -350,12 +369,13 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.ApprovalPolicy, c.ApprovalTicket, c.AuditLog, c.AuthProvider,
-		c.BatchApprovalTicket, c.Cluster, c.ClusterPolicy, c.DomainEvent,
-		c.ExternalApprovalSystem, c.IdPGroupMapping, c.IdPSyncedGroup, c.InstanceSize,
-		c.NamespaceRegistry, c.Notification, c.PendingAdoption, c.RateLimitExemption,
-		c.RateLimitUserOverride, c.ResourceRoleBinding, c.Role, c.RoleBinding,
-		c.Service, c.System, c.SystemSecret, c.Template, c.User, c.VM, c.VMRevision,
+		c.ApprovalPolicy, c.AuditLog, c.AuthProvider, c.BatchTicket, c.Cluster,
+		c.ClusterPolicy, c.DirectorySyncJob, c.DomainEvent, c.ExternalCohort,
+		c.ExternalCohortGrant, c.ExternalCohortMapping, c.InstanceSize,
+		c.NamespaceRegistry, c.Notification, c.PendingAdoption, c.PlatformSetting,
+		c.RateLimitExemption, c.RateLimitUserOverride, c.ResourceRoleBinding, c.Role,
+		c.RoleBinding, c.Service, c.System, c.SystemSecret, c.Template, c.Ticket,
+		c.User, c.UserDirectoryProfile, c.VM, c.VMRevision,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -366,26 +386,26 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
 	case *ApprovalPolicyMutation:
 		return c.ApprovalPolicy.mutate(ctx, m)
-	case *ApprovalTicketMutation:
-		return c.ApprovalTicket.mutate(ctx, m)
 	case *AuditLogMutation:
 		return c.AuditLog.mutate(ctx, m)
 	case *AuthProviderMutation:
 		return c.AuthProvider.mutate(ctx, m)
-	case *BatchApprovalTicketMutation:
-		return c.BatchApprovalTicket.mutate(ctx, m)
+	case *BatchTicketMutation:
+		return c.BatchTicket.mutate(ctx, m)
 	case *ClusterMutation:
 		return c.Cluster.mutate(ctx, m)
 	case *ClusterPolicyMutation:
 		return c.ClusterPolicy.mutate(ctx, m)
+	case *DirectorySyncJobMutation:
+		return c.DirectorySyncJob.mutate(ctx, m)
 	case *DomainEventMutation:
 		return c.DomainEvent.mutate(ctx, m)
-	case *ExternalApprovalSystemMutation:
-		return c.ExternalApprovalSystem.mutate(ctx, m)
-	case *IdPGroupMappingMutation:
-		return c.IdPGroupMapping.mutate(ctx, m)
-	case *IdPSyncedGroupMutation:
-		return c.IdPSyncedGroup.mutate(ctx, m)
+	case *ExternalCohortMutation:
+		return c.ExternalCohort.mutate(ctx, m)
+	case *ExternalCohortGrantMutation:
+		return c.ExternalCohortGrant.mutate(ctx, m)
+	case *ExternalCohortMappingMutation:
+		return c.ExternalCohortMapping.mutate(ctx, m)
 	case *InstanceSizeMutation:
 		return c.InstanceSize.mutate(ctx, m)
 	case *NamespaceRegistryMutation:
@@ -394,6 +414,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Notification.mutate(ctx, m)
 	case *PendingAdoptionMutation:
 		return c.PendingAdoption.mutate(ctx, m)
+	case *PlatformSettingMutation:
+		return c.PlatformSetting.mutate(ctx, m)
 	case *RateLimitExemptionMutation:
 		return c.RateLimitExemption.mutate(ctx, m)
 	case *RateLimitUserOverrideMutation:
@@ -412,8 +434,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.SystemSecret.mutate(ctx, m)
 	case *TemplateMutation:
 		return c.Template.mutate(ctx, m)
+	case *TicketMutation:
+		return c.Ticket.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
+	case *UserDirectoryProfileMutation:
+		return c.UserDirectoryProfile.mutate(ctx, m)
 	case *VMMutation:
 		return c.VM.mutate(ctx, m)
 	case *VMRevisionMutation:
@@ -553,139 +579,6 @@ func (c *ApprovalPolicyClient) mutate(ctx context.Context, m *ApprovalPolicyMuta
 		return (&ApprovalPolicyDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ApprovalPolicy mutation op: %q", m.Op())
-	}
-}
-
-// ApprovalTicketClient is a client for the ApprovalTicket schema.
-type ApprovalTicketClient struct {
-	config
-}
-
-// NewApprovalTicketClient returns a client for the ApprovalTicket from the given config.
-func NewApprovalTicketClient(c config) *ApprovalTicketClient {
-	return &ApprovalTicketClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `approvalticket.Hooks(f(g(h())))`.
-func (c *ApprovalTicketClient) Use(hooks ...Hook) {
-	c.hooks.ApprovalTicket = append(c.hooks.ApprovalTicket, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `approvalticket.Intercept(f(g(h())))`.
-func (c *ApprovalTicketClient) Intercept(interceptors ...Interceptor) {
-	c.inters.ApprovalTicket = append(c.inters.ApprovalTicket, interceptors...)
-}
-
-// Create returns a builder for creating a ApprovalTicket entity.
-func (c *ApprovalTicketClient) Create() *ApprovalTicketCreate {
-	mutation := newApprovalTicketMutation(c.config, OpCreate)
-	return &ApprovalTicketCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of ApprovalTicket entities.
-func (c *ApprovalTicketClient) CreateBulk(builders ...*ApprovalTicketCreate) *ApprovalTicketCreateBulk {
-	return &ApprovalTicketCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *ApprovalTicketClient) MapCreateBulk(slice any, setFunc func(*ApprovalTicketCreate, int)) *ApprovalTicketCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &ApprovalTicketCreateBulk{err: fmt.Errorf("calling to ApprovalTicketClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*ApprovalTicketCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &ApprovalTicketCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for ApprovalTicket.
-func (c *ApprovalTicketClient) Update() *ApprovalTicketUpdate {
-	mutation := newApprovalTicketMutation(c.config, OpUpdate)
-	return &ApprovalTicketUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *ApprovalTicketClient) UpdateOne(_m *ApprovalTicket) *ApprovalTicketUpdateOne {
-	mutation := newApprovalTicketMutation(c.config, OpUpdateOne, withApprovalTicket(_m))
-	return &ApprovalTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *ApprovalTicketClient) UpdateOneID(id string) *ApprovalTicketUpdateOne {
-	mutation := newApprovalTicketMutation(c.config, OpUpdateOne, withApprovalTicketID(id))
-	return &ApprovalTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for ApprovalTicket.
-func (c *ApprovalTicketClient) Delete() *ApprovalTicketDelete {
-	mutation := newApprovalTicketMutation(c.config, OpDelete)
-	return &ApprovalTicketDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *ApprovalTicketClient) DeleteOne(_m *ApprovalTicket) *ApprovalTicketDeleteOne {
-	return c.DeleteOneID(_m.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *ApprovalTicketClient) DeleteOneID(id string) *ApprovalTicketDeleteOne {
-	builder := c.Delete().Where(approvalticket.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &ApprovalTicketDeleteOne{builder}
-}
-
-// Query returns a query builder for ApprovalTicket.
-func (c *ApprovalTicketClient) Query() *ApprovalTicketQuery {
-	return &ApprovalTicketQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeApprovalTicket},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a ApprovalTicket entity by its id.
-func (c *ApprovalTicketClient) Get(ctx context.Context, id string) (*ApprovalTicket, error) {
-	return c.Query().Where(approvalticket.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *ApprovalTicketClient) GetX(ctx context.Context, id string) *ApprovalTicket {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// Hooks returns the client hooks.
-func (c *ApprovalTicketClient) Hooks() []Hook {
-	return c.hooks.ApprovalTicket
-}
-
-// Interceptors returns the client interceptors.
-func (c *ApprovalTicketClient) Interceptors() []Interceptor {
-	return c.inters.ApprovalTicket
-}
-
-func (c *ApprovalTicketClient) mutate(ctx context.Context, m *ApprovalTicketMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&ApprovalTicketCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&ApprovalTicketUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&ApprovalTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&ApprovalTicketDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown ApprovalTicket mutation op: %q", m.Op())
 	}
 }
 
@@ -955,107 +848,107 @@ func (c *AuthProviderClient) mutate(ctx context.Context, m *AuthProviderMutation
 	}
 }
 
-// BatchApprovalTicketClient is a client for the BatchApprovalTicket schema.
-type BatchApprovalTicketClient struct {
+// BatchTicketClient is a client for the BatchTicket schema.
+type BatchTicketClient struct {
 	config
 }
 
-// NewBatchApprovalTicketClient returns a client for the BatchApprovalTicket from the given config.
-func NewBatchApprovalTicketClient(c config) *BatchApprovalTicketClient {
-	return &BatchApprovalTicketClient{config: c}
+// NewBatchTicketClient returns a client for the BatchTicket from the given config.
+func NewBatchTicketClient(c config) *BatchTicketClient {
+	return &BatchTicketClient{config: c}
 }
 
 // Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `batchapprovalticket.Hooks(f(g(h())))`.
-func (c *BatchApprovalTicketClient) Use(hooks ...Hook) {
-	c.hooks.BatchApprovalTicket = append(c.hooks.BatchApprovalTicket, hooks...)
+// A call to `Use(f, g, h)` equals to `batchticket.Hooks(f(g(h())))`.
+func (c *BatchTicketClient) Use(hooks ...Hook) {
+	c.hooks.BatchTicket = append(c.hooks.BatchTicket, hooks...)
 }
 
 // Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `batchapprovalticket.Intercept(f(g(h())))`.
-func (c *BatchApprovalTicketClient) Intercept(interceptors ...Interceptor) {
-	c.inters.BatchApprovalTicket = append(c.inters.BatchApprovalTicket, interceptors...)
+// A call to `Intercept(f, g, h)` equals to `batchticket.Intercept(f(g(h())))`.
+func (c *BatchTicketClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BatchTicket = append(c.inters.BatchTicket, interceptors...)
 }
 
-// Create returns a builder for creating a BatchApprovalTicket entity.
-func (c *BatchApprovalTicketClient) Create() *BatchApprovalTicketCreate {
-	mutation := newBatchApprovalTicketMutation(c.config, OpCreate)
-	return &BatchApprovalTicketCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+// Create returns a builder for creating a BatchTicket entity.
+func (c *BatchTicketClient) Create() *BatchTicketCreate {
+	mutation := newBatchTicketMutation(c.config, OpCreate)
+	return &BatchTicketCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
-// CreateBulk returns a builder for creating a bulk of BatchApprovalTicket entities.
-func (c *BatchApprovalTicketClient) CreateBulk(builders ...*BatchApprovalTicketCreate) *BatchApprovalTicketCreateBulk {
-	return &BatchApprovalTicketCreateBulk{config: c.config, builders: builders}
+// CreateBulk returns a builder for creating a bulk of BatchTicket entities.
+func (c *BatchTicketClient) CreateBulk(builders ...*BatchTicketCreate) *BatchTicketCreateBulk {
+	return &BatchTicketCreateBulk{config: c.config, builders: builders}
 }
 
 // MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
 // a builder and applies setFunc on it.
-func (c *BatchApprovalTicketClient) MapCreateBulk(slice any, setFunc func(*BatchApprovalTicketCreate, int)) *BatchApprovalTicketCreateBulk {
+func (c *BatchTicketClient) MapCreateBulk(slice any, setFunc func(*BatchTicketCreate, int)) *BatchTicketCreateBulk {
 	rv := reflect.ValueOf(slice)
 	if rv.Kind() != reflect.Slice {
-		return &BatchApprovalTicketCreateBulk{err: fmt.Errorf("calling to BatchApprovalTicketClient.MapCreateBulk with wrong type %T, need slice", slice)}
+		return &BatchTicketCreateBulk{err: fmt.Errorf("calling to BatchTicketClient.MapCreateBulk with wrong type %T, need slice", slice)}
 	}
-	builders := make([]*BatchApprovalTicketCreate, rv.Len())
+	builders := make([]*BatchTicketCreate, rv.Len())
 	for i := 0; i < rv.Len(); i++ {
 		builders[i] = c.Create()
 		setFunc(builders[i], i)
 	}
-	return &BatchApprovalTicketCreateBulk{config: c.config, builders: builders}
+	return &BatchTicketCreateBulk{config: c.config, builders: builders}
 }
 
-// Update returns an update builder for BatchApprovalTicket.
-func (c *BatchApprovalTicketClient) Update() *BatchApprovalTicketUpdate {
-	mutation := newBatchApprovalTicketMutation(c.config, OpUpdate)
-	return &BatchApprovalTicketUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+// Update returns an update builder for BatchTicket.
+func (c *BatchTicketClient) Update() *BatchTicketUpdate {
+	mutation := newBatchTicketMutation(c.config, OpUpdate)
+	return &BatchTicketUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
 // UpdateOne returns an update builder for the given entity.
-func (c *BatchApprovalTicketClient) UpdateOne(_m *BatchApprovalTicket) *BatchApprovalTicketUpdateOne {
-	mutation := newBatchApprovalTicketMutation(c.config, OpUpdateOne, withBatchApprovalTicket(_m))
-	return &BatchApprovalTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+func (c *BatchTicketClient) UpdateOne(_m *BatchTicket) *BatchTicketUpdateOne {
+	mutation := newBatchTicketMutation(c.config, OpUpdateOne, withBatchTicket(_m))
+	return &BatchTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
 // UpdateOneID returns an update builder for the given id.
-func (c *BatchApprovalTicketClient) UpdateOneID(id string) *BatchApprovalTicketUpdateOne {
-	mutation := newBatchApprovalTicketMutation(c.config, OpUpdateOne, withBatchApprovalTicketID(id))
-	return &BatchApprovalTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+func (c *BatchTicketClient) UpdateOneID(id string) *BatchTicketUpdateOne {
+	mutation := newBatchTicketMutation(c.config, OpUpdateOne, withBatchTicketID(id))
+	return &BatchTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
-// Delete returns a delete builder for BatchApprovalTicket.
-func (c *BatchApprovalTicketClient) Delete() *BatchApprovalTicketDelete {
-	mutation := newBatchApprovalTicketMutation(c.config, OpDelete)
-	return &BatchApprovalTicketDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+// Delete returns a delete builder for BatchTicket.
+func (c *BatchTicketClient) Delete() *BatchTicketDelete {
+	mutation := newBatchTicketMutation(c.config, OpDelete)
+	return &BatchTicketDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
 // DeleteOne returns a builder for deleting the given entity.
-func (c *BatchApprovalTicketClient) DeleteOne(_m *BatchApprovalTicket) *BatchApprovalTicketDeleteOne {
+func (c *BatchTicketClient) DeleteOne(_m *BatchTicket) *BatchTicketDeleteOne {
 	return c.DeleteOneID(_m.ID)
 }
 
 // DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *BatchApprovalTicketClient) DeleteOneID(id string) *BatchApprovalTicketDeleteOne {
-	builder := c.Delete().Where(batchapprovalticket.ID(id))
+func (c *BatchTicketClient) DeleteOneID(id string) *BatchTicketDeleteOne {
+	builder := c.Delete().Where(batchticket.ID(id))
 	builder.mutation.id = &id
 	builder.mutation.op = OpDeleteOne
-	return &BatchApprovalTicketDeleteOne{builder}
+	return &BatchTicketDeleteOne{builder}
 }
 
-// Query returns a query builder for BatchApprovalTicket.
-func (c *BatchApprovalTicketClient) Query() *BatchApprovalTicketQuery {
-	return &BatchApprovalTicketQuery{
+// Query returns a query builder for BatchTicket.
+func (c *BatchTicketClient) Query() *BatchTicketQuery {
+	return &BatchTicketQuery{
 		config: c.config,
-		ctx:    &QueryContext{Type: TypeBatchApprovalTicket},
+		ctx:    &QueryContext{Type: TypeBatchTicket},
 		inters: c.Interceptors(),
 	}
 }
 
-// Get returns a BatchApprovalTicket entity by its id.
-func (c *BatchApprovalTicketClient) Get(ctx context.Context, id string) (*BatchApprovalTicket, error) {
-	return c.Query().Where(batchapprovalticket.ID(id)).Only(ctx)
+// Get returns a BatchTicket entity by its id.
+func (c *BatchTicketClient) Get(ctx context.Context, id string) (*BatchTicket, error) {
+	return c.Query().Where(batchticket.ID(id)).Only(ctx)
 }
 
 // GetX is like Get, but panics if an error occurs.
-func (c *BatchApprovalTicketClient) GetX(ctx context.Context, id string) *BatchApprovalTicket {
+func (c *BatchTicketClient) GetX(ctx context.Context, id string) *BatchTicket {
 	obj, err := c.Get(ctx, id)
 	if err != nil {
 		panic(err)
@@ -1064,27 +957,27 @@ func (c *BatchApprovalTicketClient) GetX(ctx context.Context, id string) *BatchA
 }
 
 // Hooks returns the client hooks.
-func (c *BatchApprovalTicketClient) Hooks() []Hook {
-	return c.hooks.BatchApprovalTicket
+func (c *BatchTicketClient) Hooks() []Hook {
+	return c.hooks.BatchTicket
 }
 
 // Interceptors returns the client interceptors.
-func (c *BatchApprovalTicketClient) Interceptors() []Interceptor {
-	return c.inters.BatchApprovalTicket
+func (c *BatchTicketClient) Interceptors() []Interceptor {
+	return c.inters.BatchTicket
 }
 
-func (c *BatchApprovalTicketClient) mutate(ctx context.Context, m *BatchApprovalTicketMutation) (Value, error) {
+func (c *BatchTicketClient) mutate(ctx context.Context, m *BatchTicketMutation) (Value, error) {
 	switch m.Op() {
 	case OpCreate:
-		return (&BatchApprovalTicketCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+		return (&BatchTicketCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpUpdate:
-		return (&BatchApprovalTicketUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+		return (&BatchTicketUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpUpdateOne:
-		return (&BatchApprovalTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+		return (&BatchTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpDelete, OpDeleteOne:
-		return (&BatchApprovalTicketDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+		return (&BatchTicketDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
-		return nil, fmt.Errorf("ent: unknown BatchApprovalTicket mutation op: %q", m.Op())
+		return nil, fmt.Errorf("ent: unknown BatchTicket mutation op: %q", m.Op())
 	}
 }
 
@@ -1386,6 +1279,139 @@ func (c *ClusterPolicyClient) mutate(ctx context.Context, m *ClusterPolicyMutati
 	}
 }
 
+// DirectorySyncJobClient is a client for the DirectorySyncJob schema.
+type DirectorySyncJobClient struct {
+	config
+}
+
+// NewDirectorySyncJobClient returns a client for the DirectorySyncJob from the given config.
+func NewDirectorySyncJobClient(c config) *DirectorySyncJobClient {
+	return &DirectorySyncJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `directorysyncjob.Hooks(f(g(h())))`.
+func (c *DirectorySyncJobClient) Use(hooks ...Hook) {
+	c.hooks.DirectorySyncJob = append(c.hooks.DirectorySyncJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `directorysyncjob.Intercept(f(g(h())))`.
+func (c *DirectorySyncJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.DirectorySyncJob = append(c.inters.DirectorySyncJob, interceptors...)
+}
+
+// Create returns a builder for creating a DirectorySyncJob entity.
+func (c *DirectorySyncJobClient) Create() *DirectorySyncJobCreate {
+	mutation := newDirectorySyncJobMutation(c.config, OpCreate)
+	return &DirectorySyncJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of DirectorySyncJob entities.
+func (c *DirectorySyncJobClient) CreateBulk(builders ...*DirectorySyncJobCreate) *DirectorySyncJobCreateBulk {
+	return &DirectorySyncJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *DirectorySyncJobClient) MapCreateBulk(slice any, setFunc func(*DirectorySyncJobCreate, int)) *DirectorySyncJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &DirectorySyncJobCreateBulk{err: fmt.Errorf("calling to DirectorySyncJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*DirectorySyncJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &DirectorySyncJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for DirectorySyncJob.
+func (c *DirectorySyncJobClient) Update() *DirectorySyncJobUpdate {
+	mutation := newDirectorySyncJobMutation(c.config, OpUpdate)
+	return &DirectorySyncJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *DirectorySyncJobClient) UpdateOne(_m *DirectorySyncJob) *DirectorySyncJobUpdateOne {
+	mutation := newDirectorySyncJobMutation(c.config, OpUpdateOne, withDirectorySyncJob(_m))
+	return &DirectorySyncJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *DirectorySyncJobClient) UpdateOneID(id string) *DirectorySyncJobUpdateOne {
+	mutation := newDirectorySyncJobMutation(c.config, OpUpdateOne, withDirectorySyncJobID(id))
+	return &DirectorySyncJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for DirectorySyncJob.
+func (c *DirectorySyncJobClient) Delete() *DirectorySyncJobDelete {
+	mutation := newDirectorySyncJobMutation(c.config, OpDelete)
+	return &DirectorySyncJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *DirectorySyncJobClient) DeleteOne(_m *DirectorySyncJob) *DirectorySyncJobDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *DirectorySyncJobClient) DeleteOneID(id string) *DirectorySyncJobDeleteOne {
+	builder := c.Delete().Where(directorysyncjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &DirectorySyncJobDeleteOne{builder}
+}
+
+// Query returns a query builder for DirectorySyncJob.
+func (c *DirectorySyncJobClient) Query() *DirectorySyncJobQuery {
+	return &DirectorySyncJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeDirectorySyncJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a DirectorySyncJob entity by its id.
+func (c *DirectorySyncJobClient) Get(ctx context.Context, id string) (*DirectorySyncJob, error) {
+	return c.Query().Where(directorysyncjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *DirectorySyncJobClient) GetX(ctx context.Context, id string) *DirectorySyncJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *DirectorySyncJobClient) Hooks() []Hook {
+	return c.hooks.DirectorySyncJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *DirectorySyncJobClient) Interceptors() []Interceptor {
+	return c.inters.DirectorySyncJob
+}
+
+func (c *DirectorySyncJobClient) mutate(ctx context.Context, m *DirectorySyncJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&DirectorySyncJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&DirectorySyncJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&DirectorySyncJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&DirectorySyncJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown DirectorySyncJob mutation op: %q", m.Op())
+	}
+}
+
 // DomainEventClient is a client for the DomainEvent schema.
 type DomainEventClient struct {
 	config
@@ -1519,107 +1545,107 @@ func (c *DomainEventClient) mutate(ctx context.Context, m *DomainEventMutation) 
 	}
 }
 
-// ExternalApprovalSystemClient is a client for the ExternalApprovalSystem schema.
-type ExternalApprovalSystemClient struct {
+// ExternalCohortClient is a client for the ExternalCohort schema.
+type ExternalCohortClient struct {
 	config
 }
 
-// NewExternalApprovalSystemClient returns a client for the ExternalApprovalSystem from the given config.
-func NewExternalApprovalSystemClient(c config) *ExternalApprovalSystemClient {
-	return &ExternalApprovalSystemClient{config: c}
+// NewExternalCohortClient returns a client for the ExternalCohort from the given config.
+func NewExternalCohortClient(c config) *ExternalCohortClient {
+	return &ExternalCohortClient{config: c}
 }
 
 // Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `externalapprovalsystem.Hooks(f(g(h())))`.
-func (c *ExternalApprovalSystemClient) Use(hooks ...Hook) {
-	c.hooks.ExternalApprovalSystem = append(c.hooks.ExternalApprovalSystem, hooks...)
+// A call to `Use(f, g, h)` equals to `externalcohort.Hooks(f(g(h())))`.
+func (c *ExternalCohortClient) Use(hooks ...Hook) {
+	c.hooks.ExternalCohort = append(c.hooks.ExternalCohort, hooks...)
 }
 
 // Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `externalapprovalsystem.Intercept(f(g(h())))`.
-func (c *ExternalApprovalSystemClient) Intercept(interceptors ...Interceptor) {
-	c.inters.ExternalApprovalSystem = append(c.inters.ExternalApprovalSystem, interceptors...)
+// A call to `Intercept(f, g, h)` equals to `externalcohort.Intercept(f(g(h())))`.
+func (c *ExternalCohortClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ExternalCohort = append(c.inters.ExternalCohort, interceptors...)
 }
 
-// Create returns a builder for creating a ExternalApprovalSystem entity.
-func (c *ExternalApprovalSystemClient) Create() *ExternalApprovalSystemCreate {
-	mutation := newExternalApprovalSystemMutation(c.config, OpCreate)
-	return &ExternalApprovalSystemCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+// Create returns a builder for creating a ExternalCohort entity.
+func (c *ExternalCohortClient) Create() *ExternalCohortCreate {
+	mutation := newExternalCohortMutation(c.config, OpCreate)
+	return &ExternalCohortCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
-// CreateBulk returns a builder for creating a bulk of ExternalApprovalSystem entities.
-func (c *ExternalApprovalSystemClient) CreateBulk(builders ...*ExternalApprovalSystemCreate) *ExternalApprovalSystemCreateBulk {
-	return &ExternalApprovalSystemCreateBulk{config: c.config, builders: builders}
+// CreateBulk returns a builder for creating a bulk of ExternalCohort entities.
+func (c *ExternalCohortClient) CreateBulk(builders ...*ExternalCohortCreate) *ExternalCohortCreateBulk {
+	return &ExternalCohortCreateBulk{config: c.config, builders: builders}
 }
 
 // MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
 // a builder and applies setFunc on it.
-func (c *ExternalApprovalSystemClient) MapCreateBulk(slice any, setFunc func(*ExternalApprovalSystemCreate, int)) *ExternalApprovalSystemCreateBulk {
+func (c *ExternalCohortClient) MapCreateBulk(slice any, setFunc func(*ExternalCohortCreate, int)) *ExternalCohortCreateBulk {
 	rv := reflect.ValueOf(slice)
 	if rv.Kind() != reflect.Slice {
-		return &ExternalApprovalSystemCreateBulk{err: fmt.Errorf("calling to ExternalApprovalSystemClient.MapCreateBulk with wrong type %T, need slice", slice)}
+		return &ExternalCohortCreateBulk{err: fmt.Errorf("calling to ExternalCohortClient.MapCreateBulk with wrong type %T, need slice", slice)}
 	}
-	builders := make([]*ExternalApprovalSystemCreate, rv.Len())
+	builders := make([]*ExternalCohortCreate, rv.Len())
 	for i := 0; i < rv.Len(); i++ {
 		builders[i] = c.Create()
 		setFunc(builders[i], i)
 	}
-	return &ExternalApprovalSystemCreateBulk{config: c.config, builders: builders}
+	return &ExternalCohortCreateBulk{config: c.config, builders: builders}
 }
 
-// Update returns an update builder for ExternalApprovalSystem.
-func (c *ExternalApprovalSystemClient) Update() *ExternalApprovalSystemUpdate {
-	mutation := newExternalApprovalSystemMutation(c.config, OpUpdate)
-	return &ExternalApprovalSystemUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+// Update returns an update builder for ExternalCohort.
+func (c *ExternalCohortClient) Update() *ExternalCohortUpdate {
+	mutation := newExternalCohortMutation(c.config, OpUpdate)
+	return &ExternalCohortUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
 // UpdateOne returns an update builder for the given entity.
-func (c *ExternalApprovalSystemClient) UpdateOne(_m *ExternalApprovalSystem) *ExternalApprovalSystemUpdateOne {
-	mutation := newExternalApprovalSystemMutation(c.config, OpUpdateOne, withExternalApprovalSystem(_m))
-	return &ExternalApprovalSystemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+func (c *ExternalCohortClient) UpdateOne(_m *ExternalCohort) *ExternalCohortUpdateOne {
+	mutation := newExternalCohortMutation(c.config, OpUpdateOne, withExternalCohort(_m))
+	return &ExternalCohortUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
 // UpdateOneID returns an update builder for the given id.
-func (c *ExternalApprovalSystemClient) UpdateOneID(id string) *ExternalApprovalSystemUpdateOne {
-	mutation := newExternalApprovalSystemMutation(c.config, OpUpdateOne, withExternalApprovalSystemID(id))
-	return &ExternalApprovalSystemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+func (c *ExternalCohortClient) UpdateOneID(id string) *ExternalCohortUpdateOne {
+	mutation := newExternalCohortMutation(c.config, OpUpdateOne, withExternalCohortID(id))
+	return &ExternalCohortUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
-// Delete returns a delete builder for ExternalApprovalSystem.
-func (c *ExternalApprovalSystemClient) Delete() *ExternalApprovalSystemDelete {
-	mutation := newExternalApprovalSystemMutation(c.config, OpDelete)
-	return &ExternalApprovalSystemDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+// Delete returns a delete builder for ExternalCohort.
+func (c *ExternalCohortClient) Delete() *ExternalCohortDelete {
+	mutation := newExternalCohortMutation(c.config, OpDelete)
+	return &ExternalCohortDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
 // DeleteOne returns a builder for deleting the given entity.
-func (c *ExternalApprovalSystemClient) DeleteOne(_m *ExternalApprovalSystem) *ExternalApprovalSystemDeleteOne {
+func (c *ExternalCohortClient) DeleteOne(_m *ExternalCohort) *ExternalCohortDeleteOne {
 	return c.DeleteOneID(_m.ID)
 }
 
 // DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *ExternalApprovalSystemClient) DeleteOneID(id string) *ExternalApprovalSystemDeleteOne {
-	builder := c.Delete().Where(externalapprovalsystem.ID(id))
+func (c *ExternalCohortClient) DeleteOneID(id string) *ExternalCohortDeleteOne {
+	builder := c.Delete().Where(externalcohort.ID(id))
 	builder.mutation.id = &id
 	builder.mutation.op = OpDeleteOne
-	return &ExternalApprovalSystemDeleteOne{builder}
+	return &ExternalCohortDeleteOne{builder}
 }
 
-// Query returns a query builder for ExternalApprovalSystem.
-func (c *ExternalApprovalSystemClient) Query() *ExternalApprovalSystemQuery {
-	return &ExternalApprovalSystemQuery{
+// Query returns a query builder for ExternalCohort.
+func (c *ExternalCohortClient) Query() *ExternalCohortQuery {
+	return &ExternalCohortQuery{
 		config: c.config,
-		ctx:    &QueryContext{Type: TypeExternalApprovalSystem},
+		ctx:    &QueryContext{Type: TypeExternalCohort},
 		inters: c.Interceptors(),
 	}
 }
 
-// Get returns a ExternalApprovalSystem entity by its id.
-func (c *ExternalApprovalSystemClient) Get(ctx context.Context, id string) (*ExternalApprovalSystem, error) {
-	return c.Query().Where(externalapprovalsystem.ID(id)).Only(ctx)
+// Get returns a ExternalCohort entity by its id.
+func (c *ExternalCohortClient) Get(ctx context.Context, id string) (*ExternalCohort, error) {
+	return c.Query().Where(externalcohort.ID(id)).Only(ctx)
 }
 
 // GetX is like Get, but panics if an error occurs.
-func (c *ExternalApprovalSystemClient) GetX(ctx context.Context, id string) *ExternalApprovalSystem {
+func (c *ExternalCohortClient) GetX(ctx context.Context, id string) *ExternalCohort {
 	obj, err := c.Get(ctx, id)
 	if err != nil {
 		panic(err)
@@ -1628,131 +1654,296 @@ func (c *ExternalApprovalSystemClient) GetX(ctx context.Context, id string) *Ext
 }
 
 // Hooks returns the client hooks.
-func (c *ExternalApprovalSystemClient) Hooks() []Hook {
-	return c.hooks.ExternalApprovalSystem
+func (c *ExternalCohortClient) Hooks() []Hook {
+	return c.hooks.ExternalCohort
 }
 
 // Interceptors returns the client interceptors.
-func (c *ExternalApprovalSystemClient) Interceptors() []Interceptor {
-	return c.inters.ExternalApprovalSystem
+func (c *ExternalCohortClient) Interceptors() []Interceptor {
+	return c.inters.ExternalCohort
 }
 
-func (c *ExternalApprovalSystemClient) mutate(ctx context.Context, m *ExternalApprovalSystemMutation) (Value, error) {
+func (c *ExternalCohortClient) mutate(ctx context.Context, m *ExternalCohortMutation) (Value, error) {
 	switch m.Op() {
 	case OpCreate:
-		return (&ExternalApprovalSystemCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+		return (&ExternalCohortCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpUpdate:
-		return (&ExternalApprovalSystemUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+		return (&ExternalCohortUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpUpdateOne:
-		return (&ExternalApprovalSystemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+		return (&ExternalCohortUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpDelete, OpDeleteOne:
-		return (&ExternalApprovalSystemDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+		return (&ExternalCohortDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
-		return nil, fmt.Errorf("ent: unknown ExternalApprovalSystem mutation op: %q", m.Op())
+		return nil, fmt.Errorf("ent: unknown ExternalCohort mutation op: %q", m.Op())
 	}
 }
 
-// IdPGroupMappingClient is a client for the IdPGroupMapping schema.
-type IdPGroupMappingClient struct {
+// ExternalCohortGrantClient is a client for the ExternalCohortGrant schema.
+type ExternalCohortGrantClient struct {
 	config
 }
 
-// NewIdPGroupMappingClient returns a client for the IdPGroupMapping from the given config.
-func NewIdPGroupMappingClient(c config) *IdPGroupMappingClient {
-	return &IdPGroupMappingClient{config: c}
+// NewExternalCohortGrantClient returns a client for the ExternalCohortGrant from the given config.
+func NewExternalCohortGrantClient(c config) *ExternalCohortGrantClient {
+	return &ExternalCohortGrantClient{config: c}
 }
 
 // Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `idpgroupmapping.Hooks(f(g(h())))`.
-func (c *IdPGroupMappingClient) Use(hooks ...Hook) {
-	c.hooks.IdPGroupMapping = append(c.hooks.IdPGroupMapping, hooks...)
+// A call to `Use(f, g, h)` equals to `externalcohortgrant.Hooks(f(g(h())))`.
+func (c *ExternalCohortGrantClient) Use(hooks ...Hook) {
+	c.hooks.ExternalCohortGrant = append(c.hooks.ExternalCohortGrant, hooks...)
 }
 
 // Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `idpgroupmapping.Intercept(f(g(h())))`.
-func (c *IdPGroupMappingClient) Intercept(interceptors ...Interceptor) {
-	c.inters.IdPGroupMapping = append(c.inters.IdPGroupMapping, interceptors...)
+// A call to `Intercept(f, g, h)` equals to `externalcohortgrant.Intercept(f(g(h())))`.
+func (c *ExternalCohortGrantClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ExternalCohortGrant = append(c.inters.ExternalCohortGrant, interceptors...)
 }
 
-// Create returns a builder for creating a IdPGroupMapping entity.
-func (c *IdPGroupMappingClient) Create() *IdPGroupMappingCreate {
-	mutation := newIdPGroupMappingMutation(c.config, OpCreate)
-	return &IdPGroupMappingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+// Create returns a builder for creating a ExternalCohortGrant entity.
+func (c *ExternalCohortGrantClient) Create() *ExternalCohortGrantCreate {
+	mutation := newExternalCohortGrantMutation(c.config, OpCreate)
+	return &ExternalCohortGrantCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
-// CreateBulk returns a builder for creating a bulk of IdPGroupMapping entities.
-func (c *IdPGroupMappingClient) CreateBulk(builders ...*IdPGroupMappingCreate) *IdPGroupMappingCreateBulk {
-	return &IdPGroupMappingCreateBulk{config: c.config, builders: builders}
+// CreateBulk returns a builder for creating a bulk of ExternalCohortGrant entities.
+func (c *ExternalCohortGrantClient) CreateBulk(builders ...*ExternalCohortGrantCreate) *ExternalCohortGrantCreateBulk {
+	return &ExternalCohortGrantCreateBulk{config: c.config, builders: builders}
 }
 
 // MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
 // a builder and applies setFunc on it.
-func (c *IdPGroupMappingClient) MapCreateBulk(slice any, setFunc func(*IdPGroupMappingCreate, int)) *IdPGroupMappingCreateBulk {
+func (c *ExternalCohortGrantClient) MapCreateBulk(slice any, setFunc func(*ExternalCohortGrantCreate, int)) *ExternalCohortGrantCreateBulk {
 	rv := reflect.ValueOf(slice)
 	if rv.Kind() != reflect.Slice {
-		return &IdPGroupMappingCreateBulk{err: fmt.Errorf("calling to IdPGroupMappingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+		return &ExternalCohortGrantCreateBulk{err: fmt.Errorf("calling to ExternalCohortGrantClient.MapCreateBulk with wrong type %T, need slice", slice)}
 	}
-	builders := make([]*IdPGroupMappingCreate, rv.Len())
+	builders := make([]*ExternalCohortGrantCreate, rv.Len())
 	for i := 0; i < rv.Len(); i++ {
 		builders[i] = c.Create()
 		setFunc(builders[i], i)
 	}
-	return &IdPGroupMappingCreateBulk{config: c.config, builders: builders}
+	return &ExternalCohortGrantCreateBulk{config: c.config, builders: builders}
 }
 
-// Update returns an update builder for IdPGroupMapping.
-func (c *IdPGroupMappingClient) Update() *IdPGroupMappingUpdate {
-	mutation := newIdPGroupMappingMutation(c.config, OpUpdate)
-	return &IdPGroupMappingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+// Update returns an update builder for ExternalCohortGrant.
+func (c *ExternalCohortGrantClient) Update() *ExternalCohortGrantUpdate {
+	mutation := newExternalCohortGrantMutation(c.config, OpUpdate)
+	return &ExternalCohortGrantUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
 // UpdateOne returns an update builder for the given entity.
-func (c *IdPGroupMappingClient) UpdateOne(_m *IdPGroupMapping) *IdPGroupMappingUpdateOne {
-	mutation := newIdPGroupMappingMutation(c.config, OpUpdateOne, withIdPGroupMapping(_m))
-	return &IdPGroupMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+func (c *ExternalCohortGrantClient) UpdateOne(_m *ExternalCohortGrant) *ExternalCohortGrantUpdateOne {
+	mutation := newExternalCohortGrantMutation(c.config, OpUpdateOne, withExternalCohortGrant(_m))
+	return &ExternalCohortGrantUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
 // UpdateOneID returns an update builder for the given id.
-func (c *IdPGroupMappingClient) UpdateOneID(id string) *IdPGroupMappingUpdateOne {
-	mutation := newIdPGroupMappingMutation(c.config, OpUpdateOne, withIdPGroupMappingID(id))
-	return &IdPGroupMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+func (c *ExternalCohortGrantClient) UpdateOneID(id string) *ExternalCohortGrantUpdateOne {
+	mutation := newExternalCohortGrantMutation(c.config, OpUpdateOne, withExternalCohortGrantID(id))
+	return &ExternalCohortGrantUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
-// Delete returns a delete builder for IdPGroupMapping.
-func (c *IdPGroupMappingClient) Delete() *IdPGroupMappingDelete {
-	mutation := newIdPGroupMappingMutation(c.config, OpDelete)
-	return &IdPGroupMappingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+// Delete returns a delete builder for ExternalCohortGrant.
+func (c *ExternalCohortGrantClient) Delete() *ExternalCohortGrantDelete {
+	mutation := newExternalCohortGrantMutation(c.config, OpDelete)
+	return &ExternalCohortGrantDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
 
 // DeleteOne returns a builder for deleting the given entity.
-func (c *IdPGroupMappingClient) DeleteOne(_m *IdPGroupMapping) *IdPGroupMappingDeleteOne {
+func (c *ExternalCohortGrantClient) DeleteOne(_m *ExternalCohortGrant) *ExternalCohortGrantDeleteOne {
 	return c.DeleteOneID(_m.ID)
 }
 
 // DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *IdPGroupMappingClient) DeleteOneID(id string) *IdPGroupMappingDeleteOne {
-	builder := c.Delete().Where(idpgroupmapping.ID(id))
+func (c *ExternalCohortGrantClient) DeleteOneID(id string) *ExternalCohortGrantDeleteOne {
+	builder := c.Delete().Where(externalcohortgrant.ID(id))
 	builder.mutation.id = &id
 	builder.mutation.op = OpDeleteOne
-	return &IdPGroupMappingDeleteOne{builder}
+	return &ExternalCohortGrantDeleteOne{builder}
 }
 
-// Query returns a query builder for IdPGroupMapping.
-func (c *IdPGroupMappingClient) Query() *IdPGroupMappingQuery {
-	return &IdPGroupMappingQuery{
+// Query returns a query builder for ExternalCohortGrant.
+func (c *ExternalCohortGrantClient) Query() *ExternalCohortGrantQuery {
+	return &ExternalCohortGrantQuery{
 		config: c.config,
-		ctx:    &QueryContext{Type: TypeIdPGroupMapping},
+		ctx:    &QueryContext{Type: TypeExternalCohortGrant},
 		inters: c.Interceptors(),
 	}
 }
 
-// Get returns a IdPGroupMapping entity by its id.
-func (c *IdPGroupMappingClient) Get(ctx context.Context, id string) (*IdPGroupMapping, error) {
-	return c.Query().Where(idpgroupmapping.ID(id)).Only(ctx)
+// Get returns a ExternalCohortGrant entity by its id.
+func (c *ExternalCohortGrantClient) Get(ctx context.Context, id string) (*ExternalCohortGrant, error) {
+	return c.Query().Where(externalcohortgrant.ID(id)).Only(ctx)
 }
 
 // GetX is like Get, but panics if an error occurs.
-func (c *IdPGroupMappingClient) GetX(ctx context.Context, id string) *IdPGroupMapping {
+func (c *ExternalCohortGrantClient) GetX(ctx context.Context, id string) *ExternalCohortGrant {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a ExternalCohortGrant.
+func (c *ExternalCohortGrantClient) QueryUser(_m *ExternalCohortGrant) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(externalcohortgrant.Table, externalcohortgrant.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, externalcohortgrant.UserTable, externalcohortgrant.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRoleBinding queries the role_binding edge of a ExternalCohortGrant.
+func (c *ExternalCohortGrantClient) QueryRoleBinding(_m *ExternalCohortGrant) *RoleBindingQuery {
+	query := (&RoleBindingClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(externalcohortgrant.Table, externalcohortgrant.FieldID, id),
+			sqlgraph.To(rolebinding.Table, rolebinding.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, externalcohortgrant.RoleBindingTable, externalcohortgrant.RoleBindingColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *ExternalCohortGrantClient) Hooks() []Hook {
+	return c.hooks.ExternalCohortGrant
+}
+
+// Interceptors returns the client interceptors.
+func (c *ExternalCohortGrantClient) Interceptors() []Interceptor {
+	return c.inters.ExternalCohortGrant
+}
+
+func (c *ExternalCohortGrantClient) mutate(ctx context.Context, m *ExternalCohortGrantMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ExternalCohortGrantCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ExternalCohortGrantUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ExternalCohortGrantUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ExternalCohortGrantDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ExternalCohortGrant mutation op: %q", m.Op())
+	}
+}
+
+// ExternalCohortMappingClient is a client for the ExternalCohortMapping schema.
+type ExternalCohortMappingClient struct {
+	config
+}
+
+// NewExternalCohortMappingClient returns a client for the ExternalCohortMapping from the given config.
+func NewExternalCohortMappingClient(c config) *ExternalCohortMappingClient {
+	return &ExternalCohortMappingClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `externalcohortmapping.Hooks(f(g(h())))`.
+func (c *ExternalCohortMappingClient) Use(hooks ...Hook) {
+	c.hooks.ExternalCohortMapping = append(c.hooks.ExternalCohortMapping, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `externalcohortmapping.Intercept(f(g(h())))`.
+func (c *ExternalCohortMappingClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ExternalCohortMapping = append(c.inters.ExternalCohortMapping, interceptors...)
+}
+
+// Create returns a builder for creating a ExternalCohortMapping entity.
+func (c *ExternalCohortMappingClient) Create() *ExternalCohortMappingCreate {
+	mutation := newExternalCohortMappingMutation(c.config, OpCreate)
+	return &ExternalCohortMappingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ExternalCohortMapping entities.
+func (c *ExternalCohortMappingClient) CreateBulk(builders ...*ExternalCohortMappingCreate) *ExternalCohortMappingCreateBulk {
+	return &ExternalCohortMappingCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ExternalCohortMappingClient) MapCreateBulk(slice any, setFunc func(*ExternalCohortMappingCreate, int)) *ExternalCohortMappingCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ExternalCohortMappingCreateBulk{err: fmt.Errorf("calling to ExternalCohortMappingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ExternalCohortMappingCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ExternalCohortMappingCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ExternalCohortMapping.
+func (c *ExternalCohortMappingClient) Update() *ExternalCohortMappingUpdate {
+	mutation := newExternalCohortMappingMutation(c.config, OpUpdate)
+	return &ExternalCohortMappingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ExternalCohortMappingClient) UpdateOne(_m *ExternalCohortMapping) *ExternalCohortMappingUpdateOne {
+	mutation := newExternalCohortMappingMutation(c.config, OpUpdateOne, withExternalCohortMapping(_m))
+	return &ExternalCohortMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ExternalCohortMappingClient) UpdateOneID(id string) *ExternalCohortMappingUpdateOne {
+	mutation := newExternalCohortMappingMutation(c.config, OpUpdateOne, withExternalCohortMappingID(id))
+	return &ExternalCohortMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ExternalCohortMapping.
+func (c *ExternalCohortMappingClient) Delete() *ExternalCohortMappingDelete {
+	mutation := newExternalCohortMappingMutation(c.config, OpDelete)
+	return &ExternalCohortMappingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ExternalCohortMappingClient) DeleteOne(_m *ExternalCohortMapping) *ExternalCohortMappingDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ExternalCohortMappingClient) DeleteOneID(id string) *ExternalCohortMappingDeleteOne {
+	builder := c.Delete().Where(externalcohortmapping.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ExternalCohortMappingDeleteOne{builder}
+}
+
+// Query returns a query builder for ExternalCohortMapping.
+func (c *ExternalCohortMappingClient) Query() *ExternalCohortMappingQuery {
+	return &ExternalCohortMappingQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeExternalCohortMapping},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ExternalCohortMapping entity by its id.
+func (c *ExternalCohortMappingClient) Get(ctx context.Context, id string) (*ExternalCohortMapping, error) {
+	return c.Query().Where(externalcohortmapping.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ExternalCohortMappingClient) GetX(ctx context.Context, id string) *ExternalCohortMapping {
 	obj, err := c.Get(ctx, id)
 	if err != nil {
 		panic(err)
@@ -1761,160 +1952,27 @@ func (c *IdPGroupMappingClient) GetX(ctx context.Context, id string) *IdPGroupMa
 }
 
 // Hooks returns the client hooks.
-func (c *IdPGroupMappingClient) Hooks() []Hook {
-	return c.hooks.IdPGroupMapping
+func (c *ExternalCohortMappingClient) Hooks() []Hook {
+	return c.hooks.ExternalCohortMapping
 }
 
 // Interceptors returns the client interceptors.
-func (c *IdPGroupMappingClient) Interceptors() []Interceptor {
-	return c.inters.IdPGroupMapping
+func (c *ExternalCohortMappingClient) Interceptors() []Interceptor {
+	return c.inters.ExternalCohortMapping
 }
 
-func (c *IdPGroupMappingClient) mutate(ctx context.Context, m *IdPGroupMappingMutation) (Value, error) {
+func (c *ExternalCohortMappingClient) mutate(ctx context.Context, m *ExternalCohortMappingMutation) (Value, error) {
 	switch m.Op() {
 	case OpCreate:
-		return (&IdPGroupMappingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+		return (&ExternalCohortMappingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpUpdate:
-		return (&IdPGroupMappingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+		return (&ExternalCohortMappingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpUpdateOne:
-		return (&IdPGroupMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+		return (&ExternalCohortMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpDelete, OpDeleteOne:
-		return (&IdPGroupMappingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+		return (&ExternalCohortMappingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
-		return nil, fmt.Errorf("ent: unknown IdPGroupMapping mutation op: %q", m.Op())
-	}
-}
-
-// IdPSyncedGroupClient is a client for the IdPSyncedGroup schema.
-type IdPSyncedGroupClient struct {
-	config
-}
-
-// NewIdPSyncedGroupClient returns a client for the IdPSyncedGroup from the given config.
-func NewIdPSyncedGroupClient(c config) *IdPSyncedGroupClient {
-	return &IdPSyncedGroupClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `idpsyncedgroup.Hooks(f(g(h())))`.
-func (c *IdPSyncedGroupClient) Use(hooks ...Hook) {
-	c.hooks.IdPSyncedGroup = append(c.hooks.IdPSyncedGroup, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `idpsyncedgroup.Intercept(f(g(h())))`.
-func (c *IdPSyncedGroupClient) Intercept(interceptors ...Interceptor) {
-	c.inters.IdPSyncedGroup = append(c.inters.IdPSyncedGroup, interceptors...)
-}
-
-// Create returns a builder for creating a IdPSyncedGroup entity.
-func (c *IdPSyncedGroupClient) Create() *IdPSyncedGroupCreate {
-	mutation := newIdPSyncedGroupMutation(c.config, OpCreate)
-	return &IdPSyncedGroupCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of IdPSyncedGroup entities.
-func (c *IdPSyncedGroupClient) CreateBulk(builders ...*IdPSyncedGroupCreate) *IdPSyncedGroupCreateBulk {
-	return &IdPSyncedGroupCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *IdPSyncedGroupClient) MapCreateBulk(slice any, setFunc func(*IdPSyncedGroupCreate, int)) *IdPSyncedGroupCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &IdPSyncedGroupCreateBulk{err: fmt.Errorf("calling to IdPSyncedGroupClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*IdPSyncedGroupCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &IdPSyncedGroupCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for IdPSyncedGroup.
-func (c *IdPSyncedGroupClient) Update() *IdPSyncedGroupUpdate {
-	mutation := newIdPSyncedGroupMutation(c.config, OpUpdate)
-	return &IdPSyncedGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *IdPSyncedGroupClient) UpdateOne(_m *IdPSyncedGroup) *IdPSyncedGroupUpdateOne {
-	mutation := newIdPSyncedGroupMutation(c.config, OpUpdateOne, withIdPSyncedGroup(_m))
-	return &IdPSyncedGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *IdPSyncedGroupClient) UpdateOneID(id string) *IdPSyncedGroupUpdateOne {
-	mutation := newIdPSyncedGroupMutation(c.config, OpUpdateOne, withIdPSyncedGroupID(id))
-	return &IdPSyncedGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for IdPSyncedGroup.
-func (c *IdPSyncedGroupClient) Delete() *IdPSyncedGroupDelete {
-	mutation := newIdPSyncedGroupMutation(c.config, OpDelete)
-	return &IdPSyncedGroupDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *IdPSyncedGroupClient) DeleteOne(_m *IdPSyncedGroup) *IdPSyncedGroupDeleteOne {
-	return c.DeleteOneID(_m.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *IdPSyncedGroupClient) DeleteOneID(id string) *IdPSyncedGroupDeleteOne {
-	builder := c.Delete().Where(idpsyncedgroup.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &IdPSyncedGroupDeleteOne{builder}
-}
-
-// Query returns a query builder for IdPSyncedGroup.
-func (c *IdPSyncedGroupClient) Query() *IdPSyncedGroupQuery {
-	return &IdPSyncedGroupQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeIdPSyncedGroup},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a IdPSyncedGroup entity by its id.
-func (c *IdPSyncedGroupClient) Get(ctx context.Context, id string) (*IdPSyncedGroup, error) {
-	return c.Query().Where(idpsyncedgroup.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *IdPSyncedGroupClient) GetX(ctx context.Context, id string) *IdPSyncedGroup {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// Hooks returns the client hooks.
-func (c *IdPSyncedGroupClient) Hooks() []Hook {
-	return c.hooks.IdPSyncedGroup
-}
-
-// Interceptors returns the client interceptors.
-func (c *IdPSyncedGroupClient) Interceptors() []Interceptor {
-	return c.inters.IdPSyncedGroup
-}
-
-func (c *IdPSyncedGroupClient) mutate(ctx context.Context, m *IdPSyncedGroupMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&IdPSyncedGroupCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&IdPSyncedGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&IdPSyncedGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&IdPSyncedGroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown IdPSyncedGroup mutation op: %q", m.Op())
+		return nil, fmt.Errorf("ent: unknown ExternalCohortMapping mutation op: %q", m.Op())
 	}
 }
 
@@ -2463,6 +2521,139 @@ func (c *PendingAdoptionClient) mutate(ctx context.Context, m *PendingAdoptionMu
 		return (&PendingAdoptionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown PendingAdoption mutation op: %q", m.Op())
+	}
+}
+
+// PlatformSettingClient is a client for the PlatformSetting schema.
+type PlatformSettingClient struct {
+	config
+}
+
+// NewPlatformSettingClient returns a client for the PlatformSetting from the given config.
+func NewPlatformSettingClient(c config) *PlatformSettingClient {
+	return &PlatformSettingClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `platformsetting.Hooks(f(g(h())))`.
+func (c *PlatformSettingClient) Use(hooks ...Hook) {
+	c.hooks.PlatformSetting = append(c.hooks.PlatformSetting, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `platformsetting.Intercept(f(g(h())))`.
+func (c *PlatformSettingClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PlatformSetting = append(c.inters.PlatformSetting, interceptors...)
+}
+
+// Create returns a builder for creating a PlatformSetting entity.
+func (c *PlatformSettingClient) Create() *PlatformSettingCreate {
+	mutation := newPlatformSettingMutation(c.config, OpCreate)
+	return &PlatformSettingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PlatformSetting entities.
+func (c *PlatformSettingClient) CreateBulk(builders ...*PlatformSettingCreate) *PlatformSettingCreateBulk {
+	return &PlatformSettingCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PlatformSettingClient) MapCreateBulk(slice any, setFunc func(*PlatformSettingCreate, int)) *PlatformSettingCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PlatformSettingCreateBulk{err: fmt.Errorf("calling to PlatformSettingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PlatformSettingCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PlatformSettingCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PlatformSetting.
+func (c *PlatformSettingClient) Update() *PlatformSettingUpdate {
+	mutation := newPlatformSettingMutation(c.config, OpUpdate)
+	return &PlatformSettingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PlatformSettingClient) UpdateOne(_m *PlatformSetting) *PlatformSettingUpdateOne {
+	mutation := newPlatformSettingMutation(c.config, OpUpdateOne, withPlatformSetting(_m))
+	return &PlatformSettingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PlatformSettingClient) UpdateOneID(id string) *PlatformSettingUpdateOne {
+	mutation := newPlatformSettingMutation(c.config, OpUpdateOne, withPlatformSettingID(id))
+	return &PlatformSettingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PlatformSetting.
+func (c *PlatformSettingClient) Delete() *PlatformSettingDelete {
+	mutation := newPlatformSettingMutation(c.config, OpDelete)
+	return &PlatformSettingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PlatformSettingClient) DeleteOne(_m *PlatformSetting) *PlatformSettingDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PlatformSettingClient) DeleteOneID(id string) *PlatformSettingDeleteOne {
+	builder := c.Delete().Where(platformsetting.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PlatformSettingDeleteOne{builder}
+}
+
+// Query returns a query builder for PlatformSetting.
+func (c *PlatformSettingClient) Query() *PlatformSettingQuery {
+	return &PlatformSettingQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePlatformSetting},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PlatformSetting entity by its id.
+func (c *PlatformSettingClient) Get(ctx context.Context, id string) (*PlatformSetting, error) {
+	return c.Query().Where(platformsetting.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PlatformSettingClient) GetX(ctx context.Context, id string) *PlatformSetting {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PlatformSettingClient) Hooks() []Hook {
+	return c.hooks.PlatformSetting
+}
+
+// Interceptors returns the client interceptors.
+func (c *PlatformSettingClient) Interceptors() []Interceptor {
+	return c.inters.PlatformSetting
+}
+
+func (c *PlatformSettingClient) mutate(ctx context.Context, m *PlatformSettingMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PlatformSettingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PlatformSettingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PlatformSettingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PlatformSettingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PlatformSetting mutation op: %q", m.Op())
 	}
 }
 
@@ -3154,6 +3345,22 @@ func (c *RoleBindingClient) QueryRole(_m *RoleBinding) *RoleQuery {
 	return query
 }
 
+// QueryExternalCohortGrants queries the external_cohort_grants edge of a RoleBinding.
+func (c *RoleBindingClient) QueryExternalCohortGrants(_m *RoleBinding) *ExternalCohortGrantQuery {
+	query := (&ExternalCohortGrantClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rolebinding.Table, rolebinding.FieldID, id),
+			sqlgraph.To(externalcohortgrant.Table, externalcohortgrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rolebinding.ExternalCohortGrantsTable, rolebinding.ExternalCohortGrantsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *RoleBindingClient) Hooks() []Hook {
 	return c.hooks.RoleBinding
@@ -3759,6 +3966,139 @@ func (c *TemplateClient) mutate(ctx context.Context, m *TemplateMutation) (Value
 	}
 }
 
+// TicketClient is a client for the Ticket schema.
+type TicketClient struct {
+	config
+}
+
+// NewTicketClient returns a client for the Ticket from the given config.
+func NewTicketClient(c config) *TicketClient {
+	return &TicketClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `ticket.Hooks(f(g(h())))`.
+func (c *TicketClient) Use(hooks ...Hook) {
+	c.hooks.Ticket = append(c.hooks.Ticket, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `ticket.Intercept(f(g(h())))`.
+func (c *TicketClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Ticket = append(c.inters.Ticket, interceptors...)
+}
+
+// Create returns a builder for creating a Ticket entity.
+func (c *TicketClient) Create() *TicketCreate {
+	mutation := newTicketMutation(c.config, OpCreate)
+	return &TicketCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Ticket entities.
+func (c *TicketClient) CreateBulk(builders ...*TicketCreate) *TicketCreateBulk {
+	return &TicketCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TicketClient) MapCreateBulk(slice any, setFunc func(*TicketCreate, int)) *TicketCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TicketCreateBulk{err: fmt.Errorf("calling to TicketClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TicketCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TicketCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Ticket.
+func (c *TicketClient) Update() *TicketUpdate {
+	mutation := newTicketMutation(c.config, OpUpdate)
+	return &TicketUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TicketClient) UpdateOne(_m *Ticket) *TicketUpdateOne {
+	mutation := newTicketMutation(c.config, OpUpdateOne, withTicket(_m))
+	return &TicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TicketClient) UpdateOneID(id string) *TicketUpdateOne {
+	mutation := newTicketMutation(c.config, OpUpdateOne, withTicketID(id))
+	return &TicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Ticket.
+func (c *TicketClient) Delete() *TicketDelete {
+	mutation := newTicketMutation(c.config, OpDelete)
+	return &TicketDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TicketClient) DeleteOne(_m *Ticket) *TicketDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TicketClient) DeleteOneID(id string) *TicketDeleteOne {
+	builder := c.Delete().Where(ticket.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TicketDeleteOne{builder}
+}
+
+// Query returns a query builder for Ticket.
+func (c *TicketClient) Query() *TicketQuery {
+	return &TicketQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTicket},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Ticket entity by its id.
+func (c *TicketClient) Get(ctx context.Context, id string) (*Ticket, error) {
+	return c.Query().Where(ticket.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TicketClient) GetX(ctx context.Context, id string) *Ticket {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TicketClient) Hooks() []Hook {
+	return c.hooks.Ticket
+}
+
+// Interceptors returns the client interceptors.
+func (c *TicketClient) Interceptors() []Interceptor {
+	return c.inters.Ticket
+}
+
+func (c *TicketClient) mutate(ctx context.Context, m *TicketMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TicketCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TicketUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TicketDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Ticket mutation op: %q", m.Op())
+	}
+}
+
 // UserClient is a client for the User schema.
 type UserClient struct {
 	config
@@ -3899,6 +4239,38 @@ func (c *UserClient) QueryNotifications(_m *User) *NotificationQuery {
 	return query
 }
 
+// QueryDirectoryProfile queries the directory_profile edge of a User.
+func (c *UserClient) QueryDirectoryProfile(_m *User) *UserDirectoryProfileQuery {
+	query := (&UserDirectoryProfileClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(userdirectoryprofile.Table, userdirectoryprofile.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, user.DirectoryProfileTable, user.DirectoryProfileColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryExternalCohortGrants queries the external_cohort_grants edge of a User.
+func (c *UserClient) QueryExternalCohortGrants(_m *User) *ExternalCohortGrantQuery {
+	query := (&ExternalCohortGrantClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(externalcohortgrant.Table, externalcohortgrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ExternalCohortGrantsTable, user.ExternalCohortGrantsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *UserClient) Hooks() []Hook {
 	return c.hooks.User
@@ -3921,6 +4293,155 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 		return (&UserDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown User mutation op: %q", m.Op())
+	}
+}
+
+// UserDirectoryProfileClient is a client for the UserDirectoryProfile schema.
+type UserDirectoryProfileClient struct {
+	config
+}
+
+// NewUserDirectoryProfileClient returns a client for the UserDirectoryProfile from the given config.
+func NewUserDirectoryProfileClient(c config) *UserDirectoryProfileClient {
+	return &UserDirectoryProfileClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `userdirectoryprofile.Hooks(f(g(h())))`.
+func (c *UserDirectoryProfileClient) Use(hooks ...Hook) {
+	c.hooks.UserDirectoryProfile = append(c.hooks.UserDirectoryProfile, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `userdirectoryprofile.Intercept(f(g(h())))`.
+func (c *UserDirectoryProfileClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UserDirectoryProfile = append(c.inters.UserDirectoryProfile, interceptors...)
+}
+
+// Create returns a builder for creating a UserDirectoryProfile entity.
+func (c *UserDirectoryProfileClient) Create() *UserDirectoryProfileCreate {
+	mutation := newUserDirectoryProfileMutation(c.config, OpCreate)
+	return &UserDirectoryProfileCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UserDirectoryProfile entities.
+func (c *UserDirectoryProfileClient) CreateBulk(builders ...*UserDirectoryProfileCreate) *UserDirectoryProfileCreateBulk {
+	return &UserDirectoryProfileCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UserDirectoryProfileClient) MapCreateBulk(slice any, setFunc func(*UserDirectoryProfileCreate, int)) *UserDirectoryProfileCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UserDirectoryProfileCreateBulk{err: fmt.Errorf("calling to UserDirectoryProfileClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UserDirectoryProfileCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UserDirectoryProfileCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UserDirectoryProfile.
+func (c *UserDirectoryProfileClient) Update() *UserDirectoryProfileUpdate {
+	mutation := newUserDirectoryProfileMutation(c.config, OpUpdate)
+	return &UserDirectoryProfileUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UserDirectoryProfileClient) UpdateOne(_m *UserDirectoryProfile) *UserDirectoryProfileUpdateOne {
+	mutation := newUserDirectoryProfileMutation(c.config, OpUpdateOne, withUserDirectoryProfile(_m))
+	return &UserDirectoryProfileUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UserDirectoryProfileClient) UpdateOneID(id string) *UserDirectoryProfileUpdateOne {
+	mutation := newUserDirectoryProfileMutation(c.config, OpUpdateOne, withUserDirectoryProfileID(id))
+	return &UserDirectoryProfileUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UserDirectoryProfile.
+func (c *UserDirectoryProfileClient) Delete() *UserDirectoryProfileDelete {
+	mutation := newUserDirectoryProfileMutation(c.config, OpDelete)
+	return &UserDirectoryProfileDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UserDirectoryProfileClient) DeleteOne(_m *UserDirectoryProfile) *UserDirectoryProfileDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UserDirectoryProfileClient) DeleteOneID(id string) *UserDirectoryProfileDeleteOne {
+	builder := c.Delete().Where(userdirectoryprofile.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UserDirectoryProfileDeleteOne{builder}
+}
+
+// Query returns a query builder for UserDirectoryProfile.
+func (c *UserDirectoryProfileClient) Query() *UserDirectoryProfileQuery {
+	return &UserDirectoryProfileQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUserDirectoryProfile},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UserDirectoryProfile entity by its id.
+func (c *UserDirectoryProfileClient) Get(ctx context.Context, id string) (*UserDirectoryProfile, error) {
+	return c.Query().Where(userdirectoryprofile.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UserDirectoryProfileClient) GetX(ctx context.Context, id string) *UserDirectoryProfile {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a UserDirectoryProfile.
+func (c *UserDirectoryProfileClient) QueryUser(_m *UserDirectoryProfile) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userdirectoryprofile.Table, userdirectoryprofile.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, true, userdirectoryprofile.UserTable, userdirectoryprofile.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *UserDirectoryProfileClient) Hooks() []Hook {
+	return c.hooks.UserDirectoryProfile
+}
+
+// Interceptors returns the client interceptors.
+func (c *UserDirectoryProfileClient) Interceptors() []Interceptor {
+	return c.inters.UserDirectoryProfile
+}
+
+func (c *UserDirectoryProfileClient) mutate(ctx context.Context, m *UserDirectoryProfileMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UserDirectoryProfileCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UserDirectoryProfileUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UserDirectoryProfileUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UserDirectoryProfileDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UserDirectoryProfile mutation op: %q", m.Op())
 	}
 }
 
@@ -4241,19 +4762,19 @@ func (c *VMRevisionClient) mutate(ctx context.Context, m *VMRevisionMutation) (V
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		ApprovalPolicy, ApprovalTicket, AuditLog, AuthProvider, BatchApprovalTicket,
-		Cluster, ClusterPolicy, DomainEvent, ExternalApprovalSystem, IdPGroupMapping,
-		IdPSyncedGroup, InstanceSize, NamespaceRegistry, Notification, PendingAdoption,
-		RateLimitExemption, RateLimitUserOverride, ResourceRoleBinding, Role,
-		RoleBinding, Service, System, SystemSecret, Template, User, VM,
-		VMRevision []ent.Hook
+		ApprovalPolicy, AuditLog, AuthProvider, BatchTicket, Cluster, ClusterPolicy,
+		DirectorySyncJob, DomainEvent, ExternalCohort, ExternalCohortGrant,
+		ExternalCohortMapping, InstanceSize, NamespaceRegistry, Notification,
+		PendingAdoption, PlatformSetting, RateLimitExemption, RateLimitUserOverride,
+		ResourceRoleBinding, Role, RoleBinding, Service, System, SystemSecret,
+		Template, Ticket, User, UserDirectoryProfile, VM, VMRevision []ent.Hook
 	}
 	inters struct {
-		ApprovalPolicy, ApprovalTicket, AuditLog, AuthProvider, BatchApprovalTicket,
-		Cluster, ClusterPolicy, DomainEvent, ExternalApprovalSystem, IdPGroupMapping,
-		IdPSyncedGroup, InstanceSize, NamespaceRegistry, Notification, PendingAdoption,
-		RateLimitExemption, RateLimitUserOverride, ResourceRoleBinding, Role,
-		RoleBinding, Service, System, SystemSecret, Template, User, VM,
-		VMRevision []ent.Interceptor
+		ApprovalPolicy, AuditLog, AuthProvider, BatchTicket, Cluster, ClusterPolicy,
+		DirectorySyncJob, DomainEvent, ExternalCohort, ExternalCohortGrant,
+		ExternalCohortMapping, InstanceSize, NamespaceRegistry, Notification,
+		PendingAdoption, PlatformSetting, RateLimitExemption, RateLimitUserOverride,
+		ResourceRoleBinding, Role, RoleBinding, Service, System, SystemSecret,
+		Template, Ticket, User, UserDirectoryProfile, VM, VMRevision []ent.Interceptor
 	}
 )

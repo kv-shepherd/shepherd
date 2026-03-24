@@ -30,6 +30,8 @@ const (
 	EdgeUser = "user"
 	// EdgeRole holds the string denoting the role edge name in mutations.
 	EdgeRole = "role"
+	// EdgeExternalCohortGrants holds the string denoting the external_cohort_grants edge name in mutations.
+	EdgeExternalCohortGrants = "external_cohort_grants"
 	// Table holds the table name of the rolebinding in the database.
 	Table = "role_bindings"
 	// UserTable is the table that holds the user relation/edge.
@@ -46,6 +48,13 @@ const (
 	RoleInverseTable = "roles"
 	// RoleColumn is the table column denoting the role relation/edge.
 	RoleColumn = "role_role_bindings"
+	// ExternalCohortGrantsTable is the table that holds the external_cohort_grants relation/edge.
+	ExternalCohortGrantsTable = "external_cohort_grants"
+	// ExternalCohortGrantsInverseTable is the table name for the ExternalCohortGrant entity.
+	// It exists in this package in order to avoid circular dependency with the "externalcohortgrant" package.
+	ExternalCohortGrantsInverseTable = "external_cohort_grants"
+	// ExternalCohortGrantsColumn is the table column denoting the external_cohort_grants relation/edge.
+	ExternalCohortGrantsColumn = "role_binding_id"
 )
 
 // Columns holds all SQL columns for rolebinding fields.
@@ -138,6 +147,20 @@ func ByRoleField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newRoleStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByExternalCohortGrantsCount orders the results by external_cohort_grants count.
+func ByExternalCohortGrantsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newExternalCohortGrantsStep(), opts...)
+	}
+}
+
+// ByExternalCohortGrants orders the results by external_cohort_grants terms.
+func ByExternalCohortGrants(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newExternalCohortGrantsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -150,5 +173,12 @@ func newRoleStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(RoleInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, RoleTable, RoleColumn),
+	)
+}
+func newExternalCohortGrantsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ExternalCohortGrantsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ExternalCohortGrantsTable, ExternalCohortGrantsColumn),
 	)
 }

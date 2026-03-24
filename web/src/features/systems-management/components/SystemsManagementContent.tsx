@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import {
     Button,
-    Card,
     Form,
     Input,
     Modal,
@@ -28,24 +27,54 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
-import dayjs from 'dayjs';
+import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
 import { PermissionGuard } from '@/components/auth/PermissionGuard';
+import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
+import { SystemsOverviewGlyph } from '@/components/illustrations/DashboardIllustrations';
+import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
+import {
+    buildDashboardSetupResumeHref,
+    resolveNextSetupAction,
+} from '@/features/setup-guide/flow';
+import { SetupGuideCard } from '@/features/setup-guide/components/SetupGuideCard';
+import { useAutoOpenIntent } from '@/features/setup-guide/hooks/useAutoOpenIntent';
+import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
 import { useSystemsManagementController } from '../hooks/useSystemsManagementController';
 import { RFC1035_PATTERN, type System } from '../types';
 import { SystemMembersModal } from './SystemMembersModal';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 
 export function SystemsManagementContent() {
     const { t } = useTranslation('common');
-    const systems = useSystemsManagementController({ t });
+    const router = useRouter();
+    const setupGuide = useSetupGuide();
+    const systems = useSystemsManagementController({
+        t,
+        onCreateSuccess: (_system, context) => {
+            if (!context.isFirstSystem) {
+                return false;
+            }
+            const nextAction = resolveNextSetupAction(setupGuide, 'system');
+            if (!nextAction) {
+                return false;
+            }
+            router.push(buildDashboardSetupResumeHref(nextAction));
+            return true;
+        },
+    });
 
     const [createPreviewMode, setCreatePreviewMode] = useState(false);
     const [editPreviewMode, setEditPreviewMode] = useState(false);
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailSystem, setDetailSystem] = useState<System | null>(null);
+
+    useAutoOpenIntent('create-system', () => {
+        systems.openCreateModal();
+    });
 
     const columns: ColumnsType<System> = [
         {
@@ -78,7 +107,7 @@ export function SystemsManagementContent() {
             key: 'created_at',
             width: 160,
             render: (date: string) => (
-                <Text type="secondary">{dayjs(date).format('YYYY-MM-DD HH:mm')}</Text>
+                <Text type="secondary"><LocalDateTimeText value={date} /></Text>
             ),
         },
         {
@@ -88,42 +117,52 @@ export function SystemsManagementContent() {
             render: (_, record) => (
                 <Space>
                     <Button
-                        type="text"
+                        type="link"
+                        size="small"
                         data-testid={`system-action-detail-${record.id}`}
                         icon={<EyeOutlined />}
                         onClick={() => {
                             setDetailSystem(record);
                             setDetailOpen(true);
                         }}
-                        title={t('button.detail')}
-                    />
+                    >
+                        {t('button.detail', 'Details')}
+                    </Button>
                     <PermissionGuard permission="rbac:manage">
                         <Button
-                            type="text"
+                            type="link"
+                            size="small"
                             data-testid={`system-action-members-${record.id}`}
                             icon={<TeamOutlined />}
                             onClick={() => systems.openMembersModal(record)}
-                            title={t('button.manage_members')}
-                        />
+                        >
+                            {t('button.manage_members')}
+                        </Button>
                     </PermissionGuard>
                     <PermissionGuard permission="system:write">
                         <Button
-                            type="text"
+                            type="link"
+                            size="small"
                             data-testid={`system-action-edit-${record.id}`}
                             icon={<EditOutlined />}
                             loading={systems.updatePending && systems.editingSystem?.id === record.id}
                             onClick={() => systems.openEditModal(record)}
-                        />
+                        >
+                            {t('button.edit')}
+                        </Button>
                     </PermissionGuard>
                     <PermissionGuard permission="system:delete">
                         <Button
-                            type="text"
+                            type="link"
+                            size="small"
                             data-testid={`system-action-delete-${record.id}`}
                             danger
                             icon={<DeleteOutlined />}
                             loading={systems.deletePending && systems.deletingSystem?.id === record.id}
                             onClick={() => systems.openDeleteModal(record)}
-                        />
+                        >
+                            {t('button.delete')}
+                        </Button>
                     </PermissionGuard>
                 </Space>
             ),
@@ -133,12 +172,11 @@ export function SystemsManagementContent() {
     return (
         <div>
             {systems.messageContextHolder}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                <div>
-                    <Title level={4} style={{ margin: 0 }}>{t('nav.systems')}</Title>
-                    <Text type="secondary">{t('systems.subtitle')}</Text>
-                </div>
-                <Space>
+            <PageHeader
+                title={t('nav.systems')}
+                subtitle={t('systems.subtitle')}
+                actions={(
+                    <Space>
                     <Button icon={<ReloadOutlined />} onClick={() => systems.refetch()}>
                         {t('button.refresh')}
                     </Button>
@@ -152,28 +190,33 @@ export function SystemsManagementContent() {
                             {t('button.create')}
                         </Button>
                     </PermissionGuard>
-                </Space>
-            </div>
+                    </Space>
+                )}
+            />
 
-            <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
-                <Table<System>
-                    columns={columns}
-                    dataSource={systems.data?.items ?? []}
-                    rowKey="id"
-                    loading={systems.isLoading}
-                    pagination={{
-                        current: systems.page,
-                        pageSize: systems.pageSize,
-                        total: systems.data?.pagination?.total ?? 0,
-                        showTotal: (total) => t('table.total', { total }),
-                        onChange: (page, pageSize) => {
-                            systems.setPage(page);
-                            systems.setPageSize(pageSize);
-                        },
-                    }}
-                    size="middle"
-                />
-            </Card>
+            {(systems.data?.items?.length ?? 0) === 0 && !systems.isLoading ? (
+                <SetupGuideCard variant="systems" />
+            ) : (
+                <PageSurface flush={true}>
+                    <Table<System>
+                        columns={columns}
+                        dataSource={systems.data?.items ?? []}
+                        rowKey="id"
+                        loading={systems.isLoading}
+                        pagination={{
+                            current: systems.page,
+                            pageSize: systems.pageSize,
+                            total: systems.data?.pagination?.total ?? 0,
+                            showTotal: (total) => t('table.total', { total }),
+                            onChange: (page, pageSize) => {
+                                systems.setPage(page);
+                                systems.setPageSize(pageSize);
+                            },
+                        }}
+                        size="middle"
+                    />
+                </PageSurface>
+            )}
 
             <Modal
                 title={t('systems.modal.create_title')}
@@ -183,7 +226,7 @@ export function SystemsManagementContent() {
                 }}
                 onCancel={systems.closeCreateModal}
                 confirmLoading={systems.createPending}
-                destroyOnHidden={true}
+                forceRender={true}
                 data-testid="system-create-modal"
             >
                 <Form form={systems.form} layout="vertical" name="create-system">
@@ -257,7 +300,7 @@ export function SystemsManagementContent() {
                 }}
                 onCancel={systems.closeEditModal}
                 confirmLoading={systems.updatePending}
-                destroyOnHidden={true}
+                forceRender={true}
                 data-testid="system-edit-modal"
             >
                 <Form form={systems.editForm} layout="vertical" name="edit-system">
@@ -325,7 +368,7 @@ export function SystemsManagementContent() {
                     disabled: systems.deleteConfirmName !== systems.deletingSystem?.name,
                 }}
                 okText={t('button.delete')}
-                destroyOnHidden={true}
+                forceRender={true}
                 data-testid="system-delete-modal"
             >
                 <Paragraph>
@@ -358,8 +401,7 @@ export function SystemsManagementContent() {
                         {t('button.close', 'Close')}
                     </Button>
                 ]}
-                destroyOnHidden
-                width={800}
+                forceRender                width={800}
             >
                 {detailSystem?.description ? (
                     <div className="markdown-preview" style={{ padding: '16px', background: '#fafafa', borderRadius: 8, marginTop: 16 }}>
@@ -368,8 +410,13 @@ export function SystemsManagementContent() {
                         </ReactMarkdown>
                     </div>
                 ) : (
-                    <div style={{ padding: '24px', textAlign: 'center', color: '#999' }}>
-                        *No description provided*
+                    <div style={{ paddingTop: 16 }}>
+                        <ActionEmptyState
+                            compact={true}
+                            title={t('table.description')}
+                            description={t('systems.description_placeholder')}
+                            visual={<SystemsOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                        />
                     </div>
                 )}
             </Modal>

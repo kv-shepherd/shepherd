@@ -145,6 +145,7 @@ const DefaultStatus = StatusCREATING
 // Status values.
 const (
 	StatusCREATING  Status = "CREATING"
+	StatusSTARTING  Status = "STARTING"
 	StatusRUNNING   Status = "RUNNING"
 	StatusSTOPPING  Status = "STOPPING"
 	StatusSTOPPED   Status = "STOPPED"
@@ -154,6 +155,7 @@ const (
 	StatusMIGRATING Status = "MIGRATING"
 	StatusPAUSED    Status = "PAUSED"
 	StatusUNKNOWN   Status = "UNKNOWN"
+	StatusNOT_FOUND Status = "NOT_FOUND"
 )
 
 func (s Status) String() string {
@@ -163,7 +165,7 @@ func (s Status) String() string {
 // StatusValidator is a validator for the "status" field enum values. It is called by the builders before save.
 func StatusValidator(s Status) error {
 	switch s {
-	case StatusCREATING, StatusRUNNING, StatusSTOPPING, StatusSTOPPED, StatusDELETING, StatusFAILED, StatusPENDING, StatusMIGRATING, StatusPAUSED, StatusUNKNOWN:
+	case StatusCREATING, StatusSTARTING, StatusRUNNING, StatusSTOPPING, StatusSTOPPED, StatusDELETING, StatusFAILED, StatusPENDING, StatusMIGRATING, StatusPAUSED, StatusUNKNOWN, StatusNOT_FOUND:
 		return nil
 	default:
 		return fmt.Errorf("vm: invalid enum value for status field: %q", s)

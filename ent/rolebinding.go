@@ -46,9 +46,11 @@ type RoleBindingEdges struct {
 	User *User `json:"user,omitempty"`
 	// Role holds the value of the role edge.
 	Role *Role `json:"role,omitempty"`
+	// ExternalCohortGrants holds the value of the external_cohort_grants edge.
+	ExternalCohortGrants []*ExternalCohortGrant `json:"external_cohort_grants,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -71,6 +73,15 @@ func (e RoleBindingEdges) RoleOrErr() (*Role, error) {
 		return nil, &NotFoundError{label: role.Label}
 	}
 	return nil, &NotLoadedError{edge: "role"}
+}
+
+// ExternalCohortGrantsOrErr returns the ExternalCohortGrants value or an error if the edge
+// was not loaded in eager-loading.
+func (e RoleBindingEdges) ExternalCohortGrantsOrErr() ([]*ExternalCohortGrant, error) {
+	if e.loadedTypes[2] {
+		return e.ExternalCohortGrants, nil
+	}
+	return nil, &NotLoadedError{edge: "external_cohort_grants"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -182,6 +193,11 @@ func (_m *RoleBinding) QueryUser() *UserQuery {
 // QueryRole queries the "role" edge of the RoleBinding entity.
 func (_m *RoleBinding) QueryRole() *RoleQuery {
 	return NewRoleBindingClient(_m.config).QueryRole(_m)
+}
+
+// QueryExternalCohortGrants queries the "external_cohort_grants" edge of the RoleBinding entity.
+func (_m *RoleBinding) QueryExternalCohortGrants() *ExternalCohortGrantQuery {
+	return NewRoleBindingClient(_m.config).QueryExternalCohortGrants(_m)
 }
 
 // Update returns a builder for updating this RoleBinding.

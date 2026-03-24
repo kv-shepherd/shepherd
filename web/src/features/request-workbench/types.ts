@@ -1,0 +1,49 @@
+import type { components } from '@/types/api.gen';
+
+export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'EXECUTING' | 'SUCCESS' | 'FAILED';
+export type BatchStatusResponse = components['schemas']['VMBatchStatusResponse'];
+export type BatchActionResponse = components['schemas']['VMBatchActionResponse'];
+
+export interface VMRequestPrefill {
+    system_id: string;
+    service_id: string;
+    template_id: string;
+    instance_size_id: string;
+    namespace: string;
+    reason: string;
+    batch_count: number;
+}
+
+export interface Ticket {
+    id: string;
+    event_id?: string;
+    operation_type?: string;
+    status: ApprovalStatus;
+    requester: string;
+    reason?: string;
+    approver?: string;
+    created_at: string;
+    updated_at?: string;
+    request_prefill?: VMRequestPrefill;
+    summary?: components['schemas']['TicketSummary'];
+    target_vm_name?: string;
+    ticket_payload?: Record<string, unknown>;
+}
+
+export interface TicketList {
+    items: Ticket[];
+    pagination?: { total: number; page: number; per_page: number };
+}
+
+export type RequestWorkbenchView = 'drafts' | 'in_progress' | 'history' | 'batch_jobs';
+export type HistoryStatusFilter = Extract<ApprovalStatus, 'SUCCESS' | 'FAILED' | 'REJECTED' | 'CANCELLED'>;
+
+export const STATUS_COLORS: Record<ApprovalStatus, string> = {
+    PENDING: 'orange',
+    APPROVED: 'green',
+    REJECTED: 'red',
+    CANCELLED: 'default',
+    EXECUTING: 'blue',
+    SUCCESS: 'green',
+    FAILED: 'red',
+};

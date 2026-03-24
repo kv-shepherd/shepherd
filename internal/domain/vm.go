@@ -62,6 +62,14 @@ type VMSpec struct {
 	// Populated by the usecase/handler layer, not by the provider.
 	// The provider acts as a "YAML porter" — it submits this YAML via SSA.
 	RenderedYAML string `json:"-"` // excluded from JSON serialization
+
+	// Internal live-spec metadata used by the online modify flow.
+	RootDataVolumeName       string `json:"-"`
+	RootVolumeUsesPVCSpec    bool   `json:"-"`
+	DiskHotplugSupported     bool   `json:"-"`
+	CurrentCPUSockets        int    `json:"-"`
+	CurrentCPUCoresPerSocket int    `json:"-"`
+	CurrentCPUThreads        int    `json:"-"`
 }
 
 // VMStatus represents the current status of a VM.
@@ -71,6 +79,7 @@ type VMStatus string
 const (
 	// Primary lifecycle states (master-flow.md Part 4)
 	VMStatusCreating VMStatus = "CREATING" // VM being provisioned (post-approval)
+	VMStatusStarting VMStatus = "STARTING" // Existing VM starting from stopped/paused
 	VMStatusRunning  VMStatus = "RUNNING"  // VM is running
 	VMStatusStopping VMStatus = "STOPPING" // VM shutting down (transitional)
 	VMStatusStopped  VMStatus = "STOPPED"  // VM is stopped
@@ -81,7 +90,8 @@ const (
 	VMStatusPending   VMStatus = "PENDING"   // K8s: waiting for resources (scheduler)
 	VMStatusMigrating VMStatus = "MIGRATING" // Live migration in progress
 	VMStatusPaused    VMStatus = "PAUSED"    // VM paused
-	VMStatusUnknown   VMStatus = "UNKNOWN"   // Status cannot be determined
+	VMStatusUnknown   VMStatus = "UNKNOWN"   // Cluster unreachable or API error
+	VMStatusNotFound  VMStatus = "NOT_FOUND" // Cluster responded OK but VM resource no longer exists
 )
 
 // VMList represents a paginated list of VMs.

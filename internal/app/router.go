@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"time"
@@ -13,9 +14,14 @@ import (
 	"kv-shepherd.io/shepherd/internal/config"
 )
 
+type corsOriginChecker interface {
+	IsAllowedOrigin(ctx context.Context, origin string) bool
+}
+
 // Public routes that do NOT require JWT authentication.
 var publicPrefixes = []string{
 	"/api/v1/auth/login",
+	"/api/v1/auth/providers",
 	"/api/v1/health/",
 	// Schema metadata: does not contain sensitive data; must be accessible
 	// before login for bootstrap tooling (ADR-0023). Matches OpenAPI security:[].
@@ -26,7 +32,12 @@ func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg midd
 	router := gin.New()
 	router.Use(gin.Recovery(), middleware.RequestID(), middleware.ErrorHandler())
 
-	router.Use(cors.New(buildCORSConfig(cfg)))
+	var originChecker corsOriginChecker
+	if checker, ok := server.(corsOriginChecker); ok && checker != nil {
+		originChecker = checker
+	}
+
+	router.Use(cors.New(buildCORSConfig(cfg, originChecker)))
 
 	router.Use(jwtSkipPublic(jwtCfg))
 	router.Use(middleware.MustOpenAPIValidator("/api/v1"))
@@ -37,7 +48,7 @@ func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg midd
 	return router
 }
 
-func buildCORSConfig(cfg *config.Config) cors.Config {
+func buildCORSConfig(cfg *config.Config, checker corsOriginChecker) cors.Config {
 	allowAllOrigins := cfg.Server.UnsafeAllowAllOrigins
 	allowedOrigins := sanitizeAllowedOrigins(cfg.Server.AllowedOrigins)
 
@@ -59,6 +70,14 @@ func buildCORSConfig(cfg *config.Config) cors.Config {
 	if len(allowedOrigins) == 0 {
 		allowedOrigins = []string{"http://localhost:3000", "http://127.0.0.1:3000"}
 	}
+
+	if checker != nil {
+		corsCfg.AllowOriginWithContextFunc = func(c *gin.Context, origin string) bool {
+			return checker.IsAllowedOrigin(c.Request.Context(), origin)
+		}
+		return corsCfg
+	}
+
 	corsCfg.AllowOrigins = allowedOrigins
 	return corsCfg
 }

@@ -94,6 +94,7 @@ func TestOpenAPIValidatorAcceptsValidServiceUpdateRequest(t *testing.T) {
 			"name":                "redis",
 			"description":         "new description",
 			"system_id":           c.Param("system_id"),
+			"system_name":         "system-name",
 			"next_instance_index": 1,
 			"created_at":          time.Now().Format(time.RFC3339),
 		})
@@ -570,9 +571,9 @@ func TestOpenAPIValidatorAllowsDynamicAuthProviderTypeConfigSchemaInStrictMode(t
 	}
 }
 
-func TestOpenAPIValidatorAllowsDynamicApprovalTicketPayloadInStrictMode(t *testing.T) {
+func TestOpenAPIValidatorAllowsDynamicTicketPayloadInStrictMode(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
-	router.GET("/api/v1/approvals", func(c *gin.Context) {
+	router.GET("/api/v1/builtin-approval/tasks", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"items": []gin.H{
 				{
@@ -593,12 +594,12 @@ func TestOpenAPIValidatorAllowsDynamicApprovalTicketPayloadInStrictMode(t *testi
 		})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/approvals", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/builtin-approval/tasks", http.NoBody)
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusOK {
-		t.Fatalf("expected 200 for dynamic approval ticket payload, got %d body=%s", resp.Code, resp.Body.String())
+		t.Fatalf("expected 200 for dynamic ticket payload, got %d body=%s", resp.Code, resp.Body.String())
 	}
 }
 

@@ -30,12 +30,12 @@ func NewTriggers(sender Sender, client *ent.Client) *Triggers {
 }
 
 // OnTicketSubmitted fires when a VM request is submitted and needs approval.
-// Notifies all users who have the "approval:approve" permission.
+// Notifies all users who have the "builtin_approval:approve" permission.
 //
 // master-flow.md Stage 5.F / Event: VM Request Submitted:
 //
 //	INSERT INTO notifications ... SELECT user_id FROM role_bindings
-//	WHERE role_id IN (SELECT id FROM roles WHERE permissions @> 'approval:approve')
+//	WHERE role_id IN (SELECT id FROM roles WHERE permissions @> 'builtin_approval:approve')
 func (t *Triggers) OnTicketSubmitted(ctx context.Context, ticketID, requesterName, namespace string) {
 	approverIDs, err := t.findApproverUserIDs(ctx)
 	if err != nil {
@@ -55,7 +55,7 @@ func (t *Triggers) OnTicketSubmitted(ctx context.Context, ticketID, requesterNam
 		Type:         TypeApprovalPending,
 		Title:        "New VM request pending approval",
 		Message:      fmt.Sprintf("User %s submitted a VM request in namespace %s", requesterName, namespace),
-		ResourceType: "approval_ticket",
+		ResourceType: "ticket",
 		ResourceID:   ticketID,
 	}
 
@@ -83,7 +83,7 @@ func (t *Triggers) OnTicketApproved(ctx context.Context, ticketID, requesterID, 
 		Type:         TypeApprovalCompleted,
 		Title:        "Your VM request has been approved",
 		Message:      fmt.Sprintf("Your request (ticket %s) was approved by %s", ticketID, approver),
-		ResourceType: "approval_ticket",
+		ResourceType: "ticket",
 		ResourceID:   ticketID,
 	}
 
@@ -109,7 +109,7 @@ func (t *Triggers) OnTicketRejected(ctx context.Context, ticketID, requesterID, 
 		Type:         TypeApprovalRejected,
 		Title:        "Your VM request has been rejected",
 		Message:      msg,
-		ResourceType: "approval_ticket",
+		ResourceType: "ticket",
 		ResourceID:   ticketID,
 	}
 
@@ -149,13 +149,13 @@ func (t *Triggers) OnVMStatusChanged(ctx context.Context, vmID, vmName, ownerID,
 	}
 }
 
-// findApproverUserIDs queries all user IDs that have the "approval:approve" permission.
+// findApproverUserIDs queries all user IDs that have the "builtin_approval:approve" permission.
 // Ent JSON array fields don't generate DB-level Contains predicates, so we
 // query all roles with their bindings+users and filter in Go.
 //
 // master-flow.md Stage 5.F:
 //
-//	FROM role_bindings WHERE role_id IN (SELECT id FROM roles WHERE permissions @> 'approval:approve')
+//	FROM role_bindings WHERE role_id IN (SELECT id FROM roles WHERE permissions @> 'builtin_approval:approve')
 func (t *Triggers) findApproverUserIDs(ctx context.Context) ([]string, error) {
 	// Query all roles eager-loading bindings → users.
 	roles, err := t.client.Role.Query().
@@ -171,8 +171,8 @@ func (t *Triggers) findApproverUserIDs(ctx context.Context) ([]string, error) {
 	var userIDs []string
 
 	for _, r := range roles {
-		// Filter: role must contain "approval:approve" permission.
-		if !slices.Contains(r.Permissions, "approval:approve") {
+		// Filter: role must contain "builtin_approval:approve" permission.
+		if !slices.Contains(r.Permissions, "builtin_approval:approve") {
 			continue
 		}
 		for _, b := range r.Edges.RoleBindings {

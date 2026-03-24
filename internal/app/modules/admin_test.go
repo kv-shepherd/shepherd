@@ -152,3 +152,63 @@ func TestNewServerDeps_WiresRefreshClusterHealth(t *testing.T) {
 		t.Fatal("storage_classes_updated_at = zero, want populated timestamp")
 	}
 }
+
+func TestNewServerDeps_RefreshClusterHealth_DisabledClusterDoesNotStayHealthy(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "modules_admin_disabled")
+	ctx := t.Context()
+	probeCalls := 0
+
+	_, err := client.Cluster.Create().
+		SetID("cl-disabled").
+		SetName("cluster-disabled").
+		SetDisplayName("Cluster Disabled").
+		SetAPIServerURL("https://cluster.example.invalid").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetEnabled(false).
+		SetCreatedBy("test").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+
+	checker := provider.NewClusterHealthChecker(func(string) (provider.KubeVirtClusterClient, error) {
+		probeCalls++
+		return &stubModulesClusterClient{
+			kvCR: &stubModulesKVCRClient{version: "1.7.0"},
+		}, nil
+	}, 0)
+
+	deps := NewServerDeps(&config.Config{
+		Session: config.SessionConfig{Lifetime: 2},
+		Security: config.SecurityConfig{
+			SessionSecret:       "session-secret-1234567890123456789012",
+			EncryptionKey:       "3031323334353637383961626364656630313233343536373839616263646566",
+			JWTVerificationKeys: []string{"verify-a"},
+		},
+	}, &Infrastructure{
+		EntClient:   client,
+		HealthCheck: checker,
+	}, nil)
+
+	if deps.RefreshClusterHealth == nil {
+		t.Fatal("RefreshClusterHealth dependency was not wired")
+	}
+	refreshErr := deps.RefreshClusterHealth(ctx, "cl-disabled")
+	if refreshErr != nil {
+		t.Fatalf("RefreshClusterHealth() error = %v", refreshErr)
+	}
+
+	stored, err := client.Cluster.Get(ctx, "cl-disabled")
+	if err != nil {
+		t.Fatalf("reload cluster: %v", err)
+	}
+	if stored.Status != entcluster.StatusUNKNOWN {
+		t.Fatalf("status = %s, want %s", stored.Status, entcluster.StatusUNKNOWN)
+	}
+	if probeCalls != 0 {
+		t.Fatalf("probeCalls = %d, want 0", probeCalls)
+	}
+}

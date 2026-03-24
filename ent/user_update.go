@@ -11,10 +11,12 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/notification"
 	"kv-shepherd.io/shepherd/ent/predicate"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
 	"kv-shepherd.io/shepherd/ent/user"
+	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
 )
 
 // UserUpdate is the builder for updating User entities.
@@ -228,6 +230,40 @@ func (_u *UserUpdate) AddNotifications(v ...*Notification) *UserUpdate {
 	return _u.AddNotificationIDs(ids...)
 }
 
+// SetDirectoryProfileID sets the "directory_profile" edge to the UserDirectoryProfile entity by ID.
+func (_u *UserUpdate) SetDirectoryProfileID(id string) *UserUpdate {
+	_u.mutation.SetDirectoryProfileID(id)
+	return _u
+}
+
+// SetNillableDirectoryProfileID sets the "directory_profile" edge to the UserDirectoryProfile entity by ID if the given value is not nil.
+func (_u *UserUpdate) SetNillableDirectoryProfileID(id *string) *UserUpdate {
+	if id != nil {
+		_u = _u.SetDirectoryProfileID(*id)
+	}
+	return _u
+}
+
+// SetDirectoryProfile sets the "directory_profile" edge to the UserDirectoryProfile entity.
+func (_u *UserUpdate) SetDirectoryProfile(v *UserDirectoryProfile) *UserUpdate {
+	return _u.SetDirectoryProfileID(v.ID)
+}
+
+// AddExternalCohortGrantIDs adds the "external_cohort_grants" edge to the ExternalCohortGrant entity by IDs.
+func (_u *UserUpdate) AddExternalCohortGrantIDs(ids ...string) *UserUpdate {
+	_u.mutation.AddExternalCohortGrantIDs(ids...)
+	return _u
+}
+
+// AddExternalCohortGrants adds the "external_cohort_grants" edges to the ExternalCohortGrant entity.
+func (_u *UserUpdate) AddExternalCohortGrants(v ...*ExternalCohortGrant) *UserUpdate {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddExternalCohortGrantIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_u *UserUpdate) Mutation() *UserMutation {
 	return _u.mutation
@@ -273,6 +309,33 @@ func (_u *UserUpdate) RemoveNotifications(v ...*Notification) *UserUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveNotificationIDs(ids...)
+}
+
+// ClearDirectoryProfile clears the "directory_profile" edge to the UserDirectoryProfile entity.
+func (_u *UserUpdate) ClearDirectoryProfile() *UserUpdate {
+	_u.mutation.ClearDirectoryProfile()
+	return _u
+}
+
+// ClearExternalCohortGrants clears all "external_cohort_grants" edges to the ExternalCohortGrant entity.
+func (_u *UserUpdate) ClearExternalCohortGrants() *UserUpdate {
+	_u.mutation.ClearExternalCohortGrants()
+	return _u
+}
+
+// RemoveExternalCohortGrantIDs removes the "external_cohort_grants" edge to ExternalCohortGrant entities by IDs.
+func (_u *UserUpdate) RemoveExternalCohortGrantIDs(ids ...string) *UserUpdate {
+	_u.mutation.RemoveExternalCohortGrantIDs(ids...)
+	return _u
+}
+
+// RemoveExternalCohortGrants removes "external_cohort_grants" edges to ExternalCohortGrant entities.
+func (_u *UserUpdate) RemoveExternalCohortGrants(v ...*ExternalCohortGrant) *UserUpdate {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveExternalCohortGrantIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -469,6 +532,80 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(notification.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.DirectoryProfileCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.DirectoryProfileTable,
+			Columns: []string{user.DirectoryProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userdirectoryprofile.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.DirectoryProfileIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.DirectoryProfileTable,
+			Columns: []string{user.DirectoryProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userdirectoryprofile.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ExternalCohortGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ExternalCohortGrantsTable,
+			Columns: []string{user.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedExternalCohortGrantsIDs(); len(nodes) > 0 && !_u.mutation.ExternalCohortGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ExternalCohortGrantsTable,
+			Columns: []string{user.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ExternalCohortGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ExternalCohortGrantsTable,
+			Columns: []string{user.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {
@@ -694,6 +831,40 @@ func (_u *UserUpdateOne) AddNotifications(v ...*Notification) *UserUpdateOne {
 	return _u.AddNotificationIDs(ids...)
 }
 
+// SetDirectoryProfileID sets the "directory_profile" edge to the UserDirectoryProfile entity by ID.
+func (_u *UserUpdateOne) SetDirectoryProfileID(id string) *UserUpdateOne {
+	_u.mutation.SetDirectoryProfileID(id)
+	return _u
+}
+
+// SetNillableDirectoryProfileID sets the "directory_profile" edge to the UserDirectoryProfile entity by ID if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableDirectoryProfileID(id *string) *UserUpdateOne {
+	if id != nil {
+		_u = _u.SetDirectoryProfileID(*id)
+	}
+	return _u
+}
+
+// SetDirectoryProfile sets the "directory_profile" edge to the UserDirectoryProfile entity.
+func (_u *UserUpdateOne) SetDirectoryProfile(v *UserDirectoryProfile) *UserUpdateOne {
+	return _u.SetDirectoryProfileID(v.ID)
+}
+
+// AddExternalCohortGrantIDs adds the "external_cohort_grants" edge to the ExternalCohortGrant entity by IDs.
+func (_u *UserUpdateOne) AddExternalCohortGrantIDs(ids ...string) *UserUpdateOne {
+	_u.mutation.AddExternalCohortGrantIDs(ids...)
+	return _u
+}
+
+// AddExternalCohortGrants adds the "external_cohort_grants" edges to the ExternalCohortGrant entity.
+func (_u *UserUpdateOne) AddExternalCohortGrants(v ...*ExternalCohortGrant) *UserUpdateOne {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddExternalCohortGrantIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_u *UserUpdateOne) Mutation() *UserMutation {
 	return _u.mutation
@@ -739,6 +910,33 @@ func (_u *UserUpdateOne) RemoveNotifications(v ...*Notification) *UserUpdateOne 
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveNotificationIDs(ids...)
+}
+
+// ClearDirectoryProfile clears the "directory_profile" edge to the UserDirectoryProfile entity.
+func (_u *UserUpdateOne) ClearDirectoryProfile() *UserUpdateOne {
+	_u.mutation.ClearDirectoryProfile()
+	return _u
+}
+
+// ClearExternalCohortGrants clears all "external_cohort_grants" edges to the ExternalCohortGrant entity.
+func (_u *UserUpdateOne) ClearExternalCohortGrants() *UserUpdateOne {
+	_u.mutation.ClearExternalCohortGrants()
+	return _u
+}
+
+// RemoveExternalCohortGrantIDs removes the "external_cohort_grants" edge to ExternalCohortGrant entities by IDs.
+func (_u *UserUpdateOne) RemoveExternalCohortGrantIDs(ids ...string) *UserUpdateOne {
+	_u.mutation.RemoveExternalCohortGrantIDs(ids...)
+	return _u
+}
+
+// RemoveExternalCohortGrants removes "external_cohort_grants" edges to ExternalCohortGrant entities.
+func (_u *UserUpdateOne) RemoveExternalCohortGrants(v ...*ExternalCohortGrant) *UserUpdateOne {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveExternalCohortGrantIDs(ids...)
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -965,6 +1163,80 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(notification.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.DirectoryProfileCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.DirectoryProfileTable,
+			Columns: []string{user.DirectoryProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userdirectoryprofile.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.DirectoryProfileIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.DirectoryProfileTable,
+			Columns: []string{user.DirectoryProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userdirectoryprofile.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ExternalCohortGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ExternalCohortGrantsTable,
+			Columns: []string{user.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedExternalCohortGrantsIDs(); len(nodes) > 0 && !_u.mutation.ExternalCohortGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ExternalCohortGrantsTable,
+			Columns: []string{user.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ExternalCohortGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ExternalCohortGrantsTable,
+			Columns: []string{user.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

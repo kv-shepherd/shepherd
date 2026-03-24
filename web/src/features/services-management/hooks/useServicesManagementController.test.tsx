@@ -88,13 +88,13 @@ describe('useServicesManagementController', () => {
         };
       }
       return {
-        data: { items: [{ id: 'svc-1', system_id: 'sys-1', name: 'Service A' }] },
+        data: { items: [{ id: 'svc-1', system_id: 'sys-1', system_name: 'System A', name: 'Service A' }] },
         isLoading: false,
         refetch: vi.fn(),
       };
     });
     apiGetMock.mockResolvedValue({
-      data: { id: 'svc-1', system_id: 'sys-1', name: 'Service A', description: 'old' },
+      data: { id: 'svc-1', system_id: 'sys-1', system_name: 'System A', name: 'Service A', description: 'old' },
       error: undefined,
       response: new Response(),
     });
@@ -128,6 +128,81 @@ describe('useServicesManagementController', () => {
     });
   });
 
+  it('defaults the service workspace to the all-systems filter instead of the first system', () => {
+    const createMutate = vi.fn();
+    const deleteMutate = vi.fn();
+    const updateMutate = vi.fn();
+
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      if (mutationCall%3 === 1) return { mutate: createMutate, isPending: false };
+      if (mutationCall%3 === 2) return { mutate: deleteMutate, isPending: false };
+      return { mutate: updateMutate, isPending: false };
+    });
+
+    renderHook(() => useServicesManagementController({ t }));
+
+    expect(useApiGetMock).toHaveBeenNthCalledWith(
+      2,
+      ['services', '__all__', 1, 20],
+      expect.any(Function),
+    );
+  });
+
+  it('prefills and focuses the selected system when create flow is launched with system context', () => {
+    const createMutate = vi.fn();
+    const deleteMutate = vi.fn();
+    const updateMutate = vi.fn();
+
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      if (mutationCall % 3 === 1) return { mutate: createMutate, isPending: false };
+      if (mutationCall % 3 === 2) return { mutate: deleteMutate, isPending: false };
+      return { mutate: updateMutate, isPending: false };
+    });
+
+    const { result } = renderHook(() => useServicesManagementController({ t }));
+
+    act(() => {
+      result.current.openCreateModal('sys-1');
+    });
+
+    expect(result.current.activeSystemId).toBe('sys-1');
+    expect(formState.setFieldValue).toHaveBeenCalledWith('system_id', 'sys-1');
+  });
+
+  it('fetches the aggregated services overview endpoint for the all-systems view', async () => {
+    const createMutate = vi.fn();
+    const deleteMutate = vi.fn();
+    const updateMutate = vi.fn();
+
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      if (mutationCall % 3 === 1) return { mutate: createMutate, isPending: false };
+      if (mutationCall % 3 === 2) return { mutate: deleteMutate, isPending: false };
+      return { mutate: updateMutate, isPending: false };
+    });
+
+    renderHook(() => useServicesManagementController({ t }));
+
+    const servicesFetcher = useApiGetMock.mock.calls[1]?.[1] as (() => Promise<unknown>) | undefined;
+    expect(servicesFetcher).toBeTypeOf('function');
+
+    await servicesFetcher?.();
+
+    expect(apiGetMock).toHaveBeenCalledWith('/services', {
+      params: {
+        query: {
+          page: 1,
+          per_page: 20,
+        },
+      },
+    });
+  });
+
   it('submits update and delete operations for selected service', async () => {
     const createMutate = vi.fn();
     const deleteMutate = vi.fn();
@@ -147,6 +222,7 @@ describe('useServicesManagementController', () => {
       result.current.openEditModal({
         id: 'svc-1',
         system_id: 'sys-1',
+        system_name: 'System A',
         name: 'Service A',
         description: 'old',
       } as never);

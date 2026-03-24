@@ -13,20 +13,21 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"kv-shepherd.io/shepherd/ent/approvalpolicy"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/auditlog"
 	"kv-shepherd.io/shepherd/ent/authprovider"
-	"kv-shepherd.io/shepherd/ent/batchapprovalticket"
+	"kv-shepherd.io/shepherd/ent/batchticket"
 	"kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/clusterpolicy"
+	"kv-shepherd.io/shepherd/ent/directorysyncjob"
 	"kv-shepherd.io/shepherd/ent/domainevent"
-	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
-	"kv-shepherd.io/shepherd/ent/idpgroupmapping"
-	"kv-shepherd.io/shepherd/ent/idpsyncedgroup"
+	"kv-shepherd.io/shepherd/ent/externalcohort"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
+	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
 	"kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	"kv-shepherd.io/shepherd/ent/notification"
 	"kv-shepherd.io/shepherd/ent/pendingadoption"
+	"kv-shepherd.io/shepherd/ent/platformsetting"
 	"kv-shepherd.io/shepherd/ent/ratelimitexemption"
 	"kv-shepherd.io/shepherd/ent/ratelimituseroverride"
 	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
@@ -36,7 +37,9 @@ import (
 	"kv-shepherd.io/shepherd/ent/system"
 	"kv-shepherd.io/shepherd/ent/systemsecret"
 	"kv-shepherd.io/shepherd/ent/template"
+	"kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/ent/user"
+	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
 	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/ent/vmrevision"
 )
@@ -99,33 +102,36 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			approvalpolicy.Table:         approvalpolicy.ValidColumn,
-			approvalticket.Table:         approvalticket.ValidColumn,
-			auditlog.Table:               auditlog.ValidColumn,
-			authprovider.Table:           authprovider.ValidColumn,
-			batchapprovalticket.Table:    batchapprovalticket.ValidColumn,
-			cluster.Table:                cluster.ValidColumn,
-			clusterpolicy.Table:          clusterpolicy.ValidColumn,
-			domainevent.Table:            domainevent.ValidColumn,
-			externalapprovalsystem.Table: externalapprovalsystem.ValidColumn,
-			idpgroupmapping.Table:        idpgroupmapping.ValidColumn,
-			idpsyncedgroup.Table:         idpsyncedgroup.ValidColumn,
-			instancesize.Table:           instancesize.ValidColumn,
-			namespaceregistry.Table:      namespaceregistry.ValidColumn,
-			notification.Table:           notification.ValidColumn,
-			pendingadoption.Table:        pendingadoption.ValidColumn,
-			ratelimitexemption.Table:     ratelimitexemption.ValidColumn,
-			ratelimituseroverride.Table:  ratelimituseroverride.ValidColumn,
-			resourcerolebinding.Table:    resourcerolebinding.ValidColumn,
-			role.Table:                   role.ValidColumn,
-			rolebinding.Table:            rolebinding.ValidColumn,
-			service.Table:                service.ValidColumn,
-			system.Table:                 system.ValidColumn,
-			systemsecret.Table:           systemsecret.ValidColumn,
-			template.Table:               template.ValidColumn,
-			user.Table:                   user.ValidColumn,
-			vm.Table:                     vm.ValidColumn,
-			vmrevision.Table:             vmrevision.ValidColumn,
+			approvalpolicy.Table:        approvalpolicy.ValidColumn,
+			auditlog.Table:              auditlog.ValidColumn,
+			authprovider.Table:          authprovider.ValidColumn,
+			batchticket.Table:           batchticket.ValidColumn,
+			cluster.Table:               cluster.ValidColumn,
+			clusterpolicy.Table:         clusterpolicy.ValidColumn,
+			directorysyncjob.Table:      directorysyncjob.ValidColumn,
+			domainevent.Table:           domainevent.ValidColumn,
+			externalcohort.Table:        externalcohort.ValidColumn,
+			externalcohortgrant.Table:   externalcohortgrant.ValidColumn,
+			externalcohortmapping.Table: externalcohortmapping.ValidColumn,
+			instancesize.Table:          instancesize.ValidColumn,
+			namespaceregistry.Table:     namespaceregistry.ValidColumn,
+			notification.Table:          notification.ValidColumn,
+			pendingadoption.Table:       pendingadoption.ValidColumn,
+			platformsetting.Table:       platformsetting.ValidColumn,
+			ratelimitexemption.Table:    ratelimitexemption.ValidColumn,
+			ratelimituseroverride.Table: ratelimituseroverride.ValidColumn,
+			resourcerolebinding.Table:   resourcerolebinding.ValidColumn,
+			role.Table:                  role.ValidColumn,
+			rolebinding.Table:           rolebinding.ValidColumn,
+			service.Table:               service.ValidColumn,
+			system.Table:                system.ValidColumn,
+			systemsecret.Table:          systemsecret.ValidColumn,
+			template.Table:              template.ValidColumn,
+			ticket.Table:                ticket.ValidColumn,
+			user.Table:                  user.ValidColumn,
+			userdirectoryprofile.Table:  userdirectoryprofile.ValidColumn,
+			vm.Table:                    vm.ValidColumn,
+			vmrevision.Table:            vmrevision.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

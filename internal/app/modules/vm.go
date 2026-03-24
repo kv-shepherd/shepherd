@@ -79,6 +79,7 @@ func (m *VMModule) RegisterWorkers(workers *river.Workers) {
 	}
 	river.AddWorker(workers, jobs.NewVMCreateWorker(m.infra.EntClient, m.vmService, m.infra.AuditLogger))
 	river.AddWorker(workers, jobs.NewVMDeleteWorker(m.infra.EntClient, m.vmService, m.infra.AuditLogger))
+	river.AddWorker(workers, jobs.NewVMModifyWorker(m.infra.EntClient, m.vmService, m.infra.AuditLogger))
 	river.AddWorker(workers, jobs.NewVMPowerWorker(m.infra.EntClient, m.vmService, m.infra.AuditLogger))
 	// ADR-0038 Phase 2: Register adaptive status sync worker.
 	river.AddWorker(workers, jobs.NewVMStatusSyncWorker(m.infra.EntClient, m.vmService, func() *river.Client[pgx.Tx] {

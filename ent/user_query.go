@@ -12,21 +12,25 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/notification"
 	"kv-shepherd.io/shepherd/ent/predicate"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
 	"kv-shepherd.io/shepherd/ent/user"
+	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
 )
 
 // UserQuery is the builder for querying User entities.
 type UserQuery struct {
 	config
-	ctx               *QueryContext
-	order             []user.OrderOption
-	inters            []Interceptor
-	predicates        []predicate.User
-	withRoleBindings  *RoleBindingQuery
-	withNotifications *NotificationQuery
+	ctx                      *QueryContext
+	order                    []user.OrderOption
+	inters                   []Interceptor
+	predicates               []predicate.User
+	withRoleBindings         *RoleBindingQuery
+	withNotifications        *NotificationQuery
+	withDirectoryProfile     *UserDirectoryProfileQuery
+	withExternalCohortGrants *ExternalCohortGrantQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -100,6 +104,50 @@ func (_q *UserQuery) QueryNotifications() *NotificationQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(notification.Table, notification.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.NotificationsTable, user.NotificationsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryDirectoryProfile chains the current query on the "directory_profile" edge.
+func (_q *UserQuery) QueryDirectoryProfile() *UserDirectoryProfileQuery {
+	query := (&UserDirectoryProfileClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(userdirectoryprofile.Table, userdirectoryprofile.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, user.DirectoryProfileTable, user.DirectoryProfileColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryExternalCohortGrants chains the current query on the "external_cohort_grants" edge.
+func (_q *UserQuery) QueryExternalCohortGrants() *ExternalCohortGrantQuery {
+	query := (&ExternalCohortGrantClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(externalcohortgrant.Table, externalcohortgrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ExternalCohortGrantsTable, user.ExternalCohortGrantsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -294,13 +342,15 @@ func (_q *UserQuery) Clone() *UserQuery {
 		return nil
 	}
 	return &UserQuery{
-		config:            _q.config,
-		ctx:               _q.ctx.Clone(),
-		order:             append([]user.OrderOption{}, _q.order...),
-		inters:            append([]Interceptor{}, _q.inters...),
-		predicates:        append([]predicate.User{}, _q.predicates...),
-		withRoleBindings:  _q.withRoleBindings.Clone(),
-		withNotifications: _q.withNotifications.Clone(),
+		config:                   _q.config,
+		ctx:                      _q.ctx.Clone(),
+		order:                    append([]user.OrderOption{}, _q.order...),
+		inters:                   append([]Interceptor{}, _q.inters...),
+		predicates:               append([]predicate.User{}, _q.predicates...),
+		withRoleBindings:         _q.withRoleBindings.Clone(),
+		withNotifications:        _q.withNotifications.Clone(),
+		withDirectoryProfile:     _q.withDirectoryProfile.Clone(),
+		withExternalCohortGrants: _q.withExternalCohortGrants.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -326,6 +376,28 @@ func (_q *UserQuery) WithNotifications(opts ...func(*NotificationQuery)) *UserQu
 		opt(query)
 	}
 	_q.withNotifications = query
+	return _q
+}
+
+// WithDirectoryProfile tells the query-builder to eager-load the nodes that are connected to
+// the "directory_profile" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithDirectoryProfile(opts ...func(*UserDirectoryProfileQuery)) *UserQuery {
+	query := (&UserDirectoryProfileClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withDirectoryProfile = query
+	return _q
+}
+
+// WithExternalCohortGrants tells the query-builder to eager-load the nodes that are connected to
+// the "external_cohort_grants" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithExternalCohortGrants(opts ...func(*ExternalCohortGrantQuery)) *UserQuery {
+	query := (&ExternalCohortGrantClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withExternalCohortGrants = query
 	return _q
 }
 
@@ -407,9 +479,11 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [4]bool{
 			_q.withRoleBindings != nil,
 			_q.withNotifications != nil,
+			_q.withDirectoryProfile != nil,
+			_q.withExternalCohortGrants != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -441,6 +515,21 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := _q.loadNotifications(ctx, query, nodes,
 			func(n *User) { n.Edges.Notifications = []*Notification{} },
 			func(n *User, e *Notification) { n.Edges.Notifications = append(n.Edges.Notifications, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withDirectoryProfile; query != nil {
+		if err := _q.loadDirectoryProfile(ctx, query, nodes, nil,
+			func(n *User, e *UserDirectoryProfile) { n.Edges.DirectoryProfile = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withExternalCohortGrants; query != nil {
+		if err := _q.loadExternalCohortGrants(ctx, query, nodes,
+			func(n *User) { n.Edges.ExternalCohortGrants = []*ExternalCohortGrant{} },
+			func(n *User, e *ExternalCohortGrant) {
+				n.Edges.ExternalCohortGrants = append(n.Edges.ExternalCohortGrants, e)
+			}); err != nil {
 			return nil, err
 		}
 	}
@@ -504,6 +593,63 @@ func (_q *UserQuery) loadNotifications(ctx context.Context, query *NotificationQ
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "user_notifications" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadDirectoryProfile(ctx context.Context, query *UserDirectoryProfileQuery, nodes []*User, init func(*User), assign func(*User, *UserDirectoryProfile)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[string]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(userdirectoryprofile.FieldUserID)
+	}
+	query.Where(predicate.UserDirectoryProfile(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.DirectoryProfileColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadExternalCohortGrants(ctx context.Context, query *ExternalCohortGrantQuery, nodes []*User, init func(*User), assign func(*User, *ExternalCohortGrant)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[string]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(externalcohortgrant.FieldUserID)
+	}
+	query.Where(predicate.ExternalCohortGrant(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.ExternalCohortGrantsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
 		}
 		assign(node, n)
 	}

@@ -14,12 +14,12 @@ const (
 	openAPIPath         = "api/openapi.yaml"
 	handlerPath         = "internal/api/handlers/server_vm_batch.go"
 	adminHandlerPath    = "internal/api/handlers/server_admin_rate_limit.go"
-	gatewayPath         = "internal/governance/approval/gateway.go"
+	gatewayPath         = "internal/governance/ticketing/service.go"
 	jobHelperPath       = "internal/jobs/helpers.go"
-	schemaPath          = "ent/schema/batch_approval_ticket.go"
+	schemaPath          = "ent/schema/batch_ticket.go"
 	exemptionSchemaPath = "ent/schema/rate_limit_exemption.go"
 	overrideSchemaPath  = "ent/schema/rate_limit_user_override.go"
-	frontendVMPagePath  = "web/src/app/(protected)/vms/page.tsx"
+	frontendVMPagePath  = "web/src/app/(protected)/vms/VMsPageContent.tsx"
 	frontendVMHookPath  = "web/src/features/vm-management/hooks/useVMManagementController.ts"
 	frontendVMHookTests = "web/src/features/vm-management/hooks/useVMManagementController.test.tsx"
 	allowlistPath       = "docs/design/ci/allowlists/master_flow_api_deferred.txt"
@@ -79,7 +79,6 @@ func checkOpenAPI(violations *[]string) {
 		{path: "/vms/batch/{batch_id}/retry", op: "post", id: "retryVMBatch"},
 		{path: "/vms/batch/{batch_id}/cancel", op: "post", id: "cancelVMBatch"},
 		{path: "/vms/batch/power", op: "post", id: "submitVMBatchPower"},
-		{path: "/approvals/batch", op: "post", id: "submitApprovalBatch"},
 		{path: "/admin/rate-limits/exemptions", op: "post", id: "createRateLimitExemption"},
 		{path: "/admin/rate-limits/exemptions/{user_id}", op: "delete", id: "deleteRateLimitExemption"},
 		{path: "/admin/rate-limits/users/{user_id}", op: "put", id: "updateRateLimitUserOverrides"},
@@ -112,7 +111,6 @@ func checkHandlerFragments(violations *[]string) {
 
 	needles := []string{
 		"func (s *Server) SubmitVMBatch(",
-		"func (s *Server) SubmitApprovalBatch(",
 		"func (s *Server) SubmitVMBatchPower(",
 		"func (s *Server) GetVMBatch(",
 		"func (s *Server) RetryVMBatch(",
@@ -128,8 +126,8 @@ func checkHandlerFragments(violations *[]string) {
 		"maxPendingBatchChildrenUser",
 		"maxGlobalBatchRequestsPerMinute",
 		"batchSubmitCooldown",
-		"tx.BatchApprovalTicket.Create(",
-		"s.client.BatchApprovalTicket.UpdateOneID(",
+		"tx.BatchTicket.Create(",
+		"s.client.BatchTicket.UpdateOneID(",
 	}
 	text := string(content)
 	for _, n := range needles {
@@ -147,7 +145,7 @@ func checkSchemaFragments(violations *[]string) {
 	}
 
 	needles := []string{
-		"type BatchApprovalTicket struct",
+		"type BatchTicket struct",
 		`field.Enum("batch_type")`,
 		`field.Int("child_count")`,
 		`field.Int("success_count")`,
@@ -254,7 +252,7 @@ func checkJobHelperFragments(violations *[]string) {
 	needles := []string{
 		"syncParentBatchStatusByChildEvent(",
 		"syncParentBatchStatus(",
-		"parentStatus := approvalticket.StatusEXECUTING",
+		"parentStatus := entticket.StatusEXECUTING",
 	}
 	text := string(content)
 	for _, n := range needles {
@@ -273,7 +271,6 @@ func checkAllowlist(violations *[]string) {
 	lines := parseAllowlistLines(string(content))
 
 	blocked := []string{
-		"/approvals/batch",
 		"/vms/batch",
 		"/vms/batch/power",
 		"/vms/batch/{}",

@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/internal/api/handlers"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/provider"
+	"kv-shepherd.io/shepherd/internal/service"
 )
 
 // NewServerDeps builds base server deps then lets each module contribute explicit wiring.
@@ -22,11 +24,12 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 		}
 		verificationKeys = append(verificationKeys, []byte(key))
 	}
-	encryptionKey, err := cfg.Security.DecodeEncryptionKey()
-	if err != nil {
-		panic("validated config returned invalid encryption key: " + err.Error())
+	encryptionKey := infra.EncryptionKey
+	if len(encryptionKey) == 0 && cfg != nil {
+		if decodedKey, err := cfg.Security.DecodeEncryptionKey(); err == nil {
+			encryptionKey = decodedKey
+		}
 	}
-
 	deps := handlers.ServerDeps{
 		EntClient: infra.EntClient,
 		Pool:      infra.Pool,
@@ -38,8 +41,11 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 		},
 		EncryptionKey:        encryptionKey,
 		Audit:                infra.AuditLogger,
+		ExternalAuth:         service.NewExternalAuthService(infra.EntClient),
 		RefreshClusterHealth: newClusterHealthRefresher(infra),
 		RiverClient:          infra.RiverClient,
+		PublicBaseURL:        cfg.Server.PublicBaseURL,
+		AllowedOrigins:       append([]string(nil), cfg.Server.AllowedOrigins...),
 	}
 	for _, mod := range mods {
 		if mod == nil {
@@ -66,6 +72,20 @@ func newClusterHealthRefresher(infra *Infrastructure) func(context.Context, stri
 		cl, err := infra.EntClient.Cluster.Get(ctx, clusterID)
 		if err != nil {
 			return fmt.Errorf("get cluster %s: %w", clusterID, err)
+		}
+		if !cl.Enabled {
+			infra.HealthCheck.UpdateHealth(&provider.ClusterHealth{
+				ClusterName: cl.ID,
+				Status:      provider.ClusterStatusUnknown,
+				LastChecked: time.Now(),
+				Error:       "cluster is disabled",
+			})
+			if _, err := infra.EntClient.Cluster.UpdateOneID(cl.ID).
+				SetStatus(entcluster.StatusUNKNOWN).
+				Save(ctx); err != nil {
+				return fmt.Errorf("persist disabled cluster health %s: %w", cl.ID, err)
+			}
+			return nil
 		}
 
 		health := infra.HealthCheck.CheckCluster(ctx, cl.ID)

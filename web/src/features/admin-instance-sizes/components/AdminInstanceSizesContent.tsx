@@ -1,13 +1,12 @@
 'use client';
 
-import { useRef, type RefObject } from 'react';
+import { useMemo, useRef, type RefObject } from 'react';
 import {
     Alert,
     Button,
     Card,
     Checkbox,
     Divider,
-    Empty,
     Form,
     Input,
     InputNumber,
@@ -31,11 +30,27 @@ import {
     QuestionCircleOutlined,
     ReloadOutlined,
     SearchOutlined,
-    ThunderboltOutlined,
 } from '@ant-design/icons';
+import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
+import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
+import { SummaryMetricCard } from '@/components/feedback/SummaryMetricCard';
+import {
+    InstanceSizeBlueprintGlyph,
+    QueueReviewGlyph,
+    RequestsOverviewGlyph,
+    ServiceWorkspaceGlyph,
+} from '@/components/illustrations/DashboardIllustrations';
+import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { UnitInputNumber } from '@/components/form/UnitInputNumber';
+import {
+    buildDashboardSetupResumeHref,
+    resolveNextSetupAction,
+} from '@/features/setup-guide/flow';
+import { translateApiError } from '@/lib/api/errorMessage';
+import { useAutoOpenIntent } from '@/features/setup-guide/hooks/useAutoOpenIntent';
+import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
 import { useAdminInstanceSizesController } from '../hooks/useAdminInstanceSizesController';
 import {
     buildInstanceSizePresetValues,
@@ -59,7 +74,7 @@ import {
 } from '../../admin-templates/components/DynamicSchemaForm';
 import { useDynamicSchema } from '../../admin-templates/hooks/useDynamicSchema';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const INSTANCE_SIZE_RECOGNIZED_EXCLUDED_PATHS = [
     'spec.template.spec.domain.cpu.cores',
@@ -102,6 +117,95 @@ function catalogScopeColor(scope: InstanceSize['catalog_scope']): string {
         default:
             return 'default';
     }
+}
+
+function getInstanceSizePublicationMeta(
+    record: Pick<InstanceSize, 'enabled' | 'catalog_scope'>,
+    t: ReturnType<typeof useTranslation>['t'],
+): { statusLabel: string; statusColor: string; description: string } {
+    if (record.enabled === false) {
+        return {
+            statusLabel: t('common:status.disabled'),
+            statusColor: 'default',
+            description: t(
+                'instanceSizes.catalog_status_disabled_description',
+                'Enable this profile before exposing it in the VM request catalog.',
+            ),
+        };
+    }
+    if ((record.catalog_scope ?? 'unclassified') === 'unclassified') {
+        return {
+            statusLabel: t('instanceSizes.catalog_status_hidden', 'Hidden from requests'),
+            statusColor: 'gold',
+            description: t(
+                'instanceSizes.catalog_status_hidden_description',
+                'Move the catalog scope to test, prod, or all before regular users can pick it.',
+            ),
+        };
+    }
+    return {
+        statusLabel: t('instanceSizes.catalog_status_ready', 'Visible in requests'),
+        statusColor: 'green',
+        description: t(
+            'instanceSizes.catalog_status_ready_description',
+            'This profile is already visible in the VM request flow.',
+        ),
+    };
+}
+
+function getInstanceSizeCapabilityTags(
+    record: InstanceSize,
+    t: ReturnType<typeof useTranslation>['t'],
+): { label: string; color: string }[] {
+    const tags: { label: string; color: string }[] = [];
+    const gpuDevices = getGPUDeviceLabels(record);
+    if (gpuDevices.length > 0) {
+        tags.push(...gpuDevices.map((device) => ({
+            label: t('instanceSizes.capability_gpu_device', {
+                defaultValue: `GPU ${device}`,
+                device,
+            }),
+            color: 'volcano',
+        })));
+    } else if (record.requires_gpu) {
+        tags.push({ label: t('instanceSizes.capability_gpu', 'GPU'), color: 'volcano' });
+    }
+    if (record.requires_sriov) {
+        tags.push({ label: t('instanceSizes.capability_sriov', 'SR-IOV'), color: 'purple' });
+    }
+    if (record.requires_hugepages) {
+        tags.push({
+            label: record.hugepages_size
+                ? t('instanceSizes.capability_hugepages_size', {
+                    defaultValue: `Hugepages ${record.hugepages_size}`,
+                    size: record.hugepages_size,
+                })
+                : t('instanceSizes.capability_hugepages', 'Hugepages'),
+            color: 'geekblue',
+        });
+    }
+    if (record.dedicated_cpu) {
+        tags.push({ label: t('instanceSizes.capability_dedicated_cpu', 'Dedicated CPU'), color: 'orange' });
+    }
+    if (hasCPUOvercommit(record)) {
+        tags.push({
+            label: t('instanceSizes.capability_cpu_overcommit', {
+                defaultValue: 'CPU request {{value}}',
+                value: `${formatCores(record.cpu_request!)} ${t('instanceSizes.cores')}`,
+            }),
+            color: 'cyan',
+        });
+    }
+    if (hasMemoryOvercommit(record)) {
+        tags.push({
+            label: t('instanceSizes.capability_memory_overcommit', {
+                defaultValue: 'Memory request {{value}}',
+                value: formatMemory(record.memory_request_gi!),
+            }),
+            color: 'blue',
+        });
+    }
+    return tags;
 }
 
 function handleInstanceSizeFormValuesChange(
@@ -276,7 +380,6 @@ function InstanceSizeFormFields({
             <Form.Item
                 name="catalog_scope"
                 label={t('instanceSizes.catalog_scope')}
-                initialValue="unclassified"
                 extra={t('instanceSizes.catalog_scope_help')}
                 rules={[
                     { required: true, message: t('instanceSizes.catalog_scope_required') },
@@ -461,7 +564,6 @@ function InstanceSizeFormFields({
                 name="root_volume_mode_intent"
                 label={t('instanceSizes.root_volume_mode')}
                 tooltip={{ title: t('instanceSizes.root_volume_mode_help'), trigger: ['hover', 'click'] }}
-                initialValue="auto"
             >
                 <Select
                     options={[
@@ -591,7 +693,6 @@ function InstanceSizeFormFields({
                 label={t('instanceSizes.enabled')}
                 tooltip={{ title: t('instanceSizes.enabled_help'), trigger: ['hover', 'click'] }}
                 valuePropName="checked"
-                initialValue={true}
                 style={{ marginTop: 16 }}
             >
                 <Switch />
@@ -600,7 +701,7 @@ function InstanceSizeFormFields({
     );
 }
 
-function applyInstanceSizePreset(
+export function applyInstanceSizePreset(
     form: FormInstance,
     _formRef: RefObject<DynamicSchemaFormHandle | null>,
     presetKey: InstanceSizePresetKey,
@@ -611,33 +712,26 @@ function applyInstanceSizePreset(
         'description',
         'sort_order',
     ]) as Record<string, unknown>;
-
-    form.resetFields([
-        ['spec'],
-        ['spec_text'],
-        ['catalog_scope'],
-        ['cpu_cores'],
-        ['memory_gi'],
-        ['disk_gb'],
-        ['cpu_request'],
-        ['memory_request_gi'],
-        ['cpu_overcommit_enabled'],
-        ['memory_overcommit_enabled'],
-        ['dedicated_cpu'],
-        ['root_volume_mode_intent'],
-        ['dv_access_modes'],
-        ['dv_volume_mode'],
-        ['requires_sriov'],
-        ['enabled'],
-    ]);
-
-    form.setFieldsValue({
-        ...preserved,
+    const presetValues = buildInstanceSizePresetValues(presetKey);
+    const basePresetValues = {
+        catalog_scope: 'unclassified',
+        cpu_cores: undefined,
+        memory_gi: undefined,
+        disk_gb: undefined,
+        cpu_request: undefined,
+        memory_request_gi: undefined,
+        cpu_overcommit_enabled: false,
+        memory_overcommit_enabled: false,
+        dedicated_cpu: false,
         root_volume_mode_intent: 'auto',
         dv_access_modes: undefined,
         dv_volume_mode: undefined,
-        ...buildInstanceSizePresetValues(presetKey),
-    });
+        requires_sriov: false,
+        enabled: true,
+        spec_text: '{}',
+    } satisfies Record<string, unknown>;
+
+    form.setFieldsValue(Object.assign({}, basePresetValues, presetValues, preserved));
 }
 
 function InstanceSizePresetPicker({
@@ -704,8 +798,27 @@ function InstanceSizePresetPicker({
 
 export function AdminInstanceSizesContent() {
     const { t } = useTranslation(['admin', 'common']);
-    const sizes = useAdminInstanceSizesController({ t });
+    const router = useRouter();
+    const setupGuide = useSetupGuide();
+    const sizes = useAdminInstanceSizesController({
+        t,
+        onCreateSuccess: (_instanceSize, context) => {
+            if (!context.isFirstInstanceSize) {
+                return false;
+            }
+            const nextAction = resolveNextSetupAction(setupGuide, 'instance-size');
+            if (!nextAction) {
+                return false;
+            }
+            router.push(buildDashboardSetupResumeHref(nextAction));
+            return true;
+        },
+    });
     const searchInputRef = useRef<InputRef>(null);
+
+    useAutoOpenIntent('create-instance-size', () => {
+        sizes.openCreateModal();
+    });
     const catalogScopeOptions = [
         { label: t('templates.scope_unclassified'), value: 'unclassified' },
         { label: t('templates.scope_test'), value: 'test' },
@@ -813,88 +926,79 @@ export function AdminInstanceSizesContent() {
             ),
         },
         {
-            title: t('instanceSizes.cpu'),
-            dataIndex: 'cpu_cores',
-            key: 'cpu_cores',
-            width: 100,
-            align: 'center' as const,
-            sorter: (a, b) => a.cpu_cores - b.cpu_cores,
-            render: (cores: number, record: InstanceSize) => (
-                <Space direction="vertical" size={0} style={{ textAlign: 'center' }}>
-                    <Text strong>{formatCores(cores)} {t('instanceSizes.cores')}</Text>
-                    {record.dedicated_cpu && (
-                        <Tag color="orange" style={{ fontSize: 10 }}>
-                            <ThunderboltOutlined /> {t('instanceSizes.dedicated')}
-                        </Tag>
-                    )}
-                    {hasCPUOvercommit(record) && (
+            title: t('instanceSizes.resources_summary', 'Resources'),
+            key: 'resources_summary',
+            width: 220,
+            sorter: (a, b) => (a.cpu_cores + a.memory_gi) - (b.cpu_cores + b.memory_gi),
+            render: (_: unknown, record: InstanceSize) => (
+                <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <Text strong>
+                        {t('instanceSizes.resources_primary', {
+                            defaultValue: `${formatCores(record.cpu_cores)} ${t('instanceSizes.cores')} · ${formatMemory(record.memory_gi)}`,
+                            cpu: formatCores(record.cpu_cores),
+                            cores: t('instanceSizes.cores'),
+                            memory: formatMemory(record.memory_gi),
+                        })}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        {record.disk_gb
+                            ? t('instanceSizes.resources_disk_summary', {
+                                defaultValue: `Default root disk ${record.disk_gb} GB`,
+                                disk: record.disk_gb,
+                            })
+                            : t('instanceSizes.resources_disk_unset', 'Root disk size follows the selected template.')}
+                    </Text>
+                    {(hasCPUOvercommit(record) || hasMemoryOvercommit(record)) ? (
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                            {t('instanceSizes.request_compact', {
-                                value: `${formatCores(record.cpu_request!)} ${t('instanceSizes.cores')}`,
-                            })}
+                            {[
+                                hasCPUOvercommit(record)
+                                    ? t('instanceSizes.request_compact', {
+                                        value: `${formatCores(record.cpu_request!)} ${t('instanceSizes.cores')}`,
+                                    })
+                                    : null,
+                                hasMemoryOvercommit(record)
+                                    ? t('instanceSizes.request_compact', {
+                                        value: formatMemory(record.memory_request_gi!),
+                                    })
+                                    : null,
+                            ].filter(Boolean).join(' · ')}
                         </Text>
-                    )}
+                    ) : null}
                 </Space>
             ),
         },
         {
-            title: t('instanceSizes.memory'),
-            dataIndex: 'memory_gi',
-            key: 'memory_gi',
-            width: 100,
-            align: 'center' as const,
-            sorter: (a, b) => a.memory_gi - b.memory_gi,
-            render: (gi: number, record: InstanceSize) => (
-                <Space direction="vertical" size={0} style={{ textAlign: 'center' }}>
-                    <Text strong>{formatMemory(gi)}</Text>
-                    {hasMemoryOvercommit(record) && (
+            title: t('instanceSizes.catalog_publication', 'Catalog Publication'),
+            key: 'catalog_publication',
+            width: 240,
+            render: (_: unknown, record: InstanceSize) => {
+                const publication = getInstanceSizePublicationMeta(record, t);
+                return (
+                    <Space direction="vertical" size={4}>
+                        <Space size={[4, 4]} wrap>
+                            <Tag color={publication.statusColor}>{publication.statusLabel}</Tag>
+                            <Tag color={catalogScopeColor(record.catalog_scope)}>
+                                {catalogScopeLabel(record.catalog_scope, t)}
+                            </Tag>
+                            <Tag color={record.enabled !== false ? 'green' : 'default'}>
+                                {record.enabled !== false ? t('common:status.active') : t('common:status.disabled')}
+                            </Tag>
+                        </Space>
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                            {t('instanceSizes.request_compact', {
-                                value: formatMemory(record.memory_request_gi!),
-                            })}
+                            {publication.description}
                         </Text>
-                    )}
-                </Space>
-            ),
-        },
-        {
-            title: t('instanceSizes.catalog_scope'),
-            dataIndex: 'catalog_scope',
-            key: 'catalog_scope',
-            width: 120,
-            render: (scope: InstanceSize['catalog_scope']) => (
-                <Tag color={catalogScopeColor(scope)}>
-                    {catalogScopeLabel(scope, t)}
-                </Tag>
-            ),
+                    </Space>
+                );
+            },
             filters: catalogScopeFilters,
             onFilter: (value, record) => record.catalog_scope === value,
-        },
-        {
-            title: t('instanceSizes.disk'),
-            dataIndex: 'disk_gb',
-            key: 'disk_gb',
-            width: 100,
-            align: 'center' as const,
-            sorter: (a, b) => (a.disk_gb ?? 0) - (b.disk_gb ?? 0),
-            render: (gb: number | undefined) => gb ? <Text>{gb} GB</Text> : <Text type="secondary">—</Text>,
         },
         {
             title: t('instanceSizes.capabilities'),
             key: 'capabilities',
             width: 200,
             render: (_: unknown, record: InstanceSize) => {
-                const tags: { label: string; color: string }[] = [];
-                const gpuDevices = getGPUDeviceLabels(record);
-                if (gpuDevices.length > 0) {
-                    tags.push(...gpuDevices.map((device) => ({ label: `GPU ${device}`, color: 'volcano' })));
-                } else if (record.requires_gpu) {
-                    tags.push({ label: 'GPU', color: 'volcano' });
-                }
-                if (record.requires_sriov) tags.push({ label: 'SR-IOV', color: 'purple' });
-                if (record.requires_hugepages) {
-                    tags.push({ label: `Hugepages ${record.hugepages_size ?? ''}`.trim(), color: 'geekblue' });
-                }
+                const tags = getInstanceSizeCapabilityTags(record, t);
                 if (tags.length === 0) return <Text type="secondary">—</Text>;
                 return (
                     <Space size={[0, 4]} wrap>
@@ -906,60 +1010,65 @@ export function AdminInstanceSizesContent() {
             },
         },
         {
-            title: t('instanceSizes.enabled'),
-            dataIndex: 'enabled',
-            key: 'enabled',
-            width: 90,
-            render: (enabled: boolean | undefined) => (
-                <Tag color={enabled !== false ? 'green' : 'default'}>
-                    {enabled !== false ? t('common:status.active') : t('common:status.disabled')}
-                </Tag>
-            ),
-        },
-        {
             title: t('common:table.actions'),
             key: 'actions',
-            width: 120,
+            width: 150,
             render: (_: unknown, record: InstanceSize) => (
                 <Space size="small">
-                    <Tooltip title={t('common:button.edit')}>
-                        <Button
-                            type="text"
-                            size="small"
-                            data-testid={`instance-size-action-edit-${record.id}`}
-                            icon={<EditOutlined />}
-                            onClick={() => sizes.openEditModal(record)}
-                        />
-                    </Tooltip>
-                    <Tooltip title={t('common:button.delete')}>
-                        <Button
-                            type="text"
-                            size="small"
-                            danger
-                            data-testid={`instance-size-action-delete-${record.id}`}
-                            icon={<DeleteOutlined />}
-                            onClick={() => sizes.openDeleteModal(record)}
-                        />
-                    </Tooltip>
+                    <Button
+                        type="link"
+                        size="small"
+                        data-testid={`instance-size-action-edit-${record.id}`}
+                        icon={<EditOutlined />}
+                        onClick={() => sizes.openEditModal(record)}
+                    >
+                        {t('common:button.edit')}
+                    </Button>
+                    <Button
+                        type="link"
+                        size="small"
+                        danger
+                        data-testid={`instance-size-action-delete-${record.id}`}
+                        icon={<DeleteOutlined />}
+                        onClick={() => sizes.openDeleteModal(record)}
+                    >
+                        {t('common:button.delete')}
+                    </Button>
                 </Space>
             ),
         },
     ];
 
+    const sizeSummary = useMemo(() => {
+        const items = sizes.filteredItems;
+        const enabledCount = items.filter((item) => item.enabled !== false).length;
+        const requestReadyCount = items.filter(
+            (item) => item.enabled !== false && (item.catalog_scope ?? 'unclassified') !== 'unclassified',
+        ).length;
+        const specializedCount = items.filter(
+            (item) =>
+                item.requires_gpu ||
+                item.requires_hugepages ||
+                item.requires_sriov ||
+                hasCPUOvercommit(item) ||
+                hasMemoryOvercommit(item),
+        ).length;
+        return {
+            totalCount: items.length,
+            enabledCount,
+            requestReadyCount,
+            specializedCount,
+        };
+    }, [sizes.filteredItems]);
+
     return (
         <div>
             {sizes.messageContextHolder}
-            <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 24,
-            }}>
-                <div>
-                    <Title level={4} style={{ margin: 0 }}>{t('instanceSizes.title')}</Title>
-                    <Text type="secondary">{t('instanceSizes.subtitle')}</Text>
-                </div>
-                <Space>
+            <PageHeader
+                title={t('instanceSizes.title')}
+                subtitle={t('instanceSizes.subtitle')}
+                actions={(
+                    <Space>
                     <Input
                         placeholder={t('common:button.search')}
                         prefix={<SearchOutlined />}
@@ -979,17 +1088,52 @@ export function AdminInstanceSizesContent() {
                     >
                         {t('common:button.add')}
                     </Button>
-                </Space>
+                    </Space>
+                )}
+            />
+            <div className="summary-card-grid">
+                <SummaryMetricCard
+                    title={t('instanceSizes.summary.total_title', 'Catalog sizes')}
+                    value={sizeSummary.totalCount}
+                    description={t('instanceSizes.summary.total_description', 'Instance-size profiles visible after the current filters.')}
+                    visual={<InstanceSizeBlueprintGlyph className="summary-metric-card__art" />}
+                    accentColor="#1D5BFF"
+                    surfaceColor="#E6F4FF"
+                />
+                <SummaryMetricCard
+                    title={t('instanceSizes.summary.enabled_title', 'Enabled')}
+                    value={sizeSummary.enabledCount}
+                    description={t('instanceSizes.summary.enabled_description', 'Profiles currently available for catalog publication.')}
+                    visual={<ServiceWorkspaceGlyph className="summary-metric-card__art" />}
+                    accentColor="#0F8F57"
+                    surfaceColor="#E8FFF2"
+                />
+                <SummaryMetricCard
+                    title={t('instanceSizes.summary.request_ready_title', 'Request-ready')}
+                    value={sizeSummary.requestReadyCount}
+                    description={t('instanceSizes.summary.request_ready_description', 'Profiles already visible to the VM request flow.')}
+                    visual={<RequestsOverviewGlyph className="summary-metric-card__art" />}
+                    accentColor="#D66A1F"
+                    surfaceColor="#FFF4E5"
+                />
+                <SummaryMetricCard
+                    title={t('instanceSizes.summary.specialized_title', 'Specialized')}
+                    value={sizeSummary.specializedCount}
+                    description={t('instanceSizes.summary.specialized_description', 'Profiles with GPU, hugepages, SR-IOV, or overcommit tuning.')}
+                    visual={<QueueReviewGlyph className="summary-metric-card__art" />}
+                    accentColor="#6D4DE3"
+                    surfaceColor="#F5EDFF"
+                />
             </div>
 
-            <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+            <PageSurface flush={true}>
                 {sizes.listError && (
                     <Alert
                         type="error"
                         showIcon
                         style={{ margin: 16, marginBottom: 0 }}
                         message={t('instanceSizes.load_error', 'Failed to load instance sizes')}
-                        description={sizes.listError.message || t('common:message.error')}
+                        description={translateApiError(t, sizes.listError)}
                         action={
                             <Button size="small" onClick={() => sizes.refetch()}>
                                 {t('common:button.refresh')}
@@ -1015,19 +1159,25 @@ export function AdminInstanceSizesContent() {
                         }}
                         locale={{
                             emptyText: (
-                                <Empty
-                                    description={
+                                <ActionEmptyState
+                                    compact={true}
+                                    title={
                                         sizes.deferredSearch
                                             ? t('common:message.no_data')
                                             : t('instanceSizes.empty')
                                     }
-                                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                    description={
+                                        sizes.deferredSearch
+                                            ? t('instanceSizes.empty_filtered_description', 'Try a broader search or reset the current filters.')
+                                            : t('instanceSizes.empty_description', 'Create at least one instance-size profile before opening the VM request catalog.')
+                                    }
+                                    visual={<InstanceSizeBlueprintGlyph className="action-empty-state__art action-empty-state__art--compact" />}
                                 />
                             ),
                         }}
                     />
                 </div>
-            </Card>
+            </PageSurface>
 
             {/* Create Modal */}
             <Modal
@@ -1036,14 +1186,15 @@ export function AdminInstanceSizesContent() {
                 onOk={() => { void sizes.submitCreate(); }}
                 onCancel={sizes.closeCreateModal}
                 confirmLoading={sizes.createPending}
-                forceRender
-                destroyOnHidden={true}
+                forceRender={true}
                 width={720}
                 data-testid="instance-size-create-modal"
             >
                 <Form
+                    key="instance-size-create-form"
                     form={sizes.createForm}
                     layout="vertical"
+                    initialValues={sizes.createInitialValues}
                     onValuesChange={(changedValues) => {
                         handleInstanceSizeFormValuesChange(sizes.createForm, createFormRef, changedValues);
                     }}
@@ -1060,14 +1211,15 @@ export function AdminInstanceSizesContent() {
                 onOk={() => { void sizes.submitEdit(); }}
                 onCancel={sizes.closeEditModal}
                 confirmLoading={sizes.updatePending}
-                forceRender
-                destroyOnHidden={true}
+                forceRender={true}
                 width={720}
                 data-testid="instance-size-edit-modal"
             >
                 <Form
+                    key={sizes.editingItem?.id ?? 'instance-size-edit-form'}
                     form={sizes.editForm}
                     layout="vertical"
+                    initialValues={sizes.editInitialValues}
                     onValuesChange={(changedValues) => {
                         handleInstanceSizeFormValuesChange(sizes.editForm, editFormRef, changedValues);
                     }}

@@ -35,54 +35,6 @@ var (
 			},
 		},
 	}
-	// ApprovalTicketsColumns holds the columns for the "approval_tickets" table.
-	ApprovalTicketsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeString, Unique: true},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "updated_at", Type: field.TypeTime},
-		{Name: "event_id", Type: field.TypeString},
-		{Name: "operation_type", Type: field.TypeEnum, Enums: []string{"CREATE", "DELETE", "POWER", "VNC_ACCESS"}, Default: "CREATE"},
-		{Name: "status", Type: field.TypeEnum, Enums: []string{"PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXECUTING", "SUCCESS", "FAILED"}, Default: "PENDING"},
-		{Name: "requester", Type: field.TypeString},
-		{Name: "approver", Type: field.TypeString, Nullable: true},
-		{Name: "reason", Type: field.TypeString, Nullable: true},
-		{Name: "reject_reason", Type: field.TypeString, Nullable: true},
-		{Name: "selected_cluster_id", Type: field.TypeString, Nullable: true},
-		{Name: "selected_storage_class", Type: field.TypeString, Nullable: true},
-		{Name: "template_snapshot", Type: field.TypeJSON, Nullable: true},
-		{Name: "instance_size_snapshot", Type: field.TypeJSON, Nullable: true},
-		{Name: "placement_evaluation", Type: field.TypeJSON, Nullable: true},
-		{Name: "modified_spec", Type: field.TypeJSON, Nullable: true},
-		{Name: "parent_ticket_id", Type: field.TypeString, Nullable: true},
-	}
-	// ApprovalTicketsTable holds the schema information for the "approval_tickets" table.
-	ApprovalTicketsTable = &schema.Table{
-		Name:       "approval_tickets",
-		Columns:    ApprovalTicketsColumns,
-		PrimaryKey: []*schema.Column{ApprovalTicketsColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "approvalticket_status",
-				Unique:  false,
-				Columns: []*schema.Column{ApprovalTicketsColumns[5]},
-			},
-			{
-				Name:    "approvalticket_requester",
-				Unique:  false,
-				Columns: []*schema.Column{ApprovalTicketsColumns[6]},
-			},
-			{
-				Name:    "approvalticket_event_id",
-				Unique:  false,
-				Columns: []*schema.Column{ApprovalTicketsColumns[3]},
-			},
-			{
-				Name:    "approvalticket_parent_ticket_id",
-				Unique:  false,
-				Columns: []*schema.Column{ApprovalTicketsColumns[16]},
-			},
-		},
-	}
 	// AuditLogsColumns holds the columns for the "audit_logs" table.
 	AuditLogsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
@@ -147,12 +99,12 @@ var (
 			},
 		},
 	}
-	// BatchApprovalTicketsColumns holds the columns for the "batch_approval_tickets" table.
-	BatchApprovalTicketsColumns = []*schema.Column{
+	// BatchTicketsColumns holds the columns for the "batch_tickets" table.
+	BatchTicketsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
-		{Name: "batch_type", Type: field.TypeEnum, Enums: []string{"BATCH_CREATE", "BATCH_DELETE", "BATCH_APPROVE", "BATCH_POWER"}, Default: "BATCH_CREATE"},
+		{Name: "batch_type", Type: field.TypeEnum, Enums: []string{"BATCH_CREATE", "BATCH_MODIFY", "BATCH_DELETE", "BATCH_APPROVE", "BATCH_POWER"}, Default: "BATCH_CREATE"},
 		{Name: "child_count", Type: field.TypeInt, Default: 0},
 		{Name: "success_count", Type: field.TypeInt, Default: 0},
 		{Name: "failed_count", Type: field.TypeInt, Default: 0},
@@ -162,31 +114,31 @@ var (
 		{Name: "created_by", Type: field.TypeString},
 		{Name: "reason", Type: field.TypeString, Nullable: true},
 	}
-	// BatchApprovalTicketsTable holds the schema information for the "batch_approval_tickets" table.
-	BatchApprovalTicketsTable = &schema.Table{
-		Name:       "batch_approval_tickets",
-		Columns:    BatchApprovalTicketsColumns,
-		PrimaryKey: []*schema.Column{BatchApprovalTicketsColumns[0]},
+	// BatchTicketsTable holds the schema information for the "batch_tickets" table.
+	BatchTicketsTable = &schema.Table{
+		Name:       "batch_tickets",
+		Columns:    BatchTicketsColumns,
+		PrimaryKey: []*schema.Column{BatchTicketsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "batchapprovalticket_status",
+				Name:    "batchticket_status",
 				Unique:  false,
-				Columns: []*schema.Column{BatchApprovalTicketsColumns[8]},
+				Columns: []*schema.Column{BatchTicketsColumns[8]},
 			},
 			{
-				Name:    "batchapprovalticket_created_by",
+				Name:    "batchticket_created_by",
 				Unique:  false,
-				Columns: []*schema.Column{BatchApprovalTicketsColumns[10]},
+				Columns: []*schema.Column{BatchTicketsColumns[10]},
 			},
 			{
-				Name:    "batchapprovalticket_created_at",
+				Name:    "batchticket_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{BatchApprovalTicketsColumns[1]},
+				Columns: []*schema.Column{BatchTicketsColumns[1]},
 			},
 			{
-				Name:    "batchapprovalticket_batch_type_created_by",
+				Name:    "batchticket_batch_type_created_by",
 				Unique:  false,
-				Columns: []*schema.Column{BatchApprovalTicketsColumns[3], BatchApprovalTicketsColumns[10]},
+				Columns: []*schema.Column{BatchTicketsColumns[3], BatchTicketsColumns[10]},
 			},
 		},
 	}
@@ -268,6 +220,55 @@ var (
 			},
 		},
 	}
+	// DirectorySyncJobsColumns holds the columns for the "directory_sync_jobs" table.
+	DirectorySyncJobsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "auth_provider_id", Type: field.TypeString},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"pending", "running", "completed", "failed"}, Default: "pending"},
+		{Name: "request_snapshot", Type: field.TypeJSON},
+		{Name: "conflict_resolution", Type: field.TypeString, Default: "skip"},
+		{Name: "sync_mode", Type: field.TypeEnum, Enums: []string{"manual_import", "scheduled_enrichment"}, Default: "manual_import"},
+		{Name: "join_key_type", Type: field.TypeString, Default: ""},
+		{Name: "total_entries", Type: field.TypeInt, Default: 0},
+		{Name: "create_count", Type: field.TypeInt, Default: 0},
+		{Name: "update_count", Type: field.TypeInt, Default: 0},
+		{Name: "blocked_count", Type: field.TypeInt, Default: 0},
+		{Name: "error_count", Type: field.TypeInt, Default: 0},
+		{Name: "errors", Type: field.TypeJSON, Nullable: true},
+		{Name: "triggered_by", Type: field.TypeString},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+	}
+	// DirectorySyncJobsTable holds the schema information for the "directory_sync_jobs" table.
+	DirectorySyncJobsTable = &schema.Table{
+		Name:       "directory_sync_jobs",
+		Columns:    DirectorySyncJobsColumns,
+		PrimaryKey: []*schema.Column{DirectorySyncJobsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "directorysyncjob_auth_provider_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncJobsColumns[3], DirectorySyncJobsColumns[1]},
+			},
+			{
+				Name:    "directorysyncjob_auth_provider_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncJobsColumns[3], DirectorySyncJobsColumns[4]},
+			},
+			{
+				Name:    "directorysyncjob_auth_provider_id_sync_mode_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncJobsColumns[3], DirectorySyncJobsColumns[7], DirectorySyncJobsColumns[1]},
+			},
+			{
+				Name:    "directorysyncjob_auth_provider_id_sync_mode_status",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncJobsColumns[3], DirectorySyncJobsColumns[7], DirectorySyncJobsColumns[4]},
+			},
+		},
+	}
 	// DomainEventsColumns holds the columns for the "domain_events" table.
 	DomainEventsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
@@ -308,83 +309,115 @@ var (
 			},
 		},
 	}
-	// ExternalApprovalSystemsColumns holds the columns for the "external_approval_systems" table.
-	ExternalApprovalSystemsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeString, Unique: true},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "updated_at", Type: field.TypeTime},
-		{Name: "name", Type: field.TypeString},
-		{Name: "system_type", Type: field.TypeEnum, Enums: []string{"webhook", "jira", "servicenow", "custom"}},
-		{Name: "config", Type: field.TypeJSON},
-		{Name: "enabled", Type: field.TypeBool, Default: false},
-		{Name: "created_by", Type: field.TypeString},
-	}
-	// ExternalApprovalSystemsTable holds the schema information for the "external_approval_systems" table.
-	ExternalApprovalSystemsTable = &schema.Table{
-		Name:       "external_approval_systems",
-		Columns:    ExternalApprovalSystemsColumns,
-		PrimaryKey: []*schema.Column{ExternalApprovalSystemsColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "externalapprovalsystem_name",
-				Unique:  true,
-				Columns: []*schema.Column{ExternalApprovalSystemsColumns[3]},
-			},
-		},
-	}
-	// IDPgroupMappingsColumns holds the columns for the "id_pgroup_mappings" table.
-	IDPgroupMappingsColumns = []*schema.Column{
+	// ExternalCohortsColumns holds the columns for the "external_cohorts" table.
+	ExternalCohortsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "provider_id", Type: field.TypeString},
-		{Name: "external_group_id", Type: field.TypeString},
+		{Name: "cohort_kind", Type: field.TypeString},
+		{Name: "cohort_key", Type: field.TypeString},
+		{Name: "display_name", Type: field.TypeString},
+		{Name: "source_field", Type: field.TypeString, Nullable: true},
+		{Name: "description", Type: field.TypeString, Nullable: true},
+		{Name: "last_synced_at", Type: field.TypeTime, Nullable: true},
+	}
+	// ExternalCohortsTable holds the schema information for the "external_cohorts" table.
+	ExternalCohortsTable = &schema.Table{
+		Name:       "external_cohorts",
+		Columns:    ExternalCohortsColumns,
+		PrimaryKey: []*schema.Column{ExternalCohortsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "externalcohort_provider_id_cohort_kind_cohort_key",
+				Unique:  true,
+				Columns: []*schema.Column{ExternalCohortsColumns[3], ExternalCohortsColumns[4], ExternalCohortsColumns[5]},
+			},
+			{
+				Name:    "externalcohort_provider_id_display_name",
+				Unique:  false,
+				Columns: []*schema.Column{ExternalCohortsColumns[3], ExternalCohortsColumns[6]},
+			},
+		},
+	}
+	// ExternalCohortGrantsColumns holds the columns for the "external_cohort_grants" table.
+	ExternalCohortGrantsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "provider_id", Type: field.TypeString},
+		{Name: "binding_key", Type: field.TypeString},
+		{Name: "source_mapping_ids", Type: field.TypeJSON, Nullable: true},
+		{Name: "last_applied_at", Type: field.TypeTime},
+		{Name: "role_binding_id", Type: field.TypeString},
+		{Name: "user_id", Type: field.TypeString},
+	}
+	// ExternalCohortGrantsTable holds the schema information for the "external_cohort_grants" table.
+	ExternalCohortGrantsTable = &schema.Table{
+		Name:       "external_cohort_grants",
+		Columns:    ExternalCohortGrantsColumns,
+		PrimaryKey: []*schema.Column{ExternalCohortGrantsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "external_cohort_grants_role_bindings_external_cohort_grants",
+				Columns:    []*schema.Column{ExternalCohortGrantsColumns[7]},
+				RefColumns: []*schema.Column{RoleBindingsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "external_cohort_grants_users_external_cohort_grants",
+				Columns:    []*schema.Column{ExternalCohortGrantsColumns[8]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "externalcohortgrant_user_id_provider_id_binding_key",
+				Unique:  true,
+				Columns: []*schema.Column{ExternalCohortGrantsColumns[8], ExternalCohortGrantsColumns[3], ExternalCohortGrantsColumns[4]},
+			},
+			{
+				Name:    "externalcohortgrant_role_binding_id",
+				Unique:  true,
+				Columns: []*schema.Column{ExternalCohortGrantsColumns[7]},
+			},
+		},
+	}
+	// ExternalCohortMappingsColumns holds the columns for the "external_cohort_mappings" table.
+	ExternalCohortMappingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "provider_id", Type: field.TypeString},
+		{Name: "cohort_kind", Type: field.TypeString},
+		{Name: "cohort_key", Type: field.TypeString},
 		{Name: "role_id", Type: field.TypeString},
 		{Name: "scope_type", Type: field.TypeString, Nullable: true},
 		{Name: "scope_id", Type: field.TypeString, Nullable: true},
 		{Name: "allowed_environments", Type: field.TypeJSON, Nullable: true},
 		{Name: "created_by", Type: field.TypeString},
 	}
-	// IDPgroupMappingsTable holds the schema information for the "id_pgroup_mappings" table.
-	IDPgroupMappingsTable = &schema.Table{
-		Name:       "id_pgroup_mappings",
-		Columns:    IDPgroupMappingsColumns,
-		PrimaryKey: []*schema.Column{IDPgroupMappingsColumns[0]},
+	// ExternalCohortMappingsTable holds the schema information for the "external_cohort_mappings" table.
+	ExternalCohortMappingsTable = &schema.Table{
+		Name:       "external_cohort_mappings",
+		Columns:    ExternalCohortMappingsColumns,
+		PrimaryKey: []*schema.Column{ExternalCohortMappingsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "idpgroupmapping_provider_id_external_group_id",
-				Unique:  true,
-				Columns: []*schema.Column{IDPgroupMappingsColumns[3], IDPgroupMappingsColumns[4]},
-			},
-			{
-				Name:    "idpgroupmapping_provider_id_role_id",
+				Name:    "externalcohortmapping_provider_id_cohort_kind_cohort_key",
 				Unique:  false,
-				Columns: []*schema.Column{IDPgroupMappingsColumns[3], IDPgroupMappingsColumns[5]},
+				Columns: []*schema.Column{ExternalCohortMappingsColumns[3], ExternalCohortMappingsColumns[4], ExternalCohortMappingsColumns[5]},
 			},
-		},
-	}
-	// IDPsyncedGroupsColumns holds the columns for the "id_psynced_groups" table.
-	IDPsyncedGroupsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeString, Unique: true},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "updated_at", Type: field.TypeTime},
-		{Name: "provider_id", Type: field.TypeString},
-		{Name: "external_group_id", Type: field.TypeString},
-		{Name: "group_name", Type: field.TypeString},
-		{Name: "source_field", Type: field.TypeString, Nullable: true},
-		{Name: "description", Type: field.TypeString, Nullable: true},
-		{Name: "last_synced_at", Type: field.TypeTime, Nullable: true},
-	}
-	// IDPsyncedGroupsTable holds the schema information for the "id_psynced_groups" table.
-	IDPsyncedGroupsTable = &schema.Table{
-		Name:       "id_psynced_groups",
-		Columns:    IDPsyncedGroupsColumns,
-		PrimaryKey: []*schema.Column{IDPsyncedGroupsColumns[0]},
-		Indexes: []*schema.Index{
 			{
-				Name:    "idpsyncedgroup_provider_id_external_group_id",
+				Name:    "externalcohortmapping_provider_id_cohort_kind_cohort_key_role_id_scope_type_scope_id",
 				Unique:  true,
-				Columns: []*schema.Column{IDPsyncedGroupsColumns[3], IDPsyncedGroupsColumns[4]},
+				Columns: []*schema.Column{ExternalCohortMappingsColumns[3], ExternalCohortMappingsColumns[4], ExternalCohortMappingsColumns[5], ExternalCohortMappingsColumns[6], ExternalCohortMappingsColumns[7], ExternalCohortMappingsColumns[8]},
+			},
+			{
+				Name:    "externalcohortmapping_provider_id_role_id",
+				Unique:  false,
+				Columns: []*schema.Column{ExternalCohortMappingsColumns[3], ExternalCohortMappingsColumns[6]},
 			},
 		},
 	}
@@ -558,6 +591,28 @@ var (
 				Name:    "pendingadoption_status",
 				Unique:  false,
 				Columns: []*schema.Column{PendingAdoptionsColumns[7]},
+			},
+		},
+	}
+	// PlatformSettingsColumns holds the columns for the "platform_settings" table.
+	PlatformSettingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "key", Type: field.TypeString, Unique: true},
+		{Name: "value", Type: field.TypeJSON},
+		{Name: "updated_by", Type: field.TypeString},
+	}
+	// PlatformSettingsTable holds the schema information for the "platform_settings" table.
+	PlatformSettingsTable = &schema.Table{
+		Name:       "platform_settings",
+		Columns:    PlatformSettingsColumns,
+		PrimaryKey: []*schema.Column{PlatformSettingsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "platformsetting_key",
+				Unique:  true,
+				Columns: []*schema.Column{PlatformSettingsColumns[3]},
 			},
 		},
 	}
@@ -833,6 +888,54 @@ var (
 			},
 		},
 	}
+	// TicketsColumns holds the columns for the "tickets" table.
+	TicketsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "event_id", Type: field.TypeString},
+		{Name: "operation_type", Type: field.TypeEnum, Enums: []string{"CREATE", "MODIFY", "DELETE", "POWER", "VNC_ACCESS"}, Default: "CREATE"},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXECUTING", "SUCCESS", "FAILED"}, Default: "PENDING"},
+		{Name: "requester", Type: field.TypeString},
+		{Name: "approver", Type: field.TypeString, Nullable: true},
+		{Name: "reason", Type: field.TypeString, Nullable: true},
+		{Name: "reject_reason", Type: field.TypeString, Nullable: true},
+		{Name: "selected_cluster_id", Type: field.TypeString, Nullable: true},
+		{Name: "selected_storage_class", Type: field.TypeString, Nullable: true},
+		{Name: "template_snapshot", Type: field.TypeJSON, Nullable: true},
+		{Name: "instance_size_snapshot", Type: field.TypeJSON, Nullable: true},
+		{Name: "placement_evaluation", Type: field.TypeJSON, Nullable: true},
+		{Name: "modified_spec", Type: field.TypeJSON, Nullable: true},
+		{Name: "parent_ticket_id", Type: field.TypeString, Nullable: true},
+	}
+	// TicketsTable holds the schema information for the "tickets" table.
+	TicketsTable = &schema.Table{
+		Name:       "tickets",
+		Columns:    TicketsColumns,
+		PrimaryKey: []*schema.Column{TicketsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "ticket_status",
+				Unique:  false,
+				Columns: []*schema.Column{TicketsColumns[5]},
+			},
+			{
+				Name:    "ticket_requester",
+				Unique:  false,
+				Columns: []*schema.Column{TicketsColumns[6]},
+			},
+			{
+				Name:    "ticket_event_id",
+				Unique:  false,
+				Columns: []*schema.Column{TicketsColumns[3]},
+			},
+			{
+				Name:    "ticket_parent_ticket_id",
+				Unique:  false,
+				Columns: []*schema.Column{TicketsColumns[16]},
+			},
+		},
+	}
 	// UsersColumns holds the columns for the "users" table.
 	UsersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
@@ -871,6 +974,36 @@ var (
 			},
 		},
 	}
+	// UserDirectoryProfilesColumns holds the columns for the "user_directory_profiles" table.
+	UserDirectoryProfilesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "attributes", Type: field.TypeJSON},
+		{Name: "last_synced_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeString, Unique: true},
+	}
+	// UserDirectoryProfilesTable holds the schema information for the "user_directory_profiles" table.
+	UserDirectoryProfilesTable = &schema.Table{
+		Name:       "user_directory_profiles",
+		Columns:    UserDirectoryProfilesColumns,
+		PrimaryKey: []*schema.Column{UserDirectoryProfilesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "user_directory_profiles_users_directory_profile",
+				Columns:    []*schema.Column{UserDirectoryProfilesColumns[5]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "userdirectoryprofile_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{UserDirectoryProfilesColumns[5]},
+			},
+		},
+	}
 	// VmsColumns holds the columns for the "vms" table.
 	VmsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
@@ -880,7 +1013,7 @@ var (
 		{Name: "instance", Type: field.TypeString},
 		{Name: "namespace", Type: field.TypeString},
 		{Name: "cluster_id", Type: field.TypeString, Nullable: true},
-		{Name: "status", Type: field.TypeEnum, Enums: []string{"CREATING", "RUNNING", "STOPPING", "STOPPED", "DELETING", "FAILED", "PENDING", "MIGRATING", "PAUSED", "UNKNOWN"}, Default: "CREATING"},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"CREATING", "STARTING", "RUNNING", "STOPPING", "STOPPED", "DELETING", "FAILED", "PENDING", "MIGRATING", "PAUSED", "UNKNOWN", "NOT_FOUND"}, Default: "CREATING"},
 		{Name: "hostname", Type: field.TypeString, Nullable: true},
 		{Name: "created_by", Type: field.TypeString},
 		{Name: "ticket_id", Type: field.TypeString, Nullable: true},
@@ -964,20 +1097,21 @@ var (
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		ApprovalPoliciesTable,
-		ApprovalTicketsTable,
 		AuditLogsTable,
 		AuthProvidersTable,
-		BatchApprovalTicketsTable,
+		BatchTicketsTable,
 		ClustersTable,
 		ClusterPoliciesTable,
+		DirectorySyncJobsTable,
 		DomainEventsTable,
-		ExternalApprovalSystemsTable,
-		IDPgroupMappingsTable,
-		IDPsyncedGroupsTable,
+		ExternalCohortsTable,
+		ExternalCohortGrantsTable,
+		ExternalCohortMappingsTable,
 		InstanceSizesTable,
 		NamespaceRegistriesTable,
 		NotificationsTable,
 		PendingAdoptionsTable,
+		PlatformSettingsTable,
 		RateLimitExemptionsTable,
 		RateLimitUserOverridesTable,
 		ResourceRoleBindingsTable,
@@ -987,7 +1121,9 @@ var (
 		SystemsTable,
 		SystemSecretsTable,
 		TemplatesTable,
+		TicketsTable,
 		UsersTable,
+		UserDirectoryProfilesTable,
 		VmsTable,
 		VMRevisionsTable,
 	}
@@ -995,10 +1131,13 @@ var (
 
 func init() {
 	ClusterPoliciesTable.ForeignKeys[0].RefTable = ClustersTable
+	ExternalCohortGrantsTable.ForeignKeys[0].RefTable = RoleBindingsTable
+	ExternalCohortGrantsTable.ForeignKeys[1].RefTable = UsersTable
 	NotificationsTable.ForeignKeys[0].RefTable = UsersTable
 	RoleBindingsTable.ForeignKeys[0].RefTable = RolesTable
 	RoleBindingsTable.ForeignKeys[1].RefTable = UsersTable
 	ServicesTable.ForeignKeys[0].RefTable = SystemsTable
+	UserDirectoryProfilesTable.ForeignKeys[0].RefTable = UsersTable
 	VmsTable.ForeignKeys[0].RefTable = ServicesTable
 	VMRevisionsTable.ForeignKeys[0].RefTable = VmsTable
 }

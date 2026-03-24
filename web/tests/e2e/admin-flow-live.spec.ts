@@ -19,7 +19,9 @@
  *   listAuthProviders      Stage 2.B  – GET /admin/auth-providers
  *   createAuthProvider     Stage 2.B  – POST /admin/auth-providers
  *   deleteAuthProvider     Stage 2.B  – DELETE /admin/auth-providers/{id}
- *   listAuthProviderGroupMappings Stage 2.C – GET /admin/auth-providers/{id}/group-mappings
+ *   getAuthProviderSample    Stage 2.C  – GET /admin/auth-providers/{id}/sample
+ *   listAuthProviderCohorts  Stage 2.C  – GET /admin/auth-providers/{id}/cohorts
+ *   listAuthProviderCohortMappings Stage 2.C – GET /admin/auth-providers/{id}/cohort-mappings
  *   listClusters           Stage 3    – GET /admin/clusters
  *   createCluster          Stage 3    – POST /admin/clusters
  *   listNamespaces         Stage 3    – GET /admin/namespaces
@@ -30,9 +32,9 @@
  *   createAdminTemplate    Stage 3    – POST /admin/templates
  *   listAdminInstanceSizes Stage 3    – GET /admin/instance-sizes
  *   createAdminInstanceSize Stage 3   – POST /admin/instance-sizes
- *   listApprovals          Stage 5.B  – GET /approvals
- *   approveTicket          Stage 5.B  – POST /approvals/{id}/approve
- *   rejectTicket           Stage 5.B  – POST /approvals/{id}/reject
+ *   listApprovals          Stage 5.B  – GET /builtin-approval/tasks
+ *   approveTicket          Stage 5.B  – POST /builtin-approval/tasks/{id}/approve
+ *   rejectTicket           Stage 5.B  – POST /builtin-approval/tasks/{id}/reject
  *   listAuditLogs          Audit      – GET /audit-logs
  *
  * Environment variables:
@@ -198,9 +200,9 @@ async function waitForTicketStatus(
         const perPage = 100;
 
         for (let guard = 0; guard < 20; guard += 1) {
-            const listResp = await request.get(`/api/v1/approvals?page=${page}&per_page=${perPage}`, { headers });
-            expect(listResp.status(), `GET /approvals returned ${listResp.status()}`).toBe(200);
-            const listBody = await validateApiResponse('ApprovalTicketList', listResp) as {
+            const listResp = await request.get(`/api/v1/builtin-approval/tasks?page=${page}&per_page=${perPage}`, { headers });
+            expect(listResp.status(), `GET /builtin-approval/tasks returned ${listResp.status()}`).toBe(200);
+            const listBody = await validateApiResponse('TicketList', listResp) as {
                 items?: Array<{ id?: string; status?: string }>;
                 pagination?: { total_pages?: number };
             };
@@ -406,9 +408,9 @@ async function seedPendingApprovalTicket(request: APIRequestContext): Promise<st
     }
 
     expect(createResp.status(), 'POST /vms/request must return 202 for approval seed').toBe(202);
-    const ticket = await validateApiResponse('ApprovalTicketResponse', createResp) as { ticket_id?: string; id?: string };
+    const ticket = await validateApiResponse('TicketResponse', createResp) as { ticket_id?: string; id?: string };
     const ticketID = ticket.ticket_id ?? ticket.id ?? '';
-    expect(ticketID, 'ApprovalTicketResponse missing ticket id').toBeTruthy();
+    expect(ticketID, 'TicketResponse missing ticket id').toBeTruthy();
     return ticketID;
 }
 
@@ -555,10 +557,9 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(providerName);
         await selectAntOption(page, createModal.locator('.ant-select-selector').first(), providerTypeLabel);
-        const configText = '{"test_endpoint":"https://idp.example.com/healthz"}';
-        const configInput = createModal.locator('textarea').first();
-        await configInput.fill(configText);
-        await expect(configInput).toHaveValue(configText);
+        const configInput = createModal.getByLabel(/test endpoint/i);
+        await expect(configInput).toBeVisible();
+        await configInput.fill('https://idp.example.com/healthz');
         await createModal.getByRole('button', { name: 'OK' }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'AuthProvider', 201);
@@ -583,11 +584,11 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         await expect(page.locator('tr').filter({ hasText: providerName })).toHaveCount(0);
     });
 
-    // ── Stage 2.C: IdP Group Mapping ─────────────────────────────────────────────
+    // ── Stage 2.C: Auth provider sample + observed cohort surfaces ──────────────
 
-    test('Stage 2.C – listAuthProviderGroupMappings: IdP group mapping list conforms to IdPGroupMappingList schema', async ({ page }) => {
-        // operationId: listAuthProviderGroupMappings
-        await test.step('Stage 2.C / Step 1: fetch provider group-mapping sample list', async () => {
+    test('Stage 2.C – sample/cohorts/cohort-mappings surfaces conform to current schemas', async ({ page }) => {
+        // operationId: getAuthProviderSample, listAuthProviderCohorts, listAuthProviderCohortMappings
+        await test.step('Stage 2.C / Step 1: fetch provider sample, observed cohorts, and cohort mappings', async () => {
             // Contract: seed data MUST include at least one auth provider.
             await page.goto('/admin/auth-providers');
             await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
@@ -595,24 +596,35 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
             const firstProviderRow = page.locator('tr[data-row-key]').first();
             await expect(firstProviderRow, 'No auth providers found — seed data must include at least one provider').toBeVisible();
 
-            // Click into the provider's group mappings
+            // Click into the provider's cohort mapping surface
             const mappingLink = firstProviderRow.locator('[data-testid^="auth-provider-action-mappings-"]').first();
-            await expect(mappingLink, 'No group mapping action found on provider row — UI must expose this action').toBeVisible();
+            await expect(mappingLink, 'No cohort mapping action found on provider row — UI must expose this action').toBeVisible();
 
             const providerID = (await mappingLink.getAttribute('data-testid'))
                 ?.replace('auth-provider-action-mappings-', '') ?? '';
 
+            const sampleRespPromise = page.waitForResponse(
+                (r) =>
+                    urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/sample`) &&
+                    r.request().method() === 'GET'
+            );
+            const cohortsRespPromise = page.waitForResponse(
+                (r) =>
+                    urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/cohorts`) &&
+                    r.request().method() === 'GET'
+            );
             const mappingsRespPromise = page.waitForResponse(
                 (r) =>
-                    urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/group-mappings`) &&
+                    urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/cohort-mappings`) &&
                     r.request().method() === 'GET'
             );
             await mappingLink.click();
+            const mappingsPage = getAntModal(page, 'auth-provider-mappings-page');
+            await expect(mappingsPage).toBeVisible();
 
-            // ── CONTRACT CHECK: listAuthProviderGroupMappings → IdPGroupMappingList ─
-            const mappingsResp = await mappingsRespPromise;
-            expect(mappingsResp.status()).toBe(200);
-            await validateApiResponse('IdPGroupMappingList', mappingsResp);
+            await expectSchema(sampleRespPromise, 'AuthProviderSampleResponse', 200);
+            await expectSchema(cohortsRespPromise, 'ExternalCohortList', 200);
+            await expectSchema(mappingsRespPromise, 'ExternalCohortMappingList', 200);
         });
     });
 
@@ -793,16 +805,16 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
     // ── Stage 5.B: Approval workflow ─────────────────────────────────────────────
 
-    test('Stage 5.B – listApprovals: approval list conforms to ApprovalTicketList schema', async ({ page }) => {
+    test('Stage 5.B – listApprovals: approval task list conforms to TicketList schema', async ({ page }) => {
         // operationId: listApprovals
         const listRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), '/api/v1/approvals') && r.request().method() === 'GET'
+            (r) => urlPathIncludes(r.url(), '/api/v1/builtin-approval/tasks') && r.request().method() === 'GET'
         );
         await page.goto('/admin/approvals');
         await expect(page.getByRole('heading', { name: /approval/i })).toBeVisible();
 
-        // ── CONTRACT CHECK: listApprovals → ApprovalTicketList ───────────────────
-        await expectSchema(listRespPromise, 'ApprovalTicketList', 200);
+        // ── CONTRACT CHECK: listApprovals → TicketList ───────────────────────────
+        await expectSchema(listRespPromise, 'TicketList', 200);
     });
 
     test('Stage 5.B – approveTicket: approve action calls real API', async ({ page, request }) => {
@@ -831,14 +843,14 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         const approveRespPromise = page.waitForResponse(
             (r) =>
-                urlPathEndsWith(r.url(), `/api/v1/approvals/${ticketID}/approve`) &&
+                urlPathEndsWith(r.url(), `/api/v1/builtin-approval/tasks/${ticketID}/approve`) &&
                 r.request().method() === 'POST'
         );
         await modal.getByRole('button', { name: 'OK' }).click();
 
         // ── CONTRACT CHECK: approveTicket → 204 ──────────────────────────────────
         const approveResp = await approveRespPromise;
-        expect(approveResp.status(), `POST /approvals/{id}/approve returned ${approveResp.status()}`).toBe(204);
+        expect(approveResp.status(), `POST /builtin-approval/tasks/{id}/approve returned ${approveResp.status()}`).toBe(204);
         await waitForTicketStatus(request, headers, ticketID, 'APPROVED');
         await waitForApprovalNotification(request, headers, ticketID, 'APPROVAL_COMPLETED');
 
@@ -861,7 +873,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         const rejectRespPromise = page.waitForResponse(
             (r) =>
-                urlPathEndsWith(r.url(), `/api/v1/approvals/${ticketID}/reject`) &&
+                urlPathEndsWith(r.url(), `/api/v1/builtin-approval/tasks/${ticketID}/reject`) &&
                 r.request().method() === 'POST'
         );
 
@@ -873,7 +885,7 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         // ── CONTRACT CHECK: rejectTicket → 204 ───────────────────────────────────
         const rejectResp = await rejectRespPromise;
-        expect(rejectResp.status(), `POST /approvals/{id}/reject returned ${rejectResp.status()}`).toBe(204);
+        expect(rejectResp.status(), `POST /builtin-approval/tasks/{id}/reject returned ${rejectResp.status()}`).toBe(204);
         const token = await getAdminToken(request);
         const headers = { Authorization: `Bearer ${token}` };
         await waitForTicketStatus(request, headers, ticketID, 'REJECTED');

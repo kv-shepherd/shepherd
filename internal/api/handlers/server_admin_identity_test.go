@@ -211,6 +211,299 @@ func TestAdminUserRoleBindingAndAuthProviderCRUD(t *testing.T) {
 	}
 }
 
+func TestUserRoleBinding_IncludesRoleAndScopeDisplayNames(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	systemEnt := mustCreateSystem(t, client, "sys-rbac-1", "commerce", "owner-1")
+	serviceEnt := mustCreateService(t, client, "svc-rbac-1", "billing", systemEnt.ID, "billing service")
+
+	roleEnt, err := client.Role.Create().
+		SetID("role-rbac-1").
+		SetName("billing_admin").
+		SetDisplayName("Billing Admin").
+		SetPermissions([]string{"service:read"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-rbac-1").
+		SetUsername("finance.alice").
+		SetDisplayName("Alice Finance").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	bindCtx, bindW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/users/"+userEnt.ID+"/role-bindings",
+		`{"role_id":"`+roleEnt.ID+`","scope_type":"service","scope_id":"`+serviceEnt.ID+`","allowed_environments":["test"]}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.CreateUserRoleBinding(bindCtx, userEnt.ID)
+	if bindW.Code != http.StatusCreated {
+		t.Fatalf("create role binding status = %d, want %d, body=%s", bindW.Code, http.StatusCreated, bindW.Body.String())
+	}
+	var createdBinding generated.GlobalRoleBinding
+	mustDecodeJSON(t, bindW.Body.Bytes(), &createdBinding)
+	if createdBinding.RoleDisplayName != "Billing Admin" {
+		t.Fatalf("role_display_name = %q, want %q", createdBinding.RoleDisplayName, "Billing Admin")
+	}
+	if createdBinding.ScopeDisplayName != "commerce / billing" {
+		t.Fatalf("scope_display_name = %q, want %q", createdBinding.ScopeDisplayName, "commerce / billing")
+	}
+
+	listCtx, listW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/users/"+userEnt.ID+"/role-bindings",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListUserRoleBindings(listCtx, userEnt.ID)
+	if listW.Code != http.StatusOK {
+		t.Fatalf("list role bindings status = %d, want %d, body=%s", listW.Code, http.StatusOK, listW.Body.String())
+	}
+	var list generated.GlobalRoleBindingList
+	mustDecodeJSON(t, listW.Body.Bytes(), &list)
+	if len(list.Items) != 1 {
+		t.Fatalf("bindings len = %d, want 1", len(list.Items))
+	}
+	if list.Items[0].ScopeDisplayName != "commerce / billing" {
+		t.Fatalf("scope_display_name = %q, want %q", list.Items[0].ScopeDisplayName, "commerce / billing")
+	}
+}
+
+func TestListSystemMemberCandidates_ExcludesExistingMembersAndSupportsSearch(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	systemID := "11111111-2222-3333-4444-555555555555"
+	mustCreateSystem(t, client, systemID, "shop-members", "owner-1")
+	mustCreateSystemBinding(t, client, "owner-1", systemID, "owner")
+
+	for _, user := range []struct {
+		id          string
+		username    string
+		displayName string
+		email       string
+	}{
+		{id: "user-alice", username: "alice", displayName: "Alice Zhang", email: "alice@example.com"},
+		{id: "user-bob", username: "bob", displayName: "Bob Platform", email: "bob@example.com"},
+		{id: "user-carol", username: "carol", displayName: "Carol Ops", email: "ops@example.com"},
+		{id: "user-existing", username: "existing", displayName: "Existing Member", email: "existing@example.com"},
+	} {
+		_, err := client.User.Create().
+			SetID(user.id).
+			SetUsername(user.username).
+			SetDisplayName(user.displayName).
+			SetEmail(user.email).
+			SetEnabled(true).
+			Save(t.Context())
+		if err != nil {
+			t.Fatalf("create user %s: %v", user.id, err)
+		}
+	}
+	mustCreateSystemBinding(t, client, "user-existing", systemID, "viewer")
+
+	listCtx, listW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/systems/"+systemID+"/member-candidates?page=1&per_page=20",
+		"",
+		"owner-1",
+		[]string{"rbac:manage"},
+	)
+	srv.ListSystemMemberCandidates(listCtx, systemID, generated.ListSystemMemberCandidatesParams{
+		Page:    1,
+		PerPage: 20,
+	})
+	if listW.Code != http.StatusOK {
+		t.Fatalf("list member candidates status = %d, want %d, body=%s", listW.Code, http.StatusOK, listW.Body.String())
+	}
+	var candidates generated.UserList
+	mustDecodeJSON(t, listW.Body.Bytes(), &candidates)
+	if len(candidates.Items) != 3 {
+		t.Fatalf("candidate count = %d, want 3", len(candidates.Items))
+	}
+	if got := []string{candidates.Items[0].Username, candidates.Items[1].Username, candidates.Items[2].Username}; !slices.Equal(got, []string{"alice", "bob", "carol"}) {
+		t.Fatalf("candidate usernames = %v, want [alice bob carol]", got)
+	}
+
+	searchCtx, searchW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/systems/"+systemID+"/member-candidates?page=1&per_page=20&search=ops",
+		"",
+		"owner-1",
+		[]string{"rbac:manage"},
+	)
+	srv.ListSystemMemberCandidates(searchCtx, systemID, generated.ListSystemMemberCandidatesParams{
+		Page:    1,
+		PerPage: 20,
+		Search:  "ops",
+	})
+	if searchW.Code != http.StatusOK {
+		t.Fatalf("search member candidates status = %d, want %d, body=%s", searchW.Code, http.StatusOK, searchW.Body.String())
+	}
+	mustDecodeJSON(t, searchW.Body.Bytes(), &candidates)
+	if len(candidates.Items) != 1 || candidates.Items[0].Username != "carol" {
+		t.Fatalf("search candidates = %+v, want only carol", candidates.Items)
+	}
+}
+
+func TestListUsers_SupportsSearch(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	for _, user := range []struct {
+		id          string
+		username    string
+		displayName string
+		email       string
+	}{
+		{id: "user-alice-search", username: "alice", displayName: "Alice Zhang", email: "alice@example.com"},
+		{id: "user-bob-search", username: "bob", displayName: "Bob Platform", email: "bob@example.com"},
+		{id: "user-carol-search", username: "carol", displayName: "Carol Ops", email: "ops@example.com"},
+	} {
+		_, err := client.User.Create().
+			SetID(user.id).
+			SetUsername(user.username).
+			SetDisplayName(user.displayName).
+			SetEmail(user.email).
+			SetEnabled(true).
+			Save(t.Context())
+		if err != nil {
+			t.Fatalf("create user %s: %v", user.id, err)
+		}
+	}
+
+	searchCtx, searchW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/users?page=1&per_page=20&search=ops",
+		"",
+		"admin-1",
+		[]string{"rbac:read"},
+	)
+	srv.ListUsers(searchCtx, generated.ListUsersParams{
+		Page:    1,
+		PerPage: 20,
+		Search:  "ops",
+	})
+	if searchW.Code != http.StatusOK {
+		t.Fatalf("list users search status = %d, want %d, body=%s", searchW.Code, http.StatusOK, searchW.Body.String())
+	}
+
+	var users generated.UserList
+	mustDecodeJSON(t, searchW.Body.Bytes(), &users)
+	if len(users.Items) != 1 || users.Items[0].Username != "carol" {
+		t.Fatalf("search users = %+v, want only carol", users.Items)
+	}
+}
+
+func TestAuthProviderConfigSecretsAreEncryptedAndSanitized(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+
+	createCtx, createW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/auth-providers",
+		`{
+			"name":"Corp SSO Secrets",
+			"auth_type":"oidc",
+			"enabled":true,
+			"config":{
+				"issuer_url":"https://issuer.example.com",
+				"client_id":"shepherd",
+				"client_secret":"top-secret"
+			}
+		}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.CreateAuthProvider(createCtx)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("create provider status = %d, want %d, body=%s", createW.Code, http.StatusCreated, createW.Body.String())
+	}
+
+	var created generated.AuthProvider
+	mustDecodeJSON(t, createW.Body.Bytes(), &created)
+	if got := created.Config["client_secret"]; got != provider.AuthProviderProtectedFieldMask {
+		t.Fatalf("create response client_secret = %#v, want placeholder", got)
+	}
+
+	stored, err := client.AuthProvider.Get(t.Context(), created.Id)
+	if err != nil {
+		t.Fatalf("get stored provider: %v", err)
+	}
+	storedSecret, _ := stored.Config["client_secret"].(string)
+	if storedSecret == "" || storedSecret == "top-secret" {
+		t.Fatalf("stored client_secret = %q, want encrypted value", storedSecret)
+	}
+
+	listCtx, listW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/auth-providers",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListAuthProviders(listCtx)
+	if listW.Code != http.StatusOK {
+		t.Fatalf("list providers status = %d, want %d, body=%s", listW.Code, http.StatusOK, listW.Body.String())
+	}
+
+	var listResp generated.AuthProviderList
+	mustDecodeJSON(t, listW.Body.Bytes(), &listResp)
+	if len(listResp.Items) != 1 {
+		t.Fatalf("listed auth providers = %d, want 1", len(listResp.Items))
+	}
+	if got := listResp.Items[0].Config["client_secret"]; got != provider.AuthProviderProtectedFieldMask {
+		t.Fatalf("list response client_secret = %#v, want placeholder", got)
+	}
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/auth-providers/"+created.Id,
+		`{
+			"config":{
+				"issuer_url":"https://issuer.example.com",
+				"client_id":"shepherd-updated",
+				"client_secret":"`+provider.AuthProviderProtectedFieldMask+`"
+			}
+		}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.UpdateAuthProvider(updateCtx, created.Id)
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("update provider status = %d, want %d, body=%s", updateW.Code, http.StatusOK, updateW.Body.String())
+	}
+
+	updatedStored, err := client.AuthProvider.Get(t.Context(), created.Id)
+	if err != nil {
+		t.Fatalf("get updated provider: %v", err)
+	}
+	if got := updatedStored.Config["client_secret"]; got != stored.Config["client_secret"] {
+		t.Fatalf("stored encrypted secret changed unexpectedly: got=%#v want=%#v", got, stored.Config["client_secret"])
+	}
+	if got := updatedStored.Config["client_id"]; got != "shepherd-updated" {
+		t.Fatalf("stored client_id = %#v, want %q", got, "shepherd-updated")
+	}
+}
+
 func TestAuthProviderStage2CFlow(t *testing.T) {
 	t.Parallel()
 
@@ -293,19 +586,40 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	syncCtx, syncW := newAuthedGinContext(
 		t,
 		http.MethodPost,
-		"/admin/auth-providers/"+authProvider.Id+"/sync",
-		`{"source_field":"groups","groups":["DevOps-Team","QA-Team","Platform-Admin"]}`,
+		"/admin/auth-providers/"+authProvider.Id+"/cohorts/sync",
+		`{"cohort_kind":"group","source_field":"groups","cohorts":["DevOps-Team","QA-Team","Platform-Admin"]}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
-	srv.SyncAuthProviderGroups(syncCtx, authProvider.Id)
+	srv.SyncAuthProviderCohorts(syncCtx, authProvider.Id)
 	if syncW.Code != http.StatusOK {
 		t.Fatalf("sync status = %d, want %d, body=%s", syncW.Code, http.StatusOK, syncW.Body.String())
 	}
-	var syncResp generated.AuthProviderGroupSyncResponse
+	var syncResp generated.ExternalCohortSyncResponse
 	mustDecodeJSON(t, syncW.Body.Bytes(), &syncResp)
 	if len(syncResp.Items) != 3 {
-		t.Fatalf("expected 3 synced groups, got %d", len(syncResp.Items))
+		t.Fatalf("expected 3 synced cohorts, got %d", len(syncResp.Items))
+	}
+
+	listCohortsCtx, listCohortsW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/auth-providers/"+authProvider.Id+"/cohorts",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListAuthProviderCohorts(listCohortsCtx, authProvider.Id)
+	if listCohortsW.Code != http.StatusOK {
+		t.Fatalf("list cohorts status = %d, want %d, body=%s", listCohortsW.Code, http.StatusOK, listCohortsW.Body.String())
+	}
+	var cohortsResp generated.ExternalCohortList
+	mustDecodeJSON(t, listCohortsW.Body.Bytes(), &cohortsResp)
+	if len(cohortsResp.Items) != 3 {
+		t.Fatalf("expected 3 listed cohorts, got %d", len(cohortsResp.Items))
+	}
+	if cohortsResp.Items[0].CohortKind != "group" {
+		t.Fatalf("expected cohort kind group, got %q", cohortsResp.Items[0].CohortKind)
 	}
 
 	createRoleCtx, createRoleW := newAuthedGinContext(
@@ -326,16 +640,16 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	createMappingCtx, createMappingW := newAuthedGinContext(
 		t,
 		http.MethodPost,
-		"/admin/auth-providers/"+authProvider.Id+"/group-mappings",
-		`{"external_group_id":"DevOps-Team","role_id":"`+createdRole.Id+`","scope_type":"global","allowed_environments":["test","prod"]}`,
+		"/admin/auth-providers/"+authProvider.Id+"/cohort-mappings",
+		`{"cohort_kind":"group","cohort_key":"DevOps-Team","role_id":"`+createdRole.Id+`","scope_type":"global","allowed_environments":["test","prod"]}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
-	srv.CreateAuthProviderGroupMapping(createMappingCtx, authProvider.Id)
+	srv.CreateAuthProviderCohortMapping(createMappingCtx, authProvider.Id)
 	if createMappingW.Code != http.StatusCreated {
 		t.Fatalf("create mapping status = %d, want %d, body=%s", createMappingW.Code, http.StatusCreated, createMappingW.Body.String())
 	}
-	var mapping generated.IdPGroupMapping
+	var mapping generated.ExternalCohortMapping
 	mustDecodeJSON(t, createMappingW.Body.Bytes(), &mapping)
 	if mapping.Id == "" {
 		t.Fatal("mapping id is empty")
@@ -344,16 +658,16 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	listMappingsCtx, listMappingsW := newAuthedGinContext(
 		t,
 		http.MethodGet,
-		"/admin/auth-providers/"+authProvider.Id+"/group-mappings",
+		"/admin/auth-providers/"+authProvider.Id+"/cohort-mappings",
 		"",
 		"admin-1",
 		[]string{"platform:admin"},
 	)
-	srv.ListAuthProviderGroupMappings(listMappingsCtx, authProvider.Id)
+	srv.ListAuthProviderCohortMappings(listMappingsCtx, authProvider.Id)
 	if listMappingsW.Code != http.StatusOK {
 		t.Fatalf("list mappings status = %d, want %d, body=%s", listMappingsW.Code, http.StatusOK, listMappingsW.Body.String())
 	}
-	var listResp generated.IdPGroupMappingList
+	var listResp generated.ExternalCohortMappingList
 	mustDecodeJSON(t, listMappingsW.Body.Bytes(), &listResp)
 	if len(listResp.Items) != 1 {
 		t.Fatalf("expected 1 mapping, got %d", len(listResp.Items))
@@ -362,12 +676,12 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	updateMappingCtx, updateMappingW := newAuthedGinContext(
 		t,
 		http.MethodPatch,
-		"/admin/auth-providers/"+authProvider.Id+"/group-mappings/"+mapping.Id,
+		"/admin/auth-providers/"+authProvider.Id+"/cohort-mappings/"+mapping.Id,
 		`{"allowed_environments":["test"]}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
-	srv.UpdateAuthProviderGroupMapping(updateMappingCtx, authProvider.Id, mapping.Id)
+	srv.UpdateAuthProviderCohortMapping(updateMappingCtx, authProvider.Id, mapping.Id)
 	if updateMappingW.Code != http.StatusOK {
 		t.Fatalf("update mapping status = %d, want %d, body=%s", updateMappingW.Code, http.StatusOK, updateMappingW.Body.String())
 	}
@@ -375,12 +689,12 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	deleteMappingCtx, deleteMappingW := newAuthedGinContext(
 		t,
 		http.MethodDelete,
-		"/admin/auth-providers/"+authProvider.Id+"/group-mappings/"+mapping.Id,
+		"/admin/auth-providers/"+authProvider.Id+"/cohort-mappings/"+mapping.Id,
 		"",
 		"admin-1",
 		[]string{"platform:admin"},
 	)
-	srv.DeleteAuthProviderGroupMapping(deleteMappingCtx, authProvider.Id, mapping.Id)
+	srv.DeleteAuthProviderCohortMapping(deleteMappingCtx, authProvider.Id, mapping.Id)
 	if got := deleteMappingCtx.Writer.Status(); got != http.StatusNoContent {
 		t.Fatalf("delete mapping status = %d, want %d, body=%s", got, http.StatusNoContent, deleteMappingW.Body.String())
 	}
@@ -413,7 +727,7 @@ func TestListAuthProviderTypesAndRejectUnknownType(t *testing.T) {
 	for _, item := range listResp.Items {
 		typeKeys = append(typeKeys, item.Type)
 	}
-	for _, expected := range []string{"generic", "oidc", "ldap"} {
+	for _, expected := range []string{"generic", "oidc", "ldap", "upstream_assertion"} {
 		if !slices.Contains(typeKeys, expected) {
 			t.Fatalf("provider type list missing %q: %#v", expected, typeKeys)
 		}
@@ -440,8 +754,10 @@ func newAdminIdentityTestServer(t *testing.T) (*Server, *ent.Client) {
 	vmInfra := newGenericStorageProfileProvider()
 	return NewServer(ServerDeps{
 		EntClient:     client,
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
 		VMService:     service.NewVMService(vmInfra),
 		ClusterPolicy: service.NewClusterPolicyService(client),
 		ApprovalReqs:  service.NewApprovalRequirementService(client),
+		DirectorySync: service.NewDirectorySyncService(client),
 	}), client
 }

@@ -10,10 +10,11 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/approvalticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/ratelimitexemption"
 	"kv-shepherd.io/shepherd/ent/ratelimituseroverride"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
+	entuser "kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
@@ -56,7 +57,8 @@ func (s *Server) CreateRateLimitExemption(c *gin.Context) {
 		})
 		return
 	}
-	if _, err := s.client.User.Get(ctx, userID); err != nil {
+	userEnt, err := s.client.User.Get(ctx, userID)
+	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
 			return
@@ -124,12 +126,15 @@ func (s *Server) CreateRateLimitExemption(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, generated.RateLimitExemption{
-		UserId:     saved.ID,
-		ExemptedBy: saved.ExemptedBy,
-		Reason:     saved.Reason,
-		ExpiresAt:  expiresAt,
-		CreatedAt:  saved.CreatedAt,
-		UpdatedAt:  saved.UpdatedAt,
+		UserId:      saved.ID,
+		Username:    userEnt.Username,
+		DisplayName: userEnt.DisplayName,
+		Email:       userEnt.Email,
+		ExemptedBy:  saved.ExemptedBy,
+		Reason:      saved.Reason,
+		ExpiresAt:   expiresAt,
+		CreatedAt:   saved.CreatedAt,
+		UpdatedAt:   saved.UpdatedAt,
 	})
 }
 
@@ -346,13 +351,13 @@ func (s *Server) ListRateLimitStatus(c *gin.Context) {
 		candidates[actor] = struct{}{}
 	}
 
-	childTickets, err := s.client.ApprovalTicket.Query().
+	childTickets, err := s.client.Ticket.Query().
 		Where(
-			approvalticket.ParentTicketIDNotNil(),
-			approvalticket.StatusIn(
-				approvalticket.StatusPENDING,
-				approvalticket.StatusAPPROVED,
-				approvalticket.StatusEXECUTING,
+			entticket.ParentTicketIDNotNil(),
+			entticket.StatusIn(
+				entticket.StatusPENDING,
+				entticket.StatusAPPROVED,
+				entticket.StatusEXECUTING,
 			),
 		).
 		All(ctx)
@@ -425,6 +430,12 @@ func (s *Server) ListRateLimitStatus(c *gin.Context) {
 		userIDs = append(userIDs, userID)
 	}
 	sort.Strings(userIDs)
+	userMetaByID, err := s.loadUsersByID(c, userIDs)
+	if err != nil {
+		logger.Error("failed to list users for rate-limit status", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 
 	items := make([]generated.RateLimitUserStatus, 0, len(userIDs))
 	for _, userID := range userIDs {
@@ -447,7 +458,7 @@ func (s *Server) ListRateLimitStatus(c *gin.Context) {
 			}
 		}
 
-		items = append(items, generated.RateLimitUserStatus{
+		status := generated.RateLimitUserStatus{
 			UserId:                      userID,
 			Exempted:                    policy.Exempt,
 			ExemptionExpiresAt:          effectiveExemptionExpiry(policy.ExemptionExpiresAt),
@@ -457,7 +468,13 @@ func (s *Server) ListRateLimitStatus(c *gin.Context) {
 			CurrentPendingParents:       parentCounts[userID],
 			CurrentPendingChildren:      childCounts[userID],
 			CooldownRemainingSeconds:    cooldownRemaining,
-		})
+		}
+		if userEnt := userMetaByID[userID]; userEnt != nil {
+			status.Username = userEnt.Username
+			status.DisplayName = userEnt.DisplayName
+			status.Email = userEnt.Email
+		}
+		items = append(items, status)
 	}
 
 	c.JSON(http.StatusOK, generated.RateLimitStatusList{
@@ -471,6 +488,25 @@ func effectiveExemptionExpiry(v *time.Time) time.Time {
 		return time.Time{}
 	}
 	return *v
+}
+
+func (s *Server) loadUsersByID(ctx *gin.Context, userIDs []string) (map[string]*ent.User, error) {
+	if len(userIDs) == 0 {
+		return map[string]*ent.User{}, nil
+	}
+
+	users, err := s.client.User.Query().
+		Where(entuser.IDIn(userIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	userMetaByID := make(map[string]*ent.User, len(users))
+	for _, userEnt := range users {
+		userMetaByID[userEnt.ID] = userEnt
+	}
+	return userMetaByID, nil
 }
 
 // ListRateLimitExemptions handles GET /admin/rate-limits/exemptions.
@@ -499,20 +535,37 @@ func (s *Server) ListRateLimitExemptions(c *gin.Context, params generated.ListRa
 		return
 	}
 
+	userIDs := make([]string, 0, len(items))
+	for _, ex := range items {
+		userIDs = append(userIDs, ex.ID)
+	}
+	userMetaByID, err := s.loadUsersByID(c, userIDs)
+	if err != nil {
+		logger.Error("failed to list users for rate-limit exemptions", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
 	resp := make([]generated.RateLimitExemption, 0, len(items))
 	for _, ex := range items {
 		expiresAt := time.Time{}
 		if ex.ExpiresAt != nil {
 			expiresAt = *ex.ExpiresAt
 		}
-		resp = append(resp, generated.RateLimitExemption{
+		item := generated.RateLimitExemption{
 			UserId:     ex.ID,
 			ExemptedBy: ex.ExemptedBy,
 			Reason:     ex.Reason,
 			ExpiresAt:  expiresAt,
 			CreatedAt:  ex.CreatedAt,
 			UpdatedAt:  ex.UpdatedAt,
-		})
+		}
+		if userEnt := userMetaByID[ex.ID]; userEnt != nil {
+			item.Username = userEnt.Username
+			item.DisplayName = userEnt.DisplayName
+			item.Email = userEnt.Email
+		}
+		resp = append(resp, item)
 	}
 
 	totalPages := (total + perPage - 1) / perPage

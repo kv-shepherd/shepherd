@@ -8,7 +8,7 @@ import (
 )
 
 // Cluster holds the schema definition for the Cluster entity.
-// Multi-cluster credential management with encrypted kubeconfig storage.
+// Multi-cluster credential management with sensitive kubeconfig storage.
 type Cluster struct {
 	ent.Schema
 }
@@ -34,9 +34,9 @@ func (Cluster) Fields() []ent.Field {
 		field.String("api_server_url").
 			NotEmpty(),
 		field.Bytes("encrypted_kubeconfig").
-			Sensitive(), // AES-256-GCM encrypted
+			Sensitive().Comment("Sensitive kubeconfig bytes; field name retained for historical compatibility"),
 		field.String("encryption_key_id").
-			Optional(), // For key rotation support
+			Optional().Comment("Reserved for future key rotation support"),
 		field.Enum("status").
 			Values("UNKNOWN", "HEALTHY", "UNHEALTHY", "UNREACHABLE").
 			Default("UNKNOWN"),

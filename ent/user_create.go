@@ -10,9 +10,11 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/notification"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
 	"kv-shepherd.io/shepherd/ent/user"
+	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
 )
 
 // UserCreate is the builder for creating a User entity.
@@ -204,6 +206,40 @@ func (_c *UserCreate) AddNotifications(v ...*Notification) *UserCreate {
 	return _c.AddNotificationIDs(ids...)
 }
 
+// SetDirectoryProfileID sets the "directory_profile" edge to the UserDirectoryProfile entity by ID.
+func (_c *UserCreate) SetDirectoryProfileID(id string) *UserCreate {
+	_c.mutation.SetDirectoryProfileID(id)
+	return _c
+}
+
+// SetNillableDirectoryProfileID sets the "directory_profile" edge to the UserDirectoryProfile entity by ID if the given value is not nil.
+func (_c *UserCreate) SetNillableDirectoryProfileID(id *string) *UserCreate {
+	if id != nil {
+		_c = _c.SetDirectoryProfileID(*id)
+	}
+	return _c
+}
+
+// SetDirectoryProfile sets the "directory_profile" edge to the UserDirectoryProfile entity.
+func (_c *UserCreate) SetDirectoryProfile(v *UserDirectoryProfile) *UserCreate {
+	return _c.SetDirectoryProfileID(v.ID)
+}
+
+// AddExternalCohortGrantIDs adds the "external_cohort_grants" edge to the ExternalCohortGrant entity by IDs.
+func (_c *UserCreate) AddExternalCohortGrantIDs(ids ...string) *UserCreate {
+	_c.mutation.AddExternalCohortGrantIDs(ids...)
+	return _c
+}
+
+// AddExternalCohortGrants adds the "external_cohort_grants" edges to the ExternalCohortGrant entity.
+func (_c *UserCreate) AddExternalCohortGrants(v ...*ExternalCohortGrant) *UserCreate {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddExternalCohortGrantIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_c *UserCreate) Mutation() *UserMutation {
 	return _c.mutation
@@ -388,6 +424,38 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(notification.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.DirectoryProfileIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.DirectoryProfileTable,
+			Columns: []string{user.DirectoryProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userdirectoryprofile.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ExternalCohortGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ExternalCohortGrantsTable,
+			Columns: []string{user.ExternalCohortGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(externalcohortgrant.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

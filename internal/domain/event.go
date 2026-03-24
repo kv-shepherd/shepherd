@@ -42,6 +42,9 @@ const (
 	EventBatchDeleteRequested EventType = "BATCH_DELETE_REQUESTED"
 	EventBatchDeleteCompleted EventType = "BATCH_DELETE_COMPLETED"
 	EventBatchDeleteFailed    EventType = "BATCH_DELETE_FAILED"
+	EventBatchModifyRequested EventType = "BATCH_MODIFY_REQUESTED"
+	EventBatchModifyCompleted EventType = "BATCH_MODIFY_COMPLETED"
+	EventBatchModifyFailed    EventType = "BATCH_MODIFY_FAILED"
 	EventBatchPowerRequested  EventType = "BATCH_POWER_REQUESTED"
 	EventBatchPowerCompleted  EventType = "BATCH_POWER_COMPLETED"
 	EventBatchPowerFailed     EventType = "BATCH_POWER_FAILED"
@@ -112,11 +115,12 @@ type ModifiedSpec struct {
 
 // VMDeletePayload is the payload for VM deletion events.
 type VMDeletePayload struct {
-	VMID      string `json:"vm_id"`
-	VMName    string `json:"vm_name"`
-	ClusterID string `json:"cluster_id"`
-	Namespace string `json:"namespace"`
-	Actor     string `json:"actor"`
+	VMID            string `json:"vm_id"`
+	VMName          string `json:"vm_name"`
+	ClusterID       string `json:"cluster_id"`
+	Namespace       string `json:"namespace"`
+	RequestVMStatus string `json:"request_vm_status,omitempty"`
+	Actor           string `json:"actor"`
 }
 
 // ToJSON converts payload to JSON bytes.
@@ -126,12 +130,13 @@ func (p VMDeletePayload) ToJSON() ([]byte, error) {
 
 // VMPowerPayload is the payload for VM power operation events.
 type VMPowerPayload struct {
-	VMID      string `json:"vm_id"`
-	VMName    string `json:"vm_name"`
-	ClusterID string `json:"cluster_id"`
-	Namespace string `json:"namespace"`
-	Operation string `json:"operation"` // start, stop, restart
-	Actor     string `json:"actor"`
+	VMID            string `json:"vm_id"`
+	VMName          string `json:"vm_name"`
+	ClusterID       string `json:"cluster_id"`
+	Namespace       string `json:"namespace"`
+	RequestVMStatus string `json:"request_vm_status,omitempty"`
+	Operation       string `json:"operation"` // start, stop, restart
+	Actor           string `json:"actor"`
 }
 
 // ToJSON converts payload to JSON bytes.
@@ -139,14 +144,50 @@ func (p VMPowerPayload) ToJSON() ([]byte, error) {
 	return json.Marshal(p)
 }
 
+// VMModifyPayload is the payload for VM resource change events.
+//
+// V1 scope:
+//   - online expansion only; shrink is rejected at request/approval/worker time
+//   - cpu/memory/disk fields are optional individually, but at least one target
+//     value must be provided by the caller
+type VMModifyPayload struct {
+	VMID            string `json:"vm_id"`
+	VMName          string `json:"vm_name"`
+	ClusterID       string `json:"cluster_id"`
+	Namespace       string `json:"namespace"`
+	RequestVMStatus string `json:"request_vm_status,omitempty"`
+	Actor           string `json:"actor"`
+
+	CurrentCPUCores float64 `json:"current_cpu_cores"`
+	CurrentMemoryGi float64 `json:"current_memory_gi"`
+	CurrentDiskGB   int     `json:"current_disk_gb,omitempty"`
+
+	TargetCPUCores *float64 `json:"target_cpu_cores,omitempty"`
+	TargetMemoryGi *float64 `json:"target_memory_gi,omitempty"`
+	TargetDiskGB   *int     `json:"target_disk_gb,omitempty"`
+}
+
+// ToJSON converts payload to JSON bytes.
+func (p VMModifyPayload) ToJSON() ([]byte, error) {
+	return json.Marshal(p)
+}
+
 // BatchVMItemPayload represents one child item in a batch request.
 type BatchVMItemPayload struct {
-	VMID           string `json:"vm_id,omitempty"`
-	ServiceID      string `json:"service_id,omitempty"`
-	TemplateID     string `json:"template_id,omitempty"`
-	InstanceSizeID string `json:"instance_size_id,omitempty"`
-	Namespace      string `json:"namespace,omitempty"`
-	Reason         string `json:"reason,omitempty"`
+	VMID            string   `json:"vm_id,omitempty"`
+	ServiceID       string   `json:"service_id,omitempty"`
+	TemplateID      string   `json:"template_id,omitempty"`
+	InstanceSizeID  string   `json:"instance_size_id,omitempty"`
+	Namespace       string   `json:"namespace,omitempty"`
+	Reason          string   `json:"reason,omitempty"`
+	RequestVMStatus string   `json:"request_vm_status,omitempty"`
+	CurrentCPUCores float64  `json:"current_cpu_cores,omitempty"`
+	CurrentMemoryGi float64  `json:"current_memory_gi,omitempty"`
+	CurrentDiskGB   int      `json:"current_disk_gb,omitempty"`
+	Operation       string   `json:"operation,omitempty"`
+	TargetCPUCores  *float64 `json:"target_cpu_cores,omitempty"`
+	TargetMemoryGi  *float64 `json:"target_memory_gi,omitempty"`
+	TargetDiskGB    *int     `json:"target_disk_gb,omitempty"`
 }
 
 // BatchVMRequestPayload is the parent payload for batch submit requests.

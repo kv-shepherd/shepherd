@@ -160,10 +160,10 @@
 
 ## Extension Interfaces
 
-- [x] **AuthProvider Interface** defined (`internal/provider/auth.go`)
+- [x] **Auth Runtime Contract** defined (`internal/provider/runtimecontract/contract.go`, thin re-export in `internal/provider/auth.go`)
 - [x] **JWT Implementation** completed — *Phase 5: `middleware/jwt.go` HS256 + JWTClaims + JWTAuth middleware*
-- [x] **ApprovalProvider Interface** defined (`internal/provider/auth.go`)
-- [x] **NotificationProvider Interface** defined (`internal/provider/auth.go`)
+- [x] **ApprovalProvider Interface** defined (`internal/provider/approvalcontract/contract.go`, thin re-export in `internal/provider/approval.go`)
+- [x] **NotificationProvider Interface** defined (`internal/provider/notificationcontract/contract.go`, thin re-export in `internal/provider/notification.go`)
 
 ---
 

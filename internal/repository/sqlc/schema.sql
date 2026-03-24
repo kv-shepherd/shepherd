@@ -33,7 +33,7 @@ CREATE TABLE domain_events (
     archived_at timestamptz
 );
 
-CREATE TABLE approval_tickets (
+CREATE TABLE tickets (
     id text PRIMARY KEY,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL,
