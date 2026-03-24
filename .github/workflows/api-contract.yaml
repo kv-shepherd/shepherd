@@ -91,7 +91,7 @@ jobs:
 
       - name: Check for Breaking Changes
         if: steps.check_file.outputs.exists == 'true' && env.base_exists == 'true'
-        uses: oasdiff/oasdiff-action/breaking@65fef71494258f00f911d7a71edb0482c5378899  # v0.0.30
+        uses: oasdiff/oasdiff-action/breaking@aa8903311a8d1ac05b94223b500c160da0ca909a  # v0.0.32
         with:
           base: origin/${{ github.base_ref }}:api/openapi.yaml
           revision: api/openapi.yaml
