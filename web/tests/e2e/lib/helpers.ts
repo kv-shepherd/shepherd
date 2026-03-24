@@ -106,6 +106,7 @@ export async function selectAntOption(
     if (typeof optionFilter === 'string' && optionFilter.length > 0) {
         const searchInput = trigger.locator('input[type="search"]');
         if (await searchInput.count() > 0 && await searchInput.isVisible().catch(() => false)) {
+            await searchInput.fill('');
             await searchInput.pressSequentially(optionFilter, { delay: 30 });
             // Give Ant a moment to re-render filtered options
             await page.waitForTimeout(200);
@@ -169,7 +170,14 @@ export async function selectAntOption(
         option = visibleOptions.first();
     }
 
-    // Step 6: Wait for option to be visible and stable before clicking
+    // Step 6: Wait for the target option itself to exist. Ant Select dropdowns
+    // can momentarily render an empty list during async refreshes or after a
+    // previous search term was cleared, so checking only the dropdown readiness
+    // is not stable enough.
+    await expect
+        .poll(async () => option.count(), { timeout })
+        .toBeGreaterThan(0);
+
     const matchCount = await option.count();
     if (matchCount === 0) {
         const available = (await visibleOptions.allTextContents())

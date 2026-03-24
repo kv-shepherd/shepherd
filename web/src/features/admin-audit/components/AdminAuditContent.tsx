@@ -2,48 +2,43 @@
 
 import { useState } from 'react';
 import {
-    Table,
     Button,
-    Typography,
-    Tag,
-    Input,
-    Select,
-    Card,
-    Row,
-    Col,
     Badge,
+    Col,
+    Input,
     Popover,
-    Descriptions,
+    Row,
+    Select,
     Space,
+    Table,
+    Tag,
+    Typography,
 } from 'antd';
-import type { DescriptionsProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import {
-    ReloadOutlined,
-    SearchOutlined,
-    FileTextOutlined,
-} from '@ant-design/icons';
+import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import dayjs from 'dayjs';
 
+import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
+import { SummaryMetricCard } from '@/components/feedback/SummaryMetricCard';
+import {
+    NotificationInboxGlyph,
+    QueueReviewGlyph,
+    RequestsOverviewGlyph,
+    ServiceWorkspaceGlyph,
+} from '@/components/illustrations/DashboardIllustrations';
+import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 import { useApiGet } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
 import type { components } from '@/types/api.gen';
 
 import { buildAuditLogQuery, type AuditLogFilters } from '../query';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 type AuditLog = components['schemas']['AuditLog'];
 type AuditLogList = components['schemas']['AuditLogList'];
-
-type PlacementEvaluationSummary = {
-    selectedClusterName?: string;
-    selectedClusterId?: string;
-    eligible?: boolean;
-    reasonCode?: string;
-    advisoryCode?: string;
-};
+type AuditPlacementSummary = components['schemas']['AuditPlacementSummary'];
 
 const ACTION_COLORS: Record<string, string> = {
     CREATE: 'green',
@@ -54,7 +49,20 @@ const ACTION_COLORS: Record<string, string> = {
     START: 'green',
     STOP: 'gold',
     RESTART: 'purple',
-    LOGIN: 'geekblue',
+	LOGIN: 'geekblue',
+};
+
+const DECISION_COLORS: Record<string, string> = {
+    approved: 'green',
+    rejected: 'red',
+    validation_failed: 'orange',
+    power_approved: 'cyan',
+    delete_approved: 'volcano',
+    vnc_access_approved: 'blue',
+    batch_approved: 'green',
+    batch_rejected: 'red',
+    cancelled: 'default',
+    batch_cancelled: 'default',
 };
 
 function normalizeActionKey(action?: string): string {
@@ -67,52 +75,7 @@ function actionSuffix(action?: string): string {
     return tokens.at(-1) ?? normalized;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        return undefined;
-    }
-    return value as Record<string, unknown>;
-}
-
-function readStringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
-    if (!record) {
-        return undefined;
-    }
-    const value = record[key];
-    if (typeof value !== 'string') {
-        return undefined;
-    }
-    const trimmed = value.trim();
-    return trimmed || undefined;
-}
-
-function readBooleanField(record: Record<string, unknown> | undefined, key: string): boolean | undefined {
-    if (!record) {
-        return undefined;
-    }
-    const value = record[key];
-    return typeof value === 'boolean' ? value : undefined;
-}
-
-function readApprovalDecision(details: Record<string, unknown> | undefined): string | undefined {
-    return readStringField(details, 'decision');
-}
-
-function readPlacementEvaluation(details: Record<string, unknown> | undefined): PlacementEvaluationSummary | undefined {
-    const placement = asRecord(details?.placement_evaluation);
-    if (!placement) {
-        return undefined;
-    }
-    return {
-        selectedClusterName: readStringField(placement, 'selected_cluster_name'),
-        selectedClusterId: readStringField(placement, 'selected_cluster_id'),
-        eligible: readBooleanField(placement, 'eligible'),
-        reasonCode: readStringField(placement, 'reason_code'),
-        advisoryCode: readStringField(placement, 'advisory_code'),
-    };
-}
-
-function placementStatusTagColor(summary: PlacementEvaluationSummary): string {
+function placementStatusTagColor(summary: AuditPlacementSummary): string {
     if (summary.eligible === true) {
         return 'success';
     }
@@ -140,7 +103,7 @@ export function AdminAuditContent() {
         { label: t('audit.resource_option.vm'), value: 'vm' },
         { label: t('audit.resource_option.system'), value: 'system' },
         { label: t('audit.resource_option.service'), value: 'service' },
-        { label: t('audit.resource_option.approval_ticket'), value: 'approval_ticket' },
+        { label: t('audit.resource_option.ticket'), value: 'ticket' },
         { label: t('audit.resource_option.cluster'), value: 'cluster' },
         { label: t('audit.resource_option.user'), value: 'user' },
         { label: t('audit.resource_option.namespace'), value: 'namespace' },
@@ -172,6 +135,10 @@ export function AdminAuditContent() {
                 },
             })
     );
+    const auditItems = data?.items ?? [];
+    const actorsVisible = new Set(auditItems.map((item) => item.actor).filter(Boolean)).size;
+    const decisionsVisible = auditItems.filter((item) => Boolean(item.approval_decision)).length;
+    const placementVisible = auditItems.filter((item) => Boolean(item.placement_summary)).length;
 
     const columns: ColumnsType<AuditLog> = [
         {
@@ -194,15 +161,18 @@ export function AdminAuditContent() {
         },
         {
             title: t('audit.decision', { defaultValue: 'Decision' }),
-            dataIndex: 'details',
+            dataIndex: 'approval_decision',
             key: 'decision',
             width: 160,
-            render: (details: Record<string, unknown>) => {
-                const decision = readApprovalDecision(details);
+            render: (decision?: string) => {
                 if (!decision) {
                     return <Text type="secondary">—</Text>;
                 }
-                return <Tag color="blue">{decision}</Tag>;
+                return (
+                    <Tag color={DECISION_COLORS[decision] ?? 'blue'}>
+                        {t(`audit.decision_option.${decision}`, { defaultValue: decision })}
+                    </Tag>
+                );
             },
         },
         {
@@ -210,35 +180,37 @@ export function AdminAuditContent() {
             dataIndex: 'actor',
             key: 'actor',
             width: 150,
-        },
-        {
-            title: t('audit.resource_type'),
-            dataIndex: 'resource_type',
-            key: 'resource_type',
-            width: 130,
-            render: (type: string) => (
-                <Badge
-                    status="processing"
-                    text={t(`audit.resource_option.${(type ?? '').toLowerCase()}`, { defaultValue: type })}
-                />
+            render: (actor: string) => (
+                <Space direction="vertical" size={0}>
+                    <Text strong>{actor || '—'}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        {t('audit.actor_label', { defaultValue: 'Actor identity' })}
+                    </Text>
+                </Space>
             ),
         },
         {
-            title: t('audit.resource_id'),
-            dataIndex: 'resource_id',
-            key: 'resource_id',
-            width: 150,
-            render: (id: string) => (
-                <Text copyable style={{ fontSize: 12 }}>{id?.slice(0, 8) ?? '—'}</Text>
+            title: t('audit.resource', { defaultValue: 'Resource' }),
+            key: 'resource',
+            width: 220,
+            render: (_: unknown, record: AuditLog) => (
+                <Space direction="vertical" size={2}>
+                    <Badge
+                        status="processing"
+                        text={t(`audit.resource_option.${(record.resource_type ?? '').toLowerCase()}`, { defaultValue: record.resource_type })}
+                    />
+                    <Text copyable style={{ fontSize: 12 }}>
+                        {record.resource_id || '—'}
+                    </Text>
+                </Space>
             ),
         },
         {
             title: t('audit.placement', { defaultValue: 'Placement' }),
-            dataIndex: 'details',
+            dataIndex: 'placement_summary',
             key: 'placement',
             width: 280,
-            render: (details: Record<string, unknown>) => {
-                const summary = readPlacementEvaluation(details);
+            render: (summary?: AuditPlacementSummary) => {
                 if (!summary) {
                     return <Text type="secondary">—</Text>;
                 }
@@ -252,16 +224,16 @@ export function AdminAuditContent() {
                                         ? t('audit.placement.denied', { defaultValue: 'Denied' })
                                         : '—'}
                             </Tag>
-                            {summary.reasonCode && (
-                                <Tag color="red">{summary.reasonCode}</Tag>
+                            {summary.reason_code && (
+                                <Tag color="red">{summary.reason_code}</Tag>
                             )}
-                            {summary.advisoryCode && (
-                                <Tag color="orange">{summary.advisoryCode}</Tag>
+                            {summary.advisory_code && (
+                                <Tag color="orange">{summary.advisory_code}</Tag>
                             )}
                         </Space>
-                        {(summary.selectedClusterName || summary.selectedClusterId) && (
+                        {(summary.selected_cluster_name || summary.selected_cluster_id) && (
                             <Text type="secondary" style={{ fontSize: 12 }}>
-                                {t('audit.placement.cluster', { defaultValue: 'Cluster' })}: {summary.selectedClusterName ?? summary.selectedClusterId}
+                                {t('audit.placement.cluster', { defaultValue: 'Cluster' })}: {summary.selected_cluster_name ?? summary.selected_cluster_id}
                             </Text>
                         )}
                     </Space>
@@ -273,64 +245,12 @@ export function AdminAuditContent() {
             dataIndex: 'details',
             key: 'details',
             ellipsis: true,
-            render: (details: Record<string, unknown>) => {
+            render: (details: Record<string, unknown> | undefined) => {
                 if (!details || Object.keys(details).length === 0) return <Text type="secondary">—</Text>;
-                const decision = readApprovalDecision(details);
-                const placement = readPlacementEvaluation(details);
-                const descriptionItems: NonNullable<DescriptionsProps['items']> = [];
-                if (decision) {
-                    descriptionItems.push({
-                        key: 'decision',
-                        label: t('audit.decision', { defaultValue: 'Decision' }),
-                        children: <Tag color="blue">{decision}</Tag>,
-                    });
-                }
-                if (placement?.selectedClusterName || placement?.selectedClusterId) {
-                    descriptionItems.push({
-                        key: 'cluster',
-                        label: t('audit.placement.cluster', { defaultValue: 'Cluster' }),
-                        children: placement?.selectedClusterName ?? placement?.selectedClusterId,
-                    });
-                }
-                if (placement?.eligible !== undefined) {
-                    descriptionItems.push({
-                        key: 'eligible',
-                        label: t('audit.placement', { defaultValue: 'Placement' }),
-                        children: (
-                            <Tag color={placementStatusTagColor(placement)}>
-                                {placement.eligible
-                                    ? t('audit.placement.eligible', { defaultValue: 'Eligible' })
-                                    : t('audit.placement.denied', { defaultValue: 'Denied' })}
-                            </Tag>
-                        ),
-                    });
-                }
-                if (placement?.reasonCode) {
-                    descriptionItems.push({
-                        key: 'reason',
-                        label: t('audit.placement.reason', { defaultValue: 'Reason Code' }),
-                        children: <Tag color="red">{placement.reasonCode}</Tag>,
-                    });
-                }
-                if (placement?.advisoryCode) {
-                    descriptionItems.push({
-                        key: 'advisory',
-                        label: t('audit.placement.advisory', { defaultValue: 'Advisory Code' }),
-                        children: <Tag color="orange">{placement.advisoryCode}</Tag>,
-                    });
-                }
                 return (
                     <Popover
                         content={
                             <div style={{ maxWidth: 420 }}>
-                                {descriptionItems.length > 0 && (
-                                    <Descriptions
-                                        size="small"
-                                        column={1}
-                                        items={descriptionItems}
-                                        style={{ marginBottom: 12 }}
-                                    />
-                                )}
                                 <Text type="secondary" style={{ fontSize: 12 }}>
                                     {t('audit.details.raw_json', { defaultValue: 'Raw JSON' })}
                                 </Text>
@@ -354,28 +274,57 @@ export function AdminAuditContent() {
             dataIndex: 'created_at',
             key: 'created_at',
             width: 170,
-            render: (date: string) => (
-                <Text type="secondary">{dayjs(date).format('YYYY-MM-DD HH:mm:ss')}</Text>
-            ),
+            render: (date: string) => <LocalDateTimeText value={date} />,
         },
     ];
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                <div>
-                    <Title level={4} style={{ margin: 0 }}>
-                        <FileTextOutlined style={{ marginRight: 8, color: '#1677ff' }} />
-                        {t('audit.title')}
-                    </Title>
-                    <Text type="secondary">{t('audit.subtitle')}</Text>
-                </div>
-                <Button icon={<ReloadOutlined />} onClick={() => refetch()}>
-                    {t('common:button.refresh')}
-                </Button>
+            <PageHeader
+                title={t('audit.title')}
+                subtitle={t('audit.subtitle')}
+                actions={(
+                    <Button icon={<ReloadOutlined />} onClick={() => refetch()}>
+                        {t('common:button.refresh')}
+                    </Button>
+                )}
+            />
+            <div className="summary-card-grid">
+                <SummaryMetricCard
+                    title={t('audit.summary.total_title', { defaultValue: 'Visible events' })}
+                    value={auditItems.length}
+                    description={t('audit.summary.total_description', { defaultValue: 'Audit entries visible with the current filters.' })}
+                    visual={<NotificationInboxGlyph className="summary-metric-card__art" />}
+                    accentColor="#1D5BFF"
+                    surfaceColor="#E6F4FF"
+                />
+                <SummaryMetricCard
+                    title={t('audit.summary.decisions_title', { defaultValue: 'Decision traces' })}
+                    value={decisionsVisible}
+                    description={t('audit.summary.decisions_description', { defaultValue: 'Entries that include an approval outcome.' })}
+                    visual={<RequestsOverviewGlyph className="summary-metric-card__art" />}
+                    accentColor="#0F8F57"
+                    surfaceColor="#E8FFF2"
+                />
+                <SummaryMetricCard
+                    title={t('audit.summary.placement_title', { defaultValue: 'Placement reviews' })}
+                    value={placementVisible}
+                    description={t('audit.summary.placement_description', { defaultValue: 'Entries carrying placement evaluation context.' })}
+                    visual={<QueueReviewGlyph className="summary-metric-card__art" />}
+                    accentColor="#D66A1F"
+                    surfaceColor="#FFF4E5"
+                />
+                <SummaryMetricCard
+                    title={t('audit.summary.actors_title', { defaultValue: 'Active actors' })}
+                    value={actorsVisible}
+                    description={t('audit.summary.actors_description', { defaultValue: 'Distinct actors represented in this result set.' })}
+                    visual={<ServiceWorkspaceGlyph className="summary-metric-card__art" />}
+                    accentColor="#6D4DE3"
+                    surfaceColor="#F5EDFF"
+                />
             </div>
 
-            <Card style={{ marginBottom: 16, borderRadius: 12 }}>
+            <PageSurface style={{ marginBottom: 16 }}>
                 <Row gutter={16}>
                     <Col xs={24} sm={12} lg={6}>
                         <Select
@@ -444,9 +393,9 @@ export function AdminAuditContent() {
                         </Button>
                     </Col>
                 </Row>
-            </Card>
+            </PageSurface>
 
-            <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+            <PageSurface flush={true}>
                 <Table<AuditLog>
                     columns={columns}
                     dataSource={data?.items ?? []}
@@ -461,8 +410,18 @@ export function AdminAuditContent() {
                     }}
                     size="middle"
                     scroll={{ x: 'max-content' }}
+                    locale={{
+                        emptyText: (
+                            <ActionEmptyState
+                                compact={true}
+                                title={t('audit.empty', { defaultValue: 'No audit activity' })}
+                                description={t('audit.empty_description', { defaultValue: 'Try a broader filter, or return later after new platform activity is recorded.' })}
+                                visual={<NotificationInboxGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                            />
+                        ),
+                    }}
                 />
-            </Card>
+            </PageSurface>
         </div>
     );
 }

@@ -21,9 +21,11 @@ services:
     environment:
       DATABASE_URL: "postgres://shepherd:shepherd_password@db:5432/shepherd_db?sslmode=disable"
       DATABASE_AUTO_MIGRATE: "true"
-      SECURITY_SESSION_SECRET: "dev-secret-key-must-be-32-bytes-long!!"
-      SECURITY_ENCRYPTION_KEY: "dev-encryption-key-32-bytes-long!!"
+      SECURITY_SESSION_SECRET: "dev-session-secret-0123456789abcdef0123456789abcdef"
+      SECURITY_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       GIN_MODE: debug
+      SERVER_PUBLIC_BASE_URL: "${DEV_PUBLIC_BASE_URL:-http://localhost:3000}"
+      SERVER_ALLOWED_ORIGINS: "${DEV_ALLOWED_ORIGIN_URLS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001}"
       # Keep wildcard disabled by default; use nginx single-origin ingress instead.
       SERVER_ALLOW_CREDENTIALS: "true"
       SERVER_UNSAFE_ALLOW_ALL_ORIGINS: "false"
@@ -35,6 +37,7 @@ services:
     image: shepherd-web
     environment:
       NEXT_PUBLIC_API_URL: "/api/v1"
+      NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE: "1"
       # Enable only when filesystem events are unreliable.
       WATCHPACK_POLLING: "${WATCHPACK_POLLING:-false}"
     volumes:

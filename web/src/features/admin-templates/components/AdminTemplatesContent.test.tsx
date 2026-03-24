@@ -9,6 +9,12 @@ const { useApiGetMock, useApiMutationMock, useApiActionMock } = vi.hoisted(() =>
     useApiActionMock: vi.fn(),
 }));
 
+vi.mock('next/navigation', () => ({
+    useRouter: () => ({
+        push: vi.fn(),
+    }),
+}));
+
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
         t: (key: string, fallback?: string | { defaultValue?: string }) => {
@@ -24,6 +30,29 @@ vi.mock('@/hooks/useApiQuery', () => ({
     useApiGet: (...args: unknown[]) => useApiGetMock(...args),
     useApiMutation: (...args: unknown[]) => useApiMutationMock(...args),
     useApiAction: (...args: unknown[]) => useApiActionMock(...args),
+}));
+
+vi.mock('@/features/setup-guide/hooks/useSetupGuide', () => ({
+    useSetupGuide: () => ({
+        systemsTotal: 1,
+        servicesTotal: 1,
+        vmsTotal: 0,
+        namespacesTotal: 1,
+        templatesTotal: 1,
+        instanceSizesTotal: 1,
+        canCreateSystem: true,
+        canCreateService: true,
+        canCreateVM: true,
+        canManageNamespaces: true,
+        canManageTemplates: true,
+        canManageInstanceSizes: true,
+        systemReady: true,
+        serviceReady: true,
+        prerequisitesReady: true,
+        vmRequestReady: true,
+        hasRequestedFirstVM: false,
+        isLoading: false,
+    }),
 }));
 
 import { AdminTemplatesContent } from './AdminTemplatesContent';
@@ -109,7 +138,8 @@ describe('AdminTemplatesContent', () => {
         render(<AdminTemplatesContent />);
 
         await user.click(screen.getByTestId('template-create-button'));
-        await user.click(screen.getByRole('button', { name: 'templates.official_preset_fedora_eval' }));
+        await screen.findByPlaceholderText('centos7-standard');
+        await user.click(await screen.findByRole('button', { name: 'templates.official_preset_fedora_eval' }));
 
         expect(await screen.findByText('Fedora')).toBeInTheDocument();
         expect(screen.getByText('docker://quay.io/containerdisks/fedora:latest')).toBeInTheDocument();
@@ -121,7 +151,8 @@ describe('AdminTemplatesContent', () => {
         render(<AdminTemplatesContent />);
 
         await user.click(screen.getByTestId('template-create-button'));
-        await user.click(screen.getByRole('button', { name: 'templates.preset_linux_prod' }));
+        await screen.findByPlaceholderText('centos7-standard');
+        await user.click(await screen.findByRole('button', { name: 'templates.preset_linux_prod' }));
 
         expect(await screen.findByText('Kylin V10')).toBeInTheDocument();
         expect(screen.getByText('vm-muban')).toBeInTheDocument();

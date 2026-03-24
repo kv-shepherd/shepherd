@@ -396,6 +396,8 @@ describe('DynamicSchemaForm', () => {
     }, 10000);
 
     it('clears hugepages field state when raw json removes the hugepages block', async () => {
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
         function Harness() {
             const [form] = Form.useForm();
 
@@ -444,6 +446,12 @@ describe('DynamicSchemaForm', () => {
             expect(screen.getByTestId('hugepages-value')).toHaveTextContent('');
             expect(screen.queryByText('2Mi')).not.toBeInTheDocument();
         });
+        expect(
+            consoleErrorSpy.mock.calls.some((call) =>
+                call.some((value) => String(value).includes('circular references')),
+            ),
+        ).toBe(false);
+        consoleErrorSpy.mockRestore();
     }, 10000);
 
     it('recognizes custom json fields into the recognition panel and keeps them visible after clearing', async () => {

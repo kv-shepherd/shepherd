@@ -21,7 +21,9 @@ vi.mock('@/lib/api/client', () => ({
     },
 }));
 
-import AuditLogPage, { buildAuditLogQuery } from './page';
+import { buildAuditLogQuery } from '@/features/admin-audit/query';
+
+import AuditLogPage from './page';
 
 describe('AuditLogPage', () => {
     beforeEach(() => {
@@ -58,7 +60,7 @@ describe('AuditLogPage', () => {
             actor: '',
             placement_advisory_code: 'PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY',
             placement_reason_code: 'CLUSTER_POLICY_DENIED',
-            resource_type: 'approval_ticket',
+            resource_type: 'ticket',
             resource_id: '',
         })).toEqual({
             page: 1,
@@ -66,7 +68,7 @@ describe('AuditLogPage', () => {
             approval_decision: 'validation_failed',
             placement_advisory_code: 'PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY',
             placement_reason_code: 'CLUSTER_POLICY_DENIED',
-            resource_type: 'approval_ticket',
+            resource_type: 'ticket',
         });
     });
 });

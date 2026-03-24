@@ -11,10 +11,11 @@ NODE_MODULES_DIR="${ROOT_DIR}/web/node_modules"
 LOCK_HASH_FILE="${NODE_MODULES_DIR}/.package-lock.hash"
 SERVICES_TO_DELETE=("db" "server" "web" "nginx")
 COMPOSE_CMD=(docker compose -f "${COMPOSE_FILE}")
-DEV_INCLUDE_E2E_SEED="${DEV_INCLUDE_E2E_SEED:-1}"
+DEV_INCLUDE_E2E_SEED="${DEV_INCLUDE_E2E_SEED:-0}"
 DEV_FRONTEND_MODE="${DEV_FRONTEND_MODE:-host}"
 DEV_FRONTEND_PORT="${DEV_FRONTEND_PORT:-3001}"
 DEV_INGRESS_PORT="${DEV_INGRESS_PORT:-3000}"
+DEV_PUBLIC_BASE_URL="${DEV_PUBLIC_BASE_URL:-}"
 DEV_FRONTEND_RUNTIME="${DEV_FRONTEND_RUNTIME:-dev}" # dev|prod
 DEV_FRONTEND_PROD_DIST_DIR="${DEV_FRONTEND_PROD_DIST_DIR:-.next-prod}"
 # Dev-only tuning:
@@ -24,10 +25,13 @@ DEV_FRONTEND_DISABLE_SOURCE_MAPS="${DEV_FRONTEND_DISABLE_SOURCE_MAPS:-0}"
 # - enabled by default (no swap on many dev machines makes kernel OOM-kill likely)
 # - applies only to the Next.js dev server process (host or docker)
 DEV_FRONTEND_OOM_GUARD="${DEV_FRONTEND_OOM_GUARD:-1}"
-DEV_FRONTEND_OOM_GUARD_MAX_OLD_SPACE_MB="${DEV_FRONTEND_OOM_GUARD_MAX_OLD_SPACE_MB:-3072}"
+DEV_FRONTEND_OOM_GUARD_MAX_OLD_SPACE_MB="${DEV_FRONTEND_OOM_GUARD_MAX_OLD_SPACE_MB:-4096}"
+DEV_FRONTEND_OOM_DIAGNOSTICS="${DEV_FRONTEND_OOM_DIAGNOSTICS:-1}"
+DEV_FRONTEND_HEAPSNAPSHOT_NEAR_LIMIT_COUNT="${DEV_FRONTEND_HEAPSNAPSHOT_NEAR_LIMIT_COUNT:-2}"
+DEV_FRONTEND_DIAGNOSTIC_DIR="${DEV_FRONTEND_DIAGNOSTIC_DIR:-${ROOT_DIR}/tmp/node-diagnostics/dev-web}"
 # Optional: override NODE_OPTIONS for the Next.js dev server only (host mode).
 # Example:
-#   DEV_FRONTEND_NODE_OPTIONS="--max-old-space-size=4096 --heapsnapshot-signal=SIGUSR2"
+#   DEV_FRONTEND_NODE_OPTIONS="--max-old-space-size=6144 --heapsnapshot-signal=SIGUSR2"
 DEV_FRONTEND_NODE_OPTIONS="${DEV_FRONTEND_NODE_OPTIONS:-}"
 FRONTEND_PID_FILE="${ROOT_DIR}/tmp/dev-web.pid"
 FRONTEND_LOG_FILE="${ROOT_DIR}/tmp/dev-web.log"
@@ -42,6 +46,8 @@ Usage: ./start-dev.sh [options]
 Options:
   --keep-db          Preserve the existing dev PostgreSQL container/data and only
                      recreate app services.
+  --e2e-seed         Run extended local fixtures (`cmd/e2e-seed`) after the
+                     baseline development seed (`cmd/seed`).
   --frontend-docker  Run the frontend inside Docker instead of the default host
                      Next.js dev server. This is slower but useful as a fallback.
   --frontend-prod    Run the host frontend in production mode:
@@ -87,6 +93,10 @@ json_string() {
     node -p 'JSON.stringify(process.argv[1])' "$1"
 }
 
+url_origin() {
+    node -p '(() => { try { return new URL(process.argv[1] || "").origin; } catch { return ""; } })()' -- "$1"
+}
+
 compute_allowed_dev_origins() {
     node -e '
         const os = require("os");
@@ -103,6 +113,85 @@ compute_allowed_dev_origins() {
             }
         }
         process.stdout.write(Array.from(origins).join(","));
+    '
+}
+
+compute_allowed_dev_origin_urls() {
+    DEV_FRONTEND_PORT="${DEV_FRONTEND_PORT}" DEV_INGRESS_PORT="${DEV_INGRESS_PORT}" node -e '
+        const os = require("os");
+        const hosts = new Set(["localhost", "127.0.0.1"]);
+        const hostname = os.hostname();
+        if (hostname) {
+            hosts.add(hostname);
+        }
+        for (const infos of Object.values(os.networkInterfaces())) {
+            for (const info of infos || []) {
+                if (info && info.family === "IPv4" && !info.internal) {
+                    hosts.add(info.address);
+                }
+            }
+        }
+        const ports = new Set([
+            process.env.DEV_INGRESS_PORT || "3000",
+            process.env.DEV_FRONTEND_PORT || "3001",
+        ]);
+        const origins = [];
+        for (const host of hosts) {
+            for (const port of ports) {
+                origins.push(`http://${host}:${port}`);
+            }
+        }
+        process.stdout.write(origins.join(","));
+    '
+}
+
+compute_public_dev_base_url() {
+    if [[ -n "${DEV_PUBLIC_BASE_URL}" ]]; then
+        printf "%s" "${DEV_PUBLIC_BASE_URL}"
+        return 0
+    fi
+    DEV_INGRESS_PORT="${DEV_INGRESS_PORT}" node -e '
+        const os = require("os");
+        const port = process.env.DEV_INGRESS_PORT || "3000";
+        let selectedHost = "";
+        for (const infos of Object.values(os.networkInterfaces())) {
+            for (const info of infos || []) {
+                if (info && info.family === "IPv4" && !info.internal) {
+                    selectedHost = info.address;
+                    break;
+                }
+            }
+            if (selectedHost) {
+                break;
+            }
+        }
+        if (!selectedHost) {
+            const hostname = os.hostname();
+            selectedHost = hostname || "localhost";
+        }
+        process.stdout.write(`http://${selectedHost}:${port}`);
+    '
+}
+
+append_origin_url() {
+    local csv="$1"
+    local candidate="$2"
+    if [[ -z "${candidate}" ]]; then
+        printf "%s" "${csv}"
+        return 0
+    fi
+    if [[ -z "${csv}" ]]; then
+        printf "%s" "${candidate}"
+        return 0
+    fi
+    CSV_INPUT="${csv}" CANDIDATE_INPUT="${candidate}" node -e '
+        const csv = process.env.CSV_INPUT || "";
+        const candidate = process.env.CANDIDATE_INPUT || "";
+        const values = csv.split(",").map(v => v.trim()).filter(Boolean);
+        if (!values.some(v => v.toLowerCase() === candidate.toLowerCase())) {
+            values.push(candidate);
+        }
+        process.stdout.write(values.join(","));
     '
 }
 
@@ -131,8 +220,14 @@ start_host_frontend() {
     local node_options="${DEV_FRONTEND_NODE_OPTIONS}"
     if [[ -z "${node_options}" ]] && [[ "${DEV_FRONTEND_OOM_GUARD}" == "1" ]]; then
         node_options="--max-old-space-size=${DEV_FRONTEND_OOM_GUARD_MAX_OLD_SPACE_MB} --heapsnapshot-signal=SIGUSR2"
+        if [[ "${DEV_FRONTEND_OOM_DIAGNOSTICS}" == "1" ]]; then
+            node_options="${node_options} --diagnostic-dir=${DEV_FRONTEND_DIAGNOSTIC_DIR} --report-on-fatalerror --report-dir=${DEV_FRONTEND_DIAGNOSTIC_DIR} --heapsnapshot-near-heap-limit=${DEV_FRONTEND_HEAPSNAPSHOT_NEAR_LIMIT_COUNT}"
+        fi
     fi
     mkdir -p "$(dirname "${FRONTEND_PID_FILE}")"
+    if [[ "${DEV_FRONTEND_OOM_DIAGNOSTICS}" == "1" ]]; then
+        mkdir -p "${DEV_FRONTEND_DIAGNOSTIC_DIR}"
+    fi
     stop_host_frontend
 
     : > "${FRONTEND_LOG_FILE}"
@@ -147,6 +242,7 @@ start_host_frontend() {
         (
             cd "${ROOT_DIR}/web"
             NEXT_PUBLIC_API_URL="/api/v1" \
+            NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE="1" \
             INTERNAL_API_URL="http://localhost:8080" \
             NEXT_DIST_DIR="${DEV_FRONTEND_PROD_DIST_DIR}" \
             NODE_OPTIONS="${node_options}" \
@@ -158,9 +254,13 @@ start_host_frontend() {
         }
 
         echo "Starting frontend on host (Next.js production server on :${DEV_FRONTEND_PORT})..."
+        if [[ "${DEV_FRONTEND_OOM_DIAGNOSTICS}" == "1" ]]; then
+            echo "  - diagnostics: ${DEV_FRONTEND_DIAGNOSTIC_DIR}"
+        fi
         (
             cd "${ROOT_DIR}/web"
             NEXT_PUBLIC_API_URL="/api/v1" \
+            NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE="1" \
             INTERNAL_API_URL="http://localhost:8080" \
             NEXT_DIST_DIR="${DEV_FRONTEND_PROD_DIST_DIR}" \
             NODE_OPTIONS="${node_options}" \
@@ -188,10 +288,14 @@ start_host_frontend() {
     if [[ -n "${node_options}" ]]; then
         echo "  - NODE_OPTIONS: ${node_options}"
     fi
+    if [[ "${DEV_FRONTEND_OOM_DIAGNOSTICS}" == "1" ]]; then
+        echo "  - diagnostics: ${DEV_FRONTEND_DIAGNOSTIC_DIR}"
+    fi
     (
         cd "${ROOT_DIR}/web"
         DEV_ALLOWED_ORIGINS="${allowed_origins}" \
         NEXT_PUBLIC_API_URL="/api/v1" \
+        NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE="1" \
         INTERNAL_API_URL="http://localhost:8080" \
         NODE_OPTIONS="${node_options}" \
         setsid ./node_modules/.bin/next dev "${next_args[@]}" --hostname 0.0.0.0 --port "${DEV_FRONTEND_PORT}" >"${FRONTEND_LOG_FILE}" 2>&1 < /dev/null &
@@ -289,6 +393,10 @@ while [[ $# -gt 0 ]]; do
             KEEP_DB=1
             shift
             ;;
+        --e2e-seed)
+            DEV_INCLUDE_E2E_SEED=1
+            shift
+            ;;
         --frontend-docker)
             DEV_FRONTEND_MODE="docker"
             shift
@@ -356,6 +464,11 @@ if [[ "${DEV_FRONTEND_DISABLE_SOURCE_MAPS}" != "0" && "${DEV_FRONTEND_DISABLE_SO
     exit 1
 fi
 
+if [[ "${DEV_INCLUDE_E2E_SEED}" != "0" && "${DEV_INCLUDE_E2E_SEED}" != "1" ]]; then
+    echo "DEV_INCLUDE_E2E_SEED must be '0' or '1'. Current value: ${DEV_INCLUDE_E2E_SEED}"
+    exit 1
+fi
+
 if [[ "${DEV_FRONTEND_RUNTIME}" == "prod" && "${DEV_FRONTEND_MODE}" != "host" ]]; then
     echo "--frontend-prod only supports the host frontend. Remove --frontend-docker or set DEV_FRONTEND_MODE=host."
     exit 1
@@ -420,9 +533,17 @@ if [[ "${DEV_FRONTEND_MODE}" == "docker" ]]; then
 fi
 
 echo "Starting development environment (${COMPOSE_SERVICES[*]})..."
+dev_allowed_origin_urls="$(compute_allowed_dev_origin_urls)"
+dev_public_base_url="$(compute_public_dev_base_url)"
+dev_public_origin="$(url_origin "${dev_public_base_url}")"
+dev_allowed_origin_urls="$(append_origin_url "${dev_allowed_origin_urls}" "${dev_public_origin}")"
+echo "  - backend allowed origins: ${dev_allowed_origin_urls}"
+echo "  - backend public base url: ${dev_public_base_url}"
 USER_ID="${HOST_USER_ID}" \
 GROUP_ID="${HOST_GROUP_ID}" \
 WEB_UPSTREAM="${WEB_UPSTREAM}" \
+DEV_ALLOWED_ORIGIN_URLS="${dev_allowed_origin_urls}" \
+DEV_PUBLIC_BASE_URL="${dev_public_base_url}" \
 "${COMPOSE_CMD[@]}" up -d "${COMPOSE_SERVICES[@]}"
 
 echo "Waiting for database..."
@@ -464,7 +585,7 @@ if [[ "${DEV_INCLUDE_E2E_SEED}" == "1" ]]; then
     "${COMPOSE_CMD[@]}" exec -T "${E2E_SEED_ENV[@]}" server /usr/local/bin/e2e-seed >/dev/null
     echo " seed complete (baseline + extended fixtures)"
 else
-    echo " seed complete (baseline only; set DEV_INCLUDE_E2E_SEED=1 to include extended fixtures)"
+    echo " seed complete (baseline only)"
 fi
 
 if [[ "${DEV_FRONTEND_MODE}" == "host" ]]; then

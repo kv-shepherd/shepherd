@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #eef3f8;
+  --foreground: #10233d;
+  --surface: rgba(255, 255, 255, 0.88);
+  --surface-strong: #ffffff;
+  --surface-border: rgba(15, 23, 42, 0.08);
+  --shell-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
 }
 
 @theme inline {
@@ -12,17 +16,29 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  min-height: 100%;
+}
+
+html {
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(21, 94, 239, 0.1), transparent 34%),
+    linear-gradient(180deg, #f7faff 0%, #eef3f8 100%);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(21, 94, 239, 0.1), transparent 34%),
+    radial-gradient(circle at top right, rgba(18, 183, 106, 0.08), transparent 26%),
+    linear-gradient(180deg, #f7faff 0%, #eef3f8 100%);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 @keyframes fadeIn {
@@ -32,4 +48,380 @@ body {
 
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out forwards;
+}
+
+a {
+  color: inherit;
+}
+
+.action-icon:hover {
+  background-color: rgba(21, 94, 239, 0.08);
+}
+
+.app-shell-content {
+  min-height: calc(100vh - 56px);
+  padding: 24px 24px 32px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.page-header__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.app-shell-surface {
+  border: 1px solid var(--surface-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, var(--surface) 100%);
+  box-shadow: var(--shell-shadow);
+  backdrop-filter: blur(10px);
+}
+
+.page-surface {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.dashboard-health {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.dashboard-health__meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.dashboard-health__visual {
+  flex: 0 0 auto;
+}
+
+.dashboard-health__visual-art {
+  width: 88px;
+  height: 88px;
+  display: block;
+}
+
+.dashboard-stat {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.dashboard-stat__icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dashboard-stat-bg);
+  color: var(--dashboard-stat-fg);
+}
+
+.dashboard-stat__icon-art {
+  width: 34px;
+  height: 34px;
+  display: block;
+}
+
+.dashboard-stat__metric {
+  min-width: 0;
+}
+
+.summary-card-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 16px;
+}
+
+.admin-approvals-modal .ant-modal-content {
+  max-width: calc(100vw - 16px);
+}
+
+.admin-approvals-modal .ant-card-head-title {
+  white-space: normal;
+}
+
+.admin-approvals-modal .ant-descriptions-view table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.admin-approvals-modal .ant-descriptions-item-label,
+.admin-approvals-modal .ant-descriptions-item-content {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.admin-approvals-modal .ant-descriptions-item-label {
+  width: 34%;
+}
+
+.summary-metric-card {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.summary-metric-card .ant-card-body {
+  padding: 18px 18px 16px;
+}
+
+.summary-metric-card__layout {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.summary-metric-card__content {
+  width: 100%;
+  min-width: 0;
+}
+
+.summary-metric-card__value {
+  font-size: 24px;
+  line-height: 1.2;
+  color: var(--summary-card-accent);
+}
+
+.summary-metric-card__actions {
+  padding-top: 2px;
+}
+
+.summary-metric-card__visual {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--summary-card-surface);
+  color: var(--summary-card-accent);
+}
+
+.summary-metric-card__art {
+  width: 42px;
+  height: 42px;
+  display: block;
+}
+
+.action-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 8px 0;
+}
+
+.action-empty-state--compact {
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.action-empty-state__visual {
+  flex: 0 0 auto;
+  color: #1D5BFF;
+}
+
+.action-empty-state__art {
+  width: 112px;
+  height: auto;
+  display: block;
+}
+
+.action-empty-state__art--compact {
+  width: 72px;
+}
+
+.action-empty-state__copy {
+  width: 100%;
+  min-width: 0;
+}
+
+.action-empty-state__title {
+  font-size: 16px;
+}
+
+.action-empty-state__actions {
+  padding-top: 4px;
+}
+
+.setup-guide-next {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border: 1px solid rgba(21, 94, 239, 0.14);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(241, 247, 255, 0.92) 0%, rgba(255, 255, 255, 0.96) 100%);
+}
+
+.setup-guide-next__meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setup-guide-next__eyebrow {
+  width: fit-content;
+  margin-inline-end: 0;
+  font-weight: 600;
+  border-radius: 999px;
+}
+
+.setup-guide-next__title {
+  font-size: 16px;
+}
+
+.setup-guide-next__hint {
+  font-size: 12px;
+}
+
+.setup-guide-next__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.setup-guide-steps .ant-steps-item-process .ant-steps-item-container {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(21, 94, 239, 0.05);
+  border: 1px solid rgba(21, 94, 239, 0.1);
+}
+
+.setup-guide-steps .ant-steps-item-process .ant-steps-item-title {
+  color: #0f52ba;
+}
+
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(21, 94, 239, 0.22), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.18), transparent 28%),
+    linear-gradient(145deg, #0f1d33 0%, #173258 45%, #0d223f 100%);
+}
+
+.auth-shell__card {
+  width: min(440px, 100%);
+  border-radius: 24px;
+}
+
+.auth-shell__card .ant-card-body {
+  padding: 32px 28px;
+}
+
+.auth-shell__hero {
+  width: 100%;
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.auth-shell__eyebrow {
+  align-self: center;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.auth-shell__logo {
+  width: auto;
+  height: 52px;
+  max-width: 100%;
+}
+
+.auth-shell__submit {
+  height: 44px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .app-shell-content {
+    padding: 16px 12px 24px;
+  }
+
+  .admin-approvals-modal__sections {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-approvals-modal .ant-descriptions-item-label {
+    width: 40%;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .auth-shell {
+    padding: 16px;
+  }
+
+  .auth-shell__card .ant-card-body {
+    padding: 24px 20px;
+  }
+
+  .dashboard-health {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dashboard-health__visual {
+    align-self: flex-end;
+  }
+
+  .dashboard-stat {
+    align-items: flex-start;
+  }
+
+  .summary-metric-card__layout,
+  .action-empty-state {
+    flex-direction: column;
+  }
+
+  .summary-metric-card__visual,
+  .action-empty-state__visual {
+    align-self: flex-start;
+  }
+
+  .setup-guide-next {
+    flex-direction: column;
+  }
+
+  .setup-guide-next__actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .setup-guide-next__actions .ant-btn {
+    width: 100%;
+  }
 }

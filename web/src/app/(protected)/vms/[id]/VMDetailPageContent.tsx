@@ -16,10 +16,13 @@
  *   vm-action-stop-{id}
  *   vm-action-delete-{id}
  *   vm-action-console-{id}
+ *   vm-action-request-similar-{id}
  */
-import { Badge, Button, Card, Descriptions, Input, Modal, Space, Tag, Typography } from 'antd';
+import { Badge, Button, Descriptions, Input, Modal, Space, Tag, Typography } from 'antd';
+import type { DescriptionsProps } from 'antd';
 import {
     ArrowLeftOutlined,
+    CopyOutlined,
     DeleteOutlined,
     DesktopOutlined,
     ExclamationCircleOutlined,
@@ -35,10 +38,12 @@ import dayjs from 'dayjs';
 import { useApiGet } from '@/lib/api/useApiGet';
 import { useApiMutation } from '@/lib/api/useApiMutation';
 import { api } from '@/lib/api/client';
+import { translateApiError } from '@/lib/api/errorMessage';
 import { useMessage } from '@/lib/hooks/useMessage';
 import { VM_STATUS_MAP } from '@/features/vm-management/types';
+import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 
 export default function VMDetailPage() {
     const { t } = useTranslation(['vm', 'common']);
@@ -77,15 +82,14 @@ export default function VMDetailPage() {
                 },
             }),
         {
-            onSuccess: (resp) => {
-                const ticketID = resp?.ticket_id ?? '—';
-                void messageApi.success(t('delete_request_submitted', { ticket_id: ticketID }));
+            onSuccess: () => {
+                void messageApi.success(t('delete_request_submitted'));
                 setDeleteOpen(false);
                 setDeleteConfirmName('');
                 router.push('/vms');
             },
             onError: (err) => {
-                void messageApi.error(err.message || t('common:message.error'));
+                void messageApi.error(translateApiError(t, err));
             },
         }
     );
@@ -96,15 +100,58 @@ export default function VMDetailPage() {
     const mapped = VM_STATUS_MAP[status ?? 'UNKNOWN'] ?? VM_STATUS_MAP.UNKNOWN;
     const isRunning = status === 'RUNNING';
     const isStopped = status === 'STOPPED';
-    const canDelete = isStopped || status === 'FAILED';
+    const canDelete = isStopped || status === 'FAILED' || status === 'NOT_FOUND';
     const requiresNameConfirm = vmData?.environment !== 'test';
     const deleteConfirmMatched = !requiresNameConfirm || deleteConfirmName === (vmData?.name ?? '');
+    const detailItems: DescriptionsProps['items'] = [
+        {
+            key: 'name',
+            label: t('field.name'),
+            children: <Text strong>{vmData?.name}</Text>,
+        },
+        {
+            key: 'status',
+            label: t('common:table.status'),
+            children: (
+                <Badge
+                    status={mapped.badge}
+                    text={<Tag color={mapped.color}>{t(`status.${status ?? 'UNKNOWN'}`)}</Tag>}
+                />
+            ),
+        },
+        {
+            key: 'namespace',
+            label: t('field.namespace'),
+            children: <Tag>{vmData?.namespace}</Tag>,
+        },
+        {
+            key: 'hostname',
+            label: t('field.hostname'),
+            children: <Text type="secondary">{vmData?.hostname || '—'}</Text>,
+        },
+        {
+            key: 'createdAt',
+            label: t('common:table.created_at'),
+            children: (
+                <Text type="secondary">
+                    {vmData?.created_at ? dayjs(vmData.created_at).format('YYYY-MM-DD HH:mm:ss') : '—'}
+                </Text>
+            ),
+        },
+    ];
 
     return (
         <div data-testid="vm-detail-page">
             {messageContextHolder}
-            <div style={{ marginBottom: 24 }}>
-                <Space>
+            <PageHeader
+                title={(
+                    <Space size="small">
+                        <DesktopOutlined style={{ color: '#531dab' }} />
+                        <span>{vmData?.name ?? vmId}</span>
+                    </Space>
+                )}
+                subtitle={t('detail.subtitle')}
+                actions={(
                     <Button
                         icon={<ArrowLeftOutlined />}
                         type="text"
@@ -112,39 +159,14 @@ export default function VMDetailPage() {
                     >
                         {t('common:button.back')}
                     </Button>
-                </Space>
-                <Title level={4} style={{ margin: '8px 0 0' }}>
-                    <DesktopOutlined style={{ marginRight: 8, color: '#531dab' }} />
-                    {vmData?.name ?? vmId}
-                </Title>
-            </div>
+                )}
+            />
 
-            <Card style={{ borderRadius: 12, marginBottom: 16 }} loading={isLoading}>
-                <Descriptions bordered column={2}>
-                    <Descriptions.Item label={t('field.name')}>
-                        <Text strong>{vmData?.name}</Text>
-                    </Descriptions.Item>
-                    <Descriptions.Item label={t('common:table.status')}>
-                        <Badge
-                            status={mapped.badge}
-                            text={<Tag color={mapped.color}>{status}</Tag>}
-                        />
-                    </Descriptions.Item>
-                    <Descriptions.Item label={t('field.namespace')}>
-                        <Tag>{vmData?.namespace}</Tag>
-                    </Descriptions.Item>
-                    <Descriptions.Item label={t('field.hostname')}>
-                        <Text type="secondary">{vmData?.hostname || '—'}</Text>
-                    </Descriptions.Item>
-                    <Descriptions.Item label={t('common:table.created_at')}>
-                        <Text type="secondary">
-                            {vmData?.created_at ? dayjs(vmData.created_at).format('YYYY-MM-DD HH:mm:ss') : '—'}
-                        </Text>
-                    </Descriptions.Item>
-                </Descriptions>
-            </Card>
+            <PageSurface loading={isLoading}>
+                <Descriptions bordered column={2} items={detailItems} />
+            </PageSurface>
 
-            <Card style={{ borderRadius: 12 }}>
+            <PageSurface title={t('common:table.actions')}>
                 <Space wrap>
                     <Button
                         type="primary"
@@ -185,12 +207,19 @@ export default function VMDetailPage() {
                         {t('action.console')}
                     </Button>
                     <Button
+                        icon={<CopyOutlined />}
+                        data-testid={`vm-action-request-similar-${vmId}`}
+                        onClick={() => router.push(`/vms?request=create&source_vm_id=${vmId}`)}
+                    >
+                        {t('action.request_similar')}
+                    </Button>
+                    <Button
                         icon={<DesktopOutlined />}
                         data-testid={`vm-console-status-${vmId}`}
                         onClick={() => void refetch()}
                         loading={isLoading}
                     >
-                        {t('action.refresh_status', { defaultValue: 'Refresh Status' })}
+                        {t('action.refresh_status')}
                     </Button>
                     <Button
                         danger
@@ -206,7 +235,7 @@ export default function VMDetailPage() {
                         {t('action.delete')}
                     </Button>
                 </Space>
-            </Card>
+            </PageSurface>
             <Modal
                 title={(
                     <Space>
@@ -232,7 +261,7 @@ export default function VMDetailPage() {
                 confirmLoading={deleteMutation.isPending}
                 okButtonProps={{ danger: true, disabled: !deleteConfirmMatched }}
                 okText={t('common:button.delete')}
-                destroyOnHidden={true}
+                forceRender={true}
                 data-testid="vm-delete-modal"
             >
                 <Paragraph>

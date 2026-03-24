@@ -1,7 +1,21 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const webPort = Number(process.env.PW_WEB_PORT ?? 3000);
+const e2eRunId = process.env.PW_E2E_RUN_ID ?? 'local';
+const defaultWebPort = 3210;
+const webPort = Number(process.env.PW_WEB_PORT ?? defaultWebPort);
 const baseURL = process.env.PW_BASE_URL ?? `http://127.0.0.1:${webPort}`;
+const baseHostname = new URL(baseURL).hostname;
+const devAllowedOrigins = Array.from(
+	new Set(
+		(process.env.DEV_ALLOWED_ORIGINS ?? '')
+			.split(',')
+			.map((origin) => origin.trim())
+			.filter(Boolean)
+			.concat(baseHostname),
+	),
+).join(',');
+const e2eDistDir = `.next-e2e/${e2eRunId}`;
+const e2eTsconfigPath = `.next-e2e/tsconfig.${e2eRunId}.json`;
 
 // Live E2E tests run against a real backend.
 // Set LIVE_E2E=true to include them in the test run.
@@ -61,9 +75,17 @@ export default defineConfig({
 		name: 'Next.js (dev)',
 		// Always run Next.js dev server — faster than production builds and sufficient
 		// for E2E functional coverage. HMR is irrelevant for headless test runs.
+		// Force a dedicated port, dist dir, and temp tsconfig mirror so E2E never
+		// contends with an already-running local next dev instance or a stale prior
+		// Playwright run.
 		// When launched via run_e2e_live.sh, the process stdout is already captured
 		// by the shell (nohup redirect in background mode, or tee in foreground).
-		command: `npm run dev -- --port ${webPort}`,
+		command: `sh -c 'rm -rf ${e2eDistDir} ${e2eTsconfigPath} && mkdir -p .next-e2e && cat > ${e2eTsconfigPath} <<\"EOF\"
+{
+  "extends": "../tsconfig.json"
+}
+EOF
+DEV_ALLOWED_ORIGINS=${devAllowedOrigins} NEXT_DIST_DIR=${e2eDistDir} NEXT_TSCONFIG_PATH=${e2eTsconfigPath} npm run dev -- --port ${webPort}'`,
 		url: baseURL,
 		// MUST be false unconditionally: reusing an existing server risks pointing at
 		// a stale process bound to a different backend URL or a different database.

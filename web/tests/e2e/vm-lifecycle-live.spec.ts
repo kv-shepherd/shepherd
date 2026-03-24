@@ -288,9 +288,9 @@ async function submitOrReusePendingCreateTicket(
         data: { ...createReqData, reason: `vm-lifecycle setup ${Date.now()}` },
     });
     if (createResp.status() === 202) {
-        const ticket = await validateApiResponse('ApprovalTicketResponse', createResp) as { ticket_id?: string; id?: string };
+        const ticket = await validateApiResponse('TicketResponse', createResp) as { ticket_id?: string; id?: string };
         const ticketID = ticket.ticket_id ?? ticket.id ?? '';
-        expect(ticketID, 'ApprovalTicketResponse missing ticket id').toBeTruthy();
+        expect(ticketID, 'TicketResponse missing ticket id').toBeTruthy();
         return ticketID;
     }
     if (createResp.status() === 400) {
@@ -319,9 +319,9 @@ async function ensureRealVMForLifecycle(request: APIRequestContext): Promise<str
         return existingReal.id;
     }
 
-    const approvalsResp = await request.get('/api/v1/approvals?page=1&per_page=100', { headers });
-    expect(approvalsResp.status(), `GET /approvals returned ${approvalsResp.status()}`).toBe(200);
-    const approvals = await validateApiResponse('ApprovalTicketList', approvalsResp) as {
+    const approvalsResp = await request.get('/api/v1/builtin-approval/tasks?page=1&per_page=100', { headers });
+    expect(approvalsResp.status(), `GET /builtin-approval/tasks returned ${approvalsResp.status()}`).toBe(200);
+    const approvals = await validateApiResponse('TicketList', approvalsResp) as {
         items?: Array<{ id?: string; status?: string; operation_type?: string; operationType?: string }>;
     };
     const pendingCreate = (approvals.items ?? []).find((item) =>
@@ -336,13 +336,13 @@ async function ensureRealVMForLifecycle(request: APIRequestContext): Promise<str
     const clusterID = await resolveApprovalClusterID(request, headers);
     expect(clusterID, 'VM lifecycle setup requires at least one enabled cluster').toBeTruthy();
 
-    const approveResp = await request.post(`/api/v1/approvals/${ticketID}/approve`, {
+    const approveResp = await request.post(`/api/v1/builtin-approval/tasks/${ticketID}/approve`, {
         headers,
         data: { selected_cluster_id: clusterID },
     });
     expect(
         [204, 409],
-        `POST /approvals/${ticketID}/approve returned ${approveResp.status()} during vm-lifecycle setup`
+        `POST /builtin-approval/tasks/${ticketID}/approve returned ${approveResp.status()} during vm-lifecycle setup`
     ).toContain(approveResp.status());
 
     await expect.poll(async () => {

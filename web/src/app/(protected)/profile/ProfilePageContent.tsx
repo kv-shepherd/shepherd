@@ -20,7 +20,6 @@
 import {
     Alert,
     Button,
-    Card,
     Descriptions,
     Form,
     Input,
@@ -32,12 +31,14 @@ import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { useApiGet } from '@/lib/api/useApiGet';
 import { useApiMutation } from '@/lib/api/useApiMutation';
 import { api } from '@/lib/api/client';
+import { translateApiError } from '@/lib/api/errorMessage';
 import { useMessage } from '@/lib/hooks/useMessage';
 
-const { Title, Text } = Typography;
+const { Text, Title } = Typography;
 
 interface UserProfile {
     id: string;
@@ -82,7 +83,7 @@ export default function ProfilePage() {
                 setError(null);
             },
             onError: (err: Error) => {
-                setError(err.message || t('auth.change_password_error', { defaultValue: 'Failed to change password.' }));
+                setError(translateApiError(t, err, 'auth.change_password_error'));
             },
         }
     );
@@ -96,17 +97,17 @@ export default function ProfilePage() {
     return (
         <div data-testid="profile-page">
             {messageContextHolder}
-            <div style={{ marginBottom: 24 }}>
-                <Title level={4} style={{ margin: 0 }}>
-                    <UserOutlined style={{ marginRight: 8, color: '#1677ff' }} />
-                    {t('nav.profile', { defaultValue: 'My Profile' })}
-                </Title>
-                <Text type="secondary">
-                    {t('profile.subtitle', { defaultValue: 'View your account details and manage settings.' })}
-                </Text>
-            </div>
+            <PageHeader
+                title={(
+                    <>
+                        <UserOutlined style={{ marginRight: 8, color: '#1677ff' }} />
+                        {t('nav.profile', { defaultValue: 'My Profile' })}
+                    </>
+                )}
+                subtitle={t('profile.subtitle', { defaultValue: 'View your account details and manage settings.' })}
+            />
 
-            <Card style={{ borderRadius: 12, marginBottom: 16 }}>
+            <PageSurface style={{ marginBottom: 16 }}>
                 <Descriptions
                     title={t('profile.account_info', { defaultValue: 'Account Information' })}
                     bordered
@@ -125,9 +126,9 @@ export default function ProfilePage() {
                         {profile?.created_at ?? '—'}
                     </Descriptions.Item>
                 </Descriptions>
-            </Card>
+            </PageSurface>
 
-            <Card style={{ borderRadius: 12 }}>
+            <PageSurface>
                 <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                     <div>
                         <Title level={5} style={{ margin: 0 }}>
@@ -145,7 +146,7 @@ export default function ProfilePage() {
                         {t('auth.change_password')}
                     </Button>
                 </Space>
-            </Card>
+            </PageSurface>
 
             <Modal
                 title={t('auth.change_password')}
@@ -157,8 +158,7 @@ export default function ProfilePage() {
                     setError(null);
                 }}
                 confirmLoading={changePasswordMutation.isPending}
-                destroyOnHidden
-                data-testid="change-password-modal"
+                forceRender                data-testid="change-password-modal"
             >
                     {error && (
                         <Alert

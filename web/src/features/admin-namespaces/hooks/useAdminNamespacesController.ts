@@ -6,7 +6,9 @@ import { useState } from 'react';
 
 import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { applyApiFieldErrors } from '@/hooks/applyApiFieldErrors';
+import { SETUP_GUIDE_INVALIDATION_KEYS } from '@/features/setup-guide/queryKeys';
 import { api } from '@/lib/api/client';
+import { translateApiError } from '@/lib/api/errorMessage';
 
 import type {
     NamespaceCreateRequest,
@@ -17,9 +19,13 @@ import type {
 
 interface UseAdminNamespacesControllerArgs {
     t: TFunction;
+    onCreateSuccess?: (namespace: NamespaceRegistry, context: { isFirstNamespace: boolean }) => boolean | void;
 }
 
-export function useAdminNamespacesController({ t }: UseAdminNamespacesControllerArgs) {
+export function useAdminNamespacesController({
+    t,
+    onCreateSuccess,
+}: UseAdminNamespacesControllerArgs) {
     const [messageApi, messageContextHolder] = message.useMessage();
     const [createOpen, setCreateOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
@@ -44,15 +50,26 @@ export function useAdminNamespacesController({ t }: UseAdminNamespacesController
             },
         })
     );
+    const existingNamespacesTotal =
+        namespaceListQuery.data?.pagination?.total ??
+        namespaceListQuery.data?.items?.length ??
+        0;
+    const shouldContinueOnboarding = existingNamespacesTotal === 0;
 
     const createMutation = useApiMutation<NamespaceCreateRequest, NamespaceRegistry>(
         (req) => api.POST('/admin/namespaces', { body: req }),
         {
-            invalidateKeys: [['admin-namespaces']],
-            onSuccess: () => {
-                messageApi.success(t('common:message.success'));
+            invalidateKeys: [['admin-namespaces'], ...SETUP_GUIDE_INVALIDATION_KEYS],
+            onSuccess: (namespace) => {
                 setCreateOpen(false);
                 createForm.resetFields();
+                const handled = onCreateSuccess?.(namespace, {
+                    isFirstNamespace: shouldContinueOnboarding,
+                }) ?? false;
+                if (handled) {
+                    return;
+                }
+                messageApi.success(t('common:message.success'));
             },
             onError: (err) => {
                 if (applyApiFieldErrors(createForm, err)) {
@@ -62,7 +79,7 @@ export function useAdminNamespacesController({ t }: UseAdminNamespacesController
                     messageApi.error(t('namespaces.error.name_exists'));
                     return;
                 }
-                messageApi.error(err.message || t('common:message.error'));
+                messageApi.error(translateApiError(t, err));
             },
         }
     );
@@ -76,7 +93,7 @@ export function useAdminNamespacesController({ t }: UseAdminNamespacesController
             body,
         }),
         {
-            invalidateKeys: [['admin-namespaces']],
+            invalidateKeys: [['admin-namespaces'], ...SETUP_GUIDE_INVALIDATION_KEYS],
             onSuccess: () => {
                 messageApi.success(t('common:message.success'));
                 setEditOpen(false);
@@ -86,7 +103,7 @@ export function useAdminNamespacesController({ t }: UseAdminNamespacesController
                 if (applyApiFieldErrors(editForm, err)) {
                     return;
                 }
-                messageApi.error(err.message || t('common:message.error'));
+                messageApi.error(translateApiError(t, err));
             },
         }
     );
@@ -99,14 +116,14 @@ export function useAdminNamespacesController({ t }: UseAdminNamespacesController
             },
         }),
         {
-            invalidateKeys: [['admin-namespaces']],
+            invalidateKeys: [['admin-namespaces'], ...SETUP_GUIDE_INVALIDATION_KEYS],
             onSuccess: () => {
                 messageApi.success(t('common:message.success'));
                 setDeleteOpen(false);
                 setDeletingNs(null);
                 setDeleteConfirmName('');
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 

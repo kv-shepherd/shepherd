@@ -2,7 +2,6 @@
 
 import {
     Button,
-    Card,
     Form,
     Input,
     Modal,
@@ -11,7 +10,6 @@ import {
     Switch,
     Table,
     Tag,
-    Tooltip,
     Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -24,23 +22,63 @@ import {
     PlusOutlined,
     ReloadOutlined,
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'next/navigation';
 
+import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
+import { SummaryMetricCard } from '@/components/feedback/SummaryMetricCard';
+import {
+    NotificationInboxGlyph,
+    QueueReviewGlyph,
+    RequestsOverviewGlyph,
+    ServiceWorkspaceGlyph,
+} from '@/components/illustrations/DashboardIllustrations';
+import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
+import {
+    buildDashboardSetupResumeHref,
+    resolveNextSetupAction,
+} from '@/features/setup-guide/flow';
+import { useAutoOpenIntent } from '@/features/setup-guide/hooks/useAutoOpenIntent';
+import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
 import { useAdminNamespacesController } from '../hooks/useAdminNamespacesController';
 import { ENV_MAP, ENV_OPTIONS, type NamespaceRegistry } from '../types';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 
 export function AdminNamespacesContent() {
     const { t } = useTranslation(['admin', 'common']);
-    const namespaces = useAdminNamespacesController({ t });
     const router = useRouter();
+    const setupGuide = useSetupGuide();
+    const namespaces = useAdminNamespacesController({
+        t,
+        onCreateSuccess: (_namespace, context) => {
+            if (!context.isFirstNamespace) {
+                return false;
+            }
+            const nextAction = resolveNextSetupAction(setupGuide, 'namespace');
+            if (!nextAction) {
+                return false;
+            }
+            router.push(buildDashboardSetupResumeHref(nextAction));
+            return true;
+        },
+    });
+
+    useAutoOpenIntent('create-namespace', () => {
+        namespaces.openCreateModal();
+    });
+    const namespaceItems = namespaces.data?.items ?? [];
+    const namespaceSummary = {
+        total: namespaceItems.length,
+        prod: namespaceItems.filter((item) => item.environment === 'prod').length,
+        enabled: namespaceItems.filter((item) => item.enabled).length,
+        filtered: namespaceItems.length,
+    };
 
     const columns: ColumnsType<NamespaceRegistry> = [
         {
-            title: t('common:table.name'),
+            title: t('namespaces.table.namespace', 'Namespace'),
             dataIndex: 'name',
             key: 'name',
             render: (name: string, record: NamespaceRegistry) => (
@@ -85,52 +123,57 @@ export function AdminNamespacesContent() {
             title: t('common:table.created_by'),
             dataIndex: 'created_by',
             key: 'created_by',
-            width: 140,
-            render: (actor: string) => <Text type="secondary">{actor || '—'}</Text>,
+            width: 180,
+            render: (actor: string) => (
+                <Space direction="vertical" size={0}>
+                    <Text strong>{actor || '—'}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        {t('namespaces.created_by_hint', 'Registry author')}
+                    </Text>
+                </Space>
+            ),
         },
         {
             title: t('common:table.created_at'),
             dataIndex: 'created_at',
             key: 'created_at',
             width: 160,
-            render: (date: string) => (
-                <Text type="secondary">{date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '—'}</Text>
-            ),
+            render: (date: string) => <LocalDateTimeText value={date} />,
         },
         {
             title: t('common:table.actions'),
             key: 'actions',
-            width: 160,
+            width: 220,
             render: (_: unknown, record: NamespaceRegistry) => (
-                <Space size="small">
-                    <Tooltip title={t('common:button.detail')}>
-                        <Button
-                            type="text"
-                            size="small"
-                            icon={<EyeOutlined />}
-                            data-testid={`namespace-action-detail-${record.id}`}
-                            onClick={() => router.push(`/admin/namespaces/${record.id}`)}
-                        />
-                    </Tooltip>
-                    <Tooltip title={t('common:button.edit')}>
-                        <Button
-                            type="text"
-                            size="small"
-                            icon={<EditOutlined />}
-                            data-testid={`namespace-action-edit-${record.id}`}
-                            onClick={() => namespaces.openEditModal(record)}
-                        />
-                    </Tooltip>
-                    <Tooltip title={t('common:button.delete')}>
-                        <Button
-                            type="text"
-                            size="small"
-                            danger
-                            icon={<DeleteOutlined />}
-                            data-testid={`namespace-action-delete-${record.id}`}
-                            onClick={() => namespaces.openDeleteModal(record)}
-                        />
-                    </Tooltip>
+                <Space size={4} wrap>
+                    <Button
+                        type="link"
+                        size="small"
+                        icon={<EyeOutlined />}
+                        data-testid={`namespace-action-detail-${record.id}`}
+                        onClick={() => router.push(`/admin/namespaces/${record.id}`)}
+                    >
+                        {t('common:button.detail')}
+                    </Button>
+                    <Button
+                        type="link"
+                        size="small"
+                        icon={<EditOutlined />}
+                        data-testid={`namespace-action-edit-${record.id}`}
+                        onClick={() => namespaces.openEditModal(record)}
+                    >
+                        {t('common:button.edit')}
+                    </Button>
+                    <Button
+                        type="link"
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        data-testid={`namespace-action-delete-${record.id}`}
+                        onClick={() => namespaces.openDeleteModal(record)}
+                    >
+                        {t('common:button.delete')}
+                    </Button>
                 </Space>
             ),
         },
@@ -147,17 +190,11 @@ export function AdminNamespacesContent() {
     return (
         <div data-testid="admin-namespaces-page">
             {namespaces.messageContextHolder}
-            <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 24,
-            }}>
-                <div>
-                    <Title level={4} style={{ margin: 0 }}>{t('namespaces.title')}</Title>
-                    <Text type="secondary">{t('namespaces.subtitle')}</Text>
-                </div>
-                <Space>
+            <PageHeader
+                title={t('namespaces.title')}
+                subtitle={t('namespaces.subtitle')}
+                actions={(
+                    <Space>
                     <Select
                         placeholder={t('namespaces.filter_env')}
                         allowClear
@@ -178,13 +215,49 @@ export function AdminNamespacesContent() {
                     >
                         {t('namespaces.add')}
                     </Button>
-                </Space>
+                    </Space>
+                )}
+            />
+
+            <div className="summary-card-grid">
+                <SummaryMetricCard
+                    title={t('namespaces.summary.total_title', 'Registered namespaces')}
+                    value={namespaceSummary.total}
+                    description={t('namespaces.summary.total_description', 'Logical namespaces currently available for placement and governance rules.')}
+                    visual={<ServiceWorkspaceGlyph className="summary-metric-card__art" />}
+                    accentColor="#1D5BFF"
+                    surfaceColor="#E6F4FF"
+                />
+                <SummaryMetricCard
+                    title={t('namespaces.summary.prod_title', 'Production')}
+                    value={namespaceSummary.prod}
+                    description={t('namespaces.summary.prod_description', 'Namespaces tagged for production requests and approvals.')}
+                    visual={<QueueReviewGlyph className="summary-metric-card__art" />}
+                    accentColor="#D66A1F"
+                    surfaceColor="#FFF4E5"
+                />
+                <SummaryMetricCard
+                    title={t('namespaces.summary.enabled_title', 'Enabled')}
+                    value={namespaceSummary.enabled}
+                    description={t('namespaces.summary.enabled_description', 'Namespaces currently available for new request placement.')}
+                    visual={<RequestsOverviewGlyph className="summary-metric-card__art" />}
+                    accentColor="#0F8F57"
+                    surfaceColor="#E8FFF2"
+                />
+                <SummaryMetricCard
+                    title={t('namespaces.summary.filtered_title', 'Visible now')}
+                    value={namespaceSummary.filtered}
+                    description={t('namespaces.summary.filtered_description', 'Entries matching the current environment filter.')}
+                    visual={<NotificationInboxGlyph className="summary-metric-card__art" />}
+                    accentColor="#6D4DE3"
+                    surfaceColor="#F5EDFF"
+                />
             </div>
 
-            <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+            <PageSurface flush={true}>
                 <Table<NamespaceRegistry>
                     columns={columns}
-                    dataSource={namespaces.data?.items ?? []}
+                    dataSource={namespaceItems}
                     rowKey="id"
                     loading={namespaces.isLoading}
                     pagination={{
@@ -195,8 +268,18 @@ export function AdminNamespacesContent() {
                         showTotal: (total) => t('common:table.total', { total }),
                     }}
                     size="middle"
+                    locale={{
+                        emptyText: (
+                            <ActionEmptyState
+                                compact={true}
+                                title={t('namespaces.empty', 'No namespaces registered')}
+                                description={t('namespaces.empty_description', 'Register the first logical namespace before users submit VM requests into a governed resource domain.')}
+                                visual={<ServiceWorkspaceGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                            />
+                        ),
+                    }}
                 />
-            </Card>
+            </PageSurface>
 
             <Modal
                 title={t('namespaces.add')}
@@ -204,10 +287,10 @@ export function AdminNamespacesContent() {
                 onOk={handleCreate}
                 onCancel={namespaces.closeCreateModal}
                 confirmLoading={namespaces.createPending}
-                forceRender
+                forceRender={true}
                 data-testid="namespace-create-modal"
             >
-                    <Form form={namespaces.createForm} layout="vertical" name="create-namespace">
+                    <Form form={namespaces.createForm} layout="vertical" name="create-namespace" preserve={false}>
                         <Form.Item
                             name="name"
                             label={t('common:table.name')}
@@ -246,10 +329,10 @@ export function AdminNamespacesContent() {
                 onOk={handleUpdate}
                 onCancel={namespaces.closeEditModal}
                 confirmLoading={namespaces.updatePending}
-                forceRender
+                forceRender={true}
                 data-testid="namespace-edit-modal"
             >
-                    <Form form={namespaces.editForm} layout="vertical" name="edit-namespace">
+                    <Form form={namespaces.editForm} layout="vertical" name="edit-namespace" preserve={false}>
                         <Paragraph type="secondary" style={{ marginBottom: 16 }}>
                             {t('namespaces.edit_note')}
                         </Paragraph>

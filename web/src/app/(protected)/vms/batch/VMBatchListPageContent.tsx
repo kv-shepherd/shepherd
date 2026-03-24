@@ -11,7 +11,7 @@
  *   vm-batch-page
  *   batch-action-detail-{id}
  */
-import { Button, Card, Space, Table, Tag, Typography } from 'antd';
+import { Button, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
     EyeOutlined,
@@ -21,15 +21,18 @@ import {
     ThunderboltOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import type { TFunction } from 'i18next';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
 import { useApiGet } from '@/lib/api/useApiGet';
 import { useApiMutation } from '@/lib/api/useApiMutation';
 import { api } from '@/lib/api/client';
+import { translateApiError } from '@/lib/api/errorMessage';
 import { useMessage } from '@/lib/hooks/useMessage';
+import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface BatchJobSummary {
     id: string;
@@ -56,6 +59,25 @@ const STATUS_COLORS: Record<string, string> = {
     CANCELLED: 'default',
 };
 
+function batchStatusLabel(status: string, t: TFunction) {
+    const labelKey = `batch.status_value.${status}`;
+    const label = t(labelKey);
+    return label === labelKey ? status : label;
+}
+
+function batchOperationLabel(operation: string, t: TFunction) {
+    const labelKey = `batch.operation.${operation}`;
+    const label = t(labelKey);
+    return label === labelKey ? operation : label;
+}
+
+function formatRecordID(id: string): string {
+    if (id.length <= 14) {
+        return id;
+    }
+    return `${id.slice(0, 8)}…${id.slice(-4)}`;
+}
+
 export default function VMBatchListPage() {
     const { t } = useTranslation(['vm', 'common']);
     const router = useRouter();
@@ -70,11 +92,11 @@ export default function VMBatchListPage() {
         (batchId) => api.POST('/vms/batch/{batch_id}/retry', { params: { path: { batch_id: batchId } } }),
         {
             onSuccess: () => {
-                void messageApi.success(t('batch.retry_submitted', { defaultValue: 'Retry submitted.' }));
+                void messageApi.success(t('batch.retry_submitted'));
                 void refetch();
             },
             onError: (err) => {
-                void messageApi.error(err.message || t('common:message.error'));
+                void messageApi.error(translateApiError(t, err));
             },
         }
     );
@@ -83,11 +105,11 @@ export default function VMBatchListPage() {
         (batchId) => api.POST('/vms/batch/{batch_id}/cancel', { params: { path: { batch_id: batchId } } }),
         {
             onSuccess: () => {
-                void messageApi.success(t('batch.cancel_submitted', { defaultValue: 'Batch cancelled.' }));
+                void messageApi.success(t('batch.cancel_submitted'));
                 void refetch();
             },
             onError: (err) => {
-                void messageApi.error(err.message || t('common:message.error'));
+                void messageApi.error(translateApiError(t, err));
             },
         }
     );
@@ -98,18 +120,23 @@ export default function VMBatchListPage() {
 
     const columns: ColumnsType<BatchJobSummary> = [
         {
-            title: t('batch.id', { defaultValue: 'Batch ID' }),
-            dataIndex: 'id',
-            key: 'id',
-            width: 150,
-            render: (id: string) => <Text code style={{ fontSize: 12 }}>{id.slice(0, 12)}</Text>,
-        },
-        {
-            title: t('batch.operation'),
-            dataIndex: 'operation',
-            key: 'operation',
-            width: 120,
-            render: (op: string) => <Tag color="purple">{op}</Tag>,
+            title: t('batch.summary'),
+            key: 'summary',
+            width: 280,
+            render: (_, record) => (
+                <Space direction="vertical" size={0}>
+                    <Space size={8} wrap>
+                        <Text strong>{batchOperationLabel(record.operation, t)}</Text>
+                        <Tag color="purple">{t('batch.request_count', { count: record.child_count })}</Tag>
+                    </Space>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        {t('batch.success_count')}: {record.success_count} · {t('batch.failed_count')}: {record.failed_count} · {t('batch.pending_count')}: {record.pending_count}
+                    </Text>
+                    <Text copyable={{ text: record.id }} type="secondary" style={{ fontSize: 12 }}>
+                        {t('batch.id')}: {formatRecordID(record.id)}
+                    </Text>
+                </Space>
+            ),
         },
         {
             title: t('batch.status'),
@@ -117,7 +144,7 @@ export default function VMBatchListPage() {
             key: 'status',
             width: 140,
             render: (status: string) => (
-                <Tag color={STATUS_COLORS[status] ?? 'default'}>{status}</Tag>
+                <Tag color={STATUS_COLORS[status] ?? 'default'}>{batchStatusLabel(status, t)}</Tag>
             ),
         },
         {
@@ -158,7 +185,7 @@ export default function VMBatchListPage() {
                         type="text"
                         size="small"
                         icon={<RedoOutlined />}
-                        aria-label={t('batch.retry_failed', { defaultValue: 'Retry failed children' })}
+                        aria-label={t('batch.retry_failed')}
                         data-testid={`batch-action-retry-${record.id}`}
                         disabled={!canRetry(record.status)}
                         loading={retryMutation.isPending}
@@ -169,7 +196,7 @@ export default function VMBatchListPage() {
                         size="small"
                         danger
                         icon={<StopOutlined />}
-                        aria-label={t('batch.cancel_pending', { defaultValue: 'Cancel pending children' })}
+                        aria-label={t('batch.cancel_pending')}
                         data-testid={`batch-action-cancel-${record.id}`}
                         disabled={!canCancel(record.status)}
                         loading={cancelMutation.isPending}
@@ -190,31 +217,22 @@ export default function VMBatchListPage() {
     return (
         <div data-testid="vm-batch-page">
             {messageContextHolder}
-            <div
-                style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: 24,
-                }}
-            >
-                <div>
-                    <Title level={4} style={{ margin: 0 }}>
-                        <ThunderboltOutlined style={{ marginRight: 8, color: '#fa8c16' }} />
-                        {t('batch.list_title', { defaultValue: 'Batch Operations' })}
-                    </Title>
-                    <Text type="secondary">
-                        {t('batch.list_subtitle', { defaultValue: 'History of batch VM power operations.' })}
-                    </Text>
-                </div>
-                <Space>
+            <PageHeader
+                title={(
+                    <Space size="small">
+                        <ThunderboltOutlined style={{ color: '#fa8c16' }} />
+                        <span>{t('batch.list_title')}</span>
+                    </Space>
+                )}
+                subtitle={t('batch.list_subtitle')}
+                actions={(
                     <Button icon={<ReloadOutlined />} onClick={() => refetch()}>
                         {t('common:button.refresh')}
                     </Button>
-                </Space>
-            </div>
+                )}
+            />
 
-            <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+            <PageSurface flush={true}>
                 <Table<BatchJobSummary>
                     columns={columns}
                     dataSource={data?.items ?? []}
@@ -223,7 +241,7 @@ export default function VMBatchListPage() {
                     pagination={false}
                     size="middle"
                 />
-            </Card>
+            </PageSurface>
         </div>
     );
 }

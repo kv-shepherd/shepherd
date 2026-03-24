@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { Alert, Button, Card, Form, Input, Space, Typography } from 'antd';
+import { Alert, Button, Form, Input, Space, Tag, Typography } from 'antd';
 import { LockOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -9,6 +9,7 @@ import {
     type ChangePasswordFormValues,
     useChangePasswordController,
 } from '../hooks/useChangePasswordController';
+import { PageSurface } from '@/components/layouts/PageSection';
 
 const { Title, Text } = Typography;
 
@@ -17,35 +18,22 @@ export function ChangePasswordContent() {
     const controller = useChangePasswordController();
 
     return (
-        <div
-            style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '100vh',
-                background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)',
-                padding: 24,
-            }}
-        >
-            <Card
-                style={{
-                    width: 420,
-                    borderRadius: 16,
-                    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-                    border: 'none',
-                }}
-            >
+        <div className="auth-shell" data-testid="change-password-page">
+            <PageSurface className="auth-shell__card">
                 <Space
                     direction="vertical"
                     size="large"
-                    style={{ width: '100%', textAlign: 'center', marginBottom: 32 }}
+                    className="auth-shell__hero"
                 >
+                    <Tag color="blue" className="auth-shell__eyebrow">
+                        {t('auth.security')}
+                    </Tag>
                     <Image
                         src="/logo-wide.svg"
                         alt="Shepherd"
                         width={180}
                         height={52}
-                        style={{ width: 'auto', height: 52, maxWidth: '100%' }}
+                        className="auth-shell__logo"
                     />
                     <div>
                         <Title level={3} style={{ marginBottom: 4 }}>
@@ -129,17 +117,14 @@ export function ChangePasswordContent() {
                             htmlType="submit"
                             loading={controller.loading}
                             block
-                            style={{
-                                height: 44,
-                                borderRadius: 8,
-                                fontWeight: 600,
-                            }}
+                            className="auth-shell__submit"
+                            data-testid="change-password-submit"
                         >
                             {t('auth.change_password')}
                         </Button>
                     </Form.Item>
                 </Form>
-            </Card>
+            </PageSurface>
         </div>
     );
 }

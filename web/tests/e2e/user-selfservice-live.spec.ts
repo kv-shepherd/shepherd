@@ -13,8 +13,8 @@
  *   listInstanceSizes       – GET /instance-sizes                    → InstanceSizeList
  *   markNotificationRead    – PATCH /notifications/{id}/read         → 204
  *   markAllNotificationsRead– POST /notifications/mark-all-read      → 204
- *   cancelTicket            – POST /approvals/{id}/cancel            → 204
- *   submitApprovalBatch     – POST /approvals/batch                  → VMBatchSubmitResponse
+ *   cancelTicket            – POST /tickets/{id}/cancel              → 204
+ *   submitApprovalBatch     – POST /vms/batch                        → VMBatchSubmitResponse
  *   getSystem               – GET /systems/{id}                      → System
  *   getService              – GET /systems/{id}/services/{id}        → Service
  *   addSystemMember         – POST /systems/{id}/members             → SystemMember
@@ -111,7 +111,7 @@ async function findTicketCancelButtonAcrossPages(
         }
 
         const listRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/approvals') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/tickets') && r.request().method() === 'GET'
         );
         await nextPageBtn.click();
         await listRespPromise;
@@ -261,9 +261,9 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         expect(markAllResp.status(), `POST /notifications/mark-all-read returned ${markAllResp.status()}`).toBe(204);
     });
 
-    // ── cancelTicket: POST /approvals/{id}/cancel → 204 ──────────────────────
+    // ── cancelTicket: POST /tickets/{id}/cancel → 204 ────────────────────────
 
-    test('cancelTicket – POST /approvals/{id}/cancel returns 204', async ({ page }) => {
+    test('cancelTicket – POST /tickets/{id}/cancel returns 204', async ({ page }) => {
         // operationId: cancelTicket
         // First submit a VM request to get a pending ticket
         const uniqueSuffix = `${Date.now()}`;
@@ -298,7 +298,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         const submitResp = await submitRespPromise;
         let ticketID = '';
         if (submitResp.status() === 202) {
-            const submitBody = await validateApiResponse('ApprovalTicketResponse', submitResp) as { ticket_id?: string; id?: string };
+            const submitBody = await validateApiResponse('TicketResponse', submitResp) as { ticket_id?: string; id?: string };
             ticketID = submitBody.ticket_id ?? submitBody.id ?? '';
         } else if (submitResp.status() === 400) {
             const errBody = await validateApiResponse('Error', submitResp) as {
@@ -320,23 +320,23 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         }
         expect(ticketID, 'POST /vms/request response missing ticket_id/id field').toBeTruthy();
 
-        // ── POST /approvals/{id}/cancel → 204 ────────────────────────────────────
+        // ── POST /tickets/{id}/cancel → 204 ──────────────────────────────────────
         const listRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/approvals') && r.request().method() === 'GET'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/tickets') && r.request().method() === 'GET'
         );
-        await page.goto('/approvals');
+        await page.goto('/tickets');
         await listRespPromise;
-        await expect(page.getByRole('heading', { name: /approval/i })).toBeVisible();
+        await expect(page.getByRole('heading', { name: /request/i })).toBeVisible();
 
         const cancelActionBtn = await findTicketCancelButtonAcrossPages(page, ticketID);
         if (!cancelActionBtn) {
-            throw new Error(`Ticket ${ticketID} should be visible and cancellable in approval list`);
+            throw new Error(`Ticket ${ticketID} should be visible and cancellable in the ticket list`);
         }
         await expect(cancelActionBtn).toBeVisible({ timeout: 20000 });
         await expect(cancelActionBtn).toBeEnabled();
 
         const cancelRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), `/api/v1/approvals/${ticketID}/cancel`) && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), `/api/v1/tickets/${ticketID}/cancel`) && r.request().method() === 'POST'
         );
         await cancelActionBtn.click();
         const confirmBtn = page.locator('.ant-popover:visible, .ant-modal-content:visible')
@@ -344,18 +344,18 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
         if (await confirmBtn.count() > 0) await confirmBtn.click();
 
         const cancelResp = await cancelRespPromise;
-        expect(cancelResp.status(), `POST /approvals/${ticketID}/cancel returned ${cancelResp.status()}`).toBe(204);
+        expect(cancelResp.status(), `POST /tickets/${ticketID}/cancel returned ${cancelResp.status()}`).toBe(204);
     });
 
-    // ── submitApprovalBatch: POST /approvals/batch → VMBatchSubmitResponse ────
+    // ── submitApprovalBatch: POST /vms/batch → VMBatchSubmitResponse ──────────
 
-    test('submitApprovalBatch – POST /approvals/batch conforms to VMBatchSubmitResponse schema', async ({ page }) => {
+    test('submitApprovalBatch – POST /vms/batch conforms to VMBatchSubmitResponse schema', async ({ page }) => {
         // operationId: submitApprovalBatch
         await page.goto('/vms');
         await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
 
         const batchRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/approvals/batch') && r.request().method() === 'POST'
+            (r) => urlPathEndsWith(r.url(), '/api/v1/vms/batch') && r.request().method() === 'POST'
         );
 
         // Open Wizard
@@ -389,7 +389,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
         // ── CONTRACT CHECK: strict success path (must be accepted) ─────────────────
         const batchResp = await batchRespPromise;
-        expect(batchResp.status(), `POST /approvals/batch returned ${batchResp.status()}`).toBe(202);
+        expect(batchResp.status(), `POST /vms/batch returned ${batchResp.status()}`).toBe(202);
         await validateApiResponse('VMBatchSubmitResponse', batchResp);
     });
 

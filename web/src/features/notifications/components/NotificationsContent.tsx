@@ -3,8 +3,6 @@
 import {
     Badge,
     Button,
-    Card,
-    Empty,
     Segmented,
     Space,
     Table,
@@ -12,40 +10,44 @@ import {
     Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import {
-    CheckCircleOutlined,
-    ClockCircleOutlined,
-    CloseCircleOutlined,
-    DesktopOutlined,
-    ReloadOutlined,
-} from '@ant-design/icons';
+import { ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
 
+import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
+import { SummaryMetricCard } from '@/components/feedback/SummaryMetricCard';
+import {
+    DecisionRejectedGlyph,
+    NotificationInboxGlyph,
+    QueueReviewGlyph,
+    RequestsOverviewGlyph,
+    VirtualMachinesOverviewGlyph,
+} from '@/components/illustrations/DashboardIllustrations';
+import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { useNotificationsController } from '../hooks/useNotificationsController';
 import type { Notification } from '../types';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const typeConfig: Record<string, { color: string; icon: React.ReactNode; labelKey: string }> = {
     APPROVAL_PENDING: {
         color: 'orange',
-        icon: <ClockCircleOutlined />,
+        icon: <QueueReviewGlyph style={{ width: 18, height: 18, display: 'block' }} />,
         labelKey: 'notification.type.approval_pending',
     },
     APPROVAL_COMPLETED: {
         color: 'green',
-        icon: <CheckCircleOutlined />,
+        icon: <RequestsOverviewGlyph style={{ width: 18, height: 18, display: 'block' }} />,
         labelKey: 'notification.type.approval_completed',
     },
     APPROVAL_REJECTED: {
         color: 'red',
-        icon: <CloseCircleOutlined />,
+        icon: <DecisionRejectedGlyph style={{ width: 18, height: 18, display: 'block' }} />,
         labelKey: 'notification.type.approval_rejected',
     },
     VM_STATUS_CHANGE: {
         color: 'blue',
-        icon: <DesktopOutlined />,
+        icon: <VirtualMachinesOverviewGlyph style={{ width: 18, height: 18, display: 'block' }} />,
         labelKey: 'notification.type.vm_status_change',
     },
 };
@@ -118,16 +120,18 @@ export function NotificationsContent() {
     ];
 
     const listItems = notifications.data?.items ?? [];
+    const pendingVisible = listItems.filter((item) => item.type === 'APPROVAL_PENDING').length;
+    const resolvedVisible = listItems.filter((item) => item.type === 'APPROVAL_COMPLETED' || item.type === 'APPROVAL_REJECTED').length;
+    const vmEventsVisible = listItems.filter((item) => item.type === 'VM_STATUS_CHANGE').length;
 
     return (
         <div>
             {notifications.messageContextHolder}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                <div>
-                    <Title level={4} style={{ margin: 0 }}>{t('notification.title')}</Title>
-                    <Text type="secondary">{t('notification.subtitle')}</Text>
-                </div>
-                <Space>
+            <PageHeader
+                title={t('notification.title')}
+                subtitle={t('notification.subtitle')}
+                actions={(
+                    <Space>
                     <Badge count={notifications.unreadCount} showZero color="#1677ff" />
                     <Segmented
                         value={notifications.unreadOnly ? 'unread' : 'all'}
@@ -154,13 +158,52 @@ export function NotificationsContent() {
                     >
                         {t('notification.markAllRead')}
                     </Button>
-                </Space>
+                    </Space>
+                )}
+            />
+            <div className="summary-card-grid">
+                <SummaryMetricCard
+                    title={t('notification.summary.unread_title', 'Unread inbox')}
+                    value={notifications.unreadCount}
+                    description={t('notification.summary.unread_description', 'Unread items across your notification inbox.')}
+                    visual={<NotificationInboxGlyph className="summary-metric-card__art" />}
+                    accentColor="#1D5BFF"
+                    surfaceColor="#E6F4FF"
+                />
+                <SummaryMetricCard
+                    title={t('notification.summary.pending_title', 'Pending approvals')}
+                    value={pendingVisible}
+                    description={t('notification.summary.pending_description', 'Approval reminders visible in the current list.')}
+                    visual={<QueueReviewGlyph className="summary-metric-card__art" />}
+                    accentColor="#D97706"
+                    surfaceColor="#FFF4E5"
+                />
+                <SummaryMetricCard
+                    title={t('notification.summary.resolved_title', 'Resolved items')}
+                    value={resolvedVisible}
+                    description={t('notification.summary.resolved_description', 'Approved and rejected results visible right now.')}
+                    visual={<RequestsOverviewGlyph className="summary-metric-card__art" />}
+                    accentColor="#0F8F57"
+                    surfaceColor="#E8FFF2"
+                />
+                <SummaryMetricCard
+                    title={t('notification.summary.vm_title', 'VM events')}
+                    value={vmEventsVisible}
+                    description={t('notification.summary.vm_description', 'Lifecycle updates visible in the current page.')}
+                    visual={<VirtualMachinesOverviewGlyph className="summary-metric-card__art" />}
+                    accentColor="#6D4DE3"
+                    surfaceColor="#F5EDFF"
+                />
             </div>
 
-            <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+            <PageSurface flush={true}>
                 {listItems.length === 0 && !notifications.isLoading ? (
                     <div style={{ padding: 48 }}>
-                        <Empty description={t('notification.empty')} />
+                        <ActionEmptyState
+                            title={t('notification.empty')}
+                            description={t('notification.empty_description', 'Approval decisions and VM lifecycle changes will appear here.')}
+                            visual={<NotificationInboxGlyph className="action-empty-state__art" />}
+                        />
                     </div>
                 ) : (
                     <Table<Notification>
@@ -180,7 +223,7 @@ export function NotificationsContent() {
                         }}
                     />
                 )}
-            </Card>
+            </PageSurface>
         </div>
     );
 }

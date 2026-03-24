@@ -6,6 +6,7 @@ import { useState } from 'react';
 
 import { useApiAction, useApiGet } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
+import { translateApiError } from '@/lib/api/errorMessage';
 
 import type { NotificationList, UnreadCount } from '../types';
 
@@ -44,7 +45,7 @@ export function useNotificationsController({ t }: UseNotificationsControllerArgs
         }),
         {
             invalidateKeys: [['notifications', 'page'], ['notifications', 'unread-count'], ['notifications', 'list']],
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -53,7 +54,7 @@ export function useNotificationsController({ t }: UseNotificationsControllerArgs
         {
             invalidateKeys: [['notifications', 'page'], ['notifications', 'unread-count'], ['notifications', 'list']],
             onSuccess: () => messageApi.success(t('common:message.success')),
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 

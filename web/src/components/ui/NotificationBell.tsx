@@ -130,8 +130,8 @@ export default function NotificationBell() {
             }
 
             // Navigate to resource.
-            if (notification.resource_type === 'approval_ticket' && notification.resource_id) {
-                router.push('/admin/approvals');
+            if (notification.resource_type === 'ticket' && notification.resource_id) {
+                router.push('/admin/approval-tasks');
             } else if (notification.resource_type === 'vm' && notification.resource_id) {
                 router.push('/vms');
             }

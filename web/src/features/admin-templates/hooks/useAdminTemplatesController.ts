@@ -5,12 +5,15 @@ import type { TFunction } from 'i18next';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 
 import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
+import { SETUP_GUIDE_INVALIDATION_KEYS } from '@/features/setup-guide/queryKeys';
 import { api } from '@/lib/api/client';
+import { translateApiError } from '@/lib/api/errorMessage';
 
 import type { Template, TemplateCreateRequest, TemplateList, TemplateUpdateRequest } from '../types';
 
 interface UseAdminTemplatesControllerArgs {
     t: TFunction;
+    onCreateSuccess?: (template: Template, context: { isFirstTemplate: boolean }) => boolean | void;
 }
 
 const CREATE_TEMPLATE_DEFAULTS: Pick<TemplateCreateRequest, 'catalog_scope' | 'enabled' | 'source_type'> = {
@@ -54,7 +57,10 @@ function buildEditTemplateFormValues(template: Template): TemplateUpdateRequest 
  */
 
 
-export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerArgs) {
+export function useAdminTemplatesController({
+    t,
+    onCreateSuccess,
+}: UseAdminTemplatesControllerArgs) {
     const [messageApi, messageContextHolder] = message.useMessage();
     const [createOpen, setCreateOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
@@ -81,17 +87,28 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
             params: { query: { page, per_page: 20 } },
         })
     );
+    const existingTemplatesTotal =
+        templatesQuery.data?.pagination?.total ??
+        templatesQuery.data?.items?.length ??
+        0;
+    const shouldContinueOnboarding = existingTemplatesTotal === 0;
 
     const createMutation = useApiMutation<TemplateCreateRequest, Template>(
         (body) => api.POST('/admin/templates', { body }),
         {
-            invalidateKeys: [['admin-templates']],
-            onSuccess: () => {
-                messageApi.success(t('common:message.success'));
+            invalidateKeys: [['admin-templates'], ...SETUP_GUIDE_INVALIDATION_KEYS],
+            onSuccess: (template) => {
                 setCreateOpen(false);
                 createForm.resetFields();
+                const handled = onCreateSuccess?.(template, {
+                    isFirstTemplate: shouldContinueOnboarding,
+                }) ?? false;
+                if (handled) {
+                    return;
+                }
+                messageApi.success(t('common:message.success'));
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
@@ -101,27 +118,27 @@ export function useAdminTemplatesController({ t }: UseAdminTemplatesControllerAr
             body,
         }),
         {
-            invalidateKeys: [['admin-templates']],
+            invalidateKeys: [['admin-templates'], ...SETUP_GUIDE_INVALIDATION_KEYS],
             onSuccess: () => {
                 messageApi.success(t('common:message.success'));
                 setEditOpen(false);
                 setEditingTemplate(null);
                 editForm.resetFields();
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 
     const deleteMutation = useApiAction<string>(
         (id) => api.DELETE('/admin/templates/{template_id}', { params: { path: { template_id: id } } }),
         {
-            invalidateKeys: [['admin-templates']],
+            invalidateKeys: [['admin-templates'], ...SETUP_GUIDE_INVALIDATION_KEYS],
             onSuccess: () => {
                 messageApi.success(t('common:message.success'));
                 setDeleteOpen(false);
                 setDeletingTemplate(null);
             },
-            onError: (err) => messageApi.error(err.message || t('common:message.error')),
+            onError: (err) => messageApi.error(translateApiError(t, err)),
         }
     );
 

@@ -1,12 +1,10 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
     Alert,
     Button,
-    Card,
     Divider,
-    Empty,
     Form,
     Input,
     Modal,
@@ -30,7 +28,23 @@ import {
     SearchOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useRouter } from 'next/navigation';
 
+import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
+import { SummaryMetricCard } from '@/components/feedback/SummaryMetricCard';
+import {
+    QueueReviewGlyph,
+    RequestsOverviewGlyph,
+    ServiceWorkspaceGlyph,
+    TemplateCatalogGlyph,
+} from '@/components/illustrations/DashboardIllustrations';
+import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import {
+    buildDashboardSetupResumeHref,
+    resolveNextSetupAction,
+} from '@/features/setup-guide/flow';
+import { useAutoOpenIntent } from '@/features/setup-guide/hooks/useAutoOpenIntent';
+import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
 import { useAdminTemplatesController } from '../hooks/useAdminTemplatesController';
 import {
     buildTemplatePresetValues,
@@ -46,7 +60,99 @@ import {
 import { OS_COLOR_MAP, type Template } from '../types';
 import { getTemplateRequestFlowStatus } from '../requestFlow';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
+
+function getTemplateSourceType(template: Pick<Template, 'source_type' | 'image_url' | 'pvc_name'>): string {
+    if (template.source_type) {
+        return template.source_type;
+    }
+    if (template.pvc_name) {
+        return 'cdi_pvc_clone';
+    }
+    if (template.image_url) {
+        return 'containerdisk';
+    }
+    return '';
+}
+
+function getTemplateSourceLabel(
+    template: Pick<Template, 'source_type' | 'image_url' | 'pvc_name'>,
+    t: ReturnType<typeof useTranslation>['t'],
+): string {
+    const sourceType = getTemplateSourceType(template);
+    switch (sourceType) {
+        case 'containerdisk':
+            return t('templates.source_containerdisk');
+        case 'cdi_image_import':
+            return t('templates.source_cdi_import');
+        case 'cdi_pvc_clone':
+            return t('templates.source_cdi_clone');
+        default:
+            return t('templates.source_unconfigured', 'Source not configured');
+    }
+}
+
+function getTemplateRequestFlowMeta(
+    template: Pick<Template, 'enabled' | 'catalog_scope' | 'source_type' | 'image_url' | 'pvc_name'>,
+    t: ReturnType<typeof useTranslation>['t'],
+): { color: string; label: string; description: string } {
+    const status = getTemplateRequestFlowStatus(template);
+    switch (status) {
+        case 'self_service':
+            return {
+                color: 'green',
+                label: t('templates.request_flow_self_service'),
+                description: t(
+                    'templates.request_flow_reason_self_service',
+                    'This template is already visible in the VM request wizard.',
+                ),
+            };
+        case 'admin_only_source':
+            return {
+                color: 'orange',
+                label: t('templates.request_flow_admin_only'),
+                description: t('templates.request_flow_reason_admin_only'),
+            };
+        case 'hidden_unclassified':
+            return {
+                color: 'gold',
+                label: t('templates.request_flow_hidden'),
+                description: t('templates.request_flow_reason_hidden'),
+            };
+        case 'disabled':
+            return {
+                color: 'default',
+                label: t('templates.request_flow_disabled'),
+                description: t('templates.request_flow_reason_disabled'),
+            };
+        default:
+            return {
+                color: 'red',
+                label: t('templates.request_flow_unavailable'),
+                description: t('templates.request_flow_reason_unsupported'),
+            };
+    }
+}
+
+function getTemplateSourceSummary(record: Template, t: ReturnType<typeof useTranslation>['t']): string {
+    if (record.source_type === 'cdi_pvc_clone' || record.pvc_name) {
+        const namespace = record.pvc_namespace?.trim() || t('common:status.unknown', { defaultValue: 'Unknown' });
+        const pvcName = record.pvc_name?.trim() || t('templates.source_unconfigured', 'Source not configured');
+        return `${namespace} / ${pvcName}`;
+    }
+    if (record.image_url?.trim()) {
+        return record.image_url.trim();
+    }
+    return t('templates.source_unconfigured', 'Source not configured');
+}
+
+function getTemplateOsFamilyLabel(osFamily: string | undefined, t: ReturnType<typeof useTranslation>['t']): string {
+    if (!osFamily) {
+        return t('common:status.unknown', { defaultValue: 'Unknown' });
+    }
+    const normalized = osFamily.toLowerCase();
+    return t(`templates.os_family_${normalized}`, { defaultValue: osFamily });
+}
 
 function SuggestedValueInput({
     value,
@@ -250,8 +356,27 @@ function highlightText(text: string, highlight: string): React.ReactNode {
 
 export function AdminTemplatesContent() {
     const { t } = useTranslation(['admin', 'common', 'error']);
-    const templates = useAdminTemplatesController({ t });
     const searchInputRef = useRef<InputRef>(null);
+    const router = useRouter();
+    const setupGuide = useSetupGuide();
+    const templates = useAdminTemplatesController({
+        t,
+        onCreateSuccess: (_template, context) => {
+            if (!context.isFirstTemplate) {
+                return false;
+            }
+            const nextAction = resolveNextSetupAction(setupGuide, 'template');
+            if (!nextAction) {
+                return false;
+            }
+            router.push(buildDashboardSetupResumeHref(nextAction));
+            return true;
+        },
+    });
+
+    useAutoOpenIntent('create-template', () => {
+        templates.openCreateModal();
+    });
     const catalogScopeOptions = [
         { label: t('templates.scope_unclassified'), value: 'unclassified' },
         { label: t('templates.scope_test'), value: 'test' },
@@ -342,109 +467,87 @@ export function AdminTemplatesContent() {
             ),
         },
         {
-            title: t('templates.os_family'),
-            dataIndex: 'os_family',
-            key: 'os_family',
-            width: 120,
+            title: t('templates.os_profile', 'OS Profile'),
+            key: 'os_profile',
+            width: 160,
             filters: templates.osFamilyFilters,
             onFilter: (value, record) => record.os_family === value,
-            render: (family: string | undefined) => {
-                if (!family) {
-                    return <Text type="secondary">—</Text>;
-                }
-                const color = OS_COLOR_MAP[family.toLowerCase()] ?? 'default';
-                return <Tag color={color}>{family}</Tag>;
-            },
-        },
-        {
-            title: t('templates.os_version'),
-            dataIndex: 'os_version',
-            key: 'os_version',
-            width: 120,
-            render: (version: string | undefined) => version ? <Tag>{version}</Tag> : '—',
-        },
-        {
-            title: t('templates.catalog_scope'),
-            dataIndex: 'catalog_scope',
-            key: 'catalog_scope',
-            width: 120,
-            render: (scope: string | undefined) => {
-                const normalized = (scope ?? 'unclassified').toLowerCase();
-                const color = normalized === 'prod' ? 'red' : normalized === 'all' ? 'blue' : normalized === 'test' ? 'gold' : 'default';
-                return <Tag color={color}>{t(`templates.scope_${normalized}`, { defaultValue: normalized })}</Tag>;
-            },
-        },
-        {
-            title: t('templates.request_flow'),
-            key: 'request_flow',
-            width: 240,
             render: (_: unknown, record: Template) => {
-                const status = getTemplateRequestFlowStatus(record);
-                switch (status) {
-                    case 'self_service':
-                        return <Tag color="green">{t('templates.request_flow_self_service')}</Tag>;
-                    case 'admin_only_source':
-                        return (
-                            <div>
-                                <Tag color="orange">{t('templates.request_flow_admin_only')}</Tag>
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                        {t('templates.request_flow_reason_admin_only')}
-                                    </Text>
-                                </div>
-                            </div>
-                        );
-                    case 'hidden_unclassified':
-                        return (
-                            <div>
-                                <Tag color="gold">{t('templates.request_flow_hidden')}</Tag>
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                        {t('templates.request_flow_reason_hidden')}
-                                    </Text>
-                                </div>
-                            </div>
-                        );
-                    case 'disabled':
-                        return (
-                            <div>
-                                <Tag>{t('templates.request_flow_disabled')}</Tag>
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                        {t('templates.request_flow_reason_disabled')}
-                                    </Text>
-                                </div>
-                            </div>
-                        );
-                    default:
-                        return (
-                            <div>
-                                <Tag color="red">{t('templates.request_flow_unavailable')}</Tag>
-                                <div>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                        {t('templates.request_flow_reason_unsupported')}
-                                    </Text>
-                                </div>
-                            </div>
-                        );
-                }
+                const family = record.os_family;
+                const familyColor = family ? (OS_COLOR_MAP[family.toLowerCase()] ?? 'default') : 'default';
+                return (
+                    <Space direction="vertical" size={4}>
+                        <Space size={[4, 4]} wrap>
+                            <Tag color={familyColor}>
+                                {getTemplateOsFamilyLabel(family, t)}
+                            </Tag>
+                            {record.os_version ? <Tag>{record.os_version}</Tag> : null}
+                        </Space>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            {record.os_version
+                                ? t(
+                                    'templates.os_profile_summary',
+                                    {
+                                        defaultValue: `${getTemplateOsFamilyLabel(family, t)} · ${record.os_version}`,
+                                        family: getTemplateOsFamilyLabel(family, t),
+                                        version: record.os_version,
+                                    },
+                                )
+                                : getTemplateOsFamilyLabel(family, t)}
+                        </Text>
+                    </Space>
+                );
             },
         },
         {
-            title: t('templates.enabled'),
-            dataIndex: 'enabled',
-            key: 'enabled',
-            width: 90,
-            filters: [
-                { text: t('common:status.active'), value: true },
-                { text: t('common:status.disabled'), value: false },
-            ],
-            onFilter: (value, record) => (record.enabled !== false) === value,
-            render: (enabled: boolean | undefined) => (
-                <Tag color={enabled !== false ? 'green' : 'default'}>
-                    {enabled !== false ? t('common:status.active') : t('common:status.disabled')}
-                </Tag>
-            ),
+            title: t('templates.catalog_publication', 'Catalog Publication'),
+            key: 'request_flow',
+            width: 260,
+            render: (_: unknown, record: Template) => {
+                const flow = getTemplateRequestFlowMeta(record, t);
+                const scope = (record.catalog_scope ?? 'unclassified').toLowerCase();
+                const scopeColor = scope === 'prod' ? 'red' : scope === 'all' ? 'blue' : scope === 'test' ? 'gold' : 'default';
+                return (
+                    <Space direction="vertical" size={4}>
+                        <Space size={[4, 4]} wrap>
+                            <Tag color={flow.color}>{flow.label}</Tag>
+                            <Tag color={scopeColor}>{t(`templates.scope_${scope}`, { defaultValue: scope })}</Tag>
+                            <Tag color={record.enabled !== false ? 'green' : 'default'}>
+                                {record.enabled !== false ? t('common:status.active') : t('common:status.disabled')}
+                            </Tag>
+                        </Space>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            {flow.description}
+                        </Text>
+                    </Space>
+                );
+            },
+        },
+        {
+            title: t('templates.image_source'),
+            key: 'image_source',
+            width: 260,
+            render: (_: unknown, record: Template) => {
+                const sourceSummary = getTemplateSourceSummary(record, t);
+                return (
+                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                        <Space size={[4, 4]} wrap>
+                            <Tag>{getTemplateSourceLabel(record, t)}</Tag>
+                        </Space>
+                        <Tooltip title={sourceSummary}>
+                            <Text
+                                style={{
+                                    display: 'inline-block',
+                                    maxWidth: 220,
+                                }}
+                                ellipsis={true}
+                            >
+                                {sourceSummary}
+                            </Text>
+                        </Tooltip>
+                    </Space>
+                );
+            },
         },
         {
             title: t('common:table.description'),
@@ -458,47 +561,54 @@ export function AdminTemplatesContent() {
         {
             title: t('common:table.actions'),
             key: 'actions',
-            width: 120,
+            width: 150,
             render: (_: unknown, record: Template) => (
                 <Space size="small">
-                    <Tooltip title={t('common:button.edit')}>
-                        <Button
-                            type="text"
-                            size="small"
-                            data-testid={`template-action-edit-${record.id}`}
-                            icon={<EditOutlined />}
-                            onClick={() => templates.openEditModal(record)}
-                        />
-                    </Tooltip>
-                    <Tooltip title={t('common:button.delete')}>
-                        <Button
-                            type="text"
-                            size="small"
-                            danger
-                            data-testid={`template-action-delete-${record.id}`}
-                            icon={<DeleteOutlined />}
-                            onClick={() => templates.openDeleteModal(record)}
-                        />
-                    </Tooltip>
+                    <Button
+                        type="link"
+                        size="small"
+                        data-testid={`template-action-edit-${record.id}`}
+                        icon={<EditOutlined />}
+                        onClick={() => templates.openEditModal(record)}
+                    >
+                        {t('common:button.edit')}
+                    </Button>
+                    <Button
+                        type="link"
+                        size="small"
+                        danger
+                        data-testid={`template-action-delete-${record.id}`}
+                        icon={<DeleteOutlined />}
+                        onClick={() => templates.openDeleteModal(record)}
+                    >
+                        {t('common:button.delete')}
+                    </Button>
                 </Space>
             ),
         },
     ];
 
+    const templateSummary = useMemo(() => {
+        const items = templates.filteredItems;
+        const enabledCount = items.filter((item) => item.enabled !== false).length;
+        const selfServiceCount = items.filter((item) => getTemplateRequestFlowStatus(item) === 'self_service').length;
+        const attentionCount = items.filter((item) => getTemplateRequestFlowStatus(item) !== 'self_service').length;
+        return {
+            totalCount: items.length,
+            enabledCount,
+            selfServiceCount,
+            attentionCount,
+        };
+    }, [templates.filteredItems]);
+
     return (
         <div>
             {templates.messageContextHolder}
-            <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 24,
-            }}>
-                <div>
-                    <Title level={4} style={{ margin: 0 }}>{t('templates.title')}</Title>
-                    <Text type="secondary">{t('templates.subtitle')}</Text>
-                </div>
-                <Space>
+            <PageHeader
+                title={t('templates.title')}
+                subtitle={t('templates.subtitle')}
+                actions={(
+                    <Space>
                     <Input
                         placeholder={t('common:button.search')}
                         prefix={<SearchOutlined />}
@@ -518,10 +628,45 @@ export function AdminTemplatesContent() {
                     >
                         {t('common:button.add')}
                     </Button>
-                </Space>
+                    </Space>
+                )}
+            />
+            <div className="summary-card-grid">
+                <SummaryMetricCard
+                    title={t('templates.summary.total_title', 'Catalog templates')}
+                    value={templateSummary.totalCount}
+                    description={t('templates.summary.total_description', 'Templates visible after the current filters.')}
+                    visual={<TemplateCatalogGlyph className="summary-metric-card__art" />}
+                    accentColor="#D66A1F"
+                    surfaceColor="#FFF4E5"
+                />
+                <SummaryMetricCard
+                    title={t('templates.summary.enabled_title', 'Enabled')}
+                    value={templateSummary.enabledCount}
+                    description={t('templates.summary.enabled_description', 'Templates currently published in the catalog.')}
+                    visual={<ServiceWorkspaceGlyph className="summary-metric-card__art" />}
+                    accentColor="#0F8F57"
+                    surfaceColor="#E8FFF2"
+                />
+                <SummaryMetricCard
+                    title={t('templates.summary.self_service_title', 'Request-ready')}
+                    value={templateSummary.selfServiceCount}
+                    description={t('templates.summary.self_service_description', 'Templates already available in the request wizard.')}
+                    visual={<RequestsOverviewGlyph className="summary-metric-card__art" />}
+                    accentColor="#1D5BFF"
+                    surfaceColor="#E6F4FF"
+                />
+                <SummaryMetricCard
+                    title={t('templates.summary.attention_title', 'Needs review')}
+                    value={templateSummary.attentionCount}
+                    description={t('templates.summary.attention_description', 'Templates still hidden, disabled, or admin-only.')}
+                    visual={<QueueReviewGlyph className="summary-metric-card__art" />}
+                    accentColor="#6D4DE3"
+                    surfaceColor="#F5EDFF"
+                />
             </div>
 
-            <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+            <PageSurface flush={true}>
                 <div style={{
                     opacity: templates.isStale ? 0.6 : 1,
                     transition: templates.isStale ? 'opacity 0.2s 0.1s linear' : 'opacity 0s 0s linear',
@@ -542,19 +687,25 @@ export function AdminTemplatesContent() {
                         size="middle"
                         locale={{
                             emptyText: (
-                                <Empty
-                                    description={
+                                <ActionEmptyState
+                                    compact={true}
+                                    title={
                                         templates.deferredSearch
                                             ? t('common:message.no_data')
                                             : t('templates.empty')
                                     }
-                                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                    description={
+                                        templates.deferredSearch
+                                            ? t('templates.empty_filtered_description', 'Try a broader search or reset the current filters.')
+                                            : t('templates.empty_description', 'Import or create a template before opening VM requests to regular users.')
+                                    }
+                                    visual={<TemplateCatalogGlyph className="action-empty-state__art action-empty-state__art--compact" />}
                                 />
                             ),
                         }}
                     />
                 </div>
-            </Card>
+            </PageSurface>
 
             {/* ── Create Modal (master-flow Step 3) ── */}
             <Modal
@@ -563,7 +714,7 @@ export function AdminTemplatesContent() {
                 onOk={() => { void templates.submitCreate(); }}
                 onCancel={templates.closeCreateModal}
                 confirmLoading={templates.createPending}
-                destroyOnHidden={true}
+                forceRender={true}
                 width={640}
                 data-testid="template-create-modal"
             >
@@ -797,7 +948,7 @@ export function AdminTemplatesContent() {
                 onOk={() => { void templates.submitEdit(); }}
                 onCancel={templates.closeEditModal}
                 confirmLoading={templates.updatePending}
-                destroyOnHidden={true}
+                forceRender={true}
                 width={640}
                 data-testid="template-edit-modal"
             >

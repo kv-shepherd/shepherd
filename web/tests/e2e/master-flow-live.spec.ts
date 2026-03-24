@@ -20,9 +20,9 @@
  *   listVMs                Stage 5    – GET /vms
  *   getVMRequestContext    Stage 5.A  – GET /vms/request-context
  *   createVMRequest        Stage 5.A  – POST /vms/request
- *   listApprovals          Stage 5.B  – GET /approvals
- *   approveTicket          Stage 5.B  – POST /approvals/{id}/approve
- *   rejectTicket           Stage 5.B  – POST /approvals/{id}/reject
+ *   listApprovals          Stage 5.B  – GET /builtin-approval/tasks
+ *   approveTicket          Stage 5.B  – POST /builtin-approval/tasks/{id}/approve
+ *   rejectTicket           Stage 5.B  – POST /builtin-approval/tasks/{id}/reject
  *   submitVMBatchPower     Stage 5.E  – POST /vms/batch/power
  *   listNotifications      Stage 5.F  – GET /notifications
  *   getUnreadCount         Stage 5.F  – GET /notifications/unread-count
@@ -328,9 +328,9 @@ async function waitForTicketStatus(
     const perPage = 100;
 
     for (let guard = 0; guard < 20; guard += 1) {
-      const listResp = await request.get(`/api/v1/approvals?page=${page}&per_page=${perPage}`, { headers });
-      expect(listResp.status(), `GET /approvals returned ${listResp.status()}`).toBe(200);
-      const listBody = await validateApiResponse('ApprovalTicketList', listResp) as {
+      const listResp = await request.get(`/api/v1/builtin-approval/tasks?page=${page}&per_page=${perPage}`, { headers });
+      expect(listResp.status(), `GET /builtin-approval/tasks returned ${listResp.status()}`).toBe(200);
+      const listBody = await validateApiResponse('TicketList', listResp) as {
         items?: Array<{ id?: string; status?: string }>;
         pagination?: { total_pages?: number };
       };
@@ -361,11 +361,11 @@ async function findApprovalTicket(
   let page = 1;
   const perPage = 100;
   for (let guard = 0; guard < 20; guard += 1) {
-    const listResp = await request.get(`/api/v1/approvals?page=${page}&per_page=${perPage}`, { headers });
+    const listResp = await request.get(`/api/v1/builtin-approval/tasks?page=${page}&per_page=${perPage}`, { headers });
     if (listResp.status() !== 200) {
       return null;
     }
-    const listBody = await validateApiResponse('ApprovalTicketList', listResp) as {
+    const listBody = await validateApiResponse('TicketList', listResp) as {
       items?: Array<{ id?: string; status?: string; ticket_payload?: Record<string, unknown> }>;
       pagination?: { total_pages?: number };
     };
@@ -539,9 +539,9 @@ async function seedPendingApprovalTicket(request: APIRequestContext): Promise<Ap
   }
 
   expect(createResp.status(), 'POST /vms/request must return 202 for approval seed').toBe(202);
-  const ticket = await validateApiResponse('ApprovalTicketResponse', createResp) as { ticket_id?: string; id?: string };
+  const ticket = await validateApiResponse('TicketResponse', createResp) as { ticket_id?: string; id?: string };
   const ticketID = ticket.ticket_id ?? ticket.id ?? '';
-  expect(ticketID, 'ApprovalTicketResponse missing ticket id').toBeTruthy();
+  expect(ticketID, 'TicketResponse missing ticket id').toBeTruthy();
   return {
     ticketID,
     namespace: createReqData.namespace,
@@ -1196,7 +1196,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
 
       const submitResp = await submitRespPromise;
       expect(submitResp.status(), `POST /vms/request returned ${submitResp.status()}`).toBe(202);
-      const submitBody = await validateApiResponse('ApprovalTicketResponse', submitResp) as {
+      const submitBody = await validateApiResponse('TicketResponse', submitResp) as {
         ticket_id?: string;
         id?: string;
         status?: string;
@@ -1205,7 +1205,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
       ticketID = String(submitBody.ticket_id ?? submitBody.id ?? '').trim();
       expect(ticketID, 'createVMRequest must return ticket reference for polling').toBeTruthy();
 
-      await test.step('Stage 2.E / Step 1: user submission returns canonical pending approval ticket', async () => {
+      await test.step('Stage 2.E / Step 1: user submission returns canonical pending ticket', async () => {
         expect(String(submitBody.status ?? '').toUpperCase()).toBe('PENDING');
         if (typeof submitBody.operation_type !== 'undefined') {
           expect(String(submitBody.operation_type).toUpperCase()).toBe('CREATE');
@@ -1239,18 +1239,18 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
 
   // ── Stage 5.B: Approvals ─────────────────────────────────────────────────────
 
-  test('Stage 5.B – listApprovals: approval list conforms to ApprovalTicketList schema', async ({ page }) => {
+  test('Stage 5.B – listApprovals: approval task list conforms to TicketList schema', async ({ page }) => {
     // operationId: listApprovals
     await test.step('Stage 5.B / Step 1: open approval list and validate pending-ticket surface', async () => {
       const listRespPromise = page.waitForResponse(
-        (r) => urlPathIncludes(r.url(), '/api/v1/approvals') && r.request().method() === 'GET'
+        (r) => urlPathIncludes(r.url(), '/api/v1/builtin-approval/tasks') && r.request().method() === 'GET'
       );
       const [listResp] = await Promise.all([
         listRespPromise,
-        page.goto('/admin/approvals'),
+        page.goto('/admin/approval-tasks'),
       ]);
       expect(listResp.status()).toBe(200);
-      await validateApiResponse('ApprovalTicketList', listResp);
+      await validateApiResponse('TicketList', listResp);
       await expect(page.getByRole('heading', { name: /approval/i })).toBeVisible();
     });
   });
@@ -1265,11 +1265,11 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     const beforeVMIDs = new Set(beforeVMs.map((item) => item.id));
 
     await test.step('Stage 5.B / Step 2: approve path updates ticket/event and triggers execution', async () => {
-      await page.goto('/admin/approvals');
+      await page.goto('/admin/approval-tasks');
       await expect(page.getByRole('heading', { name: /approval/i })).toBeVisible();
 
       const approveBtn = page.getByTestId(`approval-action-approve-${ticketID}`);
-      await expect(approveBtn, 'No pending approval tickets found — API setup may have failed').toBeVisible();
+      await expect(approveBtn, 'No pending approval tasks found — API setup may have failed').toBeVisible();
 
       await approveBtn.click();
       const modal = getAntModal(page, 'approve-modal');
@@ -1283,13 +1283,13 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
 
       const approveRespPromise = page.waitForResponse(
         (r) =>
-          urlPathEndsWith(r.url(), `/api/v1/approvals/${ticketID}/approve`) &&
+          urlPathEndsWith(r.url(), `/api/v1/builtin-approval/tasks/${ticketID}/approve`) &&
           r.request().method() === 'POST'
       );
       await modal.getByRole('button', { name: 'OK' }).click();
 
       const approveResp = await approveRespPromise;
-      expect(approveResp.status(), `POST /approvals/{id}/approve returned ${approveResp.status()}`).toBe(204);
+      expect(approveResp.status(), `POST /builtin-approval/tasks/{id}/approve returned ${approveResp.status()}`).toBe(204);
       await test.step('Stage 2.E / Step 3: approver decision transitions ticket to APPROVED state', async () => {
         await waitForTicketStatus(request, headers, ticketID, 'APPROVED');
       });
@@ -1300,7 +1300,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
         const createdVMID = await waitForNewVMFromApproval(request, headers, beforeVMIDs);
         await waitForVMExecutionOutcome(request, headers, createdVMID);
 
-        await test.step('Stage 3.C / Step 1: approval ticket payload keeps namespace immutable across decision and execution', async () => {
+        await test.step('Stage 3.C / Step 1: ticket payload keeps namespace immutable across decision and execution', async () => {
           await expect.poll(async () => {
             const found = await findApprovalTicket(request, headers, ticketID);
             if (!found) {
@@ -1335,7 +1335,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
 
         await expect.poll(async () => {
           const auditResp = await request.get(
-            `/api/v1/audit-logs?page=1&per_page=100&resource_type=approval_ticket&resource_id=${encodeURIComponent(ticketID)}`,
+            `/api/v1/audit-logs?page=1&per_page=100&resource_type=ticket&resource_id=${encodeURIComponent(ticketID)}`,
             { headers }
           );
           if (auditResp.status() !== 200) {
@@ -1363,15 +1363,15 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
     const ticketID = seeded.ticketID;
 
     await test.step('Stage 5.B / Step 3: reject path closes ticket without creating VM', async () => {
-      await page.goto('/admin/approvals');
+      await page.goto('/admin/approval-tasks');
       await expect(page.getByRole('heading', { name: /approval/i })).toBeVisible();
 
       const rejectBtn = page.getByTestId(`approval-action-reject-${ticketID}`);
-      await expect(rejectBtn, 'No pending approval tickets found — API setup may have failed').toBeVisible();
+      await expect(rejectBtn, 'No pending approval tasks found — API setup may have failed').toBeVisible();
 
       const rejectRespPromise = page.waitForResponse(
         (r) =>
-          urlPathEndsWith(r.url(), `/api/v1/approvals/${ticketID}/reject`) &&
+          urlPathEndsWith(r.url(), `/api/v1/builtin-approval/tasks/${ticketID}/reject`) &&
           r.request().method() === 'POST'
       );
 
@@ -1382,7 +1382,7 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
       await modal.getByRole('button', { name: 'OK' }).click();
 
       const rejectResp = await rejectRespPromise;
-      expect(rejectResp.status(), `POST /approvals/{id}/reject returned ${rejectResp.status()}`).toBe(204);
+      expect(rejectResp.status(), `POST /builtin-approval/tasks/{id}/reject returned ${rejectResp.status()}`).toBe(204);
       const token = await getAdminToken(request);
       const headers = { Authorization: `Bearer ${token}` };
       await waitForTicketStatus(request, headers, ticketID, 'REJECTED');
@@ -1466,24 +1466,24 @@ test.describe('master-flow live (contract-enforced, no mock)', () => {
           },
         });
         expect(createResp.status(), `POST /vms/request returned ${createResp.status()}`).toBe(202);
-        const createBody = await validateApiResponse('ApprovalTicketResponse', createResp) as { ticket_id?: string; id?: string };
+        const createBody = await validateApiResponse('TicketResponse', createResp) as { ticket_id?: string; id?: string };
         ticketID = String(createBody.ticket_id ?? createBody.id ?? '').trim();
         expect(ticketID, 'ticket id is required for conflict approval assertion').toBeTruthy();
 
-        const approveResp = await request.post(`/api/v1/approvals/${ticketID}/approve`, {
+        const approveResp = await request.post(`/api/v1/builtin-approval/tasks/${ticketID}/approve`, {
           headers,
           data: {
             selected_cluster_id: clusterID,
           },
         });
-        expect(approveResp.status(), `POST /approvals/{id}/approve returned ${approveResp.status()}`).toBe(400);
+        expect(approveResp.status(), `POST /builtin-approval/tasks/{id}/approve returned ${approveResp.status()}`).toBe(400);
         const errBody = await validateApiResponse('Error', approveResp) as { code?: string };
         expect(String(errBody.code ?? ''), 'approval must hard-block dedicated+overcommit conflict').toBe('DEDICATED_CPU_OVERCOMMIT_CONFLICT');
         await waitForTicketStatus(request, headers, ticketID, 'PENDING');
       });
     } finally {
       if (ticketID) {
-        const rejectResp = await request.post(`/api/v1/approvals/${ticketID}/reject`, {
+        const rejectResp = await request.post(`/api/v1/builtin-approval/tasks/${ticketID}/reject`, {
           headers,
           data: { reason: 'cleanup after Stage 5.B constraint test' },
         });

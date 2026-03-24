@@ -200,6 +200,13 @@ function dedupeMaskFields(fields: MaskField[]): MaskField[] {
   });
 }
 
+function clonePlainRecord(value: Record<string, unknown>): Record<string, unknown> {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value) as Record<string, unknown>;
+  }
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
+
 function collectPresentSchemaPaths(
   value: unknown,
   node: SchemaNode,
@@ -938,25 +945,20 @@ export const DynamicSchemaForm = React.forwardRef<
         return;
       }
 
-      const clearPaths = Array.from(
+      const clearRoots = Array.from(
         new Set([
           ...appliedFieldPathsRef.current,
           ...nextManagedFields.map((field) => field.path),
-        ]),
+        ].map((path) => path.split(".")[0]).filter(Boolean)),
       );
 
-      if (clearPaths.length > 0) {
-        outerForm.setFields(
-          clearPaths.map((path) => ({
-            name: path.split("."),
-            value: undefined,
-            errors: [],
-            warnings: [],
-          })),
+      if (clearRoots.length > 0) {
+        outerForm.setFieldsValue(
+          Object.fromEntries(clearRoots.map((root) => [root, undefined])),
         );
       }
 
-      outerForm.setFieldsValue(parsed);
+      outerForm.setFieldsValue(clonePlainRecord(parsed));
       appliedFieldPathsRef.current = nextManagedFields.map((field) => field.path);
     },
     [outerForm],
@@ -1079,7 +1081,14 @@ export const DynamicSchemaForm = React.forwardRef<
       <Alert
         type="error"
         banner
-        message="Frontend Standard Violation: DynamicSchemaForm rendered without schema or mask."
+        message={t(
+          "dynamic_form.schema_unavailable",
+          "Dynamic form configuration is unavailable.",
+        )}
+        description={t(
+          "dynamic_form.schema_unavailable_help",
+          "The schema or field mask for this form is missing. Refresh the page or contact an administrator if the problem persists.",
+        )}
       />
     );
   }

@@ -38,7 +38,7 @@ Provide a single-command local development workflow that starts and resets backe
 - `down --volumes --remove-orphans`
 - rebuild backend/frontend images
 - re-seed development data (`cmd/seed`)
-- by default also seed extended local fixtures (`cmd/e2e-seed`)
+- optionally seed extended local fixtures (`cmd/e2e-seed`)
 
 ## Seeded Accounts
 
@@ -47,7 +47,18 @@ Provide a single-command local development workflow that starts and resets backe
 - extended local fixture admin: `e2e-admin/e2e-admin-123`
 
 Set `DEV_ADMIN_PASSWORD=<password>` to override the post-seed local admin password.
-Set `DEV_INCLUDE_E2E_SEED=0` when you want the minimal baseline seed only.
+Set `DEV_INCLUDE_E2E_SEED=1` or pass `--e2e-seed` when you want the extended local fixtures too.
+
+## Browser Warning Bridge
+
+When started via `./start-dev.sh`, the frontend enables a dev-only browser warning bridge.
+
+- Browser `console.warn` / `console.error` still appear in DevTools as usual.
+- The same warning/error payload is also mirrored to the local frontend server log.
+- Host frontend mode writes these entries to `tmp/dev-web.log`.
+- Docker frontend mode writes them to `docker compose logs web`.
+
+This bridge is development-only and is not intended for production deployments.
 
 This is optimized for early development consistency over state persistence.
 

@@ -14,127 +14,20 @@ import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
-    DashboardOutlined,
-    CloudServerOutlined,
-    AppstoreOutlined,
-    DesktopOutlined,
-    AuditOutlined,
-    BellOutlined,
-    ClusterOutlined,
-    TeamOutlined,
+    ThunderboltOutlined,
     LogoutOutlined,
-    SettingOutlined,
-    FileTextOutlined,
     GlobalOutlined,
-    HddOutlined,
-    ProfileOutlined,
-    SafetyCertificateOutlined,
-    KeyOutlined,
 } from '@ant-design/icons';
 import { ProLayout } from '@ant-design/pro-components';
-import type { ProLayoutProps } from '@ant-design/pro-components';
-import { Dropdown, Typography } from 'antd';
+import { Button, Dropdown, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
 import NotificationBell from '@/components/ui/NotificationBell';
 import LocalTimezoneBadge from '@/components/ui/LocalTimezoneBadge';
 import { hasPermission, PLATFORM_ADMIN_PERMISSION } from '@/lib/auth/permissions';
+import { getMenuRoutes, resolveMenuHref } from './appLayoutRoutes';
 
 const { Text } = Typography;
-
-/**
- * Navigation route configuration.
- * Maps to FRONTEND.md directory structure.
- */
-const getMenuRoutes = (t: (key: string) => string, includeAdmin: boolean): ProLayoutProps['route'] => {
-    const routes: NonNullable<ProLayoutProps['route']>['routes'] = [
-        {
-            path: '/dashboard',
-            name: t('nav.dashboard'),
-            icon: <DashboardOutlined />,
-        },
-        {
-            path: '/notifications',
-            name: t('nav.notifications'),
-            icon: <BellOutlined />,
-        },
-        {
-            path: '/systems',
-            name: t('nav.systems'),
-            icon: <CloudServerOutlined />,
-        },
-        {
-            path: '/services',
-            name: t('nav.services'),
-            icon: <AppstoreOutlined />,
-        },
-        {
-            path: '/vms',
-            name: t('nav.vms'),
-            icon: <DesktopOutlined />,
-        },
-    ];
-
-    if (includeAdmin) {
-        routes.push({
-            name: 'Admin',
-            icon: <SettingOutlined />,
-            path: '/admin',
-            routes: [
-                {
-                    path: '/admin/approvals',
-                    name: t('nav.approvals'),
-                    icon: <AuditOutlined />,
-                },
-                {
-                    path: '/admin/clusters',
-                    name: t('nav.clusters'),
-                    icon: <ClusterOutlined />,
-                },
-                {
-                    path: '/admin/namespaces',
-                    name: t('nav.namespaces'),
-                    icon: <GlobalOutlined />,
-                },
-                {
-                    path: '/admin/templates',
-                    name: t('nav.templates'),
-                    icon: <ProfileOutlined />,
-                },
-                {
-                    path: '/admin/instance-sizes',
-                    name: t('nav.instance_sizes'),
-                    icon: <HddOutlined />,
-                },
-                {
-                    path: '/admin/users',
-                    name: t('nav.users'),
-                    icon: <TeamOutlined />,
-                },
-                {
-                    path: '/admin/rbac',
-                    name: t('nav.rbac'),
-                    icon: <SafetyCertificateOutlined />,
-                },
-                {
-                    path: '/admin/auth-providers',
-                    name: t('nav.auth_providers'),
-                    icon: <KeyOutlined />,
-                },
-                {
-                    path: '/admin/audit',
-                    name: t('nav.audit'),
-                    icon: <FileTextOutlined />,
-                },
-            ],
-        });
-    }
-
-    return {
-        path: '/',
-        routes,
-    };
-};
 
 export default function AppLayout({
     children,
@@ -156,6 +49,29 @@ export default function AppLayout({
         void i18n.changeLanguage(lang);
     };
 
+    const quickActionItems = React.useMemo(() => {
+        const items = [
+            {
+                key: 'new-vm-request',
+                label: t('quick_actions.new_vm_request'),
+                onClick: () => router.push('/vms?request=create'),
+            },
+            {
+                key: 'my-requests',
+                label: t('quick_actions.open_my_requests'),
+                onClick: () => router.push('/tickets'),
+            },
+        ];
+        if (canAccessAdmin) {
+            items.push({
+                key: 'approval-center',
+                label: t('quick_actions.open_approval_tasks'),
+                onClick: () => router.push('/admin/approval-tasks'),
+            });
+        }
+        return items;
+    }, [canAccessAdmin, router, t]);
+
     return (
         <ProLayout
             style={{ minHeight: '100vh' }}
@@ -169,13 +85,13 @@ export default function AppLayout({
             splitMenus={false}
             token={{
                 sider: {
-                    colorMenuBackground: '#001529',
-                    colorTextMenu: '#ffffffa6',
+                    colorMenuBackground: '#0f1c2f',
+                    colorTextMenu: '#dbe7ffcc',
                     colorTextMenuSelected: '#fff',
-                    colorBgMenuItemSelected: '#1677ff22',
+                    colorBgMenuItemSelected: '#155eef2b',
                 },
                 header: {
-                    colorBgHeader: '#fff',
+                    colorBgHeader: 'rgba(255, 255, 255, 0.78)',
                     heightLayoutHeader: 56,
                 },
             }}
@@ -191,17 +107,30 @@ export default function AppLayout({
                     <LocalTimezoneBadge />
                 </div>,
                 <Dropdown
+                    key="quick-actions"
+                    menu={{ items: quickActionItems }}
+                    placement="bottomRight"
+                >
+                    <Button
+                        type="text"
+                        icon={<ThunderboltOutlined />}
+                        data-testid="quick-actions-trigger"
+                    >
+                        {t('quick_actions.label')}
+                    </Button>
+                </Dropdown>,
+                <Dropdown
                     key="language"
                     menu={{
                         items: [
                             {
                                 key: 'en',
-                                label: 'English',
+                                label: t('language.english'),
                                 onClick: () => handleLanguageChange('en'),
                             },
                             {
                                 key: 'zh-CN',
-                                label: 'Simplified Chinese',
+                                label: t('language.chinese'),
                                 onClick: () => handleLanguageChange('zh-CN'),
                             },
                         ],
@@ -227,16 +156,34 @@ export default function AppLayout({
                 </Dropdown>,
                 <NotificationBell key="notification" />,
             ]}
-            menuItemRender={(item, dom) => (
-                <Link
-                    href={item.path || '#'}
-                    legacyBehavior={false}
-                    style={{ width: '100%', display: 'block' }}
-                    data-testid={`nav-item-${(item.path || '#').replace(/^\//, '').replace(/\//g, '-')}`}
-                >
-                    {dom}
-                </Link>
-            )}
+            menuItemRender={(item, dom) => {
+                const href = resolveMenuHref(item);
+                return href ? (
+                    <Link
+                        href={href}
+                        legacyBehavior={false}
+                        style={{ width: '100%', display: 'block' }}
+                        data-testid={`nav-item-${String(item.key || href)
+                            .replace(/^\//, '')
+                            .replace(/\//g, '-')
+                            .replace(/\s+/g, '-')
+                            .toLowerCase()}`}
+                    >
+                        {dom}
+                    </Link>
+                ) : (
+                    <span
+                        style={{ width: '100%', display: 'block' }}
+                        data-testid={`nav-item-${String(item.key || item.name || 'group')
+                            .replace(/^\//, '')
+                            .replace(/\//g, '-')
+                            .replace(/\s+/g, '-')
+                            .toLowerCase()}`}
+                    >
+                        {dom}
+                    </span>
+                );
+            }}
             avatarProps={{
                 src: undefined,
                 title: user?.display_name ?? user?.username ?? 'User',
@@ -275,7 +222,7 @@ export default function AppLayout({
                 ),
             }}
         >
-            {children}
+            <div className="app-shell-content">{children}</div>
         </ProLayout>
     );
 }

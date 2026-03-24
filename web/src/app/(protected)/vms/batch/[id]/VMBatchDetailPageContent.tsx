@@ -15,8 +15,10 @@
  *   batch-retry-button
  *   batch-cancel-button
  */
-import { Button, Card, Descriptions, Divider, Space, Table, Tag, Typography } from 'antd';
+import { Button, Descriptions, Space, Table, Tag, Typography } from 'antd';
+import type { DescriptionsProps } from 'antd';
 import { ArrowLeftOutlined, RedoOutlined, StopOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import type { TFunction } from 'i18next';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
@@ -25,8 +27,9 @@ import { useApiMutation } from '@/lib/api/useApiMutation';
 import { api } from '@/lib/api/client';
 import { useMessage } from '@/lib/hooks/useMessage';
 import type { components } from '@/types/api.gen';
+import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 type BatchJobStatus = components['schemas']['VMBatchStatusResponse'];
 
@@ -38,6 +41,29 @@ const STATUS_COLORS: Record<string, string> = {
     PARTIAL_SUCCESS: 'gold',
     CANCELLED: 'default',
 };
+
+function batchStatusLabel(status: string, t: TFunction) {
+    const labelKey = `batch.status_value.${status}`;
+    const label = t(labelKey);
+    return label === labelKey ? status : label;
+}
+
+function batchOperationLabel(operation: string, t: TFunction) {
+    const labelKey = `batch.operation.${operation}`;
+    const label = t(labelKey);
+    return label === labelKey ? operation : label;
+}
+
+function formatRecordID(id: string): string {
+    if (id.length <= 14) {
+        return id;
+    }
+    return `${id.slice(0, 8)}…${id.slice(-4)}`;
+}
+
+function batchChildSummaryTitle(resourceName: string | undefined): string {
+    return resourceName && resourceName.trim() !== '' ? resourceName : '—';
+}
 
 export default function VMBatchDetailPage() {
     const { t } = useTranslation(['vm', 'common']);
@@ -55,7 +81,7 @@ export default function VMBatchDetailPage() {
         () => api.POST('/vms/batch/{batch_id}/retry', { params: { path: { batch_id: batchId } } }),
         {
             onSuccess: () => {
-                void messageApi.success(t('batch.retry_submitted', { defaultValue: 'Retry submitted.' }));
+                void messageApi.success(t('batch.retry_submitted'));
                 void refetch();
             },
         }
@@ -65,7 +91,7 @@ export default function VMBatchDetailPage() {
         () => api.POST('/vms/batch/{batch_id}/cancel', { params: { path: { batch_id: batchId } } }),
         {
             onSuccess: () => {
-                void messageApi.success(t('batch.cancel_submitted', { defaultValue: 'Batch cancelled.' }));
+                void messageApi.success(t('batch.cancel_submitted'));
                 void refetch();
             },
         }
@@ -74,16 +100,62 @@ export default function VMBatchDetailPage() {
     const status = batchStatus?.status;
     const canRetry = status === 'FAILED' || status === 'PARTIAL_SUCCESS';
     const canCancel = status === 'PENDING_APPROVAL' || status === 'IN_PROGRESS';
+    const summaryItems: DescriptionsProps['items'] = [
+        {
+            key: 'status',
+            label: t('batch.status'),
+            children: (
+                <Tag color={STATUS_COLORS[status ?? ''] ?? 'default'}>
+                    {status ? batchStatusLabel(status, t) : '—'}
+                </Tag>
+            ),
+        },
+        {
+            key: 'operation',
+            label: t('batch.operation'),
+            children: batchStatus?.operation ? batchOperationLabel(batchStatus.operation, t) : '—',
+        },
+        {
+            key: 'childCount',
+            label: t('batch.child_count'),
+            children: batchStatus?.child_count ?? 0,
+        },
+        {
+            key: 'successCount',
+            label: t('batch.success_count'),
+            children: <Text type="success">{batchStatus?.success_count ?? 0}</Text>,
+        },
+        {
+            key: 'failedCount',
+            label: t('batch.failed_count'),
+            children: <Text type="danger">{batchStatus?.failed_count ?? 0}</Text>,
+        },
+        {
+            key: 'pendingCount',
+            label: t('batch.pending_count'),
+            children: batchStatus?.pending_count ?? 0,
+        },
+    ];
 
     const childColumns = [
-        { title: t('batch.child.ticket'), dataIndex: 'ticket_id', key: 'ticket_id', width: 150 },
-        { title: t('batch.child.resource'), dataIndex: 'resource_name', key: 'resource_name' },
+        {
+            title: t('batch.child.resource'),
+            key: 'resource_summary',
+            render: (_: unknown, record: NonNullable<BatchJobStatus['children']>[number]) => (
+                <Space direction="vertical" size={0}>
+                    <Text strong>{batchChildSummaryTitle(record.resource_name)}</Text>
+                    <Text copyable={{ text: record.ticket_id }} type="secondary" style={{ fontSize: 12 }}>
+                        {t('batch.child.ticket')}: {formatRecordID(record.ticket_id)}
+                    </Text>
+                </Space>
+            ),
+        },
         {
             title: t('batch.child.status'),
             dataIndex: 'status',
             key: 'status',
             width: 120,
-            render: (s: string) => <Tag color={STATUS_COLORS[s] ?? 'default'}>{s}</Tag>,
+            render: (s: string) => <Tag color={STATUS_COLORS[s] ?? 'default'}>{batchStatusLabel(s, t)}</Tag>,
         },
         { title: t('batch.child.attempt'), dataIndex: 'attempt_count', key: 'attempt_count', width: 90 },
         { title: t('batch.child.error'), dataIndex: 'last_error', key: 'last_error', ellipsis: true },
@@ -92,21 +164,26 @@ export default function VMBatchDetailPage() {
     return (
         <div data-testid="vm-batch-detail-page">
             {messageContextHolder}
-            <div style={{ marginBottom: 24 }}>
-                <Button
-                    icon={<ArrowLeftOutlined />}
-                    type="text"
-                    onClick={() => router.push('/vms/batch')}
-                >
-                    {t('batch.list_title', { defaultValue: 'Batch Operations' })}
-                </Button>
-                <Title level={4} style={{ margin: '8px 0 0' }}>
-                    <ThunderboltOutlined style={{ marginRight: 8, color: '#fa8c16' }} />
-                    {t('batch.detail_title', { defaultValue: 'Batch Operation Detail' })}
-                </Title>
-            </div>
+            <PageHeader
+                title={(
+                    <Space size="small">
+                        <ThunderboltOutlined style={{ color: '#fa8c16' }} />
+                        <span>{t('batch.detail_title')}</span>
+                    </Space>
+                )}
+                subtitle={t('batch.detail_subtitle')}
+                actions={(
+                    <Button
+                        icon={<ArrowLeftOutlined />}
+                        type="text"
+                        onClick={() => router.push('/vms/batch')}
+                    >
+                        {t('batch.list_title')}
+                    </Button>
+                )}
+            />
 
-            <Card style={{ borderRadius: 12, marginBottom: 16 }} loading={isLoading}>
+            <PageSurface loading={isLoading}>
                 <div
                     role="status"
                     aria-live="polite"
@@ -116,35 +193,14 @@ export default function VMBatchDetailPage() {
                     <Text type="secondary">
                         {t('batch.live_status_summary', {
                             batch_id: batchId,
-                            status: batchStatus?.status ?? '—',
+                            status: batchStatus?.status ? batchStatusLabel(batchStatus.status, t) : '—',
                             success_count: batchStatus?.success_count ?? 0,
                             failed_count: batchStatus?.failed_count ?? 0,
                             pending_count: batchStatus?.pending_count ?? 0,
                         })}
                     </Text>
                 </div>
-                <Descriptions bordered column={3} size="small">
-                    <Descriptions.Item label={t('batch.status')}>
-                        <Tag color={STATUS_COLORS[status ?? ''] ?? 'default'}>{status ?? '—'}</Tag>
-                    </Descriptions.Item>
-                    <Descriptions.Item label={t('batch.operation')}>
-                        {batchStatus?.operation ?? '—'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label={t('batch.child_count')}>
-                        {batchStatus?.child_count ?? 0}
-                    </Descriptions.Item>
-                    <Descriptions.Item label={t('batch.success_count')}>
-                        <Text type="success">{batchStatus?.success_count ?? 0}</Text>
-                    </Descriptions.Item>
-                    <Descriptions.Item label={t('batch.failed_count')}>
-                        <Text type="danger">{batchStatus?.failed_count ?? 0}</Text>
-                    </Descriptions.Item>
-                    <Descriptions.Item label={t('batch.pending_count')}>
-                        {batchStatus?.pending_count ?? 0}
-                    </Descriptions.Item>
-                </Descriptions>
-
-                <Divider />
+                <Descriptions bordered column={3} size="small" items={summaryItems} />
 
                 <Space>
                     <Button
@@ -167,9 +223,12 @@ export default function VMBatchDetailPage() {
                         {t('batch.cancel_pending')}
                     </Button>
                 </Space>
-            </Card>
+            </PageSurface>
 
-            <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+            <PageSurface
+                title={t('batch.child.title')}
+                flush={true}
+            >
                 <Table
                     rowKey="ticket_id"
                     loading={isLoading}
@@ -178,7 +237,7 @@ export default function VMBatchDetailPage() {
                     pagination={false}
                     size="small"
                 />
-            </Card>
+            </PageSurface>
         </div>
     );
 }
