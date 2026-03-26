@@ -181,7 +181,7 @@ func TestPool_Submit_ContextCancelledWhileQueued(t *testing.T) {
 	var taskExecuted atomic.Bool
 	var submitWg sync.WaitGroup
 	submitWg.Add(1)
-	go func() { //nolint:shepherd-arch // test helper
+	go func() {
 		defer submitWg.Done()
 		_ = pools.General.Submit(cancelCtx, func(ctx context.Context) {
 			taskExecuted.Store(true)

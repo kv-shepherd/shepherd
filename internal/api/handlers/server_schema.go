@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -12,13 +13,6 @@ import (
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	"kv-shepherd.io/shepherd/internal/pkg/schema"
 )
-
-// schemaVersion is the embedded schema baseline version.
-// Reflects the KubeVirt source release this schema was extracted from.
-// Format: semantic version aligned with KubeVirt release tag.
-// Increment the patch when the extraction/pruning logic changes without
-// a KubeVirt upgrade; bump minor/major when KubeVirt version changes.
-const schemaVersion = "1.7.0"
 
 // ── Parse-once cache ──────────────────────────────────────────────────────────
 //
@@ -34,6 +28,7 @@ type schemaCache struct {
 	once     sync.Once
 	schema   map[string]interface{}
 	mask     generated.SchemaMask
+	version  string
 	err      error
 	cachedAt time.Time // set once during sync.Once initialisation — "schema was cached at"
 }
@@ -66,6 +61,13 @@ func loadSchemaCache(c *schemaCache, entityType string) {
 		if c.mask.QuickFields == nil {
 			c.mask.QuickFields = []generated.MaskField{}
 		}
+
+		version, ok := schema.SchemaVersionFor(entityType)
+		if !ok || version == "" {
+			c.err = fmt.Errorf("unsupported entity type: %s", entityType)
+			return
+		}
+		c.version = version
 
 		// Record when this schema was first parsed and cached.
 		// ADR-0023: fetched_at represents cache initialisation time, not request time.
@@ -115,7 +117,7 @@ func (s *Server) GetDynamicSchema(c *gin.Context, entityType generated.GetDynami
 	c.JSON(http.StatusOK, generated.DynamicSchemaResponse{
 		Schema:        cache.schema,
 		Mask:          cache.mask,
-		SchemaVersion: schemaVersion,
+		SchemaVersion: cache.version,
 		Source:        generated.Embedded,
 		// degraded=false: embedded schema IS the current source of truth.
 		// Set to true only when falling back from a more-recent remote schema.

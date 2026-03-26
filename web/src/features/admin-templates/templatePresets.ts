@@ -20,11 +20,6 @@ const templatePresetItemByKey = Object.fromEntries(
     templatePresetItems.map((item) => [item.key, item]),
 ) as Record<TemplatePresetKey, (typeof templatePresetItems)[number]>;
 
-export const TEMPLATE_PRESET_ORDER: TemplatePresetKey[] = [
-    ...OFFICIAL_TEMPLATE_PRESET_ITEMS.map((item) => item.key as OfficialTemplatePresetKey),
-    ...CURATED_TEMPLATE_PRESET_ITEMS.map((item) => item.key as CuratedTemplatePresetKey),
-];
-
 export const TEMPLATE_OS_FAMILY_OPTIONS = [
     { labelKey: 'templates.os_family_linux', value: 'linux' as const },
     { labelKey: 'templates.os_family_windows', value: 'windows' as const },

@@ -254,6 +254,7 @@ func (s *stubClusterClient) PVC() PersistentVolumeClaimClient     { return nil }
 func (s *stubClusterClient) StorageClass() StorageClassClient     { return nil }
 func (s *stubClusterClient) Events() EventClient                  { return nil }
 func (s *stubClusterClient) Namespaces() NamespaceClient          { return nil }
+func (s *stubClusterClient) Nodes() NodeClient                    { return nil }
 func (s *stubClusterClient) Pods() PodClient                      { return nil }
 func (s *stubClusterClient) Authorization() AuthorizationClient   { return nil }
 func (s *stubClusterClient) SSA() DynamicSSAClient                { return nil }

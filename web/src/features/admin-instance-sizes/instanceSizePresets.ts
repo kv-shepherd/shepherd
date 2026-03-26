@@ -9,7 +9,7 @@ import {
 
 export type InstanceSizePresetKey = CuratedInstanceSizePresetKey | OfficialInstanceSizePresetKey;
 
-export type InstanceSizePresetFormValues = CuratedInstanceSizePresetFormValues;
+type InstanceSizePresetFormValues = CuratedInstanceSizePresetFormValues;
 
 const instanceSizePresetItems = [
     ...OFFICIAL_INSTANCE_SIZE_PRESET_ITEMS,
@@ -19,10 +19,6 @@ const instanceSizePresetItems = [
 const instanceSizePresetItemByKey = Object.fromEntries(
     instanceSizePresetItems.map((item) => [item.key, item]),
 ) as Record<InstanceSizePresetKey, (typeof instanceSizePresetItems)[number]>;
-
-export const INSTANCE_SIZE_PRESET_ORDER: InstanceSizePresetKey[] = instanceSizePresetItems.map(
-    (item) => item.key as InstanceSizePresetKey,
-);
 
 type InstanceSizeCatalogScope = 'test' | 'prod' | 'all' | 'unclassified';
 
@@ -51,10 +47,6 @@ const INSTANCE_SIZE_GROUP_META: Record<
 
 export function buildInstanceSizePresetValues(key: InstanceSizePresetKey): InstanceSizePresetFormValues {
     return { ...instanceSizePresetItemByKey[key].values };
-}
-
-export function getInstanceSizePresetLabelKey(key: InstanceSizePresetKey): string {
-    return instanceSizePresetItemByKey[key].labelKey;
 }
 
 export function getInstanceSizePresetGroups() {

@@ -33,6 +33,9 @@ export function useApiGet<T>(
         refetchInterval?: number;
     },
 ) {
+    // queryKey is owned by the caller; this wrapper intentionally avoids
+    // encoding fetcher function identity into the cache key.
+    // eslint-disable-next-line @tanstack/query/exhaustive-deps
     const query = useQuery<T | undefined>({
         queryKey,
         queryFn: async () => {

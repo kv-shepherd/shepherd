@@ -25,7 +25,14 @@ func (a *Application) Start(ctx context.Context) error {
 		if err := a.refreshClusterHealth(ctx); err != nil {
 			return fmt.Errorf("initial cluster health refresh: %w", err)
 		}
-		go a.runClusterHealthLoop(ctx) //nolint:shepherd-arch // dedicated background lifecycle loop.
+		if a.Pools == nil {
+			return fmt.Errorf("start cluster health checker: worker pools not initialized")
+		}
+		if err := a.Pools.SubmitDetached("general", func(loopCtx context.Context) {
+			a.runClusterHealthLoop(loopCtx)
+		}); err != nil {
+			return fmt.Errorf("start cluster health checker: %w", err)
+		}
 		logger.Info("Cluster health checker started")
 	}
 
@@ -35,10 +42,6 @@ func (a *Application) Start(ctx context.Context) error {
 // Shutdown gracefully shuts down all application components.
 func (a *Application) Shutdown() {
 	shutdownCtx := context.Background()
-
-	if a.HealthCheck != nil {
-		a.HealthCheck.Stop()
-	}
 
 	if a.DB != nil && a.DB.RiverClient != nil {
 		if err := a.DB.RiverClient.Stop(shutdownCtx); err != nil {

@@ -10,6 +10,30 @@ permissions:
   contents: read
 
 jobs:
+  deadcode:
+    name: Dead Code & Dependency Hygiene
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit (high+)
+        run: make -C .. ci-frontend-deadcode
+
   unit-tests:
     name: Unit & Typecheck
     runs-on: ubuntu-24.04
@@ -31,14 +55,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      - name: Restore Next.js build cache
+        id: next_build_cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: web/.next/cache
+          key: ${{ runner.os }}-nextjs-build-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/**/*.js', 'web/**/*.jsx', 'web/**/*.ts', 'web/**/*.tsx', 'web/**/*.mjs', 'web/package.json', 'web/next.config.ts', 'web/tsconfig.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-build-${{ hashFiles('web/package-lock.json') }}-
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Report Next.js build cache status
+        run: |
+          echo "cache-hit=${{ steps.next_build_cache.outputs.cache-hit }}"
+          if [ -d .next/cache ]; then
+            du -sh .next/cache
+          else
+            echo ".next/cache directory does not exist yet"
+          fi
 
-      - name: Run unit tests
-        run: npm run test:run
+      - name: Run frontend unit/type/build lane
+        run: make -C .. ci-frontend-unit
 
   e2e-tests:
     name: E2E Mock Smoke (Playwright)
@@ -61,11 +97,31 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Restore Next.js E2E build cache
+        id: next_e2e_cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: web/.next-e2e/ci/cache
+          key: ${{ runner.os }}-nextjs-e2e-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/**/*.js', 'web/**/*.jsx', 'web/**/*.ts', 'web/**/*.tsx', 'web/**/*.mjs', 'web/package.json', 'web/next.config.ts', 'web/playwright.config.ts', 'web/tsconfig.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-e2e-${{ hashFiles('web/package-lock.json') }}-
+
+      - name: Report Next.js E2E cache status
+        run: |
+          echo "cache-hit=${{ steps.next_e2e_cache.outputs.cache-hit }}"
+          if [ -d .next-e2e/ci/cache ]; then
+            du -sh .next-e2e/ci/cache
+          else
+            echo ".next-e2e/ci/cache directory does not exist yet"
+          fi
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E Mock Smoke
-        run: npm run test:e2e:mock
+        env:
+          PW_E2E_RUN_ID: ci
+        run: make -C .. ci-e2e-smoke
 
       - name: Upload Playwright report
         if: failure()

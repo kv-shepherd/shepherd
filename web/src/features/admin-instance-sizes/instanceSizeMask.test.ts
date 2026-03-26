@@ -13,10 +13,44 @@ interface SchemaMask {
     professional_fields?: MaskField[];
 }
 
-const MASK_PATH = path.resolve(
+interface ManifestVersionEntry {
+    mask_path?: string;
+}
+
+interface ManifestEntityEntry {
+    current_version?: string;
+    versions?: Record<string, ManifestVersionEntry>;
+}
+
+interface SchemaManifest {
+    entities?: Record<string, ManifestEntityEntry>;
+}
+
+const MANIFEST_PATH = path.resolve(
     __dirname,
-    '../../../../internal/pkg/schema/instancesize.mask.json',
+    '../../../../internal/pkg/schema/manifest.json',
 );
+
+function resolveMaskPath(): string {
+    const manifest = JSON.parse(
+        readFileSync(MANIFEST_PATH, 'utf8'),
+    ) as SchemaManifest;
+    const instancesize = manifest.entities?.instancesize;
+    const currentVersion = instancesize?.current_version;
+    const maskPath = currentVersion
+        ? instancesize?.versions?.[currentVersion]?.mask_path
+        : undefined;
+    if (!maskPath) {
+        throw new Error('instancesize schema manifest is missing current mask_path');
+    }
+    return path.resolve(
+        __dirname,
+        '../../../../internal/pkg/schema',
+        maskPath,
+    );
+}
+
+const MASK_PATH = resolveMaskPath();
 
 function readMask(): SchemaMask {
     return JSON.parse(readFileSync(MASK_PATH, 'utf8')) as SchemaMask;
@@ -55,9 +89,19 @@ describe('instancesize.mask.json', () => {
         expect(advancedPaths).toContain('spec.template.spec.domain.cpu.model');
         expect(advancedPaths).toContain('spec.template.spec.domain.cpu.threads');
         expect(advancedPaths).toContain('spec.template.spec.domain.cpu.sockets');
+        expect(advancedPaths).toContain('spec.template.spec.domain.devices.autoattachGraphicsDevice');
+        expect(advancedPaths).toContain('spec.template.spec.domain.devices.autoattachSerialConsole');
+        expect(advancedPaths).toContain('spec.template.spec.domain.devices.autoattachMemBalloon');
+        expect(advancedPaths).toContain('spec.template.spec.domain.devices.autoattachVSOCK');
+        expect(advancedPaths).toContain('spec.template.spec.domain.devices.rng');
 
         expect(professionalPaths).toContain('spec.template.spec.domain.features.hyperv.relaxed.enabled');
         expect(professionalPaths).toContain('spec.template.spec.domain.clock.utc');
         expect(professionalPaths).toContain('spec.template.spec.domain.cpu.isolateEmulatorThread');
+        expect(professionalPaths).not.toContain('spec.template.spec.domain.devices.autoattachGraphicsDevice');
+        expect(professionalPaths).not.toContain('spec.template.spec.domain.devices.autoattachSerialConsole');
+        expect(professionalPaths).not.toContain('spec.template.spec.domain.devices.autoattachMemBalloon');
+        expect(professionalPaths).not.toContain('spec.template.spec.domain.devices.autoattachVSOCK');
+        expect(professionalPaths).not.toContain('spec.template.spec.domain.devices.rng');
     });
 });

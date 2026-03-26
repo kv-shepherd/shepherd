@@ -17,7 +17,6 @@ export type InstanceSize = components['schemas']['InstanceSize'];
 export type TicketResponse = components['schemas']['TicketResponse'];
 export type DeleteVMResponse = components['schemas']['DeleteVMResponse'];
 export type VMConsoleRequestResponse = components['schemas']['VMConsoleRequestResponse'];
-export type VMConsoleStatusResponse = components['schemas']['VMConsoleStatusResponse'];
 export type VMVNCSessionResponse = components['schemas']['VMVNCSessionResponse'];
 export type VMBatchSubmitRequest = components['schemas']['VMBatchSubmitRequest'];
 export type VMBatchPowerRequest = components['schemas']['VMBatchPowerRequest'];

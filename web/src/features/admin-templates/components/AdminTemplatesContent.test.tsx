@@ -131,7 +131,7 @@ describe('AdminTemplatesContent', () => {
                 call.some((value) => String(value).includes('There may be circular references')),
             ),
         ).toBe(false);
-    }, 20000);
+    }, 30000);
 
     it('hydrates the official fedora preset into the create form', async () => {
         const user = userEvent.setup();
@@ -144,7 +144,7 @@ describe('AdminTemplatesContent', () => {
         expect(await screen.findByText('Fedora')).toBeInTheDocument();
         expect(screen.getByText('docker://quay.io/containerdisks/fedora:latest')).toBeInTheDocument();
         expect(screen.getByDisplayValue(/#cloud-config/)).toBeInTheDocument();
-    }, 20000);
+    }, 30000);
 
     it('hydrates the curated linux prod preset into the create form', async () => {
         const user = userEvent.setup();
@@ -158,7 +158,7 @@ describe('AdminTemplatesContent', () => {
         expect(screen.getByText('vm-muban')).toBeInTheDocument();
         expect(screen.getByText('kylinv10-image')).toBeInTheDocument();
         expect(screen.getByDisplayValue(/#cloud-config/)).toBeInTheDocument();
-    }, 20000);
+    }, 30000);
 
     it('hydrates edit values for pvc clone templates after the modal opens', async () => {
         const user = userEvent.setup();

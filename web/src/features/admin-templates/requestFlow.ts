@@ -1,6 +1,6 @@
 import type { Template } from './types';
 
-export type TemplateRequestFlowStatus =
+type TemplateRequestFlowStatus =
     | 'self_service'
     | 'admin_only_source'
     | 'hidden_unclassified'

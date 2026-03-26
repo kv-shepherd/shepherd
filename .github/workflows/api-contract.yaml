@@ -50,12 +50,7 @@ jobs:
       # ADR-0029: Use vacuum instead of spectral (Go-native, 10x faster)
       - name: Run Vacuum Linting
         if: steps.check_file.outputs.exists == 'true'
-        uses: pb33f/vacuum-action@e0a6b0297ff1abcac6c415f2eba24fd9018cad58  # v2
-        with:
-          openapi_path: api/openapi.yaml
-          ruleset: api/.vacuum.yaml
-          fail_on_error: true
-          print_logs: true
+        run: make ci-api-lint
 
   # ─────────────────────────────────────────────────────────────────
   # Stage 2: Detect Breaking Changes
@@ -79,35 +74,20 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Fetch base branch
-        if: steps.check_file.outputs.exists == 'true'
-        run: |
-          git fetch origin ${{ github.base_ref }}
-          if git show origin/${{ github.base_ref }}:api/openapi.yaml > /dev/null 2>&1; then
-            echo "base_exists=true" >> $GITHUB_ENV
-          else
-            echo "base_exists=false" >> $GITHUB_ENV
-          fi
-
       - name: Check for Breaking Changes
-        if: steps.check_file.outputs.exists == 'true' && env.base_exists == 'true'
-        uses: oasdiff/oasdiff-action/breaking@aa8903311a8d1ac05b94223b500c160da0ca909a  # v0.0.32
-        with:
-          base: origin/${{ github.base_ref }}:api/openapi.yaml
-          revision: api/openapi.yaml
-          fail-on: ERR
-          format: github-actions
+        if: steps.check_file.outputs.exists == 'true'
+        run: make ci-api-breaking BASE_REF=${{ github.base_ref }}
 
       - name: Generate Changelog
-        if: steps.check_file.outputs.exists == 'true' && env.base_exists == 'true'
+        if: steps.check_file.outputs.exists == 'true'
         run: |
-          make api-changelog > /tmp/api-changelog.md
+          make api-changelog BASE_REF=${{ github.base_ref }} > /tmp/api-changelog.md
           if [ ! -s /tmp/api-changelog.md ]; then
             echo "_No API changelog output._" > /tmp/api-changelog.md
           fi
 
       - name: Publish Changelog Comment
-        if: github.event_name == 'pull_request' && steps.check_file.outputs.exists == 'true' && env.base_exists == 'true'
+        if: github.event_name == 'pull_request' && steps.check_file.outputs.exists == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -178,45 +158,8 @@ jobs:
           go mod download
           cd web && npm ci
 
-      - name: Verify oapi-codegen version (ADR-0028 omitzero)
-        run: |
-          VERSION="$(go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.1 -version | tail -n 1)"
-          echo "Detected oapi-codegen: ${VERSION}"
-          if [ "${VERSION}" != "v2.5.1" ]; then
-            echo "::error::oapi-codegen must be v2.5.1, got ${VERSION}"
-            exit 1
-          fi
-
-      - name: Generate OpenAPI compat spec
-        run: make api-compat-generate
-
-      - name: Regenerate API code
-        run: make api-generate
-
-      - name: Check OpenAPI compat spec (if required)
-        env:
-          REQUIRE_OPENAPI_COMPAT: ${{ vars.REQUIRE_OPENAPI_COMPAT || '1' }}
-        run: make api-compat
-
-      - name: Frontend type sync check
-        run: |
-          cd web
-          npm run api:generate
-          git diff --exit-code src/types/api.gen.ts
-          npm run typecheck
-
-      - name: Check for uncommitted changes
-        run: |
-          if [ -n "$(git status --porcelain internal/api/generated/ web/src/types/api.gen.ts api/openapi.compat.yaml internal/api/specembed/openapi.yaml 2>/dev/null)" ]; then
-            echo "::error::Generated code is out of sync with OpenAPI spec!"
-            echo ""
-            echo "The following files have uncommitted changes after regeneration:"
-            git status --porcelain internal/api/generated/ web/src/types/api.gen.ts api/openapi.compat.yaml internal/api/specembed/openapi.yaml
-            echo ""
-            echo "Please run 'make api-compat-generate && make api-generate && make api-compat' and commit the changes."
-            exit 1
-          fi
-          echo "✅ Generated code is in sync with OpenAPI spec"
+      - name: Verify generated code sync
+        run: make ci-api-generated-sync
 
   # ─────────────────────────────────────────────────────────────────
   # Stage 4: Contract Testing
@@ -240,4 +183,4 @@ jobs:
         run: go mod download
 
       - name: Run contract tests with libopenapi-validator
-        run: make api-contract-test
+        run: make ci-api-contract

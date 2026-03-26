@@ -75,29 +75,6 @@ export function HealthOverviewGlyph(props: IllustrationProps) {
     );
 }
 
-export function SetupGuideCompassIllustration(props: IllustrationProps) {
-    return (
-        <IllustrationFrame {...props}>
-            <defs>
-                <linearGradient id="setup-guide-gradient" x1="18" y1="18" x2="102" y2="102" gradientUnits="userSpaceOnUse">
-                    <stop stopColor="#2B6BFF" />
-                    <stop offset="1" stopColor="#41C7A1" />
-                </linearGradient>
-            </defs>
-            <rect x="14" y="18" width="92" height="84" rx="26" fill="#F3F8FF" />
-            <circle cx="60" cy="60" r="24" fill="#FFFFFF" stroke="#C7D9FF" strokeWidth="4" />
-            <circle cx="60" cy="60" r="5" fill="#2B6BFF" />
-            <path d="M60 38L69 60L60 82L51 60L60 38Z" fill="url(#setup-guide-gradient)" />
-            <path d="M60 46L65 60L60 74L55 60L60 46Z" fill="#FFFFFF" fillOpacity="0.72" />
-            <path d="M87 34V52" stroke="#2B6BFF" strokeWidth="5" strokeLinecap="round" />
-            <path d="M87 34L96 40L87 46" fill="#2B6BFF" />
-            <path d="M24 84H96" stroke="#C7D9FF" strokeWidth="4" strokeLinecap="round" />
-            <circle cx="31" cy="84" r="6" fill="#41C7A1" />
-            <circle cx="89" cy="84" r="6" fill="#2B6BFF" />
-        </IllustrationFrame>
-    );
-}
-
 export function DraftNotebookGlyph(props: IllustrationProps) {
     return (
         <IllustrationFrame {...props}>

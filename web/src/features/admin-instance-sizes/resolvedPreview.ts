@@ -1,4 +1,4 @@
-export interface InstanceSizeResolvedPreviewValues {
+interface InstanceSizeResolvedPreviewValues {
     catalog_scope?: string;
     cpu_cores?: number;
     memory_gi?: number;

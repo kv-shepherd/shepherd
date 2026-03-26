@@ -19,6 +19,7 @@ GO_GENERATED_DIR := internal/api/generated
 TS_GENERATED_FILE := web/src/types/api.gen.ts
 OAPI_CODEGEN_CONFIG := api/oapi-codegen.yaml
 OAPI_CODEGEN_INPUT := $(OPENAPI_SPEC)
+BASE_REF ?= main
 
 # Tool versions (pin in docs/design/DEPENDENCIES.md; override via env if needed)
 OAPI_CODEGEN_VERSION ?= v2.5.1
@@ -87,11 +88,11 @@ api-contract-test: ## Run runtime OpenAPI contract tests
 .PHONY: api-breaking
 api-breaking: ## Detect breaking changes vs main branch
 	@echo "🔍 Checking for breaking changes..."
-	@git fetch origin main --quiet 2>/dev/null || true
-	@if git show origin/main:$(OPENAPI_SPEC) > /tmp/openapi-base.yaml 2>/dev/null; then \
+	@git fetch origin $(BASE_REF) --quiet 2>/dev/null || true
+	@if git show origin/$(BASE_REF):$(OPENAPI_SPEC) > /tmp/openapi-base.yaml 2>/dev/null; then \
 		$(OASDIFF_CMD) breaking /tmp/openapi-base.yaml $(OPENAPI_SPEC) --fail-on ERR; \
 	else \
-		echo "⚠️  No base spec found on main branch (new API?)"; \
+		echo "⚠️  No base spec found on $(BASE_REF) branch (new API?)"; \
 	fi
 
 .PHONY: api-diff
@@ -100,11 +101,11 @@ api-diff: api-breaking ## Compatibility alias for Issue #85 terminology
 .PHONY: api-changelog
 api-changelog: ## Generate changelog vs main branch
 	@echo "📝 Generating API changelog..."
-	@git fetch origin main --quiet 2>/dev/null || true
-	@if git show origin/main:$(OPENAPI_SPEC) > /tmp/openapi-base.yaml 2>/dev/null; then \
+	@git fetch origin $(BASE_REF) --quiet 2>/dev/null || true
+	@if git show origin/$(BASE_REF):$(OPENAPI_SPEC) > /tmp/openapi-base.yaml 2>/dev/null; then \
 		$(OASDIFF_CMD) changelog /tmp/openapi-base.yaml $(OPENAPI_SPEC) --format markdown; \
 	else \
-		echo "⚠️  No base spec found on main branch"; \
+		echo "⚠️  No base spec found on $(BASE_REF) branch"; \
 	fi
 
 .PHONY: api-mock

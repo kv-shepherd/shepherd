@@ -9,7 +9,7 @@ const BUILT_IN_ROLE_CATALOG_KEYS: Record<string, string> = {
     Viewer: 'viewer',
 };
 
-export function builtInRoleCatalogTranslationKey(roleName: string) {
+function builtInRoleCatalogTranslationKey(roleName: string) {
     return BUILT_IN_ROLE_CATALOG_KEYS[roleName]
         ?? roleName.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
 }

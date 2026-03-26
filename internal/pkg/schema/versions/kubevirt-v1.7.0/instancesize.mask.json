@@ -62,6 +62,36 @@
             "help_key": "instanceSizes.mask.block_multiqueue_help"
         },
         {
+            "path": "spec.template.spec.domain.devices.autoattachGraphicsDevice",
+            "display_name": "Auto-attach Graphics",
+            "display_name_key": "instanceSizes.mask.autoattach_graphics",
+            "help_key": "instanceSizes.mask.autoattach_graphics_help"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.autoattachSerialConsole",
+            "display_name": "Auto-attach Serial Console",
+            "display_name_key": "instanceSizes.mask.autoattach_serial",
+            "help_key": "instanceSizes.mask.autoattach_serial_help"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.autoattachMemBalloon",
+            "display_name": "Auto-attach Memory Balloon",
+            "display_name_key": "instanceSizes.mask.autoattach_memballoon",
+            "help_key": "instanceSizes.mask.autoattach_memballoon_help"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.autoattachVSOCK",
+            "display_name": "Auto-attach VSOCK",
+            "display_name_key": "instanceSizes.mask.autoattach_vsock",
+            "help_key": "instanceSizes.mask.autoattach_vsock_help"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.rng",
+            "display_name": "Hardware RNG Device",
+            "display_name_key": "instanceSizes.mask.rng",
+            "help_key": "instanceSizes.mask.rng_help"
+        },
+        {
             "path": "spec.template.spec.terminationGracePeriodSeconds",
             "display_name": "Termination Grace Period (s)",
             "display_name_key": "instanceSizes.mask.termination_grace",
@@ -88,34 +118,6 @@
             "display_name": "Isolate Emulator Thread",
             "display_name_key": "instanceSizes.mask.isolate_emulator_thread",
             "help_key": "instanceSizes.mask.isolate_emulator_thread_help"
-        },
-        {
-            "path": "spec.template.spec.domain.devices.autoattachSerialConsole",
-            "display_name": "Auto-attach Serial Console",
-            "display_name_key": "instanceSizes.mask.autoattach_serial"
-        },
-        {
-            "path": "spec.template.spec.domain.devices.autoattachGraphicsDevice",
-            "display_name": "Auto-attach Graphics",
-            "display_name_key": "instanceSizes.mask.autoattach_graphics"
-        },
-        {
-            "path": "spec.template.spec.domain.devices.autoattachMemBalloon",
-            "display_name": "Auto-attach Memory Balloon",
-            "display_name_key": "instanceSizes.mask.autoattach_memballoon",
-            "help_key": "instanceSizes.mask.autoattach_memballoon_help"
-        },
-        {
-            "path": "spec.template.spec.domain.devices.autoattachVSOCK",
-            "display_name": "Auto-attach VSOCK",
-            "display_name_key": "instanceSizes.mask.autoattach_vsock",
-            "help_key": "instanceSizes.mask.autoattach_vsock_help"
-        },
-        {
-            "path": "spec.template.spec.domain.devices.rng",
-            "display_name": "Hardware RNG Device",
-            "display_name_key": "instanceSizes.mask.rng",
-            "help_key": "instanceSizes.mask.rng_help"
         },
         {
             "path": "spec.template.spec.domain.features.acpi.enabled",

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-export const presetCatalogSourceTypeSchema = z.enum(['curated', 'official', 'imported']);
-export const presetVerificationLevelSchema = z.enum(['verified', 'experimental', 'unverified']);
+const presetCatalogSourceTypeSchema = z.enum(['curated', 'official', 'imported']);
+const presetVerificationLevelSchema = z.enum(['verified', 'experimental', 'unverified']);
 
 export const templatePresetBundleItemSchema = z.object({
     key: z.string().min(1),

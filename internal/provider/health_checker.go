@@ -44,8 +44,6 @@ type ClusterHealthChecker struct {
 	interval           time.Duration
 	results            map[string]*ClusterHealth
 	mu                 sync.RWMutex
-	stopCh             chan struct{}
-	stopOnce           sync.Once // ISSUE-010: prevent double-close panic
 }
 
 // NewClusterHealthChecker creates a new ClusterHealthChecker.
@@ -55,7 +53,6 @@ func NewClusterHealthChecker(clientFactory ClusterClientFactory, interval time.D
 		capabilityDetector: NewCapabilityDetector(), // always enabled
 		interval:           interval,
 		results:            make(map[string]*ClusterHealth),
-		stopCh:             make(chan struct{}),
 	}
 }
 
@@ -160,34 +157,21 @@ func (c *ClusterHealthChecker) UpdateHealth(health *ClusterHealth) {
 }
 
 // Start begins periodic health checking for the given clusters.
-// nolint:shepherd-arch // health checker ticker loop; doesn't fit worker pool pattern.
 func (c *ClusterHealthChecker) Start(ctx context.Context, clusterNames []string) {
-	go func() {
-		ticker := time.NewTicker(c.interval)
-		defer ticker.Stop()
+	ticker := time.NewTicker(c.interval)
+	defer ticker.Stop()
 
-		// Initial check
-		c.checkAll(ctx, clusterNames)
+	// Initial check
+	c.checkAll(ctx, clusterNames)
 
-		for {
-			select {
-			case <-ticker.C:
-				c.checkAll(ctx, clusterNames)
-			case <-c.stopCh:
-				return
-			case <-ctx.Done():
-				return
-			}
+	for {
+		select {
+		case <-ticker.C:
+			c.checkAll(ctx, clusterNames)
+		case <-ctx.Done():
+			return
 		}
-	}()
-}
-
-// Stop halts periodic health checking.
-// ISSUE-010 FIX: Uses sync.Once to prevent double-close panic.
-func (c *ClusterHealthChecker) Stop() {
-	c.stopOnce.Do(func() {
-		close(c.stopCh)
-	})
+	}
 }
 
 func (c *ClusterHealthChecker) checkAll(ctx context.Context, clusterNames []string) {

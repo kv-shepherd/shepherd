@@ -1,6 +1,6 @@
 import type { SetupGuideState } from './hooks/useSetupGuide';
 
-export type SetupCompletionStep =
+type SetupCompletionStep =
     | 'system'
     | 'service'
     | 'namespace'
@@ -23,7 +23,7 @@ function incrementIfCompleted(
     return current + (completedStep === expectedStep ? 1 : 0);
 }
 
-export function resolveNextSetupHref(
+function resolveNextSetupHref(
     setup: SetupGuideState,
     completedStep: SetupCompletionStep,
 ): string | null {

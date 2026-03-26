@@ -39,6 +39,7 @@ tmp/
 /server
 .run/
 /web/.next-e2e/
+/web/tsconfig.build.json
 /web/tsconfig.e2e.*.json
 /custom-gcl
 /custom-gcl-proofread

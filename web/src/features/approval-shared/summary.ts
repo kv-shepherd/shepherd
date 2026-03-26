@@ -3,9 +3,9 @@ import type { TFunction } from 'i18next';
 
 import type { components } from '@/types/api.gen';
 
-export type TicketSummaryData = components['schemas']['TicketSummary'];
-export type TicketItemSummaryData = components['schemas']['TicketItemSummary'];
-export type TicketRecord = {
+type TicketSummaryData = components['schemas']['TicketSummary'];
+type TicketItemSummaryData = components['schemas']['TicketItemSummary'];
+type TicketRecord = {
     id: string;
     operation_type?: string;
     status: string;
@@ -33,7 +33,7 @@ const EMPTY_VALUE = '—';
 type PayloadRecord = Record<string, unknown>;
 type DescriptionItem = NonNullable<DescriptionsProps['items']>[number];
 
-export type ApprovalBatchDisplayItem = {
+type ApprovalBatchDisplayItem = {
     key: string;
     title: string;
     scope?: string;

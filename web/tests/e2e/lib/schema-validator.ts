@@ -310,19 +310,3 @@ export async function validateApiResponse(
     }
     return body;
 }
-
-/**
- * Assert that a response body has all required fields from the spec.
- * Useful for quick spot-checks without full schema compilation.
- */
-export function assertRequiredFields(schemaName: string, body: Record<string, unknown>): void {
-    const schema = schemas[schemaName] as { required?: string[] } | undefined;
-    const required = schema?.required ?? [];
-    const missing = required.filter((f) => !(f in body));
-    if (missing.length > 0) {
-        throw new Error(
-            `[schema-validator] "${schemaName}" missing required fields: ${missing.join(', ')}\n` +
-            `Got keys: ${Object.keys(body).join(', ')}`
-        );
-    }
-}

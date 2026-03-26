@@ -4,9 +4,50 @@ import nextTs from "eslint-config-next/typescript";
 import queryPlugin from "@tanstack/eslint-plugin-query";
 
 const eslintConfig = defineConfig([
+  {
+    linterOptions: {
+      reportUnusedDisableDirectives: "error",
+      reportUnusedInlineConfigs: "error",
+    },
+  },
   ...nextVitals,
   ...nextTs,
   ...queryPlugin.configs["flat/recommended"],
+  {
+    files: ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "next/router",
+              message: "Use next/navigation in the App Router codebase.",
+            },
+            {
+              name: "openapi-fetch",
+              message:
+                "Use the shared OpenAPI client wrapper in src/lib/api/client.ts instead of creating ad-hoc clients.",
+            },
+          ],
+          patterns: [
+            {
+              group: ["@/types/api.gen"],
+              allowTypeImports: true,
+              message:
+                "Generated OpenAPI modules may only be imported with `import type` outside the shared API client wrapper.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/lib/api/client.ts"],
+    rules: {
+      "no-restricted-imports": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

@@ -139,6 +139,32 @@ func TestMaskFor_UnknownEntityType(t *testing.T) {
 	}
 }
 
+func TestCurrentVersionKeyFor_Instancesize(t *testing.T) {
+	versionKey, ok := schema.CurrentVersionKeyFor("instancesize")
+	if !ok {
+		t.Fatal("CurrentVersionKeyFor(instancesize) returned ok=false")
+	}
+	if versionKey != "kubevirt-v1.7.0" {
+		t.Fatalf("CurrentVersionKeyFor(instancesize) = %q, want %q", versionKey, "kubevirt-v1.7.0")
+	}
+}
+
+func TestAvailableVersions_Instancesize(t *testing.T) {
+	versions, ok := schema.AvailableVersions("instancesize")
+	if !ok {
+		t.Fatal("AvailableVersions(instancesize) returned ok=false")
+	}
+	if len(versions) == 0 {
+		t.Fatal("AvailableVersions(instancesize) returned no versions")
+	}
+	if versions[0].Key != "kubevirt-v1.7.0" {
+		t.Fatalf("AvailableVersions(instancesize)[0].Key = %q, want %q", versions[0].Key, "kubevirt-v1.7.0")
+	}
+	if versions[0].KubeVirtVersion != "1.7.0" {
+		t.Fatalf("AvailableVersions(instancesize)[0].KubeVirtVersion = %q, want %q", versions[0].KubeVirtVersion, "1.7.0")
+	}
+}
+
 // TestInstancesizeSchema_RequiredPaths verifies that the embedded instancesize
 // schema contains the paths referenced by ALL mask fields (not just spot-check).
 // This is insurance in addition to TestMain's full validation.

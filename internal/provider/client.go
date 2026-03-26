@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"net"
+	"time"
 
 	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -9,6 +11,7 @@ import (
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
@@ -40,6 +43,7 @@ type VirtualMachineClient interface {
 	// Read operations (type-safe via kubevirt.io/client-go)
 	Get(ctx context.Context, namespace, name string, opts k8smetav1.GetOptions) (*kubevirtv1.VirtualMachine, error)
 	List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*kubevirtv1.VirtualMachineList, error)
+	Patch(ctx context.Context, namespace, name string, pt types.PatchType, data []byte, opts k8smetav1.PatchOptions, subresources ...string) (*kubevirtv1.VirtualMachine, error)
 	// Delete remains on typed client (not SSA-related, standard K8s operation)
 	Delete(ctx context.Context, namespace, name string, opts k8smetav1.DeleteOptions) error
 	// Lifecycle sub-resource methods (stable across KubeVirt versions)
@@ -54,6 +58,8 @@ type VirtualMachineInstanceClient interface {
 	List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*kubevirtv1.VirtualMachineInstanceList, error)
 	Pause(ctx context.Context, namespace, name string, opts *kubevirtv1.PauseOptions) error
 	Unpause(ctx context.Context, namespace, name string, opts *kubevirtv1.UnpauseOptions) error
+	VNC(namespace, name string, preserveSession bool) (net.Conn, error)
+	SerialConsole(namespace, name string, connectionTimeout time.Duration) (net.Conn, error)
 }
 
 // DataVolumeClient abstracts CDI DataVolume read operations.
@@ -86,6 +92,11 @@ type EventClient interface {
 // NamespaceClient abstracts cluster-scoped Namespace reads.
 type NamespaceClient interface {
 	Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*corev1.Namespace, error)
+}
+
+// NodeClient abstracts cluster-scoped Node reads used for host placement enrichment.
+type NodeClient interface {
+	Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*corev1.Node, error)
 }
 
 // PodClient abstracts namespace-scoped Pod reads used for PVC clone preflight checks.
@@ -132,6 +143,7 @@ type KubeVirtClusterClient interface {
 	StorageClass() StorageClassClient   // StorageClass reads for clone expansion preflight
 	Events() EventClient                // CoreV1 Events for best-effort failure summaries
 	Namespaces() NamespaceClient        // CoreV1 Namespaces for idempotent namespace creation
+	Nodes() NodeClient                  // CoreV1 Nodes for host placement enrichment
 	Pods() PodClient                    // CoreV1 Pods for PVC clone in-use preflight
 	Authorization() AuthorizationClient // SAR for CDI clone source RBAC preflight
 	SSA() DynamicSSAClient              // Write: CreateVM/UpdateVM (Unstructured SSA, ADR-0011)

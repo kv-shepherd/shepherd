@@ -58,19 +58,27 @@ Well-defined issues are the foundation of efficient collaboration:
 4. **Make your changes** following our coding standards
 5. **Run workflow-aligned local validation** before pushing:
    ```bash
+   make pr
+   ```
+   `make pr` is the canonical local mirror of the repository's required GitHub
+   Actions jobs. It runs the same quality dimensions at least once, using a
+   shared preflight plus parallel lanes for backend, frontend, governance,
+   API-contract sync, and Playwright mock smoke.
+
+   For faster local iteration before the full gate, run:
+   ```bash
    make lint
-   go test ./...
-   make ci-checks
    ```
-   If your PR changes frontend code, also run:
+   `make lint` is blocking and includes:
+   - Go lint
+   - `govulncheck`
+   - `gitleaks`
+   - `npm audit --audit-level=high`
+   - frontend `knip`
+
+   If you need easier failure debugging, use the serial fallback:
    ```bash
-   npm run lint --prefix web
-   npm run typecheck --prefix web
-   npm run test:run --prefix web
-   ```
-   If your PR changes API/OpenAPI artifacts, also run:
-   ```bash
-   bash docs/design/ci/scripts/api-check.sh
+   make pr-sequential
    ```
 6. **Commit** with clear, descriptive messages
 7. **Push** to your fork and create a Pull Request
@@ -84,7 +92,14 @@ The source of truth for local validation is the repository workflow configuratio
 - `.github/workflows/api-contract.yaml`
 
 Do not declare a branch "CI clean" unless the corresponding local commands aligned
-to those workflow jobs have actually passed.
+to those workflow jobs have actually passed. In this repository, that normally
+means `make pr` has passed.
+
+GitHub Actions required jobs must invoke repository-owned `make` targets rather
+than hand-maintained inline quality commands. If a workflow starts running
+direct `golangci-lint`, `go test`, `npm run typecheck`, or similar commands
+outside the repository targets, fix the drift before trusting local/remote CI
+parity.
 
 ### Atomic Pull Requests
 
@@ -229,11 +244,11 @@ go mod download
 # Generate Ent code
 go generate ./ent/...
 
-# Run unit tests
-go test ./...
+# Quick blocking lint bundle
+make lint
 
-# Run linter
-golangci-lint run
+# Full workflow-equivalent local validation
+make pr
 ```
 
 ### Running Locally
@@ -272,12 +287,14 @@ All PRs must pass these checks:
 
 | Check | Description |
 |-------|-------------|
-| `make lint` | Go linting via the repository's configured lint wrapper |
+| `make lint` | Blocking local lint bundle: Go lint + `govulncheck` + `gitleaks` + `npm audit --audit-level=high` + frontend `knip` |
+| `make pr` | Canonical workflow-equivalent local validation bundle (parallel) |
 | `shepherd-arch` (golangci-lint) | Architecture enforcement: import boundaries, ADR compliance, concurrency rules (ADR-0039) |
 | `go test ./...` | Backend/unit/integration test suite |
 | `npm run lint --prefix web` | Frontend lint |
 | `npm run typecheck --prefix web` | Frontend typecheck |
 | `npm run test:run --prefix web` | Frontend unit tests |
+| `npm run build --prefix web` | Frontend production build gate |
 | `make ci-checks` | Canonical governance/static strict checks |
 | `bash docs/design/ci/scripts/api-check.sh` | API contract sync (when API artifacts change) |
 
@@ -371,6 +388,12 @@ After the ADR is **Accepted**, use later PRs to:
 ### Unit Tests
 
 ```bash
+# Full PR-grade local validation
+make pr
+
+# Serial fallback for easier debugging
+make pr-sequential
+
 go test ./...
 
 # With race detection (CI default)

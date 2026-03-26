@@ -1,0 +1,30 @@
+title = "KubeVirt Shepherd gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Skip generated artifacts and local build/cache directories"
+paths = [
+  '''(^|/)\.env$''',
+  '''(^|/)\.git/''',
+  '''(^|/)bin/''',
+  '''(^|/)tmp/''',
+  '''(^|/)web/node_modules/''',
+  '''(^|/)web/\.next/''',
+  '''(^|/)web/\.next-e2e/''',
+  '''(^|/)web/playwright-report/''',
+  '''(^|/)web/test-results/''',
+  '''^internal/api/generated/server\.gen\.go$''',
+  '''^docs/design/ci/locks/openapi-critical\.lock$''',
+]
+
+[[allowlists]]
+description = "Allow deterministic dev/test bootstrap fixtures"
+paths = [
+  '''^deploy/dev/docker-compose\.yml$''',
+  '''^internal/config/config_test\.go$''',
+  '''^internal/config/secret_bootstrap_test\.go$''',
+  '''^internal/pkg/schema/embed_test\.go$''',
+  '''^internal/api/middleware/openapi_validator_test\.go$''',
+]

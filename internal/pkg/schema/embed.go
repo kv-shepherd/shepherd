@@ -5,83 +5,175 @@
 //
 // The schema pipeline is:
 //
-//	KubeVirt CRD JSON Schema → (pruned subset) → embedded JSON file
-//	                                         ↓
-//	                       GET /schemas/{entity_type}
-//	                                         ↓
-//	               DynamicSchemaResponse { schema, mask, source: "embedded" }
+//	KubeVirt CRD JSON Schema → (pruned subset) → versioned embedded JSON files
+//	                                                ↓
+//	                                  manifest.json selects current baseline
+//	                                                ↓
+//	                         GET /schemas/{entity_type} → DynamicSchemaResponse
 //
-// Currently all entity types are served from embedded baseline files.
-// When a remote schema cache is implemented (ADR-0023 Phase 2), the handler
-// SHOULD prefer the cached remote version and fall back to embedded on error.
-//
-// # Supported entity types
-//
-// - instancesize: KubeVirt v1.7.0 VirtualMachineSpec sub-schema (cpu, memory, gpu, hugepages).
-//
-// template and cluster are intentionally excluded:
-//   - template: cloud_init is a static YAML textarea; no dynamic schema needed (master-flow Step 3).
-//   - cluster:  schema not yet designed (ADR-0023 phase 2).
-//
-// # Adding a new entity type
-//  1. Add a JSON schema file to this package directory (e.g., cluster.schema.json).
-//  2. Add a JSON mask file (e.g., cluster.mask.json).
-//  3. Register the entity type in SchemaFor / MaskFor switch statements.
+// Currently all entity types are served from embedded baseline files selected by
+// manifest.json. When a remote schema cache is implemented (ADR-0023 Phase 2),
+// handlers SHOULD prefer the cached remote version and fall back to the current
+// embedded baseline on error.
 package schema
 
-import _ "embed"
+import (
+	"embed"
+	"encoding/json"
+	"sort"
+	"sync"
+)
 
-// ─── Embedded schema files ────────────────────────────────────────────────────
+//go:embed manifest.json versions/*/*.json
+var embeddedFiles embed.FS
 
-// instancesize.schema.json: KubeVirt v1.7.0 VirtualMachineSpec schema, pruned
-// to the spec.template subtree relevant for spec_overrides.
-//
-// Source: kubevirt/api v1.7.0, api/openapi-spec/swagger.json
-//
-//	→ definitions.v1.VirtualMachineSpec → resolved $refs inline
-//	→ wrapped under root "properties.spec" to match spec_overrides path prefix.
-//
-// Schema version: kv-shepherd:instancesize:kubevirt-v1.7.0
-// All mask paths in instancesize.mask.json must be validated against this file.
-//
-//go:embed instancesize.schema.json
-var instancesizeSchema []byte
-
-// instancesize.mask.json: UI projection mask for instancesize entity.
-// Defines quick_fields (always visible), advanced_fields (commonly adjusted),
-// and professional_fields (rare/expert settings).
-//
-//go:embed instancesize.mask.json
-var instancesizeMask []byte
-
-// ─── Lookup ───────────────────────────────────────────────────────────────────
-
-// SchemaFor returns the embedded JSON schema bytes for the given entity type.
-// Returns nil and false if the entity type is unknown or not yet implemented.
-//
-// Supported: "instancesize".
-// Unknown types (including "template" and "cluster") should be rejected
-// by the caller with HTTP 400.
-func SchemaFor(entityType string) ([]byte, bool) {
-	switch entityType {
-	case "instancesize":
-		return instancesizeSchema, true
-	default:
-		return nil, false
-	}
+type embeddedSchemaManifest struct {
+	Entities map[string]embeddedSchemaEntity `json:"entities"`
 }
 
-// MaskFor returns the embedded JSON mask bytes for the given entity type.
-// Returns nil and false if the entity type is unknown or not yet implemented.
-//
-// Supported: "instancesize".
-// Unknown types (including "template" and "cluster") should be rejected
-// by the caller with HTTP 400.
-func MaskFor(entityType string) ([]byte, bool) {
-	switch entityType {
-	case "instancesize":
-		return instancesizeMask, true
-	default:
+type embeddedSchemaEntity struct {
+	CurrentVersion string                           `json:"current_version"`
+	Versions       map[string]embeddedSchemaVersion `json:"versions"`
+}
+
+type embeddedSchemaVersion struct {
+	KubeVirtVersion string `json:"kubevirt_version"`
+	SchemaPath      string `json:"schema_path"`
+	MaskPath        string `json:"mask_path"`
+}
+
+// EmbeddedVersionInfo describes one embedded schema baseline.
+type EmbeddedVersionInfo struct {
+	Key             string
+	KubeVirtVersion string
+}
+
+var (
+	manifestOnce sync.Once
+	manifestData embeddedSchemaManifest
+	errManifest  error
+)
+
+func loadManifest() error {
+	manifestOnce.Do(func() {
+		raw, err := embeddedFiles.ReadFile("manifest.json")
+		if err != nil {
+			errManifest = err
+			return
+		}
+		if err := json.Unmarshal(raw, &manifestData); err != nil {
+			errManifest = err
+			return
+		}
+	})
+	return errManifest
+}
+
+func entityConfig(entityType string) (embeddedSchemaEntity, bool) {
+	if err := loadManifest(); err != nil {
+		return embeddedSchemaEntity{}, false
+	}
+	cfg, ok := manifestData.Entities[entityType]
+	return cfg, ok
+}
+
+func versionConfig(entityType, versionKey string) (embeddedSchemaVersion, bool) {
+	cfg, ok := entityConfig(entityType)
+	if !ok {
+		return embeddedSchemaVersion{}, false
+	}
+	version, ok := cfg.Versions[versionKey]
+	return version, ok
+}
+
+func readEmbeddedJSON(path string) ([]byte, bool) {
+	if path == "" {
 		return nil, false
 	}
+	raw, err := embeddedFiles.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	return raw, true
+}
+
+// CurrentVersionKeyFor returns the active embedded version key for an entity.
+func CurrentVersionKeyFor(entityType string) (string, bool) {
+	cfg, ok := entityConfig(entityType)
+	if !ok || cfg.CurrentVersion == "" {
+		return "", false
+	}
+	return cfg.CurrentVersion, true
+}
+
+// SchemaVersionFor returns the current KubeVirt semver for an entity.
+func SchemaVersionFor(entityType string) (string, bool) {
+	versionKey, ok := CurrentVersionKeyFor(entityType)
+	if !ok {
+		return "", false
+	}
+	version, ok := versionConfig(entityType, versionKey)
+	if !ok || version.KubeVirtVersion == "" {
+		return "", false
+	}
+	return version.KubeVirtVersion, true
+}
+
+// AvailableVersions returns the embedded schema versions for an entity.
+func AvailableVersions(entityType string) ([]EmbeddedVersionInfo, bool) {
+	cfg, ok := entityConfig(entityType)
+	if !ok {
+		return nil, false
+	}
+	keys := make([]string, 0, len(cfg.Versions))
+	for key := range cfg.Versions {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	versions := make([]EmbeddedVersionInfo, 0, len(keys))
+	for _, key := range keys {
+		version := cfg.Versions[key]
+		versions = append(versions, EmbeddedVersionInfo{
+			Key:             key,
+			KubeVirtVersion: version.KubeVirtVersion,
+		})
+	}
+	return versions, true
+}
+
+// SchemaFor returns the embedded JSON schema bytes for the current entity baseline.
+func SchemaFor(entityType string) ([]byte, bool) {
+	versionKey, ok := CurrentVersionKeyFor(entityType)
+	if !ok {
+		return nil, false
+	}
+	return SchemaForVersion(entityType, versionKey)
+}
+
+// SchemaForVersion returns the embedded JSON schema bytes for a specific version key.
+func SchemaForVersion(entityType, versionKey string) ([]byte, bool) {
+	version, ok := versionConfig(entityType, versionKey)
+	if !ok {
+		return nil, false
+	}
+	return readEmbeddedJSON(version.SchemaPath)
+}
+
+// MaskFor returns the embedded JSON mask bytes for the current entity baseline.
+func MaskFor(entityType string) ([]byte, bool) {
+	versionKey, ok := CurrentVersionKeyFor(entityType)
+	if !ok {
+		return nil, false
+	}
+	return MaskForVersion(entityType, versionKey)
+}
+
+// MaskForVersion returns the embedded JSON mask bytes for a specific version key.
+func MaskForVersion(entityType, versionKey string) ([]byte, bool) {
+	version, ok := versionConfig(entityType, versionKey)
+	if !ok {
+		return nil, false
+	}
+	return readEmbeddedJSON(version.MaskPath)
 }

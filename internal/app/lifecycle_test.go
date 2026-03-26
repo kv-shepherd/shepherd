@@ -56,6 +56,7 @@ func (s *stubLifecycleClusterClient) StorageClass() provider.StorageClassClient 
 }
 func (s *stubLifecycleClusterClient) Events() provider.EventClient                { return nil }
 func (s *stubLifecycleClusterClient) Namespaces() provider.NamespaceClient        { return nil }
+func (s *stubLifecycleClusterClient) Nodes() provider.NodeClient                  { return nil }
 func (s *stubLifecycleClusterClient) Pods() provider.PodClient                    { return nil }
 func (s *stubLifecycleClusterClient) Authorization() provider.AuthorizationClient { return nil }
 func (s *stubLifecycleClusterClient) SSA() provider.DynamicSSAClient              { return nil }

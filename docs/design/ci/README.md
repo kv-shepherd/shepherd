@@ -59,7 +59,7 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 | [check_manual_di.sh](./scripts/check_manual_di.sh) | **Strict Manual DI convention** (replaces Wire check) | Required | ✅ Yes |
 | [check_sqlc_usage.sh](./scripts/check_sqlc_usage.sh) | **sqlc usage scope** (ADR-0012 whitelist enforcement) | Required | ✅ Yes |
 | [check_repository_tests.go](./scripts/check_repository_tests.go) | Repository methods must have tests | Required | ✅ Yes |
-| [check_dead_tests.go](./scripts/check_dead_tests.go) | Orphan/invalid test detection | Warning | ⚠️ No |
+| [check_dead_tests.go](./scripts/check_dead_tests.go) | Orphan/invalid test detection | Required | ✅ Yes |
 | [check_test_assertions.go](./scripts/check_test_assertions.go) | Tests must have assertions | Required | ✅ Yes |
 | [check_doc_claims_consistency.go](./scripts/check_doc_claims_consistency.go) | Block checklist \"done\" claims that lack implementation evidence, and block stale provider-boundary doc claims that collapse approval/notification/runtime auth back into `internal/provider/auth.go` | Required | ✅ Yes |
 | [check_master_flow_api_alignment.go](./scripts/check_master_flow_api_alignment.go) | Enforce every master-flow API path is either in OpenAPI or explicit deferred allowlist | Required | ✅ Yes |
@@ -131,8 +131,14 @@ bash docs/design/ci/scripts/check_live_e2e_no_mock.sh
 # Full master-flow completion claim (no deferred/exemption debt)
 go run docs/design/ci/scripts/check_master_flow_completion_readiness.go
 
-# Workflow-equivalent local PR validation bundle
-make pr-ci
+# Workflow-equivalent local PR validation bundle (parallel)
+make pr
+
+# Sequential fallback for easier debugging
+make pr-sequential
+
+# Supplemental scanners
+make supplemental-scans
 
 # End-to-end strict chain (requires DATABASE_URL)
 make master-flow-strict
@@ -166,16 +172,82 @@ bash docs/design/ci/scripts/check_design_doc_governance.sh
 
 See the build job in `.github/workflows/ci.yml`.
 
-Current split (2026-03-03 optimization):
+Current split (2026-03-26 optimization):
 
-- `ci-checks`: canonical static governance and strict script gates (including frontend typecheck/unit).
+- `ci-checks` / `ci-governance`: canonical static governance and strict script gates only.
+  Frontend typecheck/unit and API generated-code sync no longer duplicate here.
+- `ci-prep`: shared local preflight for repo-mutating checks (`npm ci`, Ent codegen sync,
+  OpenAPI generated-code sync). This runs once before parallel lanes so generated files do not
+  race each other.
 - `master-flow-strict`: PostgreSQL behavior suites + optional live e2e (`ENABLE_LIVE_E2E=true`).
-- `pr-ci`: top-level local mirror for required GitHub Actions jobs (`Lint`, `Build`,
-  `Test`, `CI Checks`, `Frontend Tests`, and API contract validation). This target
-  intentionally repeats some frontend checks because GitHub runs them in separate jobs.
-  Playwright smoke checks now fail the run if any test is only green after retry.
+- `lint`: top-level blocking lint bundle. Runs `govulncheck`, frontend dead-code/dependency
+  hygiene (`knip`), and the Go lint stack together.
+- `ci-backend`: local once-only Go lane (`govulncheck`, Go lint, race test, build).
+- `ci-frontend`: local once-only frontend lane (`lint`, `typecheck`, `vitest`, `build`, `knip`).
+- `ci-frontend`: local once-only frontend lane (`npm audit --audit-level=high`, `lint`, `typecheck`, `vitest`, `build`, `knip`).
+- `ci-api-sync`: local once-only API contract lane (`api-contract-test`) after shared preflight.
+- `ci-e2e-smoke`: local once-only Playwright mock smoke lane.
+- `pr` / `pr-ci`: top-level local mirror for required GitHub Actions jobs. Runs the local
+  lanes in parallel after a shared `ci-prep` phase, so every gate still runs
+  at least once but the same quality dimension is not repeated in multiple lanes.
+- `pr-sequential`: serial fallback with the same gate coverage, useful when debugging failures.
+- GitHub Actions required jobs must call repository-owned `make` targets
+  (`ci-go-lint`, `ci-go-build`, `ci-go-test`, `ci-governance`,
+  `ci-master-flow-backend`, `ci-frontend-deadcode`, `ci-frontend-unit`,
+  `ci-e2e-smoke`, `ci-api-lint`, `ci-api-breaking`, `ci-api-generated-sync`,
+  `ci-api-contract`) instead of duplicating inline quality commands in workflow
+  YAML. This keeps local `make pr` and remote required checks on the same
+  command definitions.
+- `check_workflow_make_target_parity.sh` is blocking and enforces that workflow
+  files keep using those repository targets.
+- `Govulncheck`: runs `make govulncheck` as a blocking job and is also included in
+  `make lint`, `make ci-backend`, and `make pr`.
+- `Gitleaks`: runs `make secrets-scan` as a blocking job and is also included in
+  `make lint`, `make ci-governance`, and `make pr`.
+- `Dead Code & Dependency Hygiene`: runs `npm run knip` as a blocking frontend
+  hygiene gate and is also included in `make lint`, `make ci-frontend`, and `make pr`.
+- `npm audit --audit-level=high`: runs as a blocking frontend dependency-security
+  gate and is also included in `make lint`, `make ci-frontend`, and `make pr`.
 
-This split avoids duplicate execution of the same static checks across both jobs while keeping gate coverage unchanged.
+Caching policy:
+
+- `Frontend Tests` caches `web/.next/cache` for the explicit frontend build step.
+- `E2E Mock Smoke` caches `web/.next-e2e/ci/cache` so the dedicated Playwright
+  production build can reuse the Next.js build cache across workflow runs.
+- Both frontend jobs emit explicit cache observability (`cache-hit=<true|false>`
+  plus `du -sh` of the cache directory) so cache effectiveness can be checked
+  directly in GitHub Actions logs instead of inferred from runtime.
+- Playwright browser binaries are intentionally **not** cached. Per Playwright's
+  CI guidance, restoring browser caches on Linux is often not meaningfully
+  faster than reinstalling, and system dependencies still need fresh setup.
+
+This split removes redundant frontend/API sync work from `CI Checks` while keeping overall gate coverage unchanged.
+
+### Supplemental Scanners
+
+`pr` / `pr-ci` mirror required GitHub Actions jobs. Supplemental scanners are split into:
+
+Current scanner gates:
+
+- `make govulncheck`
+  - Tool: Go official `govulncheck`
+  - Policy: blocking
+  - Included in `make lint` and `make pr`
+- `make secrets-scan`
+  - Tool: `gitleaks`
+  - Policy: blocking
+  - Included in `make lint`, `make ci-governance`, and `make pr`
+- `make frontend-deadcode-scan`
+  - Tool: `knip`
+  - Policy: blocking
+  - Included in `make lint` and `make pr`
+- `make frontend-security-audit`
+  - Tool: `npm audit --audit-level=high`
+  - Policy: blocking
+  - Included in `make lint`, `make ci-frontend`, and `make pr`
+
+See [NOTE-20260326-supplemental-ci-scanners.md](../notes/NOTE-20260326-supplemental-ci-scanners.md)
+for rollout policy and promotion criteria.
 
 ---
 

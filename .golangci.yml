@@ -11,15 +11,18 @@ run:
 linters:
   enable:
     - bodyclose
+    - depguard
     - dupl
     - errname
     - errorlint
     - exhaustive
+    - forbidigo
     - goconst
     - gocritic
     - gosec
     - misspell
     - nilerr
+    - nolintlint
     - noctx
     - prealloc
     - revive
@@ -30,6 +33,26 @@ linters:
     - shepherd-arch
 
   settings:
+    depguard:
+      rules:
+        modern-stdlib:
+          files:
+            - "!$test"
+          deny:
+            - pkg: io/ioutil$
+              desc: use io or os equivalents instead of deprecated io/ioutil
+            - pkg: log$
+              desc: use internal/pkg/logger instead of the standard log package
+            - pkg: math/rand$
+              desc: use math/rand/v2 or crypto/rand as appropriate
+        runtime-shell:
+          files:
+            - "!$test"
+            - "!cmd/**"
+            - "!internal/testutil/**"
+          deny:
+            - pkg: os/exec$
+              desc: shelling out is forbidden in runtime code
     dupl:
       threshold: 150
     exhaustive:
@@ -37,6 +60,16 @@ linters:
     goconst:
       min-len: 3
       min-occurrences: 3
+    forbidigo:
+      forbid:
+        - pattern: ^print(ln)?$
+          msg: do not commit debug print statements
+        - pattern: ^fmt\.Print.*$
+          msg: use structured logging or explicit CLI output helpers instead of fmt.Print*
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
     gocritic:
       enabled-tags:
         - diagnostic
@@ -85,6 +118,12 @@ linters:
       # Allow naked goroutine in main.go server start (exempt)
       - path: cmd/server/main\.go
         text: naked goroutine
+      - path: ^cmd/
+        linters:
+          - forbidigo
+      - path: internal/testutil/
+        linters:
+          - depguard
       # Allow naked goroutine in worker pool infrastructure
       - path: internal/pkg/worker/
         text: naked goroutine

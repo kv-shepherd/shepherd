@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
 import type { SchemaMask } from '../components/DynamicSchemaForm';
 
-export interface DynamicSchemaResponse {
+interface DynamicSchemaResponse {
     /** Raw OpenAPI JSON Schema returned from backend cache or embedded fallback. */
     schema: Record<string, unknown>;
     /** Admin/developer-configured UI mask dictating which paths and labels to expose. */
@@ -53,7 +53,7 @@ export interface DynamicSchemaResponse {
  *   - template: cloud_init is a static YAML textarea only (master-flow Step 3, no spec_overrides).
  *   - cluster:  schema not yet designed (ADR-0023 phase 2).
  */
-export type DynamicSchemaEntityType = 'instancesize';
+type DynamicSchemaEntityType = 'instancesize';
 
 export const useDynamicSchema = (entityType: DynamicSchemaEntityType) => {
     return useQuery({

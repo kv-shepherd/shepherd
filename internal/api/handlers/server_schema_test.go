@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"kv-shepherd.io/shepherd/internal/api/generated"
+	"kv-shepherd.io/shepherd/internal/pkg/schema"
 )
 
 // TestGetDynamicSchema does not require a database — the handler reads only
@@ -48,6 +49,14 @@ func TestGetDynamicSchema_Instancesize_Returns200(t *testing.T) {
 	// schema_version must be set.
 	if resp.SchemaVersion == "" {
 		t.Error("schema_version is empty, want semver string")
+	}
+
+	expectedVersion, ok := schema.SchemaVersionFor("instancesize")
+	if !ok {
+		t.Fatal("schema.SchemaVersionFor(instancesize) = !ok, want true")
+	}
+	if resp.SchemaVersion != expectedVersion {
+		t.Errorf("schema_version = %q, want %q", resp.SchemaVersion, expectedVersion)
 	}
 
 	// source must be "embedded" (current implementation serves from embedded baseline).

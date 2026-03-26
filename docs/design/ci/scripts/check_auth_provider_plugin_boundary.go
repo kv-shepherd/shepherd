@@ -952,13 +952,13 @@ func main() {
 	}
 
 	if len(failures) > 0 {
-		fmt.Println("FAIL: auth provider plugin boundary check failed")
+		_, _ = os.Stdout.WriteString("FAIL: auth provider plugin boundary check failed\n")
 		for _, item := range failures {
-			fmt.Printf(" - %s\n", item)
+			_, _ = os.Stdout.WriteString(fmt.Sprintf(" - %s\n", item))
 		}
-		fmt.Println("Rule: auth-provider core must stay plugin-standard and must not hardcode provider-specific branches in runtime paths.")
+		_, _ = os.Stdout.WriteString("Rule: auth-provider core must stay plugin-standard and must not hardcode provider-specific branches in runtime paths.\n")
 		os.Exit(1)
 	}
 
-	fmt.Println("OK: auth provider plugin boundary check passed")
+	_, _ = os.Stdout.WriteString("OK: auth provider plugin boundary check passed\n")
 }

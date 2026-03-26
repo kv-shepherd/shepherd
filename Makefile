@@ -1,9 +1,11 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr-ci
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade
 
 # Go parameters
+GO_TOOLCHAIN_VERSION?=go1.25.8
+export GOTOOLCHAIN=$(GO_TOOLCHAIN_VERSION)
 GOCMD=go
 
 # golangci-lint binary — prefer PATH, fall back to ~/go/bin (ADR-0039)
@@ -16,6 +18,9 @@ GOTEST=$(GOCMD) test
 GOMOD=$(GOCMD) mod
 BINARY_NAME=shepherd
 SEED_BINARY=seed
+GOVULNCHECK_VERSION=v1.1.4
+GITLEAKS_VERSION=v8.28.0
+GO_LINT_TARGETS=./cmd/... ./ent/... ./internal/... ./pkg/...
 
 # Build directories
 BUILD_DIR=bin
@@ -66,19 +71,10 @@ test-cover:
 	$(GOTEST) -race -coverprofile=coverage.out -covermode=atomic -timeout=300s ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 
-## lint: Run golangci-lint (auto-detects module plugin via .custom-gcl.yml; ADR-0039)
+## lint: Run the blocking local lint bundle (govulncheck + gitleaks + frontend dead-code scan + frontend high-severity dependency audit + golangci-lint)
 ## Depends on lint-version-check to fail fast on golang.org/x/tools version drift.
-lint: lint-version-check
-	@if [ -f .custom-gcl.yml ]; then \
-		if [ ! -f ./custom-gcl ] || [ .custom-gcl.yml -nt ./custom-gcl ]; then \
-			echo "Building custom golangci-lint binary (module plugin)..."; \
-			$(GOLANGCI_LINT) custom; \
-		fi; \
-		echo "Running custom-gcl (includes shepherd-arch)..."; \
-		./custom-gcl run ./...; \
-	else \
-		$(GOLANGCI_LINT) run ./...; \
-	fi
+lint: lint-version-check govulncheck secrets-scan frontend-deadcode-scan frontend-security-audit
+	@$(MAKE) ci-go-lint
 
 ## lint-arch: Run architecture enforcement linters via shepherd-lint binary (ADR-0039)
 ## Replaces individual 'go run docs/design/ci/scripts/check_*.go' invocations for Batch 1 scripts.
@@ -139,18 +135,15 @@ clean:
 docker:
 	docker build -t kubevirt-shepherd:latest .
 
-## ci-checks: Run canonical CI check scripts wired in GitHub Actions
-ci-checks:
+## ci-governance: Run canonical governance/static CI check scripts wired in GitHub Actions
+ci-governance:
 	@echo "Running CI checks..."
 	@$(MAKE) lint-arch
 	@$(MAKE) test-shepherd-linter
 	@bash docs/design/ci/scripts/check_no_new_run_scripts.sh
 	@bash docs/design/ci/scripts/check_no_legacy_batch1_invocations.sh
-	@npm run typecheck --prefix web
-	@npm run test:run --prefix web
 	@bash docs/design/ci/scripts/check_changed_code_has_tests.sh
 	@bash docs/design/ci/scripts/check_no_redis_import.sh
-	@go run docs/design/ci/scripts/check_ent_codegen.go
 	@bash docs/design/ci/scripts/check_manual_di.sh
 	@go run docs/design/ci/scripts/check_no_sqlite_in_tests.go
 	@go run docs/design/ci/scripts/check_no_runtime_placeholders.go
@@ -159,7 +152,6 @@ ci-checks:
 	@go run docs/design/ci/scripts/check_validate_spec.go
 	@go run docs/design/ci/scripts/check_openapi_critical_contract.go
 	@go run docs/design/ci/scripts/check_openapi_critical_fingerprint.go
-	@bash docs/design/ci/scripts/api-check.sh
 	@go run docs/design/ci/scripts/check_vm_create_status_progression.go
 	@go run docs/design/ci/scripts/check_vm_create_spec_completeness.go
 	@go run docs/design/ci/scripts/check_critical_test_presence.go
@@ -187,25 +179,165 @@ ci-checks:
 	@bash docs/design/ci/scripts/check_design_doc_governance.sh
 	@go run docs/design/ci/scripts/check_module_noop_hooks.go
 	@go run docs/design/ci/scripts/check_test_assertions.go
-	@go run docs/design/ci/scripts/check_dead_tests.go || true
+	@go run docs/design/ci/scripts/check_dead_tests.go
 	@go run docs/design/ci/scripts/check_repository_tests.go
+	@bash docs/design/ci/scripts/check_workflow_make_target_parity.sh
+	@$(MAKE) secrets-scan
+	@$(MAKE) kubevirt-schema-check
 
-## pr-ci: Run the workflow-equivalent local PR validation bundle that mirrors required GitHub Actions jobs
-##       Intentionally keeps some duplicate checks because remote CI runs them in separate jobs/workflows.
-pr-ci:
-	@echo "Running workflow-equivalent PR CI..."
+## ci-checks: Backward-compatible alias for governance/static gates
+ci-checks: ci-governance
+
+## ci-prep: Run shared mutating checks once before parallel lanes
+ci-prep:
 	@npm ci --prefix web
+	@$(MAKE) ci-api-sync
+
+## ci-backend: Run Go/backend required checks once
+ci-backend:
+	@$(MAKE) govulncheck
+	@$(MAKE) ci-go-lint
+	@$(MAKE) ci-go-test
+	@$(MAKE) ci-go-build
+	@$(MAKE) ci-master-flow-backend
+
+## ci-frontend: Run frontend required checks once
+ci-frontend:
+	@$(MAKE) ci-frontend-deadcode
+	@$(MAKE) ci-frontend-unit
+
+## ci-api-sync: Run API contract and generated-code sync checks once
+ci-api-sync:
+	@$(MAKE) ci-api-lint
+	@$(MAKE) ci-api-breaking
+	@$(MAKE) ci-api-generated-sync
+	@$(MAKE) ci-api-contract
+
+## ci-e2e-smoke: Run frontend mock smoke once
+ci-e2e-smoke:
 	@sh -c 'trap '\''find web -maxdepth 1 -name "tsconfig.e2e.*.json" -delete'\'' EXIT; find web -maxdepth 1 -name "tsconfig.e2e.*.json" -delete; CI=1 npm run test:e2e:mock --prefix web'
 	@find web -maxdepth 1 -name 'tsconfig.e2e.*.json' -delete
-	@$(MAKE) lint
-	@$(GOCMD) test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+## ci-go-lint: Run the Go lint target set used by the required CI Lint job
+ci-go-lint: lint-version-check
+	@if [ -f .custom-gcl.yml ]; then \
+		if [ ! -f ./custom-gcl ] || [ .custom-gcl.yml -nt ./custom-gcl ]; then \
+			echo "Building custom golangci-lint binary (module plugin)..."; \
+			$(GOLANGCI_LINT) custom; \
+		fi; \
+		echo "Running custom-gcl (includes shepherd-arch)..."; \
+		./custom-gcl run $(GO_LINT_TARGETS); \
+	else \
+		$(GOLANGCI_LINT) run $(GO_LINT_TARGETS); \
+	fi
+
+## ci-go-build: Run the Go build target set used by the required CI Build job
+ci-go-build:
 	@$(GOCMD) build ./...
-	@$(MAKE) ci-checks
-	@$(MAKE) api-compat-generate api-generate api-compat api-contract-test
+
+## ci-go-test: Run the Go race-test target set used by the required CI Test job
+ci-go-test:
+	@$(GOCMD) test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+## ci-master-flow-backend: Run the backend behavior suites used by the required Master-Flow Strict job
+ci-master-flow-backend:
+	@if [ -n "$$DATABASE_URL" ]; then \
+		go test -count=1 ./internal/api/handlers; \
+		go test -count=1 ./internal/governance/approval; \
+		go test -count=1 ./internal/usecase; \
+		go test -count=1 ./internal/jobs; \
+		go test -count=1 ./internal/service; \
+	else \
+		./scripts/run_with_docker_pg.sh -- \
+			go test -count=1 \
+			./internal/api/handlers \
+			./internal/governance/approval \
+			./internal/usecase \
+			./internal/jobs \
+			./internal/service; \
+	fi
+
+## ci-frontend-deadcode: Run the frontend dependency hygiene target set used by the required Frontend dead-code job
+ci-frontend-deadcode:
+	@$(MAKE) frontend-security-audit
+	@$(MAKE) frontend-deadcode-scan
+
+## ci-frontend-unit: Run the frontend lint/typecheck/unit/build target set used by the required Frontend unit job
+ci-frontend-unit:
 	@npm run lint --prefix web
 	@npm run typecheck --prefix web
 	@npm run test:run --prefix web
 	@npm run build --prefix web
+
+## ci-api-lint: Run the OpenAPI lint target set used by the required API lint job
+ci-api-lint:
+	@$(MAKE) api-lint
+
+## ci-api-breaking: Run the OpenAPI breaking-change target set used by the required API breaking-change job
+ci-api-breaking:
+	@$(MAKE) api-breaking BASE_REF=$${BASE_REF:-main}
+
+## ci-api-generated-sync: Run the API generated-sync target set used by the required API generated-code-sync job
+ci-api-generated-sync:
+	@echo "🔍 Verifying generated API code sync..."
+	@VERSION="$$(go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.1 -version | tail -n 1)"; \
+	if [ "$$VERSION" != "v2.5.1" ]; then \
+		echo "oapi-codegen must be v2.5.1, got $$VERSION"; \
+		exit 1; \
+	fi
+	@REQUIRE_OPENAPI_COMPAT=1 bash ./docs/design/ci/scripts/api-check.sh
+	@cd web && npm run api:generate && git diff --exit-code src/types/api.gen.ts && npm run typecheck
+	@if [ -n "$$(git status --porcelain internal/api/generated/ web/src/types/api.gen.ts api/openapi.compat.yaml internal/api/specembed/openapi.yaml 2>/dev/null)" ]; then \
+		echo "Generated code is out of sync with OpenAPI spec!"; \
+		git status --porcelain internal/api/generated/ web/src/types/api.gen.ts api/openapi.compat.yaml internal/api/specembed/openapi.yaml; \
+		exit 1; \
+	fi
+
+## ci-api-contract: Run the API runtime contract test target set used by the required API contract-test job
+ci-api-contract:
+	@$(MAKE) api-contract-test
+
+## pr: Short alias for the workflow-equivalent PR validation bundle
+pr: pr-ci
+
+## pr-sequential: Run the full local PR gate set serially for easier debugging
+pr-sequential:
+	@echo "Running sequential PR CI..."
+	@$(MAKE) ci-prep
+	@$(MAKE) ci-api-sync
+	@$(MAKE) ci-backend
+	@$(MAKE) ci-governance
+	@$(MAKE) ci-frontend
+	@$(MAKE) ci-e2e-smoke
+
+## pr-ci: Run the workflow-equivalent local PR validation bundle in parallel
+pr-ci:
+	@echo "Running workflow-equivalent PR CI..."
+	@bash scripts/run_pr_parallel.sh
+
+## govulncheck: Run Go official vulnerability scanner (blocking when invoked directly)
+govulncheck:
+	@$(GOCMD) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+## frontend-deadcode-scan: Run Knip dead-code/dependency scan (blocking when invoked directly)
+frontend-deadcode-scan:
+	@npm run knip --prefix web
+
+## frontend-security-audit: Run npm audit at high severity threshold (blocking when invoked directly)
+frontend-security-audit:
+	@bash scripts/run_frontend_audit_retry.sh
+
+## secrets-scan: Run gitleaks against the current working tree (blocking when invoked directly)
+secrets-scan:
+	@$(GOCMD) run github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION) detect --source . --no-git --config .gitleaks.toml --no-banner --redact
+
+## supplemental-scans: Run dedicated scanner gates alongside the core CI bundle
+supplemental-scans:
+	@echo "Running supplemental scanners..."
+	@$(MAKE) govulncheck
+	@$(MAKE) secrets-scan
+	@$(MAKE) frontend-deadcode-scan
+	@$(MAKE) frontend-security-audit
 
 ## master-flow-strict: Run strict master-flow test-first gate chain (requires DATABASE_URL)
 master-flow-strict:
@@ -242,6 +374,16 @@ test-backend-docker-pg:
 ## master-flow-strict-docker-pg: Run master-flow strict chain against an isolated Docker PostgreSQL container
 master-flow-strict-docker-pg:
 	./scripts/run_with_docker_pg.sh -- make master-flow-strict
+
+## kubevirt-schema-check: Check if embedded KubeVirt schema matches latest GA release (non-blocking by default)
+kubevirt-schema-check:
+	@go run ./cmd/kubevirt-schema-check
+
+## kubevirt-schema-upgrade: Download and prepare a new KubeVirt schema version
+## Usage: make kubevirt-schema-upgrade VERSION=1.8.0
+kubevirt-schema-upgrade:
+	@test -n "$(VERSION)" || (echo "Usage: make kubevirt-schema-upgrade VERSION=<semver>"; exit 1)
+	@go run ./cmd/kubevirt-schema-upgrade $(VERSION)
 
 ## help: Show this help message
 help:

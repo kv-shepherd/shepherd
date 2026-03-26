@@ -1,6 +1,6 @@
 'use client';
 
-export interface StoredActiveBatchState {
+interface StoredActiveBatchState {
     batch_id: string;
     status_url: string;
 }

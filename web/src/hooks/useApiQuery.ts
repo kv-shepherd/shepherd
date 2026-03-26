@@ -61,6 +61,10 @@ export function useApiGet<T>(
     fetcher: () => Promise<{ data?: T; error?: ApiErrorResponse; response: Response }>,
     options?: Omit<UseQueryOptions<T, ApiErrorResponse>, 'queryKey' | 'queryFn'>
 ) {
+    // queryKey is the cache identity chosen by the caller; this wrapper keeps
+    // fetcher out of the key on purpose so callers don't accidentally key by
+    // function identity.
+    // eslint-disable-next-line @tanstack/query/exhaustive-deps
     return useQuery<T, ApiErrorResponse>({
         queryKey,
         queryFn: async () => {

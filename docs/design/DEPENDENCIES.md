@@ -20,12 +20,13 @@
 
 | Item | Version | Notes |
 |------|---------|-------|
-| **Go** | `1.25.7` | **Recommended latest stable** (released 2026-02-04, includes security patches) |
+| **Go** | `1.25.8` | Current repository baseline and minimum patched toolchain for blocking `govulncheck` |
 
 > **Go Version Strategy (ADR-0028)**: 
 > - **Minimum**: Go 1.24 (required for `omitzero` tag support, ADR-0028)
 > - **CI Enforced**: Go 1.25+ (ADR-0028 §Confirmation)
-> - **Recommended**: Go 1.25.7 (latest stable with security patches)
+> - **Current Baseline**: Go 1.25.8
+> - **Security Gate**: `govulncheck` is blocking at this baseline
 > - Dependencies: Gin v1.11.0 requires Go 1.23+, KubeVirt client-go requires Go 1.24+
 > - Code is backward compatible with Go 1.24, but CI blocks builds below Go 1.25
 
@@ -499,6 +500,13 @@ replace (
 | `@vitest/coverage-v8` | `3.x` | Native V8 coverage provider |
 | `playwright` | `1.5x` | Cross-browser E2E testing |
 | `msw` | `2.x` | Mock Service Worker for API mocking |
+
+### Supplemental CI Scanners
+
+| Package | Version | Description |
+|---------|---------|-------------|
+| `golang.org/x/vuln/cmd/govulncheck` | `v1.1.4` | Go official reachable-vulnerability scanner |
+| `knip` | `6.0.5` | Frontend dead-code, unused-export, and dependency-hygiene scanner |
 
 > **Environment Selection**: `jsdom` chosen over `happy-dom` for:
 > - Superior API coverage and browser fidelity

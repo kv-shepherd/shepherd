@@ -57,6 +57,7 @@ func (s *stubModulesClusterClient) PVC() provider.PersistentVolumeClaimClient   
 func (s *stubModulesClusterClient) StorageClass() provider.StorageClassClient     { return s.storageClass }
 func (s *stubModulesClusterClient) Events() provider.EventClient                  { return nil }
 func (s *stubModulesClusterClient) Namespaces() provider.NamespaceClient          { return nil }
+func (s *stubModulesClusterClient) Nodes() provider.NodeClient                    { return nil }
 func (s *stubModulesClusterClient) Pods() provider.PodClient                      { return nil }
 func (s *stubModulesClusterClient) Authorization() provider.AuthorizationClient   { return nil }
 func (s *stubModulesClusterClient) SSA() provider.DynamicSSAClient                { return nil }

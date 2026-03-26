@@ -11,6 +11,3 @@ export const i18nConfig = {
     namespaces: ['common', 'errors', 'approval', 'vm', 'admin', 'schema'] as const,
     defaultNamespace: 'common' as const,
 };
-
-export type Locale = (typeof i18nConfig.locales)[number];
-export type Namespace = (typeof i18nConfig.namespaces)[number];

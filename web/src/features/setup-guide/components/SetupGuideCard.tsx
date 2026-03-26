@@ -15,7 +15,7 @@ import { useSetupGuide } from '../hooks/useSetupGuide';
 
 const { Text } = Typography;
 
-export type SetupGuideVariant = 'dashboard' | 'systems' | 'services' | 'vm';
+type SetupGuideVariant = 'dashboard' | 'systems' | 'services' | 'vm';
 
 interface SetupGuideCardProps {
     variant: SetupGuideVariant;

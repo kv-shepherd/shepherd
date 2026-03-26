@@ -838,25 +838,39 @@ export function AdminInstanceSizesContent() {
     const getColumnSearchProps = (dataIndex: keyof InstanceSize): Partial<ColumnsType<InstanceSize>[number]> => ({
         filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }: FilterDropdownProps) => (
             <div style={{ padding: 8 }} onKeyDown={(e) => e.stopPropagation()}>
-                <Input
-                    ref={searchInputRef}
-                    placeholder={`${t('common:button.search')} ${dataIndex}`}
-                    value={selectedKeys[0]}
-                    onChange={(e) => setSelectedKeys(e.target.value ? [e.target.value] : [])}
-                    onPressEnter={() => {
-                        confirm();
-                        sizes.setSearchText(selectedKeys[0] as string);
-                        sizes.setSearchedColumn(dataIndex);
-                    }}
-                    style={{ marginBottom: 8, display: 'block' }}
-                />
+                {(() => {
+                    const currentValue = typeof selectedKeys[0] === 'symbol'
+                        ? ''
+                        : typeof selectedKeys[0] === 'undefined'
+                            ? ''
+                            : String(selectedKeys[0]);
+                    return (
+                        <Input
+                            ref={searchInputRef}
+                            placeholder={`${t('common:button.search')} ${String(dataIndex)}`}
+                            value={currentValue}
+                            onChange={(e) => setSelectedKeys(e.target.value ? [e.target.value] : [])}
+                            onPressEnter={() => {
+                                confirm();
+                                sizes.setSearchText(currentValue);
+                                sizes.setSearchedColumn(String(dataIndex));
+                            }}
+                            style={{ marginBottom: 8, display: 'block' }}
+                        />
+                    );
+                })()}
                 <Space>
                     <Button
                         type="primary"
                         onClick={() => {
+                            const currentValue = typeof selectedKeys[0] === 'symbol'
+                                ? ''
+                                : typeof selectedKeys[0] === 'undefined'
+                                    ? ''
+                                    : String(selectedKeys[0]);
                             confirm();
-                            sizes.setSearchText(selectedKeys[0] as string);
-                            sizes.setSearchedColumn(dataIndex);
+                            sizes.setSearchText(currentValue);
+                            sizes.setSearchedColumn(String(dataIndex));
                         }}
                         icon={<SearchOutlined />}
                         size="small"

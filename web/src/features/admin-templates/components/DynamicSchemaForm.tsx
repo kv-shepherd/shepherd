@@ -61,7 +61,7 @@ export interface SchemaNode {
   [key: string]: unknown;
 }
 
-export interface DynamicSchemaFormProps {
+interface DynamicSchemaFormProps {
   /** JSON string stored in the outer Form field (spec_text). Injected by Form.Item. */
   value?: string;
   /** Callback to notify outer Form.Item of new JSON string. Injected by Form.Item. */

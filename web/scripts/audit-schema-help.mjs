@@ -3,13 +3,26 @@ import path from "node:path";
 
 const rootDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 
-const schemaPath = path.join(rootDir, "..", "internal", "pkg", "schema", "instancesize.schema.json");
-const maskPath = path.join(rootDir, "..", "internal", "pkg", "schema", "instancesize.mask.json");
+const manifestPath = path.join(rootDir, "..", "internal", "pkg", "schema", "manifest.json");
 const enSchemaLocalePath = path.join(rootDir, "src", "i18n", "locales", "en", "schema.json");
 const zhSchemaLocalePath = path.join(rootDir, "src", "i18n", "locales", "zh-CN", "schema.json");
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+function resolveCurrentInstancesizeAssets() {
+  const manifest = readJson(manifestPath);
+  const entity = manifest?.entities?.instancesize;
+  const currentVersion = entity?.current_version;
+  const versionConfig = currentVersion ? entity?.versions?.[currentVersion] : null;
+  if (!versionConfig?.schema_path || !versionConfig?.mask_path) {
+    throw new Error("instancesize schema manifest is missing schema_path/mask_path");
+  }
+  return {
+    schemaPath: path.join(rootDir, "..", "internal", "pkg", "schema", versionConfig.schema_path),
+    maskPath: path.join(rootDir, "..", "internal", "pkg", "schema", versionConfig.mask_path),
+  };
 }
 
 function resolveSchemaNode(root, schemaPathValue) {
@@ -33,6 +46,7 @@ function getNestedValue(resource, segments) {
   );
 }
 
+const { schemaPath, maskPath } = resolveCurrentInstancesizeAssets();
 const schema = readJson(schemaPath);
 const mask = readJson(maskPath);
 const enSchemaLocale = readJson(enSchemaLocalePath);

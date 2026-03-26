@@ -83,8 +83,3 @@ api.use({
     return response;
   },
 });
-
-/**
- * Type helpers for components schemas.
- */
-export type { paths };

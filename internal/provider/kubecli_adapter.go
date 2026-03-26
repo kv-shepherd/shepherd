@@ -4,17 +4,21 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
+	"time"
 
 	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/clientcmd"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
+	kvcorev1 "kubevirt.io/client-go/kubevirt/typed/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
@@ -154,6 +158,10 @@ func (c *kubevirtClusterClient) Namespaces() NamespaceClient {
 	return &kubevirtNamespaceClient{client: c.client}
 }
 
+func (c *kubevirtClusterClient) Nodes() NodeClient {
+	return &kubevirtNodeClient{client: c.client}
+}
+
 func (c *kubevirtClusterClient) Pods() PodClient {
 	return &kubevirtPodClient{client: c.client}
 }
@@ -179,8 +187,19 @@ func (c *kubevirtVMClient) List(ctx context.Context, namespace string, opts k8sm
 	return c.client.VirtualMachine(namespace).List(ctx, opts)
 }
 
-// Create and Update are intentionally removed (ADR-0011).
-// All VM writes use DynamicSSAClient.ApplyYAML() via SSA().
+func (c *kubevirtVMClient) Patch(
+	ctx context.Context,
+	namespace, name string,
+	pt types.PatchType,
+	data []byte,
+	opts k8smetav1.PatchOptions,
+	subresources ...string,
+) (*kubevirtv1.VirtualMachine, error) {
+	return c.client.VirtualMachine(namespace).Patch(ctx, name, pt, data, opts, subresources...)
+}
+
+// Create and Update are intentionally removed from the infrastructure-facing
+// contract for ADR-0011 full-manifest flows. Existing VM mutation uses Patch.
 
 func (c *kubevirtVMClient) Delete(ctx context.Context, namespace, name string, opts k8smetav1.DeleteOptions) error {
 	return c.client.VirtualMachine(namespace).Delete(ctx, name, opts)
@@ -216,6 +235,26 @@ func (c *kubevirtVMIClient) Pause(ctx context.Context, namespace, name string, o
 
 func (c *kubevirtVMIClient) Unpause(ctx context.Context, namespace, name string, opts *kubevirtv1.UnpauseOptions) error {
 	return c.client.VirtualMachineInstance(namespace).Unpause(ctx, name, opts)
+}
+
+func (c *kubevirtVMIClient) VNC(namespace, name string, preserveSession bool) (net.Conn, error) {
+	stream, err := c.client.VirtualMachineInstance(namespace).VNC(name, preserveSession)
+	if err != nil {
+		return nil, err
+	}
+	return stream.AsConn(), nil
+}
+
+func (c *kubevirtVMIClient) SerialConsole(namespace, name string, connectionTimeout time.Duration) (net.Conn, error) {
+	var opts *kvcorev1.SerialConsoleOptions
+	if connectionTimeout > 0 {
+		opts = &kvcorev1.SerialConsoleOptions{ConnectionTimeout: connectionTimeout}
+	}
+	stream, err := c.client.VirtualMachineInstance(namespace).SerialConsole(name, opts)
+	if err != nil {
+		return nil, err
+	}
+	return stream.AsConn(), nil
 }
 
 type kubevirtDataVolumeClient struct {
@@ -272,6 +311,14 @@ type kubevirtNamespaceClient struct {
 
 func (c *kubevirtNamespaceClient) Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*corev1.Namespace, error) {
 	return c.client.CoreV1().Namespaces().Get(ctx, name, opts)
+}
+
+type kubevirtNodeClient struct {
+	client kubecli.KubevirtClient
+}
+
+func (c *kubevirtNodeClient) Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*corev1.Node, error) {
+	return c.client.CoreV1().Nodes().Get(ctx, name, opts)
 }
 
 type kubevirtPodClient struct {
