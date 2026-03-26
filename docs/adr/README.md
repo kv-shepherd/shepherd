@@ -61,7 +61,7 @@
 | [ADR-0049](./ADR-0049-external-auth-runtime-jit-provisioning-and-external-cohort-rbac-mapping.md) | External Auth Runtime, JIT User Provisioning, and External Cohort-to-RBAC Mapping | **Accepted** | Unified external-auth standard: JIT user center, provider-owned workflow, platform-owned RBAC |
 | [ADR-0050](./ADR-0050-upstream-identity-assertion-runtime-provider.md) | Upstream Identity Assertion Runtime Provider for Legacy Systems | **Accepted** | Generic legacy token/userinfo or trusted-gateway runtime provider without core special-casing |
 | [ADR-0051](./ADR-0051-scheduled-directory-enrichment.md) | Scheduled Directory Enrichment for Existing Users | **Accepted** | Optional scheduled enrichment of existing users via explicit join key, without abandoning JIT user-center construction |
-| [ADR-0052](./ADR-0052-existing-vm-mutation-strategy.md) | Existing VM Mutation Strategy — KubeVirt Client First, Exact Patch + Dry-Run | **Proposed** | Narrows SSA to full desired-state submission and moves existing-VM mutation to KubeVirt-native patch/update semantics |
+| [ADR-0052](./ADR-0052-existing-vm-mutation-strategy.md) | Existing VM Mutation Strategy — KubeVirt Client First, Exact Patch + Dry-Run | **Accepted** | Narrows SSA to full desired-state submission and moves existing-VM mutation to KubeVirt-native patch/update semantics |
 
 > ℹ️ **ADR-0037 Sync Notes**:
 >
@@ -137,7 +137,7 @@ For newcomers, we recommend reading ADRs in this order:
 23. **ADR-0049** (External Auth Runtime, **Accepted**) → Defines unified external-auth runtime, JIT user-center provisioning, and external cohort to platform RBAC mapping
 24. **ADR-0050** (Upstream Identity Assertion Runtime Provider, **Accepted**) → Generalizes legacy token/userinfo or trusted-gateway identity handoff as a provider type instead of a core special case
 25. **ADR-0051** (Scheduled Directory Enrichment, **Accepted**) → Adds enrich-existing-only scheduled profile/cohort sync while keeping JIT user-center construction as the default
-26. **ADR-0052** (Existing VM Mutation Strategy, **Proposed** 🔍 48-hr review window) → Narrows SSA to create/provisioning and moves existing-VM modify flows to exact KubeVirt-native patch/update + dry-run
+26. **ADR-0052** (Existing VM Mutation Strategy, **Accepted**) → Narrows SSA to create/provisioning and moves existing-VM modify flows to exact KubeVirt-native patch/update + dry-run
 
 ### Historical Context
 - **ADR-0002** → Why we moved from Git storage to DB (Superseded by ADR-0007)

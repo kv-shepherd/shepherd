@@ -1,6 +1,6 @@
 # ADR-0052 Design Note: Existing VM Mutation Strategy
 
-> **Status**: Proposed (review window open until 2026-03-26)
+> **Status**: Accepted (ADR-0052 accepted on 2026-03-26)
 > **Related ADR**: [ADR-0052](../../adr/ADR-0052-existing-vm-mutation-strategy.md)
 
 ## Purpose
@@ -123,7 +123,7 @@ Minimum tests after implementation:
 The current partial-SSA modify path should be treated as transitional and
 replaced after ADR acceptance.
 
-Before that replacement lands:
+Before and during that replacement:
 
 * avoid widening SSA ownership further just to chase admission-required fields
 * do not introduce a persistent database shadow manifest for modify flows

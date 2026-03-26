@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"
+status: "accepted"
 date: 2026-03-24
 deciders: ["@jindyzhao"]
 consulted: ["@jindyzhao"]
@@ -9,9 +9,9 @@ informed: ["@jindyzhao"]
 
 # ADR-0052: Existing VM Mutation Strategy — KubeVirt Client First, Exact Patch + Dry-Run
 
-> **Status**: 🔍 Public Review — 48-hour minimum comment window<br>
-> **Review Open**: 2026-03-24<br>
-> **Review Closes**: 2026-03-26 (earliest merge date)<br>
+> **Status**: Accepted<br>
+> **Accepted On**: 2026-03-26<br>
+> **Review Window**: 2026-03-24 → 2026-03-26<br>
 > **Discussion**: [Issue #412](https://github.com/kv-shepherd/shepherd/issues/412)<br>
 > **Amends**: `ADR-0011-ssa-apply-strategy.md` *(narrows SSA to full desired-state provisioning/create flows and removes existing-VM mutation flows from the SSA rule)*<br>
 > **Extends**: `ADR-0001-kubevirt-client.md` *(requires KubeVirt official client/subresources for existing VM mutation workflows)*<br>
@@ -215,6 +215,13 @@ Abandon the YAML porter + SSA model and move everything to typed structs.
 * KubeVirt user-guide `/compute/memory_hotplug.md` — uses `kubectl patch` for guest memory hotplug
 * KubeVirt user-guide `/architecture.md` — uses patch semantics for `runStrategy`
 * Related Issue: [#412](https://github.com/kv-shepherd/shepherd/issues/412)
+
+### Acceptance Record
+
+The 48-hour review window closed on 2026-03-26 with no blocking objections
+recorded on [Issue #412](https://github.com/kv-shepherd/shepherd/issues/412).
+ADR-0052 is therefore accepted as the normative decision for existing VM
+mutation strategy.
 
 ### Implementation Notes
 
