@@ -387,8 +387,8 @@ github.com/openshift/client-go v0.0.0-20210112165513-ebc401615f47/go.mod h1:u7NR
 github.com/openshift/custom-resource-status v1.1.2 h1:C3DL44LEbvlbItfd8mT5jWrqPfHnSOQoQf/sypqA6A4=
 github.com/openshift/custom-resource-status v1.1.2/go.mod h1:DB/Mf2oTeiAmVVX1gN+NEqweonAPY0TKUwADizj8+ZA=
 github.com/orisano/pixelmatch v0.0.0-20220722002657-fb0b55479cde/go.mod h1:nZgzbfBr3hhjoZnS66nKrHmduYNpc34ny7RK4z5/HM0=
-github.com/panjf2000/ants/v2 v2.11.6 h1:JKsoIUukIoCO0sP0gcOqdyoXmpyKXuU6fC57rODtpug=
-github.com/panjf2000/ants/v2 v2.11.6/go.mod h1:8u92CYMUc6gyvTIw8Ru7Mt7+/ESnJahz5EVtqfrilek=
+github.com/panjf2000/ants/v2 v2.12.0 h1:u9JhESo83i/GkZnhfTNuFMMWcNt7mnV1bGJ6FT4wXH8=
+github.com/panjf2000/ants/v2 v2.12.0/go.mod h1:tSQuaNQ6r6NRhPt+IZVUevvDyFMTs+eS4ztZc52uJTY=
 github.com/pb33f/jsonpath v0.8.1 h1:84C6QRyx6HcSm6PZnsMpcqYot3IsZ+m0n95+0NbBbvs=
 github.com/pb33f/jsonpath v0.8.1/go.mod h1:zBV5LJW4OQOPatmQE2QdKpGQJvhDTlE5IEj6ASaRNTo=
 github.com/pb33f/libopenapi v0.34.3 h1:3D1N56ayc7iOeEnKoy85QDe4tFbg5G1sj2J5UISi4Is=
