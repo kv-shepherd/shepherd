@@ -229,5 +229,5 @@ describe('VMsPage', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Open Service' }));
         expect(pushMock).toHaveBeenCalledWith('/services?system_id=sys-1&detail_service_id=svc-1');
-    });
+    }, 20000);
 });

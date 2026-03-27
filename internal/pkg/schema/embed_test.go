@@ -165,6 +165,71 @@ func TestAvailableVersions_Instancesize(t *testing.T) {
 	}
 }
 
+func TestAvailableSchemaVersions_Instancesize(t *testing.T) {
+	versions, ok := schema.AvailableSchemaVersions("instancesize")
+	if !ok {
+		t.Fatal("AvailableSchemaVersions(instancesize) returned ok=false")
+	}
+	if len(versions) == 0 {
+		t.Fatal("AvailableSchemaVersions(instancesize) returned no versions")
+	}
+	if versions[len(versions)-1] != "1.8.0" {
+		t.Fatalf("AvailableSchemaVersions(instancesize)[last] = %q, want %q", versions[len(versions)-1], "1.8.0")
+	}
+}
+
+func TestVersionKeyForKubeVirtVersion_Instancesize(t *testing.T) {
+	versionKey, ok := schema.VersionKeyForKubeVirtVersion("instancesize", "1.8.0")
+	if !ok {
+		t.Fatal("VersionKeyForKubeVirtVersion(instancesize, 1.8.0) returned ok=false")
+	}
+	if versionKey != "kubevirt-v1.8.0" {
+		t.Fatalf("VersionKeyForKubeVirtVersion(instancesize, 1.8.0) = %q, want %q", versionKey, "kubevirt-v1.8.0")
+	}
+}
+
+func TestFieldIntroducedVersions_Instancesize(t *testing.T) {
+	introduced, err := schema.FieldIntroducedVersions("instancesize")
+	if err != nil {
+		t.Fatalf("FieldIntroducedVersions(instancesize) error = %v", err)
+	}
+
+	const newPath = "spec.template.spec.domain.rebootPolicy"
+	if got := introduced[newPath]; got != "1.8.0" {
+		t.Fatalf("FieldIntroducedVersions(instancesize)[%q] = %q, want %q", newPath, got, "1.8.0")
+	}
+
+	const baselinePath = "spec.template.spec.domain.devices.autoattachGraphicsDevice"
+	if got, ok := introduced[baselinePath]; ok {
+		t.Fatalf("FieldIntroducedVersions(instancesize)[%q] = %q, want omitted baseline field", baselinePath, got)
+	}
+}
+
+func TestCurrentVersionDiffSummary_Instancesize(t *testing.T) {
+	diff, err := schema.CurrentVersionDiffSummary("instancesize")
+	if err != nil {
+		t.Fatalf("CurrentVersionDiffSummary(instancesize) error = %v", err)
+	}
+	if diff == nil {
+		t.Fatal("CurrentVersionDiffSummary(instancesize) = nil, want summary")
+	}
+	if diff.FromVersion != "1.7.0" {
+		t.Fatalf("FromVersion = %q, want %q", diff.FromVersion, "1.7.0")
+	}
+	if diff.ToVersion != "1.8.0" {
+		t.Fatalf("ToVersion = %q, want %q", diff.ToVersion, "1.8.0")
+	}
+	if len(diff.SchemaPathsAdded) == 0 {
+		t.Fatal("SchemaPathsAdded is empty, want non-empty")
+	}
+	if len(diff.ChangedPaths) == 0 {
+		t.Fatal("ChangedPaths is empty, want non-empty")
+	}
+	if len(diff.MaskPathsAdded) != 0 {
+		t.Fatalf("MaskPathsAdded length = %d, want 0", len(diff.MaskPathsAdded))
+	}
+}
+
 // TestInstancesizeSchema_RequiredPaths verifies that the embedded instancesize
 // schema contains the paths referenced by ALL mask fields (not just spot-check).
 // This is insurance in addition to TestMain's full validation.

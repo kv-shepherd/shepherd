@@ -220,6 +220,29 @@ describe('DynamicSchemaForm', () => {
         ).toBeVisible();
     }, 10000);
 
+    it('renders introduced-in badges for fields added in newer KubeVirt baselines', () => {
+        const versionedMask: SchemaMask = {
+            quick_fields: [
+                {
+                    path: 'spec.template.spec.domain.devices.autoattachGraphicsDevice',
+                    display_name: 'Auto-attach Graphics',
+                    introduced_in: '1.8.0',
+                },
+            ],
+        };
+
+        render(
+            <Form layout="vertical">
+                <Form.Item name="spec_text" initialValue="{}">
+                    <DynamicSchemaForm schema={minimalSchema} mask={versionedMask} />
+                </Form.Item>
+            </Form>,
+        );
+
+        expect(screen.getByText('v1.8.0+')).toBeVisible();
+        expect(screen.getByText('Auto-attach Graphics')).toBeVisible();
+    }, 10000);
+
     it('promotes description-bounded string fields into select controls', async () => {
         const enumLikeSchema: SchemaNode = {
             type: 'object',
@@ -341,6 +364,37 @@ describe('DynamicSchemaForm', () => {
         expect(screen.getByTestId('spec-text')).not.toHaveTextContent(
             'spec.template.spec.domain.cpu.cores'
         );
+    }, 10000);
+
+    it('does not emit a redundant parent update when sync keeps spec_text unchanged', async () => {
+        vi.useFakeTimers();
+        const onValuesChange = vi.fn();
+
+        function Harness() {
+            const [form] = Form.useForm();
+            const formRef = useRef<DynamicSchemaFormHandle>(null);
+
+            return (
+                <Form form={form} layout="vertical" onValuesChange={onValuesChange}>
+                    <Form.Item name="spec_text" initialValue="{}">
+                        <DynamicSchemaForm ref={formRef} schema={minimalSchema} mask={minimalMask} />
+                    </Form.Item>
+                    <button type="button" onClick={() => formRef.current?.sync()}>
+                        sync
+                    </button>
+                </Form>
+            );
+        }
+
+        render(<Harness />);
+
+        await act(async () => {
+            screen.getByText('sync').click();
+            vi.advanceTimersByTime(350);
+        });
+
+        expect(onValuesChange).not.toHaveBeenCalled();
+        vi.useRealTimers();
     }, 10000);
 
     it('hydrates existing nested values after schema becomes available', async () => {

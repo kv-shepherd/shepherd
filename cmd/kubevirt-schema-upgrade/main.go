@@ -128,11 +128,20 @@ func main() {
 
 	fmt.Println()
 	fmt.Println("📝 Next steps:")
-	fmt.Println("  1. Review the diff above")
-	fmt.Println("  2. Check if new fields need to be added to instancesize.mask.json")
-	fmt.Printf("  3. Update embed_test.go version assertions → %q\n", versionKey)
-	fmt.Printf("  4. Update go.mod: kubevirt.io/api + kubevirt.io/client-go to v%s\n", version)
-	fmt.Println("  5. Run 'make test' to verify")
+	for index, step := range upgradeNextSteps(version, versionKey) {
+		fmt.Printf("  %d. %s\n", index+1, step)
+	}
+}
+
+func upgradeNextSteps(version, versionKey string) []string {
+	return []string{
+		"Review the diff above",
+		"Run 'make kubevirt-schema-report' to inspect added fields and locale gaps",
+		"Update instancesize.mask.json only for fields you choose to expose",
+		fmt.Sprintf("Update embed_test.go version assertions → %q", versionKey),
+		fmt.Sprintf("Update go.mod: kubevirt.io/api + kubevirt.io/client-go to v%s", version),
+		"Run 'make test' to verify",
+	}
 }
 
 func extractVMSpec(swaggerData []byte, version string) (map[string]any, error) {

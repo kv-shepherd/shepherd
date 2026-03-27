@@ -20,7 +20,6 @@ package schema
 import (
 	"embed"
 	"encoding/json"
-	"sort"
 	"sync"
 )
 
@@ -112,11 +111,31 @@ func SchemaVersionFor(entityType string) (string, bool) {
 	if !ok {
 		return "", false
 	}
+	return SchemaVersionForVersion(entityType, versionKey)
+}
+
+// SchemaVersionForVersion returns the KubeVirt semver for a specific embedded version key.
+func SchemaVersionForVersion(entityType, versionKey string) (string, bool) {
 	version, ok := versionConfig(entityType, versionKey)
 	if !ok || version.KubeVirtVersion == "" {
 		return "", false
 	}
 	return version.KubeVirtVersion, true
+}
+
+// VersionKeyForKubeVirtVersion resolves a KubeVirt semver (for example "1.8.0")
+// to the embedded version key (for example "kubevirt-v1.8.0").
+func VersionKeyForKubeVirtVersion(entityType, kubeVirtVersion string) (string, bool) {
+	cfg, ok := entityConfig(entityType)
+	if !ok {
+		return "", false
+	}
+	for key, version := range cfg.Versions {
+		if version.KubeVirtVersion == kubeVirtVersion {
+			return key, true
+		}
+	}
+	return "", false
 }
 
 // AvailableVersions returns the embedded schema versions for an entity.
@@ -125,21 +144,31 @@ func AvailableVersions(entityType string) ([]EmbeddedVersionInfo, bool) {
 	if !ok {
 		return nil, false
 	}
-	keys := make([]string, 0, len(cfg.Versions))
-	for key := range cfg.Versions {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	versions := make([]EmbeddedVersionInfo, 0, len(keys))
-	for _, key := range keys {
-		version := cfg.Versions[key]
+	versions := make([]EmbeddedVersionInfo, 0, len(cfg.Versions))
+	for key, version := range cfg.Versions {
 		versions = append(versions, EmbeddedVersionInfo{
 			Key:             key,
 			KubeVirtVersion: version.KubeVirtVersion,
 		})
 	}
+	sortEmbeddedVersions(versions)
 	return versions, true
+}
+
+// AvailableSchemaVersions returns sorted KubeVirt semvers for one entity.
+func AvailableSchemaVersions(entityType string) ([]string, bool) {
+	versions, ok := AvailableVersions(entityType)
+	if !ok {
+		return nil, false
+	}
+	items := make([]string, 0, len(versions))
+	for _, version := range versions {
+		if version.KubeVirtVersion == "" {
+			continue
+		}
+		items = append(items, version.KubeVirtVersion)
+	}
+	return items, true
 }
 
 // SchemaFor returns the embedded JSON schema bytes for the current entity baseline.

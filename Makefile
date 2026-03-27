@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report
 
 # Go parameters
 GO_TOOLCHAIN_VERSION?=go1.25.8
@@ -395,6 +395,10 @@ kubevirt-schema-check:
 kubevirt-schema-upgrade:
 	@test -n "$(VERSION)" || (echo "Usage: make kubevirt-schema-upgrade VERSION=<semver>"; exit 1)
 	@go run ./cmd/kubevirt-schema-upgrade $(VERSION)
+
+## kubevirt-schema-report: Print upgrade candidates and missing i18n keys for the current embedded schema baseline
+kubevirt-schema-report:
+	@go run ./cmd/kubevirt-schema-report
 
 ## help: Show this help message
 help:

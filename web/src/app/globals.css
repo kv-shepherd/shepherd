@@ -226,6 +226,17 @@ a {
   margin-bottom: 10px;
 }
 
+.dynamic-form-field-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.dynamic-form-version-tag {
+  margin-inline-end: 0;
+}
+
 .dynamic-form-field-help {
   line-height: 1.6;
   white-space: normal;

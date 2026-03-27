@@ -101,6 +101,27 @@ direct `golangci-lint`, `go test`, `npm run typecheck`, or similar commands
 outside the repository targets, fix the drift before trusting local/remote CI
 parity.
 
+### KubeVirt Schema Baseline Maintenance
+
+When upgrading the embedded KubeVirt schema baseline, use the repository
+commands rather than manually diffing raw JSON:
+
+```bash
+make kubevirt-schema-check
+make kubevirt-schema-upgrade VERSION=<semver>
+make kubevirt-schema-report
+```
+
+The report command is the maintainer-facing aid that lists:
+- new schema paths not yet exposed in the current mask
+- exposed mask fields whose upstream schema changed
+- missing admin locale keys referenced by the current mask
+
+Runtime authoring follows the single `manifest.current_version` baseline. Do
+not add a runtime schema-version selector for instance sizes. For the full
+upgrade workflow and rationale, see
+[docs/design/DEPENDENCIES.md](docs/design/DEPENDENCIES.md).
+
 ### Atomic Pull Requests
 
 An atomic PR contains the minimal, self-contained set of changes to address one issue:

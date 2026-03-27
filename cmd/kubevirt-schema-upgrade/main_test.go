@@ -58,3 +58,20 @@ func TestSwaggerDownloadURLs(t *testing.T) {
 		t.Fatalf("swaggerDownloadURLs() = %#v, want %#v", got, want)
 	}
 }
+
+func TestUpgradeNextSteps(t *testing.T) {
+	t.Parallel()
+
+	got := upgradeNextSteps("1.8.0", "kubevirt-v1.8.0")
+	want := []string{
+		"Review the diff above",
+		"Run 'make kubevirt-schema-report' to inspect added fields and locale gaps",
+		"Update instancesize.mask.json only for fields you choose to expose",
+		`Update embed_test.go version assertions → "kubevirt-v1.8.0"`,
+		"Update go.mod: kubevirt.io/api + kubevirt.io/client-go to v1.8.0",
+		"Run 'make test' to verify",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("upgradeNextSteps() = %#v, want %#v", got, want)
+	}
+}

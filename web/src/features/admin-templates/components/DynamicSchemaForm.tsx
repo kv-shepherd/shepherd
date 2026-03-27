@@ -17,6 +17,7 @@ import {
   InputNumber,
   Select,
   Space,
+  Tag,
   Tooltip,
   Typography,
   type CollapseProps,
@@ -44,6 +45,7 @@ export interface MaskField {
   help_key?: string;
   placeholder?: string;
   placeholder_key?: string;
+  introduced_in?: string;
 }
 
 export interface SchemaMask {
@@ -357,7 +359,8 @@ function buildRecognizedMaskFields(
 interface DynamicFieldGroupProps {
   node: SchemaNode;
   namePath: (string | number)[];
-  label: string;
+  label: React.ReactNode;
+  labelText: string;
   helpText?: string;
   placeholder?: string;
   disabled?: boolean;
@@ -676,6 +679,7 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
   node,
   namePath,
   label,
+  labelText,
   helpText,
   placeholder,
   disabled,
@@ -688,7 +692,9 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
 
   const renderFieldHeader = () => (
     <div className="dynamic-form-field-header">
-      <Text strong>{label}</Text>
+      <div className="dynamic-form-field-title">
+        {typeof label === "string" ? <Text strong>{label}</Text> : label}
+      </div>
       {helpText ? (
         <Text type="secondary" className="dynamic-form-field-help">
           {helpText}
@@ -761,6 +767,7 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
                           node={subNode}
                           namePath={[field.name, itemKey]}
                           label={itemKey}
+                          labelText={itemKey}
                           placeholder={placeholder}
                           disabled={disabled}
                         />
@@ -783,7 +790,7 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
                   block
                   icon={<PlusOutlined />}
                 >
-                  {t("dynamic_form.add_item", { label })}
+                  {t("dynamic_form.add_item", { label: labelText })}
                 </Button>
               )}
             </div>
@@ -826,7 +833,7 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
         <Checkbox
           disabled={disabled}
           data-testid={fieldTestId}
-          aria-label={label}
+          aria-label={labelText}
         />
       ),
       "dynamic-form-field-shell-boolean",
@@ -888,7 +895,7 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
         <Checkbox
           disabled={disabled}
           data-testid={fieldTestId}
-          aria-label={label}
+          aria-label={labelText}
         />
       ) : (
         <Input
@@ -938,6 +945,14 @@ export const DynamicSchemaForm = React.forwardRef<
   const { t } = useTranslation(["admin", "schema", "common"]);
   const outerForm = Form.useFormInstance();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
   const appliedFieldPathsRef = useRef<string[]>([]);
   const [rawEditorDraft, setRawEditorDraft] = useState<RawEditorDraft | null>(
     null,
@@ -1003,6 +1018,36 @@ export const DynamicSchemaForm = React.forwardRef<
     [outerForm],
   );
 
+  const serializeManagedSpecOverrides = useCallback(() => {
+    if (!outerForm || !schema) {
+      return "{}";
+    }
+
+    const allValues = outerForm.getFieldsValue(true) as Record<string, unknown>;
+    const specKeys = Object.keys(schema.properties ?? {});
+    const nestedSpecValues: Record<string, unknown> = {};
+    for (const k of specKeys) {
+      if (k in allValues) {
+        nestedSpecValues[k] = allValues[k];
+      }
+    }
+    const presenceObjectPaths = new Set(
+      managedFields
+        .filter((field) => {
+          const node = resolveSchemaNode(schema, field.path);
+          return node ? isPresenceObjectNode(node) : false;
+        })
+        .map((field) => field.path),
+    );
+    const prunedSpecOverrides = pruneSpecTree(
+      nestedSpecValues,
+      presenceObjectPaths,
+      "",
+      schema,
+    );
+    return JSON.stringify(prunedSpecOverrides ?? {}, null, 2);
+  }, [managedFields, outerForm, schema]);
+
   // Initialise outer form fields from the JSON string value on first render
   // or when the modal opens with a different record.
   // NOTE: hooks must be called unconditionally (React rules-of-hooks).
@@ -1010,13 +1055,23 @@ export const DynamicSchemaForm = React.forwardRef<
   useEffect(() => {
     if (!outerForm || !schema || !mask) return;
     applyParsedValueToForm(committedValue, managedFields);
+    if (!onChange) {
+      return;
+    }
+    const nextSerializedValue = serializeManagedSpecOverrides();
+    if (nextSerializedValue !== value) {
+      onChange(nextSerializedValue);
+    }
   }, [
     applyParsedValueToForm,
     committedValue,
     managedFields,
     mask,
+    onChange,
     outerForm,
     schema,
+    serializeManagedSpecOverrides,
+    value,
   ]);
 
   // Sync outer Form values back to the JSON string.
@@ -1030,35 +1085,13 @@ export const DynamicSchemaForm = React.forwardRef<
     if (!outerForm || !onChange || !schema) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      const allValues = outerForm.getFieldsValue(true) as Record<
-        string,
-        unknown
-      >;
-      // Strip non-spec fields (display_name, os_family, etc.) so we only
-      // serialise the dynamic spec fields.  The spec fields are those
-      // whose top-level keys map to schema.properties keys.
-      const specKeys = Object.keys(schema.properties ?? {});
-      const nestedSpecValues: Record<string, unknown> = {};
-      for (const k of specKeys) {
-        if (k in allValues) nestedSpecValues[k] = allValues[k];
+      const nextSerializedValue = serializeManagedSpecOverrides();
+      if (nextSerializedValue === value) {
+        return;
       }
-      const presenceObjectPaths = new Set(
-        managedFields
-          .filter((field) => {
-            const node = resolveSchemaNode(schema, field.path);
-            return node ? isPresenceObjectNode(node) : false;
-          })
-          .map((field) => field.path),
-      );
-      const prunedSpecOverrides = pruneSpecTree(
-        nestedSpecValues,
-        presenceObjectPaths,
-        "",
-        schema,
-      );
-      onChange(JSON.stringify(prunedSpecOverrides ?? {}, null, 2));
+      onChange(nextSerializedValue);
     }, 300);
-  }, [managedFields, onChange, outerForm, schema]);
+  }, [onChange, outerForm, schema, serializeManagedSpecOverrides, value]);
 
   // Expose sync() imperatively so the parent Form's onValuesChange can call it.
   // This is the Ant Design recommended pattern: side effects in event handlers,
@@ -1159,6 +1192,7 @@ export const DynamicSchemaForm = React.forwardRef<
       }
       const namePath = field.path.split(".");
       const label = field.display_name ?? field.path;
+      const versionBadge = field.introduced_in ? `v${field.introduced_in}+` : undefined;
       const schemaDescription =
         typeof node.description === "string" ? node.description : undefined;
       const helpText = field.help_key
@@ -1178,7 +1212,17 @@ export const DynamicSchemaForm = React.forwardRef<
           key={field.path}
           node={node}
           namePath={namePath}
-          label={label}
+          label={
+            <Space size={6} wrap>
+              <Text strong>{label}</Text>
+              {versionBadge ? (
+                <Tag color="blue" className="dynamic-form-version-tag">
+                  {versionBadge}
+                </Tag>
+              ) : null}
+            </Space>
+          }
+          labelText={label}
           helpText={helpText}
           placeholder={placeholder}
           disabled={disabled}

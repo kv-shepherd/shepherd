@@ -4,7 +4,7 @@
 #
 # Prerequisites:
 #   - Go 1.25+ (for oapi-codegen, vacuum)
-#   - Node.js 20+ (for openapi-typescript only)
+#   - Node.js 20+ (for frontend OpenAPI type generation only)
 #   - Optional local binaries: vacuum, oasdiff
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -21,7 +21,6 @@ OAPI_CODEGEN_INPUT := $(OPENAPI_SPEC)
 
 # Tool versions (pin in docs/design/DEPENDENCIES.md; override via env if needed)
 OAPI_CODEGEN_VERSION ?= v2.5.1
-OPENAPI_TS_VERSION ?= 7.12.0
 VACUUM_VERSION ?= v0.23.8
 OASDIFF_VERSION ?= v1.11.10
 
@@ -58,7 +57,7 @@ api-generate-go: ## Generate Go server code
 api-generate-ts: ## Generate TypeScript types
 	@echo "🔄 Generating TypeScript types..."
 	@mkdir -p $(dir $(TS_GENERATED_FILE))
-	@cd web && npm exec --yes --package=openapi-typescript@$(OPENAPI_TS_VERSION) -- openapi-typescript ../$(OPENAPI_SPEC) -o src/types/api.gen.ts
+	@cd web && npm run api:generate
 	@echo "✅ TypeScript types generated: $(TS_GENERATED_FILE)"
 
 .PHONY: api-check

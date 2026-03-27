@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -36,5 +37,21 @@ func TestReadLocalVersionFromManifest(t *testing.T) {
 	}
 	if got != "1.7.0" {
 		t.Fatalf("readLocalVersionFromManifest = %q, want %q", got, "1.7.0")
+	}
+}
+
+func TestDriftActionSteps(t *testing.T) {
+	t.Parallel()
+
+	got := driftActionSteps("1.8.0")
+	want := []string{
+		"Run:  make kubevirt-schema-upgrade VERSION=1.8.0",
+		"Review diff in internal/pkg/schema/versions/",
+		"Run:  make kubevirt-schema-report",
+		"Update instancesize mask/i18n only for fields you choose to expose",
+		"Update go.mod: kubevirt.io/api + kubevirt.io/client-go",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("driftActionSteps() = %#v, want %#v", got, want)
 	}
 }

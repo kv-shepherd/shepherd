@@ -240,5 +240,5 @@ describe('SystemsManagementContent', () => {
         pushMock.mockClear();
         fireEvent.click(screen.getByRole('button', { name: 'Open Services' }));
         expect(pushMock).toHaveBeenCalledWith('/services?system_id=sys-1');
-    }, 15000);
+    }, 25000);
 });

@@ -193,6 +193,23 @@ func (c *DatabaseClients) Close() {
 | `kubevirt.io/api` | `v1.8.0` | 2026-03-24 | KubeVirt API type definitions |
 | `sigs.k8s.io/controller-runtime` | `v0.22.5` | 2025-12 | **SSA Apply core dependency** (ADR-0011), validated against k8s.io v0.34.x |
 
+### KubeVirt Schema Upgrade Workflow
+
+The repository keeps versioned embedded KubeVirt schema snapshots under
+`internal/pkg/schema/versions/`, but runtime authoring always follows the
+single `manifest.current_version` baseline.
+
+When a new KubeVirt GA release appears:
+
+1. Run `make kubevirt-schema-check`
+2. Run `make kubevirt-schema-upgrade VERSION=<semver>`
+3. Run `make kubevirt-schema-report`
+4. Review only the newly added/changed fields that the report surfaces
+5. Manually expose chosen fields in the current mask and add i18n/help keys
+
+This keeps schema truth upstream-driven while leaving product exposure decisions
+explicit and reviewable.
+
 ---
 
 ## API Contract-First Tooling (ADR-0021, ADR-0028, ADR-0029)

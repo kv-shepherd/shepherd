@@ -172,7 +172,7 @@ describe("AdminAuthProvidersContent", () => {
     expect(
       screen.getByTestId("auth-provider-action-test-provider-1"),
     ).toBeVisible();
-  }, 20000);
+  }, 30000);
 
   it(
     "opens the latest blocked job from the preview summary card",

@@ -163,6 +163,12 @@ describe('AdminInstanceSizesContent', () => {
         controllerState.createOpen = false;
     });
 
+    it('does not pre-mount dynamic schema forms while modals are closed', () => {
+        render(<AdminInstanceSizesContent />);
+
+        expect(screen.queryByTestId('dynamic-schema-form')).not.toBeInTheDocument();
+    });
+
     it('renders the create form without duplicate initialValues warnings', async () => {
         controllerState.createOpen = true;
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

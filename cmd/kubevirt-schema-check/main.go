@@ -61,10 +61,9 @@ func main() {
 	fmt.Printf("  Upstream:  v%s\n", latestGA)
 	fmt.Println()
 	fmt.Println("  Action required:")
-	fmt.Printf("    1. Run:  make kubevirt-schema-upgrade VERSION=%s\n", latestGA)
-	fmt.Println("    2. Review diff in internal/pkg/schema/versions/")
-	fmt.Println("    3. Update instancesize mask/version overlays if new fields need exposure")
-	fmt.Println("    4. Update go.mod: kubevirt.io/api + kubevirt.io/client-go")
+	for index, step := range driftActionSteps(latestGA) {
+		fmt.Printf("    %d. %s\n", index+1, step)
+	}
 	fmt.Println()
 	fmt.Println("  See: docs/design/DEPENDENCIES.md for version alignment guide")
 	fmt.Println("============================================================")
@@ -154,6 +153,16 @@ func parseSemver(s string) [3]int {
 		result[i] = n
 	}
 	return result
+}
+
+func driftActionSteps(latestGA string) []string {
+	return []string{
+		fmt.Sprintf("Run:  make kubevirt-schema-upgrade VERSION=%s", latestGA),
+		"Review diff in internal/pkg/schema/versions/",
+		"Run:  make kubevirt-schema-report",
+		"Update instancesize mask/i18n only for fields you choose to expose",
+		"Update go.mod: kubevirt.io/api + kubevirt.io/client-go",
+	}
 }
 
 func minInt(a, b int) int {
