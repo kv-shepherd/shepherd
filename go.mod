@@ -14,7 +14,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
-	github.com/jackc/pgx/v5 v5.8.0
+	github.com/jackc/pgx/v5 v5.9.1
 	github.com/oapi-codegen/runtime v1.2.0
 	github.com/panjf2000/ants/v2 v2.11.6
 	github.com/pb33f/libopenapi v0.34.3
