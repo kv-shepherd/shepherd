@@ -117,7 +117,7 @@ Use `docs/design/notes/` for ADR-0037 execution tracking because it is non-norma
 ### Progress
 
 - [x] PR-1 local compatibility alias (`api-diff`) added in `build/api.mk`
-- [x] PR-1 workflow permission prepared in `.github/workflows/api-contract.yaml` (`pull-requests: write`)
+- [x] PR-1 workflow permission prepared in `.github/workflows/api-contract-validation.yml` (`pull-requests: write`)
 - [ ] PR-1 branch protection applied in GitHub UI (deferred until ADR path is approved for rollout)
 - [x] PR-2 OpenAPI 3.1 nullable fixes + Vacuum lint green + frontend type regen
 - [x] PR-3 runtime validator migration + frontend E2E regression
@@ -437,7 +437,7 @@ Execution requirements:
 
 - `build/api.mk`
   - ensure compatibility alias: `api-diff -> api-breaking`.
-- `.github/workflows/api-contract.yaml`
+- `.github/workflows/api-contract-validation.yml`
   - enforce lint, sync, and breaking gates.
   - add PR visibility for API changelog output.
   - enable compat bridge as blocking path (`REQUIRE_OPENAPI_COMPAT=1` in CI).
@@ -446,7 +446,7 @@ Execution requirements:
     2. `make api-generate` (Go codegen reads compat; TS typegen reads canonical)
     3. `make api-compat` (freshness check — blocking gate)
     4. `git diff --exit-code` (sync check)
-  - **Current defect**: The workflow (`api-contract.yaml:150–153`) runs `make api-generate` BEFORE `make api-compat-generate`, meaning Go codegen may use a stale or missing compat file. This must be fixed in PR-6.
+  - **Current defect**: The workflow (`api-contract-validation.yml:150–153`) runs `make api-generate` BEFORE `make api-compat-generate`, meaning Go codegen may use a stale or missing compat file. This must be fixed in PR-6.
   - preserve compat freshness checks as blocking gate.
   - optionally add a non-blocking canonical-codegen probe to monitor compat removal readiness.
   - **(rev.3) Frontend type sync gate**:
@@ -463,7 +463,7 @@ Execution requirements:
 - GitHub branch protection (repository settings)
   - require status checks on `main`.
   - **(rev.4 — corrected from rev.3)** Required checks must reference **job names** (which map to GitHub status check names), not workflow step names. GitHub branch protection "Require status checks" operates on job-level check names. The specific check names to configure are:
-    - `Lint OpenAPI Spec` (from `api-contract.yaml` job `lint-spec`, line 36)
+    - `Lint OpenAPI Spec` (from `api-contract-validation.yml` job `lint-spec`, line 36)
     - `Detect Breaking Changes` (from job `breaking-changes`, line 66)
     - `Verify Generated Code Sync` (from job `generated-code-sync`, line 115)
   - These job names must remain stable and unique across all workflows to prevent check name conflicts.

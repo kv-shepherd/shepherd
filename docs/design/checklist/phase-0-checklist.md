@@ -36,7 +36,7 @@
   - [x] Deferred required-stage test debt is explicit in `docs/design/ci/allowlists/master_flow_test_deferred.txt`
   - [x] CI blocks PRs when required-stage coverage/deferred hygiene check fails (`check_master_flow_test_matrix.go`)
 - [x] **API Contract-First CI (ADR-0021, ADR-0029)**:
-  - [x] Move API contract workflow to `.github/workflows/api-contract.yaml`
+  - [x] Move API contract workflow to `.github/workflows/api-contract-validation.yml`
   - [x] Move `docs/design/ci/makefile/api.mk` to `build/api.mk`
   - [x] Include `build/api.mk` from root `Makefile`
   - [x] Add strict OpenAPI critical contract gate (`check_openapi_critical_contract.go`) to block accidental deletion of required paths/schemas/global security
@@ -47,7 +47,7 @@
   - [x] Add strict VM create spec completeness gate (`check_vm_create_spec_completeness.go`) to enforce `spec_overrides` passthrough in Stage 5.C
   - [x] Add strict critical-test-presence gate (`check_critical_test_presence.go`) to require paired test coverage on critical runtime paths
   - [x] Add strict Stage 5.C behavior-test gate (`check_stage5c_behavior_tests.go`) to enforce key scenario assertions (advanced overrides + invalid-path rejection)
-  - [x] Add CI step: `make api-check` — *Defined in `build/api.mk`, runs via api-contract.yaml*
+  - [x] Add CI step: `make api-check` — *Defined in `build/api.mk`, runs via api-contract-validation.yml*
   - [ ] If 3.1-only features are used: add CI step `REQUIRE_OPENAPI_COMPAT=1 make api-compat` — *Deferred: no 3.1-only features yet*
   - [x] Implement `make api-compat-generate` minimal generator (3.1 → 3.0.3 rewrite + 3.1 keyword guard) — *Full overlay transform still recommended before strict compat in 3.1-heavy specs*
 - [x] **OpenAPI Toolchain (ADR-0029)**: See [CI README §API Contract-First](../ci/README.md#api-contract-first-enforcement-adr-0021-adr-0029) for details

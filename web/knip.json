@@ -12,6 +12,7 @@
     "tailwindcss"
   ],
   "ignore": [
-    "src/types/api.gen.ts"
+    "src/types/api.gen.ts",
+    "src/vendor/novnc/browser.ts"
   ]
 }

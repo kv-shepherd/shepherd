@@ -123,7 +123,7 @@ Upon acceptance, the following documents require updates:
 |----------|--------|-------------|
 | `docs/design/DEPENDENCIES.md` | UPDATE | Add libopenapi, libopenapi-validator; mark spectral/oas-patch as replaced |
 | `Makefile` | ADD | Add `api-lint`, `api-validate`, `api-check` targets |
-| `.github/workflows/api-contract.yaml` | UPDATE | Add vacuum lint gate, libopenapi-validator gate |
+| `.github/workflows/api-contract-validation.yml` | UPDATE | Add vacuum lint gate, libopenapi-validator gate |
 | `internal/api/middleware/openapi_validator.go` | CREATE | Implement StrictMode validation middleware |
 | `api/.vacuum.yaml` | CREATE | Vacuum ruleset configuration |
 | `go.mod` | UPDATE | Add `github.com/pb33f/libopenapi`, `github.com/pb33f/libopenapi-validator` |

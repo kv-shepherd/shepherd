@@ -1355,7 +1355,7 @@ func (f *fakeDeleteAtomicWriter) ApproveDeleteAndEnqueue(_ context.Context, _, _
 	return nil
 }
 
-func (f *fakeDeleteAtomicWriter) ApproveModifyAndEnqueue(_ context.Context, _, _, _ string) error {
+func (f *fakeDeleteAtomicWriter) ApproveModifyAndEnqueue(_ context.Context, _, _, _ string, _ map[string]interface{}) error {
 	return nil
 }
 

@@ -365,7 +365,7 @@ export function useAdminApprovalsController({
     {
       invalidateKeys: [["builtin-approval-tasks"], ["tickets"], ["vms"]],
       onSuccess: () => {
-        messageApi.success(t("common:message.success"));
+        messageApi.info(t("approve_submitted"));
         closeApproveModal();
       },
       onError: (err) => showApprovalError(err),
@@ -384,7 +384,7 @@ export function useAdminApprovalsController({
     {
       invalidateKeys: [["builtin-approval-tasks"], ["tickets"]],
       onSuccess: () => {
-        messageApi.success(t("common:message.success"));
+        messageApi.success(t("reject_submitted"));
         closeRejectModal();
       },
       onError: (err) => showApprovalError(err),
@@ -443,6 +443,28 @@ export function useAdminApprovalsController({
 
   const openApproveModal = (ticket: ApprovalTask) => {
     setApproveModal(ticket);
+    approveForm.resetFields();
+    if (ticket.operation_type === "MODIFY") {
+      const payload = asPayloadRecord(ticket.ticket_payload);
+      const currentCPURequest = payloadNumber(payload?.current_cpu_request);
+      const currentMemoryRequestGi = payloadNumber(
+        payload?.current_memory_request_gi,
+      );
+      const targetCPULimit = payloadNumber(payload?.target_cpu_cores);
+      const targetMemoryLimitGi = payloadNumber(payload?.target_memory_gi);
+      const requestReviewRequired =
+        (typeof currentCPURequest === "number" &&
+          typeof targetCPULimit === "number" &&
+          currentCPURequest > targetCPULimit) ||
+        (typeof currentMemoryRequestGi === "number" &&
+          typeof targetMemoryLimitGi === "number" &&
+          currentMemoryRequestGi > targetMemoryLimitGi);
+      approveForm.setFieldsValue({
+        enable_override: requestReviewRequired,
+        cpu_request: currentCPURequest,
+        memory_request_gi: currentMemoryRequestGi,
+      });
+    }
   };
 
   const closeApproveModal = () => {
@@ -755,6 +777,18 @@ function normalizeApprovalDecisionValues(
 
 function normalizeOptionalString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function asPayloadRecord(
+  value: unknown,
+): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function payloadNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function normalizeStorageClassName(value: string): string {

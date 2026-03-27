@@ -93,6 +93,10 @@ function payloadNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function payloadBool(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
+}
+
 function requestPrefillString(
     requestPrefill: TicketRecord['request_prefill'],
     key: keyof NonNullable<TicketRecord['request_prefill']>,
@@ -342,17 +346,29 @@ export function approvalSummaryMeta(ticket: TicketRecord, t: TFunction): string[
             }
             break;
         case 'MODIFY': {
-            const change = formatResourceShape(
+            const currentShape = formatResourceShape(
+                summary?.current_cpu_cores,
+                summary?.current_memory_gi,
+                summary?.current_disk_gb,
+                t,
+            );
+            const targetShape = formatResourceShape(
                 summary?.target_cpu_cores,
                 summary?.target_memory_gi,
                 summary?.target_disk_gb,
                 t,
             );
+            const change = currentShape && targetShape && currentShape !== targetShape
+                ? `${currentShape} → ${targetShape}`
+                : targetShape || currentShape;
             if (change) {
                 parts.push(change);
             }
             if (cluster) {
                 parts.push(cluster);
+            }
+            if (payloadBool(payload?.requires_restart)) {
+                parts.push(t('summary.restart_required_short', { ns: 'approval' }));
             }
             break;
         }
@@ -416,6 +432,7 @@ export function buildApprovalScopeItems(ticket: TicketRecord, t: TFunction): Des
 
 export function buildApprovalChangeItems(ticket: TicketRecord, t: TFunction): DescriptionItem[] {
     const summary = ticket.summary ?? undefined;
+    const payload = asPayloadRecord(ticket.ticket_payload);
     const currentShape = formatResourceShape(
         summary?.current_cpu_cores,
         summary?.current_memory_gi,
@@ -429,9 +446,23 @@ export function buildApprovalChangeItems(ticket: TicketRecord, t: TFunction): De
         t,
     );
     const powerAction = formatPowerAction(summary?.power_action, t);
+    const currentRequestShape = formatResourceShape(
+        payloadNumber(payload?.current_cpu_request),
+        payloadNumber(payload?.current_memory_request_gi),
+        undefined,
+        t,
+    );
     return compactDescriptionItems([
         item('current_shape', t('summary.current_resources', { ns: 'approval' }), currentShape),
         item('target_shape', t('summary.target_resources', { ns: 'approval' }), targetShape),
+        item('current_request_shape', t('summary.current_requests', { ns: 'approval' }), currentRequestShape),
+        item(
+            'restart_required',
+            t('summary.apply_mode', { ns: 'approval' }),
+            payloadBool(payload?.requires_restart)
+                ? t('summary.restart_required_long', { ns: 'approval' })
+                : undefined,
+        ),
         item('power_action', t('summary.power_action', { ns: 'approval' }), powerAction),
     ]);
 }

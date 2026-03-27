@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { NextConfig } from "next";
 
 const allowedDevOrigins = (process.env.DEV_ALLOWED_ORIGINS || "")
@@ -40,6 +42,8 @@ const nextConfig: NextConfig = {
     ],
   },
 
+  turbopack: {},
+
   // Proxy API requests to backend server (solves CORS & remote access issues)
   // When accessing from 10.x.x.x:3000, requests to /api/v1 go to localhost:8080
   async rewrites() {
@@ -55,11 +59,19 @@ const nextConfig: NextConfig = {
         source: "/api/v1/:path*",
         destination: `${apiUrl}/api/v1/:path*`,
       },
-      {
-        source: "/novnc/:path*",
-        destination: `${apiUrl}/novnc/:path*`,
-      },
     ];
+  },
+
+  webpack: (config) => {
+    config.resolve = config.resolve || {};
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      [require.resolve("@novnc/novnc/lib/util/browser.js")]: path.resolve(
+        __dirname,
+        "src/vendor/novnc/browser.ts",
+      ),
+    };
+    return config;
   },
 };
 

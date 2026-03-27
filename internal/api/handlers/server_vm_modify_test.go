@@ -47,6 +47,27 @@ func TestGetVMModifyContext_ReturnsLiveCapabilities(t *testing.T) {
 	}
 }
 
+func TestGetVMModifyContext_AllowsStoppedVMOfflineResize(t *testing.T) {
+	t.Parallel()
+
+	srv, _, vmID := newVMModifyTestServerWithStatus(t, entvm.StatusSTOPPED, domain.VMStatusStopped)
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms/"+vmID+"/modify-context", "", "owner-1", []string{"vm:operate", "platform:admin"})
+	srv.GetVMModifyContext(c, vmID)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.VMModifyContext
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.CpuSupported || !resp.MemorySupported {
+		t.Fatalf("expected stopped VM to allow offline cpu/memory resize, got cpu=%v memory=%v", resp.CpuSupported, resp.MemorySupported)
+	}
+}
+
 func TestCreateVMModifyRequest_CreatesPendingModifyTicket(t *testing.T) {
 	t.Parallel()
 
@@ -103,9 +124,60 @@ func TestCreateVMModifyRequest_CreatesPendingModifyTicket(t *testing.T) {
 	if payload.VMID != vmID {
 		t.Fatalf("payload vm_id = %q, want %q", payload.VMID, vmID)
 	}
+	if payload.RequiresRestart {
+		t.Fatal("payload.RequiresRestart = true, want false for memory expansion")
+	}
+}
+
+func TestCreateVMModifyRequest_AllowsRunningShrinkAndMarksRestartRequired(t *testing.T) {
+	t.Parallel()
+
+	srv, client, vmID := newVMModifyTestServer(t)
+
+	body := mustJSON(t, generated.VMModifyRequest{
+		Reason:         "shrink memory",
+		TargetMemoryGi: 2,
+	})
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/"+vmID+"/modify-request", body, "owner-1", []string{"vm:operate", "platform:admin"})
+	srv.CreateVMModifyRequest(c, vmID)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	var resp generated.TicketResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	ticket, err := client.Ticket.Get(t.Context(), resp.TicketId)
+	if err != nil {
+		t.Fatalf("query ticket: %v", err)
+	}
+	event, err := client.DomainEvent.Get(t.Context(), ticket.EventID)
+	if err != nil {
+		t.Fatalf("query domain event: %v", err)
+	}
+
+	var payload domain.VMModifyPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		t.Fatalf("decode event payload: %v", err)
+	}
+	if payload.TargetMemoryGi == nil || *payload.TargetMemoryGi != 2 {
+		t.Fatalf("target_memory_gi = %v, want 2", payload.TargetMemoryGi)
+	}
+	if !payload.RequiresRestart {
+		t.Fatal("payload.RequiresRestart = false, want true for running shrink")
+	}
+	if payload.ApplyMode != "restart_required" {
+		t.Fatalf("payload.ApplyMode = %q, want %q", payload.ApplyMode, "restart_required")
+	}
 }
 
 func newVMModifyTestServer(t *testing.T) (*Server, *ent.Client, string) {
+	return newVMModifyTestServerWithStatus(t, entvm.StatusRUNNING, domain.VMStatusRunning)
+}
+
+func newVMModifyTestServerWithStatus(t *testing.T, dbStatus entvm.Status, liveStatus domain.VMStatus) (*Server, *ent.Client, string) {
 	t.Helper()
 
 	client := testutil.OpenEntPostgres(t, "server_vm_modify")
@@ -136,7 +208,7 @@ func newVMModifyTestServer(t *testing.T) (*Server, *ent.Client, string) {
 		SetName(vmName).
 		SetInstance("01").
 		SetNamespace("prod-ns").
-		SetStatus(entvm.StatusRUNNING).
+		SetStatus(dbStatus).
 		SetCreatedBy("owner-1").
 		SetClusterID(clusterID).
 		SetServiceID(serviceID).
@@ -151,7 +223,7 @@ func newVMModifyTestServer(t *testing.T) (*Server, *ent.Client, string) {
 		Name:      vmName,
 		Namespace: "prod-ns",
 		Cluster:   clusterID,
-		Status:    domain.VMStatusRunning,
+		Status:    liveStatus,
 		Spec: domain.VMSpec{
 			CPU:                      2,
 			MemoryGi:                 4,

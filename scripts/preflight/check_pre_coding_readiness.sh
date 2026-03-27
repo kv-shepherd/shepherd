@@ -93,7 +93,7 @@ run_optional_check "Design docs governance script" bash -c "bash docs/design/ci/
 
 echo
 echo "## C. Design-phase API contract artifacts (ADR-0021, ADR-0029)"
-check_file "docs/design/ci/workflows/api-contract.yaml" "Design-phase API contract workflow template"
+check_file "docs/design/ci/workflows/api-contract-validation.yml" "Design-phase API contract workflow template"
 check_file "docs/design/ci/makefile/api.mk" "Design-phase API make targets"
 check_file "docs/design/ci/vacuum/.vacuum.yaml" "Vacuum ruleset template"
 check_file "docs/design/ci/api-templates/openapi.yaml" "OpenAPI template"
@@ -106,10 +106,10 @@ if [[ -f ".github/workflows/docs-governance.yaml" ]]; then
 else
   print_warn "Coding-phase docs governance workflow not landed yet (.github/workflows/docs-governance.yaml)"
 fi
-if [[ -f ".github/workflows/api-contract.yaml" ]]; then
+if [[ -f ".github/workflows/api-contract-validation.yml" ]]; then
   print_warn "Coding-phase API contract workflow already exists in .github/workflows"
 else
-  print_warn "Coding-phase API contract workflow not landed yet (.github/workflows/api-contract.yaml)"
+  print_warn "Coding-phase API contract workflow not landed yet (.github/workflows/api-contract-validation.yml)"
 fi
 if [[ -f "build/api.mk" ]]; then
   print_warn "build/api.mk already exists"

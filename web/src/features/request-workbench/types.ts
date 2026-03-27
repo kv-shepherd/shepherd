@@ -22,12 +22,14 @@ export interface Ticket {
     requester: string;
     reason?: string;
     approver?: string;
+    reject_reason?: string;
     created_at: string;
     updated_at?: string;
     request_prefill?: VMRequestPrefill;
     summary?: components['schemas']['TicketSummary'];
     target_vm_name?: string;
     ticket_payload?: Record<string, unknown>;
+    provisioning?: components['schemas']['ProvisioningStatus'];
 }
 
 export interface TicketList {

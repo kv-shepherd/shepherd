@@ -51,7 +51,7 @@ Establish Go project infrastructure:
 | Error middleware | `internal/api/middleware/error_handler.go` | ✅ | *Added: Gin centralized error handling* |
 | OpenAPI validator | `internal/api/middleware/openapi_validator.go` | ✅ | *Request/response runtime validation implemented and wired via router middleware* |
 | Modular DI | `internal/app/modules/*.go` | ✅ | *Module interface + infrastructure + domain stubs* |
-| API contract CI | `.github/workflows/api-contract.yaml` | ✅ | - |
+| API contract CI | `.github/workflows/api-contract-validation.yml` | ✅ | - |
 | API tooling | `build/api.mk`, `api/.vacuum.yaml` | ✅ | - |
 | Config example | `config/config.yaml.example` | ✅ | - |
 | Dependabot | `.github/dependabot.yml` | ✅ | - |

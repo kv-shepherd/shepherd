@@ -304,6 +304,27 @@ function buildDetectedFieldLabel(path: string): string {
   return compactSegments.map(humanizeFieldSegment).join(" ");
 }
 
+function deriveEnumOptionsFromDescription(description?: string): string[] {
+  if (typeof description !== "string") {
+    return [];
+  }
+
+  const normalized = description.trim();
+  const lower = normalized.toLowerCase();
+  if (
+    !lower.includes("one of ") &&
+    !lower.includes("possible options are")
+  ) {
+    return [];
+  }
+
+  const matches = Array.from(normalized.matchAll(/"([^"]+)"/g)).map(
+    (match) => match[1],
+  );
+  const unique = Array.from(new Set(matches.filter(Boolean)));
+  return unique.length >= 2 ? unique : [];
+}
+
 function buildRecognizedMaskFields(
   schema: SchemaNode,
   mask: SchemaMask,
@@ -663,6 +684,34 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
 
   if (!node) return null;
 
+  const fieldTestId = `dynamic-form-${namePath.join(".")}`;
+
+  const renderFieldHeader = () => (
+    <div className="dynamic-form-field-header">
+      <Text strong>{label}</Text>
+      {helpText ? (
+        <Text type="secondary" className="dynamic-form-field-help">
+          {helpText}
+        </Text>
+      ) : null}
+    </div>
+  );
+
+  const renderFieldShell = (
+    formItemProps: Omit<React.ComponentProps<typeof Form.Item>, "children">,
+    control: React.ReactNode,
+    className?: string,
+  ) => (
+    <div className={`dynamic-form-field-shell${className ? ` ${className}` : ""}`}>
+      {renderFieldHeader()}
+      <Form.Item {...formItemProps} style={{ marginBottom: 0 }}>
+        {control}
+      </Form.Item>
+    </div>
+  );
+
+  const resolvedSelectPlaceholder = placeholder ?? "Select an option";
+
   // array → dynamic add/remove table
   if (node.type === "array" && node.items?.properties) {
     const itemKeys = Object.keys(node.items.properties);
@@ -746,100 +795,91 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
 
   const scalarMapValueNode = getScalarMapValueNode(node);
   if (scalarMapValueNode) {
-    return (
-      <Form.Item
-        label={label}
-        name={namePath}
-        style={{ marginBottom: 8 }}
-        tooltip={
-          helpText
-            ? { title: helpText, trigger: ["hover", "click"] }
-            : undefined
-        }
-      >
+    return renderFieldShell(
+      {
+        name: namePath,
+      },
+      (
         <ScalarMapEditor
           valueNode={scalarMapValueNode}
           disabled={disabled}
-          testIdBase={`dynamic-form-${namePath.join(".")}`}
+          testIdBase={fieldTestId}
           valuePlaceholder={placeholder}
         />
-      </Form.Item>
+      ),
     );
   }
 
   if (isPresenceObjectNode(node)) {
-    return (
-      <Form.Item
-        label={label}
-        name={namePath}
-        style={{ marginBottom: 8 }}
-        tooltip={
-          helpText
-            ? { title: helpText, trigger: ["hover", "click"] }
-            : undefined
-        }
-        getValueProps={(fieldValue?: Record<string, unknown>) => ({
+    return renderFieldShell(
+      {
+        name: namePath,
+        getValueProps: (fieldValue?: Record<string, unknown>) => ({
           checked: fieldValue !== undefined,
-        })}
-        getValueFromEvent={(event: { target?: { checked?: boolean } }) =>
+        }),
+        getValueFromEvent: (event: { target?: { checked?: boolean } }) =>
           event?.target?.checked ? {} : undefined
-        }
-        valuePropName="checked"
-      >
+        ,
+        valuePropName: "checked",
+      },
+      (
         <Checkbox
           disabled={disabled}
-          data-testid={`dynamic-form-${namePath.join(".")}`}
+          data-testid={fieldTestId}
+          aria-label={label}
         />
-      </Form.Item>
+      ),
+      "dynamic-form-field-shell-boolean",
     );
   }
 
   // enum → dropdown (options from schema, not developer-defined — Stage 1 constraint)
-  if (node.enum && Array.isArray(node.enum)) {
-    return (
-      <Form.Item
-        label={label}
-        name={namePath}
-        style={{ marginBottom: 8 }}
-        tooltip={
-          helpText
-            ? { title: helpText, trigger: ["hover", "click"] }
-            : undefined
-        }
-      >
+  const descriptionEnumOptions =
+    !node.enum || !Array.isArray(node.enum)
+      ? deriveEnumOptionsFromDescription(
+          typeof node.description === "string" ? node.description : undefined,
+        )
+      : [];
+  const selectOptions =
+    node.enum && Array.isArray(node.enum)
+      ? node.enum.map((option) => String(option))
+      : descriptionEnumOptions;
+
+  if (selectOptions.length > 0) {
+    return renderFieldShell(
+      {
+        name: namePath,
+      },
+      (
         <Select
           disabled={disabled}
-          data-testid={`dynamic-form-${namePath.join(".")}`}
-          placeholder={placeholder}
+          data-testid={fieldTestId}
+          placeholder={resolvedSelectPlaceholder}
+          style={{ width: "100%" }}
         >
-          {node.enum.map((opt: string | number) => (
-            <Select.Option key={String(opt)} value={opt}>
-              {String(opt)}
+          {selectOptions.map((opt) => (
+            <Select.Option key={opt} value={opt}>
+              {opt}
             </Select.Option>
           ))}
         </Select>
-      </Form.Item>
+      ),
     );
   }
 
   // integer/number → numeric input
   // boolean → checkbox  (master-flow.md:167: "boolean → checkbox")
   // string (default) → text input
-  return (
-    <Form.Item
-      label={label}
-      name={namePath}
-      valuePropName={node.type === "boolean" ? "checked" : "value"}
-      style={{ marginBottom: 8 }}
-      tooltip={
-        helpText ? { title: helpText, trigger: ["hover", "click"] } : undefined
-      }
-    >
-      {node.type === "integer" || node.type === "number" ? (
+  return renderFieldShell(
+    {
+      name: namePath,
+      valuePropName: node.type === "boolean" ? "checked" : "value",
+    },
+    node.type === "integer" || node.type === "number" ? (
         <InputNumber
           style={{ width: "100%" }}
           disabled={disabled}
-          data-testid={`dynamic-form-${namePath.join(".")}`}
+          data-testid={fieldTestId}
           placeholder={placeholder}
         />
       ) : node.type === "boolean" ? (
@@ -847,18 +887,17 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
         // Checkbox communicates a binary on/off choice matching spec field semantics.
         <Checkbox
           disabled={disabled}
-          data-testid={`dynamic-form-${namePath.join(".")}`}
-        >
-          {label}
-        </Checkbox>
+          data-testid={fieldTestId}
+          aria-label={label}
+        />
       ) : (
         <Input
           disabled={disabled}
-          data-testid={`dynamic-form-${namePath.join(".")}`}
+          data-testid={fieldTestId}
           placeholder={placeholder}
         />
-      )}
-    </Form.Item>
+      ),
+    node.type === "boolean" ? "dynamic-form-field-shell-boolean" : undefined,
   );
 };
 
@@ -1119,9 +1158,7 @@ export const DynamicSchemaForm = React.forwardRef<
         );
       }
       const namePath = field.path.split(".");
-      const label = field.display_name_key
-        ? t(field.display_name_key, field.display_name ?? field.path)
-        : (field.display_name ?? field.path);
+      const label = field.display_name ?? field.path;
       const schemaDescription =
         typeof node.description === "string" ? node.description : undefined;
       const helpText = field.help_key

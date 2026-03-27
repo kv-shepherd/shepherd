@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@xterm/xterm/css/xterm.css";
 
 :root {
   --background: #eef3f8;
@@ -153,29 +154,141 @@ a {
   margin-bottom: 16px;
 }
 
-.admin-approvals-modal .ant-modal-content {
+.workbench-detail-modal .ant-modal-content {
   max-width: calc(100vw - 16px);
 }
 
-.admin-approvals-modal .ant-card-head-title {
+.workbench-detail-modal__viewport {
+  max-width: 100%;
+  overflow: auto;
+}
+
+.workbench-detail-modal__canvas {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+}
+
+.workbench-detail-modal__stack {
+  width: 100%;
+}
+
+.workbench-detail-modal__grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-bottom: 16px;
+}
+
+.workbench-detail-modal__table-scroll {
+  overflow-x: auto;
+}
+
+.workbench-detail-modal .ant-card-head-title {
   white-space: normal;
 }
 
-.admin-approvals-modal .ant-descriptions-view table {
+.workbench-detail-modal .ant-descriptions-view table {
   table-layout: fixed;
   width: 100%;
 }
 
-.admin-approvals-modal .ant-descriptions-item-label,
-.admin-approvals-modal .ant-descriptions-item-content {
+.workbench-detail-modal .ant-descriptions-item-label,
+.workbench-detail-modal .ant-descriptions-item-content {
   white-space: normal;
   word-break: break-word;
   overflow-wrap: anywhere;
   vertical-align: top;
 }
 
-.admin-approvals-modal .ant-descriptions-item-label {
+.workbench-detail-modal .ant-descriptions-item-label {
   width: 34%;
+}
+
+.quick-fields-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dynamic-form-field-shell {
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(255, 255, 255, 0.98) 100%);
+}
+
+.dynamic-form-field-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.dynamic-form-field-help {
+  line-height: 1.6;
+  white-space: normal;
+}
+
+.dynamic-form-field-shell-boolean .ant-form-item-control-input {
+  min-height: auto;
+}
+
+.dynamic-form-field-shell-boolean .ant-checkbox-wrapper {
+  display: inline-flex;
+  align-items: center;
+}
+
+.vm-console-option {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.vm-console-option .ant-radio-wrapper {
+  flex: 1 1 auto;
+  align-items: flex-start;
+}
+
+.vm-console-option .ant-radio-wrapper,
+.vm-console-option .ant-radio-wrapper * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.vm-console-support-note {
+  padding: 12px 14px;
+  border: 1px dashed rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.48);
+}
+
+.page-header__actions .ant-btn,
+.page-header__actions .ant-btn * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.copy-friendly-actions .ant-btn,
+.copy-friendly-actions .ant-btn *,
+.copy-friendly-actions .ant-radio-wrapper,
+.copy-friendly-actions .ant-radio-wrapper *,
+.copy-friendly-actions .ant-dropdown-menu-title-content,
+.copy-friendly-actions .ant-dropdown-menu-title-content * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.selectable-inline-text,
+.selectable-inline-text * {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .summary-metric-card {

@@ -568,7 +568,7 @@ export interface paths {
         put?: never;
         /**
          * Request VM console access
-         * @description Stage 6 VNC access entrypoint.
+         * @description Stage 6 console access entrypoint.
          *     test env: direct token issuance.
          *     prod env: create ticket and return pending status.
          */
@@ -613,6 +613,28 @@ export interface paths {
          *     V1 returns session bootstrap metadata; proxy internals are implementation-defined.
          */
         get: operations["openVMVNC"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vms/{vm_id}/serial": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open VM serial console session
+         * @description Validates one-time console bootstrap credential from secure cookie and establishes a serial access session.
+         *     Clients MUST NOT pass bearer credentials via URI query.
+         *     V1 returns session bootstrap metadata; proxy internals are implementation-defined.
+         */
+        get: operations["openVMSerial"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1778,8 +1800,28 @@ export interface components {
             /** @enum {string} */
             status: "CREATING" | "STARTING" | "RUNNING" | "STOPPING" | "STOPPED" | "DELETING" | "FAILED" | "PENDING" | "MIGRATING" | "PAUSED" | "UNKNOWN" | "NOT_FOUND";
             hostname?: string;
+            /** @description Current KubeVirt VMI node name when the VM is scheduled */
+            node_name?: string;
+            /** @description Primary observed node IP for the current VMI placement */
+            host_ip?: string;
+            /** @description Primary observed guest IP address from the live VMI status */
+            ip_address?: string;
+            /** @description Best-effort guest operating system name from KubeVirt guest OS info, or creation snapshot fallback */
+            os_name?: string;
+            /** @description Best-effort guest operating system version from KubeVirt guest OS info, or creation snapshot fallback */
+            os_version?: string;
+            /** @description Best-effort guest operating system family (for example linux or windows) */
+            os_family?: string;
             service_id?: string;
+            service_name?: string;
+            system_id?: string;
+            system_name?: string;
             instance?: string;
+            /** Format: float */
+            cpu_cores?: number;
+            /** Format: float */
+            memory_gi?: number;
+            disk_gb?: number;
             ticket_id?: string;
             created_by?: string;
             /** Format: date-time */
@@ -1789,7 +1831,13 @@ export interface components {
              * @enum {string}
              */
             environment?: "test" | "prod";
+            console_capabilities?: components["schemas"]["VMConsoleCapabilities"];
             provisioning?: components["schemas"]["ProvisioningStatus"];
+        };
+        VMConsoleCapabilities: {
+            serial_available: boolean;
+            vnc_available: boolean;
+            preferred_console_type?: components["schemas"]["VMConsoleType"];
         };
         ProvisioningCondition: {
             type?: string;
@@ -2017,15 +2065,34 @@ export interface components {
         VMConsoleRequestStatus: "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
         /** @enum {string} */
         VMConsoleStatus: "NOT_REQUESTED" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+        /** @enum {string} */
+        VMConsoleType: "SERIAL" | "VNC";
         VMConsoleRequestResponse: {
             status: components["schemas"]["VMConsoleRequestStatus"];
             ticket_id?: string | null;
+            console_type?: ((string & components["schemas"]["VMConsoleType"]) | null) & components["schemas"]["VMConsoleType"];
+            console_url?: string | null;
+            /** @deprecated */
             vnc_url?: string | null;
+        };
+        VMConsoleRequestInput: {
+            preferred_console_type?: components["schemas"]["VMConsoleType"];
         };
         VMConsoleStatusResponse: {
             status: components["schemas"]["VMConsoleStatus"];
             ticket_id?: string | null;
+            console_type?: ((string & components["schemas"]["VMConsoleType"]) | null) & components["schemas"]["VMConsoleType"];
+            console_url?: string | null;
+            /** @deprecated */
             vnc_url?: string | null;
+        };
+        VMConsoleSessionResponse: {
+            /** @enum {string} */
+            status: "SESSION_READY";
+            vm_id: string;
+            console_type: components["schemas"]["VMConsoleType"];
+            /** @description Relative websocket/proxy path for console bootstrap. */
+            websocket_path?: string;
         };
         VMVNCSessionResponse: {
             /** @enum {string} */
@@ -2033,6 +2100,7 @@ export interface components {
             vm_id: string;
             /** @description Relative websocket/proxy path for noVNC bootstrap. */
             websocket_path?: string;
+            console_type?: components["schemas"]["VMConsoleType"];
         };
         TicketResponse: {
             ticket_id: string;
@@ -3224,6 +3292,24 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description Upstream dependency rejected the request */
+        BadGateway: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Requested capability is currently unavailable */
+        ServiceUnavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
         /** @description Page number (1-indexed) */
@@ -4295,7 +4381,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["VMConsoleRequestInput"];
+            };
+        };
         responses: {
             /** @description Console access approved immediately (test env) */
             200: {
@@ -4368,6 +4458,35 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    openVMSerial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vm_id: components["parameters"]["VMID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Serial console session ready */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMConsoleSessionResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     listTickets: {

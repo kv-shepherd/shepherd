@@ -229,20 +229,22 @@ func (s *Server) resolveVMModifyContext(
 	resp.CurrentMemoryGi = liveVM.Spec.MemoryGi
 	resp.CurrentDiskGb = liveVM.Spec.DiskGB
 
-	liveUpdateSupported := provider.HasAllCapabilities(clusterRow.EnabledFeatures, []string{"VMLiveUpdateFeatures"})
-	if liveUpdateSupported {
+	resp.CpuSupported = true
+	resp.MemorySupported = true
+	switch {
+	case liveVM.Status == domain.VMStatusStopped:
+	case provider.HasAllCapabilities(clusterRow.EnabledFeatures, []string{"VMLiveUpdateFeatures"}):
+	default:
 		resp.CpuSupported = true
 		resp.MemorySupported = true
-	} else {
-		resp.CpuReason = "cluster does not support live CPU updates"
-		resp.MemoryReason = "cluster does not support live memory updates"
+		resp.CpuReason = "cpu changes will be saved now and take effect after the next restart"
+		resp.MemoryReason = "memory changes will be saved now and take effect after the next restart"
 	}
 
-	if resp.CpuSupported {
+	if resp.CpuSupported && liveVM.Status != domain.VMStatusStopped {
 		_, _, cpuErr := provider.ResolveVMLiveCPUHotplugSupport(liveVM)
 		if cpuErr != nil {
-			resp.CpuSupported = false
-			resp.CpuReason = cpuErr.Error()
+			resp.CpuReason = "some cpu topology changes require a restart before they take effect"
 		}
 	}
 
@@ -304,27 +306,34 @@ func (s *Server) buildVMModifyPayload(
 		return domain.VMModifyPayload{}, errors.New(firstNonEmptyString(resp.DiskReason, "disk live update is unavailable"))
 	}
 
-	if _, err := provider.RenderVMLiveUpdatePatch(vmRow.Namespace, liveVM, provider.VMLiveUpdateTargets{
-		CPUCores: targetCPU,
-		MemoryGi: targetMemory,
-		DiskGB:   targetDisk,
-	}); err != nil {
+	plan, err := provider.PlanVMResourceUpdatePatch(vmRow.Namespace, liveVM, provider.VMLiveUpdateTargets{
+		CPUCores:        targetCPU,
+		MemoryGi:        targetMemory,
+		DiskGB:          targetDisk,
+		CPURequest:      nil,
+		MemoryRequestGi: nil,
+	})
+	if err != nil {
 		return domain.VMModifyPayload{}, err
 	}
 
 	return domain.VMModifyPayload{
-		VMID:            vmRow.ID,
-		VMName:          vmRow.Name,
-		ClusterID:       clusterRow.ID,
-		Namespace:       vmRow.Namespace,
-		RequestVMStatus: string(liveVM.Status),
-		Actor:           actor,
-		CurrentCPUCores: liveVM.Spec.CPU,
-		CurrentMemoryGi: liveVM.Spec.MemoryGi,
-		CurrentDiskGB:   liveVM.Spec.DiskGB,
-		TargetCPUCores:  targetCPU,
-		TargetMemoryGi:  targetMemory,
-		TargetDiskGB:    targetDisk,
+		VMID:                   vmRow.ID,
+		VMName:                 vmRow.Name,
+		ClusterID:              clusterRow.ID,
+		Namespace:              vmRow.Namespace,
+		RequestVMStatus:        string(liveVM.Status),
+		Actor:                  actor,
+		CurrentCPUCores:        liveVM.Spec.CPU,
+		CurrentMemoryGi:        liveVM.Spec.MemoryGi,
+		CurrentDiskGB:          liveVM.Spec.DiskGB,
+		CurrentCPURequest:      liveVM.Spec.CPURequest,
+		CurrentMemoryRequestGi: liveVM.Spec.MemoryRequestGi,
+		TargetCPUCores:         targetCPU,
+		TargetMemoryGi:         targetMemory,
+		TargetDiskGB:           targetDisk,
+		RequiresRestart:        plan.RequiresRestart,
+		ApplyMode:              plan.ApplyMode,
 	}, nil
 }
 

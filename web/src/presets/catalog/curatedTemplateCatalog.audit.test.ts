@@ -10,6 +10,8 @@ describe('curated template catalog internal audit', () => {
     it.each(CURATED_TEMPLATE_PRESET_ITEMS)(
         'keeps template preset $key internally consistent',
         ({ key, sourceType, verificationLevel, osFamily, osVersion, pvcNamespace, pvcName, imageUrlExamples, values }) => {
+            const serialized = JSON.stringify(values);
+
             expect(sourceType).toBe('curated');
             expect(verificationLevel).toBe('verified');
 
@@ -21,6 +23,8 @@ describe('curated template catalog internal audit', () => {
             expect(values.catalog_scope).toBe(key.includes('test') ? 'test' : 'prod');
             expect(values.image_url).toBeUndefined();
             expect(values.enabled).toBe(true);
+            expect(serialized).not.toContain('autoattachGraphicsDevice');
+            expect(serialized).not.toContain('spec.template.spec.domain.devices');
 
             expect(values.pvc_namespace).toBe('vm-muban');
             expect(imageUrlExamples.length).toBeGreaterThan(0);

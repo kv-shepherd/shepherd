@@ -223,8 +223,36 @@ func (m *VNCTokenManager) Issue(subject, vmID, clusterID, namespace string) (tok
 	return token, policyClaims, nil
 }
 
+// Validate verifies token signature and claims without consuming a single-use token.
+func (m *VNCTokenManager) Validate(token, expectedVMID string) (*VNCJWTClaims, error) {
+	return m.validateToken(token, expectedVMID)
+}
+
 // ValidateAndConsume validates token signature+claims and consumes single-use token.
 func (m *VNCTokenManager) ValidateAndConsume(ctx context.Context, token, expectedVMID string) (*VNCJWTClaims, error) {
+	claims, err := m.validateToken(token, expectedVMID)
+	if err != nil {
+		return nil, err
+	}
+	if !claims.SingleUse {
+		return claims, nil
+	}
+	if claims.ID == "" {
+		return nil, ErrVNCTokenIDMissing
+	}
+	allow, err := m.replay.Consume(ctx, claims.ID, claims.ExpiresAt.Time)
+	if err != nil {
+		return nil, fmt.Errorf("consume vnc token id: %w", err)
+	}
+	if !allow {
+		return nil, ErrVNCTokenReplayed
+	}
+
+	_ = ctx
+	return claims, nil
+}
+
+func (m *VNCTokenManager) validateToken(token, expectedVMID string) (*VNCJWTClaims, error) {
 	if len(m.signingKey) == 0 {
 		return nil, ErrVNCTokenSigningKeyMissing
 	}
@@ -260,21 +288,6 @@ func (m *VNCTokenManager) ValidateAndConsume(ctx context.Context, token, expecte
 	if expectedVMID != "" && claims.VMID != expectedVMID {
 		return nil, ErrVNCTokenVMMismatch
 	}
-	if claims.ID == "" {
-		return nil, ErrVNCTokenIDMissing
-	}
-
-	if claims.SingleUse {
-		allow, err := m.replay.Consume(ctx, claims.ID, claims.ExpiresAt.Time)
-		if err != nil {
-			return nil, fmt.Errorf("consume vnc token id: %w", err)
-		}
-		if !allow {
-			return nil, ErrVNCTokenReplayed
-		}
-	}
-
-	_ = ctx
 	return claims, nil
 }
 

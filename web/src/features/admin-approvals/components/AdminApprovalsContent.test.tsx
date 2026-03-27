@@ -503,12 +503,11 @@ describe("AdminApprovalsContent", () => {
   it("keeps the approve modal body scrollable when the content is long", () => {
     const { container } = render(<AdminApprovalsContent />);
 
-    const modalBody = container.ownerDocument.querySelector(".ant-modal-body");
-    expect(modalBody).not.toBeNull();
-    expect(modalBody).toHaveStyle({
-      maxHeight: "calc(100vh - 220px)",
-      overflowY: "auto",
-      overflowX: "hidden",
+    const modalViewport = container.ownerDocument.querySelector(".workbench-detail-modal__viewport");
+    expect(modalViewport).not.toBeNull();
+    expect(modalViewport).toHaveClass("workbench-detail-modal__viewport");
+    expect(modalViewport).toHaveStyle({
+      maxHeight: "calc(100vh - 180px)",
     });
   });
 

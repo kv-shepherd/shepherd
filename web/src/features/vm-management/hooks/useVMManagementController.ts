@@ -17,7 +17,6 @@ import { useAuthStore } from "@/stores/auth";
 
 import type {
   DeleteVMResponse,
-  TicketResponse,
   InstanceSize,
   InstanceSizeList,
   ServiceList,
@@ -30,7 +29,7 @@ import type {
   VMBatchStatusResponse,
   VMBatchSubmitRequest,
   VMBatchSubmitResponse,
-  VMConsoleRequestResponse,
+  TicketResponse,
   VMCreateRequest,
   VMPlacementHint,
   VMRequestDraft,
@@ -38,7 +37,6 @@ import type {
   VMModifyContext,
   VMModifyRequest,
   VMRequestContext,
-  VMVNCSessionResponse,
   VMRequestLaunchPrefill,
   VMRequestMode,
   VMRequestPrefill,
@@ -66,8 +64,6 @@ const TERMINAL_BATCH_STATUSES = new Set([
   "CANCELLED",
 ]);
 
-const noVNCEntry = process.env.NEXT_PUBLIC_NOVNC_ENTRY ?? "/novnc/vnc.html";
-
 type BatchActionKind = "retry" | "cancel";
 
 interface BatchActionFeedback {
@@ -77,13 +73,6 @@ interface BatchActionFeedback {
 }
 
 const VM_REQUEST_DRAFT_SAVE_DEBOUNCE_MS = 400;
-
-const buildNoVNCURL = (websocketPath: string): string => {
-  const cleaned = websocketPath.startsWith("/")
-    ? websocketPath.slice(1)
-    : websocketPath;
-  return `${noVNCEntry}?path=${encodeURIComponent(cleaned)}`;
-};
 
 const parseBatchIDFromStatusURL = (
   statusURL: string,
@@ -325,7 +314,8 @@ export function useVMManagementController({
         params: { path: { vm_id: modifyTargetVM?.id ?? "" } },
       }),
     {
-      enabled: modifyOpen && modifyScope === "single" && Boolean(modifyTargetVM?.id),
+      enabled:
+        modifyOpen && modifyScope === "single" && Boolean(modifyTargetVM?.id),
     },
   );
 
@@ -353,7 +343,8 @@ export function useVMManagementController({
     instanceSizesFallbackQuery.data,
   ]);
   const selectedSystem = useMemo(
-    () => systemsQuery.data?.items?.find((item) => item.id === selectedSystemId),
+    () =>
+      systemsQuery.data?.items?.find((item) => item.id === selectedSystemId),
     [selectedSystemId, systemsQuery.data],
   );
   const selectedService = useMemo(
@@ -606,23 +597,22 @@ export function useVMManagementController({
     setSavedDraft(null);
   };
 
-  const createVMRequest = useApiMutation<
-    VMCreateRequest,
-    TicketResponse
-  >((req) => api.POST("/vms/request", { body: req }), {
-    invalidateKeys: [["vms"], ["tickets"], ["builtin-approval-tasks"]],
-    onSuccess: () => {
-      clearSavedDraft();
-      messageApi.success(t("request_submitted"));
-      setWizardOpen(false);
-      setWizardStep(0);
-      setRequestMode("guided");
-      setSelectedSystemId("");
-      form.resetFields();
+  const createVMRequest = useApiMutation<VMCreateRequest, TicketResponse>(
+    (req) => api.POST("/vms/request", { body: req }),
+    {
+      invalidateKeys: [["vms"], ["tickets"], ["builtin-approval-tasks"]],
+      onSuccess: () => {
+        clearSavedDraft();
+        messageApi.success(t("request_submitted"));
+        setWizardOpen(false);
+        setWizardStep(0);
+        setRequestMode("guided");
+        setSelectedSystemId("");
+        form.resetFields();
+      },
+      onError: (err) => messageApi.error(translateApiError(t, err)),
     },
-    onError: (err) =>
-      messageApi.error(translateApiError(t, err)),
-  });
+  );
 
   const createVMModifyRequest = useApiMutation<
     { vmId: string; body: VMModifyRequest },
@@ -641,8 +631,7 @@ export function useVMManagementController({
         setModifyTargetVM(null);
         modifyForm.resetFields();
       },
-      onError: (err) =>
-        messageApi.error(translateApiError(t, err)),
+      onError: (err) => messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -773,8 +762,7 @@ export function useVMManagementController({
     {
       invalidateKeys: [["vms"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
-      onError: (err) =>
-        messageApi.error(translateApiError(t, err)),
+      onError: (err) => messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -784,8 +772,7 @@ export function useVMManagementController({
     {
       invalidateKeys: [["vms"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
-      onError: (err) =>
-        messageApi.error(translateApiError(t, err)),
+      onError: (err) => messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -795,20 +782,7 @@ export function useVMManagementController({
     {
       invalidateKeys: [["vms"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
-      onError: (err) =>
-        messageApi.error(translateApiError(t, err)),
-    },
-  );
-
-  const requestConsole = useApiMutation<string, VMConsoleRequestResponse>(
-    (vmId) =>
-      api.POST("/vms/{vm_id}/console/request", {
-        params: { path: { vm_id: vmId } },
-      }),
-    {
-      invalidateKeys: [["approvals"]],
-      onError: (err) =>
-        messageApi.error(translateApiError(t, err)),
+      onError: (err) => messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -830,8 +804,7 @@ export function useVMManagementController({
         setDeleteOpen(false);
         setTimeout(() => setDeletingVM(null), 300);
       },
-      onError: (err) =>
-        messageApi.error(translateApiError(t, err)),
+      onError: (err) => messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -907,7 +880,11 @@ export function useVMManagementController({
     const targetCPU = normalizeOptionalTargetNumber(values.target_cpu_cores);
     const targetMemory = normalizeOptionalTargetNumber(values.target_memory_gi);
     const targetDisk = normalizeOptionalTargetNumber(values.target_disk_gb);
-    if (targetCPU === undefined && targetMemory === undefined && targetDisk === undefined) {
+    if (
+      targetCPU === undefined &&
+      targetMemory === undefined &&
+      targetDisk === undefined
+    ) {
       messageApi.warning(t("modify.target_required"));
       return;
     }
@@ -917,28 +894,6 @@ export function useVMManagementController({
       const modifyContext = modifyContextQuery.data;
       if (!targetVM || !modifyContext) {
         messageApi.warning(t("modify.context_unavailable"));
-        return;
-      }
-      if (
-        targetCPU !== undefined &&
-        targetCPU <= Number(modifyContext.current_cpu_cores ?? 0)
-      ) {
-        messageApi.warning(
-          t("modify.target_cpu_expand_only", {
-            current: modifyContext.current_cpu_cores,
-          }),
-        );
-        return;
-      }
-      if (
-        targetMemory !== undefined &&
-        targetMemory <= Number(modifyContext.current_memory_gi ?? 0)
-      ) {
-        messageApi.warning(
-          t("modify.target_memory_expand_only", {
-            current: modifyContext.current_memory_gi,
-          }),
-        );
         return;
       }
       if (
@@ -1141,33 +1096,6 @@ export function useVMManagementController({
     });
   };
 
-  const openVNCTab = async (vmID: string): Promise<boolean> => {
-    const { data, error } = await api.GET("/vms/{vm_id}/vnc", {
-      params: { path: { vm_id: vmID } },
-    });
-    const session = data as VMVNCSessionResponse | undefined;
-    if (error || !session?.websocket_path) {
-      messageApi.error(t("console.unavailable"));
-      return false;
-    }
-
-    const noVNCURL = buildNoVNCURL(session.websocket_path);
-    window.open(noVNCURL, "_blank", "noopener,noreferrer");
-    messageApi.success(t("console.opened"));
-    return true;
-  };
-
-  const fetchVMDetail = async (vmID: string) => {
-    const { data, error } = await api.GET("/vms/{vm_id}", {
-      params: { path: { vm_id: vmID } },
-    });
-    if (error || !data) {
-      messageApi.error(t("common:message.error"));
-      return null;
-    }
-    return data;
-  };
-
   const openSimilarRequest = async (vmID: string) => {
     const { data, error } = await api.GET("/vms/{vm_id}/request-prefill", {
       params: { path: { vm_id: vmID } },
@@ -1311,34 +1239,6 @@ export function useVMManagementController({
     startVM: (vmId: string) => startVM.mutate(vmId),
     stopVM: (vmId: string) => stopVM.mutate(vmId),
     restartVM: (vmId: string) => restartVM.mutate(vmId),
-    requestConsole: async (vmId: string) => {
-      const vm = await fetchVMDetail(vmId);
-      if (!vm) {
-        return;
-      }
-      requestConsole.mutate(vmId, {
-        onSuccess: (resp) => {
-          if (resp.status === "APPROVED") {
-            void openVNCTab(vmId);
-            return;
-          }
-          if (resp.status === "PENDING_APPROVAL") {
-            messageApi.info(t("console.pending_approval"));
-            void api
-              .GET("/vms/{vm_id}/console/status", {
-                params: { path: { vm_id: vmId } },
-              })
-              .then(({ data }) => {
-                if (data?.status === "APPROVED") {
-                  void openVNCTab(vmId);
-                }
-              });
-            return;
-          }
-          messageApi.warning(t("console.unavailable"));
-        },
-      });
-    },
     deleteVM: openDeleteModal,
     openDeleteModal,
     deleteOpen,

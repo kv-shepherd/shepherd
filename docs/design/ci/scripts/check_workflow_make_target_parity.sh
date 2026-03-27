@@ -24,7 +24,7 @@ forbid_line() {
 
 ci_workflow=".github/workflows/ci.yml"
 frontend_workflow=".github/workflows/frontend-tests.yml"
-api_workflow=".github/workflows/api-contract.yaml"
+api_workflow=".github/workflows/api-contract-validation.yml"
 
 require_line "$ci_workflow" "run: make secrets-scan"
 require_line "$ci_workflow" "run: make govulncheck"

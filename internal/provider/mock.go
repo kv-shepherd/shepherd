@@ -2,8 +2,11 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
 	"sync"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -22,6 +25,8 @@ type MockProvider struct {
 	events            map[string][]domain.ProvisioningEvent    // key: namespace/kind/name
 	pvcConsumers      map[string][]domain.ObjectReference      // key: namespace/claim
 	cloneSourceAccess map[string]cloneSourceAccessDecision     // key: source namespace
+	vncOpenErr        error
+	serialOpenErr     error
 	mu                sync.RWMutex
 }
 
@@ -29,6 +34,8 @@ type cloneSourceAccessDecision struct {
 	allowed bool
 	reason  string
 }
+
+const mockProviderName = "mock"
 
 // NewMockProvider creates a new MockProvider.
 func NewMockProvider() *MockProvider {
@@ -68,10 +75,24 @@ func (p *MockProvider) Reset() {
 	p.events = make(map[string][]domain.ProvisioningEvent)
 	p.pvcConsumers = make(map[string][]domain.ObjectReference)
 	p.cloneSourceAccess = make(map[string]cloneSourceAccessDecision)
+	p.vncOpenErr = nil
+	p.serialOpenErr = nil
 }
 
-func (p *MockProvider) Name() string { return "mock" }
-func (p *MockProvider) Type() string { return "mock" }
+func (p *MockProvider) SetVNCOpenError(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.vncOpenErr = err
+}
+
+func (p *MockProvider) SetSerialOpenError(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.serialOpenErr = err
+}
+
+func (p *MockProvider) Name() string { return mockProviderName }
+func (p *MockProvider) Type() string { return mockProviderName }
 
 func (p *MockProvider) EnsureNamespace(_ context.Context, _, namespace string) error {
 	p.mu.Lock()
@@ -140,6 +161,152 @@ func (p *MockProvider) UpdateVM(_ context.Context, _, namespace, name string, sp
 	return vm, nil
 }
 
+func (p *MockProvider) DryRunVMMutation(_ context.Context, _, namespace, name string, mutation *domain.VMMutation) error {
+	if mutation == nil {
+		return fmt.Errorf("vm mutation is nil")
+	}
+	if mutation.Mode != domain.VMMutationModePatch {
+		return fmt.Errorf("unsupported vm mutation mode %q", mutation.Mode)
+	}
+	if namespace == "" || name == "" {
+		return fmt.Errorf("vm mutation dry-run requires namespace and name")
+	}
+	if len(mutation.Payload) == 0 {
+		return fmt.Errorf("vm mutation payload is empty")
+	}
+	switch mutation.PatchType {
+	case "", domain.VMMutationPatchTypeMerge:
+		if _, err := decodeMockMergeMutationPayload(mutation.Payload); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported vm mutation patch type %q", mutation.PatchType)
+	}
+	return nil
+}
+
+func (p *MockProvider) ExecuteVMMutation(ctx context.Context, cluster, namespace, name string, mutation *domain.VMMutation) (*domain.VM, error) {
+	if err := p.DryRunVMMutation(ctx, cluster, namespace, name, mutation); err != nil {
+		return nil, err
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	key := namespace + "/" + name
+	vm, ok := p.vms[key]
+	if !ok {
+		return nil, fmt.Errorf("vm %s not found", key)
+	}
+	if len(mutation.Payload) == 0 {
+		return vm, nil
+	}
+
+	patch, err := decodeMockMergeMutationPayload(mutation.Payload)
+	if err != nil {
+		return nil, err
+	}
+
+	specPatch, _ := patch["spec"].(map[string]interface{})
+	if template, ok := specPatch["template"].(map[string]interface{}); ok {
+		if templateSpec, ok := template["spec"].(map[string]interface{}); ok {
+			if domainSpec, ok := templateSpec["domain"].(map[string]interface{}); ok {
+				if cpu, ok := domainSpec["cpu"].(map[string]interface{}); ok {
+					if value, ok := cpu["sockets"].(float64); ok {
+						vm.Spec.CurrentCPUSockets = int(value)
+					}
+					if value, ok := cpu["cores"].(float64); ok {
+						vm.Spec.CurrentCPUCoresPerSocket = int(value)
+					}
+					if value, ok := cpu["threads"].(float64); ok {
+						vm.Spec.CurrentCPUThreads = int(value)
+					}
+				}
+				if memory, ok := domainSpec["memory"].(map[string]interface{}); ok {
+					if guest, ok := memory["guest"].(string); ok {
+						var memoryGi float64
+						if _, err := fmt.Sscanf(guest, "%fGi", &memoryGi); err == nil {
+							vm.Spec.MemoryGi = memoryGi
+						}
+					}
+				}
+				if resources, ok := domainSpec["resources"].(map[string]interface{}); ok {
+					if limits, ok := resources["limits"].(map[string]interface{}); ok {
+						if cpu, ok := limits["cpu"].(string); ok {
+							var value float64
+							if _, err := fmt.Sscanf(cpu, "%f", &value); err == nil {
+								vm.Spec.CPU = value
+							}
+						}
+						if memory, ok := limits["memory"].(string); ok {
+							var value float64
+							if _, err := fmt.Sscanf(memory, "%fGi", &value); err == nil {
+								vm.Spec.MemoryGi = value
+							}
+						}
+					}
+					if requests, ok := resources["requests"].(map[string]interface{}); ok {
+						if cpu, ok := requests["cpu"].(string); ok {
+							var value float64
+							if _, err := fmt.Sscanf(cpu, "%f", &value); err == nil {
+								vm.Spec.CPURequest = value
+							}
+						}
+						if memory, ok := requests["memory"].(string); ok {
+							var value float64
+							if _, err := fmt.Sscanf(memory, "%fGi", &value); err == nil {
+								vm.Spec.MemoryRequestGi = value
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if dataVolumeTemplates, ok := specPatch["dataVolumeTemplates"].([]interface{}); ok && len(dataVolumeTemplates) > 0 {
+		if item, ok := dataVolumeTemplates[0].(map[string]interface{}); ok {
+			if spec, ok := item["spec"].(map[string]interface{}); ok {
+				var resources map[string]interface{}
+				switch {
+				case spec["pvc"] != nil:
+					if pvc, ok := spec["pvc"].(map[string]interface{}); ok {
+						if value, ok := pvc["resources"].(map[string]interface{}); ok {
+							resources = value
+						}
+					}
+				case spec["storage"] != nil:
+					if storage, ok := spec["storage"].(map[string]interface{}); ok {
+						if value, ok := storage["resources"].(map[string]interface{}); ok {
+							resources = value
+						}
+					}
+				}
+				if resources != nil {
+					if requests, ok := resources["requests"].(map[string]interface{}); ok {
+						if storage, ok := requests["storage"].(string); ok {
+							var value int
+							if _, err := fmt.Sscanf(storage, "%dGi", &value); err == nil {
+								vm.Spec.DiskGB = value
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return vm, nil
+}
+
+func decodeMockMergeMutationPayload(payload []byte) (map[string]interface{}, error) {
+	var patch map[string]interface{}
+	if err := json.Unmarshal(payload, &patch); err != nil {
+		return nil, fmt.Errorf("decode vm merge mutation payload: %w", err)
+	}
+	return patch, nil
+}
+
 func (p *MockProvider) DeleteVM(_ context.Context, _, namespace, name string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -162,6 +329,48 @@ func (p *MockProvider) StopVM(_ context.Context, _, namespace, name string) erro
 func (p *MockProvider) RestartVM(_ context.Context, _, namespace, name string) error {
 	return p.setStatus(namespace, name, domain.VMStatusRunning)
 }
+
+func (p *MockProvider) OpenVNCStream(_ context.Context, _, namespace, name string) (net.Conn, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.vncOpenErr != nil {
+		return nil, p.vncOpenErr
+	}
+	key := namespace + "/" + name
+	if _, ok := p.vms[key]; !ok {
+		return nil, fmt.Errorf("vm %s not found", key)
+	}
+	return mockNetConn{}, nil
+}
+
+func (p *MockProvider) OpenSerialConsoleStream(_ context.Context, _, namespace, name string) (net.Conn, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.serialOpenErr != nil {
+		return nil, p.serialOpenErr
+	}
+	key := namespace + "/" + name
+	if _, ok := p.vms[key]; !ok {
+		return nil, fmt.Errorf("vm %s not found", key)
+	}
+	return mockNetConn{}, nil
+}
+
+type mockNetConn struct{}
+
+func (mockNetConn) Read(_ []byte) (int, error)         { return 0, net.ErrClosed }
+func (mockNetConn) Write(b []byte) (int, error)        { return len(b), nil }
+func (mockNetConn) Close() error                       { return nil }
+func (mockNetConn) LocalAddr() net.Addr                { return mockNetAddr("local") }
+func (mockNetConn) RemoteAddr() net.Addr               { return mockNetAddr("remote") }
+func (mockNetConn) SetDeadline(_ time.Time) error      { return nil }
+func (mockNetConn) SetReadDeadline(_ time.Time) error  { return nil }
+func (mockNetConn) SetWriteDeadline(_ time.Time) error { return nil }
+
+type mockNetAddr string
+
+func (a mockNetAddr) Network() string { return "mock" }
+func (a mockNetAddr) String() string  { return string(a) }
 
 func (p *MockProvider) PauseVM(_ context.Context, _, namespace, name string) error {
 	return p.setStatus(namespace, name, domain.VMStatusStopped)

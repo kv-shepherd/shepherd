@@ -16,12 +16,12 @@ import {
     Upload,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { CloudOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, UploadOutlined, FileTextOutlined, DesktopOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
 import { PermissionGuard } from '@/components/auth/PermissionGuard';
@@ -33,6 +33,7 @@ import {
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
+import { WorkbenchDetailModal } from '@/components/workbench/WorkbenchDetailModal';
 import {
     buildDashboardSetupResumeHref,
     resolveNextSetupAction,
@@ -51,9 +52,13 @@ const { Text } = Typography;
 export function ServicesManagementContent() {
     const { t } = useTranslation(['common', 'vm', 'approval']);
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const initialSystemId = searchParams.get('system_id') || undefined;
+    const detailServiceIdFromQuery = searchParams.get('detail_service_id') || undefined;
     const setupGuide = useSetupGuide();
     const services = useServicesManagementController({
         t,
+        initialSystemId,
         onCreateSuccess: (_, context) => {
             if (!context.isFirstService) {
                 return false;
@@ -71,27 +76,52 @@ export function ServicesManagementContent() {
     const [editPreviewMode, setEditPreviewMode] = useState(false);
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailService, setDetailService] = useState<Service | null>(null);
+    const [dismissedQueryDetailServiceId, setDismissedQueryDetailServiceId] = useState<string | null>(null);
 
     useAutoOpenIntent('create-service', (params) => {
         services.openCreateModal(params.get('system_id') ?? undefined);
     });
 
+    const deepLinkedService = useMemo(() => {
+        if (!detailServiceIdFromQuery || detailServiceIdFromQuery === dismissedQueryDetailServiceId) {
+            return null;
+        }
+        return (
+            services.servicesData?.items?.find((service) => service.id === detailServiceIdFromQuery) ?? null
+        );
+    }, [detailServiceIdFromQuery, dismissedQueryDetailServiceId, services.servicesData?.items]);
+
+    const activeDetailService = detailService ?? deepLinkedService;
+    const detailModalOpen = detailOpen || Boolean(activeDetailService);
+
+    const closeDetailModal = () => {
+        setDetailOpen(false);
+        setDetailService(null);
+        if (detailServiceIdFromQuery) {
+            setDismissedQueryDetailServiceId(detailServiceIdFromQuery);
+            const url = new URL(window.location.href);
+            url.searchParams.delete('detail_service_id');
+            const nextURL = `${url.pathname}${url.searchParams.toString() === '' ? '' : `?${url.searchParams.toString()}`}${url.hash}`;
+            window.history.replaceState(window.history.state, '', nextURL);
+        }
+    };
+
     const serviceContextQuery = useApiGet<ServiceWorkspaceContext>(
-        ['service-workspace-context', detailService?.system_id, detailService?.id],
+        ['service-workspace-context', activeDetailService?.system_id, activeDetailService?.id],
         () => api.GET('/systems/{system_id}/services/{service_id}/context', {
             params: {
                 path: {
-                    system_id: detailService!.system_id,
-                    service_id: detailService!.id,
+                    system_id: activeDetailService!.system_id,
+                    service_id: activeDetailService!.id,
                 },
             },
         }),
-        { enabled: detailOpen && Boolean(detailService?.id) }
+        { enabled: detailModalOpen && Boolean(activeDetailService?.id) }
     );
 
     const detailSystemName = serviceContextQuery.data?.service.system_name
-        ?? detailService?.system_name
-        ?? services.systemsData?.items?.find((system) => system.id === detailService?.system_id)?.name
+        ?? activeDetailService?.system_name
+        ?? services.systemsData?.items?.find((system) => system.id === activeDetailService?.system_id)?.name
         ?? '—';
 
     const serviceRelatedVMs = serviceContextQuery.data?.visible_vms ?? [];
@@ -115,12 +145,19 @@ export function ServicesManagementContent() {
             key: 'system_name',
             width: 180,
             render: (_: string | undefined, record) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong>{record.system_name || record.system_id}</Text>
-                    {record.system_name && record.system_id && record.system_name !== record.system_id ? (
-                        <Text type="secondary" style={{ fontSize: 12 }}>{record.system_id}</Text>
-                    ) : null}
-                </Space>
+                record.system_id && record.system_name ? (
+                    <Button
+                        type="link"
+                        size="small"
+                        data-testid={`service-action-open-system-${record.id}`}
+                        style={{ paddingInline: 0, justifyContent: 'flex-start' }}
+                        onClick={() => router.push(`/systems?detail_system_id=${record.system_id}`)}
+                    >
+                        {record.system_name}
+                    </Button>
+                ) : (
+                    <Text strong>{record.system_name || '—'}</Text>
+                )
             ),
         },
         {
@@ -157,10 +194,11 @@ export function ServicesManagementContent() {
                         size="small"
                         data-testid={`service-action-detail-${record.id}`}
                         icon={<EyeOutlined />}
-                        onClick={() => {
-                            setDetailService(record);
-                            setDetailOpen(true);
-                        }}
+                            onClick={() => {
+                                setDetailService(record);
+                                setDetailOpen(true);
+                                setDismissedQueryDetailServiceId(null);
+                            }}
                     >
                         {t('button.detail', 'Details')}
                     </Button>
@@ -271,6 +309,7 @@ export function ServicesManagementContent() {
                         dataSource={services.servicesData?.items ?? []}
                         rowKey="id"
                         loading={services.isLoading}
+                        scroll={{ x: 'max-content' }}
                         pagination={{
                             current: services.page,
                             pageSize: services.pageSize,
@@ -428,24 +467,24 @@ export function ServicesManagementContent() {
                     </Form.Item>
                 </Form>
             </Modal>
-            <Modal
-                title={detailService?.name}
-                open={detailOpen}
-                onCancel={() => setDetailOpen(false)}
+            <WorkbenchDetailModal
+                title={activeDetailService?.name}
+                open={detailModalOpen}
+                onCancel={closeDetailModal}
                 footer={[
                     <Button
                         key="request-vm"
                         type="primary"
                         onClick={() => {
-                            if (!detailService) {
+                            if (!activeDetailService) {
                                 return;
                             }
                             const params = new URLSearchParams({
                                 request: 'create',
-                                system_id: detailService.system_id,
-                                service_id: detailService.id,
+                                system_id: activeDetailService.system_id,
+                                service_id: activeDetailService.id,
                             });
-                            setDetailOpen(false);
+                            closeDetailModal();
                             router.push(`/vms?${params.toString()}`);
                         }}
                     >
@@ -454,23 +493,39 @@ export function ServicesManagementContent() {
                     <Button
                         key="open-requests"
                         onClick={() => {
-                            setDetailOpen(false);
+                            closeDetailModal();
                             router.push('/tickets?tab=history');
                         }}
                     >
                         {t('services.open_my_requests')}
                     </Button>,
-                    <Button key="close" onClick={() => setDetailOpen(false)}>
+                    <Button key="close" onClick={closeDetailModal}>
                         {t('button.close', 'Close')}
                     </Button>
                 ]}
-                forceRender                width={960}
+                forceRender
+                width="min(1120px, calc(100vw - 16px))"
+                contentMinWidth={1080}
             >
-                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                <Space direction="vertical" size={16} className="workbench-detail-modal__stack">
                     <Card size="small" title={t('services.context_title')}>
-                        <Descriptions size="small" column={2}>
+                        <Descriptions
+                            size="small"
+                            column={{ xs: 1, sm: 1, md: 1, lg: 2, xl: 2, xxl: 2 }}
+                        >
                             <Descriptions.Item label={t('services.context_system')}>
-                                {detailSystemName}
+                                {activeDetailService?.system_id && detailSystemName !== '—' ? (
+                                    <Button
+                                        type="link"
+                                        size="small"
+                                        style={{ paddingInline: 0, justifyContent: 'flex-start' }}
+                                        onClick={() => router.push(`/systems?detail_system_id=${activeDetailService.system_id}`)}
+                                    >
+                                        {detailSystemName}
+                                    </Button>
+                                ) : (
+                                    detailSystemName
+                                )}
                             </Descriptions.Item>
                             <Descriptions.Item label={t('services.context_next_index')}>
                                 <Tag color="blue">{serviceContextQuery.data?.service.next_instance_index ?? detailService?.next_instance_index ?? 0}</Tag>
@@ -508,60 +563,73 @@ export function ServicesManagementContent() {
                         size="small"
                         title={t('services.related_vms_title')}
                         extra={(
-                            <Button size="small" onClick={() => router.push('/vms')}>
+                            <Button
+                                size="small"
+                                onClick={() => {
+                                    if (!activeDetailService) {
+                                        return;
+                                    }
+                                    router.push(
+                                        `/vms?system_id=${activeDetailService.system_id}&service_id=${activeDetailService.id}`,
+                                    );
+                                }}
+                            >
                                 {t('services.open_vm_workspace')}
                             </Button>
                         )}
                     >
-                        <Table<VM>
-                            rowKey="id"
-                            size="small"
-                            loading={serviceContextQuery.isLoading}
-                            pagination={false}
-                            dataSource={serviceRelatedVMs}
-                            locale={{
-                                emptyText: (
-                                    <ActionEmptyState
-                                        compact={true}
-                                        title={t('services.related_vms_title')}
-                                        description={t('services.related_vms_empty')}
-                                        visual={<VirtualMachinesOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
-                                    />
-                                ),
-                            }}
-                            columns={[
-                                {
-                                    title: t('table.name'),
-                                    dataIndex: 'name',
-                                    key: 'name',
-                                    render: (name: string) => <Text strong>{name}</Text>,
-                                },
-                                {
-                                    title: t('field.namespace', { ns: 'vm' }),
-                                    dataIndex: 'namespace',
-                                    key: 'namespace',
-                                },
-                                {
-                                    title: t('table.status'),
-                                    dataIndex: 'status',
-                                    key: 'status',
-                                    render: (status: string) => <Tag>{status}</Tag>,
-                                },
-                                {
-                                    title: t('table.actions'),
-                                    key: 'actions',
-                                    render: (_, record) => (
-                                        <Button
-                                            type="link"
-                                            size="small"
-                                            onClick={() => router.push(`/vms/${record.id}`)}
-                                        >
-                                            {t('services.open_vm_detail')}
-                                        </Button>
+                        <div className="workbench-detail-modal__table-scroll">
+                            <Table<VM>
+                                rowKey="id"
+                                size="small"
+                                loading={serviceContextQuery.isLoading}
+                                pagination={false}
+                                scroll={{ x: 'max-content' }}
+                                dataSource={serviceRelatedVMs}
+                                locale={{
+                                    emptyText: (
+                                        <ActionEmptyState
+                                            compact={true}
+                                            title={t('services.related_vms_title')}
+                                            description={t('services.related_vms_empty')}
+                                            visual={<VirtualMachinesOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                                        />
                                     ),
-                                },
-                            ]}
-                        />
+                                }}
+                                columns={[
+                                    {
+                                        title: t('table.name'),
+                                        dataIndex: 'name',
+                                        key: 'name',
+                                        render: (name: string) => <Text strong>{name}</Text>,
+                                    },
+                                    {
+                                        title: t('field.namespace', { ns: 'vm' }),
+                                        dataIndex: 'namespace',
+                                        key: 'namespace',
+                                    },
+                                    {
+                                        title: t('table.status'),
+                                        dataIndex: 'status',
+                                        key: 'status',
+                                        render: (status: string) => <Tag>{status}</Tag>,
+                                    },
+                                    {
+                                        title: t('table.actions'),
+                                        key: 'actions',
+                                        render: (_, record) => (
+                                            <Button
+                                                type="link"
+                                                size="small"
+                                                onClick={() => router.push(`/vms/${record.id}`)}
+                                            >
+                                                {t('services.open_vm_detail')}
+                                            </Button>
+                                        ),
+                                    },
+                                ]}
+                            />
+                        </div>
                     </Card>
 
                     <Card
@@ -573,69 +641,72 @@ export function ServicesManagementContent() {
                             </Button>
                         )}
                     >
-                        <Table<Ticket>
-                            rowKey="id"
-                            size="small"
-                            loading={serviceContextQuery.isLoading}
-                            pagination={false}
-                            dataSource={serviceRelatedRequests}
-                            locale={{
-                                emptyText: (
-                                    <ActionEmptyState
-                                        compact={true}
-                                        title={t('services.related_requests_title')}
-                                        description={t('services.related_requests_empty')}
-                                        visual={<RequestsOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
-                                    />
-                                ),
-                            }}
-                            columns={[
-                                {
-                                    title: t('request_summary', { ns: 'approval' }),
-                                    key: 'request_summary',
-                                    render: (_, record) => {
-                                        const summaryMeta = approvalSummaryMeta(record, t);
-                                        return (
-                                            <Space direction="vertical" size={0}>
-                                                <Space size={8}>
-                                                    <FileTextOutlined style={{ color: '#1677ff' }} />
-                                                    <Text strong>{approvalSummaryTitle(record, t)}</Text>
-                                                </Space>
-                                                {summaryMeta.length > 0 && (
-                                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                                        {summaryMeta.join(' · ')}
+                        <div className="workbench-detail-modal__table-scroll">
+                            <Table<Ticket>
+                                rowKey="id"
+                                size="small"
+                                loading={serviceContextQuery.isLoading}
+                                pagination={false}
+                                scroll={{ x: 'max-content' }}
+                                dataSource={serviceRelatedRequests}
+                                locale={{
+                                    emptyText: (
+                                        <ActionEmptyState
+                                            compact={true}
+                                            title={t('services.related_requests_title')}
+                                            description={t('services.related_requests_empty')}
+                                            visual={<RequestsOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                                        />
+                                    ),
+                                }}
+                                columns={[
+                                    {
+                                        title: t('request_summary', { ns: 'approval' }),
+                                        key: 'request_summary',
+                                        render: (_, record) => {
+                                            const summaryMeta = approvalSummaryMeta(record, t);
+                                            return (
+                                                <Space direction="vertical" size={0}>
+                                                    <Space size={8}>
+                                                        <FileTextOutlined style={{ color: '#1677ff' }} />
+                                                        <Text strong>{approvalSummaryTitle(record, t)}</Text>
+                                                    </Space>
+                                                    {summaryMeta.length > 0 && (
+                                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                                            {summaryMeta.join(' · ')}
+                                                        </Text>
+                                                    )}
+                                                    <Text copyable={{ text: record.id }} type="secondary" style={{ fontSize: 12 }}>
+                                                        {t('ticket_id', { ns: 'approval' })}: {formatApprovalRecordID(record.id)}
                                                     </Text>
-                                                )}
-                                                <Text copyable={{ text: record.id }} type="secondary" style={{ fontSize: 12 }}>
-                                                    {t('ticket_id', { ns: 'approval' })}: {formatApprovalRecordID(record.id)}
-                                                </Text>
-                                            </Space>
-                                        );
+                                                </Space>
+                                            );
+                                        },
                                     },
-                                },
-                                {
-                                    title: t('operation_type', { ns: 'approval' }),
-                                    dataIndex: 'operation_type',
-                                    key: 'operation_type',
-                                    render: (value: string) => <Tag>{value || '—'}</Tag>,
-                                },
-                                {
-                                    title: t('table.status'),
-                                    dataIndex: 'status',
-                                    key: 'status',
-                                    render: (status: string) => <Tag>{status}</Tag>,
-                                },
-                                {
-                                    title: t('table.created_at'),
-                                    dataIndex: 'created_at',
-                                    key: 'created_at',
-                                    render: (date: string) => <LocalDateTimeText value={date} />,
-                                },
-                            ]}
-                        />
+                                    {
+                                        title: t('operation_type', { ns: 'approval' }),
+                                        dataIndex: 'operation_type',
+                                        key: 'operation_type',
+                                        render: (value: string) => <Tag>{value || '—'}</Tag>,
+                                    },
+                                    {
+                                        title: t('table.status'),
+                                        dataIndex: 'status',
+                                        key: 'status',
+                                        render: (status: string) => <Tag>{status}</Tag>,
+                                    },
+                                    {
+                                        title: t('table.created_at'),
+                                        dataIndex: 'created_at',
+                                        key: 'created_at',
+                                        render: (date: string) => <LocalDateTimeText value={date} />,
+                                    },
+                                ]}
+                            />
+                        </div>
                     </Card>
                 </Space>
-            </Modal>
+            </WorkbenchDetailModal>
         </div>
     );
 }

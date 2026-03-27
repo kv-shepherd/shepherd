@@ -185,6 +185,27 @@ func TestOpenAPIValidatorAllowsBrowserRuntimeHeadersInStrictMode(t *testing.T) {
 	}
 }
 
+func TestOpenAPIValidatorSkipsWebSocketUpgradeRequests(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/vms/:vm_id/vnc", func(c *gin.Context) {
+		c.Status(http.StatusSwitchingProtocols)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/vms/vm-1/vnc", http.NoBody)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Sec-WebSocket-Version", "13")
+	req.Header.Set("Sec-WebSocket-Key", "c2hlcGhlcmQtdm5jLXByb2Jl")
+	req.Header.Set("Origin", "http://127.0.0.1:3000")
+	req.AddCookie(&http.Cookie{Name: "vnc_bootstrap", Value: "token"})
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusSwitchingProtocols {
+		t.Fatalf("expected 101 for websocket upgrade request, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestOpenAPIValidatorAcceptsValidVMCreateRequest(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.POST("/api/v1/vms/request", func(c *gin.Context) {
@@ -266,7 +287,7 @@ func TestOpenAPIValidatorAcceptsDynamicSchemaResponse(t *testing.T) {
 	router.GET("/api/v1/schemas/:entity_type", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"schema": gin.H{
-				"$id":         "kv-shepherd:instancesize:kubevirt-v1.7.0",
+				"$id":         "kv-shepherd:instancesize:kubevirt-v1.8.0",
 				"$schema":     "https://json-schema.org/draft/2020-12/schema",
 				"title":       "KubeVirt VirtualMachineSpec",
 				"type":        "object",
@@ -285,7 +306,7 @@ func TestOpenAPIValidatorAcceptsDynamicSchemaResponse(t *testing.T) {
 					},
 				},
 			},
-			"schema_version": "1.7.0",
+			"schema_version": "1.8.0",
 			"source":         "embedded",
 			"degraded":       false,
 			"fetched_at":     time.Now().UTC().Format(time.RFC3339),

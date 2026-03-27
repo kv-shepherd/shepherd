@@ -329,6 +329,7 @@ func (w *ApprovalAtomicWriter) ApproveDeleteAndEnqueue(
 func (w *ApprovalAtomicWriter) ApproveModifyAndEnqueue(
 	ctx context.Context,
 	ticketID, eventID, approver string,
+	modifiedSpec map[string]interface{},
 ) error {
 	if w.pool == nil || w.riverClient == nil || w.queries == nil {
 		return fmt.Errorf("approval atomic writer is not initialized")
@@ -344,11 +345,16 @@ func (w *ApprovalAtomicWriter) ApproveModifyAndEnqueue(
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := w.queries.WithTx(tx)
+	modifiedSpecBytes, err := marshalJSONOrNull(modifiedSpec)
+	if err != nil {
+		return fmt.Errorf("marshal modify approved spec: %w", err)
+	}
 
 	affected, err := qtx.ApproveModifyTicket(ctx, sqlcrepo.ApproveModifyTicketParams{
-		Approver: pgtype.Text{String: approver, Valid: true},
-		ID:       ticketID,
-		EventID:  eventID,
+		Approver:     pgtype.Text{String: approver, Valid: true},
+		ID:           ticketID,
+		EventID:      eventID,
+		ModifiedSpec: modifiedSpecBytes,
 	})
 	if err != nil {
 		return fmt.Errorf("approve modify ticket %s: %w", ticketID, err)

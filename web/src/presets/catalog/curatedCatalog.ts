@@ -79,7 +79,7 @@ const linuxBaseSpec = {
                     devices: {
                         autoattachSerialConsole: true,
                         autoattachMemBalloon: false,
-                        autoattachGraphicsDevice: false,
+                        autoattachGraphicsDevice: true,
                         autoattachVSOCK: true,
                         networkInterfaceMultiqueue: true,
                         blockMultiQueue: true,
@@ -169,6 +169,7 @@ const windowsBaseSpec = {
                     },
                     devices: {
                         autoattachMemBalloon: false,
+                        autoattachGraphicsDevice: true,
                         autoattachVSOCK: false,
                         networkInterfaceMultiqueue: true,
                         blockMultiQueue: true,

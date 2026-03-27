@@ -15,7 +15,12 @@ DEV_INCLUDE_E2E_SEED="${DEV_INCLUDE_E2E_SEED:-0}"
 DEV_FRONTEND_MODE="${DEV_FRONTEND_MODE:-host}"
 DEV_FRONTEND_PORT="${DEV_FRONTEND_PORT:-3001}"
 DEV_INGRESS_PORT="${DEV_INGRESS_PORT:-3000}"
+DEV_HTTPS_INGRESS_PORT="${DEV_HTTPS_INGRESS_PORT:-3443}"
 DEV_PUBLIC_BASE_URL="${DEV_PUBLIC_BASE_URL:-}"
+DEV_NGINX_TLS_DIR="${DEV_NGINX_TLS_DIR:-${ROOT_DIR}/tmp/dev-nginx-tls}"
+DEV_NGINX_TLS_CERT_FILE="${DEV_NGINX_TLS_DIR}/cert.pem"
+DEV_NGINX_TLS_KEY_FILE="${DEV_NGINX_TLS_DIR}/key.pem"
+DEV_NGINX_TLS_HOSTS_FILE="${DEV_NGINX_TLS_DIR}/hosts.txt"
 DEV_FRONTEND_RUNTIME="${DEV_FRONTEND_RUNTIME:-dev}" # dev|prod
 DEV_FRONTEND_PROD_DIST_DIR="${DEV_FRONTEND_PROD_DIST_DIR:-.next-prod}"
 # Dev-only tuning:
@@ -117,7 +122,7 @@ compute_allowed_dev_origins() {
 }
 
 compute_allowed_dev_origin_urls() {
-    DEV_FRONTEND_PORT="${DEV_FRONTEND_PORT}" DEV_INGRESS_PORT="${DEV_INGRESS_PORT}" node -e '
+    DEV_FRONTEND_PORT="${DEV_FRONTEND_PORT}" DEV_INGRESS_PORT="${DEV_INGRESS_PORT}" DEV_HTTPS_INGRESS_PORT="${DEV_HTTPS_INGRESS_PORT}" node -e '
         const os = require("os");
         const hosts = new Set(["localhost", "127.0.0.1"]);
         const hostname = os.hostname();
@@ -133,12 +138,16 @@ compute_allowed_dev_origin_urls() {
         }
         const ports = new Set([
             process.env.DEV_INGRESS_PORT || "3000",
+            process.env.DEV_HTTPS_INGRESS_PORT || "3443",
             process.env.DEV_FRONTEND_PORT || "3001",
         ]);
         const origins = [];
         for (const host of hosts) {
             for (const port of ports) {
                 origins.push(`http://${host}:${port}`);
+                if (port === (process.env.DEV_HTTPS_INGRESS_PORT || "3443")) {
+                    origins.push(`https://${host}:${port}`);
+                }
             }
         }
         process.stdout.write(origins.join(","));
@@ -150,9 +159,9 @@ compute_public_dev_base_url() {
         printf "%s" "${DEV_PUBLIC_BASE_URL}"
         return 0
     fi
-    DEV_INGRESS_PORT="${DEV_INGRESS_PORT}" node -e '
+    DEV_HTTPS_INGRESS_PORT="${DEV_HTTPS_INGRESS_PORT}" node -e '
         const os = require("os");
-        const port = process.env.DEV_INGRESS_PORT || "3000";
+        const port = process.env.DEV_HTTPS_INGRESS_PORT || "3443";
         let selectedHost = "";
         for (const infos of Object.values(os.networkInterfaces())) {
             for (const info of infos || []) {
@@ -169,8 +178,92 @@ compute_public_dev_base_url() {
             const hostname = os.hostname();
             selectedHost = hostname || "localhost";
         }
-        process.stdout.write(`http://${selectedHost}:${port}`);
+        process.stdout.write(`https://${selectedHost}:${port}`);
     '
+}
+
+compute_dev_tls_hosts() {
+    node -e '
+        const os = require("os");
+        const values = new Set(["localhost", "127.0.0.1"]);
+        const hostname = os.hostname();
+        if (hostname) {
+            values.add(hostname);
+        }
+        for (const infos of Object.values(os.networkInterfaces())) {
+            for (const info of infos || []) {
+                if (info && info.family === "IPv4" && !info.internal) {
+                    values.add(info.address);
+                }
+            }
+        }
+        process.stdout.write(Array.from(values).sort().join("\n"));
+    '
+}
+
+generate_dev_tls_certificate() {
+    local hosts=""
+    hosts="$(compute_dev_tls_hosts)"
+    mkdir -p "${DEV_NGINX_TLS_DIR}"
+
+    local regenerate="0"
+    if [[ ! -f "${DEV_NGINX_TLS_CERT_FILE}" || ! -f "${DEV_NGINX_TLS_KEY_FILE}" ]]; then
+        regenerate="1"
+    elif [[ ! -f "${DEV_NGINX_TLS_HOSTS_FILE}" ]]; then
+        regenerate="1"
+    elif [[ "$(cat "${DEV_NGINX_TLS_HOSTS_FILE}")" != "${hosts}" ]]; then
+        regenerate="1"
+    fi
+
+    if [[ "${regenerate}" != "1" ]]; then
+        return 0
+    fi
+
+    local config_file="${DEV_NGINX_TLS_DIR}/openssl.cnf"
+    local alt_names_file="${DEV_NGINX_TLS_DIR}/alt_names.cnf"
+    : > "${alt_names_file}"
+    local dns_index=1
+    local ip_index=1
+    while IFS= read -r host; do
+        [[ -z "${host}" ]] && continue
+        if [[ "${host}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf "IP.%d = %s\n" "${ip_index}" "${host}" >> "${alt_names_file}"
+            ip_index=$((ip_index + 1))
+        else
+            printf "DNS.%d = %s\n" "${dns_index}" "${host}" >> "${alt_names_file}"
+            dns_index=$((dns_index + 1))
+        fi
+    done <<< "${hosts}"
+
+    cat > "${config_file}" <<EOF
+[ req ]
+default_bits = 2048
+prompt = no
+distinguished_name = req_distinguished_name
+x509_extensions = v3_req
+
+[ req_distinguished_name ]
+CN = localhost
+
+[ v3_req ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+$(cat "${alt_names_file}")
+EOF
+
+    echo "Generating development TLS certificate (${DEV_NGINX_TLS_CERT_FILE})..."
+    openssl req \
+        -x509 \
+        -nodes \
+        -newkey rsa:2048 \
+        -days 365 \
+        -keyout "${DEV_NGINX_TLS_KEY_FILE}" \
+        -out "${DEV_NGINX_TLS_CERT_FILE}" \
+        -config "${config_file}" \
+        >/dev/null 2>&1
+
+    printf "%s" "${hosts}" > "${DEV_NGINX_TLS_HOSTS_FILE}"
 }
 
 append_origin_url() {
@@ -243,6 +336,8 @@ start_host_frontend() {
             cd "${ROOT_DIR}/web"
             NEXT_PUBLIC_API_URL="/api/v1" \
             NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE="1" \
+            NEXT_PUBLIC_DEV_SECURE_ORIGIN="${DEV_PUBLIC_BASE_URL}" \
+            NEXT_PUBLIC_DEV_HTTP_INGRESS_PORT="${DEV_INGRESS_PORT}" \
             INTERNAL_API_URL="http://localhost:8080" \
             NEXT_DIST_DIR="${DEV_FRONTEND_PROD_DIST_DIR}" \
             NODE_OPTIONS="${node_options}" \
@@ -296,6 +391,8 @@ start_host_frontend() {
         DEV_ALLOWED_ORIGINS="${allowed_origins}" \
         NEXT_PUBLIC_API_URL="/api/v1" \
         NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE="1" \
+        NEXT_PUBLIC_DEV_SECURE_ORIGIN="${DEV_PUBLIC_BASE_URL}" \
+        NEXT_PUBLIC_DEV_HTTP_INGRESS_PORT="${DEV_INGRESS_PORT}" \
         INTERNAL_API_URL="http://localhost:8080" \
         NODE_OPTIONS="${node_options}" \
         setsid ./node_modules/.bin/next dev "${next_args[@]}" --hostname 0.0.0.0 --port "${DEV_FRONTEND_PORT}" >"${FRONTEND_LOG_FILE}" 2>&1 < /dev/null &
@@ -386,6 +483,7 @@ require_cmd go
 require_cmd npm
 require_cmd node
 require_cmd curl
+require_cmd openssl
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -533,8 +631,10 @@ if [[ "${DEV_FRONTEND_MODE}" == "docker" ]]; then
 fi
 
 echo "Starting development environment (${COMPOSE_SERVICES[*]})..."
+generate_dev_tls_certificate
 dev_allowed_origin_urls="$(compute_allowed_dev_origin_urls)"
 dev_public_base_url="$(compute_public_dev_base_url)"
+DEV_PUBLIC_BASE_URL="${dev_public_base_url}"
 dev_public_origin="$(url_origin "${dev_public_base_url}")"
 dev_allowed_origin_urls="$(append_origin_url "${dev_allowed_origin_urls}" "${dev_public_origin}")"
 echo "  - backend allowed origins: ${dev_allowed_origin_urls}"
@@ -544,6 +644,7 @@ GROUP_ID="${HOST_GROUP_ID}" \
 WEB_UPSTREAM="${WEB_UPSTREAM}" \
 DEV_ALLOWED_ORIGIN_URLS="${dev_allowed_origin_urls}" \
 DEV_PUBLIC_BASE_URL="${dev_public_base_url}" \
+DEV_HTTPS_INGRESS_PORT="${DEV_HTTPS_INGRESS_PORT}" \
 "${COMPOSE_CMD[@]}" up -d "${COMPOSE_SERVICES[@]}"
 
 echo "Waiting for database..."
@@ -593,9 +694,9 @@ if [[ "${DEV_FRONTEND_MODE}" == "host" ]]; then
     wait_for_host_frontend
 fi
 
-echo "Waiting for ingress (http://localhost:${DEV_INGRESS_PORT})..."
+echo "Waiting for ingress (https://localhost:${DEV_HTTPS_INGRESS_PORT})..."
 for _ in {1..30}; do
-    if curl -fsS "http://localhost:${DEV_INGRESS_PORT}/" >/dev/null; then
+    if curl -kfsS "https://localhost:${DEV_HTTPS_INGRESS_PORT}/" >/dev/null; then
         echo " ingress ready"
         break
     fi
@@ -605,13 +706,14 @@ done
 
 echo "Prewarming common routes..."
 for route in / /login /dashboard; do
-    curl -fsS "http://localhost:${DEV_INGRESS_PORT}${route}" >/dev/null || true
+    curl -kfsS "https://localhost:${DEV_HTTPS_INGRESS_PORT}${route}" >/dev/null || true
 done
 echo " warmup complete"
 
 echo ""
 echo "Development environment is UP"
-echo "  - Web (nginx ingress): http://localhost:${DEV_INGRESS_PORT}"
+echo "  - Web (nginx redirect): http://localhost:${DEV_INGRESS_PORT}"
+echo "  - Web (nginx ingress):  https://localhost:${DEV_HTTPS_INGRESS_PORT}"
 echo "  - Backend direct:      http://localhost:8080"
 echo "  - DB:                  localhost:5432"
 echo "  - Frontend mode:       ${DEV_FRONTEND_MODE}"
@@ -626,5 +728,6 @@ else
 fi
 echo "  - Seeded users:        admin/${DEV_ADMIN_PASSWORD} (rotated from bootstrap admin/admin)"
 if [[ "${DEV_INCLUDE_E2E_SEED}" == "1" ]]; then
-    echo "                         e2e-admin/e2e-admin-123"
+echo "                         e2e-admin/e2e-admin-123"
 fi
+echo "  - Note:                accept the local TLS certificate once in the browser for noVNC"

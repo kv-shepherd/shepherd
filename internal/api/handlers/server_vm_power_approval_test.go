@@ -67,6 +67,36 @@ func TestStartVM_ProdNamespaceCreatesPendingPowerTicket(t *testing.T) {
 	}
 }
 
+func TestStopVM_StartingProdNamespaceCreatesPendingPowerTicket(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "stop_vm_starting_prod_requires_approval")
+	_ = logger.Init("error", "json")
+	srv := NewServer(ServerDeps{
+		EntClient:    client,
+		ApprovalReqs: service.NewApprovalRequirementService(client),
+	})
+
+	vmID := seedPowerTestVM(t, client, namespaceregistry.EnvironmentProd, entvm.StatusSTARTING)
+
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/"+vmID+"/stop", "", "owner-1", []string{"vm:operate", "platform:admin"})
+	srv.StopVM(c, vmID)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	var resp generated.VMPowerAcceptedResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Status != generated.VMPowerAcceptedResponseStatus("PENDING_APPROVAL") {
+		t.Fatalf("status = %q, want %q", resp.Status, "PENDING_APPROVAL")
+	}
+	if resp.TicketId == "" || resp.EventId == "" {
+		t.Fatalf("response ticket_id/event_id must be set, got ticket=%q event=%q", resp.TicketId, resp.EventId)
+	}
+}
+
 func TestStartVM_UnregisteredNamespaceReturnsBadRequest(t *testing.T) {
 	t.Parallel()
 

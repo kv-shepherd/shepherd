@@ -103,6 +103,10 @@ const minimalSchema: SchemaNode = {
                                                         },
                                                     },
                                                 },
+                                                autoattachGraphicsDevice: {
+                                                    type: 'boolean',
+                                                    description: 'Whether to attach the default graphics device or not.',
+                                                },
                                                 gpus: {
                                                     type: 'array',
                                                     items: {
@@ -181,6 +185,91 @@ describe('DynamicSchemaForm', () => {
 
         expect(screen.getByTestId('dynamic-form-spec.template.spec.domain.cpu.cores')).toBeInTheDocument();
         expect(screen.getByTestId(`dynamic-form-${HUGEPAGES_PAGE_SIZE_PATH}`)).toBeInTheDocument();
+    }, 10000);
+
+    it('renders boolean mask fields with english heading, persistent help, and a single toggle control', () => {
+        const booleanMask: SchemaMask = {
+            quick_fields: [
+                {
+                    path: 'spec.template.spec.domain.devices.autoattachGraphicsDevice',
+                    display_name: 'Auto-attach Graphics',
+                    help_text:
+                        'Keep the minimal graphics device attached so the noVNC console remains available.',
+                },
+            ],
+        };
+
+        render(
+            <Form layout="vertical">
+                <Form.Item name="spec_text" initialValue="{}">
+                    <DynamicSchemaForm schema={minimalSchema} mask={booleanMask} />
+                </Form.Item>
+            </Form>
+        );
+
+        expect(screen.getByText('Auto-attach Graphics')).toBeVisible();
+        expect(
+            screen.getByText(
+                'Keep the minimal graphics device attached so the noVNC console remains available.',
+            ),
+        ).toBeVisible();
+        expect(
+            screen
+                .getByTestId('dynamic-form-spec.template.spec.domain.devices.autoattachGraphicsDevice')
+                .closest('.ant-checkbox-wrapper'),
+        ).toBeVisible();
+    }, 10000);
+
+    it('promotes description-bounded string fields into select controls', async () => {
+        const enumLikeSchema: SchemaNode = {
+            type: 'object',
+            properties: {
+                spec: {
+                    type: 'object',
+                    properties: {
+                        template: {
+                            type: 'object',
+                            properties: {
+                                spec: {
+                                    type: 'object',
+                                    properties: {
+                                        evictionStrategy: {
+                                            type: 'string',
+                                            description:
+                                                'The possible options are: - "None": no action. - "LiveMigrate": migrate. - "LiveMigrateIfPossible": migrate if possible.',
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        const enumLikeMask: SchemaMask = {
+            quick_fields: [
+                {
+                    path: 'spec.template.spec.evictionStrategy',
+                    display_name: 'Eviction Strategy',
+                },
+            ],
+        };
+
+        render(
+            <Form layout="vertical">
+                <Form.Item name="spec_text" initialValue="{}">
+                    <DynamicSchemaForm schema={enumLikeSchema} mask={enumLikeMask} />
+                </Form.Item>
+            </Form>
+        );
+
+        expect(screen.getByText('Select an option')).toBeVisible();
+        fireEvent.mouseDown(screen.getByRole('combobox'));
+
+        expect(await screen.findByRole('listbox')).toBeInTheDocument();
+        expect(screen.getAllByRole('option', { name: 'None' }).length).toBeGreaterThan(0);
+        expect(screen.getAllByRole('option', { name: 'LiveMigrate' }).length).toBeGreaterThan(0);
     }, 10000);
 
     it('normalizes custom MB hugepages input', () => {

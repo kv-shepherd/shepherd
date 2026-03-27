@@ -10,6 +10,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net"
 
 	"go.uber.org/zap"
 
@@ -127,6 +128,53 @@ func (s *VMService) ExecuteK8sUpdate(ctx context.Context, cluster, namespace, na
 	return vm, nil
 }
 
+func (s *VMService) DryRunVMMutation(ctx context.Context, cluster, namespace, name string, mutation *domain.VMMutation) error {
+	if mutation == nil {
+		return fmt.Errorf("vm mutation is nil")
+	}
+	if namespace == "" {
+		return fmt.Errorf("vm mutation: namespace is required")
+	}
+	if name == "" {
+		return fmt.Errorf("vm mutation: name is required")
+	}
+	mutator, ok := s.infra.(infracontract.VMMutationProvider)
+	if !ok {
+		return fmt.Errorf("vm infrastructure provider does not support vm mutation dry-run")
+	}
+	if err := mutator.DryRunVMMutation(ctx, cluster, namespace, name, mutation); err != nil {
+		return fmt.Errorf("dry-run vm mutation: %w", err)
+	}
+	return nil
+}
+
+func (s *VMService) ExecuteVMMutation(ctx context.Context, cluster, namespace, name string, mutation *domain.VMMutation) (*domain.VM, error) {
+	if mutation == nil {
+		return nil, fmt.Errorf("vm mutation is nil")
+	}
+	if namespace == "" {
+		return nil, fmt.Errorf("vm mutation: namespace is required")
+	}
+	if name == "" {
+		return nil, fmt.Errorf("vm mutation: name is required")
+	}
+	mutator, ok := s.infra.(infracontract.VMMutationProvider)
+	if !ok {
+		return nil, fmt.Errorf("vm infrastructure provider does not support vm mutation execution")
+	}
+	vm, err := mutator.ExecuteVMMutation(ctx, cluster, namespace, name, mutation)
+	if err != nil {
+		logger.Error("KubeVirt VM mutation failed",
+			zap.String("cluster", cluster),
+			zap.String("namespace", namespace),
+			zap.String("name", name),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("execute vm mutation: %w", err)
+	}
+	return vm, nil
+}
+
 // GetStorageProfile returns the CDI StorageProfile for a target storage class.
 // It is used by approval-time root-volume resolution and clone advisories.
 func (s *VMService) GetStorageProfile(ctx context.Context, cluster, name string) (*domain.StorageProfile, error) {
@@ -205,4 +253,28 @@ func (s *VMService) RestartVM(ctx context.Context, cluster, namespace, name stri
 // DeleteVM deletes a VM.
 func (s *VMService) DeleteVM(ctx context.Context, cluster, namespace, name string) error {
 	return s.infra.DeleteVM(ctx, cluster, namespace, name)
+}
+
+// OpenVNCStream returns a raw VNC stream for the target VM when the provider supports it.
+func (s *VMService) OpenVNCStream(ctx context.Context, cluster, namespace, name string) (net.Conn, error) {
+	if s == nil || s.infra == nil {
+		return nil, fmt.Errorf("vm infrastructure provider is not configured")
+	}
+	console, ok := s.infra.(infracontract.VNCStreamProvider)
+	if !ok {
+		return nil, fmt.Errorf("vm infrastructure provider does not support vnc streaming")
+	}
+	return console.OpenVNCStream(ctx, cluster, namespace, name)
+}
+
+// OpenSerialConsoleStream returns a raw serial console stream for the target VM when the provider supports it.
+func (s *VMService) OpenSerialConsoleStream(ctx context.Context, cluster, namespace, name string) (net.Conn, error) {
+	if s == nil || s.infra == nil {
+		return nil, fmt.Errorf("vm infrastructure provider is not configured")
+	}
+	console, ok := s.infra.(infracontract.SerialConsoleStreamProvider)
+	if !ok {
+		return nil, fmt.Errorf("vm infrastructure provider does not support serial console streaming")
+	}
+	return console.OpenSerialConsoleStream(ctx, cluster, namespace, name)
 }

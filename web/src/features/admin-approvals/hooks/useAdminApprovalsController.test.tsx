@@ -16,6 +16,7 @@ const {
   rejectMutate,
   cancelMutate,
   messageSuccessMock,
+  messageInfoMock,
   messageErrorMock,
 } = vi.hoisted(() => ({
   useApiGetMock: vi.fn(),
@@ -52,6 +53,7 @@ const {
   rejectMutate: vi.fn(),
   cancelMutate: vi.fn(),
   messageSuccessMock: vi.fn(),
+  messageInfoMock: vi.fn(),
   messageErrorMock: vi.fn(),
 }));
 
@@ -64,6 +66,7 @@ vi.mock("antd", () => ({
     useMessage: () => [
       {
         success: messageSuccessMock,
+        info: messageInfoMock,
         error: messageErrorMock,
       },
       null,
@@ -1008,6 +1011,31 @@ describe("useAdminApprovalsController", () => {
     });
   });
 
+  it("prefills modify approval request review and enables override when current requests exceed target limits", () => {
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openApproveModal({
+        id: "ticket-modify-1",
+        operation_type: "MODIFY",
+        status: "PENDING",
+        requester: "alice",
+        ticket_payload: {
+          current_cpu_request: 8,
+          current_memory_request_gi: 8,
+          target_cpu_cores: 4,
+          target_memory_gi: 4,
+        },
+      } as never);
+    });
+
+    expect(approveFormState.setFieldsValue).toHaveBeenCalledWith({
+      enable_override: true,
+      cpu_request: 8,
+      memory_request_gi: 8,
+    });
+  });
+
   it("submits the derived storage class when the cluster has exactly one eligible option", async () => {
     watchedValues.selected_storage_class = "";
     approveFormState.validateFields.mockResolvedValue({
@@ -1154,6 +1182,10 @@ describe("useAdminApprovalsController", () => {
 
   it("does not auto-select a storage class when multiple eligible options exist", () => {
     watchedValues.selected_storage_class = "";
+    approveFormState.resetFields.mockImplementation(() => {
+      watchedValues.selected_cluster_id = "cluster-a";
+      watchedValues.selected_storage_class = "";
+    });
     useApiGetMock.mockImplementation((queryKey: unknown[]) => {
       const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
       if (key === "builtin-approval-tasks") {

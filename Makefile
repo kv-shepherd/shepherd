@@ -21,6 +21,8 @@ SEED_BINARY=seed
 GOVULNCHECK_VERSION=v1.1.4
 GITLEAKS_VERSION=v8.28.0
 GO_LINT_TARGETS=./cmd/... ./ent/... ./internal/... ./pkg/...
+GO_BUILD_TARGETS=./cmd/... ./ent/... ./internal/... ./pkg/... ./plugins/...
+GO_TEST_TARGETS=./cmd/... ./ent/... ./internal/... ./pkg/... ./plugins/...
 
 # Build directories
 BUILD_DIR=bin
@@ -215,7 +217,16 @@ ci-api-sync:
 
 ## ci-e2e-smoke: Run frontend mock smoke once
 ci-e2e-smoke:
-	@sh -c 'trap '\''find web -maxdepth 1 -name "tsconfig.e2e.*.json" -delete'\'' EXIT; find web -maxdepth 1 -name "tsconfig.e2e.*.json" -delete; CI=1 npm run test:e2e:mock --prefix web'
+	@set -e; \
+	trap 'find web -maxdepth 1 -name "tsconfig.e2e.*.json" -delete' EXIT; \
+	find web -maxdepth 1 -name "tsconfig.e2e.*.json" -delete; \
+	PW_WEB_PORT="$$(bash ./scripts/pick_free_port.sh)"; \
+	if [ -z "$$PW_WEB_PORT" ]; then \
+		echo "Failed to allocate Playwright web port"; \
+		exit 1; \
+	fi; \
+	echo "Using Playwright web port $$PW_WEB_PORT"; \
+	CI=1 PW_WEB_PORT="$$PW_WEB_PORT" npm run test:e2e:mock --prefix web
 	@find web -maxdepth 1 -name 'tsconfig.e2e.*.json' -delete
 
 ## ci-go-lint: Run the Go lint target set used by the required CI Lint job
@@ -233,11 +244,11 @@ ci-go-lint: lint-version-check
 
 ## ci-go-build: Run the Go build target set used by the required CI Build job
 ci-go-build:
-	@$(GOCMD) build ./...
+	@$(GOCMD) build $(GO_BUILD_TARGETS)
 
 ## ci-go-test: Run the Go race-test target set used by the required CI Test job
 ci-go-test:
-	@$(GOCMD) test -race -coverprofile=coverage.out -covermode=atomic ./...
+	@$(GOCMD) test -race -coverprofile=coverage.out -covermode=atomic $(GO_TEST_TARGETS)
 
 ## ci-master-flow-backend: Run the backend behavior suites used by the required Master-Flow Strict job
 ci-master-flow-backend:

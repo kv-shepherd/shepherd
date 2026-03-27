@@ -8,7 +8,6 @@ import {
   Descriptions,
   Form,
   Input,
-  Modal,
   Popconfirm,
   Select,
   Segmented,
@@ -37,6 +36,7 @@ import {
   VirtualMachinesOverviewGlyph,
 } from "@/components/illustrations/DashboardIllustrations";
 import { PageHeader, PageSurface } from "@/components/layouts/PageSection";
+import { WorkbenchDetailModal } from "@/components/workbench/WorkbenchDetailModal";
 import { SetupGuideCard } from "@/features/setup-guide/components/SetupGuideCard";
 import { useSetupGuide } from "@/features/setup-guide/hooks/useSetupGuide";
 import { translateApiError } from "@/lib/api/errorMessage";
@@ -94,6 +94,10 @@ function asPayloadRecords(value: unknown): PayloadRecord[] {
 
 function payloadBool(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function payloadNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function instanceSizeDiskGB(
@@ -217,21 +221,6 @@ export function AdminApprovalsContent() {
   const { t } = useTranslation(["approval", "common", "vm"]);
   const approvals = useAdminApprovalsController({ t });
   const setupGuide = useSetupGuide();
-  const modalBodyStyles = {
-    maxHeight: "calc(100vh - 220px)",
-    overflowY: "auto" as const,
-    overflowX: "hidden" as const,
-    paddingRight: 8,
-  };
-  const modalViewportStyle = { top: 16 } as const;
-  const approveModalWidth = "min(1040px, calc(100vw - 16px))";
-  const rejectModalWidth = "min(720px, calc(100vw - 16px))";
-  const approvalSectionGridStyles = {
-    display: "grid",
-    gap: 16,
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-    marginBottom: 16,
-  } as const;
   const selectedClusterOptionLabel = clusterDisplayLabel(approvals.selectedCluster);
   const pageItems = approvals.data?.items ?? [];
   const pendingOnPage = pageItems.filter((ticket) => ticket.status === "PENDING").length;
@@ -266,6 +255,29 @@ export function AdminApprovalsContent() {
   const approveBatchItems = approvals.approveModal
     ? buildApprovalBatchDisplayItems(approvals.approveModal, t)
     : [];
+  const approveModalPayload = asPayloadRecord(approvals.approveModal?.ticket_payload);
+  const modifyRequiresRestart =
+    payloadBool(approveModalPayload?.requires_restart) ?? false;
+  const modifyCurrentCPURequest = payloadNumber(
+    approveModalPayload?.current_cpu_request,
+  );
+  const modifyCurrentMemoryRequestGi = payloadNumber(
+    approveModalPayload?.current_memory_request_gi,
+  );
+  const modifyTargetCPULimit =
+    approvals.approveModal?.summary?.target_cpu_cores ??
+    payloadNumber(approveModalPayload?.target_cpu_cores);
+  const modifyTargetMemoryLimitGi =
+    approvals.approveModal?.summary?.target_memory_gi ??
+    payloadNumber(approveModalPayload?.target_memory_gi);
+  const modifyCPURequestNeedsReview =
+    typeof modifyCurrentCPURequest === "number" &&
+    typeof modifyTargetCPULimit === "number" &&
+    modifyCurrentCPURequest > modifyTargetCPULimit;
+  const modifyMemoryRequestNeedsReview =
+    typeof modifyCurrentMemoryRequestGi === "number" &&
+    typeof modifyTargetMemoryLimitGi === "number" &&
+    modifyCurrentMemoryRequestGi > modifyTargetMemoryLimitGi;
 
   const columns: ColumnsType<ApprovalTask> = [
     {
@@ -288,6 +300,11 @@ export function AdminApprovalsContent() {
             <Text copyable={{ text: record.id }} type="secondary" style={{ fontSize: 12 }}>
               {t("ticket_id")}: {formatApprovalRecordID(record.id)}
             </Text>
+            {record.status === "FAILED" && record.reject_reason ? (
+              <Text type="danger" style={{ fontSize: 12 }}>
+                {record.reject_reason}
+              </Text>
+            ) : null}
           </Space>
         );
       },
@@ -724,14 +741,12 @@ export function AdminApprovalsContent() {
         )}
       </PageSurface>
 
-      <Modal
+      <WorkbenchDetailModal
         title={
           approvals.approveModal?.operation_type === "DELETE"
             ? t("approve_modal.delete_title")
             : t("approve_modal.title")
         }
-        width={approveModalWidth}
-        style={modalViewportStyle}
         open={Boolean(approvals.approveModal)}
         onOk={() => {
           void approvals.submitApprove();
@@ -739,8 +754,7 @@ export function AdminApprovalsContent() {
         onCancel={approvals.closeApproveModal}
         confirmLoading={approvals.approvePending}
         forceRender={true}
-        wrapClassName="admin-approvals-modal"
-        styles={{ body: modalBodyStyles }}
+        contentMinWidth={960}
         data-testid="approve-modal"
       >
         <Form
@@ -762,8 +776,7 @@ export function AdminApprovalsContent() {
             approveScopeItems.length > 0 ||
             approveChangeItems.length > 0) && (
             <div
-              className="admin-approvals-modal__sections"
-              style={approvalSectionGridStyles}
+              className="workbench-detail-modal__grid"
             >
               {approveOverviewItems.length > 0 && (
                 <Card size="small" title={t("summary.overview_title")}>
@@ -803,74 +816,314 @@ export function AdminApprovalsContent() {
               style={{ marginBottom: 16 }}
               title={t("summary.affected_items_title")}
             >
-              <Table
-                size="small"
-                pagination={false}
-                rowKey="key"
-                dataSource={approveBatchItems}
-                scroll={{ x: 920, y: 280 }}
-                columns={[
-                  {
-                    title: t("summary.item"),
-                    dataIndex: "title",
-                    key: "title",
-                  },
-                  {
-                    title: t("summary.scope"),
-                    dataIndex: "scope",
-                    key: "scope",
-                    render: (value: string | undefined) => value || "—",
-                  },
-                  {
-                    title: t("summary.cluster"),
-                    dataIndex: "cluster",
-                    key: "cluster",
-                    render: (value: string | undefined) => value || "—",
-                  },
-                  {
-                    title: t("summary.request_vm_status"),
-                    dataIndex: "requestStatus",
-                    key: "requestStatus",
-                    render: (value: string | undefined) => value || "—",
-                  },
-                  {
-                    title: t("summary.latest_vm_status"),
-                    dataIndex: "latestStatus",
-                    key: "latestStatus",
-                    render: (value: string | undefined, record) => (
-                      <Space direction="vertical" size={0}>
-                        <span>{value || "—"}</span>
-                        {record.statusChanged && (
-                          <Text type="warning" style={{ fontSize: 12 }}>
-                            {t("summary.status_changed")}
-                          </Text>
-                        )}
-                      </Space>
-                    ),
-                  },
-                  {
-                    title: t("summary.current_resources"),
-                    dataIndex: "currentShape",
-                    key: "currentShape",
-                    render: (value: string | undefined) => value || "—",
-                  },
-                  {
-                    title: t("summary.target_resources"),
-                    dataIndex: "targetShape",
-                    key: "targetShape",
-                    render: (value: string | undefined) => value || "—",
-                  },
-                  {
-                    title: t("summary.power_action"),
-                    dataIndex: "action",
-                    key: "action",
-                    render: (value: string | undefined) => value || "—",
-                  },
-                ]}
-              />
+              <div className="workbench-detail-modal__table-scroll">
+                <Table
+                  size="small"
+                  pagination={false}
+                  rowKey="key"
+                  dataSource={approveBatchItems}
+                  scroll={{ x: 920, y: 280 }}
+                  columns={[
+                    {
+                      title: t("summary.item"),
+                      dataIndex: "title",
+                      key: "title",
+                    },
+                    {
+                      title: t("summary.scope"),
+                      dataIndex: "scope",
+                      key: "scope",
+                      render: (value: string | undefined) => value || "—",
+                    },
+                    {
+                      title: t("summary.cluster"),
+                      dataIndex: "cluster",
+                      key: "cluster",
+                      render: (value: string | undefined) => value || "—",
+                    },
+                    {
+                      title: t("summary.request_vm_status"),
+                      dataIndex: "requestStatus",
+                      key: "requestStatus",
+                      render: (value: string | undefined) => value || "—",
+                    },
+                    {
+                      title: t("summary.latest_vm_status"),
+                      dataIndex: "latestStatus",
+                      key: "latestStatus",
+                      render: (value: string | undefined, record) => (
+                        <Space direction="vertical" size={0}>
+                          <span>{value || "—"}</span>
+                          {record.statusChanged && (
+                            <Text type="warning" style={{ fontSize: 12 }}>
+                              {t("summary.status_changed")}
+                            </Text>
+                          )}
+                        </Space>
+                      ),
+                    },
+                    {
+                      title: t("summary.current_resources"),
+                      dataIndex: "currentShape",
+                      key: "currentShape",
+                      render: (value: string | undefined) => value || "—",
+                    },
+                    {
+                      title: t("summary.target_resources"),
+                      dataIndex: "targetShape",
+                      key: "targetShape",
+                      render: (value: string | undefined) => value || "—",
+                    },
+                    {
+                      title: t("summary.power_action"),
+                      dataIndex: "action",
+                      key: "action",
+                      render: (value: string | undefined) => value || "—",
+                    },
+                  ]}
+                />
+              </div>
             </Card>
           )}
-          {approvals.approveModal?.operation_type === "CREATE"
+          {approvals.approveModal?.operation_type === "MODIFY"
+            ? (
+                <>
+                  {modifyRequiresRestart && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginBottom: 16 }}
+                      message={t(
+                        "approve_modal.modify_restart_required_title",
+                      )}
+                      description={t(
+                        "approve_modal.modify_restart_required_description",
+                      )}
+                    />
+                  )}
+                  <Alert
+                    type={
+                      modifyCPURequestNeedsReview ||
+                      modifyMemoryRequestNeedsReview
+                        ? "warning"
+                        : "info"
+                    }
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message={t("approve_modal.modify_request_review_title")}
+                    description={t(
+                      modifyCPURequestNeedsReview ||
+                        modifyMemoryRequestNeedsReview
+                        ? "approve_modal.modify_request_review_required_description"
+                        : "approve_modal.modify_request_review_description",
+                      {
+                        cpu_request:
+                          typeof modifyCurrentCPURequest === "number"
+                            ? modifyCurrentCPURequest
+                            : "—",
+                        memory_request_gi:
+                          typeof modifyCurrentMemoryRequestGi === "number"
+                            ? modifyCurrentMemoryRequestGi
+                            : "—",
+                      },
+                    )}
+                  />
+                  <Form.Item
+                    name="enable_override"
+                    valuePropName="checked"
+                    label={t("approve_modal.modify_request_override")}
+                    extra={t("approve_modal.modify_request_override_help")}
+                  >
+                    <Switch />
+                  </Form.Item>
+                  <Card
+                    size="small"
+                    style={{ marginBottom: 16, background: "#fafafa" }}
+                    title={t("approve_modal.modify_request_snapshot_title")}
+                  >
+                    <Space direction="vertical" style={{ width: "100%" }}>
+                      <Space style={{ width: "100%" }}>
+                        <Form.Item
+                          label={t("approve_modal.cpu_request_current")}
+                          style={{ marginBottom: 0, flex: 1 }}
+                        >
+                          <Input
+                            readOnly
+                            value={
+                              typeof modifyCurrentCPURequest === "number"
+                                ? `${modifyCurrentCPURequest} ${t(
+                                    "approve_modal.cores",
+                                  )}`
+                                : "—"
+                            }
+                          />
+                        </Form.Item>
+                        <Form.Item
+                          label={t("approve_modal.cpu_limit_review")}
+                          style={{ marginBottom: 0, flex: 1 }}
+                        >
+                          <Input
+                            readOnly
+                            value={
+                              typeof modifyTargetCPULimit === "number"
+                                ? `${modifyTargetCPULimit} ${t(
+                                    "approve_modal.cores",
+                                  )}`
+                                : "—"
+                            }
+                          />
+                        </Form.Item>
+                      </Space>
+                      <Space style={{ width: "100%" }}>
+                        <Form.Item
+                          label={t("approve_modal.memory_request_current")}
+                          style={{ marginBottom: 0, flex: 1 }}
+                        >
+                          <Input
+                            readOnly
+                            value={
+                              typeof modifyCurrentMemoryRequestGi === "number"
+                                ? `${modifyCurrentMemoryRequestGi} Gi`
+                                : "—"
+                            }
+                          />
+                        </Form.Item>
+                        <Form.Item
+                          label={t("approve_modal.memory_limit_review")}
+                          style={{ marginBottom: 0, flex: 1 }}
+                        >
+                          <Input
+                            readOnly
+                            value={
+                              typeof modifyTargetMemoryLimitGi === "number"
+                                ? `${modifyTargetMemoryLimitGi} Gi`
+                                : "—"
+                            }
+                          />
+                        </Form.Item>
+                      </Space>
+                    </Space>
+                  </Card>
+                  <Form.Item
+                    noStyle
+                    shouldUpdate={(prev, cur) =>
+                      prev.enable_override !== cur.enable_override ||
+                      prev.cpu_request !== cur.cpu_request ||
+                      prev.memory_request_gi !== cur.memory_request_gi
+                    }
+                  >
+                    {({ getFieldValue }) =>
+                      getFieldValue("enable_override") ? (
+                        <Card
+                          size="small"
+                          style={{ marginBottom: 16, background: "#fafafa" }}
+                        >
+                          <Space direction="vertical" style={{ width: "100%" }}>
+                            <Space style={{ width: "100%" }}>
+                              <Form.Item
+                                name="cpu_request"
+                                label={t("approve_modal.cpu_request")}
+                                style={{ marginBottom: 0, flex: 1 }}
+                                rules={[
+                                  () => ({
+                                    validator(_, value) {
+                                      if (
+                                        typeof value === "number" &&
+                                        typeof modifyTargetCPULimit === "number" &&
+                                        value > modifyTargetCPULimit
+                                      ) {
+                                        return Promise.reject(
+                                          new Error(
+                                            t(
+                                              "approve_modal.modify_cpu_request_exceeds_limit",
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                      return Promise.resolve();
+                                    },
+                                  }),
+                                ]}
+                              >
+                                <UnitInputNumber
+                                  min={0.5}
+                                  step={0.5}
+                                  precision={1}
+                                  unit={t("approve_modal.cores")}
+                                />
+                              </Form.Item>
+                              <Form.Item
+                                label={t("approve_modal.cpu_limit_review")}
+                                style={{ marginBottom: 0, flex: 1 }}
+                              >
+                                <Input
+                                  readOnly
+                                  value={
+                                    typeof modifyTargetCPULimit === "number"
+                                      ? `${modifyTargetCPULimit} ${t(
+                                          "approve_modal.cores",
+                                        )}`
+                                      : "—"
+                                  }
+                                />
+                              </Form.Item>
+                            </Space>
+                            <Space style={{ width: "100%" }}>
+                              <Form.Item
+                                name="memory_request_gi"
+                                label={t("approve_modal.memory_request")}
+                                style={{ marginBottom: 0, flex: 1 }}
+                                rules={[
+                                  () => ({
+                                    validator(_, value) {
+                                      if (
+                                        typeof value === "number" &&
+                                        typeof modifyTargetMemoryLimitGi ===
+                                          "number" &&
+                                        value > modifyTargetMemoryLimitGi
+                                      ) {
+                                        return Promise.reject(
+                                          new Error(
+                                            t(
+                                              "approve_modal.modify_memory_request_exceeds_limit",
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                      return Promise.resolve();
+                                    },
+                                  }),
+                                ]}
+                              >
+                                <UnitInputNumber
+                                  min={0.5}
+                                  step={0.5}
+                                  precision={1}
+                                  unit="Gi"
+                                />
+                              </Form.Item>
+                              <Form.Item
+                                label={t("approve_modal.memory_limit_review")}
+                                style={{ marginBottom: 0, flex: 1 }}
+                              >
+                                <Input
+                                  readOnly
+                                  value={
+                                    typeof modifyTargetMemoryLimitGi === "number"
+                                      ? `${modifyTargetMemoryLimitGi} Gi`
+                                      : "—"
+                                  }
+                                />
+                              </Form.Item>
+                            </Space>
+                          </Space>
+                        </Card>
+                      ) : null
+                    }
+                  </Form.Item>
+                </>
+              )
+            : approvals.approveModal?.operation_type === "CREATE"
             ? (() => {
                 const payload = asPayloadRecord(
                   approvals.approveModal?.ticket_payload,
@@ -1430,12 +1683,10 @@ export function AdminApprovalsContent() {
             <Input.TextArea rows={3} />
           </Form.Item>
         </Form>
-      </Modal>
+      </WorkbenchDetailModal>
 
-      <Modal
+      <WorkbenchDetailModal
         title={t("reject_modal.title")}
-        width={rejectModalWidth}
-        style={modalViewportStyle}
         open={Boolean(approvals.rejectModal)}
         onOk={() => {
           void approvals.submitReject();
@@ -1443,8 +1694,8 @@ export function AdminApprovalsContent() {
         onCancel={approvals.closeRejectModal}
         confirmLoading={approvals.rejectPending}
         forceRender={true}
-        wrapClassName="admin-approvals-modal"
-        styles={{ body: modalBodyStyles }}
+        width="min(720px, calc(100vw - 16px))"
+        contentMinWidth={560}
         data-testid="reject-modal"
       >
         <Form
@@ -1466,7 +1717,7 @@ export function AdminApprovalsContent() {
             />
           </Form.Item>
         </Form>
-      </Modal>
+      </WorkbenchDetailModal>
     </div>
   );
 }

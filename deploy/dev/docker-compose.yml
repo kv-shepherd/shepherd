@@ -38,6 +38,8 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: "/api/v1"
       NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE: "1"
+      NEXT_PUBLIC_DEV_SECURE_ORIGIN: "${DEV_PUBLIC_BASE_URL:-https://localhost:3443}"
+      NEXT_PUBLIC_DEV_HTTP_INGRESS_PORT: "${DEV_INGRESS_PORT:-3000}"
       # Enable only when filesystem events are unreliable.
       WATCHPACK_POLLING: "${WATCHPACK_POLLING:-false}"
     volumes:
@@ -50,10 +52,13 @@ services:
     image: nginx:1.27-alpine
     environment:
       WEB_UPSTREAM: "${WEB_UPSTREAM:-host.docker.internal:3001}"
+      DEV_HTTPS_INGRESS_PORT: "${DEV_HTTPS_INGRESS_PORT:-3443}"
     ports:
-      - "3000:80"
+      - "${DEV_INGRESS_PORT:-3000}:80"
+      - "${DEV_HTTPS_INGRESS_PORT:-3443}:443"
     volumes:
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ../../tmp/dev-nginx-tls:/etc/nginx/tls:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

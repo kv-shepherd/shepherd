@@ -931,7 +931,7 @@ func (s *Server) loadServiceContextVMs(
 	for _, vm := range vms {
 		env := clusterEnvMap[vm.ClusterID]
 		name := clusterNameMap[vm.ClusterID]
-		items = append(items, vmToAPI(vm, env, name, nil))
+		items = append(items, vmToAPI(vm, env, name, nil, vmSnapshotInfo{}, nil))
 	}
 
 	return items, total, nil

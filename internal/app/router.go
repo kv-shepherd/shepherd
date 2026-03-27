@@ -28,6 +28,16 @@ var publicPrefixes = []string{
 	"/api/v1/schemas/",
 }
 
+func isJWTOptionalPath(path string) bool {
+	for _, prefix := range publicPrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return strings.HasPrefix(path, "/api/v1/vms/") &&
+		(strings.HasSuffix(path, "/vnc") || strings.HasSuffix(path, "/serial"))
+}
+
 func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg middleware.JWTConfig) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), middleware.RequestID(), middleware.ErrorHandler())
@@ -98,11 +108,9 @@ func sanitizeAllowedOrigins(origins []string) []string {
 func jwtSkipPublic(jwtCfg middleware.JWTConfig) gin.HandlerFunc {
 	jwtMw := middleware.JWTAuthWithConfig(jwtCfg)
 	return func(c *gin.Context) {
-		for _, prefix := range publicPrefixes {
-			if strings.HasPrefix(c.Request.URL.Path, prefix) {
-				c.Next()
-				return
-			}
+		if isJWTOptionalPath(c.Request.URL.Path) {
+			c.Next()
+			return
 		}
 		jwtMw(c)
 	}

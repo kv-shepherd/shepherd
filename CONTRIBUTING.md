@@ -89,7 +89,7 @@ The source of truth for local validation is the repository workflow configuratio
 
 - `.github/workflows/ci.yml`
 - `.github/workflows/frontend-tests.yml`
-- `.github/workflows/api-contract.yaml`
+- `.github/workflows/api-contract-validation.yml`
 
 Do not declare a branch "CI clean" unless the corresponding local commands aligned
 to those workflow jobs have actually passed. In this repository, that normally
@@ -324,7 +324,7 @@ Compatibility and naming notes:
 - `api/openapi.compat.yaml` is a derived artifact for **Go codegen only**.
 - Runtime OpenAPI validation must use canonical embedded bytes (`internal/api/specembed/openapi.yaml`), not generated embedded compat bytes.
 - `make api-diff` is a compatibility alias of `make api-breaking`.
-- Contract workflow file is `.github/workflows/api-contract.yaml`.
+- Contract workflow file is `.github/workflows/api-contract-validation.yml`.
 - Reusable rollout comment template: `docs/design/ci/templates/api-contract-rollout-comment.md`.
 
 ### Code Style

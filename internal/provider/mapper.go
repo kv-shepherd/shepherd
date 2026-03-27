@@ -2,6 +2,7 @@ package provider
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -36,6 +37,11 @@ func (m *KubeVirtMapper) MapVM(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.Vi
 		Name:            vm.Name,
 		Namespace:       vm.Namespace,
 		Status:          status,
+		OSName:          extractGuestOSName(vmi),
+		OSVersion:       extractGuestOSVersion(vmi),
+		OSFamily:        extractGuestOSFamily(vmi),
+		NodeName:        extractVMINodeName(vmi),
+		IPAddress:       extractPrimaryVMIPAddress(vmi),
 		Spec:            spec,
 		ResourceVersion: vm.ResourceVersion, // ADR-0038: capture for watch-cache routing
 	}
@@ -53,6 +59,72 @@ func (m *KubeVirtMapper) MapVM(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.Vi
 	}
 
 	return result, nil
+}
+
+func extractVMINodeName(vmi *kubevirtv1.VirtualMachineInstance) string {
+	if vmi == nil {
+		return ""
+	}
+	return vmi.Status.NodeName
+}
+
+func extractPrimaryVMIPAddress(vmi *kubevirtv1.VirtualMachineInstance) string {
+	if vmi == nil {
+		return ""
+	}
+	for i := range vmi.Status.Interfaces {
+		if ip := vmi.Status.Interfaces[i].IP; ip != "" {
+			return ip
+		}
+		if len(vmi.Status.Interfaces[i].IPs) > 0 && vmi.Status.Interfaces[i].IPs[0] != "" {
+			return vmi.Status.Interfaces[i].IPs[0]
+		}
+	}
+	return ""
+}
+
+func extractGuestOSName(vmi *kubevirtv1.VirtualMachineInstance) string {
+	if vmi == nil {
+		return ""
+	}
+	info := vmi.Status.GuestOSInfo
+	return firstNonEmptyTrimmed(info.PrettyName, info.Name, info.ID)
+}
+
+func extractGuestOSVersion(vmi *kubevirtv1.VirtualMachineInstance) string {
+	if vmi == nil {
+		return ""
+	}
+	info := vmi.Status.GuestOSInfo
+	return firstNonEmptyTrimmed(info.VersionID, info.Version)
+}
+
+func extractGuestOSFamily(vmi *kubevirtv1.VirtualMachineInstance) string {
+	if vmi == nil {
+		return ""
+	}
+	info := vmi.Status.GuestOSInfo
+	source := strings.ToLower(firstNonEmptyTrimmed(info.ID, info.Name, info.PrettyName))
+	switch {
+	case source == "":
+		return ""
+	case strings.Contains(source, "windows"),
+		strings.Contains(source, "win32"),
+		strings.Contains(source, "msdos"):
+		return "windows"
+	default:
+		return "linux"
+	}
+}
+
+func firstNonEmptyTrimmed(values ...string) string {
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // MapVMList maps a slice of KubeVirt VMs to domain VMList.
@@ -170,7 +242,10 @@ func mapVMStatus(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineIn
 
 // mapVMSpec extracts resource spec from VM.
 func mapVMSpec(vm *kubevirtv1.VirtualMachine) domain.VMSpec {
-	spec := domain.VMSpec{}
+	spec := domain.VMSpec{
+		AutoattachGraphicsDevice: true,
+		AutoattachSerialConsole:  true,
+	}
 
 	if vm.Spec.Template == nil {
 		return spec
@@ -179,6 +254,12 @@ func mapVMSpec(vm *kubevirtv1.VirtualMachine) domain.VMSpec {
 	templateSpec := vm.Spec.Template.Spec
 	domainSpec := templateSpec.Domain
 	domainRes := domainSpec.Resources
+	if domainSpec.Devices.AutoattachGraphicsDevice != nil {
+		spec.AutoattachGraphicsDevice = *domainSpec.Devices.AutoattachGraphicsDevice
+	}
+	if domainSpec.Devices.AutoattachSerialConsole != nil {
+		spec.AutoattachSerialConsole = *domainSpec.Devices.AutoattachSerialConsole
+	}
 
 	// CPU topology.
 	if domainSpec.CPU != nil {

@@ -1,9 +1,12 @@
 import { Form } from 'antd';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const useSetupGuideMock = vi.fn();
 const useScopedVMRequestLauncherMock = vi.fn();
+const pushMock = vi.fn();
+const useApiGetMock = vi.fn();
+const openWizardMock = vi.fn();
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
@@ -14,7 +17,16 @@ vi.mock('react-i18next', () => ({
             const labels: Record<string, string> = {
                 title: 'Virtual Machines',
                 subtitle: 'Manage virtual machine lifecycle',
-                create_request: 'Create Request',
+                create_request: 'Request VM',
+                'context.title': 'Service workspace context',
+                'context.description':
+                    'Requests from this page will be prefilled for Billing API in Payments. The VM list still shows all VMs you can access.',
+                'context.system': 'System',
+                'context.service': 'Service',
+                'context.summary': 'Workspace Summary',
+                'context.summary_value': '2 visible VM(s), 1 recent request(s)',
+                'context.open_service': 'Open Service',
+                'context.clear': 'Clear Context',
                 'common:button.refresh': 'Refresh',
             };
             const fallback =
@@ -35,8 +47,13 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('next/navigation', () => ({
     useRouter: () => ({
-        push: vi.fn(),
+        push: pushMock,
     }),
+    useSearchParams: () => new URLSearchParams(window.location.search),
+}));
+
+vi.mock('@/hooks/useApiQuery', () => ({
+    useApiGet: (...args: unknown[]) => useApiGetMock(...args),
 }));
 
 vi.mock('@/components/auth/PermissionGuard', () => ({
@@ -77,7 +94,7 @@ vi.mock('@/features/vm-management/hooks/useVMManagementController', () => ({
             savedDraft: null,
             wizardOpen: false,
             refetch: vi.fn(),
-            openWizard: vi.fn(),
+            openWizard: openWizardMock,
             openSimilarRequest: vi.fn(),
             resumeDraft: vi.fn(),
             discardDraft: vi.fn(),
@@ -98,7 +115,6 @@ vi.mock('@/features/vm-management/hooks/useVMManagementController', () => ({
             startVM: vi.fn(),
             stopVM: vi.fn(),
             restartVM: vi.fn(),
-            requestConsole: vi.fn(),
             openDeleteModal: vi.fn(),
             openModifyModal: vi.fn(),
             setSelectedVMIDs: vi.fn(),
@@ -156,6 +172,27 @@ vi.mock('@/features/vm-management/hooks/useVMManagementController', () => ({
 import VMsPage from './page';
 
 describe('VMsPage', () => {
+    beforeEach(() => {
+        pushMock.mockReset();
+        openWizardMock.mockReset();
+        useApiGetMock.mockReturnValue({
+            data: {
+                service: {
+                    id: 'svc-1',
+                    system_id: 'sys-1',
+                    system_name: 'Payments',
+                    name: 'Billing API',
+                },
+                summary: {
+                    visible_vm_count: 2,
+                    recent_request_count: 1,
+                },
+            },
+            isLoading: false,
+        });
+        window.history.replaceState({}, '', '/vms');
+    });
+
     it('shows setup guidance and disables create when request prerequisites are missing', () => {
         useSetupGuideMock.mockReturnValue({
             vmRequestReady: false,
@@ -165,9 +202,32 @@ describe('VMsPage', () => {
         render(<VMsPage />);
 
         expect(screen.getByText('setup-guide-vm')).toBeVisible();
-        expect(screen.getByRole('button', { name: /Create Request/ })).toBeDisabled();
+        expect(screen.getByRole('button', { name: /Request VM/ })).toBeDisabled();
         expect(useScopedVMRequestLauncherMock).toHaveBeenCalledWith(
             expect.objectContaining({ canLaunchRequest: false }),
         );
+    });
+
+    it('shows scoped workspace context and prefills request actions for the selected service', () => {
+        useSetupGuideMock.mockReturnValue({
+            vmRequestReady: true,
+        });
+        window.history.replaceState({}, '', '/vms?system_id=sys-1&service_id=svc-1');
+
+        render(<VMsPage />);
+
+        expect(screen.getByText('Service workspace context')).toBeVisible();
+        expect(screen.getByText('Payments')).toBeVisible();
+        expect(screen.getByText('Billing API')).toBeVisible();
+        expect(screen.getByText('2 visible VM(s), 1 recent request(s)')).toBeVisible();
+
+        fireEvent.click(screen.getAllByRole('button', { name: 'Request VM' })[0]);
+        expect(openWizardMock).toHaveBeenCalledWith({
+            systemId: 'sys-1',
+            serviceId: 'svc-1',
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Open Service' }));
+        expect(pushMock).toHaveBeenCalledWith('/services?system_id=sys-1&detail_service_id=svc-1');
     });
 });

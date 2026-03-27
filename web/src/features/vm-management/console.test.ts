@@ -1,0 +1,75 @@
+import { describe, expect, it, beforeEach } from "vitest";
+
+import {
+  hasAnyConsoleCapability,
+  readStoredPreferredConsoleType,
+  resolveApprovedConsoleTarget,
+  resolveDefaultConsoleType,
+  saveStoredPreferredConsoleType,
+} from "./console";
+
+describe("vm console helpers", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("prefers the stored console type when it is still available", () => {
+    saveStoredPreferredConsoleType("VNC");
+
+    expect(
+      resolveDefaultConsoleType(
+        {
+          serial_available: true,
+          vnc_available: true,
+          preferred_console_type: "SERIAL",
+        },
+        readStoredPreferredConsoleType(),
+      ),
+    ).toBe("VNC");
+  });
+
+  it("falls back to the live preferred type when the stored one is unavailable", () => {
+    saveStoredPreferredConsoleType("VNC");
+
+    expect(
+      resolveDefaultConsoleType(
+        {
+          serial_available: true,
+          vnc_available: false,
+          preferred_console_type: "SERIAL",
+        },
+        readStoredPreferredConsoleType(),
+      ),
+    ).toBe("SERIAL");
+  });
+
+  it("resolves approved serial console responses into an embedded target", () => {
+    expect(
+      resolveApprovedConsoleTarget({
+        console_type: "SERIAL",
+        console_url: "/api/v1/vms/vm-1/serial",
+      }),
+    ).toEqual({
+      consoleType: "SERIAL",
+      consolePath: "/api/v1/vms/vm-1/serial",
+    });
+  });
+
+  it("disables console entry conservatively for windows VMs without live capability hints", () => {
+    expect(
+      hasAnyConsoleCapability({
+        os_family: "windows",
+        os_name: "Windows Server 2025",
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps console entry available by default for non-windows VMs without live capability hints", () => {
+    expect(
+      hasAnyConsoleCapability({
+        os_family: "linux",
+        os_name: "Ubuntu 24.04 LTS",
+      }),
+    ).toBe(true);
+  });
+});

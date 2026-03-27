@@ -24,11 +24,12 @@ import (
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
-func TestVMConsole_Request_TestEnvironmentIssuesDirectVNCURL(t *testing.T) {
+func TestVMConsole_Request_TestEnvironmentIssuesDirectPreferredConsoleURL(t *testing.T) {
 	t.Parallel()
 
-	srv, client := newVMConsoleBehaviorTestServer(t)
+	srv, client, mock := newVMConsoleBehaviorTestServer(t)
 	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentTest, entvm.StatusRUNNING)
+	seedVMConsoleTargetInMock(mock, vm)
 
 	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
 	srv.RequestVMConsoleAccess(c, vm.ID)
@@ -41,11 +42,16 @@ func TestVMConsole_Request_TestEnvironmentIssuesDirectVNCURL(t *testing.T) {
 	if got := toStringValue(resp["status"]); got != "APPROVED" {
 		t.Fatalf("status = %q, want %q", got, "APPROVED")
 	}
-	vncURL := toStringValue(resp["vnc_url"])
-	if vncURL != "/api/v1/vms/"+vm.ID+"/vnc" {
-		t.Fatalf("vnc_url = %q, want %q", vncURL, "/api/v1/vms/"+vm.ID+"/vnc")
+	if consoleType := toStringValue(resp["console_type"]); consoleType != "SERIAL" {
+		t.Fatalf("console_type = %q, want %q", consoleType, "SERIAL")
 	}
-	bootstrapCookie := mustGetBootstrapCookie(t, w, vm.ID)
+	if consoleURL := toStringValue(resp["console_url"]); consoleURL != "/api/v1/vms/"+vm.ID+"/serial" {
+		t.Fatalf("console_url = %q, want %q", consoleURL, "/api/v1/vms/"+vm.ID+"/serial")
+	}
+	if vncURL := toStringValue(resp["vnc_url"]); vncURL != "" {
+		t.Fatalf("vnc_url = %q, want empty for preferred serial response", vncURL)
+	}
+	bootstrapCookie := mustGetBootstrapCookie(t, w, "/api/v1/vms/"+vm.ID+"/serial")
 	if !bootstrapCookie.HttpOnly {
 		t.Fatal("expected vnc bootstrap cookie to be HttpOnly")
 	}
@@ -65,8 +71,9 @@ func TestVMConsole_Request_TestEnvironmentIssuesDirectVNCURL(t *testing.T) {
 func TestVMConsole_Request_ProductionCreatesPendingTicket(t *testing.T) {
 	t.Parallel()
 
-	srv, client := newVMConsoleBehaviorTestServer(t)
+	srv, client, mock := newVMConsoleBehaviorTestServer(t)
 	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
+	seedVMConsoleTargetInMock(mock, vm)
 
 	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
 	srv.RequestVMConsoleAccess(c, vm.ID)
@@ -110,11 +117,12 @@ func TestVMConsole_Request_ProductionCreatesPendingTicket(t *testing.T) {
 	}
 }
 
-func TestVMConsole_Request_ProductionExplicitNoApprovalIssuesDirectVNCURL(t *testing.T) {
+func TestVMConsole_Request_ProductionExplicitNoApprovalIssuesDirectPreferredConsoleURL(t *testing.T) {
 	t.Parallel()
 
-	srv, client := newVMConsoleBehaviorTestServer(t)
+	srv, client, mock := newVMConsoleBehaviorTestServer(t)
 	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
+	seedVMConsoleTargetInMock(mock, vm)
 	mustCreateVNCApprovalPolicy(t, client, approvalpolicy.EnvironmentTypeProd, false, 1)
 
 	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
@@ -128,8 +136,11 @@ func TestVMConsole_Request_ProductionExplicitNoApprovalIssuesDirectVNCURL(t *tes
 	if got := toStringValue(resp["status"]); got != "APPROVED" {
 		t.Fatalf("status = %q, want %q", got, "APPROVED")
 	}
-	if vncURL := toStringValue(resp["vnc_url"]); vncURL != "/api/v1/vms/"+vm.ID+"/vnc" {
-		t.Fatalf("vnc_url = %q, want %q", vncURL, "/api/v1/vms/"+vm.ID+"/vnc")
+	if consoleType := toStringValue(resp["console_type"]); consoleType != "SERIAL" {
+		t.Fatalf("console_type = %q, want %q", consoleType, "SERIAL")
+	}
+	if consoleURL := toStringValue(resp["console_url"]); consoleURL != "/api/v1/vms/"+vm.ID+"/serial" {
+		t.Fatalf("console_url = %q, want %q", consoleURL, "/api/v1/vms/"+vm.ID+"/serial")
 	}
 
 	count, err := client.Ticket.Query().Count(t.Context())
@@ -141,11 +152,43 @@ func TestVMConsole_Request_ProductionExplicitNoApprovalIssuesDirectVNCURL(t *tes
 	}
 }
 
+func TestVMConsole_Request_TestEnvironmentHonorsExplicitVNCPreference(t *testing.T) {
+	t.Parallel()
+
+	srv, client, mock := newVMConsoleBehaviorTestServer(t)
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentTest, entvm.StatusRUNNING)
+	seedVMConsoleTargetInMock(mock, vm)
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		fmt.Sprintf("/vms/%s/console/request", vm.ID),
+		`{"preferred_console_type":"VNC"}`,
+		"actor-1",
+		[]string{"vnc:access"},
+	)
+	srv.RequestVMConsoleAccess(c, vm.ID)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	resp := decodeJSONMap(t, w.Body.Bytes())
+	if consoleType := toStringValue(resp["console_type"]); consoleType != "VNC" {
+		t.Fatalf("console_type = %q, want %q", consoleType, "VNC")
+	}
+	if consoleURL := toStringValue(resp["console_url"]); consoleURL != "/api/v1/vms/"+vm.ID+"/vnc" {
+		t.Fatalf("console_url = %q, want %q", consoleURL, "/api/v1/vms/"+vm.ID+"/vnc")
+	}
+	_ = mustGetBootstrapCookie(t, w, "/api/v1/vms/"+vm.ID+"/vnc")
+}
+
 func TestVMConsole_Request_TestExplicitApprovalCreatesPendingTicket(t *testing.T) {
 	t.Parallel()
 
-	srv, client := newVMConsoleBehaviorTestServer(t)
+	srv, client, mock := newVMConsoleBehaviorTestServer(t)
 	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentTest, entvm.StatusRUNNING)
+	seedVMConsoleTargetInMock(mock, vm)
 	mustCreateVNCApprovalPolicy(t, client, approvalpolicy.EnvironmentTypeTest, true, 1)
 
 	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
@@ -167,8 +210,9 @@ func TestVMConsole_Request_TestExplicitApprovalCreatesPendingTicket(t *testing.T
 func TestVMConsole_Request_ProductionRejectsDuplicatePendingRequest(t *testing.T) {
 	t.Parallel()
 
-	srv, client := newVMConsoleBehaviorTestServer(t)
+	srv, client, mock := newVMConsoleBehaviorTestServer(t)
 	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
+	seedVMConsoleTargetInMock(mock, vm)
 	mustSeedPendingVNCRequest(t, client, vm.ID, vm.ClusterID, vm.Namespace, "actor-1")
 
 	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
@@ -183,8 +227,9 @@ func TestVMConsole_Request_ProductionRejectsDuplicatePendingRequest(t *testing.T
 func TestVMConsole_Request_RejectsNonRunningVM(t *testing.T) {
 	t.Parallel()
 
-	srv, client := newVMConsoleBehaviorTestServer(t)
+	srv, client, mock := newVMConsoleBehaviorTestServer(t)
 	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentTest, entvm.StatusSTOPPED)
+	seedVMConsoleTargetInMock(mock, vm)
 
 	c, w := newAuthedGinContext(t, http.MethodPost, fmt.Sprintf("/vms/%s/console/request", vm.ID), "", "actor-1", []string{"vnc:access"})
 	srv.RequestVMConsoleAccess(c, vm.ID)
@@ -235,8 +280,9 @@ func TestVMConsole_Request_RejectsWhenLiveStatusIsNotRunning(t *testing.T) {
 func TestVMConsole_Status_ProductionPendingAndApproved(t *testing.T) {
 	t.Parallel()
 
-	srv, client := newVMConsoleBehaviorTestServer(t)
+	srv, client, mock := newVMConsoleBehaviorTestServer(t)
 	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
+	seedVMConsoleTargetInMock(mock, vm)
 	ticketID := mustSeedPendingVNCRequest(t, client, vm.ID, vm.ClusterID, vm.Namespace, "actor-1")
 
 	pendingCtx, pendingW := newAuthedGinContext(
@@ -286,17 +332,105 @@ func TestVMConsole_Status_ProductionPendingAndApproved(t *testing.T) {
 	if got := toStringValue(approvedResp["status"]); got != "APPROVED" {
 		t.Fatalf("approved response status = %q, want %q", got, "APPROVED")
 	}
-	if vncURL := toStringValue(approvedResp["vnc_url"]); vncURL != "/api/v1/vms/"+vm.ID+"/vnc" {
-		t.Fatalf("approved response vnc_url = %q, want %q", vncURL, "/api/v1/vms/"+vm.ID+"/vnc")
+	if consoleType := toStringValue(approvedResp["console_type"]); consoleType != "SERIAL" {
+		t.Fatalf("approved response console_type = %q, want %q", consoleType, "SERIAL")
 	}
-	_ = mustGetBootstrapCookie(t, approvedW, vm.ID)
+	if consoleURL := toStringValue(approvedResp["console_url"]); consoleURL != "/api/v1/vms/"+vm.ID+"/serial" {
+		t.Fatalf("approved response console_url = %q, want %q", consoleURL, "/api/v1/vms/"+vm.ID+"/serial")
+	}
+	_ = mustGetBootstrapCookie(t, approvedW, "/api/v1/vms/"+vm.ID+"/serial")
 }
 
-func TestVMConsole_OpenVNC_RejectsTokenReplay(t *testing.T) {
+func TestVMConsole_Status_ApprovedHonorsPreferredVNCFromTicketPayload(t *testing.T) {
 	t.Parallel()
 
-	srv, client := newVMConsoleBehaviorTestServer(t)
+	srv, client, mock := newVMConsoleBehaviorTestServer(t)
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
+	seedVMConsoleTargetInMock(mock, vm)
+	eventID := uuid.Must(uuid.NewV7()).String()
+	ticketID := uuid.Must(uuid.NewV7()).String()
+	payload, err := json.Marshal(vncRequestPayload{
+		VMID:                 vm.ID,
+		ClusterID:            vm.ClusterID,
+		Namespace:            vm.Namespace,
+		RequesterID:          "actor-1",
+		PreferredConsoleType: "VNC",
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if _, err := client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVNCAccessRequested)).
+		SetAggregateType("vm").
+		SetAggregateID(vm.ID).
+		SetPayload(payload).
+		SetStatus(domainevent.StatusCOMPLETED).
+		SetCreatedBy("actor-1").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create event payload: %v", err)
+	}
+	if _, err := client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetOperationType(entticket.OperationTypeVNC_ACCESS).
+		SetStatus(entticket.StatusAPPROVED).
+		SetRequester("actor-1").
+		SetApprover("admin-1").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create approved ticket: %v", err)
+	}
+
+	approvedCtx, approvedW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		fmt.Sprintf("/vms/%s/console/status", vm.ID),
+		"",
+		"actor-1",
+		[]string{"vnc:access"},
+	)
+	srv.GetVMConsoleStatus(approvedCtx, vm.ID)
+
+	if approvedW.Code != http.StatusOK {
+		t.Fatalf("approved status = %d, want %d body=%s", approvedW.Code, http.StatusOK, approvedW.Body.String())
+	}
+	approvedResp := decodeJSONMap(t, approvedW.Body.Bytes())
+	if consoleType := toStringValue(approvedResp["console_type"]); consoleType != "VNC" {
+		t.Fatalf("approved response console_type = %q, want %q", consoleType, "VNC")
+	}
+	if consoleURL := toStringValue(approvedResp["console_url"]); consoleURL != "/api/v1/vms/"+vm.ID+"/vnc" {
+		t.Fatalf("approved response console_url = %q, want %q", consoleURL, "/api/v1/vms/"+vm.ID+"/vnc")
+	}
+	_ = mustGetBootstrapCookie(t, approvedW, "/api/v1/vms/"+vm.ID+"/vnc")
+}
+
+func TestVMConsole_OpenVNC_PreviewDoesNotConsumeBootstrapToken(t *testing.T) {
+	t.Parallel()
+
+	_ = logger.Init("error", "json")
+	client := testutil.OpenEntPostgres(t, "vm_console_preview_reuse_token")
 	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentTest, entvm.StatusRUNNING)
+
+	mock := provider.NewMockProvider()
+	mock.Seed([]*domain.VM{{
+		Name:      vm.Name,
+		Namespace: vm.Namespace,
+		Cluster:   vm.ClusterID,
+		Status:    domain.VMStatusRunning,
+	}})
+	mock.SetSerialOpenError(fmt.Errorf("serial unavailable"))
+
+	srv := NewServer(ServerDeps{
+		EntClient:    client,
+		ApprovalReqs: service.NewApprovalRequirementService(client),
+		VMService:    service.NewVMService(mock),
+		JWTCfg: middleware.JWTConfig{
+			SigningKey: []byte("test-vnc-signing-key-123456789012345678901234"),
+			Issuer:     "shepherd-test",
+			ExpiresIn:  2 * time.Hour,
+		},
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	})
 
 	reqCtx, reqW := newAuthedGinContext(
 		t,
@@ -310,7 +444,7 @@ func TestVMConsole_OpenVNC_RejectsTokenReplay(t *testing.T) {
 	if reqW.Code != http.StatusOK {
 		t.Fatalf("request status = %d, want %d body=%s", reqW.Code, http.StatusOK, reqW.Body.String())
 	}
-	bootstrapCookie := mustGetBootstrapCookie(t, reqW, vm.ID)
+	bootstrapCookie := mustGetBootstrapCookie(t, reqW, "/api/v1/vms/"+vm.ID+"/vnc")
 
 	openCtx1, openW1 := newAuthedGinContext(
 		t,
@@ -325,6 +459,10 @@ func TestVMConsole_OpenVNC_RejectsTokenReplay(t *testing.T) {
 	if openW1.Code != http.StatusOK {
 		t.Fatalf("first open status = %d, want %d body=%s", openW1.Code, http.StatusOK, openW1.Body.String())
 	}
+	firstResp := decodeJSONMap(t, openW1.Body.Bytes())
+	if got := toStringValue(firstResp["websocket_path"]); got != "/api/v1/vms/"+vm.ID+"/vnc" {
+		t.Fatalf("first websocket_path = %q, want %q", got, "/api/v1/vms/"+vm.ID+"/vnc")
+	}
 
 	openCtx2, openW2 := newAuthedGinContext(
 		t,
@@ -337,26 +475,111 @@ func TestVMConsole_OpenVNC_RejectsTokenReplay(t *testing.T) {
 	openCtx2.Request.AddCookie(&http.Cookie{Name: vncBootstrapCookieName, Value: bootstrapCookie.Value})
 	srv.OpenVMVNC(openCtx2, vm.ID)
 
-	if openW2.Code != http.StatusConflict {
-		t.Fatalf("second open status = %d, want %d body=%s", openW2.Code, http.StatusConflict, openW2.Body.String())
+	if openW2.Code != http.StatusOK {
+		t.Fatalf("second open status = %d, want %d body=%s", openW2.Code, http.StatusOK, openW2.Body.String())
 	}
-	assertErrorCode(t, openW2.Body.Bytes(), "VNC_TOKEN_REPLAYED")
+	secondResp := decodeJSONMap(t, openW2.Body.Bytes())
+	if got := toStringValue(secondResp["websocket_path"]); got != "/api/v1/vms/"+vm.ID+"/vnc" {
+		t.Fatalf("second websocket_path = %q, want %q", got, "/api/v1/vms/"+vm.ID+"/vnc")
+	}
 }
 
-func newVMConsoleBehaviorTestServer(t *testing.T) (*Server, *ent.Client) {
-	t.Helper()
+func TestVMConsole_OpenVNC_PreviewReturnsNativeStreamError(t *testing.T) {
+	t.Parallel()
+
 	_ = logger.Init("error", "json")
-	client := testutil.OpenEntPostgres(t, "vm_console_behavior")
-	return NewServer(ServerDeps{
+	client := testutil.OpenEntPostgres(t, "vm_console_preview_native_error")
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentTest, entvm.StatusRUNNING)
+
+	mock := provider.NewMockProvider()
+	mock.Seed([]*domain.VM{{
+		Name:      vm.Name,
+		Namespace: vm.Namespace,
+		Cluster:   vm.ClusterID,
+		Status:    domain.VMStatusRunning,
+	}})
+	mock.SetVNCOpenError(fmt.Errorf(`open vnc stream %s/%s: no graphics devices are present`, vm.Namespace, vm.Name))
+	mock.SetSerialOpenError(fmt.Errorf("serial unavailable"))
+
+	srv := NewServer(ServerDeps{
 		EntClient:    client,
 		ApprovalReqs: service.NewApprovalRequirementService(client),
+		VMService:    service.NewVMService(mock),
 		JWTCfg: middleware.JWTConfig{
 			SigningKey: []byte("test-vnc-signing-key-123456789012345678901234"),
 			Issuer:     "shepherd-test",
 			ExpiresIn:  2 * time.Hour,
 		},
 		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
-	}), client
+	})
+
+	token, _, err := srv.vncTokens.Issue("actor-1", vm.ID, vm.ClusterID, vm.Namespace)
+	if err != nil {
+		t.Fatalf("issue bootstrap token: %v", err)
+	}
+
+	openCtx, openW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		fmt.Sprintf("/vms/%s/vnc", vm.ID),
+		"",
+		"actor-1",
+		[]string{"vnc:access"},
+	)
+	openCtx.Request.AddCookie(&http.Cookie{Name: vncBootstrapCookieName, Value: token})
+	srv.OpenVMVNC(openCtx, vm.ID)
+
+	if openW.Code != http.StatusBadGateway {
+		t.Fatalf("preview status = %d, want %d body=%s", openW.Code, http.StatusBadGateway, openW.Body.String())
+	}
+	resp := decodeJSONMap(t, openW.Body.Bytes())
+	if got := toStringValue(resp["code"]); got != "VNC_UNAVAILABLE" {
+		t.Fatalf("code = %q, want %q", got, "VNC_UNAVAILABLE")
+	}
+	if got := toStringValue(resp["message"]); got == "" || got == "VNC_UNAVAILABLE" {
+		t.Fatalf("message = %q, want native kubevirt error", got)
+	}
+}
+
+func newVMConsoleBehaviorTestServer(t *testing.T) (*Server, *ent.Client, *provider.MockProvider) {
+	t.Helper()
+	_ = logger.Init("error", "json")
+	client := testutil.OpenEntPostgres(t, "vm_console_behavior")
+	mock := provider.NewMockProvider()
+	return NewServer(ServerDeps{
+		EntClient:    client,
+		ApprovalReqs: service.NewApprovalRequirementService(client),
+		VMService:    service.NewVMService(mock),
+		JWTCfg: middleware.JWTConfig{
+			SigningKey: []byte("test-vnc-signing-key-123456789012345678901234"),
+			Issuer:     "shepherd-test",
+			ExpiresIn:  2 * time.Hour,
+		},
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	}), client, mock
+}
+
+func seedVMConsoleTargetInMock(mock *provider.MockProvider, vm *ent.VM) {
+	if mock == nil || vm == nil {
+		return
+	}
+	var status domain.VMStatus
+	switch vm.Status {
+	case entvm.StatusRUNNING:
+		status = domain.VMStatusRunning
+	case entvm.StatusSTOPPED:
+		status = domain.VMStatusStopped
+	case entvm.StatusFAILED:
+		status = domain.VMStatusFailed
+	default:
+		status = domain.VMStatusUnknown
+	}
+	mock.Seed([]*domain.VM{{
+		Name:      vm.Name,
+		Namespace: vm.Namespace,
+		Cluster:   vm.ClusterID,
+		Status:    status,
+	}})
 }
 
 func mustCreateVMConsoleTarget(
@@ -486,14 +709,14 @@ func toStringValue(v interface{}) string {
 	return s
 }
 
-func mustGetBootstrapCookie(t *testing.T, recorder *httptest.ResponseRecorder, vmID string) *http.Cookie {
+func mustGetBootstrapCookie(t *testing.T, recorder *httptest.ResponseRecorder, expectedPath string) *http.Cookie {
 	t.Helper()
 	for _, cookie := range recorder.Result().Cookies() {
 		if cookie.Name != vncBootstrapCookieName {
 			continue
 		}
-		if cookie.Path != "/api/v1/vms/"+vmID+"/vnc" {
-			t.Fatalf("cookie path = %q, want %q", cookie.Path, "/api/v1/vms/"+vmID+"/vnc")
+		if cookie.Path != expectedPath {
+			t.Fatalf("cookie path = %q, want %q", cookie.Path, expectedPath)
 		}
 		if cookie.MaxAge <= 0 {
 			t.Fatalf("cookie max-age = %d, want > 0", cookie.MaxAge)

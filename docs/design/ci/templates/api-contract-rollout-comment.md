@@ -10,7 +10,7 @@
 
 ### Workflow/Gate Location
 
-- Current workflow file: `.github/workflows/api-contract.yaml`.
+- Current workflow file: `.github/workflows/api-contract-validation.yml`.
 - Historical references to `api-check.yml` or older gate names should be mapped to this workflow.
 
 ### Required Local Verification

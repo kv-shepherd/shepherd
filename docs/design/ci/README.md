@@ -338,7 +338,7 @@ ci/
 
 | File | Purpose | Final Location |
 |------|---------|----------------|
-| `workflows/api-contract.yaml` | GitHub Actions for spec validation | `.github/workflows/` |
+| `workflows/api-contract-validation.yml` | GitHub Actions for spec validation | `.github/workflows/` |
 | `.github/workflows/docs-governance.yaml` | GitHub Actions for design-doc governance checks (active) | `.github/workflows/` |
 | `workflows/docs-links-advisory.yaml` | GitHub Actions for advisory dead-link checks (lychee + custom) | `.github/workflows/` |
 | `scripts/api-check.sh` | Verifies generated code is in sync | `scripts/` |

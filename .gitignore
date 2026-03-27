@@ -12,7 +12,7 @@ dist/
 *.out
 go.work
 go.work.sum
-vendor/
+/vendor/
 coverage.out
 coverage.html
 

@@ -22,6 +22,12 @@ import type { ProLayoutProps } from '@ant-design/pro-components';
 
 type TranslateFn = (key: string) => string;
 export type MenuRouteItem = NonNullable<NonNullable<ProLayoutProps['route']>['routes']>[number];
+interface MenuSearchEntry {
+    key: string;
+    path: string;
+    label: string;
+    groupLabel?: string;
+}
 
 export const resolveMenuHref = (item: {
     path?: string;
@@ -131,4 +137,45 @@ export const getMenuRoutes = (
         path: '/',
         routes,
     };
+};
+
+const normalizeSearchValue = (value: string): string =>
+    value.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, ' ').trim();
+
+export const flattenMenuRoutes = (routes: MenuRouteItem[] | undefined, parentLabel?: string): MenuSearchEntry[] => {
+    if (!routes || routes.length === 0) {
+        return [];
+    }
+    return routes.flatMap((route) => {
+        const currentLabel = typeof route.name === 'string' ? route.name : '';
+        const currentParentLabel = parentLabel && parentLabel !== currentLabel ? parentLabel : undefined;
+        const current: MenuSearchEntry[] = [];
+
+        if (!route.hideInMenu && typeof route.path === 'string' && route.path.trim() !== '' && !route.routes?.length) {
+            current.push({
+                key: String(route.key || route.path),
+                path: route.path,
+                label: currentLabel,
+                groupLabel: currentParentLabel,
+            });
+        }
+
+        return current.concat(flattenMenuRoutes(route.routes as MenuRouteItem[] | undefined, currentLabel || currentParentLabel));
+    });
+};
+
+export const filterMenuSearchEntries = (entries: MenuSearchEntry[], query: string): MenuSearchEntry[] => {
+    const normalizedQuery = normalizeSearchValue(query);
+    if (normalizedQuery === '') {
+        return entries;
+    }
+    const queryTerms = normalizedQuery.split(/\s+/).filter(Boolean);
+    return entries.filter((entry) => {
+        const haystack = normalizeSearchValue(
+            [entry.label, entry.groupLabel, entry.path]
+                .filter(Boolean)
+                .join(' '),
+        );
+        return queryTerms.every((term) => haystack.includes(term));
+    });
 };

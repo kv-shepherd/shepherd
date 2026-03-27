@@ -59,5 +59,6 @@
   "INVALID_POWER_ACTION": "The requested power action is invalid.",
   "INVALID_VNC_TOKEN": "The VNC token is invalid or expired.",
   "VM_NOT_FOUND": "Virtual machine not found.",
-  "VM_NOT_RUNNING": "The virtual machine is not running."
+  "VM_NOT_RUNNING": "The virtual machine is not running.",
+  "VM_MODIFY_REQUEST_REVIEW_REQUIRED": "Review the current CPU and memory request values before approving lower limits."
 }

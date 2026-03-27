@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 
@@ -22,6 +23,10 @@ type namespaceProvisioningProviderStub struct {
 	lastCluster   string
 	lastNamespace string
 	ensureErr     error
+	vncConn       net.Conn
+	vncErr        error
+	serialConn    net.Conn
+	serialErr     error
 }
 
 func (s *namespaceProvisioningProviderStub) Name() string { return "stub" }
@@ -78,6 +83,20 @@ func (s *namespaceProvisioningProviderStub) UnpauseVM(context.Context, string, s
 func (s *namespaceProvisioningProviderStub) ValidateSpec(_ context.Context, _, _ string, _ *domain.VMSpec) (*domain.ValidationResult, error) {
 	s.validateCalls++
 	return &domain.ValidationResult{Valid: true}, nil
+}
+
+func (s *namespaceProvisioningProviderStub) OpenVNCStream(_ context.Context, _, _, _ string) (net.Conn, error) {
+	if s.vncErr != nil {
+		return nil, s.vncErr
+	}
+	return s.vncConn, nil
+}
+
+func (s *namespaceProvisioningProviderStub) OpenSerialConsoleStream(_ context.Context, _, _, _ string) (net.Conn, error) {
+	if s.serialErr != nil {
+		return nil, s.serialErr
+	}
+	return s.serialConn, nil
 }
 
 func TestVMServiceValidateAndPrepare_EnsuresNamespaceFirst(t *testing.T) {
@@ -159,6 +178,50 @@ func TestVMServiceValidateAndPrepare_PropagatesNamespaceProvisioningError(t *tes
 	}
 	if got := err.Error(); got == "" || !containsAll(got, "ensure namespace team-a", "forbidden") {
 		t.Fatalf("ValidateAndPrepare() error = %q, want namespace provisioning context", got)
+	}
+}
+
+func TestVMServiceOpenVNCStream_UsesProviderCapability(t *testing.T) {
+	t.Parallel()
+
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	infra := &namespaceProvisioningProviderStub{vncConn: serverConn}
+	svc := NewVMService(infra)
+
+	conn, err := svc.OpenVNCStream(t.Context(), "cluster-a", "team-a", "vm-a")
+	if err != nil {
+		t.Fatalf("OpenVNCStream() error = %v", err)
+	}
+	if conn == nil {
+		t.Fatal("OpenVNCStream() returned nil conn")
+	}
+	if conn != serverConn {
+		t.Fatal("OpenVNCStream() returned unexpected conn")
+	}
+}
+
+func TestVMServiceOpenSerialConsoleStream_UsesProviderCapability(t *testing.T) {
+	t.Parallel()
+
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	infra := &namespaceProvisioningProviderStub{serialConn: serverConn}
+	svc := NewVMService(infra)
+
+	conn, err := svc.OpenSerialConsoleStream(t.Context(), "cluster-a", "team-a", "vm-a")
+	if err != nil {
+		t.Fatalf("OpenSerialConsoleStream() error = %v", err)
+	}
+	if conn == nil {
+		t.Fatal("OpenSerialConsoleStream() returned nil conn")
+	}
+	if conn != serverConn {
+		t.Fatal("OpenSerialConsoleStream() returned unexpected conn")
 	}
 }
 

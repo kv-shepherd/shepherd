@@ -147,7 +147,11 @@ func (p VMPowerPayload) ToJSON() ([]byte, error) {
 // VMModifyPayload is the payload for VM resource change events.
 //
 // V1 scope:
-//   - online expansion only; shrink is rejected at request/approval/worker time
+//   - running VMs use live-update when possible
+//   - shrink or non-hotplug topology changes are saved to the VM spec and take
+//     effect after the next restart
+//   - stopped VMs may accept CPU and memory reconfiguration in either direction
+//   - disk remains expansion-only
 //   - cpu/memory/disk fields are optional individually, but at least one target
 //     value must be provided by the caller
 type VMModifyPayload struct {
@@ -158,13 +162,17 @@ type VMModifyPayload struct {
 	RequestVMStatus string `json:"request_vm_status,omitempty"`
 	Actor           string `json:"actor"`
 
-	CurrentCPUCores float64 `json:"current_cpu_cores"`
-	CurrentMemoryGi float64 `json:"current_memory_gi"`
-	CurrentDiskGB   int     `json:"current_disk_gb,omitempty"`
+	CurrentCPUCores        float64 `json:"current_cpu_cores"`
+	CurrentMemoryGi        float64 `json:"current_memory_gi"`
+	CurrentDiskGB          int     `json:"current_disk_gb,omitempty"`
+	CurrentCPURequest      float64 `json:"current_cpu_request,omitempty"`
+	CurrentMemoryRequestGi float64 `json:"current_memory_request_gi,omitempty"`
 
-	TargetCPUCores *float64 `json:"target_cpu_cores,omitempty"`
-	TargetMemoryGi *float64 `json:"target_memory_gi,omitempty"`
-	TargetDiskGB   *int     `json:"target_disk_gb,omitempty"`
+	TargetCPUCores  *float64 `json:"target_cpu_cores,omitempty"`
+	TargetMemoryGi  *float64 `json:"target_memory_gi,omitempty"`
+	TargetDiskGB    *int     `json:"target_disk_gb,omitempty"`
+	RequiresRestart bool     `json:"requires_restart,omitempty"`
+	ApplyMode       string   `json:"apply_mode,omitempty"`
 }
 
 // ToJSON converts payload to JSON bytes.

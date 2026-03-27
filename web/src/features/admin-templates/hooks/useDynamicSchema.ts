@@ -47,7 +47,7 @@ interface DynamicSchemaResponse {
  * Supported entity types for the dynamic schema endpoint.
  *
  * Only entity types with a real KubeVirt spec_overrides schema are listed:
- *   - instancesize: KubeVirt v1.7.0 VirtualMachineSpec sub-schema (cpu/memory/gpu/hugepages).
+ *   - instancesize: KubeVirt v1.8.0 VirtualMachineSpec sub-schema (cpu/memory/gpu/hugepages).
  *
  * Intentionally excluded:
  *   - template: cloud_init is a static YAML textarea only (master-flow Step 3, no spec_overrides).

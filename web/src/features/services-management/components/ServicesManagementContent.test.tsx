@@ -1,5 +1,5 @@
 import { Form } from 'antd';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const pushMock = vi.fn();
@@ -10,6 +10,7 @@ vi.mock('next/navigation', () => ({
     useRouter: () => ({
         push: pushMock,
     }),
+    useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -225,6 +226,15 @@ describe('ServicesManagementContent', () => {
         expect(pushMock).toHaveBeenCalledWith('/vms?request=create&system_id=sys-1&service_id=svc-1');
     });
 
+    it('renders the owning system as a clickable link without exposing the raw system id', () => {
+        render(<ServicesManagementContent />);
+
+        fireEvent.click(screen.getByTestId('service-action-open-system-svc-1'));
+
+        expect(pushMock).toHaveBeenCalledWith('/systems?detail_system_id=sys-1');
+        expect(screen.queryByText('sys-1')).not.toBeInTheDocument();
+    }, 15000);
+
     it('shows a service context modal with related VMs and requests', async () => {
         render(<ServicesManagementContent />);
 
@@ -249,5 +259,44 @@ describe('ServicesManagementContent', () => {
         expect(
             modalQueries.getAllByRole('button', { name: 'Open My Requests' }).length,
         ).toBeGreaterThan(0);
-    }, 10000);
+        expect(
+            modalQueries.getByRole('button', { name: 'Open VM Workspace' }),
+        ).toBeInTheDocument();
+    }, 20000);
+
+    it('opens the service detail modal from deep link context', async () => {
+        window.history.replaceState({}, '', '/services?system_id=sys-1&detail_service_id=svc-1');
+
+        render(<ServicesManagementContent />);
+
+        const detailModalTitle = await screen.findByText('Service Context');
+        const detailModal = detailModalTitle.closest('.ant-modal') as HTMLElement | null;
+        expect(detailModal).not.toBeNull();
+
+        const modalQueries = within(detailModal!);
+        expect(modalQueries.getByText('Service A')).toBeInTheDocument();
+        expect(modalQueries.getByText('System A')).toBeInTheDocument();
+        expect(modalQueries.getByText('vm-a')).toBeInTheDocument();
+    }, 20000);
+
+    it('keeps system and service context when opening the VM workspace from service detail', async () => {
+        render(<ServicesManagementContent />);
+
+        fireEvent.click(screen.getByTestId('service-action-detail-svc-1'));
+
+        const detailModalTitle = await screen.findByText('Service Context');
+        const detailModal = detailModalTitle.closest('.ant-modal') as HTMLElement | null;
+
+        expect(detailModal).not.toBeNull();
+
+        const openWorkspaceButton = within(detailModal!).getByRole('button', {
+            name: 'Open VM Workspace',
+        });
+
+        fireEvent.click(openWorkspaceButton);
+
+        await waitFor(() => {
+            expect(pushMock).toHaveBeenCalledWith('/vms?system_id=sys-1&service_id=svc-1');
+        });
+    }, 20000);
 });

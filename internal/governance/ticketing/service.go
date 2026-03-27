@@ -25,6 +25,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/notification"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/provider/vmmutationplan"
 	"kv-shepherd.io/shepherd/internal/service"
 )
 
@@ -57,7 +58,7 @@ type AtomicDecisionWriter interface {
 		modifiedSpec map[string]interface{},
 	) (vmID, vmName string, err error)
 	ApproveDeleteAndEnqueue(ctx context.Context, ticketID, eventID, approver, vmID string) error
-	ApproveModifyAndEnqueue(ctx context.Context, ticketID, eventID, approver string) error
+	ApproveModifyAndEnqueue(ctx context.Context, ticketID, eventID, approver string, modifiedSpec map[string]interface{}) error
 	ApprovePowerAndEnqueue(ctx context.Context, ticketID, eventID, approver, operation string) error
 }
 
@@ -130,7 +131,7 @@ func (g *Service) Approve(ctx context.Context, ticketID, approver string, opts E
 	// Branch by operation_type (ADR-0015 §5.D).
 	switch ticket.OperationType {
 	case entticket.OperationTypeMODIFY:
-		return g.approveModify(ctx, ticket, event, ticketID, approver)
+		return g.approveModify(ctx, ticket, event, ticketID, approver, opts)
 	case entticket.OperationTypeDELETE:
 		return g.approveDelete(ctx, ticket, ticketID, approver)
 	case entticket.OperationTypePOWER:
@@ -517,6 +518,7 @@ func (g *Service) approveModify(
 	ticket *ent.Ticket,
 	event *ent.DomainEvent,
 	ticketID, approver string,
+	opts ExecutionOptions,
 ) error {
 	if event == nil {
 		return fmt.Errorf("modify approval requires domain event")
@@ -526,12 +528,57 @@ func (g *Service) approveModify(
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return fmt.Errorf("parse modify event payload: %w", err)
 	}
-
-	if g.atomicWriter == nil {
-		return fmt.Errorf("atomic approval writer is not configured")
-	}
-	if err := g.atomicWriter.ApproveModifyAndEnqueue(ctx, ticketID, ticket.EventID, approver); err != nil {
-		return fmt.Errorf("approve modify ticket %s atomically: %w", ticketID, err)
+	if g.vmService != nil {
+		liveVM, err := g.vmService.GetVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
+		if err != nil {
+			return fmt.Errorf("load live vm for modify approval %s: %w", ticketID, err)
+		}
+		if liveVM == nil {
+			return fmt.Errorf("live vm is unavailable for modify approval %s", ticketID)
+		}
+		overrideCPURequest, overrideMemoryRequest, modifySpec, validationErr := buildModifyApprovalSpec(&payload, opts)
+		if validationErr != nil {
+			return validationErr
+		}
+		plan, err := vmmutationplan.PlanVMResourceUpdatePatch(payload.Namespace, liveVM, vmmutationplan.VMLiveUpdateTargets{
+			CPUCores:        payload.TargetCPUCores,
+			MemoryGi:        payload.TargetMemoryGi,
+			DiskGB:          payload.TargetDiskGB,
+			CPURequest:      overrideCPURequest,
+			MemoryRequestGi: overrideMemoryRequest,
+		})
+		if err != nil {
+			return apperrors.BadRequest(
+				"VM_MODIFY_APPROVAL_INVALID",
+				fmt.Sprintf("modify request cannot be executed with the current VM state: %v", err),
+			)
+		}
+		if err := g.vmService.DryRunVMMutation(ctx, payload.ClusterID, payload.Namespace, payload.VMName, plan.Mutation); err != nil {
+			return apperrors.BadRequest(
+				"VM_MODIFY_APPROVAL_INVALID",
+				fmt.Sprintf("modify request cannot be executed with the current VM state: %v", err),
+			)
+		}
+		modifySpec = withApprovedVMMutation(modifySpec, plan)
+		if g.atomicWriter == nil {
+			return fmt.Errorf("atomic approval writer is not configured")
+		}
+		if err := g.atomicWriter.ApproveModifyAndEnqueue(ctx, ticketID, ticket.EventID, approver, modifySpec); err != nil {
+			return fmt.Errorf("approve modify ticket %s atomically: %w", ticketID, err)
+		}
+	} else {
+		if g.atomicWriter == nil {
+			return fmt.Errorf("atomic approval writer is not configured")
+		}
+		overrideCPURequest, overrideMemoryRequest, modifySpec, validationErr := buildModifyApprovalSpec(&payload, opts)
+		if validationErr != nil {
+			return validationErr
+		}
+		_ = overrideCPURequest
+		_ = overrideMemoryRequest
+		if err := g.atomicWriter.ApproveModifyAndEnqueue(ctx, ticketID, ticket.EventID, approver, modifySpec); err != nil {
+			return fmt.Errorf("approve modify ticket %s atomically: %w", ticketID, err)
+		}
 	}
 
 	if g.auditLogger != nil {
@@ -550,6 +597,87 @@ func (g *Service) approveModify(
 	)
 
 	return nil
+}
+
+func buildModifyApprovalSpec(
+	payload *domain.VMModifyPayload,
+	opts ExecutionOptions,
+) (overrideCPURequest, overrideMemoryRequest *float64, modifiedSpec map[string]interface{}, err error) {
+	if payload == nil {
+		return nil, nil, nil, fmt.Errorf("modify payload is required")
+	}
+
+	targetCPULimit := payload.CurrentCPUCores
+	if payload.TargetCPUCores != nil && *payload.TargetCPUCores > 0 {
+		targetCPULimit = *payload.TargetCPUCores
+	}
+	targetMemoryLimitGi := payload.CurrentMemoryGi
+	if payload.TargetMemoryGi != nil && *payload.TargetMemoryGi > 0 {
+		targetMemoryLimitGi = *payload.TargetMemoryGi
+	}
+
+	effectiveCPURequest := payload.CurrentCPURequest
+	effectiveMemoryRequest := payload.CurrentMemoryRequestGi
+	modifiedSpec = map[string]interface{}{}
+
+	if opts.EnableOverride {
+		modifiedSpec["enable_override"] = true
+		if opts.CPURequest > 0 {
+			effectiveCPURequest = opts.CPURequest
+			overrideCPURequest = &effectiveCPURequest
+			modifiedSpec["cpu_request"] = opts.CPURequest
+		}
+		if opts.MemoryRequestGi > 0 {
+			effectiveMemoryRequest = opts.MemoryRequestGi
+			overrideMemoryRequest = &effectiveMemoryRequest
+			modifiedSpec["memory_request_gi"] = opts.MemoryRequestGi
+		}
+	}
+
+	if payload.TargetCPUCores != nil && effectiveCPURequest > 0 && targetCPULimit > 0 && effectiveCPURequest > targetCPULimit {
+		return nil, nil, nil, apperrors.BadRequest(
+			"VM_MODIFY_REQUEST_REVIEW_REQUIRED",
+			"cpu request must be reviewed before approving a lower CPU limit",
+		).WithParams(map[string]interface{}{
+			"current_cpu_request": payload.CurrentCPURequest,
+			"target_cpu_limit":    targetCPULimit,
+		}).WithFieldErrors([]apperrors.FieldError{{
+			Field:   "cpu_request",
+			Code:    "LIMIT_BELOW_REQUEST",
+			Message: "cpu request cannot exceed the approved CPU limit",
+		}})
+	}
+	if payload.TargetMemoryGi != nil && effectiveMemoryRequest > 0 && targetMemoryLimitGi > 0 && effectiveMemoryRequest > targetMemoryLimitGi {
+		return nil, nil, nil, apperrors.BadRequest(
+			"VM_MODIFY_REQUEST_REVIEW_REQUIRED",
+			"memory request must be reviewed before approving a lower memory limit",
+		).WithParams(map[string]interface{}{
+			"current_memory_request_gi": payload.CurrentMemoryRequestGi,
+			"target_memory_limit_gi":    targetMemoryLimitGi,
+		}).WithFieldErrors([]apperrors.FieldError{{
+			Field:   "memory_request_gi",
+			Code:    "LIMIT_BELOW_REQUEST",
+			Message: "memory request cannot exceed the approved memory limit",
+		}})
+	}
+
+	if len(modifiedSpec) == 0 {
+		return nil, nil, nil, nil
+	}
+	return overrideCPURequest, overrideMemoryRequest, modifiedSpec, nil
+}
+
+func withApprovedVMMutation(modifiedSpec map[string]interface{}, plan *vmmutationplan.VMResourceUpdatePlan) map[string]interface{} {
+	if plan == nil || plan.Mutation == nil {
+		return modifiedSpec
+	}
+	if modifiedSpec == nil {
+		modifiedSpec = make(map[string]interface{})
+	}
+	modifiedSpec["vm_mutation"] = plan.Mutation.Snapshot()
+	modifiedSpec["apply_mode"] = plan.ApplyMode
+	modifiedSpec["requires_restart"] = plan.RequiresRestart
+	return modifiedSpec
 }
 
 // approveDelete handles approval of DELETE tickets.
@@ -784,7 +912,7 @@ func (g *Service) approveBatchParent(
 					continue
 				}
 			}
-			approveErr = g.approveModify(ctx, child, childEvent, child.ID, approver)
+			approveErr = g.approveModify(ctx, child, childEvent, child.ID, approver, opts)
 		case entticket.OperationTypeDELETE:
 			approveErr = g.approveDelete(ctx, child, child.ID, approver)
 		case entticket.OperationTypePOWER:

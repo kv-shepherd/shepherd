@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	libopenapi "github.com/pb33f/libopenapi"
 	validator "github.com/pb33f/libopenapi-validator"
 	validatorcache "github.com/pb33f/libopenapi-validator/cache"
@@ -63,6 +64,14 @@ type openAPIRuntimeValidator struct {
 }
 
 func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
+	if websocket.IsWebSocketUpgrade(c.Request) {
+		// OpenAPI validation remains strict for the HTTP bootstrap request,
+		// but the actual websocket upgrade includes handshake headers and a
+		// 101 response that are outside the REST contract.
+		c.Next()
+		return
+	}
+
 	requestIgnorePaths := requestStrictIgnorePaths(c.Request, v.basePath)
 	requestValidator, err := v.newValidator(requestIgnorePaths...)
 	if err != nil {

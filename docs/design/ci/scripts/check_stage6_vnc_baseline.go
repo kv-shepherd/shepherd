@@ -19,7 +19,7 @@ const (
 	allowlistPath    = "docs/design/ci/allowlists/master_flow_api_deferred.txt"
 	handlerTestPath  = "internal/api/handlers/server_vm_console_behavior_test.go"
 	tokenTestPath    = "internal/service/vnc_token_test.go"
-	frontendTestPath = "web/src/features/vm-management/hooks/useVMManagementController.test.tsx"
+	frontendTestPath = "web/src/features/vm-management/console.test.ts"
 )
 
 func main() {
@@ -30,14 +30,16 @@ func main() {
 		"func (s *Server) RequestVMConsoleAccess(",
 		"func (s *Server) GetVMConsoleStatus(",
 		"func (s *Server) OpenVMVNC(",
+		"func (s *Server) OpenVMSerial(",
 		"service.EvaluateVNCRequest(",
 		"s.vncTokens.ValidateAndConsume(",
 		"createVNCApprovalRequest(",
 		"hasPendingVNCRequest(",
 		"vncBootstrapCookieName",
-		"setVNCBootstrapCookie(",
-		"clearVNCBootstrapCookie(",
+		"s.consoleBootstrapCookie(",
+		"http.SetCookie(c.Writer, s.consoleBootstrapCookie(",
 		"c.Cookie(vncBootstrapCookieName)",
+		"resolveConsoleTarget(",
 	})
 	checkNoLegacyQueryToken(&violations, handlerPath)
 	checkFragments(&violations, serverPath, []string{
@@ -59,9 +61,9 @@ func main() {
 		"EventVNCAccessRequested",
 	})
 	checkFragments(&violations, handlerTestPath, []string{
-		"TestVMConsole_Request_TestEnvironmentIssuesDirectVNCURL",
+		"TestVMConsole_Request_TestEnvironmentIssuesDirectPreferredConsoleURL",
 		"TestVMConsole_Request_ProductionCreatesPendingTicket",
-		"TestVMConsole_OpenVNC_RejectsTokenReplay",
+		"TestVMConsole_OpenVNC_PreviewDoesNotConsumeBootstrapToken",
 	})
 	checkFragments(&violations, tokenTestPath, []string{
 		"TestVNCTokenManager_IssueAndValidateSingleUse",
@@ -70,21 +72,22 @@ func main() {
 		"TestVNCTokenManager_ValidateAndConsume_UsesPostgresReplayStore",
 	})
 	checkFragments(&violations, frontendTestPath, []string{
-		"requestConsole",
-		"requestConsoleMutate",
+		"resolveDefaultConsoleType",
+		"resolveApprovedConsoleTarget",
+		"preferred_console_type",
 	})
 	checkAllowlist(&violations)
 
 	if len(violations) > 0 {
-		fmt.Println("FAIL: Stage 6 VNC baseline check failed")
+		fmt.Println("FAIL: Stage 6 console baseline check failed")
 		for _, v := range violations {
 			fmt.Println(" -", v)
 		}
-		fmt.Println("Rule: Stage 6 VNC API, runtime baseline, and behavior tests must remain implemented once introduced.")
+		fmt.Println("Rule: Stage 6 console API, runtime baseline, and behavior tests must remain implemented once introduced.")
 		os.Exit(1)
 	}
 
-	fmt.Println("OK: Stage 6 VNC baseline check passed")
+	fmt.Println("OK: Stage 6 console baseline check passed")
 }
 
 func checkOpenAPI(violations *[]string) {
@@ -115,6 +118,7 @@ func checkOpenAPI(violations *[]string) {
 		{path: "/vms/{vm_id}/console/request", op: "post", id: "requestVMConsoleAccess"},
 		{path: "/vms/{vm_id}/console/status", op: "get", id: "getVMConsoleStatus"},
 		{path: "/vms/{vm_id}/vnc", op: "get", id: "openVMVNC"},
+		{path: "/vms/{vm_id}/serial", op: "get", id: "openVMSerial"},
 	}
 
 	for _, r := range required {
@@ -169,6 +173,7 @@ func checkAllowlist(violations *[]string) {
 		"/vms/{}/console/request",
 		"/vms/{}/console/status",
 		"/vms/{}/vnc",
+		"/vms/{}/serial",
 	}
 	for _, b := range blocked {
 		if _, ok := lines[b]; ok {

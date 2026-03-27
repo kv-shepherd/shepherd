@@ -1,0 +1,253 @@
+{
+    "quick_fields": [
+        {
+            "path": "spec.template.spec.domain.memory.hugepages.pageSize",
+            "display_name": "Hugepages Size",
+            "display_name_key": "instanceSizes.mask.hugepages_size",
+            "help_key": "instanceSizes.mask.hugepages_help",
+            "placeholder_key": "instanceSizes.mask.hugepages_placeholder"
+        }
+    ],
+    "advanced_fields": [
+        {
+            "path": "spec.template.spec.domain.cpu.model",
+            "display_name": "CPU Model",
+            "display_name_key": "instanceSizes.mask.cpu_model",
+            "help_key": "instanceSizes.mask.cpu_model_help",
+            "placeholder": "host-passthrough",
+            "placeholder_key": "instanceSizes.mask.cpu_model_placeholder"
+        },
+        {
+            "path": "spec.template.spec.domain.machine.type",
+            "display_name": "Machine Type",
+            "display_name_key": "instanceSizes.mask.machine_type",
+            "help_key": "instanceSizes.mask.machine_type_help",
+            "placeholder": "q35",
+            "placeholder_key": "instanceSizes.mask.machine_type_placeholder"
+        },
+        {
+            "path": "spec.template.spec.evictionStrategy",
+            "display_name": "Eviction Strategy",
+            "display_name_key": "instanceSizes.mask.eviction_strategy",
+            "help_key": "instanceSizes.mask.eviction_strategy_help",
+            "placeholder": "LiveMigrate",
+            "placeholder_key": "instanceSizes.mask.eviction_strategy_placeholder"
+        },
+        {
+            "path": "spec.template.spec.domain.cpu.threads",
+            "display_name": "CPU Threads",
+            "display_name_key": "instanceSizes.mask.cpu_threads"
+        },
+        {
+            "path": "spec.template.spec.domain.cpu.sockets",
+            "display_name": "CPU Sockets",
+            "display_name_key": "instanceSizes.mask.cpu_sockets"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.gpus",
+            "display_name": "GPU Devices",
+            "display_name_key": "instanceSizes.mask.gpu_devices",
+            "help_key": "instanceSizes.mask.gpu_devices_help"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.networkInterfaceMultiqueue",
+            "display_name": "Network MultiQueue",
+            "display_name_key": "instanceSizes.mask.network_multiqueue",
+            "help_key": "instanceSizes.mask.network_multiqueue_help"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.blockMultiQueue",
+            "display_name": "Block MultiQueue",
+            "display_name_key": "instanceSizes.mask.block_multiqueue",
+            "help_key": "instanceSizes.mask.block_multiqueue_help"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.autoattachGraphicsDevice",
+            "display_name": "Auto-attach Graphics",
+            "display_name_key": "instanceSizes.mask.autoattach_graphics",
+            "help_key": "instanceSizes.mask.autoattach_graphics_help"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.autoattachSerialConsole",
+            "display_name": "Auto-attach Serial Console",
+            "display_name_key": "instanceSizes.mask.autoattach_serial",
+            "help_key": "instanceSizes.mask.autoattach_serial_help"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.autoattachMemBalloon",
+            "display_name": "Auto-attach Memory Balloon",
+            "display_name_key": "instanceSizes.mask.autoattach_memballoon",
+            "help_key": "instanceSizes.mask.autoattach_memballoon_help"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.autoattachVSOCK",
+            "display_name": "Auto-attach VSOCK",
+            "display_name_key": "instanceSizes.mask.autoattach_vsock",
+            "help_key": "instanceSizes.mask.autoattach_vsock_help"
+        },
+        {
+            "path": "spec.template.spec.domain.devices.rng",
+            "display_name": "Hardware RNG Device",
+            "display_name_key": "instanceSizes.mask.rng",
+            "help_key": "instanceSizes.mask.rng_help"
+        },
+        {
+            "path": "spec.template.spec.terminationGracePeriodSeconds",
+            "display_name": "Termination Grace Period (s)",
+            "display_name_key": "instanceSizes.mask.termination_grace",
+            "help_key": "instanceSizes.mask.termination_grace_help",
+            "placeholder": "0",
+            "placeholder_key": "instanceSizes.mask.termination_grace_placeholder"
+        },
+        {
+            "path": "spec.template.spec.nodeSelector",
+            "display_name": "Node Selector",
+            "display_name_key": "instanceSizes.mask.node_selector",
+            "help_key": "instanceSizes.mask.node_selector_help"
+        },
+        {
+            "path": "spec.template.metadata.annotations",
+            "display_name": "Template Annotations",
+            "display_name_key": "instanceSizes.mask.template_annotations",
+            "help_key": "instanceSizes.mask.template_annotations_help"
+        }
+    ],
+    "professional_fields": [
+        {
+            "path": "spec.template.spec.domain.cpu.isolateEmulatorThread",
+            "display_name": "Isolate Emulator Thread",
+            "display_name_key": "instanceSizes.mask.isolate_emulator_thread",
+            "help_key": "instanceSizes.mask.isolate_emulator_thread_help"
+        },
+        {
+            "path": "spec.template.spec.domain.features.acpi.enabled",
+            "display_name": "ACPI",
+            "display_name_key": "instanceSizes.mask.acpi",
+            "help_key": "instanceSizes.mask.acpi_help"
+        },
+        {
+            "path": "spec.template.spec.domain.features.apic.enabled",
+            "display_name": "APIC",
+            "display_name_key": "instanceSizes.mask.apic",
+            "help_key": "instanceSizes.mask.apic_help"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.relaxed.enabled",
+            "display_name": "Hyper-V Relaxed",
+            "display_name_key": "instanceSizes.mask.hyperv_relaxed"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.vapic.enabled",
+            "display_name": "Hyper-V vAPIC",
+            "display_name_key": "instanceSizes.mask.hyperv_vapic"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.spinlocks.enabled",
+            "display_name": "Hyper-V Spinlocks",
+            "display_name_key": "instanceSizes.mask.hyperv_spinlocks",
+            "help_key": "instanceSizes.mask.hyperv_spinlocks_help"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.spinlocks.spinlocks",
+            "display_name": "Hyper-V Spinlocks Count",
+            "display_name_key": "instanceSizes.mask.hyperv_spinlocks_count"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.vpindex.enabled",
+            "display_name": "Hyper-V VPIndex",
+            "display_name_key": "instanceSizes.mask.hyperv_vpindex"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.runtime.enabled",
+            "display_name": "Hyper-V Runtime",
+            "display_name_key": "instanceSizes.mask.hyperv_runtime"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.synic.enabled",
+            "display_name": "Hyper-V SyNIC",
+            "display_name_key": "instanceSizes.mask.hyperv_synic"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.frequencies.enabled",
+            "display_name": "Hyper-V Frequencies",
+            "display_name_key": "instanceSizes.mask.hyperv_frequencies"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.reset.enabled",
+            "display_name": "Hyper-V Reset",
+            "display_name_key": "instanceSizes.mask.hyperv_reset"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.vendorid.enabled",
+            "display_name": "Hyper-V VendorID",
+            "display_name_key": "instanceSizes.mask.hyperv_vendorid",
+            "help_key": "instanceSizes.mask.hyperv_vendorid_help"
+        },
+        {
+            "path": "spec.template.spec.domain.features.hyperv.vendorid.vendorid",
+            "display_name": "Hyper-V VendorID Value",
+            "display_name_key": "instanceSizes.mask.hyperv_vendorid_value"
+        },
+        {
+            "path": "spec.template.spec.domain.cpu.numa.guestMappingPassthrough",
+            "display_name": "NUMA Guest Mapping Passthrough",
+            "display_name_key": "instanceSizes.mask.numa_guest_mapping",
+            "help_key": "instanceSizes.mask.numa_guest_mapping_help"
+        },
+        {
+            "path": "spec.template.spec.domain.clock.utc",
+            "display_name": "UTC Clock",
+            "display_name_key": "instanceSizes.mask.clock_utc",
+            "help_key": "instanceSizes.mask.clock_utc_help"
+        },
+        {
+            "path": "spec.template.spec.domain.clock.timer.hpet.present",
+            "display_name": "HPET Present",
+            "display_name_key": "instanceSizes.mask.clock_hpet_present"
+        },
+        {
+            "path": "spec.template.spec.domain.clock.timer.pit.tickPolicy",
+            "display_name": "PIT Tick Policy",
+            "display_name_key": "instanceSizes.mask.clock_pit_tick_policy",
+            "placeholder": "delay"
+        },
+        {
+            "path": "spec.template.spec.domain.clock.timer.rtc.tickPolicy",
+            "display_name": "RTC Tick Policy",
+            "display_name_key": "instanceSizes.mask.clock_rtc_tick_policy",
+            "placeholder": "delay"
+        },
+        {
+            "path": "spec.template.spec.domain.clock.timer.hyperv",
+            "display_name": "Hyper-V Timer",
+            "display_name_key": "instanceSizes.mask.clock_hyperv_timer",
+            "help_key": "instanceSizes.mask.clock_hyperv_timer_help"
+        },
+        {
+            "path": "spec.template.spec.livenessProbe.guestAgentPing",
+            "display_name": "Guest Agent Ping Probe",
+            "display_name_key": "instanceSizes.mask.guest_agent_ping",
+            "help_key": "instanceSizes.mask.guest_agent_ping_help"
+        },
+        {
+            "path": "spec.template.spec.livenessProbe.initialDelaySeconds",
+            "display_name": "Liveness Initial Delay",
+            "display_name_key": "instanceSizes.mask.liveness_initial_delay"
+        },
+        {
+            "path": "spec.template.spec.livenessProbe.periodSeconds",
+            "display_name": "Liveness Period",
+            "display_name_key": "instanceSizes.mask.liveness_period_seconds"
+        },
+        {
+            "path": "spec.template.spec.livenessProbe.failureThreshold",
+            "display_name": "Liveness Failure Threshold",
+            "display_name_key": "instanceSizes.mask.liveness_failure_threshold"
+        },
+        {
+            "path": "spec.template.spec.livenessProbe.timeoutSeconds",
+            "display_name": "Liveness Timeout",
+            "display_name_key": "instanceSizes.mask.liveness_timeout_seconds"
+        }
+    ]
+}

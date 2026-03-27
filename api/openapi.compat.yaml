@@ -890,12 +890,18 @@ paths:
       tags: [vms]
       summary: Request VM console access
       description: |
-        Stage 6 VNC access entrypoint.
+        Stage 6 console access entrypoint.
         test env: direct token issuance.
         prod env: create ticket and return pending status.
       operationId: requestVMConsoleAccess
       parameters:
         - $ref: '#/components/parameters/VMID'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VMConsoleRequestInput'
       responses:
         '200':
           description: Console access approved immediately (test env)
@@ -960,6 +966,38 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /vms/{vm_id}/serial:
+    get:
+      tags: [vms]
+      summary: Open VM serial console session
+      description: |
+        Validates one-time console bootstrap credential from secure cookie and establishes a serial access session.
+        Clients MUST NOT pass bearer credentials via URI query.
+        V1 returns session bootstrap metadata; proxy internals are implementation-defined.
+      operationId: openVMSerial
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '200':
+          description: Serial console session ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMConsoleSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   # ── Tickets ─────────────────────────────────────────
   /tickets:
     get:
@@ -2856,6 +2894,18 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    BadGateway:
+      description: Upstream dependency rejected the request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServiceUnavailable:
+      description: Requested capability is currently unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
   # ── Schemas ─────────────────────────────────────────
   schemas:
     MaskField:
@@ -3140,10 +3190,42 @@ components:
           enum: [CREATING, STARTING, RUNNING, STOPPING, STOPPED, DELETING, FAILED, PENDING, MIGRATING, PAUSED, UNKNOWN, NOT_FOUND]
         hostname:
           type: string
+        node_name:
+          type: string
+          description: Current KubeVirt VMI node name when the VM is scheduled
+        host_ip:
+          type: string
+          description: Primary observed node IP for the current VMI placement
+        ip_address:
+          type: string
+          description: Primary observed guest IP address from the live VMI status
+        os_name:
+          type: string
+          description: Best-effort guest operating system name from KubeVirt guest OS info, or creation snapshot fallback
+        os_version:
+          type: string
+          description: Best-effort guest operating system version from KubeVirt guest OS info, or creation snapshot fallback
+        os_family:
+          type: string
+          description: Best-effort guest operating system family (for example linux or windows)
         service_id:
+          type: string
+        service_name:
+          type: string
+        system_id:
+          type: string
+        system_name:
           type: string
         instance:
           type: string
+        cpu_cores:
+          type: number
+          format: float
+        memory_gi:
+          type: number
+          format: float
+        disk_gb:
+          type: integer
         ticket_id:
           type: string
         created_by:
@@ -3155,10 +3237,26 @@ components:
           type: string
           enum: [test, prod]
           description: Inherited from cluster environment (ADR-0015 §15)
+        console_capabilities:
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: '#/components/schemas/VMConsoleCapabilities'
         provisioning:
           x-go-type-skip-optional-pointer: false
           allOf:
             - $ref: '#/components/schemas/ProvisioningStatus'
+    VMConsoleCapabilities:
+      type: object
+      required: [serial_available, vnc_available]
+      properties:
+        serial_available:
+          type: boolean
+        vnc_available:
+          type: boolean
+        preferred_console_type:
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: '#/components/schemas/VMConsoleType'
     ProvisioningCondition:
       type: object
       properties:
@@ -3612,6 +3710,9 @@ components:
     VMConsoleStatus:
       type: string
       enum: [NOT_REQUESTED, PENDING_APPROVAL, APPROVED, REJECTED]
+    VMConsoleType:
+      type: string
+      enum: [SERIAL, VNC]
     VMConsoleRequestResponse:
       type: object
       required: [status]
@@ -3621,9 +3722,25 @@ components:
         ticket_id:
           type: "string"
           nullable: true
+        console_type:
+          type: "string"
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/VMConsoleType'
+        console_url:
+          type: "string"
+          nullable: true
         vnc_url:
           type: "string"
           nullable: true
+          deprecated: true
+    VMConsoleRequestInput:
+      type: object
+      properties:
+        preferred_console_type:
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: '#/components/schemas/VMConsoleType'
     VMConsoleStatusResponse:
       type: object
       required: [status]
@@ -3633,9 +3750,32 @@ components:
         ticket_id:
           type: "string"
           nullable: true
+        console_type:
+          type: "string"
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/VMConsoleType'
+        console_url:
+          type: "string"
+          nullable: true
         vnc_url:
           type: "string"
           nullable: true
+          deprecated: true
+    VMConsoleSessionResponse:
+      type: object
+      required: [status, vm_id, console_type]
+      properties:
+        status:
+          type: string
+          enum: [SESSION_READY]
+        vm_id:
+          type: string
+        console_type:
+          $ref: '#/components/schemas/VMConsoleType'
+        websocket_path:
+          type: string
+          description: Relative websocket/proxy path for console bootstrap.
     VMVNCSessionResponse:
       type: object
       required: [status, vm_id]
@@ -3648,6 +3788,8 @@ components:
         websocket_path:
           type: string
           description: Relative websocket/proxy path for noVNC bootstrap.
+        console_type:
+          $ref: '#/components/schemas/VMConsoleType'
     # ── Approval ────────────────────────────────────
     TicketResponse:
       type: object

@@ -9,6 +9,20 @@ function toSpecText(spec: Record<string, unknown>): string {
     return JSON.stringify(spec, null, 2);
 }
 
+const graphicsDeviceOverrideSpec = {
+    spec: {
+        template: {
+            spec: {
+                domain: {
+                    devices: {
+                        autoattachGraphicsDevice: true,
+                    },
+                },
+            },
+        },
+    },
+};
+
 // KubeVirt common-instancetypes recommends the workload-agnostic U series as a
 // generic starting point. These presets keep only the broadest, lowest-risk
 // Linux/Windows settings and intentionally avoid environment-specific tuning
@@ -33,7 +47,7 @@ export const OFFICIAL_INSTANCE_SIZE_PRESET_ITEMS: Array<
             memory_request_gi: undefined,
             dedicated_cpu: false,
             requires_sriov: false,
-            spec_text: '{}',
+            spec_text: toSpecText(graphicsDeviceOverrideSpec),
             enabled: true,
         },
     },
@@ -55,10 +69,15 @@ export const OFFICIAL_INSTANCE_SIZE_PRESET_ITEMS: Array<
             dedicated_cpu: false,
             requires_sriov: false,
             spec_text: toSpecText({
+                ...graphicsDeviceOverrideSpec,
                 spec: {
+                    ...graphicsDeviceOverrideSpec.spec,
                     template: {
+                        ...graphicsDeviceOverrideSpec.spec.template,
                         spec: {
+                            ...graphicsDeviceOverrideSpec.spec.template.spec,
                             domain: {
+                                ...graphicsDeviceOverrideSpec.spec.template.spec.domain,
                                 clock: {
                                     utc: {},
                                     timer: {
@@ -84,6 +103,7 @@ export const OFFICIAL_INSTANCE_SIZE_PRESET_ITEMS: Array<
                                     },
                                 },
                                 devices: {
+                                    ...graphicsDeviceOverrideSpec.spec.template.spec.domain.devices,
                                     autoattachMemBalloon: false,
                                     autoattachVSOCK: false,
                                 },

@@ -13,6 +13,12 @@ type VM struct {
 	Name      string    `json:"name"`
 	Namespace string    `json:"namespace"`
 	Cluster   string    `json:"cluster"`
+	OSName    string    `json:"os_name,omitempty"`
+	OSVersion string    `json:"os_version,omitempty"`
+	OSFamily  string    `json:"os_family,omitempty"`
+	NodeName  string    `json:"node_name,omitempty"`
+	HostIP    string    `json:"host_ip,omitempty"`
+	IPAddress string    `json:"ip_address,omitempty"`
 	Status    VMStatus  `json:"status"`
 	Spec      VMSpec    `json:"spec"`
 	CreatedAt time.Time `json:"created_at"`
@@ -70,6 +76,8 @@ type VMSpec struct {
 	CurrentCPUSockets        int    `json:"-"`
 	CurrentCPUCoresPerSocket int    `json:"-"`
 	CurrentCPUThreads        int    `json:"-"`
+	AutoattachGraphicsDevice bool   `json:"-"`
+	AutoattachSerialConsole  bool   `json:"-"`
 }
 
 // VMStatus represents the current status of a VM.

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { getMenuRoutes, resolveMenuHref, type MenuRouteItem } from './appLayoutRoutes';
+import {
+    filterMenuSearchEntries,
+    flattenMenuRoutes,
+    getMenuRoutes,
+    resolveMenuHref,
+    type MenuRouteItem,
+} from './appLayoutRoutes';
 
 const t = (key: string) => key;
 
@@ -45,5 +51,36 @@ describe('getMenuRoutes', () => {
         const admin = route.routes?.find((item: MenuRouteItem) => item.key === 'admin');
 
         expect(resolveMenuHref(admin ?? {})).toBe('/admin/approval-tasks');
+    });
+
+    it('flattens visible leaf routes for global navigation search', () => {
+        const route = getMenuRoutes(t, true);
+        const entries = flattenMenuRoutes(route.routes as MenuRouteItem[]);
+
+        expect(entries).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    path: '/systems',
+                    label: 'nav.systems',
+                }),
+                expect.objectContaining({
+                    path: '/admin/templates',
+                    label: 'nav.templates',
+                    groupLabel: 'nav.admin',
+                }),
+            ]),
+        );
+    });
+
+    it('filters flattened routes using case-insensitive fuzzy terms', () => {
+        const route = getMenuRoutes(t, true);
+        const entries = flattenMenuRoutes(route.routes as MenuRouteItem[]);
+        const results = filterMenuSearchEntries(entries, 'admin templ');
+
+        expect(results).toEqual([
+            expect.objectContaining({
+                path: '/admin/templates',
+            }),
+        ]);
     });
 });

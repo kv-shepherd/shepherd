@@ -69,6 +69,57 @@ function batchChildSummaryTitle(resourceName: string | undefined): string {
     return resourceName && resourceName.trim() !== '' ? resourceName : EMPTY_VALUE;
 }
 
+function requestLifecycleAlert(ticket: Ticket, t: (key: string) => string) {
+    const payload = typeof ticket.ticket_payload === 'object' && ticket.ticket_payload !== null
+        ? ticket.ticket_payload as Record<string, unknown>
+        : undefined;
+    const requiresRestart = payload?.requires_restart === true;
+    switch (ticket.status) {
+        case 'PENDING':
+            return {
+                type: 'info' as const,
+                message: t('workbench.details.pending_hint'),
+            };
+        case 'APPROVED':
+        case 'EXECUTING':
+            return {
+                type: 'warning' as const,
+                message: t('workbench.details.execution_pending_hint'),
+                description: t('workbench.details.execution_pending_description'),
+            };
+        case 'SUCCESS':
+            return {
+                type: 'success' as const,
+                message: t('workbench.details.success_hint'),
+                description: requiresRestart
+                    ? t('workbench.details.success_restart_required_description')
+                    : undefined,
+            };
+        case 'FAILED':
+            return {
+                type: 'error' as const,
+                message: t('workbench.details.failed_hint'),
+                description:
+                    ticket.provisioning?.failure_message ||
+                    ticket.reject_reason ||
+                    t('workbench.details.failed_description'),
+            };
+        case 'REJECTED':
+            return {
+                type: 'warning' as const,
+                message: t('workbench.details.rejected_hint'),
+                description: ticket.reject_reason,
+            };
+        case 'CANCELLED':
+            return {
+                type: 'info' as const,
+                message: t('workbench.details.cancelled_hint'),
+            };
+        default:
+            return null;
+    }
+}
+
 export function MyRequestsWorkbench() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -117,6 +168,9 @@ export function MyRequestsWorkbench() {
 
     const approveAlert = useMemo(() => (
         detailTicket ? approvalPrimaryAlert(detailTicket, t) : null
+    ), [detailTicket, t]);
+    const lifecycleAlert = useMemo(() => (
+        detailTicket ? requestLifecycleAlert(detailTicket, t as (key: string) => string) : null
     ), [detailTicket, t]);
 
     const requestDetailItems = useMemo(() => {
@@ -195,6 +249,10 @@ export function MyRequestsWorkbench() {
             width: 280,
             render: (_, record) => {
                 const summaryMeta = approvalSummaryMeta(record, t);
+                const failureReason =
+                    record.reject_reason ||
+                    record.provisioning?.failure_message ||
+                    undefined;
                 return (
                     <Space direction="vertical" size={0}>
                         <Space size={8}>
@@ -209,6 +267,11 @@ export function MyRequestsWorkbench() {
                         <Text copyable={{ text: record.id }} type="secondary" style={{ fontSize: 12 }}>
                             {t('ticket_id')}: {formatApprovalRecordID(record.id)}
                         </Text>
+                        {record.status === 'FAILED' && failureReason ? (
+                            <Text type="danger" style={{ fontSize: 12 }}>
+                                {failureReason}
+                            </Text>
+                        ) : null}
                     </Space>
                 );
             },
@@ -742,8 +805,9 @@ export function MyRequestsWorkbench() {
                 )}
                 open={detailTicket !== null}
                 onClose={closeRequestDetails}
-                width={720}
+                width="min(1040px, calc(100vw - 16px))"
                 forceRender={true}
+                styles={{ body: { paddingRight: 8 } }}
                 footer={(
                     <Space wrap>
                         <Button onClick={closeRequestDetails}>
@@ -779,104 +843,110 @@ export function MyRequestsWorkbench() {
                     </Space>
                 )}
             >
-                <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                    {approveAlert ? (
-                        <Alert
-                            type={approveAlert.type}
-                            showIcon
-                            message={approveAlert.message}
-                            description={approveAlert.description}
-                        />
-                    ) : null}
-                    {detailTicket ? (
-                        <Alert
-                            type={detailTicket.status === 'PENDING' ? 'info' : 'success'}
-                            showIcon
-                            message={detailTicket.status === 'PENDING'
-                                ? t('workbench.details.pending_hint')
-                                : t('workbench.details.completed_hint')}
-                        />
-                    ) : null}
-                    <Card variant="borderless" title={t('workbench.details.summary_title')}>
-                        <Descriptions
-                            bordered
-                            size="small"
-                            column={2}
-                            items={requestDetailItems}
-                        />
-                    </Card>
-                    {requestScopeItems.length > 0 && (
-                        <Card variant="borderless" title={t('workbench.details.resource_title')}>
-                            <Descriptions
-                                bordered
-                                size="small"
-                                column={2}
-                                items={requestScopeItems}
-                            />
-                        </Card>
-                    )}
-                    {requestChangeItems.length > 0 && (
-                        <Card variant="borderless" title={t('workbench.details.change_title')}>
-                            <Descriptions
-                                bordered
-                                size="small"
-                                column={2}
-                                items={requestChangeItems}
-                            />
-                        </Card>
-                    )}
-                    {requestBatchItems.length > 0 && (
-                        <Card variant="borderless" title={t('workbench.details.affected_items_title')}>
-                            <Table
-                                rowKey="key"
-                                size="small"
-                                pagination={false}
-                                dataSource={requestBatchItems}
-                                columns={[
-                                    { title: t('summary.item'), dataIndex: 'title', key: 'title' },
-                                    { title: t('summary.scope'), dataIndex: 'scope', key: 'scope', render: (value: string | undefined) => value || EMPTY_VALUE },
-                                    { title: t('summary.cluster'), dataIndex: 'cluster', key: 'cluster', render: (value: string | undefined) => value || EMPTY_VALUE },
-                                    { title: t('summary.request_vm_status'), dataIndex: 'requestStatus', key: 'requestStatus', render: (value: string | undefined) => value || EMPTY_VALUE },
-                                    {
-                                        title: t('summary.latest_vm_status'),
-                                        dataIndex: 'latestStatus',
-                                        key: 'latestStatus',
-                                        render: (value: string | undefined, record) => (
-                                            <Space direction="vertical" size={0}>
-                                                <span>{value || EMPTY_VALUE}</span>
-                                                {record.statusChanged ? (
-                                                    <Text type="warning" style={{ fontSize: 12 }}>
-                                                        {t('summary.status_changed')}
-                                                    </Text>
-                                                ) : null}
-                                            </Space>
-                                        ),
-                                    },
-                                    { title: t('summary.current_resources'), dataIndex: 'currentShape', key: 'currentShape', render: (value: string | undefined) => value || EMPTY_VALUE },
-                                    { title: t('summary.target_resources'), dataIndex: 'targetShape', key: 'targetShape', render: (value: string | undefined) => value || EMPTY_VALUE },
-                                    { title: t('summary.power_action'), dataIndex: 'action', key: 'action', render: (value: string | undefined) => value || EMPTY_VALUE },
-                                ]}
-                            />
-                        </Card>
-                    )}
-                    <Card variant="borderless" title={t('workbench.details.context_title')}>
-                        {detailTicket?.request_prefill ? (
-                            <Descriptions
-                                bordered
-                                size="small"
-                                column={2}
-                                items={requestContextItems}
-                            />
-                        ) : (
-                            <ActionEmptyState
-                                compact={true}
-                                title={t('workbench.details.context_title')}
-                                description={t('workbench.details.no_context')}
-                                visual={<RequestsOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
-                            />
-                        )}
-                    </Card>
-                </Space>
+                <div className="workbench-detail-modal__viewport" style={{ maxHeight: 'calc(100vh - 150px)' }}>
+                    <div className="workbench-detail-modal__canvas" style={{ minWidth: 900 }}>
+                        <Space direction="vertical" size={16} className="workbench-detail-modal__stack">
+                            {approveAlert ? (
+                                <Alert
+                                    type={approveAlert.type}
+                                    showIcon
+                                    message={approveAlert.message}
+                                    description={approveAlert.description}
+                                />
+                            ) : null}
+                            {lifecycleAlert ? (
+                                <Alert
+                                    type={lifecycleAlert.type}
+                                    showIcon
+                                    message={lifecycleAlert.message}
+                                    description={lifecycleAlert.description}
+                                />
+                            ) : null}
+                            <Card variant="borderless" title={t('workbench.details.summary_title')}>
+                                <Descriptions
+                                    bordered
+                                    size="small"
+                                    column={2}
+                                    items={requestDetailItems}
+                                />
+                            </Card>
+                            {requestScopeItems.length > 0 && (
+                                <Card variant="borderless" title={t('workbench.details.resource_title')}>
+                                    <Descriptions
+                                        bordered
+                                        size="small"
+                                        column={2}
+                                        items={requestScopeItems}
+                                    />
+                                </Card>
+                            )}
+                            {requestChangeItems.length > 0 && (
+                                <Card variant="borderless" title={t('workbench.details.change_title')}>
+                                    <Descriptions
+                                        bordered
+                                        size="small"
+                                        column={2}
+                                        items={requestChangeItems}
+                                    />
+                                </Card>
+                            )}
+                            {requestBatchItems.length > 0 && (
+                                <Card variant="borderless" title={t('workbench.details.affected_items_title')}>
+                                    <div className="workbench-detail-modal__table-scroll">
+                                        <Table
+                                            rowKey="key"
+                                            size="small"
+                                            pagination={false}
+                                            scroll={{ x: 920 }}
+                                            dataSource={requestBatchItems}
+                                            columns={[
+                                                { title: t('summary.item'), dataIndex: 'title', key: 'title' },
+                                                { title: t('summary.scope'), dataIndex: 'scope', key: 'scope', render: (value: string | undefined) => value || EMPTY_VALUE },
+                                                { title: t('summary.cluster'), dataIndex: 'cluster', key: 'cluster', render: (value: string | undefined) => value || EMPTY_VALUE },
+                                                { title: t('summary.request_vm_status'), dataIndex: 'requestStatus', key: 'requestStatus', render: (value: string | undefined) => value || EMPTY_VALUE },
+                                                {
+                                                    title: t('summary.latest_vm_status'),
+                                                    dataIndex: 'latestStatus',
+                                                    key: 'latestStatus',
+                                                    render: (value: string | undefined, record) => (
+                                                        <Space direction="vertical" size={0}>
+                                                            <span>{value || EMPTY_VALUE}</span>
+                                                            {record.statusChanged ? (
+                                                                <Text type="warning" style={{ fontSize: 12 }}>
+                                                                    {t('summary.status_changed')}
+                                                                </Text>
+                                                            ) : null}
+                                                        </Space>
+                                                    ),
+                                                },
+                                                { title: t('summary.current_resources'), dataIndex: 'currentShape', key: 'currentShape', render: (value: string | undefined) => value || EMPTY_VALUE },
+                                                { title: t('summary.target_resources'), dataIndex: 'targetShape', key: 'targetShape', render: (value: string | undefined) => value || EMPTY_VALUE },
+                                                { title: t('summary.power_action'), dataIndex: 'action', key: 'action', render: (value: string | undefined) => value || EMPTY_VALUE },
+                                            ]}
+                                        />
+                                    </div>
+                                </Card>
+                            )}
+                            <Card variant="borderless" title={t('workbench.details.context_title')}>
+                                {detailTicket?.request_prefill ? (
+                                    <Descriptions
+                                        bordered
+                                        size="small"
+                                        column={2}
+                                        items={requestContextItems}
+                                    />
+                                ) : (
+                                    <ActionEmptyState
+                                        compact={true}
+                                        title={t('workbench.details.context_title')}
+                                        description={t('workbench.details.no_context')}
+                                        visual={<RequestsOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                                    />
+                                )}
+                            </Card>
+                        </Space>
+                    </div>
+                </div>
             </Drawer>
         </div>
     );

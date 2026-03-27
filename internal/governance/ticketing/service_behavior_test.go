@@ -1,6 +1,7 @@
 package ticketing
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -70,11 +71,12 @@ func (f *fakeAtomicWriter) ApproveDeleteAndEnqueue(_ context.Context, _, _, _, _
 	return nil
 }
 
-func (f *fakeAtomicWriter) ApproveModifyAndEnqueue(_ context.Context, ticketID, eventID, approver string) error {
+func (f *fakeAtomicWriter) ApproveModifyAndEnqueue(_ context.Context, ticketID, eventID, approver string, modifiedSpec map[string]interface{}) error {
 	f.modifyCalled = true
 	f.ticketID = ticketID
 	f.eventID = eventID
 	f.approver = approver
+	f.modifiedSpec = modifiedSpec
 	return nil
 }
 
@@ -92,6 +94,16 @@ type dryRunProviderStub struct {
 	result *domain.ValidationResult
 	err    error
 	calls  int
+}
+
+type mutationDryRunProviderStub struct {
+	*provider.MockProvider
+	dryRunErr     error
+	dryRunCalls   int
+	lastMutation  *domain.VMMutation
+	lastClusterID string
+	lastNamespace string
+	lastVMName    string
 }
 
 func newDryRunProviderStub(result *domain.ValidationResult, err error) *dryRunProviderStub {
@@ -133,6 +145,35 @@ func (s *dryRunProviderStub) GetStorageProfile(
 	}, nil
 }
 
+func newMutationDryRunProviderStub(err error) *mutationDryRunProviderStub {
+	return &mutationDryRunProviderStub{
+		MockProvider: provider.NewMockProvider(),
+		dryRunErr:    err,
+	}
+}
+
+func (s *mutationDryRunProviderStub) DryRunVMMutation(
+	_ context.Context,
+	cluster, namespace, name string,
+	mutation *domain.VMMutation,
+) error {
+	s.dryRunCalls++
+	s.lastClusterID = cluster
+	s.lastNamespace = namespace
+	s.lastVMName = name
+	if mutation != nil {
+		s.lastMutation = &domain.VMMutation{
+			Mode:      mutation.Mode,
+			PatchType: mutation.PatchType,
+			Payload:   append([]byte(nil), mutation.Payload...),
+		}
+	}
+	if s.dryRunErr != nil {
+		return s.dryRunErr
+	}
+	return s.MockProvider.DryRunVMMutation(context.Background(), cluster, namespace, name, mutation)
+}
+
 // asInt converts a JSON-decoded number (typically float64 or int) to int for assertions.
 func asInt(v interface{}) (int, bool) {
 	switch n := v.(type) {
@@ -144,6 +185,10 @@ func asInt(v interface{}) (int, bool) {
 		return int(n), true
 	}
 	return 0, false
+}
+
+func ptrFloat64(v float64) *float64 {
+	return &v
 }
 
 func TestServiceApproveCreate_CallsAtomicWriterWithResolvedIDs(t *testing.T) {
@@ -239,6 +284,291 @@ func TestServiceApproveCreate_CallsAtomicWriterWithResolvedIDs(t *testing.T) {
 	}
 	if writer.placement != nil {
 		t.Fatalf("placement evaluation should be nil when validator is disabled: %#v", writer.placement)
+	}
+}
+
+func TestBuildModifyApprovalSpec_RequiresRequestReviewWhenLimitDropsBelowCurrentRequest(t *testing.T) {
+	t.Parallel()
+
+	_, _, _, err := buildModifyApprovalSpec(&domain.VMModifyPayload{
+		CurrentCPUCores:        8,
+		CurrentMemoryGi:        8,
+		CurrentCPURequest:      8,
+		CurrentMemoryRequestGi: 8,
+		TargetCPUCores:         ptrFloat64(4),
+		TargetMemoryGi:         ptrFloat64(4),
+	}, ExecutionOptions{})
+	if err == nil {
+		t.Fatal("buildModifyApprovalSpec() error = nil, want validation error")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("buildModifyApprovalSpec() err = %v, want AppError", err)
+	}
+	if appErr.Code != "VM_MODIFY_REQUEST_REVIEW_REQUIRED" {
+		t.Fatalf("appErr.Code = %q, want %q", appErr.Code, "VM_MODIFY_REQUEST_REVIEW_REQUIRED")
+	}
+	if len(appErr.FieldErrors) == 0 {
+		t.Fatal("appErr.FieldErrors = empty, want request review fields")
+	}
+}
+
+func TestBuildModifyApprovalSpec_StoresApprovedRequestOverrides(t *testing.T) {
+	t.Parallel()
+
+	cpuRequest, memoryRequest, modifiedSpec, err := buildModifyApprovalSpec(&domain.VMModifyPayload{
+		CurrentCPUCores:        8,
+		CurrentMemoryGi:        8,
+		CurrentCPURequest:      8,
+		CurrentMemoryRequestGi: 8,
+		TargetCPUCores:         ptrFloat64(4),
+		TargetMemoryGi:         ptrFloat64(4),
+	}, ExecutionOptions{
+		EnableOverride:  true,
+		CPURequest:      4,
+		MemoryRequestGi: 4,
+	})
+	if err != nil {
+		t.Fatalf("buildModifyApprovalSpec() error = %v", err)
+	}
+	if cpuRequest == nil || *cpuRequest != 4 {
+		t.Fatalf("cpuRequest = %v, want 4", cpuRequest)
+	}
+	if memoryRequest == nil || *memoryRequest != 4 {
+		t.Fatalf("memoryRequest = %v, want 4", memoryRequest)
+	}
+	if modifiedSpec["enable_override"] != true {
+		t.Fatalf("modifiedSpec[enable_override] = %v, want true", modifiedSpec["enable_override"])
+	}
+	if got, ok := modifiedSpec["cpu_request"].(float64); !ok || got != 4 {
+		t.Fatalf("modifiedSpec[cpu_request] = %v, want 4", modifiedSpec["cpu_request"])
+	}
+	if got, ok := modifiedSpec["memory_request_gi"].(float64); !ok || got != 4 {
+		t.Fatalf("modifiedSpec[memory_request_gi] = %v, want 4", modifiedSpec["memory_request_gi"])
+	}
+}
+
+func TestWithApprovedVMMutation_StoresMutationSnapshot(t *testing.T) {
+	t.Parallel()
+
+	plan := &provider.VMResourceUpdatePlan{
+		Mutation: &domain.VMMutation{
+			Mode:      domain.VMMutationModePatch,
+			PatchType: domain.VMMutationPatchTypeMerge,
+			Payload:   []byte(`{"spec":{"template":{"spec":{"domain":{"memory":{"guest":"4Gi"}}}}}`),
+		},
+		ApplyMode:       "restart_required",
+		RequiresRestart: true,
+	}
+
+	modifiedSpec := withApprovedVMMutation(map[string]interface{}{
+		"enable_override": true,
+	}, plan)
+
+	rawSnapshot, ok := modifiedSpec["vm_mutation"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("modifiedSpec[vm_mutation] = %T, want map[string]interface{}", modifiedSpec["vm_mutation"])
+	}
+	restored, err := domain.VMMutationFromSnapshot(rawSnapshot)
+	if err != nil {
+		t.Fatalf("VMMutationFromSnapshot() error = %v", err)
+	}
+	if !bytes.Equal(restored.Payload, plan.Mutation.Payload) {
+		t.Fatalf("restored payload = %q, want %q", restored.Payload, plan.Mutation.Payload)
+	}
+	if mode, _ := modifiedSpec["apply_mode"].(string); mode != "restart_required" {
+		t.Fatalf("modifiedSpec[apply_mode] = %v, want restart_required", modifiedSpec["apply_mode"])
+	}
+	if requiresRestart, _ := modifiedSpec["requires_restart"].(bool); !requiresRestart {
+		t.Fatalf("modifiedSpec[requires_restart] = %v, want true", modifiedSpec["requires_restart"])
+	}
+}
+
+func TestServiceApproveModify_DryRunsExactMutationAndStoresApprovedSnapshot(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_modify_dryrun_snapshot")
+	ctx := context.Background()
+
+	eventID := "event-modify-dryrun"
+	ticketID := "ticket-modify-dryrun"
+	payload, err := domain.VMModifyPayload{
+		VMID:                   "vm-1",
+		VMName:                 "vm-1",
+		ClusterID:              "cluster-1",
+		Namespace:              "team-a",
+		Actor:                  "user-1",
+		CurrentCPUCores:        2,
+		CurrentMemoryGi:        4,
+		CurrentCPURequest:      2,
+		CurrentMemoryRequestGi: 4,
+		TargetMemoryGi:         ptrFloat64(8),
+	}.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal modify payload: %v", err)
+	}
+
+	_, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMModifyRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("vm-1").
+		SetPayload(payload).
+		SetCreatedBy("user-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	_, err = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeMODIFY).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	stub := newMutationDryRunProviderStub(nil)
+	stub.Seed([]*domain.VM{{
+		ID:        "vm-1",
+		Name:      "vm-1",
+		Namespace: "team-a",
+		Cluster:   "cluster-1",
+		Status:    domain.VMStatusRunning,
+		Spec: domain.VMSpec{
+			CPU:                      2,
+			CPURequest:               2,
+			MemoryGi:                 4,
+			MemoryRequestGi:          4,
+			CurrentCPUSockets:        1,
+			CurrentCPUCoresPerSocket: 2,
+			CurrentCPUThreads:        1,
+		},
+	}})
+
+	gw := NewService(client, nil, writer)
+	gw.SetVMService(service.NewVMService(stub))
+
+	if approveErr := gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{}); approveErr != nil {
+		t.Fatalf("Approve() error = %v", approveErr)
+	}
+	if !writer.modifyCalled {
+		t.Fatal("atomic modify writer was not called")
+	}
+	if stub.dryRunCalls != 1 {
+		t.Fatalf("DryRunVMMutation calls = %d, want 1", stub.dryRunCalls)
+	}
+	if stub.lastClusterID != "cluster-1" || stub.lastNamespace != "team-a" || stub.lastVMName != "vm-1" {
+		t.Fatalf("DryRunVMMutation target = %s %s/%s, want cluster-1 team-a/vm-1", stub.lastClusterID, stub.lastNamespace, stub.lastVMName)
+	}
+	if stub.lastMutation == nil {
+		t.Fatal("DryRunVMMutation mutation = nil, want exact mutation")
+	}
+	if !strings.Contains(string(stub.lastMutation.Payload), `"guest":"8Gi"`) {
+		t.Fatalf("DryRunVMMutation payload = %q, want target guest memory", stub.lastMutation.Payload)
+	}
+
+	rawSnapshot, ok := writer.modifiedSpec["vm_mutation"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("writer.modifiedSpec[vm_mutation] = %T, want map[string]interface{}", writer.modifiedSpec["vm_mutation"])
+	}
+	restored, err := domain.VMMutationFromSnapshot(rawSnapshot)
+	if err != nil {
+		t.Fatalf("VMMutationFromSnapshot() error = %v", err)
+	}
+	if !bytes.Equal(restored.Payload, stub.lastMutation.Payload) {
+		t.Fatalf("stored mutation payload = %q, want %q", restored.Payload, stub.lastMutation.Payload)
+	}
+}
+
+func TestServiceApproveModify_DryRunMutationErrorBlocksAtomicWriterAndPreservesNativeMessage(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_modify_dryrun_error")
+	ctx := context.Background()
+
+	eventID := "event-modify-dryrun-error"
+	ticketID := "ticket-modify-dryrun-error"
+	payload, err := domain.VMModifyPayload{
+		VMID:                   "vm-1",
+		VMName:                 "vm-1",
+		ClusterID:              "cluster-1",
+		Namespace:              "team-a",
+		Actor:                  "user-1",
+		CurrentCPUCores:        2,
+		CurrentMemoryGi:        4,
+		CurrentCPURequest:      2,
+		CurrentMemoryRequestGi: 4,
+		TargetMemoryGi:         ptrFloat64(8),
+	}.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal modify payload: %v", err)
+	}
+
+	_, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMModifyRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("vm-1").
+		SetPayload(payload).
+		SetCreatedBy("user-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	_, err = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeMODIFY).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+
+	rawErr := `admission webhook "virtualmachine-validator.kubevirt.io" denied the request: RunStrategy must be specified`
+	writer := &fakeAtomicWriter{}
+	stub := newMutationDryRunProviderStub(fmt.Errorf("%s", rawErr))
+	stub.Seed([]*domain.VM{{
+		ID:        "vm-1",
+		Name:      "vm-1",
+		Namespace: "team-a",
+		Cluster:   "cluster-1",
+		Status:    domain.VMStatusRunning,
+		Spec: domain.VMSpec{
+			CPU:                      2,
+			CPURequest:               2,
+			MemoryGi:                 4,
+			MemoryRequestGi:          4,
+			CurrentCPUSockets:        1,
+			CurrentCPUCoresPerSocket: 2,
+			CurrentCPUThreads:        1,
+		},
+	}})
+
+	gw := NewService(client, nil, writer)
+	gw.SetVMService(service.NewVMService(stub))
+
+	err = gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{})
+	if err == nil {
+		t.Fatal("Approve() error = nil, want modify dry-run validation failure")
+	}
+	if writer.modifyCalled {
+		t.Fatal("atomic modify writer must not be called when dry-run fails")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("Approve() error = %T, want AppError", err)
+	}
+	if appErr.Code != "VM_MODIFY_APPROVAL_INVALID" {
+		t.Fatalf("AppError.Code = %q, want %q", appErr.Code, "VM_MODIFY_APPROVAL_INVALID")
+	}
+	if !strings.Contains(appErr.Message, rawErr) {
+		t.Fatalf("AppError.Message = %q, want raw kubevirt validation message", appErr.Message)
 	}
 }
 

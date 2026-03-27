@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     Button,
+    Descriptions,
     Form,
     Input,
     Modal,
@@ -27,7 +28,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
 import { PermissionGuard } from '@/components/auth/PermissionGuard';
@@ -35,6 +36,9 @@ import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
 import { SystemsOverviewGlyph } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
+import { WorkbenchDetailModal } from '@/components/workbench/WorkbenchDetailModal';
+import { useApiGet } from '@/hooks/useApiQuery';
+import { api } from '@/lib/api/client';
 import {
     buildDashboardSetupResumeHref,
     resolveNextSetupAction,
@@ -45,12 +49,69 @@ import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
 import { useSystemsManagementController } from '../hooks/useSystemsManagementController';
 import { RFC1035_PATTERN, type System } from '../types';
 import { SystemMembersModal } from './SystemMembersModal';
+import type { components } from '@/types/api.gen';
 
 const { Text, Paragraph } = Typography;
+type Service = components['schemas']['Service'];
+type ServiceList = components['schemas']['ServiceList'];
+
+interface SystemServicesCellProps {
+    systemId: string;
+    onOpenService: (service: Service) => void;
+}
+
+function SystemServicesCell({ systemId, onOpenService }: SystemServicesCellProps) {
+    const { t } = useTranslation('common');
+    const servicesQuery = useApiGet<ServiceList>(
+        ['system-services-preview', systemId],
+        () => api.GET('/systems/{system_id}/services', {
+            params: {
+                path: { system_id: systemId },
+                query: { per_page: 100 },
+            },
+        }),
+        { enabled: Boolean(systemId) },
+    );
+    const items = servicesQuery.data?.items ?? [];
+
+    if (servicesQuery.isLoading) {
+        return <Text type="secondary">{t('message.loading', 'Loading...')}</Text>;
+    }
+
+    if (items.length === 0) {
+        return <Text type="secondary">{t('systems.related_services_empty', 'No services found for this system')}</Text>;
+    }
+
+    const previewItems = items.slice(0, 3);
+    const remaining = items.length - previewItems.length;
+
+    return (
+        <Space direction="vertical" size={0}>
+            {previewItems.map((service) => (
+                <Button
+                    key={service.id}
+                    type="link"
+                    size="small"
+                    data-testid={`system-service-link-${service.id}`}
+                    style={{ paddingInline: 0, justifyContent: 'flex-start' }}
+                    onClick={() => onOpenService(service)}
+                >
+                    {service.name}
+                </Button>
+            ))}
+            {remaining > 0 ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                    +{remaining} more
+                </Text>
+            ) : null}
+        </Space>
+    );
+}
 
 export function SystemsManagementContent() {
     const { t } = useTranslation('common');
     const router = useRouter();
+    const searchParams = useSearchParams();
     const setupGuide = useSetupGuide();
     const systems = useSystemsManagementController({
         t,
@@ -71,6 +132,40 @@ export function SystemsManagementContent() {
     const [editPreviewMode, setEditPreviewMode] = useState(false);
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailSystem, setDetailSystem] = useState<System | null>(null);
+    const [dismissedQueryDetailSystemId, setDismissedQueryDetailSystemId] = useState<string | null>(null);
+    const detailSystemIdFromQuery = searchParams.get('detail_system_id') || undefined;
+
+    const activeDetailSystem = useMemo(() => {
+        if (!detailSystemIdFromQuery || detailSystemIdFromQuery === dismissedQueryDetailSystemId) {
+            return detailSystem;
+        }
+        return systems.data?.items?.find((system) => system.id === detailSystemIdFromQuery) ?? detailSystem;
+    }, [detailSystem, detailSystemIdFromQuery, dismissedQueryDetailSystemId, systems.data?.items]);
+
+    const detailModalOpen = detailOpen || Boolean(activeDetailSystem);
+
+    const closeDetailModal = () => {
+        setDetailOpen(false);
+        setDetailSystem(null);
+        if (detailSystemIdFromQuery) {
+            setDismissedQueryDetailSystemId(detailSystemIdFromQuery);
+            const url = new URL(window.location.href);
+            url.searchParams.delete('detail_system_id');
+            const nextURL = `${url.pathname}${url.searchParams.toString() === '' ? '' : `?${url.searchParams.toString()}`}${url.hash}`;
+            window.history.replaceState(window.history.state, '', nextURL);
+        }
+    };
+
+    const relatedServicesQuery = useApiGet<ServiceList>(
+        ['system-related-services', activeDetailSystem?.id],
+        () => api.GET('/systems/{system_id}/services', {
+            params: {
+                path: { system_id: activeDetailSystem!.id },
+                query: { per_page: 100 },
+            },
+        }),
+        { enabled: detailModalOpen && Boolean(activeDetailSystem?.id) },
+    );
 
     useAutoOpenIntent('create-system', () => {
         systems.openCreateModal();
@@ -111,6 +206,19 @@ export function SystemsManagementContent() {
             ),
         },
         {
+            title: t('systems.related_services_column', 'Services'),
+            key: 'related_services',
+            width: 220,
+            render: (_, record) => (
+                <SystemServicesCell
+                    systemId={record.id}
+                    onOpenService={(service) => {
+                        router.push(`/services?system_id=${service.system_id}&detail_service_id=${service.id}`);
+                    }}
+                />
+            ),
+        },
+        {
             title: t('table.actions'),
             key: 'actions',
             width: 200,
@@ -124,6 +232,7 @@ export function SystemsManagementContent() {
                         onClick={() => {
                             setDetailSystem(record);
                             setDetailOpen(true);
+                            setDismissedQueryDetailSystemId(null);
                         }}
                     >
                         {t('button.detail', 'Details')}
@@ -203,6 +312,7 @@ export function SystemsManagementContent() {
                         dataSource={systems.data?.items ?? []}
                         rowKey="id"
                         loading={systems.isLoading}
+                        scroll={{ x: 'max-content' }}
                         pagination={{
                             current: systems.page,
                             pageSize: systems.pageSize,
@@ -392,34 +502,129 @@ export function SystemsManagementContent() {
                 systemName={systems.membersSystem?.name}
             />
 
-            <Modal
-                title={detailSystem?.name}
-                open={detailOpen}
-                onCancel={() => setDetailOpen(false)}
+            <WorkbenchDetailModal
+                title={activeDetailSystem?.name}
+                open={detailModalOpen}
+                onCancel={closeDetailModal}
                 footer={[
-                    <Button key="close" onClick={() => setDetailOpen(false)}>
+                    <Button
+                        key="open-services"
+                        type="primary"
+                        onClick={() => {
+                            if (!activeDetailSystem) {
+                                return;
+                            }
+                            closeDetailModal();
+                            router.push(`/services?system_id=${activeDetailSystem.id}`);
+                        }}
+                    >
+                        {t('systems.open_services', 'Open Services')}
+                    </Button>,
+                    <Button key="close" onClick={closeDetailModal}>
                         {t('button.close', 'Close')}
                     </Button>
                 ]}
-                forceRender                width={800}
+                forceRender
+                width="min(1120px, calc(100vw - 16px))"
+                contentMinWidth={1040}
             >
-                {detailSystem?.description ? (
-                    <div className="markdown-preview" style={{ padding: '16px', background: '#fafafa', borderRadius: 8, marginTop: 16 }}>
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-                            {detailSystem.description}
-                        </ReactMarkdown>
-                    </div>
-                ) : (
-                    <div style={{ paddingTop: 16 }}>
+                <Space direction="vertical" size={16} className="workbench-detail-modal__stack">
+                    <Descriptions
+                        size="small"
+                        column={{ xs: 1, sm: 1, md: 1, lg: 2, xl: 2, xxl: 2 }}
+                    >
+                        <Descriptions.Item label={t('table.name')}>
+                            <Text strong>{activeDetailSystem?.name}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label={t('table.created_by')}>
+                            {activeDetailSystem?.created_by || '—'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label={t('table.created_at')}>
+                            {activeDetailSystem?.created_at ? <LocalDateTimeText value={activeDetailSystem.created_at} /> : '—'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label={t('systems.related_services_column', 'Services')}>
+                            {relatedServicesQuery.data?.pagination?.total ?? relatedServicesQuery.data?.items?.length ?? 0}
+                        </Descriptions.Item>
+                    </Descriptions>
+
+                    {activeDetailSystem?.description ? (
+                        <div className="markdown-preview" style={{ padding: '16px', background: '#fafafa', borderRadius: 8 }}>
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+                                {activeDetailSystem.description}
+                            </ReactMarkdown>
+                        </div>
+                    ) : (
                         <ActionEmptyState
                             compact={true}
                             title={t('table.description')}
                             description={t('systems.description_placeholder')}
                             visual={<SystemsOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
                         />
+                    )}
+
+                    <div className="workbench-detail-modal__table-scroll">
+                        <Table<Service>
+                            rowKey="id"
+                            size="small"
+                            loading={relatedServicesQuery.isLoading}
+                            pagination={false}
+                            scroll={{ x: 'max-content' }}
+                            locale={{ emptyText: t('systems.related_services_empty', 'No services found for this system') }}
+                            dataSource={relatedServicesQuery.data?.items ?? []}
+                            columns={[
+                                {
+                                    title: t('table.name'),
+                                    dataIndex: 'name',
+                                    key: 'name',
+                                    render: (name: string) => <Text strong>{name}</Text>,
+                                },
+                                {
+                                    title: t('table.description'),
+                                    dataIndex: 'description',
+                                    key: 'description',
+                                    render: (value?: string) => <Text type="secondary">{value || '—'}</Text>,
+                                },
+                                {
+                                    title: t('services.next_instance_index', 'Next Instance Index'),
+                                    dataIndex: 'next_instance_index',
+                                    key: 'next_instance_index',
+                                    width: 160,
+                                    render: (value?: number) => <Text type="secondary">#{value ?? 0}</Text>,
+                                },
+                                {
+                                    title: t('table.actions'),
+                                    key: 'actions',
+                                    width: 260,
+                                    render: (_, service) => (
+                                        <Space size="small">
+                                            <Button
+                                                type="link"
+                                                size="small"
+                                                onClick={() => {
+                                                    setDetailOpen(false);
+                                                    router.push(`/services?system_id=${service.system_id}&detail_service_id=${service.id}`);
+                                                }}
+                                            >
+                                                {t('button.detail', 'Details')}
+                                            </Button>
+                                            <Button
+                                                type="link"
+                                                size="small"
+                                                onClick={() => {
+                                                    setDetailOpen(false);
+                                                    router.push(`/vms?request=create&system_id=${service.system_id}&service_id=${service.id}`);
+                                                }}
+                                            >
+                                                {t('button.request_vm')}
+                                            </Button>
+                                        </Space>
+                                    ),
+                                },
+                            ]}
+                        />
                     </div>
-                )}
-            </Modal>
+                </Space>
+            </WorkbenchDetailModal>
         </div>
     );
 }

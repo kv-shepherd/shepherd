@@ -132,22 +132,29 @@ UPDATE tickets
 SET
     status = 'APPROVED',
     approver = $1,
+    modified_spec = COALESCE($2::jsonb, modified_spec),
     updated_at = NOW()
 WHERE
-    id = $2
-    AND event_id = $3
+    id = $3
+    AND event_id = $4
     AND status = 'PENDING'
     AND operation_type = 'MODIFY'
 `
 
 type ApproveModifyTicketParams struct {
-	Approver pgtype.Text `db:"approver" json:"approver"`
-	ID       string      `db:"id" json:"id"`
-	EventID  string      `db:"event_id" json:"event_id"`
+	Approver     pgtype.Text `db:"approver" json:"approver"`
+	ModifiedSpec []byte      `db:"modified_spec" json:"modified_spec"`
+	ID           string      `db:"id" json:"id"`
+	EventID      string      `db:"event_id" json:"event_id"`
 }
 
 func (q *Queries) ApproveModifyTicket(ctx context.Context, arg ApproveModifyTicketParams) (int64, error) {
-	result, err := q.db.Exec(ctx, approveModifyTicket, arg.Approver, arg.ID, arg.EventID)
+	result, err := q.db.Exec(ctx, approveModifyTicket,
+		arg.Approver,
+		arg.ModifiedSpec,
+		arg.ID,
+		arg.EventID,
+	)
 	if err != nil {
 		return 0, err
 	}

@@ -3,7 +3,9 @@ package provider
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
 	"sort"
 	"strings"
 	"time"
@@ -14,6 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
@@ -104,7 +108,77 @@ func (p *KubeVirtProviderImpl) GetVM(ctx context.Context, cluster, namespace, na
 	// Try to get VMI for status enrichment
 	vmi, _ := client.VMI().Get(ctx, namespace, name, k8smetav1.GetOptions{})
 
-	return p.mapper.MapVM(vm, vmi)
+	mapped, err := p.mapper.MapVM(vm, vmi)
+	if err != nil {
+		return nil, err
+	}
+	if mapped.NodeName != "" {
+		if node, nodeErr := client.Nodes().Get(ctx, mapped.NodeName, k8smetav1.GetOptions{}); nodeErr == nil {
+			mapped.HostIP = resolveNodePrimaryIP(node)
+		}
+	}
+	return mapped, nil
+}
+
+// OpenVNCStream opens a raw VNC stream backed by the official KubeVirt client.
+func (p *KubeVirtProviderImpl) OpenVNCStream(ctx context.Context, cluster, namespace, name string) (net.Conn, error) {
+	client, err := p.clientFactory(cluster)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+	select {
+	case <-opCtx.Done():
+		return nil, opCtx.Err()
+	default:
+	}
+
+	conn, err := client.VMI().VNC(namespace, name, true)
+	if err != nil {
+		return nil, fmt.Errorf("open vnc stream %s/%s: %w", namespace, name, err)
+	}
+	return conn, nil
+}
+
+// OpenSerialConsoleStream opens a raw serial console stream backed by the official KubeVirt client.
+func (p *KubeVirtProviderImpl) OpenSerialConsoleStream(ctx context.Context, cluster, namespace, name string) (net.Conn, error) {
+	client, err := p.clientFactory(cluster)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+	select {
+	case <-opCtx.Done():
+		return nil, opCtx.Err()
+	default:
+	}
+
+	conn, err := client.VMI().SerialConsole(namespace, name, 15*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("open serial console %s/%s: %w", namespace, name, err)
+	}
+	return conn, nil
+}
+
+func (p *KubeVirtProviderImpl) DryRunVMMutation(
+	ctx context.Context,
+	cluster, namespace, name string,
+	mutation *domain.VMMutation,
+) error {
+	_, err := p.patchVM(ctx, cluster, namespace, name, mutation, true)
+	return err
+}
+
+func (p *KubeVirtProviderImpl) ExecuteVMMutation(
+	ctx context.Context,
+	cluster, namespace, name string,
+	mutation *domain.VMMutation,
+) (*domain.VM, error) {
+	return p.patchVM(ctx, cluster, namespace, name, mutation, false)
 }
 
 // ListVMs lists VMs in the specified namespace.
@@ -154,12 +228,53 @@ func (p *KubeVirtProviderImpl) ListVMs(ctx context.Context, cluster, namespace s
 	if err != nil {
 		return nil, fmt.Errorf("map vm list: %w", err)
 	}
+	p.enrichVMListHostPlacement(ctx, client, result)
 
 	if vmList.Continue != "" {
 		result.Continue = vmList.Continue
 	}
 
 	return result, nil
+}
+
+func (p *KubeVirtProviderImpl) enrichVMListHostPlacement(ctx context.Context, client KubeVirtClusterClient, list *domain.VMList) {
+	if list == nil || len(list.Items) == 0 {
+		return
+	}
+	hostIPByNode := make(map[string]string)
+	for _, item := range list.Items {
+		if item == nil || item.NodeName == "" {
+			continue
+		}
+		hostIP, ok := hostIPByNode[item.NodeName]
+		if !ok {
+			node, err := client.Nodes().Get(ctx, item.NodeName, k8smetav1.GetOptions{})
+			if err != nil {
+				hostIPByNode[item.NodeName] = ""
+				continue
+			}
+			hostIP = resolveNodePrimaryIP(node)
+			hostIPByNode[item.NodeName] = hostIP
+		}
+		item.HostIP = hostIP
+	}
+}
+
+func resolveNodePrimaryIP(node *corev1.Node) string {
+	if node == nil {
+		return ""
+	}
+	for _, address := range node.Status.Addresses {
+		if address.Type == corev1.NodeInternalIP && strings.TrimSpace(address.Address) != "" {
+			return strings.TrimSpace(address.Address)
+		}
+	}
+	for _, address := range node.Status.Addresses {
+		if address.Type == corev1.NodeExternalIP && strings.TrimSpace(address.Address) != "" {
+			return strings.TrimSpace(address.Address)
+		}
+	}
+	return ""
 }
 
 // CreateVM creates a VM via SSA Apply (ADR-0011).
@@ -225,12 +340,23 @@ func (p *KubeVirtProviderImpl) UpdateVM(ctx context.Context, cluster, namespace,
 	opCtx, cancel := p.withTimeout(ctx)
 	defer cancel()
 
-	if validateErr := validateYAMLResourceHalfSteps([]byte(spec.RenderedYAML)); validateErr != nil {
+	updateManifest, err := enrichVMUpdateManifestWithCurrentDevices(
+		opCtx,
+		client,
+		namespace,
+		name,
+		[]byte(spec.RenderedYAML),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("prepare vm update manifest: %w", err)
+	}
+
+	if validateErr := validateYAMLResourceHalfSteps(updateManifest); validateErr != nil {
 		return nil, fmt.Errorf("validate vm yaml resource steps for update: %w", validateErr)
 	}
 
 	// Safety check: validate YAML target name matches the `name` parameter.
-	yamlName, err := extractNameFromYAML([]byte(spec.RenderedYAML))
+	yamlName, err := extractNameFromYAML(updateManifest)
 	if err != nil {
 		return nil, fmt.Errorf("validate yaml name for update: %w", err)
 	}
@@ -242,7 +368,7 @@ func (p *KubeVirtProviderImpl) UpdateVM(ctx context.Context, cluster, namespace,
 	}
 
 	// SSA Apply is the same for create and update — naturally idempotent.
-	result, err := client.SSA().ApplyYAML(opCtx, namespace, []byte(spec.RenderedYAML))
+	result, err := client.SSA().ApplyYAML(opCtx, namespace, updateManifest)
 	if err != nil {
 		return nil, fmt.Errorf("update vm %s/%s via ssa: %w", namespace, name, err)
 	}
@@ -254,6 +380,125 @@ func (p *KubeVirtProviderImpl) UpdateVM(ctx context.Context, cluster, namespace,
 	}
 
 	return p.mapper.MapVM(updated, nil)
+}
+
+func (p *KubeVirtProviderImpl) patchVM(
+	ctx context.Context,
+	cluster, namespace, name string,
+	mutation *domain.VMMutation,
+	dryRun bool,
+) (*domain.VM, error) {
+	if mutation == nil {
+		return nil, fmt.Errorf("patch vm: mutation is nil")
+	}
+	if mutation.Mode != domain.VMMutationModePatch {
+		return nil, fmt.Errorf("patch vm: unsupported mutation mode %q", mutation.Mode)
+	}
+	if strings.TrimSpace(namespace) == "" {
+		return nil, fmt.Errorf("patch vm: namespace is required")
+	}
+	if strings.TrimSpace(name) == "" {
+		return nil, fmt.Errorf("patch vm: name is required")
+	}
+	if len(mutation.Payload) == 0 {
+		return nil, fmt.Errorf("patch vm: payload is empty")
+	}
+
+	client, err := p.clientFactory(cluster)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	patchType, err := resolveVMMutationPatchType(mutation.PatchType)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := k8smetav1.PatchOptions{}
+	if dryRun {
+		opts.DryRun = []string{k8smetav1.DryRunAll}
+	}
+
+	updated, err := client.VM().Patch(opCtx, namespace, name, patchType, mutation.Payload, opts)
+	if err != nil {
+		if dryRun {
+			return nil, fmt.Errorf("dry-run patch vm %s/%s: %w", namespace, name, err)
+		}
+		return nil, fmt.Errorf("patch vm %s/%s: %w", namespace, name, err)
+	}
+	if dryRun {
+		return nil, nil
+	}
+	return p.mapper.MapVM(updated, nil)
+}
+
+func enrichVMUpdateManifestWithCurrentDevices(
+	ctx context.Context,
+	client KubeVirtClusterClient,
+	namespace, name string,
+	yamlData []byte,
+) ([]byte, error) {
+	obj := &unstructured.Unstructured{}
+	decoder := k8syaml.NewYAMLOrJSONDecoder(bytes.NewReader(yamlData), 4096)
+	if err := decoder.Decode(obj); err != nil {
+		return nil, fmt.Errorf("decode update yaml: %w", err)
+	}
+
+	domainPatch, found, err := unstructured.NestedMap(
+		obj.Object,
+		"spec", "template", "spec", "domain",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("read update domain patch: %w", err)
+	}
+	if !found {
+		return yamlData, nil
+	}
+	if _, hasDevices := domainPatch["devices"]; hasDevices {
+		return yamlData, nil
+	}
+
+	currentVM, err := client.VM().Get(ctx, namespace, name, k8smetav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get current vm for domain defaults: %w", err)
+	}
+	if currentVM == nil || currentVM.Spec.Template == nil {
+		return yamlData, nil
+	}
+
+	devicesMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(
+		&currentVM.Spec.Template.Spec.Domain.Devices,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("convert current domain devices: %w", err)
+	}
+	if setErr := unstructured.SetNestedMap(
+		obj.Object,
+		devicesMap,
+		"spec", "template", "spec", "domain", "devices",
+	); setErr != nil {
+		return nil, fmt.Errorf("set current domain devices on update patch: %w", setErr)
+	}
+
+	jsonData, err := json.Marshal(obj.Object)
+	if err != nil {
+		return nil, fmt.Errorf("marshal enriched update yaml: %w", err)
+	}
+	return jsonData, nil
+}
+
+func resolveVMMutationPatchType(patchType string) (types.PatchType, error) {
+	switch strings.TrimSpace(patchType) {
+	case "", domain.VMMutationPatchTypeMerge:
+		return types.MergePatchType, nil
+	case domain.VMMutationPatchTypeJSON:
+		return types.JSONPatchType, nil
+	default:
+		return "", fmt.Errorf("patch vm: unsupported patch type %q", patchType)
+	}
 }
 
 // DeleteVM deletes a VM.

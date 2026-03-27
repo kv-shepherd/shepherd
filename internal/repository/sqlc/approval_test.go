@@ -150,21 +150,24 @@ func TestQueries_ApproveModifyTicket(t *testing.T) {
 	seedTicket(ctx, t, pool, ticketID, eventID, "MODIFY")
 
 	rows, err := q.ApproveModifyTicket(ctx, ApproveModifyTicketParams{
-		Approver: pgtype.Text{String: "admin-modify", Valid: true},
-		ID:       ticketID,
-		EventID:  eventID,
+		Approver:     pgtype.Text{String: "admin-modify", Valid: true},
+		ModifiedSpec: []byte(`{"cpu_request":4,"memory_request_gi":4}`),
+		ID:           ticketID,
+		EventID:      eventID,
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, rows)
 
 	var (
-		status   string
-		approver pgtype.Text
+		status       string
+		approver     pgtype.Text
+		modifiedSpec []byte
 	)
-	require.NoError(t, pool.QueryRow(ctx, `SELECT status, approver FROM tickets WHERE id=$1`, ticketID).Scan(&status, &approver))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status, approver, modified_spec FROM tickets WHERE id=$1`, ticketID).Scan(&status, &approver, &modifiedSpec))
 	require.Equal(t, "APPROVED", status)
 	require.True(t, approver.Valid)
 	require.Equal(t, "admin-modify", approver.String)
+	require.JSONEq(t, `{"cpu_request":4,"memory_request_gi":4}`, string(modifiedSpec))
 }
 
 func TestQueries_ApprovePowerTicket(t *testing.T) {

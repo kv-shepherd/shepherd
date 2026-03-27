@@ -2,6 +2,7 @@ package infracontract
 
 import (
 	"context"
+	"net"
 
 	"kv-shepherd.io/shepherd/internal/domain"
 )
@@ -77,6 +78,19 @@ type InstanceTypeProvider interface {
 type ConsoleProvider interface {
 	GetVNCConnection(ctx context.Context, cluster, namespace, name string) (*domain.ConsoleConnection, error)
 	GetSerialConsole(ctx context.Context, cluster, namespace, name string) (*domain.ConsoleConnection, error)
+}
+
+type VMMutationProvider interface {
+	DryRunVMMutation(ctx context.Context, cluster, namespace, name string, mutation *domain.VMMutation) error
+	ExecuteVMMutation(ctx context.Context, cluster, namespace, name string, mutation *domain.VMMutation) (*domain.VM, error)
+}
+
+type VNCStreamProvider interface {
+	OpenVNCStream(ctx context.Context, cluster, namespace, name string) (net.Conn, error)
+}
+
+type SerialConsoleStreamProvider interface {
+	OpenSerialConsoleStream(ctx context.Context, cluster, namespace, name string) (net.Conn, error)
 }
 
 type KubeVirtProvider interface {

@@ -144,8 +144,8 @@ func TestCurrentVersionKeyFor_Instancesize(t *testing.T) {
 	if !ok {
 		t.Fatal("CurrentVersionKeyFor(instancesize) returned ok=false")
 	}
-	if versionKey != "kubevirt-v1.7.0" {
-		t.Fatalf("CurrentVersionKeyFor(instancesize) = %q, want %q", versionKey, "kubevirt-v1.7.0")
+	if versionKey != "kubevirt-v1.8.0" {
+		t.Fatalf("CurrentVersionKeyFor(instancesize) = %q, want %q", versionKey, "kubevirt-v1.8.0")
 	}
 }
 
@@ -157,11 +157,11 @@ func TestAvailableVersions_Instancesize(t *testing.T) {
 	if len(versions) == 0 {
 		t.Fatal("AvailableVersions(instancesize) returned no versions")
 	}
-	if versions[0].Key != "kubevirt-v1.7.0" {
-		t.Fatalf("AvailableVersions(instancesize)[0].Key = %q, want %q", versions[0].Key, "kubevirt-v1.7.0")
+	if versions[len(versions)-1].Key != "kubevirt-v1.8.0" {
+		t.Fatalf("AvailableVersions(instancesize)[last].Key = %q, want %q", versions[len(versions)-1].Key, "kubevirt-v1.8.0")
 	}
-	if versions[0].KubeVirtVersion != "1.7.0" {
-		t.Fatalf("AvailableVersions(instancesize)[0].KubeVirtVersion = %q, want %q", versions[0].KubeVirtVersion, "1.7.0")
+	if versions[len(versions)-1].KubeVirtVersion != "1.8.0" {
+		t.Fatalf("AvailableVersions(instancesize)[last].KubeVirtVersion = %q, want %q", versions[len(versions)-1].KubeVirtVersion, "1.8.0")
 	}
 }
 

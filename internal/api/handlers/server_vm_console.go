@@ -5,12 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/approvalpolicy"
@@ -28,13 +34,37 @@ import (
 const (
 	vncBootstrapCookieName      = "vnc_bootstrap"
 	vncBootstrapCookieMaxAgeSec = 60
+	vncWebSocketWriteTimeout    = 10 * time.Second
+	vncWebSocketPongWait        = 60 * time.Second
+	vncWebSocketPingInterval    = 30 * time.Second
+	vncWebSocketReadLimit       = 512 * 1024
 )
 
 type vncRequestPayload struct {
-	VMID        string `json:"vm_id"`
-	ClusterID   string `json:"cluster_id"`
-	Namespace   string `json:"namespace"`
-	RequesterID string `json:"requester_id"`
+	VMID                 string `json:"vm_id"`
+	ClusterID            string `json:"cluster_id"`
+	Namespace            string `json:"namespace"`
+	RequesterID          string `json:"requester_id"`
+	PreferredConsoleType string `json:"preferred_console_type,omitempty"`
+}
+
+type issuedConsole struct {
+	ConsoleType generated.VMConsoleType
+	ConsoleURL  string
+}
+
+func bindOptionalJSON[T any](c *gin.Context) (*T, error) {
+	if c.Request.Body == nil || c.Request.ContentLength == 0 {
+		return nil, nil
+	}
+	var payload T
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &payload, nil
 }
 
 // RequestVMConsoleAccess handles POST /vms/{vm_id}/console/request.
@@ -48,6 +78,15 @@ func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmID generated.VMID) {
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
 		return
 	}
+	req, bindErr := bindOptionalJSON[generated.VMConsoleRequestInput](c)
+	if bindErr != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{
+			Code:    "BAD_REQUEST",
+			Message: bindErr.Error(),
+		})
+		return
+	}
+	preferredConsoleType := normalizePreferredConsoleType(req)
 
 	vm, err := s.client.VM.Get(ctx, vmID)
 	if err != nil {
@@ -100,9 +139,9 @@ func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmID generated.VMID) {
 	}
 
 	if !decision.RequireApproval {
-		vncURL, claims, issueErr := s.issueVNCURL(c, actor, vm)
+		console, claims, issueErr := s.issuePreferredConsoleURL(c, actor, vm, preferredConsoleType)
 		if issueErr != nil {
-			logger.Error("failed to issue direct vnc token", zap.Error(issueErr), zap.String("vm_id", vm.ID))
+			logger.Error("failed to issue direct console token", zap.Error(issueErr), zap.String("vm_id", vm.ID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -116,13 +155,23 @@ func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmID generated.VMID) {
 		}
 
 		c.JSON(http.StatusOK, generated.VMConsoleRequestResponse{
-			Status: generated.VMConsoleRequestStatusAPPROVED,
-			VncUrl: vncURL,
+			Status:      generated.VMConsoleRequestStatusAPPROVED,
+			ConsoleType: console.ConsoleType,
+			ConsoleUrl:  console.ConsoleURL,
+			VncUrl:      legacyVNCURL(console),
 		})
 		return
 	}
 
-	ticketID, err := s.createVNCApprovalRequest(ctx, vm, actor)
+	if _, _, preflightErr := s.resolvePreferredConsolePath(ctx, vm, preferredConsoleType); preflightErr != nil {
+		logger.Error("failed to preflight requested console path", zap.Error(preflightErr), zap.String("vm_id", vm.ID))
+		c.JSON(http.StatusBadGateway, generated.Error{
+			Code:    "VNC_UNAVAILABLE",
+			Message: preflightErr.Error(),
+		})
+		return
+	}
+	ticketID, err := s.createVNCApprovalRequest(ctx, vm, actor, preferredConsoleType)
 	if err != nil {
 		logger.Error("failed to create vnc approval request", zap.Error(err), zap.String("vm_id", vm.ID), zap.String("actor", actor))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -136,8 +185,9 @@ func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmID generated.VMID) {
 	}
 
 	c.JSON(http.StatusAccepted, generated.VMConsoleRequestResponse{
-		Status:   generated.VMConsoleRequestStatusPENDINGAPPROVAL,
-		TicketId: ticketID,
+		Status:      generated.VMConsoleRequestStatusPENDINGAPPROVAL,
+		TicketId:    ticketID,
+		ConsoleType: derefConsoleType(preferredConsoleType),
 	})
 }
 
@@ -196,9 +246,9 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmID generated.VMID) {
 	}
 
 	if !requiresApproval {
-		vncURL, claims, issueErr := s.issueVNCURL(c, actor, vm)
+		console, claims, issueErr := s.issuePreferredConsoleURL(c, actor, vm, nil)
 		if issueErr != nil {
-			logger.Error("failed to issue direct vnc token", zap.Error(issueErr), zap.String("vm_id", vm.ID))
+			logger.Error("failed to issue direct console token", zap.Error(issueErr), zap.String("vm_id", vm.ID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -210,8 +260,10 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmID generated.VMID) {
 			})
 		}
 		c.JSON(http.StatusOK, generated.VMConsoleStatusResponse{
-			Status: generated.VMConsoleStatusAPPROVED,
-			VncUrl: vncURL,
+			Status:      generated.VMConsoleStatusAPPROVED,
+			ConsoleType: console.ConsoleType,
+			ConsoleUrl:  console.ConsoleURL,
+			VncUrl:      legacyVNCURL(console),
 		})
 		return
 	}
@@ -252,9 +304,13 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmID generated.VMID) {
 		return
 	}
 
-	vncURL, claims, err := s.issueVNCURL(c, actor, vm)
+	consolePreference, consolePrefErr := s.preferredConsoleTypeForTicket(ctx, ticket)
+	if consolePrefErr != nil {
+		logger.Warn("failed to parse preferred console type from ticket payload", zap.Error(consolePrefErr), zap.String("ticket_id", ticket.ID))
+	}
+	console, claims, err := s.issuePreferredConsoleURL(c, actor, vm, consolePreference)
 	if err != nil {
-		logger.Error("failed to issue approved vnc token", zap.Error(err), zap.String("vm_id", vm.ID), zap.String("ticket_id", ticket.ID))
+		logger.Error("failed to issue approved console token", zap.Error(err), zap.String("vm_id", vm.ID), zap.String("ticket_id", ticket.ID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -268,9 +324,11 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmID generated.VMID) {
 	}
 
 	c.JSON(http.StatusOK, generated.VMConsoleStatusResponse{
-		Status:   generated.VMConsoleStatusAPPROVED,
-		TicketId: ticket.ID,
-		VncUrl:   vncURL,
+		Status:      generated.VMConsoleStatusAPPROVED,
+		TicketId:    ticket.ID,
+		ConsoleType: console.ConsoleType,
+		ConsoleUrl:  console.ConsoleURL,
+		VncUrl:      legacyVNCURL(console),
 	})
 }
 
@@ -283,64 +341,97 @@ func (s *Server) requiresVNCApproval(ctx context.Context, env namespaceregistry.
 
 // OpenVMVNC handles GET /vms/{vm_id}/vnc.
 func (s *Server) OpenVMVNC(c *gin.Context, vmID generated.VMID) {
+	s.openVMConsole(c, vmID, generated.VNC)
+}
+
+// OpenVMSerial handles GET /vms/{vm_id}/serial.
+func (s *Server) OpenVMSerial(c *gin.Context, vmID generated.VMID) {
+	s.openVMConsole(c, vmID, generated.SERIAL)
+}
+
+func (s *Server) openVMConsole(c *gin.Context, vmID generated.VMID, consoleType generated.VMConsoleType) {
 	ctx := c.Request.Context()
-	if !requireGlobalPermission(c, "vnc:access") {
-		return
-	}
-	actor := middleware.GetUserID(ctx)
-	if actor == "" {
-		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+	vm, claims, websocketUpgrade, ok := s.resolveConsoleTarget(c, vmID)
+	if !ok {
 		return
 	}
 
+	if websocketUpgrade {
+		s.streamVMConsole(c, vm, claims, consoleType)
+		return
+	}
+
+	if s.vmService == nil {
+		c.JSON(http.StatusServiceUnavailable, generated.Error{Code: "VNC_UNAVAILABLE"})
+		return
+	}
+	backend, err := s.openConsoleStream(ctx, vm, consoleType)
+	if err != nil {
+		logger.Error("failed to preflight kubevirt console stream",
+			zap.Error(err),
+			zap.String("vm_id", vm.ID),
+			zap.String("console_type", string(consoleType)),
+		)
+		c.JSON(http.StatusBadGateway, generated.Error{
+			Code:    "VNC_UNAVAILABLE",
+			Message: err.Error(),
+		})
+		return
+	}
+	_ = backend.Close()
+
+	c.JSON(http.StatusOK, generated.VMConsoleSessionResponse{
+		Status:        generated.VMConsoleSessionResponseStatusSESSIONREADY,
+		VmId:          vm.ID,
+		ConsoleType:   consoleType,
+		WebsocketPath: consolePathForType(vm.ID, consoleType),
+	})
+}
+
+func (s *Server) resolveConsoleTarget(
+	c *gin.Context,
+	vmID generated.VMID,
+) (*ent.VM, *service.VNCJWTClaims, bool, bool) {
+	ctx := c.Request.Context()
 	token, cookieErr := c.Cookie(vncBootstrapCookieName)
 	token = strings.TrimSpace(token)
 	if cookieErr != nil || token == "" {
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "INVALID_VNC_TOKEN"})
-		return
+		return nil, nil, false, false
 	}
-	// Stage 6 baseline: bootstrap credential is one-time and must not persist.
-	defer s.clearVNCBootstrapCookie(c, vmID)
 
-	claims, validateErr := s.vncTokens.ValidateAndConsume(ctx, token, vmID)
+	websocketUpgrade := websocket.IsWebSocketUpgrade(c.Request)
+	claims, validateErr := s.validateConsoleBootstrapToken(ctx, token, vmID, websocketUpgrade)
 	if validateErr != nil {
-		switch {
-		case errors.Is(validateErr, service.ErrVNCTokenReplayed):
-			c.JSON(http.StatusConflict, generated.Error{Code: "VNC_TOKEN_REPLAYED"})
-		case errors.Is(validateErr, service.ErrVNCTokenVMMismatch):
-			c.JSON(http.StatusConflict, generated.Error{Code: "VNC_TOKEN_VM_MISMATCH"})
-		default:
-			c.JSON(http.StatusUnauthorized, generated.Error{Code: "INVALID_VNC_TOKEN"})
-		}
-		return
-	}
-
-	if claims.Subject != actor && !hasPlatformAdmin(c) {
-		c.JSON(http.StatusForbidden, generated.Error{Code: "FORBIDDEN"})
-		return
+		writeConsoleBootstrapError(c, validateErr)
+		return nil, nil, false, false
 	}
 
 	vm, err := s.client.VM.Get(ctx, vmID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-			return
+			return nil, nil, false, false
 		}
-		logger.Error("failed to get VM for vnc open", zap.Error(err), zap.String("vm_id", vmID))
+		logger.Error("failed to get VM for console open", zap.Error(err), zap.String("vm_id", vmID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
+		return nil, nil, false, false
 	}
 	vm = s.refreshVMLiveState(ctx, vm)
 	if vm.Status != entvm.StatusRUNNING {
 		c.JSON(http.StatusConflict, generated.Error{Code: "VM_NOT_RUNNING"})
-		return
+		return nil, nil, false, false
+	}
+	if claims.ClusterID != "" && claims.ClusterID != vm.ClusterID {
+		c.JSON(http.StatusConflict, generated.Error{Code: "VNC_TOKEN_VM_MISMATCH"})
+		return nil, nil, false, false
+	}
+	if claims.Namespace != "" && claims.Namespace != vm.Namespace {
+		c.JSON(http.StatusConflict, generated.Error{Code: "VNC_TOKEN_VM_MISMATCH"})
+		return nil, nil, false, false
 	}
 
-	c.JSON(http.StatusOK, generated.VMVNCSessionResponse{
-		Status:        generated.SESSIONREADY,
-		VmId:          vm.ID,
-		WebsocketPath: fmt.Sprintf("/api/v1/vms/%s/vnc", vm.ID),
-	})
+	return vm, claims, websocketUpgrade, true
 }
 
 func (s *Server) resolveNamespaceEnvironment(ctx context.Context, namespace string) (namespaceregistry.Environment, error) {
@@ -412,7 +503,7 @@ func (s *Server) latestVNCRequest(ctx context.Context, vmID, requester string) (
 	return ticket, nil
 }
 
-func (s *Server) createVNCApprovalRequest(ctx context.Context, vm *ent.VM, actor string) (string, error) {
+func (s *Server) createVNCApprovalRequest(ctx context.Context, vm *ent.VM, actor string, preferredConsoleType *generated.VMConsoleType) (string, error) {
 	tx, err := s.client.Tx(ctx)
 	if err != nil {
 		return "", err
@@ -429,10 +520,11 @@ func (s *Server) createVNCApprovalRequest(ctx context.Context, vm *ent.VM, actor
 	}
 
 	payload, err := json.Marshal(vncRequestPayload{
-		VMID:        vm.ID,
-		ClusterID:   vm.ClusterID,
-		Namespace:   vm.Namespace,
-		RequesterID: actor,
+		VMID:                 vm.ID,
+		ClusterID:            vm.ClusterID,
+		Namespace:            vm.Namespace,
+		RequesterID:          actor,
+		PreferredConsoleType: stringValueForConsoleType(preferredConsoleType),
 	})
 	if err != nil {
 		return "", err
@@ -468,43 +560,336 @@ func (s *Server) createVNCApprovalRequest(ctx context.Context, vm *ent.VM, actor
 	return ticketID.String(), nil
 }
 
-func (s *Server) issueVNCURL(c *gin.Context, actor string, vm *ent.VM) (string, service.VNCTokenClaims, error) {
+func legacyVNCURL(console *issuedConsole) string {
+	if console == nil || console.ConsoleType != generated.VNC {
+		return ""
+	}
+	return console.ConsoleURL
+}
+
+func (s *Server) issuePreferredConsoleURL(c *gin.Context, actor string, vm *ent.VM, preferredConsoleType *generated.VMConsoleType) (*issuedConsole, service.VNCTokenClaims, error) {
+	consoleType, consolePath, err := s.resolvePreferredConsolePath(c.Request.Context(), vm, preferredConsoleType)
+	if err != nil {
+		return nil, service.VNCTokenClaims{}, err
+	}
 	token, claims, err := s.vncTokens.Issue(actor, vm.ID, vm.ClusterID, vm.Namespace)
 	if err != nil {
-		return "", service.VNCTokenClaims{}, err
+		return nil, service.VNCTokenClaims{}, err
 	}
-	s.setVNCBootstrapCookie(c, vm.ID, token)
-	return fmt.Sprintf("/api/v1/vms/%s/vnc", vm.ID), claims, nil
+	s.setConsoleBootstrapCookie(c, token, consolePath)
+	return &issuedConsole{
+		ConsoleType: consoleType,
+		ConsoleURL:  consolePath,
+	}, claims, nil
 }
 
-func (s *Server) setVNCBootstrapCookie(c *gin.Context, vmID, token string) {
+func (s *Server) resolvePreferredConsolePath(ctx context.Context, vm *ent.VM, preferredConsoleType *generated.VMConsoleType) (generated.VMConsoleType, string, error) {
+	if s.vmService == nil {
+		return "", "", fmt.Errorf("console service is unavailable")
+	}
+
+	serialPath := fmt.Sprintf("/api/v1/vms/%s/serial", vm.ID)
+	trySerial := preferredConsoleType == nil || *preferredConsoleType == generated.SERIAL
+	tryVNC := preferredConsoleType == nil || *preferredConsoleType == generated.VNC
+	if trySerial {
+		if backend, err := s.vmService.OpenSerialConsoleStream(ctx, vm.ClusterID, vm.Namespace, vm.Name); err == nil {
+			_ = backend.Close()
+			return generated.SERIAL, serialPath, nil
+		} else if preferredConsoleType != nil {
+			return "", "", err
+		}
+	}
+
+	vncPath := fmt.Sprintf("/api/v1/vms/%s/vnc", vm.ID)
+	if tryVNC {
+		if backend, err := s.vmService.OpenVNCStream(ctx, vm.ClusterID, vm.Namespace, vm.Name); err == nil {
+			_ = backend.Close()
+			return generated.VNC, vncPath, nil
+		} else {
+			return "", "", err
+		}
+	}
+	return "", "", fmt.Errorf("requested console type is unavailable")
+}
+
+func normalizePreferredConsoleType(req *generated.VMConsoleRequestInput) *generated.VMConsoleType {
+	if req == nil || req.PreferredConsoleType == nil {
+		return nil
+	}
+	switch *req.PreferredConsoleType {
+	case generated.SERIAL, generated.VNC:
+		return req.PreferredConsoleType
+	default:
+		return nil
+	}
+}
+
+func stringValueForConsoleType(consoleType *generated.VMConsoleType) string {
+	if consoleType == nil {
+		return ""
+	}
+	return string(*consoleType)
+}
+
+func derefConsoleType(consoleType *generated.VMConsoleType) generated.VMConsoleType {
+	if consoleType == nil {
+		return ""
+	}
+	return *consoleType
+}
+
+func (s *Server) preferredConsoleTypeForTicket(ctx context.Context, ticket *ent.Ticket) (*generated.VMConsoleType, error) {
+	if ticket == nil || ticket.EventID == "" {
+		return nil, nil
+	}
+	event, err := s.client.DomainEvent.Get(ctx, ticket.EventID)
+	if err != nil {
+		return nil, err
+	}
+	var payload vncRequestPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return nil, err
+	}
+	if payload.PreferredConsoleType == "" {
+		return nil, nil
+	}
+	consoleType := generated.VMConsoleType(payload.PreferredConsoleType)
+	switch consoleType {
+	case generated.SERIAL, generated.VNC:
+		return &consoleType, nil
+	default:
+		return nil, nil
+	}
+}
+
+func (s *Server) validateConsoleBootstrapToken(
+	ctx context.Context,
+	token string,
+	vmID generated.VMID,
+	consume bool,
+) (*service.VNCJWTClaims, error) {
+	if consume {
+		return s.vncTokens.ValidateAndConsume(ctx, token, vmID)
+	}
+	return s.vncTokens.Validate(token, vmID)
+}
+
+func writeConsoleBootstrapError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrVNCTokenReplayed):
+		c.JSON(http.StatusConflict, generated.Error{Code: "VNC_TOKEN_REPLAYED"})
+	case errors.Is(err, service.ErrVNCTokenVMMismatch):
+		c.JSON(http.StatusConflict, generated.Error{Code: "VNC_TOKEN_VM_MISMATCH"})
+	default:
+		c.JSON(http.StatusUnauthorized, generated.Error{Code: "INVALID_VNC_TOKEN"})
+	}
+}
+
+func (s *Server) openConsoleStream(ctx context.Context, vm *ent.VM, consoleType generated.VMConsoleType) (net.Conn, error) {
+	if s.vmService == nil {
+		return nil, fmt.Errorf("console service is unavailable")
+	}
+	switch consoleType {
+	case generated.SERIAL:
+		return s.vmService.OpenSerialConsoleStream(ctx, vm.ClusterID, vm.Namespace, vm.Name)
+	case generated.VNC:
+		return s.vmService.OpenVNCStream(ctx, vm.ClusterID, vm.Namespace, vm.Name)
+	default:
+		return nil, fmt.Errorf("unsupported console type %q", consoleType)
+	}
+}
+
+func (s *Server) streamVMConsole(c *gin.Context, vm *ent.VM, claims *service.VNCJWTClaims, consoleType generated.VMConsoleType) {
+	backend, err := s.openConsoleStream(c.Request.Context(), vm, consoleType)
+	if err != nil {
+		logger.Error("failed to open kubevirt console stream",
+			zap.Error(err),
+			zap.String("vm_id", vm.ID),
+			zap.String("console_type", string(consoleType)),
+		)
+		c.JSON(http.StatusBadGateway, generated.Error{
+			Code:    "VNC_UNAVAILABLE",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	conn, err := s.upgradeConsoleWebSocket(c, consolePathForType(vm.ID, consoleType))
+	if err != nil {
+		_ = backend.Close()
+		logger.Error("failed to upgrade console websocket",
+			zap.Error(err),
+			zap.String("vm_id", vm.ID),
+			zap.String("console_type", string(consoleType)),
+		)
+		return
+	}
+	defer conn.Close()
+	defer backend.Close()
+
+	if s.audit != nil && claims != nil {
+		_ = s.audit.LogAction(c.Request.Context(), consoleAuditAction(consoleType), "vm", vm.ID, claims.Subject, map[string]interface{}{
+			"token_id": claims.ID,
+		})
+	}
+
+	if err := proxyConsoleWebSocket(conn, backend); err != nil &&
+		!errors.Is(err, io.EOF) &&
+		!websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) &&
+		!websocket.IsUnexpectedCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway) {
+		logger.Warn("console websocket proxy terminated with error",
+			zap.Error(err),
+			zap.String("vm_id", vm.ID),
+			zap.String("console_type", string(consoleType)),
+		)
+	}
+}
+
+func (s *Server) upgradeConsoleWebSocket(c *gin.Context, consolePath string) (*websocket.Conn, error) {
+	upgrader := websocket.Upgrader{
+		HandshakeTimeout: 10 * time.Second,
+		ReadBufferSize:   4096,
+		WriteBufferSize:  4096,
+		CheckOrigin:      s.consoleOriginAllowed,
+	}
+	headers := http.Header{}
+	headers.Add("Set-Cookie", s.consoleBootstrapCookie("", -1, isSecureRequest(c), consolePath).String())
+	return upgrader.Upgrade(c.Writer, c.Request, headers)
+}
+
+func (s *Server) consoleOriginAllowed(r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	requestOrigin := requestOriginForConsole(r)
+	if requestOrigin != "" && sameExternalAuthOrigin(origin, requestOrigin) {
+		return true
+	}
+	for _, allowedOrigin := range s.effectiveExternalAuthAllowedOrigins() {
+		if sameExternalAuthOrigin(origin, allowedOrigin) {
+			return true
+		}
+	}
+	return false
+}
+
+func requestOriginForConsole(r *http.Request) string {
+	if r == nil || strings.TrimSpace(r.Host) == "" {
+		return ""
+	}
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + strings.TrimSpace(r.Host)
+}
+
+func proxyConsoleWebSocket(ws *websocket.Conn, backend net.Conn) error {
+	ws.SetReadLimit(vncWebSocketReadLimit)
+	_ = ws.SetReadDeadline(time.Now().Add(vncWebSocketPongWait))
+	ws.SetPongHandler(func(string) error {
+		return ws.SetReadDeadline(time.Now().Add(vncWebSocketPongWait))
+	})
+
+	proxyCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var shutdownOnce sync.Once
+	shutdown := func() {
+		shutdownOnce.Do(func() {
+			_ = backend.Close()
+			_ = ws.Close()
+		})
+	}
+
+	group, groupCtx := errgroup.WithContext(proxyCtx)
+	group.Go(func() error {
+		defer func() {
+			cancel()
+			shutdown()
+		}()
+		return pumpConsoleWebSocketToBackend(ws, backend)
+	})
+	group.Go(func() error {
+		defer func() {
+			cancel()
+			shutdown()
+		}()
+		return pumpConsoleBackendToWebSocket(backend, ws)
+	})
+	group.Go(func() error {
+		return pumpConsolePing(groupCtx, ws)
+	})
+
+	err := group.Wait()
+	shutdown()
+	return err
+}
+
+func pumpConsoleWebSocketToBackend(ws *websocket.Conn, backend net.Conn) error {
+	for {
+		messageType, reader, err := ws.NextReader()
+		if err != nil {
+			return err
+		}
+		if messageType != websocket.BinaryMessage && messageType != websocket.TextMessage {
+			continue
+		}
+		if _, err := io.Copy(backend, reader); err != nil {
+			return err
+		}
+	}
+}
+
+func pumpConsoleBackendToWebSocket(backend net.Conn, ws *websocket.Conn) error {
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := backend.Read(buf)
+		if n > 0 {
+			_ = ws.SetWriteDeadline(time.Now().Add(vncWebSocketWriteTimeout))
+			if writeErr := ws.WriteMessage(websocket.BinaryMessage, append([]byte(nil), buf[:n]...)); writeErr != nil {
+				return writeErr
+			}
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func pumpConsolePing(ctx context.Context, ws *websocket.Conn) error {
+	ticker := time.NewTicker(vncWebSocketPingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if err := ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(vncWebSocketWriteTimeout)); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (s *Server) consoleBootstrapCookie(value string, maxAge int, secure bool, consolePath string) *http.Cookie {
+	return &http.Cookie{
+		Name:     vncBootstrapCookieName,
+		Value:    value,
+		Path:     consolePath,
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	}
+}
+
+func (s *Server) setConsoleBootstrapCookie(c *gin.Context, token, consolePath string) {
 	if c == nil {
 		return
 	}
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     vncBootstrapCookieName,
-		Value:    token,
-		Path:     fmt.Sprintf("/api/v1/vms/%s/vnc", strings.TrimSpace(vmID)),
-		MaxAge:   vncBootstrapCookieMaxAgeSec,
-		HttpOnly: true,
-		Secure:   isSecureRequest(c),
-		SameSite: http.SameSiteStrictMode,
-	})
-}
-
-func (s *Server) clearVNCBootstrapCookie(c *gin.Context, vmID string) {
-	if c == nil {
-		return
-	}
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     vncBootstrapCookieName,
-		Value:    "",
-		Path:     fmt.Sprintf("/api/v1/vms/%s/vnc", strings.TrimSpace(vmID)),
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   isSecureRequest(c),
-		SameSite: http.SameSiteStrictMode,
-	})
+	http.SetCookie(c.Writer, s.consoleBootstrapCookie(token, vncBootstrapCookieMaxAgeSec, isSecureRequest(c), consolePath))
 }
 
 func isSecureRequest(c *gin.Context) bool {
@@ -557,4 +942,22 @@ func hasVNCConsoleAccess(c *gin.Context) bool {
 		}
 	}
 	return false
+}
+
+func consolePathForType(vmID string, consoleType generated.VMConsoleType) string {
+	switch consoleType {
+	case generated.SERIAL:
+		return fmt.Sprintf("/api/v1/vms/%s/serial", vmID)
+	default:
+		return fmt.Sprintf("/api/v1/vms/%s/vnc", vmID)
+	}
+}
+
+func consoleAuditAction(consoleType generated.VMConsoleType) string {
+	switch consoleType {
+	case generated.SERIAL:
+		return "serial.websocket_opened"
+	default:
+		return "vnc.websocket_opened"
+	}
 }

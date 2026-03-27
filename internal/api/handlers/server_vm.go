@@ -96,6 +96,10 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 		query = query.Where(entvm.StatusNEQ(entvm.StatusDELETING))
 	}
 
+	query = query.WithService(func(serviceQuery *ent.ServiceQuery) {
+		serviceQuery.WithSystem()
+	})
+
 	page, perPage := defaultPagination(params.Page, params.PerPage)
 	offset := (page - 1) * perPage
 
@@ -125,6 +129,7 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 		return
 	}
 	vms = s.refreshVMLiveStates(ctx, vms)
+	liveVMByID := s.loadObservedLiveVMsByID(ctx, vms)
 
 	// Batch-fetch cluster environments to fill VM.environment (ADR-0015 §15).
 	// Collect unique non-empty cluster IDs from this page.
@@ -156,11 +161,16 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 		}
 	}
 
+	vmSnapshotInfoByTicketID, err := s.loadVMSnapshotInfoByTicketID(ctx, vms)
+	if err != nil {
+		logger.Warn("failed to load VM template snapshots for list response", zap.Error(err))
+	}
+
 	items := make([]generated.VM, 0, len(vms))
 	for _, vm := range vms {
 		env := clusterEnvMap[vm.ClusterID]
 		name := clusterNameMap[vm.ClusterID]
-		items = append(items, vmToAPI(vm, env, name, nil))
+		items = append(items, vmToAPI(vm, env, name, liveVMByID[vm.ID], vmSnapshotInfoByTicketID[vm.TicketID], nil))
 	}
 
 	totalPages := (total + perPage - 1) / perPage
@@ -625,7 +635,12 @@ func (s *Server) GetVM(c *gin.Context, vmID generated.VMID) {
 		return
 	}
 
-	vm, err := s.client.VM.Get(ctx, vmID)
+	vm, err := s.client.VM.Query().
+		Where(entvm.IDEQ(vmID)).
+		WithService(func(serviceQuery *ent.ServiceQuery) {
+			serviceQuery.WithSystem()
+		}).
+		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
@@ -652,6 +667,7 @@ func (s *Server) GetVM(c *gin.Context, vmID generated.VMID) {
 		return
 	}
 	vm = s.refreshVMLiveState(ctx, vm)
+	liveVMByID := s.loadObservedLiveVMsByID(ctx, []*ent.VM{vm})
 
 	// Fetch cluster info for this VM (ADR-0015 §15).
 	var clusterEnv, clusterName string
@@ -669,7 +685,15 @@ func (s *Server) GetVM(c *gin.Context, vmID generated.VMID) {
 		}
 	}
 
-	c.JSON(http.StatusOK, vmToAPI(vm, clusterEnv, clusterName, s.loadVMProvisioning(ctx, vm)))
+	vmSnapshotInfoByTicketID, snapshotErr := s.loadVMSnapshotInfoByTicketID(ctx, []*ent.VM{vm})
+	if snapshotErr != nil {
+		logger.Warn("failed to load VM template snapshot for detail response",
+			zap.Error(snapshotErr),
+			zap.String("vm_id", vm.ID),
+		)
+	}
+
+	c.JSON(http.StatusOK, vmToAPI(vm, clusterEnv, clusterName, liveVMByID[vm.ID], vmSnapshotInfoByTicketID[vm.TicketID], s.loadVMProvisioning(ctx, vm)))
 }
 
 func firstNonEmptyString(values ...string) string {
@@ -880,7 +904,7 @@ func (s *Server) StartVM(c *gin.Context, vmID generated.VMID) {
 // StopVM handles POST /vms/{vm_id}/stop.
 // ISSUE-001: Async via River (ADR-0006). Returns 202 Accepted.
 func (s *Server) StopVM(c *gin.Context, vmID generated.VMID) {
-	vm := s.mustGetRunningVMForPowerOp(c, vmID, "stop")
+	vm := s.mustGetStoppableVMForPowerOp(c, vmID, "stop")
 	if vm == nil {
 		return
 	}
@@ -917,6 +941,32 @@ func (s *Server) mustGetRunningVMForPowerOp(c *gin.Context, vmID generated.VMID,
 		c.JSON(http.StatusConflict, generated.Error{
 			Code:    "INVALID_STATE_TRANSITION",
 			Message: fmt.Sprintf("cannot %s VM in %s state, must be RUNNING", op, vm.Status),
+		})
+		return nil
+	}
+	return vm
+}
+
+func (s *Server) mustGetStoppableVMForPowerOp(c *gin.Context, vmID generated.VMID, op string) *ent.VM {
+	if !requireGlobalPermission(c, "vm:operate") {
+		return nil
+	}
+	vm, err := s.client.VM.Get(c.Request.Context(), vmID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
+			return nil
+		}
+		logger.Error(fmt.Sprintf("failed to get VM for %s", op), zap.Error(err), zap.String("vm_id", vmID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return nil
+	}
+	vm = s.refreshVMLiveState(c.Request.Context(), vm)
+
+	if vm.Status != entvm.StatusRUNNING && vm.Status != entvm.StatusSTARTING {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "INVALID_STATE_TRANSITION",
+			Message: fmt.Sprintf("cannot %s VM in %s state, must be RUNNING or STARTING", op, vm.Status),
 		})
 		return nil
 	}
@@ -1150,7 +1200,13 @@ func (s *Server) enqueueVMPowerOp(c *gin.Context, vm *ent.VM, operation string, 
 // vmToAPI converts an Ent VM entity to the generated API VM type.
 // clusterEnv is the environment string ("test" or "prod") from the associated Cluster;
 // pass an empty string when the cluster is not yet assigned.
-func vmToAPI(vm *ent.VM, clusterEnv, clusterName string, provisioning *generated.ProvisioningStatus) generated.VM {
+type vmSnapshotInfo struct {
+	OSName    string
+	OSVersion string
+	OSFamily  string
+}
+
+func vmToAPI(vm *ent.VM, clusterEnv, clusterName string, liveVM *domain.VM, snapshot vmSnapshotInfo, provisioning *generated.ProvisioningStatus) generated.VM {
 	apiVM := generated.VM{
 		Id:          vm.ID,
 		Name:        vm.Name,
@@ -1167,6 +1223,44 @@ func vmToAPI(vm *ent.VM, clusterEnv, clusterName string, provisioning *generated
 	}
 	if vm.Edges.Service != nil {
 		apiVM.ServiceId = vm.Edges.Service.ID
+		apiVM.ServiceName = vm.Edges.Service.Name
+		if vm.Edges.Service.Edges.System != nil {
+			apiVM.SystemId = vm.Edges.Service.Edges.System.ID
+			apiVM.SystemName = vm.Edges.Service.Edges.System.Name
+		}
+	}
+	if liveVM != nil {
+		caps := generated.VMConsoleCapabilities{
+			SerialAvailable: liveVM.Spec.AutoattachSerialConsole,
+			VncAvailable:    liveVM.Spec.AutoattachGraphicsDevice,
+		}
+		switch {
+		case caps.SerialAvailable:
+			preferred := generated.SERIAL
+			caps.PreferredConsoleType = &preferred
+		case caps.VncAvailable:
+			preferred := generated.VNC
+			caps.PreferredConsoleType = &preferred
+		}
+		apiVM.ConsoleCapabilities = &caps
+		apiVM.NodeName = liveVM.NodeName
+		apiVM.HostIp = liveVM.HostIP
+		apiVM.IpAddress = liveVM.IPAddress
+		apiVM.CpuCores = float32(liveVM.Spec.CPU)
+		apiVM.MemoryGi = float32(liveVM.Spec.MemoryGi)
+		apiVM.DiskGb = liveVM.Spec.DiskGB
+		apiVM.OsName = liveVM.OSName
+		apiVM.OsVersion = liveVM.OSVersion
+		apiVM.OsFamily = liveVM.OSFamily
+	}
+	if apiVM.OsName == "" {
+		apiVM.OsName = snapshot.OSName
+	}
+	if apiVM.OsVersion == "" {
+		apiVM.OsVersion = snapshot.OSVersion
+	}
+	if apiVM.OsFamily == "" {
+		apiVM.OsFamily = snapshot.OSFamily
 	}
 	// Populate environment from cluster (ADR-0015 §15).
 	if clusterEnv != "" {
@@ -1174,6 +1268,91 @@ func vmToAPI(vm *ent.VM, clusterEnv, clusterName string, provisioning *generated
 	}
 	apiVM.Provisioning = provisioning
 	return apiVM
+}
+
+func (s *Server) loadVMSnapshotInfoByTicketID(ctx context.Context, vms []*ent.VM) (map[string]vmSnapshotInfo, error) {
+	ticketIDs := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, vm := range vms {
+		if vm == nil || strings.TrimSpace(vm.TicketID) == "" {
+			continue
+		}
+		if _, ok := seen[vm.TicketID]; ok {
+			continue
+		}
+		seen[vm.TicketID] = struct{}{}
+		ticketIDs = append(ticketIDs, vm.TicketID)
+	}
+	if len(ticketIDs) == 0 {
+		return map[string]vmSnapshotInfo{}, nil
+	}
+
+	tickets, err := s.client.Ticket.Query().
+		Where(entticket.IDIn(ticketIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	infoByTicketID := make(map[string]vmSnapshotInfo, len(tickets))
+	for _, ticket := range tickets {
+		infoByTicketID[ticket.ID] = extractVMSnapshotInfo(ticket.TemplateSnapshot)
+	}
+	return infoByTicketID, nil
+}
+
+func extractVMSnapshotInfo(snapshot map[string]interface{}) vmSnapshotInfo {
+	if len(snapshot) == 0 {
+		return vmSnapshotInfo{}
+	}
+	osFamily := lookupJSONString(snapshot, "os_family")
+	osVersion := lookupJSONString(snapshot, "os_version")
+	return vmSnapshotInfo{
+		OSName:    humanizeOSFamily(osFamily),
+		OSVersion: osVersion,
+		OSFamily:  osFamily,
+	}
+}
+
+func lookupJSONString(raw map[string]interface{}, paths ...string) string {
+	for _, path := range paths {
+		segments := strings.Split(path, ".")
+		current := interface{}(raw)
+		ok := true
+		for _, segment := range segments {
+			next, match := current.(map[string]interface{})
+			if !match {
+				ok = false
+				break
+			}
+			current, match = next[segment]
+			if !match {
+				ok = false
+				break
+			}
+		}
+		if !ok {
+			continue
+		}
+		if value, match := current.(string); match {
+			value = strings.TrimSpace(value)
+			if value != "" {
+				return value
+			}
+		}
+	}
+	return ""
+}
+
+func humanizeOSFamily(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "linux":
+		return "Linux"
+	case "windows":
+		return "Windows"
+	default:
+		return strings.TrimSpace(value)
+	}
 }
 
 // PowerVM handles POST /vms/{vm_id}/power.
@@ -1213,10 +1392,10 @@ func (s *Server) PowerVM(c *gin.Context, vmID generated.VMID) {
 		}
 		s.handleVMPower(c, vm, "start", domain.EventVMStartRequested)
 	case generated.Stop:
-		if vm.Status != entvm.StatusRUNNING {
+		if vm.Status != entvm.StatusRUNNING && vm.Status != entvm.StatusSTARTING {
 			c.JSON(http.StatusConflict, generated.Error{
 				Code:    "INVALID_STATE_TRANSITION",
-				Message: fmt.Sprintf("cannot stop VM in %s state, must be RUNNING", vm.Status),
+				Message: fmt.Sprintf("cannot stop VM in %s state, must be RUNNING or STARTING", vm.Status),
 			})
 			return
 		}

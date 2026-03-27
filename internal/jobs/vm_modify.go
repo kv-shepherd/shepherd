@@ -69,6 +69,9 @@ func (w *VMModifyWorker) Work(ctx context.Context, job *river.Job[VMModifyArgs])
 		return fmt.Errorf("fetch domain event %s: %w", eventID, err)
 	}
 	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusEXECUTING)
+	ticket, _ := w.entClient.Ticket.Query().
+		Where(entticket.EventIDEQ(eventID), entticket.OperationTypeEQ(entticket.OperationTypeMODIFY)).
+		Only(ctx)
 
 	var payload domain.VMModifyPayload
 	if unmarshalErr := json.Unmarshal(event.Payload, &payload); unmarshalErr != nil {
@@ -87,6 +90,17 @@ func (w *VMModifyWorker) Work(ctx context.Context, job *river.Job[VMModifyArgs])
 			)
 		}
 		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
+		if ticket != nil {
+			if _, saveErr := w.entClient.Ticket.UpdateOneID(ticket.ID).
+				SetStatus(entticket.StatusFAILED).
+				SetRejectReason(strings.TrimSpace(cause.Error())).
+				Save(ctx); saveErr != nil {
+				logger.Error("failed to persist failure reason for modify ticket",
+					zap.String("ticket_id", ticket.ID),
+					zap.Error(saveErr),
+				)
+			}
+		}
 		logAuditVMOp(ctx, w.auditLogger, "modify_failed", payload.VMName, payload.Actor, eventID)
 		if cancel {
 			return river.JobCancel(cause)
@@ -108,10 +122,6 @@ func (w *VMModifyWorker) Work(ctx context.Context, job *river.Job[VMModifyArgs])
 		return markFailed(fmt.Errorf("cluster %s is not healthy", payload.ClusterID), true)
 	}
 
-	if capabilityErr := validateVMModifyClusterCapabilities(clusterRow, &payload); capabilityErr != nil {
-		return markFailed(capabilityErr, true)
-	}
-
 	liveVM, err := w.vmService.GetVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
 	if err != nil {
 		return markFailed(fmt.Errorf("load live vm %s/%s: %w", payload.Namespace, payload.VMName, err), false)
@@ -122,22 +132,31 @@ func (w *VMModifyWorker) Work(ctx context.Context, job *river.Job[VMModifyArgs])
 	if liveVM.Name != payload.VMName || liveVM.Namespace != payload.Namespace {
 		return markFailed(fmt.Errorf("live vm identity mismatch for %s", payload.VMID), true)
 	}
-
-	renderedPatch, err := provider.RenderVMLiveUpdatePatch(payload.Namespace, liveVM, provider.VMLiveUpdateTargets{
-		CPUCores: payload.TargetCPUCores,
-		MemoryGi: payload.TargetMemoryGi,
-		DiskGB:   payload.TargetDiskGB,
-	})
-	if err != nil {
-		return markFailed(fmt.Errorf("render live update patch: %w", err), true)
+	if capabilityErr := validateVMModifyClusterCapabilities(clusterRow, liveVM, &payload); capabilityErr != nil {
+		return markFailed(capabilityErr, true)
 	}
 
-	updatedVM, err := w.vmService.ExecuteK8sUpdate(ctx, payload.ClusterID, payload.Namespace, payload.VMName, &domain.VMSpec{
-		Name:         payload.VMName,
-		RenderedYAML: renderedPatch,
-	})
+	overrideCPURequest, overrideMemoryRequest := approvedModifyRequestOverrides(ticket)
+	plan, err := approvedModifyMutationPlan(ticket)
 	if err != nil {
-		return markFailed(fmt.Errorf("execute k8s update for event %s: %w", eventID, err), false)
+		return markFailed(fmt.Errorf("load approved vm mutation: %w", err), true)
+	}
+	if plan == nil {
+		plan, err = provider.PlanVMResourceUpdatePatch(payload.Namespace, liveVM, provider.VMLiveUpdateTargets{
+			CPUCores:        payload.TargetCPUCores,
+			MemoryGi:        payload.TargetMemoryGi,
+			DiskGB:          payload.TargetDiskGB,
+			CPURequest:      overrideCPURequest,
+			MemoryRequestGi: overrideMemoryRequest,
+		})
+		if err != nil {
+			return markFailed(fmt.Errorf("plan vm resource update patch: %w", err), true)
+		}
+	}
+
+	updatedVM, err := w.vmService.ExecuteVMMutation(ctx, payload.ClusterID, payload.Namespace, payload.VMName, plan.Mutation)
+	if err != nil {
+		return markFailed(fmt.Errorf("execute vm mutation for event %s: %w", eventID, err), false)
 	}
 
 	if persistErr := w.persistModifiedVMStatus(ctx, payload.VMID, updatedVM); persistErr != nil {
@@ -167,22 +186,62 @@ func (w *VMModifyWorker) Work(ctx context.Context, job *river.Job[VMModifyArgs])
 	return nil
 }
 
-func validateVMModifyClusterCapabilities(clusterRow *ent.Cluster, payload *domain.VMModifyPayload) error {
+func validateVMModifyClusterCapabilities(clusterRow *ent.Cluster, liveVM *domain.VM, payload *domain.VMModifyPayload) error {
 	if clusterRow == nil {
 		return fmt.Errorf("cluster row is nil")
 	}
+	if liveVM == nil {
+		return fmt.Errorf("live vm is nil")
+	}
 	if payload == nil {
 		return fmt.Errorf("modify payload is nil")
-	}
-	if (payload.TargetCPUCores != nil || payload.TargetMemoryGi != nil) &&
-		!provider.HasAllCapabilities(clusterRow.EnabledFeatures, []string{"VMLiveUpdateFeatures"}) {
-		return fmt.Errorf("cluster %s does not support live CPU/memory updates", clusterRow.Name)
 	}
 	if payload.TargetDiskGB != nil &&
 		!provider.HasAllCapabilities(clusterRow.EnabledFeatures, []string{"ExpandDisks"}) {
 		return fmt.Errorf("cluster %s does not support online disk expansion", clusterRow.Name)
 	}
 	return nil
+}
+
+func approvedModifyRequestOverrides(ticket *ent.Ticket) (cpuRequest, memoryRequest *float64) {
+	if ticket == nil || len(ticket.ModifiedSpec) == 0 {
+		return nil, nil
+	}
+	if value, ok := ticket.ModifiedSpec["cpu_request"].(float64); ok && value > 0 {
+		cpuRequest = &value
+	}
+	if value, ok := ticket.ModifiedSpec["memory_request_gi"].(float64); ok && value > 0 {
+		memoryRequest = &value
+	}
+	return cpuRequest, memoryRequest
+}
+
+func approvedModifyMutationPlan(ticket *ent.Ticket) (*provider.VMResourceUpdatePlan, error) {
+	if ticket == nil || len(ticket.ModifiedSpec) == 0 {
+		return nil, nil
+	}
+	raw, ok := ticket.ModifiedSpec["vm_mutation"]
+	if !ok {
+		return nil, nil
+	}
+	snapshot, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("vm_mutation snapshot has unexpected type %T", raw)
+	}
+	mutation, err := domain.VMMutationFromSnapshot(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	plan := &provider.VMResourceUpdatePlan{
+		Mutation: mutation,
+	}
+	if applyMode, ok := ticket.ModifiedSpec["apply_mode"].(string); ok {
+		plan.ApplyMode = applyMode
+	}
+	if requiresRestart, ok := ticket.ModifiedSpec["requires_restart"].(bool); ok {
+		plan.RequiresRestart = requiresRestart
+	}
+	return plan, nil
 }
 
 func (w *VMModifyWorker) persistModifiedVMStatus(ctx context.Context, vmID string, updatedVM *domain.VM) error {

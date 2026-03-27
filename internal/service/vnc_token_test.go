@@ -76,6 +76,35 @@ func TestVNCTokenManager_ValidateRejectsVMMismatch(t *testing.T) {
 	}
 }
 
+func TestVNCTokenManager_Validate_DoesNotConsumeSingleUseToken(t *testing.T) {
+	t.Parallel()
+
+	manager := NewVNCTokenManager(
+		[]byte("vnc-signing-key-123456789012345678901234567890"),
+		testVNCEncryptionKey,
+		"shepherd-test",
+		2*time.Hour,
+		nil,
+	)
+
+	token, _, err := manager.Issue("user-1", "vm-1", "cluster-a", "team-test")
+	if err != nil {
+		t.Fatalf("Issue() error = %v", err)
+	}
+
+	claims, err := manager.Validate(token, "vm-1")
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if claims.VMID != "vm-1" {
+		t.Fatalf("Validate().VMID = %q, want %q", claims.VMID, "vm-1")
+	}
+
+	if _, err := manager.ValidateAndConsume(context.Background(), token, "vm-1"); err != nil {
+		t.Fatalf("ValidateAndConsume(after validate) error = %v", err)
+	}
+}
+
 func TestVNCTokenManager_IssueFailsWithoutSigningKey(t *testing.T) {
 	t.Parallel()
 

@@ -20,6 +20,7 @@ import type {
 
 interface UseServicesManagementControllerArgs {
     t: TFunction;
+    initialSystemId?: string;
     onCreateSuccess?: (service: Service, context: { isFirstService: boolean }) => boolean | void;
 }
 
@@ -27,13 +28,16 @@ const ALL_SYSTEMS_FILTER = '__all__';
 
 export function useServicesManagementController({
     t,
+    initialSystemId,
     onCreateSuccess,
 }: UseServicesManagementControllerArgs) {
     const [messageApi, messageContextHolder] = message.useMessage();
     const [createOpen, setCreateOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
     const [editingService, setEditingService] = useState<Service | null>(null);
-    const [selectedSystemId, setSelectedSystemId] = useState(ALL_SYSTEMS_FILTER);
+    const [selectedSystemId, setSelectedSystemId] = useState(
+        () => initialSystemId || ALL_SYSTEMS_FILTER,
+    );
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [form] = Form.useForm<ServiceCreateRequest & { system_id: string }>();

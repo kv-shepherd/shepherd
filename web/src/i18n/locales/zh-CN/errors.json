@@ -59,5 +59,6 @@
   "INVALID_POWER_ACTION": "电源操作无效。",
   "INVALID_VNC_TOKEN": "VNC 令牌无效或已过期。",
   "VM_NOT_FOUND": "未找到虚拟机。",
-  "VM_NOT_RUNNING": "虚拟机当前未运行。"
+  "VM_NOT_RUNNING": "虚拟机当前未运行。",
+  "VM_MODIFY_REQUEST_REVIEW_REQUIRED": "批准更低的 limit 前，请先复核当前 CPU 和内存 request 值。"
 }

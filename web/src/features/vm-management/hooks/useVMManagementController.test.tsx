@@ -9,7 +9,6 @@ const {
   postStartMutate,
   postStopMutate,
   postRestartMutate,
-  requestConsoleMutate,
   createMutate,
   createModifyMutate,
   createBatchMutate,
@@ -44,7 +43,6 @@ const {
     postStartMutate: vi.fn(),
     postStopMutate: vi.fn(),
     postRestartMutate: vi.fn(),
-    requestConsoleMutate: vi.fn(),
     createMutate: vi.fn(),
     createModifyMutate: vi.fn(),
     createBatchMutate: vi.fn(),
@@ -110,8 +108,9 @@ vi.mock("@/lib/api/client", () => ({
 }));
 
 vi.mock("@/stores/auth", () => ({
-  useAuthStore: (selector: (state: { user: { id: string; username: string } }) => unknown) =>
-    selector({ user: { id: "u-alice", username: "alice" } }),
+  useAuthStore: (
+    selector: (state: { user: { id: string; username: string } }) => unknown,
+  ) => selector({ user: { id: "u-alice", username: "alice" } }),
 }));
 
 import { useVMManagementController } from "./useVMManagementController";
@@ -256,7 +255,7 @@ describe("useVMManagementController", () => {
     let mutationCall = 0;
     useApiMutationMock.mockImplementation(() => {
       mutationCall += 1;
-      const slot = ((mutationCall - 1) % 9) + 1;
+      const slot = ((mutationCall - 1) % 8) + 1;
       if (slot === 1) return { mutate: createMutate, isPending: false };
       if (slot === 2) return { mutate: createModifyMutate, isPending: false };
       if (slot === 3) return { mutate: createBatchMutate, isPending: false };
@@ -264,7 +263,6 @@ describe("useVMManagementController", () => {
       if (slot === 5) return { mutate: vmBatchPowerMutate, isPending: false };
       if (slot === 6) return { mutate: retryBatchMutate, isPending: false };
       if (slot === 7) return { mutate: cancelBatchMutate, isPending: false };
-      if (slot === 8) return { mutate: requestConsoleMutate, isPending: false };
       return { mutate: deleteMutate, isPending: false };
     });
 
@@ -279,19 +277,7 @@ describe("useVMManagementController", () => {
     });
 
     apiGetMock.mockImplementation(
-      (path: string, options?: { params?: { path?: { vm_id?: string } } }) => {
-        if (path === "/vms/{vm_id}") {
-          const vmID = options?.params?.path?.vm_id ?? "vm-1";
-          return Promise.resolve({
-            data: {
-              id: vmID,
-              name: vmID === "vm-2" ? "vm-two" : "vm-one",
-              status: "RUNNING",
-            },
-            error: undefined,
-            response: new Response(),
-          });
-        }
+      (path: string) => {
         if (path === "/vms/{vm_id}/modify-context") {
           return Promise.resolve({
             data: {
@@ -304,24 +290,6 @@ describe("useVMManagementController", () => {
               cpu_supported: true,
               memory_supported: true,
               disk_supported: true,
-            },
-            error: undefined,
-            response: new Response(),
-          });
-        }
-        if (path === "/vms/{vm_id}/console/status") {
-          return Promise.resolve({
-            data: { status: "PENDING_APPROVAL" },
-            error: undefined,
-            response: new Response(),
-          });
-        }
-        if (path === "/vms/{vm_id}/vnc") {
-          return Promise.resolve({
-            data: {
-              status: "SESSION_READY",
-              vm_id: "vm-1",
-              websocket_path: "/api/v1/vms/vm-1/vnc",
             },
             error: undefined,
             response: new Response(),
@@ -607,24 +575,19 @@ describe("useVMManagementController", () => {
     });
   });
 
-  it("dispatches vm power, console, and delete actions with vm identity in test env", async () => {
+  it("dispatches vm power and delete actions with vm identity in test env", async () => {
     const { result } = renderHook(() => useVMManagementController({ t }));
 
     await act(async () => {
       result.current.startVM("vm-1");
       result.current.stopVM("vm-1");
       result.current.restartVM("vm-1");
-      await result.current.requestConsole("vm-1");
       result.current.deleteVM("vm-2", "vm-two", "test");
     });
 
     expect(postStartMutate).toHaveBeenCalledWith("vm-1");
     expect(postStopMutate).toHaveBeenCalledWith("vm-1");
     expect(postRestartMutate).toHaveBeenCalledWith("vm-1");
-    expect(requestConsoleMutate).toHaveBeenCalledWith(
-      "vm-1",
-      expect.any(Object),
-    );
     expect(result.current.deleteOpen).toBe(true);
     expect(result.current.deletingVM).toEqual({
       id: "vm-2",
@@ -957,7 +920,7 @@ describe("useVMManagementController", () => {
     expect(messageWarningMock).toHaveBeenCalledWith("modify.target_required");
   });
 
-  it("rejects single-vm modify requests that do not expand the current resource", async () => {
+  it("allows single-vm modify requests that reduce cpu or memory while still blocking disk shrink", async () => {
     formState.getFieldsValue.mockReturnValue({
       reason: "scale up",
       target_memory_gi: 4,
@@ -972,9 +935,14 @@ describe("useVMManagementController", () => {
       await result.current.submitModify();
     });
 
-    expect(createModifyMutate).not.toHaveBeenCalled();
-    expect(messageWarningMock).toHaveBeenCalledWith(
-      "modify.target_memory_expand_only",
-    );
+    expect(createModifyMutate).toHaveBeenCalledWith({
+      vmId: "vm-1",
+      body: {
+        reason: "scale up",
+        target_cpu_cores: 0,
+        target_memory_gi: 4,
+        target_disk_gb: 0,
+      },
+    });
   });
 });

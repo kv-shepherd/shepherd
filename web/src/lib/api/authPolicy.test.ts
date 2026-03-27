@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
     getRequestPath,
+    isConsoleSessionRequestPath,
     isPublicAuthRequestPath,
     shouldAttachAuthHeader,
+    shouldLogoutOnUnauthorized,
     shouldRedirectToLoginOnUnauthorized,
 } from './authPolicy';
 
@@ -22,6 +24,15 @@ describe('authPolicy', () => {
         expect(shouldAttachAuthHeader('/api/v1/auth/providers/provider-wecom/login/start')).toBe(false);
         expect(shouldAttachAuthHeader('/api/v1/auth/login')).toBe(false);
         expect(shouldAttachAuthHeader('/api/v1/tickets')).toBe(true);
+    });
+
+    it('treats console session endpoints as special-case authenticated requests', () => {
+        expect(isConsoleSessionRequestPath('/api/v1/vms/vm-1/serial')).toBe(true);
+        expect(isConsoleSessionRequestPath('/api/v1/vms/vm-1/vnc')).toBe(true);
+        expect(isConsoleSessionRequestPath('/api/v1/vms/vm-1/console/request')).toBe(false);
+        expect(shouldAttachAuthHeader('/api/v1/vms/vm-1/serial')).toBe(true);
+        expect(shouldLogoutOnUnauthorized('/api/v1/vms/vm-1/serial')).toBe(false);
+        expect(shouldRedirectToLoginOnUnauthorized('/api/v1/vms/vm-1/vnc', '/vms/vm-1')).toBe(false);
     });
 
     it('avoids redirect loops on login page and public auth requests', () => {

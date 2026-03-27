@@ -17,15 +17,21 @@ import {
     ThunderboltOutlined,
     LogoutOutlined,
     GlobalOutlined,
+    SearchOutlined,
 } from '@ant-design/icons';
 import { ProLayout } from '@ant-design/pro-components';
-import { Button, Dropdown, Typography } from 'antd';
+import { AutoComplete, Button, Dropdown, Input, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
 import NotificationBell from '@/components/ui/NotificationBell';
 import LocalTimezoneBadge from '@/components/ui/LocalTimezoneBadge';
 import { hasPermission, PLATFORM_ADMIN_PERMISSION } from '@/lib/auth/permissions';
-import { getMenuRoutes, resolveMenuHref } from './appLayoutRoutes';
+import {
+    filterMenuSearchEntries,
+    flattenMenuRoutes,
+    getMenuRoutes,
+    resolveMenuHref,
+} from './appLayoutRoutes';
 
 const { Text } = Typography;
 
@@ -40,10 +46,41 @@ export default function AppLayout({
     const { user, logout } = useAuthStore();
     const canAccessAdmin = hasPermission(user, PLATFORM_ADMIN_PERMISSION);
     const route = React.useMemo(() => getMenuRoutes(t, canAccessAdmin), [t, canAccessAdmin]);
+    const [menuSearch, setMenuSearch] = React.useState('');
     const languageKey = React.useMemo(() => {
         const lang = (i18n.resolvedLanguage ?? i18n.language ?? 'en').toLowerCase();
         return lang.startsWith('zh') ? 'zh-CN' : 'en';
     }, [i18n.language, i18n.resolvedLanguage]);
+    const secureDevOrigin = process.env.NEXT_PUBLIC_DEV_SECURE_ORIGIN?.trim() ?? '';
+    const devIngressPort = process.env.NEXT_PUBLIC_DEV_HTTP_INGRESS_PORT?.trim() ?? '';
+
+    React.useEffect(() => {
+        if (process.env.NODE_ENV !== 'development') {
+            return;
+        }
+        if (!secureDevOrigin || typeof window === 'undefined') {
+            return;
+        }
+        if (window.location.protocol !== 'http:') {
+            return;
+        }
+        if (devIngressPort !== '' && window.location.port !== devIngressPort) {
+            return;
+        }
+
+        try {
+            const target = new URL(secureDevOrigin);
+            if (window.location.hostname !== target.hostname) {
+                return;
+            }
+            const nextURL = `${target.origin}${window.location.pathname}${window.location.search}${window.location.hash}`;
+            if (nextURL !== window.location.href) {
+                window.location.replace(nextURL);
+            }
+        } catch {
+            // Ignore malformed dev origin overrides; the HTTP page still works with a manual refresh.
+        }
+    }, [devIngressPort, secureDevOrigin]);
 
     const handleLanguageChange = (lang: string) => {
         void i18n.changeLanguage(lang);
@@ -71,6 +108,33 @@ export default function AppLayout({
         }
         return items;
     }, [canAccessAdmin, router, t]);
+
+    const searchableMenuEntries = React.useMemo(
+        () => flattenMenuRoutes(route.routes),
+        [route.routes],
+    );
+
+    const filteredMenuEntries = React.useMemo(
+        () => filterMenuSearchEntries(searchableMenuEntries, menuSearch).slice(0, 8),
+        [menuSearch, searchableMenuEntries],
+    );
+
+    const menuSearchOptions = React.useMemo(
+        () => filteredMenuEntries.map((entry) => ({
+            value: entry.path,
+            label: (
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span>{entry.label}</span>
+                    {entry.groupLabel ? (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            {entry.groupLabel}
+                        </Text>
+                    ) : null}
+                </div>
+            ),
+        })),
+        [filteredMenuEntries],
+    );
 
     return (
         <ProLayout
@@ -106,6 +170,25 @@ export default function AppLayout({
                 >
                     <LocalTimezoneBadge />
                 </div>,
+                <AutoComplete
+                    key="nav-search"
+                    style={{ width: 280 }}
+                    value={menuSearch}
+                    options={menuSearchOptions}
+                    onSearch={setMenuSearch}
+                    onChange={(value) => setMenuSearch(String(value))}
+                    onSelect={(value) => {
+                        setMenuSearch('');
+                        router.push(String(value));
+                    }}
+                    notFoundContent={t('nav.search_empty')}
+                >
+                    <Input
+                        allowClear={true}
+                        prefix={<SearchOutlined />}
+                        placeholder={t('nav.search_placeholder')}
+                    />
+                </AutoComplete>,
                 <Dropdown
                     key="quick-actions"
                     menu={{ items: quickActionItems }}

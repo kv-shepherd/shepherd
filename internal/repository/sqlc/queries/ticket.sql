@@ -36,6 +36,7 @@ UPDATE tickets
 SET
     status = 'APPROVED',
     approver = sqlc.arg(approver),
+    modified_spec = COALESCE(sqlc.narg(modified_spec)::jsonb, modified_spec),
     updated_at = NOW()
 WHERE
     id = sqlc.arg(id)

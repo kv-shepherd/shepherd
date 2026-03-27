@@ -14,15 +14,17 @@ import {
     Input,
     InputNumber,
     Modal,
+    Popconfirm,
     Space,
     Tag,
     Typography,
 } from 'antd';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
 import { PermissionGuard } from '@/components/auth/PermissionGuard';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import type { ServiceWorkspaceContext } from '@/features/services-management/types';
 import { SetupGuideCard } from '@/features/setup-guide/components/SetupGuideCard';
 import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
 import { VMSavedDraftBanner } from '@/features/vm-management/components/VMSavedDraftBanner';
@@ -30,11 +32,14 @@ import { VMListTable } from '@/features/vm-management/components/VMListTable';
 import { VMRequestWizard } from '@/features/vm-management/components/VMRequestWizard';
 import { useVMManagementController } from '@/features/vm-management/hooks/useVMManagementController';
 import { useScopedVMRequestLauncher } from '@/features/vm-management/hooks/useScopedVMRequestLauncher';
+import { useApiGet } from '@/hooks/useApiQuery';
+import { api } from '@/lib/api/client';
 
 const { Paragraph, Text } = Typography;
 
 export default function VMsPageContent() {
     const { t } = useTranslation(['vm', 'common']);
+    const searchParams = useSearchParams();
     const vm = useVMManagementController({ t });
     const lastBatchActionFeedback = vm.lastBatchActionFeedback
         ? `${vm.lastBatchActionFeedback.action} submitted for ${vm.lastBatchActionFeedback.affectedCount} item(s)`
@@ -43,6 +48,32 @@ export default function VMsPageContent() {
         vmsTotal: vm.vmData?.pagination?.total,
     });
     const router = useRouter();
+    const scopedSystemId = searchParams.get('system_id') || undefined;
+    const scopedServiceId = searchParams.get('service_id') || undefined;
+    const hasScopedWorkspace = Boolean(scopedSystemId && scopedServiceId);
+    const scopedWorkspaceQuery = useApiGet<ServiceWorkspaceContext>(
+        ['vm-workspace-context', scopedSystemId, scopedServiceId],
+        () => api.GET('/systems/{system_id}/services/{service_id}/context', {
+            params: {
+                path: {
+                    system_id: scopedSystemId!,
+                    service_id: scopedServiceId!,
+                },
+            },
+        }),
+        { enabled: hasScopedWorkspace },
+    );
+    const scopedWorkspace = scopedWorkspaceQuery.data?.service;
+    const scopedSystemLabel = scopedWorkspace?.system_name || '—';
+    const scopedServiceLabel = scopedWorkspace?.name || '—';
+    const openCreateRequest = () => {
+        if (hasScopedWorkspace) {
+            vm.openWizard({ systemId: scopedSystemId, serviceId: scopedServiceId });
+            return;
+        }
+        vm.openWizard();
+    };
+
     useScopedVMRequestLauncher({
         canLaunchRequest: setupGuide.vmRequestReady,
         openWizard: vm.openWizard,
@@ -57,7 +88,7 @@ export default function VMsPageContent() {
                 title={t('title')}
                 subtitle={t('subtitle')}
                 actions={(
-                    <Space>
+                    <Space className="copy-friendly-actions">
                         <Button icon={<ReloadOutlined />} onClick={() => vm.refetch()}>
                             {t('common:button.refresh')}
                         </Button>
@@ -65,7 +96,7 @@ export default function VMsPageContent() {
                             <Button
                                 type="primary"
                                 icon={<PlusOutlined />}
-                                onClick={() => vm.openWizard()}
+                                onClick={openCreateRequest}
                                 disabled={!setupGuide.vmRequestReady}
                             >
                                 {t('create_request')}
@@ -88,50 +119,147 @@ export default function VMsPageContent() {
 
             {!setupGuide.vmRequestReady ? <SetupGuideCard variant="vm" /> : null}
 
+            {hasScopedWorkspace && (
+                <PageSurface style={{ marginBottom: 16 }}>
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+                            <Space direction="vertical" size={0}>
+                                <Text strong>{t('context.title')}</Text>
+                                <Text type="secondary">
+                                    {t('context.description', {
+                                        system: scopedSystemLabel,
+                                        service: scopedServiceLabel,
+                                    })}
+                                </Text>
+                            </Space>
+                            <Space wrap className="copy-friendly-actions">
+                                <PermissionGuard permission="vm:create">
+                                    <Button
+                                        type="primary"
+                                        onClick={openCreateRequest}
+                                        disabled={!setupGuide.vmRequestReady}
+                                    >
+                                        {t('create_request')}
+                                    </Button>
+                                </PermissionGuard>
+                                <Button
+                                    onClick={() =>
+                                        router.push(
+                                            `/services?system_id=${scopedSystemId}&detail_service_id=${scopedServiceId}`,
+                                        )
+                                    }
+                                >
+                                    {t('context.open_service')}
+                                </Button>
+                                <Button onClick={() => router.push('/vms')}>
+                                    {t('context.clear')}
+                                </Button>
+                            </Space>
+                        </Space>
+                        <Descriptions
+                            size="small"
+                            column={3}
+                            items={[
+                                {
+                                    key: 'system',
+                                    label: t('context.system'),
+                                    children: scopedSystemLabel,
+                                },
+                                {
+                                    key: 'service',
+                                    label: t('context.service'),
+                                    children: scopedServiceLabel,
+                                },
+                                {
+                                    key: 'summary',
+                                    label: t('context.summary'),
+                                    children: t('context.summary_value', {
+                                        vmCount: scopedWorkspaceQuery.data?.summary.visible_vm_count ?? 0,
+                                        requestCount: scopedWorkspaceQuery.data?.summary.recent_request_count ?? 0,
+                                    }),
+                                },
+                            ]}
+                        />
+                    </Space>
+                </PageSurface>
+            )}
+
             <PageSurface style={{ marginBottom: 16 }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
                     <Space direction="vertical" size={0}>
                         <Text strong>{t('batch.title')}</Text>
                         <Text type="secondary">{t('batch.subtitle')}</Text>
                     </Space>
-                    <Space wrap>
+                    <Space wrap className="copy-friendly-actions">
                         <Tag color="blue">{t('batch.selected', { count: vm.selectedVMIDs.length })}</Tag>
                         <PermissionGuard permission="vm:operate">
-                            <Button
-                                onClick={() => vm.submitBatchPowerSelected('START')}
-                                loading={vm.batchSubmitPending}
-                                disabled={vm.batchRateLimited}
+                            <Popconfirm
+                                title={t('batch.start_confirm', { count: vm.selectedVMIDs.length })}
+                                okText={t('common:button.confirm')}
+                                cancelText={t('common:button.cancel')}
+                                disabled={vm.selectedVMIDs.length === 0 || vm.batchRateLimited}
+                                onConfirm={() => vm.submitBatchPowerSelected('START')}
                             >
-                                {t('batch.start_selected')}
-                            </Button>
+                                <Button
+                                    onClick={(event) => event.preventDefault()}
+                                    loading={vm.batchSubmitPending}
+                                    disabled={vm.batchRateLimited || vm.selectedVMIDs.length === 0}
+                                >
+                                    {t('batch.start_selected')}
+                                </Button>
+                            </Popconfirm>
                         </PermissionGuard>
                         <PermissionGuard permission="vm:operate">
-                            <Button
-                                onClick={() => vm.submitBatchPowerSelected('STOP')}
-                                loading={vm.batchSubmitPending}
-                                disabled={vm.batchRateLimited}
+                            <Popconfirm
+                                title={t('batch.stop_confirm', { count: vm.selectedVMIDs.length })}
+                                okText={t('common:button.confirm')}
+                                cancelText={t('common:button.cancel')}
+                                disabled={vm.selectedVMIDs.length === 0 || vm.batchRateLimited}
+                                onConfirm={() => vm.submitBatchPowerSelected('STOP')}
                             >
-                                {t('batch.stop_selected')}
-                            </Button>
+                                <Button
+                                    onClick={(event) => event.preventDefault()}
+                                    loading={vm.batchSubmitPending}
+                                    disabled={vm.batchRateLimited || vm.selectedVMIDs.length === 0}
+                                >
+                                    {t('batch.stop_selected')}
+                                </Button>
+                            </Popconfirm>
                         </PermissionGuard>
                         <PermissionGuard permission="vm:operate">
-                            <Button
-                                onClick={() => vm.submitBatchPowerSelected('RESTART')}
-                                loading={vm.batchSubmitPending}
-                                disabled={vm.batchRateLimited}
+                            <Popconfirm
+                                title={t('batch.restart_confirm', { count: vm.selectedVMIDs.length })}
+                                okText={t('common:button.confirm')}
+                                cancelText={t('common:button.cancel')}
+                                disabled={vm.selectedVMIDs.length === 0 || vm.batchRateLimited}
+                                onConfirm={() => vm.submitBatchPowerSelected('RESTART')}
                             >
-                                {t('batch.restart_selected')}
-                            </Button>
+                                <Button
+                                    onClick={(event) => event.preventDefault()}
+                                    loading={vm.batchSubmitPending}
+                                    disabled={vm.batchRateLimited || vm.selectedVMIDs.length === 0}
+                                >
+                                    {t('batch.restart_selected')}
+                                </Button>
+                            </Popconfirm>
                         </PermissionGuard>
                         <PermissionGuard permission="vm:delete">
-                            <Button
-                                danger
-                                onClick={vm.submitBatchDeleteSelected}
-                                loading={vm.batchSubmitPending}
-                                disabled={vm.batchRateLimited}
+                            <Popconfirm
+                                title={t('batch.delete_confirm', { count: vm.selectedVMIDs.length })}
+                                okText={t('common:button.confirm')}
+                                cancelText={t('common:button.cancel')}
+                                disabled={vm.selectedVMIDs.length === 0 || vm.batchRateLimited}
+                                onConfirm={vm.submitBatchDeleteSelected}
                             >
-                                {t('batch.delete_selected')}
-                            </Button>
+                                <Button
+                                    danger
+                                    onClick={(event) => event.preventDefault()}
+                                    loading={vm.batchSubmitPending}
+                                    disabled={vm.batchRateLimited || vm.selectedVMIDs.length === 0}
+                                >
+                                    {t('batch.delete_selected')}
+                                </Button>
+                            </Popconfirm>
                         </PermissionGuard>
                         <PermissionGuard permission="vm:operate">
                             <Button
@@ -167,15 +295,20 @@ export default function VMsPageContent() {
                 onStart={vm.startVM}
                 onStop={vm.stopVM}
                 onRestart={vm.restartVM}
-                onConsole={vm.requestConsole}
+                onConsole={(vmRecord) => router.push(`/vms/${vmRecord.id}?focus=console`)}
                 onDelete={vm.openDeleteModal}
                 onModify={vm.openModifyModal}
                 onRequestSimilar={(vmId) => void vm.openSimilarRequest(vmId)}
                 onDetail={(vmId) => router.push(`/vms/${vmId}`)}
+                onOpenSystem={(systemId) => router.push(`/systems?detail_system_id=${systemId}`)}
+                onOpenService={(systemId, serviceId) =>
+                    router.push(`/services?system_id=${systemId}&detail_service_id=${serviceId}`)
+                }
+                contextSystemId={scopedSystemId}
+                contextServiceId={scopedServiceId}
                 selectedRowKeys={vm.selectedVMIDs}
                 onSelectionChange={vm.setSelectedVMIDs}
             />
-
             {vm.activeBatchID && (
                 <PageSurface style={{ marginTop: 16 }}>
                     <div
@@ -217,7 +350,7 @@ export default function VMsPageContent() {
                                 <Text type="secondary">{lastBatchActionFeedback}</Text>
                             )}
                         </Space>
-                        <Space wrap>
+                        <Space wrap className="copy-friendly-actions">
                             <Button
                                 icon={<ReloadOutlined />}
                                 onClick={vm.refreshBatch}

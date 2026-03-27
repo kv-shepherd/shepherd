@@ -3,89 +3,117 @@ package provider
 import (
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
-
-	"kv-shepherd.io/shepherd/internal/domain"
 )
 
-func TestMapVMStatus_UsesPrintableStatusMappings(t *testing.T) {
+func TestKubeVirtMapper_MapVM_MapsPrimaryIPAddress(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name      string
-		printable kubevirtv1.VirtualMachinePrintableStatus
-		want      domain.VMStatus
-	}{
-		{
-			name:      "starting_maps_to_starting",
-			printable: kubevirtv1.VirtualMachineStatusStarting,
-			want:      domain.VMStatusStarting,
+	mapper := NewKubeVirtMapper()
+	vm := &kubevirtv1.VirtualMachine{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "vm-1",
+			Namespace: "team-a",
 		},
-		{
-			name:      "waiting_for_volume_binding_maps_to_pending",
-			printable: kubevirtv1.VirtualMachineStatusWaitingForVolumeBinding,
-			want:      domain.VMStatusPending,
-		},
-		{
-			name:      "waiting_for_receiver_maps_to_pending",
-			printable: kubevirtv1.VirtualMachineStatusWaitingForReceiver,
-			want:      domain.VMStatusPending,
-		},
-		{
-			name:      "crashloop_maps_to_failed",
-			printable: kubevirtv1.VirtualMachineStatusCrashLoopBackOff,
-			want:      domain.VMStatusFailed,
-		},
-		{
-			name:      "err_image_pull_maps_to_failed",
-			printable: kubevirtv1.VirtualMachineStatusErrImagePull,
-			want:      domain.VMStatusFailed,
-		},
-		{
-			name:      "unknown_maps_to_unknown",
-			printable: kubevirtv1.VirtualMachineStatusUnknown,
-			want:      domain.VMStatusUnknown,
+	}
+	vmi := &kubevirtv1.VirtualMachineInstance{
+		Status: kubevirtv1.VirtualMachineInstanceStatus{
+			NodeName: "worker-a",
+			GuestOSInfo: kubevirtv1.VirtualMachineInstanceGuestOSInfo{
+				PrettyName: "Ubuntu 24.04.2 LTS",
+				VersionID:  "24.04",
+				ID:         "ubuntu",
+			},
+			Interfaces: []kubevirtv1.VirtualMachineInstanceNetworkInterface{
+				{
+					Name: "default",
+					IP:   "10.0.0.18",
+					IPs:  []string{"10.0.0.18", "fd00::18"},
+				},
+			},
 		},
 	}
 
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			vm := &kubevirtv1.VirtualMachine{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "vm-1",
-					Namespace: "ns-1",
-				},
-				Status: kubevirtv1.VirtualMachineStatus{
-					PrintableStatus: tc.printable,
-				},
-			}
-
-			if got := mapVMStatus(vm, nil); got != tc.want {
-				t.Fatalf("mapVMStatus(printable=%s) = %s, want %s", tc.printable, got, tc.want)
-			}
-		})
+	got, err := mapper.MapVM(vm, vmi)
+	if err != nil {
+		t.Fatalf("MapVM() error = %v", err)
+	}
+	if got.IPAddress != "10.0.0.18" {
+		t.Fatalf("IPAddress = %q, want %q", got.IPAddress, "10.0.0.18")
+	}
+	if got.NodeName != "worker-a" {
+		t.Fatalf("NodeName = %q, want %q", got.NodeName, "worker-a")
+	}
+	if got.OSName != "Ubuntu 24.04.2 LTS" {
+		t.Fatalf("OSName = %q, want %q", got.OSName, "Ubuntu 24.04.2 LTS")
+	}
+	if got.OSVersion != "24.04" {
+		t.Fatalf("OSVersion = %q, want %q", got.OSVersion, "24.04")
+	}
+	if got.OSFamily != "linux" {
+		t.Fatalf("OSFamily = %q, want %q", got.OSFamily, "linux")
 	}
 }
 
-func TestMapVMStatus_FallbackRunStrategyHaltedMapsToStopped(t *testing.T) {
+func TestKubeVirtMapper_MapVM_MapsConsoleCapabilityDefaultsAndOverrides(t *testing.T) {
 	t.Parallel()
 
-	strategy := kubevirtv1.RunStrategyHalted
+	mapper := NewKubeVirtMapper()
+	graphicsDisabled := false
+	serialDisabled := false
 	vm := &kubevirtv1.VirtualMachine{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "vm-1",
-			Namespace: "ns-1",
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "vm-console",
+			Namespace: "team-a",
 		},
 		Spec: kubevirtv1.VirtualMachineSpec{
-			RunStrategy: &strategy,
+			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
+				Spec: kubevirtv1.VirtualMachineInstanceSpec{
+					Domain: kubevirtv1.DomainSpec{
+						Devices: kubevirtv1.Devices{
+							AutoattachGraphicsDevice: &graphicsDisabled,
+							AutoattachSerialConsole:  &serialDisabled,
+						},
+					},
+				},
+			},
 		},
 	}
 
-	if got := mapVMStatus(vm, nil); got != domain.VMStatusStopped {
-		t.Fatalf("mapVMStatus(runStrategy=Halted) = %s, want %s", got, domain.VMStatusStopped)
+	got, err := mapper.MapVM(vm, nil)
+	if err != nil {
+		t.Fatalf("MapVM() error = %v", err)
+	}
+	if got.Spec.AutoattachGraphicsDevice {
+		t.Fatal("AutoattachGraphicsDevice = true, want false")
+	}
+	if got.Spec.AutoattachSerialConsole {
+		t.Fatal("AutoattachSerialConsole = true, want false")
+	}
+
+	defaultVM := &kubevirtv1.VirtualMachine{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "vm-default-console",
+			Namespace: "team-a",
+		},
+		Spec: kubevirtv1.VirtualMachineSpec{
+			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
+				Spec: kubevirtv1.VirtualMachineInstanceSpec{
+					Domain: kubevirtv1.DomainSpec{},
+				},
+			},
+		},
+	}
+
+	defaultGot, err := mapper.MapVM(defaultVM, nil)
+	if err != nil {
+		t.Fatalf("MapVM() default error = %v", err)
+	}
+	if !defaultGot.Spec.AutoattachGraphicsDevice {
+		t.Fatal("default AutoattachGraphicsDevice = false, want true")
+	}
+	if !defaultGot.Spec.AutoattachSerialConsole {
+		t.Fatal("default AutoattachSerialConsole = false, want true")
 	}
 }

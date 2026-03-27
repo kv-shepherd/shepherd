@@ -18,6 +18,11 @@ import (
 const liveVMStatusPersistMinInterval = 15 * time.Second
 const liveVMCreateBootstrapGraceWindow = 2 * time.Minute
 
+type vmLiveGroupKey struct {
+	clusterID string
+	namespace string
+}
+
 func (s *Server) refreshVMLiveState(ctx context.Context, vmRow *ent.VM) *ent.VM {
 	if s == nil || s.vmService == nil || vmRow == nil || strings.TrimSpace(vmRow.ClusterID) == "" {
 		return vmRow
@@ -46,17 +51,12 @@ func (s *Server) refreshVMLiveStates(ctx context.Context, vms []*ent.VM) []*ent.
 		return vms
 	}
 
-	type groupKey struct {
-		clusterID string
-		namespace string
-	}
-
-	groups := make(map[groupKey][]int)
+	groups := make(map[vmLiveGroupKey][]int)
 	for i, vmRow := range vms {
 		if vmRow == nil || strings.TrimSpace(vmRow.ClusterID) == "" || strings.TrimSpace(vmRow.Namespace) == "" {
 			continue
 		}
-		key := groupKey{
+		key := vmLiveGroupKey{
 			clusterID: vmRow.ClusterID,
 			namespace: vmRow.Namespace,
 		}
@@ -109,6 +109,58 @@ func (s *Server) refreshVMLiveStates(ctx context.Context, vms []*ent.VM) []*ent.
 	}
 
 	return vms
+}
+
+func (s *Server) loadObservedLiveVMsByID(ctx context.Context, vms []*ent.VM) map[string]*domain.VM {
+	liveByVMID := make(map[string]*domain.VM, len(vms))
+	if s == nil || s.vmService == nil || len(vms) == 0 {
+		return liveByVMID
+	}
+
+	groups := make(map[vmLiveGroupKey][]*ent.VM)
+	for _, vmRow := range vms {
+		if vmRow == nil || strings.TrimSpace(vmRow.ClusterID) == "" || strings.TrimSpace(vmRow.Namespace) == "" {
+			continue
+		}
+		key := vmLiveGroupKey{
+			clusterID: vmRow.ClusterID,
+			namespace: vmRow.Namespace,
+		}
+		groups[key] = append(groups[key], vmRow)
+	}
+
+	for key, group := range groups {
+		liveList, err := s.vmService.ListVMs(ctx, key.clusterID, key.namespace, infracontract.ListOptions{})
+		if err != nil {
+			logger.Warn("failed to load live vm details for namespace",
+				zap.String("cluster_id", key.clusterID),
+				zap.String("namespace", key.namespace),
+				zap.Error(err),
+			)
+			continue
+		}
+
+		liveByName := make(map[string]*domain.VM)
+		if liveList != nil {
+			for _, item := range liveList.Items {
+				if item == nil {
+					continue
+				}
+				liveByName[item.Namespace+"/"+item.Name] = item
+			}
+		}
+
+		for _, vmRow := range group {
+			if vmRow == nil {
+				continue
+			}
+			if liveVM := liveByName[vmRow.Namespace+"/"+vmRow.Name]; liveVM != nil {
+				liveByVMID[vmRow.ID] = liveVM
+			}
+		}
+	}
+
+	return liveByVMID
 }
 
 func (s *Server) applyObservedVMState(ctx context.Context, vmRow *ent.VM, liveVM *domain.VM, observedAt time.Time) *ent.VM {

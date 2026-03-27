@@ -140,7 +140,7 @@ go install github.com/tufin/oasdiff@latest
 ### GitHub Action
 
 ```yaml
-# .github/workflows/api-contract.yaml
+# .github/workflows/api-contract-validation.yml
 name: API Contract Validation
 
 on:
@@ -575,7 +575,7 @@ additional-imports:
 
 ### Phase 2: CI Integration
 
-- [ ] Create `.github/workflows/api-contract.yaml`
+- [ ] Create `.github/workflows/api-contract-validation.yml`
 - [ ] Add `api-check` to required status checks
 - [ ] Test breaking change detection on a PR
 

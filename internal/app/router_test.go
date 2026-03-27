@@ -89,6 +89,12 @@ func TestBuildCORSConfig_UsesDynamicOriginCheckerWhenAvailable(t *testing.T) {
 	require.False(t, corsCfg.AllowOriginWithContextFunc(ctx, "https://denied.example.com"))
 }
 
+func TestIsJWTOptionalPath_AllowsVMVNCBootstrap(t *testing.T) {
+	require.True(t, isJWTOptionalPath("/api/v1/vms/vm-1/vnc"))
+	require.True(t, isJWTOptionalPath("/api/v1/vms/vm-1/serial"))
+	require.False(t, isJWTOptionalPath("/api/v1/vms/vm-1/console/status"))
+}
+
 func TestMapClusterHealthStatus(t *testing.T) {
 	require.Equal(t, entcluster.StatusHEALTHY, mapClusterHealthStatus(provider.ClusterStatusHealthy))
 	require.Equal(t, entcluster.StatusUNHEALTHY, mapClusterHealthStatus(provider.ClusterStatusUnhealthy))

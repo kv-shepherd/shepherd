@@ -63,11 +63,9 @@ func main() {
 		os.Exit(0)
 	}
 
-	swaggerURL := fmt.Sprintf(
-		"https://github.com/kubevirt/kubevirt/releases/download/v%s/swagger.json", version)
 	fmt.Printf("📥 Downloading KubeVirt v%s swagger.json ...\n", version)
 
-	swaggerData, err := httpGet(swaggerURL)
+	swaggerData, err := downloadSwagger(version)
 	if err != nil {
 		fatalf("download swagger.json: %v\n  Check: https://github.com/kubevirt/kubevirt/releases/tag/v%s", err, version)
 	}
@@ -355,6 +353,25 @@ func httpGet(url string) ([]byte, error) {
 		return nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
 	}
 	return io.ReadAll(resp.Body)
+}
+
+func downloadSwagger(version string) ([]byte, error) {
+	var errs []string
+	for _, url := range swaggerDownloadURLs(version) {
+		data, err := httpGet(url)
+		if err == nil {
+			return data, nil
+		}
+		errs = append(errs, err.Error())
+	}
+	return nil, fmt.Errorf("all download attempts failed: %s", strings.Join(errs, "; "))
+}
+
+func swaggerDownloadURLs(version string) []string {
+	return []string{
+		fmt.Sprintf("https://github.com/kubevirt/kubevirt/releases/download/v%s/swagger.json", version),
+		fmt.Sprintf("https://raw.githubusercontent.com/kubevirt/kubevirt/v%s/api/openapi-spec/swagger.json", version),
+	}
 }
 
 func readManifest() (*manifest, error) {

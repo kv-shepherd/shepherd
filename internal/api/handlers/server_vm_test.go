@@ -74,7 +74,7 @@ func TestVmToAPI_Environment_Prod(t *testing.T) {
 
 	vm := minimalEntVM(t)
 	vm.ClusterID = "cluster-a"
-	got := vmToAPI(vm, "prod", "", nil)
+	got := vmToAPI(vm, "prod", "", nil, vmSnapshotInfo{}, nil)
 
 	if got.Environment != generated.VMEnvironmentProd {
 		t.Fatalf("environment = %q, want %q", got.Environment, generated.VMEnvironmentProd)
@@ -86,7 +86,7 @@ func TestVmToAPI_Environment_Test(t *testing.T) {
 
 	vm := minimalEntVM(t)
 	vm.ClusterID = "cluster-b"
-	got := vmToAPI(vm, "test", "", nil)
+	got := vmToAPI(vm, "test", "", nil, vmSnapshotInfo{}, nil)
 
 	if got.Environment != generated.VMEnvironmentTest {
 		t.Fatalf("environment = %q, want %q", got.Environment, generated.VMEnvironmentTest)
@@ -98,7 +98,7 @@ func TestVmToAPI_Environment_Empty_WhenClusterEnvBlank(t *testing.T) {
 
 	vm := minimalEntVM(t)
 	// No clusterEnv provided → environment must remain zero value.
-	got := vmToAPI(vm, "", "", nil)
+	got := vmToAPI(vm, "", "", nil, vmSnapshotInfo{}, nil)
 
 	if got.Environment != "" {
 		t.Fatalf("environment = %q, want empty string (no cluster env)", got.Environment)
@@ -110,7 +110,7 @@ func TestVmToAPI_PreservesCoreFields(t *testing.T) {
 
 	vm := minimalEntVM(t)
 	vm.ClusterID = "cluster-core"
-	got := vmToAPI(vm, "prod", "", nil)
+	got := vmToAPI(vm, "prod", "", nil, vmSnapshotInfo{}, nil)
 
 	if got.Id != vm.ID {
 		t.Fatalf("id = %q, want %q", got.Id, vm.ID)
@@ -123,6 +123,66 @@ func TestVmToAPI_PreservesCoreFields(t *testing.T) {
 	}
 	if got.ClusterId != vm.ClusterID {
 		t.Fatalf("cluster_id = %q, want %q", got.ClusterId, vm.ClusterID)
+	}
+}
+
+func TestVmToAPI_UsesLiveGuestOSInfoWhenAvailable(t *testing.T) {
+	t.Parallel()
+
+	vm := minimalEntVM(t)
+	got := vmToAPI(
+		vm,
+		"",
+		"",
+		&domain.VM{
+			OSName:    "Ubuntu 24.04.2 LTS",
+			OSVersion: "24.04",
+			OSFamily:  "linux",
+		},
+		vmSnapshotInfo{
+			OSName:    "Linux",
+			OSVersion: "22.04",
+			OSFamily:  "linux",
+		},
+		nil,
+	)
+
+	if got.OsName != "Ubuntu 24.04.2 LTS" {
+		t.Fatalf("os_name = %q, want live guest os name", got.OsName)
+	}
+	if got.OsVersion != "24.04" {
+		t.Fatalf("os_version = %q, want live guest os version", got.OsVersion)
+	}
+	if got.OsFamily != "linux" {
+		t.Fatalf("os_family = %q, want linux", got.OsFamily)
+	}
+}
+
+func TestVmToAPI_FallsBackToSnapshotOSInfoWhenLiveGuestOSMissing(t *testing.T) {
+	t.Parallel()
+
+	vm := minimalEntVM(t)
+	got := vmToAPI(
+		vm,
+		"",
+		"",
+		&domain.VM{},
+		vmSnapshotInfo{
+			OSName:    "Windows",
+			OSVersion: "Server 2022",
+			OSFamily:  "windows",
+		},
+		nil,
+	)
+
+	if got.OsName != "Windows" {
+		t.Fatalf("os_name = %q, want snapshot fallback", got.OsName)
+	}
+	if got.OsVersion != "Server 2022" {
+		t.Fatalf("os_version = %q, want snapshot fallback", got.OsVersion)
+	}
+	if got.OsFamily != "windows" {
+		t.Fatalf("os_family = %q, want windows", got.OsFamily)
 	}
 }
 

@@ -16,6 +16,7 @@ import { AUTH_STORAGE_KEY } from '@/stores/auth';
 import {
   getRequestPath,
   shouldAttachAuthHeader,
+  shouldLogoutOnUnauthorized,
   shouldRedirectToLoginOnUnauthorized,
 } from './authPolicy';
 
@@ -65,6 +66,10 @@ api.use({
   async onResponse({ request, response }) {
     if (response.status === 401 && typeof window !== 'undefined') {
       const requestPath = getRequestPath(request, window.location.origin);
+
+      if (!shouldLogoutOnUnauthorized(requestPath)) {
+        return response;
+      }
 
       const { useAuthStore } = await import('@/stores/auth');
       useAuthStore.getState().logout();

@@ -75,7 +75,7 @@ api-check: api-lint
 > **Security Note**: All third-party actions MUST be pinned to specific versions or commit SHAs to prevent supply chain attacks.
 
 ```yaml
-# .github/workflows/api-contract.yaml
+# .github/workflows/api-contract-validation.yml
 name: API Contract Validation
 
 on:

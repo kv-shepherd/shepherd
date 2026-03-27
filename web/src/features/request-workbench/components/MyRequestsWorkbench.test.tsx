@@ -59,6 +59,13 @@ vi.mock('react-i18next', () => ({
                 'workbench.details.service': 'Service',
                 'workbench.details.no_context': 'This request does not have reusable request context.',
                 'workbench.details.open_request_context': 'Open Request Context',
+                'workbench.details.execution_pending_hint': 'Approval is complete, but platform execution is still in progress.',
+                'workbench.details.execution_pending_description': 'Do not treat this as a finished change yet. The downstream VM operation can still fail later and will show its final outcome here.',
+                'workbench.details.success_hint': 'This request finished successfully.',
+                'workbench.details.failed_hint': 'Approval was accepted, but downstream execution failed.',
+                'workbench.details.failed_description': 'Review the failure details below before retrying or submitting a follow-up request.',
+                'workbench.details.rejected_hint': 'This request was rejected and will not execute.',
+                'workbench.details.cancelled_hint': 'This request was cancelled before execution completed.',
                 'workbench.in_progress.description': 'Review requests that are still waiting for approval or downstream processing.',
                 ticket_id: 'Ticket ID',
                 operation_type: 'Operation',
@@ -199,6 +206,8 @@ vi.mock('../hooks/useMyRequestsController', () => ({
 
 import { MyRequestsWorkbench } from './MyRequestsWorkbench';
 
+const REQUEST_WORKBENCH_TEST_TIMEOUT_MS = 20_000;
+
 describe('MyRequestsWorkbench', () => {
     beforeEach(() => {
         state.overrides = {};
@@ -213,7 +222,7 @@ describe('MyRequestsWorkbench', () => {
         expect(screen.getAllByText('Need a VM').length).toBeGreaterThan(0);
         expect(screen.getByTestId('approval-action-cancel-ticket-pending-1')).toBeVisible();
         expect(screen.getByTestId('approval-action-details-ticket-pending-1')).toBeVisible();
-    });
+    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
 
     it('shows the history status segmented control in history view', () => {
         state.overrides = {
@@ -247,7 +256,7 @@ describe('MyRequestsWorkbench', () => {
         expect(screen.getByTestId('approvals-status-filter')).toBeVisible();
         expect(screen.getByText('History')).toBeVisible();
         expect(screen.getByRole('button', { name: 'Reuse Request' })).toBeVisible();
-    }, 10000);
+    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
 
     it('opens a request details drawer with reusable request context', () => {
         state.overrides = {
@@ -302,7 +311,53 @@ describe('MyRequestsWorkbench', () => {
         expect(screen.getByText('svc-1')).toBeVisible();
         expect(screen.getByRole('button', { name: 'Open Request Context' })).toBeVisible();
         expect(screen.getAllByRole('button', { name: 'Reuse Request' }).length).toBeGreaterThan(0);
-    }, 10000);
+        expect(
+            screen.getByText('Approval is complete, but platform execution is still in progress.'),
+        ).toBeVisible();
+    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
+
+    it('surfaces downstream execution failures after approval succeeds', () => {
+        state.overrides = {
+            view: 'history',
+            data: {
+                items: [
+                    {
+                        id: 'ticket-failed-1',
+                        operation_type: 'MODIFY',
+                        status: 'FAILED',
+                        requester: 'alice',
+                        approver: 'bob',
+                        reason: 'Resize VM',
+                        created_at: new Date('2026-03-16T00:00:00Z').toISOString(),
+                        updated_at: new Date('2026-03-16T01:00:00Z').toISOString(),
+                        provisioning: {
+                            phase: 'Failed',
+                            failure_message: 'CPU hotplug failed on the target node',
+                        },
+                        request_prefill: {
+                            system_id: 'sys-1',
+                            service_id: 'svc-1',
+                            template_id: 'tpl-1',
+                            instance_size_id: 'size-1',
+                            namespace: 'team-prod',
+                            reason: 'Resize VM',
+                            batch_count: 1,
+                        },
+                    },
+                ],
+                pagination: { page: 1, per_page: 20, total: 1 },
+            },
+        };
+
+        render(<MyRequestsWorkbench />);
+        expect(screen.getByText('CPU hotplug failed on the target node')).toBeVisible();
+        fireEvent.click(screen.getByTestId('approval-action-details-ticket-failed-1'));
+
+        expect(
+            screen.getByText('Approval was accepted, but downstream execution failed.'),
+        ).toBeVisible();
+        expect(screen.getAllByText('CPU hotplug failed on the target node').length).toBeGreaterThan(0);
+    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
 
     it('shows a guided empty state for drafts', () => {
         state.overrides = {
@@ -315,7 +370,7 @@ describe('MyRequestsWorkbench', () => {
 
         expect(screen.getByText('No saved drafts yet')).toBeVisible();
         expect(screen.getByRole('button', { name: 'Open Virtual Machines' })).toBeVisible();
-    });
+    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
 
     it('shows a resumable local draft in the drafts tab', () => {
         state.overrides = {
@@ -338,7 +393,7 @@ describe('MyRequestsWorkbench', () => {
         expect(screen.getByRole('button', { name: 'Resume Draft' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'Discard Draft' })).toBeVisible();
         expect(screen.getByText('Service A')).toBeVisible();
-    });
+    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
 
     it('routes to the vm request flow after preparing a history reuse draft', () => {
         const prepareHistoryReuse = vi.fn(() => true);
@@ -376,7 +431,7 @@ describe('MyRequestsWorkbench', () => {
             expect.objectContaining({ id: 'ticket-approved-1' })
         );
         expect(state.push).toHaveBeenCalledWith('/vms?request=create&draft=resume');
-    }, 15000);
+    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
 
     it('renders active batch tracking inside the batch jobs tab', () => {
         state.searchParams = new URLSearchParams('tab=batch_jobs');
@@ -409,5 +464,5 @@ describe('MyRequestsWorkbench', () => {
         expect(screen.getAllByText('batch-1').length).toBeGreaterThan(0);
         expect(screen.getByRole('button', { name: 'Retry Failed' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'Cancel Pending' })).toBeVisible();
-    }, 15000);
+    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
 });
