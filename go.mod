@@ -21,7 +21,7 @@ require (
 	github.com/pb33f/libopenapi-validator v0.13.1
 	github.com/riverqueue/river v0.31.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.31.0
-	github.com/riverqueue/river/rivertype v0.31.0
+	github.com/riverqueue/river/rivertype v0.32.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
