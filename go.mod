@@ -3,7 +3,7 @@ module kv-shepherd.io/shepherd
 go 1.25.8
 
 require (
-	entgo.io/ent v0.14.5
+	entgo.io/ent v0.14.6
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/getkin/kin-openapi v0.134.0
 	github.com/gin-contrib/cors v1.7.6
@@ -40,7 +40,7 @@ require (
 )
 
 require (
-	ariga.io/atlas v0.32.1-0.20250325101103-175b25e1c1b9 // indirect
+	ariga.io/atlas v0.36.2-0.20250730182955-2c6300d0a3e1 // indirect
 	github.com/Azure/go-ntlmssp v0.1.0 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
