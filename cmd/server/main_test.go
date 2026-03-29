@@ -1,36 +1,22 @@
 package main
 
-import (
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
-)
+import "testing"
 
-func TestRun_ReturnsConfigValidationErrorForShortSessionSecret(t *testing.T) {
-	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("security:\n  session_secret: short\n"), 0o600); err != nil {
-		t.Fatalf("write config.yaml: %v", err)
-	}
+func TestMainDelegatesToServerBootstrap(t *testing.T) {
+	t.Parallel()
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
+	called := false
+	original := runMain
+	runMain = func() {
+		called = true
 	}
-	t.Cleanup(func() {
-		_ = os.Chdir(cwd)
-	})
-	chdirErr := os.Chdir(tempDir)
-	if chdirErr != nil {
-		t.Fatalf("chdir temp dir: %v", chdirErr)
-	}
+	defer func() {
+		runMain = original
+	}()
 
-	runErr := run()
-	if runErr == nil {
-		t.Fatal("run() error = nil, want config validation failure")
-	}
-	if !strings.Contains(runErr.Error(), "validate config") {
-		t.Fatalf("run() error = %q, want validate config failure", runErr.Error())
+	main()
+
+	if !called {
+		t.Fatal("expected main to delegate to serverbootstrap.Main")
 	}
 }

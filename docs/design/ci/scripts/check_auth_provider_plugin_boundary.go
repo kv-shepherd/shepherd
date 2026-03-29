@@ -767,6 +767,38 @@ func main() {
 			forbiddenRegex: privateNaming,
 		},
 		{
+			path: "tools/sdk-smoke/authproviderplugin-external/sdk_test.go",
+			required: []string{
+				`"kv-shepherd.io/shepherd/pkg/authproviderplugin"`,
+				"authproviderplugin.RegisterAdminAdapter(",
+			},
+			forbiddenText: []string{
+				`"kv-shepherd.io/shepherd/internal/`,
+			},
+			forbiddenRegex: privateNaming,
+		},
+		{
+			path: "tools/sdk-smoke/authproviderplugin-external/plugins/example/plugin.go",
+			required: []string{
+				`"kv-shepherd.io/shepherd/pkg/authproviderplugin"`,
+				"authproviderplugin.MustRegisterAdminAdapter(",
+			},
+			forbiddenText: []string{
+				`"kv-shepherd.io/shepherd/internal/`,
+			},
+			forbiddenRegex: privateNaming,
+		},
+		{
+			path: "tools/sdk-smoke/authproviderplugin-external/cmd/server-enterprise/main.go",
+			required: []string{
+				`"kv-shepherd.io/shepherd/pkg/serverbootstrap"`,
+			},
+			forbiddenText: []string{
+				`"kv-shepherd.io/shepherd/internal/`,
+			},
+			forbiddenRegex: privateNaming,
+		},
+		{
 			path: "pkg/authproviderplugin/admin.go",
 			required: []string{
 				`"kv-shepherd.io/shepherd/internal/provider/adminglobal"`,

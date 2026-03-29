@@ -26,6 +26,44 @@ Current model:
 Plugin authors should only depend on `pkg/authproviderplugin`, not
 `internal/provider`.
 
+## Separate Repository Guidance
+
+Private or external provider repositories should import only:
+
+- `kv-shepherd.io/shepherd/pkg/authproviderplugin`
+
+They must not import:
+
+- `kv-shepherd.io/shepherd/internal/...`
+
+The repository includes a blocking smoke module under:
+
+- `tools/sdk-smoke/authproviderplugin-external`
+
+That smoke test proves a separate Go module can compile and test against the
+public SDK surface without any `internal/...` imports, and can also compile an
+enterprise server entrypoint against `pkg/serverbootstrap`.
+
+For the broader public/private repository collaboration model, see:
+
+- `plugins/authprovider/PRIVATE_REPOSITORY_GUIDE.md`
+
+## Separate Repository Author Workflow
+
+For enterprise or private implementations that live outside this repository:
+
+1. Create a separate Go module for the provider implementation.
+2. Import only `kv-shepherd.io/shepherd/pkg/authproviderplugin`.
+3. Implement `AdminAdapter` plus any optional runtime/directory capabilities
+   needed by the provider.
+4. Register the adapter with
+   `authproviderplugin.RegisterAdminAdapter` or
+   `authproviderplugin.MustRegisterAdminAdapter`.
+5. Keep provider-specific mapping, transport, and deployment glue in the
+   external repository; do not import Shepherd `internal/...`.
+6. Use `tools/sdk-smoke/authproviderplugin-external` in this repository as the
+   reference pattern for a compile-only external consumer.
+
 ## Auto Registration
 
 Runtime auto-registration is activated by importing:

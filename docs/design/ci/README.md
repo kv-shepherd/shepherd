@@ -200,6 +200,9 @@ Current split (2026-03-26 optimization):
   command definitions.
 - `check_workflow_make_target_parity.sh` is blocking and enforces that workflow
   files keep using those repository targets.
+- `authproviderplugin-sdk-smoke` is blocking inside `ci-governance` and proves
+  a separate Go module can consume `pkg/authproviderplugin` without importing
+  Shepherd `internal/...`.
 - `Govulncheck`: runs `make govulncheck` as a blocking job and is also included in
   `make lint`, `make ci-backend`, and `make pr`.
 - `Gitleaks`: runs `make secrets-scan` as a blocking job and is also included in

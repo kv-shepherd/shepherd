@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke
 
 # Go parameters
 GO_TOOLCHAIN_VERSION?=go1.25.8
@@ -184,8 +184,13 @@ ci-governance:
 	@go run docs/design/ci/scripts/check_dead_tests.go
 	@go run docs/design/ci/scripts/check_repository_tests.go
 	@bash docs/design/ci/scripts/check_workflow_make_target_parity.sh
+	@$(MAKE) authproviderplugin-sdk-smoke
 	@$(MAKE) secrets-scan
 	@$(MAKE) kubevirt-schema-check
+
+## authproviderplugin-sdk-smoke: Prove the public auth-provider SDK can be consumed from a separate module.
+authproviderplugin-sdk-smoke:
+	@cd tools/sdk-smoke/authproviderplugin-external && $(GOCMD) test ./...
 
 ## ci-checks: Backward-compatible alias for governance/static gates
 ci-checks: ci-governance
