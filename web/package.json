@@ -73,6 +73,9 @@
   },
   "overrides": {
     "flatted": "^3.4.2",
+    "@ant-design/pro-layout": {
+      "path-to-regexp": "8.4.0"
+    },
     "@typescript-eslint/typescript-estree": {
       "minimatch": "^9.0.7"
     },

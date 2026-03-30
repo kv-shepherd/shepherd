@@ -48,6 +48,22 @@ For the broader public/private repository collaboration model, see:
 
 - `plugins/authprovider/PRIVATE_REPOSITORY_GUIDE.md`
 
+## Public SDK Guarantees
+
+The current public, downstream-consumable surface is intentionally small:
+
+- `pkg/authproviderplugin` is the public provider SDK entrypoint
+- `pkg/serverbootstrap` is the public server assembly seam for enterprise
+  distributions
+- `tools/sdk-smoke/authproviderplugin-external` proves an external Go module can
+  compile against these public packages without importing `internal/...`
+
+The governance lane treats these guarantees as blocking:
+
+- CI boundary checks fail if public examples or smoke modules import
+  `internal/...`
+- SDK smoke must continue to compile as an external consumer
+
 ## Separate Repository Author Workflow
 
 For enterprise or private implementations that live outside this repository:

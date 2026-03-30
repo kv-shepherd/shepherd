@@ -90,6 +90,14 @@ Use the following rule of thumb when new work arrives:
    `internal/...`, treat that as a public-SDK gap and fix the public repository
    first.
 
+Applied example:
+
+- generic WeCom multi-department sync behavior belongs in the public host
+- enterprise-specific department-name defaults or local field mapping belong in
+  the private repository
+- runtime auth-provider rows remain runtime/business configuration rather than
+  deployment-time `config.yaml`
+
 ## Recommended Delivery Sequence
 
 1. Evaluate whether the requested behavior is general or enterprise-specific.
