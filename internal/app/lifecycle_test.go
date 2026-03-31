@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	storagev1 "k8s.io/api/storage/v1"
@@ -177,5 +179,25 @@ func TestApplication_refreshClusterHealth_DisabledClusterDoesNotStayHealthy(t *t
 	}
 	if probeCalls != 0 {
 		t.Fatalf("probeCalls = %d, want 0", probeCalls)
+	}
+}
+
+func TestApplicationStart_ConsumeJobsGuard_SourceContract(t *testing.T) {
+	t.Parallel()
+
+	src, err := os.ReadFile("lifecycle.go")
+	if err != nil {
+		t.Fatalf("read lifecycle.go: %v", err)
+	}
+	text := string(src)
+
+	required := []string{
+		"a.Config != nil && a.Config.River.ConsumeJobs && a.DB != nil && a.DB.RiverClient != nil",
+		`return fmt.Errorf("start river client: %w", err)`,
+	}
+	for _, fragment := range required {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("lifecycle start missing required fragment %q", fragment)
+		}
 	}
 }

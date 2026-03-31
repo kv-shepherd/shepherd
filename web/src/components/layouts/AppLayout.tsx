@@ -23,6 +23,10 @@ import { ProLayout } from '@ant-design/pro-components';
 import { AutoComplete, Button, Dropdown, Input, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
+import {
+    getStandardLoginPath,
+    setNextLoginEntryOverride,
+} from '@/lib/auth/loginEntry';
 import NotificationBell from '@/components/ui/NotificationBell';
 import LocalTimezoneBadge from '@/components/ui/LocalTimezoneBadge';
 import { hasPermission, PLATFORM_ADMIN_PERMISSION } from '@/lib/auth/permissions';
@@ -292,8 +296,9 @@ export default function AppLayout({
                                         label: t('auth.logout'),
                                         danger: true,
                                         onClick: () => {
+                                            setNextLoginEntryOverride(getStandardLoginPath());
                                             logout();
-                                            router.push('/login');
+                                            router.push(getStandardLoginPath());
                                         },
                                     },
                                 ],

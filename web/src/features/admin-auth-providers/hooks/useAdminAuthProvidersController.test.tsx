@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { TFunction } from "i18next";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -63,16 +63,18 @@ vi.mock("@/hooks/useApiQuery", () => ({
 import { useAdminAuthProvidersController } from "./useAdminAuthProvidersController";
 
 describe("useAdminAuthProvidersController", () => {
-  const t = ((key: string) => key) as unknown as TFunction;
+  const t = ((key: string, options?: { defaultValue?: string }) =>
+    options?.defaultValue ?? key) as unknown as TFunction;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
     let formCall = 0;
     useFormMock.mockImplementation(() => {
+      const slot = formCall % 7;
       formCall += 1;
-      if (formCall === 1) return [createFormState];
-      if (formCall === 2) return [editFormState];
+      if (slot === 0) return [createFormState];
+      if (slot === 1) return [editFormState];
       return [auxFormState];
     });
 
@@ -160,26 +162,31 @@ describe("useAdminAuthProvidersController", () => {
   });
 
   it("uses backend-discovered provider types when opening create modal", async () => {
-    useApiGetMock
-      .mockImplementationOnce(() => ({
+    useApiGetMock.mockImplementation((queryKey?: unknown) => {
+      if (
+        Array.isArray(queryKey) &&
+        queryKey[0] === "admin-auth-provider-types"
+      ) {
+        return {
+          data: {
+            items: [
+              {
+                type: "custom-sso",
+                display_name: "Custom SSO",
+                built_in: false,
+              },
+            ],
+          },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      return {
         data: { items: [] },
         isLoading: false,
         refetch: vi.fn(),
-      }))
-      .mockImplementationOnce(() => ({
-        data: {
-          items: [
-            { type: "custom-sso", display_name: "Custom SSO", built_in: false },
-          ],
-        },
-        isLoading: false,
-        refetch: vi.fn(),
-      }))
-      .mockImplementation(() => ({
-        data: { items: [] },
-        isLoading: false,
-        refetch: vi.fn(),
-      }));
+      };
+    });
 
     useApiMutationMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
     useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
@@ -190,12 +197,14 @@ describe("useAdminAuthProvidersController", () => {
       result.current.openCreateModal();
     });
 
-    expect(createFormState.setFieldsValue).toHaveBeenCalledWith(
-      expect.objectContaining({
-        auth_type: "custom-sso",
-        enabled: true,
-        sort_order: 0,
-      }),
+    await waitFor(() =>
+      expect(createFormState.setFieldsValue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          auth_type: "custom-sso",
+          enabled: true,
+          sort_order: 0,
+        }),
+      ),
     );
   });
 
@@ -272,6 +281,243 @@ describe("useAdminAuthProvidersController", () => {
           email: "mail",
           name: "cn",
         },
+      },
+    });
+  });
+
+  it("hydrates edit form config values when opening the edit modal", async () => {
+    useApiGetMock.mockImplementation((queryKey?: unknown) => {
+      if (
+        Array.isArray(queryKey) &&
+        queryKey[0] === "admin-auth-provider-types"
+      ) {
+        return {
+          data: {
+            items: [
+              {
+                type: "generic",
+                display_name: "Corp SSO",
+                built_in: false,
+                config_schema: {
+                  type: "object",
+                  properties: {
+                    login_entry_url: { type: "string" },
+                    callback_param_name: {
+                      type: "string",
+                      default: "redirect_uri",
+                    },
+                    upstream_token_transport: {
+                      type: "string",
+                      default: "query",
+                    },
+                    userinfo_endpoint: { type: "string" },
+                  },
+                },
+              },
+            ],
+          },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      return {
+        data: { items: [] },
+        isLoading: false,
+        refetch: vi.fn(),
+      };
+    });
+
+    useApiMutationMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminAuthProvidersController({ t }));
+
+    await act(async () => {
+      result.current.openEditModal({
+        id: "provider-1",
+        name: "corp-sso",
+        auth_type: "generic",
+        enabled: true,
+        sort_order: 10,
+        config: {
+          login_entry_url: "https://portal.example.com/login",
+          userinfo_endpoint: "https://portal.example.com/api/userinfo",
+        },
+      } as never);
+    });
+
+    await waitFor(() =>
+      expect(editFormState.setFieldsValue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "corp-sso",
+          enabled: true,
+          sort_order: 10,
+          config: {
+            login_entry_url: "https://portal.example.com/login",
+            callback_param_name: "redirect_uri",
+            upstream_token_transport: "query",
+            userinfo_endpoint: "https://portal.example.com/api/userinfo",
+          },
+        }),
+      ),
+    );
+  });
+
+  it("recommends department mapping defaults when department sample data is present", async () => {
+    useApiGetMock.mockImplementation((queryKey?: unknown) => {
+      if (
+        Array.isArray(queryKey) &&
+        queryKey[0] === "admin-auth-provider-sample"
+      ) {
+        return {
+          data: {
+            fields: [
+              {
+                field: "department",
+                value_type: "string",
+                distinct_count: 1,
+                sample: ["Engineering"],
+              },
+            ],
+          },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      return {
+        data: { items: [] },
+        isLoading: false,
+        refetch: vi.fn(),
+      };
+    });
+
+    useApiMutationMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminAuthProvidersController({ t }));
+
+    await act(async () => {
+      result.current.openMappingModal({
+        id: "provider-1",
+        name: "corp-directory-enrichment",
+        auth_type: "generic",
+        enabled: true,
+      } as never);
+    });
+
+    expect(result.current.recommendedCohortDefaults).toEqual({
+      cohortKind: "department",
+      sourceField: "department",
+      reason: "sample_department",
+    });
+  });
+
+  it("hydrates directory request defaults from the scheduled enrichment plan", async () => {
+    useApiGetMock.mockImplementation((queryKey?: unknown) => {
+      if (
+        Array.isArray(queryKey) &&
+        queryKey[0] === "admin-auth-provider-directory-descriptor"
+      ) {
+        return {
+          data: {
+            request_schema: {
+              type: "object",
+              properties: {
+                department_names: { type: "array" },
+                include_nested: { type: "boolean", default: true },
+              },
+            },
+          },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (
+        Array.isArray(queryKey) &&
+        queryKey[0] === "admin-auth-provider-directory-schedule"
+      ) {
+        return {
+          data: {
+            supported: true,
+            enabled: true,
+            provider_request: {
+              department_names: ["Engineering", "Finance"],
+              include_nested: true,
+            },
+          },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      return {
+        data: { items: [] },
+        isLoading: false,
+        refetch: vi.fn(),
+      };
+    });
+
+    useApiMutationMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminAuthProvidersController({ t }));
+
+    await act(async () => {
+      result.current.openMappingModal({
+        id: "provider-1",
+        name: "corp-directory-enrichment",
+        auth_type: "generic",
+        enabled: true,
+      } as never);
+    });
+
+    await waitFor(() =>
+      expect(auxFormState.setFieldsValue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider_request: {
+            department_names: ["Engineering", "Finance"],
+            include_nested: true,
+          },
+        }),
+      ),
+    );
+  });
+
+  it("accepts manual cohort sync values from tag-style selection inputs", async () => {
+    const syncCohortsMutate = vi.fn();
+
+    useApiMutationMock.mockReturnValue({
+      mutate: syncCohortsMutate,
+      isPending: false,
+    });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    auxFormState.validateFields.mockResolvedValueOnce({
+      cohort_kind: "group",
+      source_field: "groups",
+      cohorts_text: ["ops-team", "platform-admin"],
+    });
+
+    const { result } = renderHook(() => useAdminAuthProvidersController({ t }));
+
+    await act(async () => {
+      result.current.openMappingModal({
+        id: "provider-1",
+        name: "corp-sso",
+        auth_type: "generic",
+        enabled: true,
+      } as never);
+    });
+
+    await act(async () => {
+      await result.current.submitSyncCohorts();
+    });
+
+    expect(syncCohortsMutate).toHaveBeenCalledWith({
+      providerId: "provider-1",
+      body: {
+        cohort_kind: "group",
+        source_field: "groups",
+        cohorts: ["ops-team", "platform-admin"],
       },
     });
   });

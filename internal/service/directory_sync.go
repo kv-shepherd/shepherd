@@ -218,6 +218,12 @@ func (s *DirectorySyncService) ApplyRecord(
 		return DirectorySyncApplyResult{Action: directorycontract.DirectoryActionBlocked}, conflicts, nil
 	}
 
+	externalResult := runtimecontract.AuthResult{
+		ProfileAttributes: record.Attributes,
+		Cohorts:           record.Cohorts,
+	}
+	externalAuth := &ExternalAuthService{client: s.client}
+
 	targetUserID := directorySameExternalIdentityID(conflicts)
 	if targetUserID == "" {
 		id, uuidErr := uuid.NewV7()
@@ -239,7 +245,13 @@ func (s *DirectorySyncService) ApplyRecord(
 		if createErr != nil {
 			return DirectorySyncApplyResult{}, conflicts, fmt.Errorf("create synced user: %w", createErr)
 		}
-		if err := s.upsertDirectoryProfile(ctx, createdUser.ID, record.Attributes); err != nil {
+		if err := externalAuth.syncObservedExternalCohorts(ctx, authProviderID, externalResult.Cohorts); err != nil {
+			return DirectorySyncApplyResult{}, conflicts, err
+		}
+		if err := externalAuth.upsertExternalProfile(ctx, createdUser.ID, externalResult); err != nil {
+			return DirectorySyncApplyResult{}, conflicts, err
+		}
+		if err := externalAuth.reconcileExternalCohortRBAC(ctx, createdUser.ID, authProviderID, externalResult.Cohorts); err != nil {
 			return DirectorySyncApplyResult{}, conflicts, err
 		}
 		return DirectorySyncApplyResult{Action: directorycontract.DirectoryActionCreate}, conflicts, nil
@@ -258,7 +270,13 @@ func (s *DirectorySyncService) ApplyRecord(
 	if _, err := update.Save(ctx); err != nil {
 		return DirectorySyncApplyResult{}, conflicts, fmt.Errorf("update synced user: %w", err)
 	}
-	if err := s.upsertDirectoryProfile(ctx, targetUserID, record.Attributes); err != nil {
+	if err := externalAuth.syncObservedExternalCohorts(ctx, authProviderID, externalResult.Cohorts); err != nil {
+		return DirectorySyncApplyResult{}, conflicts, err
+	}
+	if err := externalAuth.upsertExternalProfile(ctx, targetUserID, externalResult); err != nil {
+		return DirectorySyncApplyResult{}, conflicts, err
+	}
+	if err := externalAuth.reconcileExternalCohortRBAC(ctx, targetUserID, authProviderID, externalResult.Cohorts); err != nil {
 		return DirectorySyncApplyResult{}, conflicts, err
 	}
 	return DirectorySyncApplyResult{Action: directorycontract.DirectoryActionUpdate}, conflicts, nil
@@ -360,8 +378,8 @@ func (s *DirectorySyncService) upsertDirectoryProfile(
 }
 
 func normalizeDirectoryRecord(record directorycontract.DirectoryUserRecord) directorycontract.DirectoryUserRecord {
-	record.ExternalID = strings.TrimSpace(record.ExternalID)
-	record.Username = strings.TrimSpace(record.Username)
+	record.ExternalID = normalizeCanonicalUserIdentity(record.ExternalID)
+	record.Username = normalizeCanonicalUserIdentity(record.Username)
 	record.DisplayName = strings.TrimSpace(record.DisplayName)
 	record.Email = strings.TrimSpace(strings.ToLower(record.Email))
 	record.Cohorts = normalizeDirectoryCohorts(record.Cohorts)

@@ -17,6 +17,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/rolebinding"
 	"kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
+	"kv-shepherd.io/shepherd/ent/userpreference"
 )
 
 // UserUpdate is the builder for updating User entities.
@@ -249,6 +250,21 @@ func (_u *UserUpdate) SetDirectoryProfile(v *UserDirectoryProfile) *UserUpdate {
 	return _u.SetDirectoryProfileID(v.ID)
 }
 
+// AddPreferenceIDs adds the "preferences" edge to the UserPreference entity by IDs.
+func (_u *UserUpdate) AddPreferenceIDs(ids ...string) *UserUpdate {
+	_u.mutation.AddPreferenceIDs(ids...)
+	return _u
+}
+
+// AddPreferences adds the "preferences" edges to the UserPreference entity.
+func (_u *UserUpdate) AddPreferences(v ...*UserPreference) *UserUpdate {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddPreferenceIDs(ids...)
+}
+
 // AddExternalCohortGrantIDs adds the "external_cohort_grants" edge to the ExternalCohortGrant entity by IDs.
 func (_u *UserUpdate) AddExternalCohortGrantIDs(ids ...string) *UserUpdate {
 	_u.mutation.AddExternalCohortGrantIDs(ids...)
@@ -315,6 +331,27 @@ func (_u *UserUpdate) RemoveNotifications(v ...*Notification) *UserUpdate {
 func (_u *UserUpdate) ClearDirectoryProfile() *UserUpdate {
 	_u.mutation.ClearDirectoryProfile()
 	return _u
+}
+
+// ClearPreferences clears all "preferences" edges to the UserPreference entity.
+func (_u *UserUpdate) ClearPreferences() *UserUpdate {
+	_u.mutation.ClearPreferences()
+	return _u
+}
+
+// RemovePreferenceIDs removes the "preferences" edge to UserPreference entities by IDs.
+func (_u *UserUpdate) RemovePreferenceIDs(ids ...string) *UserUpdate {
+	_u.mutation.RemovePreferenceIDs(ids...)
+	return _u
+}
+
+// RemovePreferences removes "preferences" edges to UserPreference entities.
+func (_u *UserUpdate) RemovePreferences(v ...*UserPreference) *UserUpdate {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemovePreferenceIDs(ids...)
 }
 
 // ClearExternalCohortGrants clears all "external_cohort_grants" edges to the ExternalCohortGrant entity.
@@ -561,6 +598,51 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userdirectoryprofile.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.PreferencesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PreferencesTable,
+			Columns: []string{user.PreferencesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userpreference.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedPreferencesIDs(); len(nodes) > 0 && !_u.mutation.PreferencesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PreferencesTable,
+			Columns: []string{user.PreferencesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userpreference.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.PreferencesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PreferencesTable,
+			Columns: []string{user.PreferencesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userpreference.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {
@@ -850,6 +932,21 @@ func (_u *UserUpdateOne) SetDirectoryProfile(v *UserDirectoryProfile) *UserUpdat
 	return _u.SetDirectoryProfileID(v.ID)
 }
 
+// AddPreferenceIDs adds the "preferences" edge to the UserPreference entity by IDs.
+func (_u *UserUpdateOne) AddPreferenceIDs(ids ...string) *UserUpdateOne {
+	_u.mutation.AddPreferenceIDs(ids...)
+	return _u
+}
+
+// AddPreferences adds the "preferences" edges to the UserPreference entity.
+func (_u *UserUpdateOne) AddPreferences(v ...*UserPreference) *UserUpdateOne {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddPreferenceIDs(ids...)
+}
+
 // AddExternalCohortGrantIDs adds the "external_cohort_grants" edge to the ExternalCohortGrant entity by IDs.
 func (_u *UserUpdateOne) AddExternalCohortGrantIDs(ids ...string) *UserUpdateOne {
 	_u.mutation.AddExternalCohortGrantIDs(ids...)
@@ -916,6 +1013,27 @@ func (_u *UserUpdateOne) RemoveNotifications(v ...*Notification) *UserUpdateOne 
 func (_u *UserUpdateOne) ClearDirectoryProfile() *UserUpdateOne {
 	_u.mutation.ClearDirectoryProfile()
 	return _u
+}
+
+// ClearPreferences clears all "preferences" edges to the UserPreference entity.
+func (_u *UserUpdateOne) ClearPreferences() *UserUpdateOne {
+	_u.mutation.ClearPreferences()
+	return _u
+}
+
+// RemovePreferenceIDs removes the "preferences" edge to UserPreference entities by IDs.
+func (_u *UserUpdateOne) RemovePreferenceIDs(ids ...string) *UserUpdateOne {
+	_u.mutation.RemovePreferenceIDs(ids...)
+	return _u
+}
+
+// RemovePreferences removes "preferences" edges to UserPreference entities.
+func (_u *UserUpdateOne) RemovePreferences(v ...*UserPreference) *UserUpdateOne {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemovePreferenceIDs(ids...)
 }
 
 // ClearExternalCohortGrants clears all "external_cohort_grants" edges to the ExternalCohortGrant entity.
@@ -1192,6 +1310,51 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userdirectoryprofile.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.PreferencesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PreferencesTable,
+			Columns: []string{user.PreferencesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userpreference.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedPreferencesIDs(); len(nodes) > 0 && !_u.mutation.PreferencesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PreferencesTable,
+			Columns: []string{user.PreferencesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userpreference.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.PreferencesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PreferencesTable,
+			Columns: []string{user.PreferencesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userpreference.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

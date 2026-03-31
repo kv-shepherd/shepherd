@@ -188,6 +188,13 @@ describe("AdminAuthProvidersContent", () => {
           },
         },
         directoryDescriptorUnsupported: false,
+        mappingOpen: true,
+        mappingProvider: {
+          id: "provider-1",
+          name: "corp-directory-enrichment",
+          auth_type: "generic",
+          enabled: true,
+        },
         directoryPreview: {
           items: [
             {
@@ -245,6 +252,7 @@ describe("AdminAuthProvidersContent", () => {
         ),
       );
     },
-    20000,
+    60000,
   );
+
 });

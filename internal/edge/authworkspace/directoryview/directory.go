@@ -71,8 +71,7 @@ func DirectorySyncPreviewToAPI(preview *directorycontract.DirectorySyncPreview) 
 }
 
 func DirectorySyncJobToAPI(row *ent.DirectorySyncJob) generated.DirectorySyncJob {
-	jobErrors := make([]string, 0, len(row.Errors))
-	jobErrors = append(jobErrors, row.Errors...)
+	jobErrors := cloneStringsOrEmpty(row.Errors)
 	return generated.DirectorySyncJob{
 		CompletedAt:        derefTime(row.CompletedAt),
 		ConflictResolution: generated.DirectorySyncJobConflictResolution(row.ConflictResolution),
@@ -122,7 +121,7 @@ func DirectorySyncJobDetailToAPI(row *ent.DirectorySyncJob) generated.DirectoryS
 		ConflictResolution: generated.DirectorySyncJobDetailConflictResolution(row.ConflictResolution),
 		CreatedAt:          row.CreatedAt,
 		ErrorCount:         row.ErrorCount,
-		Errors:             append([]string(nil), row.Errors...),
+		Errors:             cloneStringsOrEmpty(row.Errors),
 		Id:                 row.ID,
 		JoinKeyType:        row.JoinKeyType,
 		ProviderId:         row.AuthProviderID,
@@ -139,6 +138,13 @@ func DirectorySyncJobDetailToAPI(row *ent.DirectorySyncJob) generated.DirectoryS
 		TriggeredBy:  row.TriggeredBy,
 		UpdatedAt:    row.UpdatedAt,
 	}
+}
+
+func cloneStringsOrEmpty(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), values...)
 }
 
 func UnsupportedDirectoryScheduleStatus() generated.DirectoryEnrichmentScheduleStatus {
@@ -220,6 +226,7 @@ func DirectoryScheduleStatusFromPlan(
 	status.JoinKeyType = generated.DirectoryEnrichmentScheduleStatusJoinKeyType(normalizedPlan.JoinKeyType)
 	status.ScheduleCron = normalizedPlan.ScheduleCron
 	status.ScheduleTimezone = normalizedPlan.ScheduleTimezone
+	status.ProviderRequest = directorycontract.CloneDirectoryAttributes(normalizedPlan.ProviderRequest)
 
 	if pendingJob != nil {
 		status.PendingJobId = pendingJob.ID

@@ -2,18 +2,26 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
 
+	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/predicate"
 	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
 	entuser "kv-shepherd.io/shepherd/ent/user"
+	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
@@ -28,15 +36,22 @@ func (s *Server) ListUsers(c *gin.Context, params generated.ListUsersParams) {
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
 	search := strings.TrimSpace(params.Search)
+	profileFieldCatalog, err := listUserProfileFieldCatalog(ctx, s.client)
+	if err != nil {
+		logger.Error("failed to load user profile field catalog", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 
 	query := s.client.User.Query()
-	query = applyUserSearch(query, search)
-	userList, err := listUsersPage(ctx, query, page, perPage)
+	query = applyUserSearch(query, search, profileFieldCatalog.SearchableFields)
+	userList, err := listUsersPage(ctx, query, page, perPage, profileFieldCatalog.SearchableFields)
 	if err != nil {
 		logger.Error("failed to list users", zap.Error(err), zap.Int("page", page))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	userList.ProfileFields = profileFieldCatalog.Descriptors
 
 	c.JSON(http.StatusOK, userList)
 }
@@ -88,9 +103,9 @@ func (s *Server) ListSystemMemberCandidates(
 	if len(existingMemberUserIDs) > 0 {
 		query = query.Where(entuser.Not(entuser.IDIn(existingMemberUserIDs...)))
 	}
-	query = applyUserSearch(query, search)
+	query = applyUserSearch(query, search, nil)
 
-	userList, err := listUsersPage(ctx, query, page, perPage)
+	userList, err := listUsersPage(ctx, query, page, perPage, nil)
 	if err != nil {
 		if isRequestContextCanceled(err) {
 			logger.Debug("request canceled while querying system member candidates", zap.Error(err), zap.String("system_id", systemID))
@@ -459,7 +474,13 @@ func isValidMemberRole(role string) bool {
 	}
 }
 
-func listUsersPage(ctx context.Context, query *ent.UserQuery, page, perPage int) (generated.UserList, error) {
+func listUsersPage(
+	ctx context.Context,
+	query *ent.UserQuery,
+	page,
+	perPage int,
+	profileFields []string,
+) (generated.UserList, error) {
 	offset := (page - 1) * perPage
 
 	total, err := query.Clone().Count(ctx)
@@ -474,6 +495,7 @@ func listUsersPage(ctx context.Context, query *ent.UserQuery, page, perPage int)
 		WithRoleBindings(func(q *ent.RoleBindingQuery) {
 			q.WithRole()
 		}).
+		WithDirectoryProfile().
 		All(ctx)
 	if err != nil {
 		return generated.UserList{}, err
@@ -481,7 +503,7 @@ func listUsersPage(ctx context.Context, query *ent.UserQuery, page, perPage int)
 
 	items := make([]generated.User, 0, len(users))
 	for _, userEnt := range users {
-		items = append(items, toGeneratedUser(userEnt))
+		items = append(items, toGeneratedUser(userEnt, profileFields))
 	}
 
 	totalPages := (total + perPage - 1) / perPage
@@ -496,18 +518,31 @@ func listUsersPage(ctx context.Context, query *ent.UserQuery, page, perPage int)
 	}, nil
 }
 
-func applyUserSearch(query *ent.UserQuery, search string) *ent.UserQuery {
-	if strings.TrimSpace(search) == "" {
+func applyUserSearch(query *ent.UserQuery, search string, searchableProfileFields []string) *ent.UserQuery {
+	terms := parseUserSearchTerms(search)
+	if len(terms) == 0 {
 		return query
 	}
-	return query.Where(entuser.Or(
-		entuser.UsernameContainsFold(search),
-		entuser.DisplayNameContainsFold(search),
-		entuser.EmailContainsFold(search),
-	))
+	normalizedProfileFields := make(map[string]string, len(searchableProfileFields))
+	for _, field := range searchableProfileFields {
+		normalizedProfileFields[normalizeUserSearchField(field)] = field
+	}
+
+	predicates := make([]predicate.User, 0, len(terms))
+	for _, term := range terms {
+		predicateForTerm := buildUserSearchPredicate(term, normalizedProfileFields, searchableProfileFields)
+		if predicateForTerm == nil {
+			continue
+		}
+		predicates = append(predicates, predicateForTerm)
+	}
+	if len(predicates) == 0 {
+		return query
+	}
+	return query.Where(entuser.And(predicates...))
 }
 
-func toGeneratedUser(userEnt *ent.User) generated.User {
+func toGeneratedUser(userEnt *ent.User, profileFields []string) generated.User {
 	roleSet := make(map[string]struct{})
 	for _, rb := range userEnt.Edges.RoleBindings {
 		if rb == nil || rb.Edges.Role == nil {
@@ -522,14 +557,252 @@ func toGeneratedUser(userEnt *ent.User) generated.User {
 	}
 	sort.Strings(roles)
 
+	profileAttributes := make(map[string]interface{}, len(profileFields))
+	if profile := userEnt.Edges.DirectoryProfile; profile != nil {
+		for _, field := range profileFields {
+			value := stringifyUserDirectoryAttribute(profile.Attributes[field])
+			if value == "" {
+				continue
+			}
+			profileAttributes[field] = value
+		}
+	}
+
 	return generated.User{
-		Id:          userEnt.ID,
-		Username:    userEnt.Username,
-		Email:       userEnt.Email,
-		DisplayName: userEnt.DisplayName,
-		Enabled:     userEnt.Enabled,
-		Roles:       roles,
-		CreatedAt:   userEnt.CreatedAt,
+		Id:                userEnt.ID,
+		Username:          userEnt.Username,
+		Email:             userEnt.Email,
+		DisplayName:       userEnt.DisplayName,
+		Enabled:           userEnt.Enabled,
+		Roles:             roles,
+		ProfileAttributes: profileAttributes,
+		CreatedAt:         userEnt.CreatedAt,
+	}
+}
+
+type userProfileFieldCatalog struct {
+	SearchableFields []string
+	Descriptors      []generated.UserProfileField
+}
+
+type userSearchTerm struct {
+	Field string
+	Value string
+}
+
+var userSearchFieldSplitPattern = regexp.MustCompile(`^([^:\s]+):(.*)$`)
+
+func listUserProfileFieldCatalog(ctx context.Context, client *ent.Client) (userProfileFieldCatalog, error) {
+	profiles, err := client.UserDirectoryProfile.Query().All(ctx)
+	if err != nil {
+		return userProfileFieldCatalog{}, err
+	}
+
+	observedSet := make(map[string]struct{})
+	observedFields := make([]string, 0)
+	for _, profile := range profiles {
+		for key := range profile.Attributes {
+			normalizedKey := strings.TrimSpace(key)
+			if normalizedKey == "" {
+				continue
+			}
+			if _, exists := observedSet[normalizedKey]; exists {
+				continue
+			}
+			observedSet[normalizedKey] = struct{}{}
+			observedFields = append(observedFields, normalizedKey)
+		}
+	}
+	sort.Strings(observedFields)
+
+	searchableFields := make([]string, 0, len(observedFields))
+	descriptors := make([]generated.UserProfileField, 0, len(observedFields))
+	for _, field := range observedFields {
+		searchableFields = append(searchableFields, field)
+		descriptors = append(descriptors, generated.UserProfileField{
+			Key:        field,
+			Label:      humanizeUserProfileFieldLabel(field),
+			Searchable: true,
+		})
+	}
+	return userProfileFieldCatalog{
+		SearchableFields: searchableFields,
+		Descriptors:      descriptors,
+	}, nil
+}
+
+func parseUserSearchTerms(search string) []userSearchTerm {
+	tokens := splitUserSearchTokens(strings.TrimSpace(search))
+	terms := make([]userSearchTerm, 0, len(tokens))
+	for _, token := range tokens {
+		if token == "" {
+			continue
+		}
+		matches := userSearchFieldSplitPattern.FindStringSubmatch(token)
+		if len(matches) == 3 {
+			field := strings.TrimSpace(matches[1])
+			value := unquoteUserSearchTermValue(strings.TrimSpace(matches[2]))
+			if field != "" && value != "" {
+				terms = append(terms, userSearchTerm{Field: field, Value: value})
+				continue
+			}
+		}
+		terms = append(terms, userSearchTerm{Value: unquoteUserSearchTermValue(token)})
+	}
+	return terms
+}
+
+func splitUserSearchTokens(search string) []string {
+	if strings.TrimSpace(search) == "" {
+		return nil
+	}
+	tokens := make([]string, 0)
+	var current strings.Builder
+	inQuotes := false
+	escaped := false
+
+	flush := func() {
+		token := strings.TrimSpace(current.String())
+		if token != "" {
+			tokens = append(tokens, token)
+		}
+		current.Reset()
+	}
+
+	for _, r := range search {
+		switch {
+		case escaped:
+			current.WriteRune(r)
+			escaped = false
+		case r == '\\' && inQuotes:
+			current.WriteRune(r)
+			escaped = true
+		case r == '"':
+			current.WriteRune(r)
+			inQuotes = !inQuotes
+		case unicode.IsSpace(r) && !inQuotes:
+			flush()
+		default:
+			current.WriteRune(r)
+		}
+	}
+	flush()
+	return tokens
+}
+
+func unquoteUserSearchTermValue(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) >= 2 && strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
+		if unquoted, err := strconv.Unquote(value); err == nil {
+			return strings.TrimSpace(unquoted)
+		}
+		return strings.Trim(strings.TrimSpace(value), `"`)
+	}
+	return value
+}
+
+func buildUserSearchPredicate(
+	term userSearchTerm,
+	normalizedProfileFields map[string]string,
+	searchableProfileFields []string,
+) predicate.User {
+	if strings.TrimSpace(term.Value) == "" {
+		return nil
+	}
+	if term.Field != "" {
+		switch normalizeUserSearchField(term.Field) {
+		case "username":
+			return entuser.UsernameContainsFold(term.Value)
+		case "display_name", "displayname", "name":
+			return entuser.DisplayNameContainsFold(term.Value)
+		case "email", "mail":
+			return entuser.EmailContainsFold(term.Value)
+		default:
+			if field, ok := normalizedProfileFields[normalizeUserSearchField(term.Field)]; ok {
+				return userProfileAttributeContains(field, term.Value)
+			}
+			return impossibleUserSearchPredicate()
+		}
+	}
+
+	predicates := []predicate.User{
+		entuser.UsernameContainsFold(term.Value),
+		entuser.DisplayNameContainsFold(term.Value),
+		entuser.EmailContainsFold(term.Value),
+	}
+	for _, field := range searchableProfileFields {
+		predicates = append(predicates, userProfileAttributeContains(field, term.Value))
+	}
+	return entuser.Or(predicates...)
+}
+
+func impossibleUserSearchPredicate() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		s.Where(sql.P(func(builder *sql.Builder) {
+			builder.WriteString("1 = 0")
+		}))
+	})
+}
+
+func userProfileAttributeContains(field, value string) predicate.User {
+	field = strings.TrimSpace(field)
+	value = strings.TrimSpace(value)
+	return entuser.HasDirectoryProfileWith(predicate.UserDirectoryProfile(func(s *sql.Selector) {
+		s.Where(sql.P(func(builder *sql.Builder) {
+			builder.WriteString("LOWER(")
+			builder.Join(sqljson.ValuePath(userdirectoryprofile.FieldAttributes, sqljson.Path(field), sqljson.Unquote(true)))
+			builder.WriteString(") LIKE ")
+			builder.Arg("%" + strings.ToLower(value) + "%")
+		}))
+	}))
+}
+
+func normalizeUserSearchField(raw string) string {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	raw = strings.ReplaceAll(raw, "-", "_")
+	raw = strings.ReplaceAll(raw, " ", "_")
+	return raw
+}
+
+func humanizeUserProfileFieldLabel(field string) string {
+	field = strings.TrimSpace(field)
+	if field == "" {
+		return ""
+	}
+	parts := strings.FieldsFunc(field, func(r rune) bool {
+		return r == '_' || r == '-' || unicode.IsSpace(r)
+	})
+	for index, part := range parts {
+		if part == "" {
+			continue
+		}
+		runes := []rune(strings.ToLower(part))
+		runes[0] = unicode.ToUpper(runes[0])
+		parts[index] = string(runes)
+	}
+	return strings.Join(parts, " ")
+}
+
+func stringifyUserDirectoryAttribute(raw interface{}) string {
+	switch value := raw.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(value)
+	case []string:
+		return strings.Join(value, ", ")
+	case []interface{}:
+		values := make([]string, 0, len(value))
+		for _, item := range value {
+			text := strings.TrimSpace(fmt.Sprint(item))
+			if text == "" {
+				continue
+			}
+			values = append(values, text)
+		}
+		return strings.Join(values, ", ")
+	default:
+		return strings.TrimSpace(fmt.Sprint(value))
 	}
 }
 

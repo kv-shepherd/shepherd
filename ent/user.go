@@ -54,11 +54,13 @@ type UserEdges struct {
 	Notifications []*Notification `json:"notifications,omitempty"`
 	// DirectoryProfile holds the value of the directory_profile edge.
 	DirectoryProfile *UserDirectoryProfile `json:"directory_profile,omitempty"`
+	// Preferences holds the value of the preferences edge.
+	Preferences []*UserPreference `json:"preferences,omitempty"`
 	// ExternalCohortGrants holds the value of the external_cohort_grants edge.
 	ExternalCohortGrants []*ExternalCohortGrant `json:"external_cohort_grants,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [4]bool
+	loadedTypes [5]bool
 }
 
 // RoleBindingsOrErr returns the RoleBindings value or an error if the edge
@@ -90,10 +92,19 @@ func (e UserEdges) DirectoryProfileOrErr() (*UserDirectoryProfile, error) {
 	return nil, &NotLoadedError{edge: "directory_profile"}
 }
 
+// PreferencesOrErr returns the Preferences value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) PreferencesOrErr() ([]*UserPreference, error) {
+	if e.loadedTypes[3] {
+		return e.Preferences, nil
+	}
+	return nil, &NotLoadedError{edge: "preferences"}
+}
+
 // ExternalCohortGrantsOrErr returns the ExternalCohortGrants value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) ExternalCohortGrantsOrErr() ([]*ExternalCohortGrant, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[4] {
 		return e.ExternalCohortGrants, nil
 	}
 	return nil, &NotLoadedError{edge: "external_cohort_grants"}
@@ -224,6 +235,11 @@ func (_m *User) QueryNotifications() *NotificationQuery {
 // QueryDirectoryProfile queries the "directory_profile" edge of the User entity.
 func (_m *User) QueryDirectoryProfile() *UserDirectoryProfileQuery {
 	return NewUserClient(_m.config).QueryDirectoryProfile(_m)
+}
+
+// QueryPreferences queries the "preferences" edge of the User entity.
+func (_m *User) QueryPreferences() *UserPreferenceQuery {
+	return NewUserClient(_m.config).QueryPreferences(_m)
 }
 
 // QueryExternalCohortGrants queries the "external_cohort_grants" edge of the User entity.

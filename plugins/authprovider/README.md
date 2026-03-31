@@ -64,6 +64,15 @@ The governance lane treats these guarantees as blocking:
   `internal/...`
 - SDK smoke must continue to compile as an external consumer
 
+Enterprise-specific provider implementations such as enterprise SSO or
+enterprise directory enrichment should live in private repositories that
+consume these public seams, not as public built-in provider types.
+
+Public built-in provider types should remain limited to standard or
+open-reusable integrations. Enterprise-specific legacy SSO handoff, enterprise
+directory enrichment defaults, and deployment-specific mapping rules belong in
+private repositories that consume the public seams.
+
 ## Separate Repository Author Workflow
 
 For enterprise or private implementations that live outside this repository:

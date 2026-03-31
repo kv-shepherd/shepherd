@@ -345,6 +345,18 @@ func (f UserDirectoryProfileFunc) Mutate(ctx context.Context, m ent.Mutation) (e
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserDirectoryProfileMutation", m)
 }
 
+// The UserPreferenceFunc type is an adapter to allow the use of ordinary
+// function as UserPreference mutator.
+type UserPreferenceFunc func(context.Context, *ent.UserPreferenceMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UserPreferenceFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UserPreferenceMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserPreferenceMutation", m)
+}
+
 // The VMFunc type is an adapter to allow the use of ordinary
 // function as VM mutator.
 type VMFunc func(context.Context, *ent.VMMutation) (ent.Value, error)

@@ -183,6 +183,11 @@ func requestStrictIgnorePaths(request *http.Request, basePath string) []string {
 		if path == "/admin/auth-providers" {
 			return []string{"$.body.config.**"}
 		}
+		if strings.HasPrefix(path, "/admin/auth-providers/") &&
+			(strings.HasSuffix(path, "/directory/preview") ||
+				strings.HasSuffix(path, "/directory/sync")) {
+			return []string{"$.body.provider_request.**"}
+		}
 		if path == "/admin/instance-sizes" {
 			return []string{"$.body.spec_overrides.**"}
 		}
@@ -192,6 +197,10 @@ func requestStrictIgnorePaths(request *http.Request, basePath string) []string {
 		}
 		if strings.HasPrefix(path, "/admin/instance-sizes/") {
 			return []string{"$.body.spec_overrides.**"}
+		}
+	case http.MethodPut:
+		if strings.HasPrefix(path, "/auth/preferences/") {
+			return []string{"$.body.value.**"}
 		}
 	}
 
@@ -235,6 +244,31 @@ func responseStrictIgnorePaths(request *http.Request, basePath string) []string 
 		// AuthProviderType.config_schema is free-form JSON Schema content.
 		ignorePaths = append(ignorePaths, "$.body.**.config_schema.**")
 	}
+	if strings.HasPrefix(path, "/admin/auth-providers/") {
+		// Directory/runtime descriptors publish provider-owned request schemas,
+		// and job details preserve provider-owned request snapshots. Both are
+		// contractually free-form JSON objects even under strict mode.
+		ignorePaths = append(
+			ignorePaths,
+			"$.body.request_schema",
+			"$.body.request_schema.**",
+			"$.body.**.request_schema.**",
+			"$.body.provider_request",
+			"$.body.provider_request.**",
+			"$.body.**.provider_request.**",
+			"$.body.request_snapshot",
+			"$.body.request_snapshot.**",
+			"$.body.**.request_snapshot.**",
+		)
+	}
+	if path == "/admin/users" {
+		// User.profile_attributes is a contractually free-form directory profile map.
+		ignorePaths = append(ignorePaths, "$.body.**.profile_attributes.**")
+	}
+	if strings.HasPrefix(path, "/auth/preferences/") {
+		// UserPreference.value is a generic per-user UI/runtime preference bag.
+		ignorePaths = append(ignorePaths, "$.body.value.**")
+	}
 	if path == "/tickets" ||
 		strings.HasPrefix(path, "/tickets/") ||
 		path == "/builtin-approval/tasks" ||
@@ -268,6 +302,7 @@ func (v *openAPIRuntimeValidator) newValidator(extraStrictIgnorePaths ...string)
 		validatorconfig.WithStrictIgnoredHeadersExtra(
 			"dnt",
 			"priority",
+			"upgrade-insecure-requests",
 			"x-forwarded-host",
 			"x-forwarded-port",
 			"sec-ch-ua",
@@ -377,6 +412,22 @@ func summarizeValidationErrors(errs []*validatorerrors.ValidationError) string {
 		message := strings.TrimSpace(err.Message)
 		if message == "" {
 			message = strings.TrimSpace(err.Reason)
+		}
+		if len(err.SchemaValidationErrors) > 0 {
+			schemaFailure := err.SchemaValidationErrors[0]
+			detail := strings.TrimSpace(schemaFailure.Reason)
+			if detail == "" {
+				detail = strings.TrimSpace(schemaFailure.Error())
+			}
+			if detail != "" {
+				if fieldPath := strings.TrimSpace(schemaFailure.FieldPath); fieldPath != "" {
+					message = fmt.Sprintf("%s at %s", detail, fieldPath)
+				} else if keywordLocation := strings.TrimSpace(schemaFailure.KeywordLocation); keywordLocation != "" {
+					message = fmt.Sprintf("%s at %s", detail, keywordLocation)
+				} else {
+					message = detail
+				}
+			}
 		}
 		if message != "" {
 			messages = append(messages, message)

@@ -34,6 +34,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
+	"kv-shepherd.io/shepherd/ent/userpreference"
 	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/ent/vmrevision"
 )
@@ -1004,6 +1005,43 @@ func init() {
 	userdirectoryprofile.DefaultUpdatedAt = userdirectoryprofileDescUpdatedAt.Default.(func() time.Time)
 	// userdirectoryprofile.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	userdirectoryprofile.UpdateDefaultUpdatedAt = userdirectoryprofileDescUpdatedAt.UpdateDefault.(func() time.Time)
+	userpreferenceMixin := schema.UserPreference{}.Mixin()
+	userpreferenceMixinFields0 := userpreferenceMixin[0].Fields()
+	_ = userpreferenceMixinFields0
+	userpreferenceFields := schema.UserPreference{}.Fields()
+	_ = userpreferenceFields
+	// userpreferenceDescCreatedAt is the schema descriptor for created_at field.
+	userpreferenceDescCreatedAt := userpreferenceMixinFields0[0].Descriptor()
+	// userpreference.DefaultCreatedAt holds the default value on creation for the created_at field.
+	userpreference.DefaultCreatedAt = userpreferenceDescCreatedAt.Default.(func() time.Time)
+	// userpreferenceDescUpdatedAt is the schema descriptor for updated_at field.
+	userpreferenceDescUpdatedAt := userpreferenceMixinFields0[1].Descriptor()
+	// userpreference.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	userpreference.DefaultUpdatedAt = userpreferenceDescUpdatedAt.Default.(func() time.Time)
+	// userpreference.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	userpreference.UpdateDefaultUpdatedAt = userpreferenceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// userpreferenceDescUserID is the schema descriptor for user_id field.
+	userpreferenceDescUserID := userpreferenceFields[1].Descriptor()
+	// userpreference.UserIDValidator is a validator for the "user_id" field. It is called by the builders before save.
+	userpreference.UserIDValidator = userpreferenceDescUserID.Validators[0].(func(string) error)
+	// userpreferenceDescKey is the schema descriptor for key field.
+	userpreferenceDescKey := userpreferenceFields[2].Descriptor()
+	// userpreference.KeyValidator is a validator for the "key" field. It is called by the builders before save.
+	userpreference.KeyValidator = func() func(string) error {
+		validators := userpreferenceDescKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(key string) error {
+			for _, fn := range fns {
+				if err := fn(key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	vmMixin := schema.VM{}.Mixin()
 	vmMixinFields0 := vmMixin[0].Fields()
 	_ = vmMixinFields0

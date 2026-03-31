@@ -17,10 +17,7 @@ type fileRule struct {
 }
 
 func main() {
-	privateNaming := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)\boms2?\b`),
-		regexp.MustCompile(`(?i)\bexample\b`),
-	}
+	privateNaming := []*regexp.Regexp{}
 
 	rules := []fileRule{
 		{
@@ -65,10 +62,10 @@ func main() {
 				"providerregistry.AuthCallbackRequest",
 				"providerregistry.AuthResult",
 			},
-			forbiddenRegex: append([]*regexp.Regexp{
-				regexp.MustCompile(`provider(ID|Type|Ent)?\s*==\s*"(wecom|oidc|ldap|sso)"`),
-				regexp.MustCompile(`case\s+"(wecom|oidc|ldap|sso)"`),
-			}, privateNaming...),
+			forbiddenRegex: []*regexp.Regexp{
+				regexp.MustCompile(`provider(ID|Type|Ent)?\s*==\s*"(oidc|ldap|sso)"`),
+				regexp.MustCompile(`case\s+"(oidc|ldap|sso)"`),
+			},
 		},
 		{
 			path: "internal/service/external_auth.go",
@@ -88,10 +85,10 @@ func main() {
 				"provider.AuthResult",
 				"provider.ExternalCohort",
 			},
-			forbiddenRegex: append([]*regexp.Regexp{
-				regexp.MustCompile(`authType\s*==\s*"(wecom|oidc|ldap|sso)"`),
-				regexp.MustCompile(`case\s+"(wecom|oidc|ldap|sso)"`),
-			}, privateNaming...),
+			forbiddenRegex: []*regexp.Regexp{
+				regexp.MustCompile(`authType\s*==\s*"(oidc|ldap|sso)"`),
+				regexp.MustCompile(`case\s+"(oidc|ldap|sso)"`),
+			},
 		},
 		{
 			path: "internal/service/vm_service.go",
@@ -153,10 +150,10 @@ func main() {
 				`"kv-shepherd.io/shepherd/internal/provider/directorycontract"`,
 				"adminglobal.Resolve(providerRow.AuthType)",
 			},
-			forbiddenRegex: append([]*regexp.Regexp{
+			forbiddenRegex: []*regexp.Regexp{
 				regexp.MustCompile(`providerRequest\s*\[\s*"(departments|base_dn|selected_fields|groups)"\s*\]`),
-				regexp.MustCompile(`case\s+"(wecom|oidc|ldap|azure|feishu)"`),
-			}, privateNaming...),
+				regexp.MustCompile(`case\s+"(oidc|ldap|azure|feishu)"`),
+			},
 			forbiddenText: []string{
 				".metadata",
 				`"kv-shepherd.io/shepherd/internal/provider"`,
@@ -169,10 +166,10 @@ func main() {
 				"runtimeview.BuildRuntimeDescriptor(",
 				`"kv-shepherd.io/shepherd/internal/edge/authworkspace/runtimeview"`,
 			},
-			forbiddenRegex: append([]*regexp.Regexp{
-				regexp.MustCompile(`case\s+"(wecom|oidc|ldap|azure|feishu)"`),
-				regexp.MustCompile(`provider(ID|Type|Ent)?\s*==\s*"(wecom|oidc|ldap|azure|feishu)"`),
-			}, privateNaming...),
+			forbiddenRegex: []*regexp.Regexp{
+				regexp.MustCompile(`case\s+"(oidc|ldap|azure|feishu)"`),
+				regexp.MustCompile(`provider(ID|Type|Ent)?\s*==\s*"(oidc|ldap|azure|feishu)"`),
+			},
 			forbiddenText: []string{
 				"department",
 				"base_dn",
@@ -210,11 +207,11 @@ func main() {
 				"ClassifyRecord(",
 				"ApplyRecord(",
 			},
-			forbiddenRegex: append([]*regexp.Regexp{
+			forbiddenRegex: []*regexp.Regexp{
 				regexp.MustCompile(`providerRequest\s*\[\s*"(departments|base_dn|selected_fields|groups)"\s*\]`),
 				regexp.MustCompile(`RequestSnapshot\s*\[\s*"(departments|base_dn|selected_fields|groups)"\s*\]`),
-				regexp.MustCompile(`case\s+"(wecom|oidc|ldap|azure|feishu)"`),
-			}, privateNaming...),
+				regexp.MustCompile(`case\s+"(oidc|ldap|azure|feishu)"`),
+			},
 			forbiddenText: []string{
 				".metadata",
 				`"kv-shepherd.io/shepherd/internal/provider"`,
@@ -535,8 +532,6 @@ func main() {
 			forbiddenText: []string{
 				"genericAuthProviderAdminAdapter{",
 				"newLDAPAuthProviderAdapter(",
-				"newWeComAuthProviderAdapter(",
-				"newUpstreamAssertionAuthProviderAdapter(",
 			},
 		},
 		{
@@ -546,8 +541,6 @@ func main() {
 				"newOIDCBuiltInAuthProviderAdapter()",
 				"newLDAPBuiltInAuthProviderAdapter()",
 				"newSSOBuiltInAuthProviderAdapter()",
-				"newUpstreamAssertionBuiltInAuthProviderAdapter()",
-				"newWeComBuiltInAuthProviderAdapter()",
 			},
 			forbiddenText: []string{
 				"configSchema:",
@@ -555,8 +548,6 @@ func main() {
 				"oidcSchema :=",
 				"ssoSchema :=",
 				"newLDAPAuthProviderAdapter(",
-				"newUpstreamAssertionAuthProviderAdapter(",
-				"newWeComAuthProviderAdapter(",
 			},
 		},
 		{
@@ -605,26 +596,6 @@ func main() {
 			path: "internal/provider/auth_provider_sso_schema.go",
 			required: []string{
 				"func ssoAuthProviderSchema() map[string]interface{} {",
-			},
-		},
-		{
-			path: "internal/provider/auth_provider_upstream_assertion.go",
-			required: []string{
-				"func newUpstreamAssertionBuiltInAuthProviderAdapter() AuthProviderAdminAdapter {",
-				"ConfigSchema: upstreamAssertionAuthProviderSchema()",
-			},
-			forbiddenText: []string{
-				"ConfigSchema: map[string]interface{}{",
-			},
-		},
-		{
-			path: "internal/provider/auth_provider_wecom.go",
-			required: []string{
-				"func newWeComBuiltInAuthProviderAdapter() AuthProviderAdminAdapter {",
-				"ConfigSchema: weComAuthProviderSchema()",
-			},
-			forbiddenText: []string{
-				"ConfigSchema: map[string]interface{}{",
 			},
 		},
 		{

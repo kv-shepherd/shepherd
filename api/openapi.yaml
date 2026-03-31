@@ -137,6 +137,8 @@ paths:
                 $ref: '#/components/schemas/SystemList'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [systems]
       summary: Create system (self-service, no approval)
@@ -513,6 +515,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /vms/request-context:
     get:
@@ -1699,6 +1703,8 @@ paths:
       responses:
         '204':
           description: Authentication provider deleted
+        '409':
+          $ref: '#/components/responses/Conflict'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -2417,6 +2423,8 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               type: object
+              additionalProperties:
+                type: string
               properties:
                 code:
                   type: string
@@ -2491,6 +2499,70 @@ paths:
       responses:
         '204':
           description: Password changed successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/preferences/{key}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: Current-user preference key
+        schema:
+          type: string
+    get:
+      tags: [auth]
+      summary: Get a current user preference
+      operationId: getCurrentUserPreference
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Current user preference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPreference'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [auth]
+      summary: Create or update a current user preference
+      operationId: updateCurrentUserPreference
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserPreferenceUpdateRequest'
+      responses:
+        '200':
+          description: Updated current user preference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPreference'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [auth]
+      summary: Delete a current user preference
+      operationId: deleteCurrentUserPreference
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: Preference deleted
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -5115,9 +5187,44 @@ components:
           type: array
           items:
             type: string
+        profile_attributes:
+          type: object
+          additionalProperties: true
         created_at:
           type: string
           format: date-time
+
+    UserProfileField:
+      type: object
+      required: [key, label]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        searchable:
+          type: boolean
+
+    UserPreference:
+      type: object
+      required: [key, value, updated_at]
+      properties:
+        key:
+          type: string
+        value:
+          type: object
+          additionalProperties: true
+        updated_at:
+          type: string
+          format: date-time
+
+    UserPreferenceUpdateRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: object
+          additionalProperties: true
 
     UserList:
       type: object
@@ -5126,6 +5233,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/User'
+        profile_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserProfileField'
         pagination:
           $ref: '#/components/schemas/Pagination'
 
@@ -5564,6 +5675,9 @@ components:
           type: string
         schedule_timezone:
           type: string
+        provider_request:
+          type: object
+          additionalProperties: true
         next_run_at:
           type: string
           format: date-time

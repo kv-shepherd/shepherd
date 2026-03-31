@@ -10,8 +10,12 @@ import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { App } from "antd";
 import { useTranslation } from "react-i18next";
-import { useAuthStore } from "@/stores/auth";
+import { AUTH_STORAGE_KEY, useAuthStore } from "@/stores/auth";
 import { api } from "@/lib/api/client";
+import {
+  getStandardLoginPath,
+  setNextLoginEntryOverride,
+} from "@/lib/auth/loginEntry";
 import type { components } from "@/types/api.gen";
 import type { ApiErrorResponse } from "./useApiQuery";
 
@@ -33,6 +37,45 @@ type ExternalAuthBridgePayload = {
 };
 
 const EXTERNAL_AUTH_BRIDGE_MESSAGE_TYPE = "shepherd.external_auth.complete";
+
+function readPersistedExternalAuthPayload(): ExternalAuthBridgePayload | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as {
+      state?: {
+        token?: unknown;
+        user?: unknown;
+        isAuthenticated?: unknown;
+        forcePasswordChange?: unknown;
+      };
+    };
+    const state = parsed?.state;
+    if (!state || state.isAuthenticated !== true) {
+      return null;
+    }
+    if (typeof state.token !== "string" || !state.token) {
+      return null;
+    }
+    if (!state.user || typeof state.user !== "object") {
+      return null;
+    }
+    return {
+      type: EXTERNAL_AUTH_BRIDGE_MESSAGE_TYPE,
+      success: true,
+      token: state.token,
+      user: state.user as UserInfo,
+      force_password_change: Boolean(state.forcePasswordChange),
+    };
+  } catch {
+    return null;
+  }
+}
 
 function getExternalAuthBridgeOrigin(): string {
   if (typeof window === "undefined") {
@@ -131,8 +174,9 @@ export function useAuth() {
   );
 
   const handleLogout = useCallback(() => {
+    setNextLoginEntryOverride(getStandardLoginPath());
     clearAuth();
-    router.push("/login");
+    router.push(getStandardLoginPath());
   }, [clearAuth, router]);
 
   const startExternalLogin = useCallback(
@@ -172,6 +216,7 @@ export function useAuth() {
         let settled = false;
         const cleanup = () => {
           window.removeEventListener("message", onMessage);
+          window.removeEventListener("storage", onStorage);
           window.clearInterval(closedPoll);
         };
 
@@ -213,6 +258,18 @@ export function useAuth() {
           resolve();
         };
 
+        const recoverPersistedLogin = () => {
+          const persisted = readPersistedExternalAuthPayload();
+          if (!persisted) {
+            return false;
+          }
+          succeed({
+            ...persisted,
+            return_to: persisted.return_to || returnTo,
+          });
+          return true;
+        };
+
         const onMessage = (event: MessageEvent<ExternalAuthBridgePayload>) => {
           if (event.origin !== expectedBridgeOrigin) return;
           const payload = event.data;
@@ -229,13 +286,24 @@ export function useAuth() {
           succeed(payload);
         };
 
+        const onStorage = (event: StorageEvent) => {
+          if (event.key !== AUTH_STORAGE_KEY) {
+            return;
+          }
+          recoverPersistedLogin();
+        };
+
         const closedPoll = window.setInterval(() => {
           if (popup.closed) {
+            if (recoverPersistedLogin()) {
+              return;
+            }
             fail({ code: "EXTERNAL_AUTH_CANCELLED" });
           }
         }, 500);
 
         window.addEventListener("message", onMessage);
+        window.addEventListener("storage", onStorage);
       });
     },
     [login, message, router, t],

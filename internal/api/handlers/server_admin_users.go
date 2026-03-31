@@ -18,6 +18,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/rolebinding"
 	"kv-shepherd.io/shepherd/ent/service"
 	entuser "kv-shepherd.io/shepherd/ent/user"
+	entuserpreference "kv-shepherd.io/shepherd/ent/userpreference"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
@@ -235,6 +236,11 @@ func (s *Server) DeleteUser(c *gin.Context, userID generated.UserID) {
 	}
 	if _, err := s.client.ResourceRoleBinding.Delete().Where(resourcerolebinding.UserIDEQ(userID)).Exec(ctx); err != nil {
 		logger.Error("failed to delete resource role bindings for user", zap.Error(err), zap.String("user_id", userID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if _, err := s.client.UserPreference.Delete().Where(entuserpreference.UserIDEQ(userID)).Exec(ctx); err != nil {
+		logger.Error("failed to delete user preferences for user", zap.Error(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}

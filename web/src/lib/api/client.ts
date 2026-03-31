@@ -13,6 +13,7 @@
 import type { paths } from '@/types/api.gen';
 import createClient from 'openapi-fetch';
 import { AUTH_STORAGE_KEY } from '@/stores/auth';
+import { getLoginEntryPath } from '@/lib/auth/loginEntry';
 import {
   getRequestPath,
   shouldAttachAuthHeader,
@@ -83,7 +84,7 @@ api.use({
         return response;
       }
 
-      window.location.replace('/login');
+      window.location.replace(getLoginEntryPath());
     }
     return response;
   },

@@ -43,6 +43,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
+	"kv-shepherd.io/shepherd/ent/userpreference"
 	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/ent/vmrevision"
 )
@@ -108,6 +109,8 @@ type Client struct {
 	User *UserClient
 	// UserDirectoryProfile is the client for interacting with the UserDirectoryProfile builders.
 	UserDirectoryProfile *UserDirectoryProfileClient
+	// UserPreference is the client for interacting with the UserPreference builders.
+	UserPreference *UserPreferenceClient
 	// VM is the client for interacting with the VM builders.
 	VM *VMClient
 	// VMRevision is the client for interacting with the VMRevision builders.
@@ -151,6 +154,7 @@ func (c *Client) init() {
 	c.Ticket = NewTicketClient(c.config)
 	c.User = NewUserClient(c.config)
 	c.UserDirectoryProfile = NewUserDirectoryProfileClient(c.config)
+	c.UserPreference = NewUserPreferenceClient(c.config)
 	c.VM = NewVMClient(c.config)
 	c.VMRevision = NewVMRevisionClient(c.config)
 }
@@ -273,6 +277,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Ticket:                NewTicketClient(cfg),
 		User:                  NewUserClient(cfg),
 		UserDirectoryProfile:  NewUserDirectoryProfileClient(cfg),
+		UserPreference:        NewUserPreferenceClient(cfg),
 		VM:                    NewVMClient(cfg),
 		VMRevision:            NewVMRevisionClient(cfg),
 	}, nil
@@ -322,6 +327,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Ticket:                NewTicketClient(cfg),
 		User:                  NewUserClient(cfg),
 		UserDirectoryProfile:  NewUserDirectoryProfileClient(cfg),
+		UserPreference:        NewUserPreferenceClient(cfg),
 		VM:                    NewVMClient(cfg),
 		VMRevision:            NewVMRevisionClient(cfg),
 	}, nil
@@ -359,7 +365,7 @@ func (c *Client) Use(hooks ...Hook) {
 		c.NamespaceRegistry, c.Notification, c.PendingAdoption, c.PlatformSetting,
 		c.RateLimitExemption, c.RateLimitUserOverride, c.ResourceRoleBinding, c.Role,
 		c.RoleBinding, c.Service, c.System, c.SystemSecret, c.Template, c.Ticket,
-		c.User, c.UserDirectoryProfile, c.VM, c.VMRevision,
+		c.User, c.UserDirectoryProfile, c.UserPreference, c.VM, c.VMRevision,
 	} {
 		n.Use(hooks...)
 	}
@@ -375,7 +381,7 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.NamespaceRegistry, c.Notification, c.PendingAdoption, c.PlatformSetting,
 		c.RateLimitExemption, c.RateLimitUserOverride, c.ResourceRoleBinding, c.Role,
 		c.RoleBinding, c.Service, c.System, c.SystemSecret, c.Template, c.Ticket,
-		c.User, c.UserDirectoryProfile, c.VM, c.VMRevision,
+		c.User, c.UserDirectoryProfile, c.UserPreference, c.VM, c.VMRevision,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -440,6 +446,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.User.mutate(ctx, m)
 	case *UserDirectoryProfileMutation:
 		return c.UserDirectoryProfile.mutate(ctx, m)
+	case *UserPreferenceMutation:
+		return c.UserPreference.mutate(ctx, m)
 	case *VMMutation:
 		return c.VM.mutate(ctx, m)
 	case *VMRevisionMutation:
@@ -4255,6 +4263,22 @@ func (c *UserClient) QueryDirectoryProfile(_m *User) *UserDirectoryProfileQuery 
 	return query
 }
 
+// QueryPreferences queries the preferences edge of a User.
+func (c *UserClient) QueryPreferences(_m *User) *UserPreferenceQuery {
+	query := (&UserPreferenceClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(userpreference.Table, userpreference.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.PreferencesTable, user.PreferencesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryExternalCohortGrants queries the external_cohort_grants edge of a User.
 func (c *UserClient) QueryExternalCohortGrants(_m *User) *ExternalCohortGrantQuery {
 	query := (&ExternalCohortGrantClient{config: c.config}).Query()
@@ -4442,6 +4466,155 @@ func (c *UserDirectoryProfileClient) mutate(ctx context.Context, m *UserDirector
 		return (&UserDirectoryProfileDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown UserDirectoryProfile mutation op: %q", m.Op())
+	}
+}
+
+// UserPreferenceClient is a client for the UserPreference schema.
+type UserPreferenceClient struct {
+	config
+}
+
+// NewUserPreferenceClient returns a client for the UserPreference from the given config.
+func NewUserPreferenceClient(c config) *UserPreferenceClient {
+	return &UserPreferenceClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `userpreference.Hooks(f(g(h())))`.
+func (c *UserPreferenceClient) Use(hooks ...Hook) {
+	c.hooks.UserPreference = append(c.hooks.UserPreference, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `userpreference.Intercept(f(g(h())))`.
+func (c *UserPreferenceClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UserPreference = append(c.inters.UserPreference, interceptors...)
+}
+
+// Create returns a builder for creating a UserPreference entity.
+func (c *UserPreferenceClient) Create() *UserPreferenceCreate {
+	mutation := newUserPreferenceMutation(c.config, OpCreate)
+	return &UserPreferenceCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UserPreference entities.
+func (c *UserPreferenceClient) CreateBulk(builders ...*UserPreferenceCreate) *UserPreferenceCreateBulk {
+	return &UserPreferenceCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UserPreferenceClient) MapCreateBulk(slice any, setFunc func(*UserPreferenceCreate, int)) *UserPreferenceCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UserPreferenceCreateBulk{err: fmt.Errorf("calling to UserPreferenceClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UserPreferenceCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UserPreferenceCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UserPreference.
+func (c *UserPreferenceClient) Update() *UserPreferenceUpdate {
+	mutation := newUserPreferenceMutation(c.config, OpUpdate)
+	return &UserPreferenceUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UserPreferenceClient) UpdateOne(_m *UserPreference) *UserPreferenceUpdateOne {
+	mutation := newUserPreferenceMutation(c.config, OpUpdateOne, withUserPreference(_m))
+	return &UserPreferenceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UserPreferenceClient) UpdateOneID(id string) *UserPreferenceUpdateOne {
+	mutation := newUserPreferenceMutation(c.config, OpUpdateOne, withUserPreferenceID(id))
+	return &UserPreferenceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UserPreference.
+func (c *UserPreferenceClient) Delete() *UserPreferenceDelete {
+	mutation := newUserPreferenceMutation(c.config, OpDelete)
+	return &UserPreferenceDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UserPreferenceClient) DeleteOne(_m *UserPreference) *UserPreferenceDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UserPreferenceClient) DeleteOneID(id string) *UserPreferenceDeleteOne {
+	builder := c.Delete().Where(userpreference.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UserPreferenceDeleteOne{builder}
+}
+
+// Query returns a query builder for UserPreference.
+func (c *UserPreferenceClient) Query() *UserPreferenceQuery {
+	return &UserPreferenceQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUserPreference},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UserPreference entity by its id.
+func (c *UserPreferenceClient) Get(ctx context.Context, id string) (*UserPreference, error) {
+	return c.Query().Where(userpreference.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UserPreferenceClient) GetX(ctx context.Context, id string) *UserPreference {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a UserPreference.
+func (c *UserPreferenceClient) QueryUser(_m *UserPreference) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userpreference.Table, userpreference.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, userpreference.UserTable, userpreference.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *UserPreferenceClient) Hooks() []Hook {
+	return c.hooks.UserPreference
+}
+
+// Interceptors returns the client interceptors.
+func (c *UserPreferenceClient) Interceptors() []Interceptor {
+	return c.inters.UserPreference
+}
+
+func (c *UserPreferenceClient) mutate(ctx context.Context, m *UserPreferenceMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UserPreferenceCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UserPreferenceUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UserPreferenceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UserPreferenceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UserPreference mutation op: %q", m.Op())
 	}
 }
 
@@ -4767,7 +4940,8 @@ type (
 		ExternalCohortMapping, InstanceSize, NamespaceRegistry, Notification,
 		PendingAdoption, PlatformSetting, RateLimitExemption, RateLimitUserOverride,
 		ResourceRoleBinding, Role, RoleBinding, Service, System, SystemSecret,
-		Template, Ticket, User, UserDirectoryProfile, VM, VMRevision []ent.Hook
+		Template, Ticket, User, UserDirectoryProfile, UserPreference, VM,
+		VMRevision []ent.Hook
 	}
 	inters struct {
 		ApprovalPolicy, AuditLog, AuthProvider, BatchTicket, Cluster, ClusterPolicy,
@@ -4775,6 +4949,7 @@ type (
 		ExternalCohortMapping, InstanceSize, NamespaceRegistry, Notification,
 		PendingAdoption, PlatformSetting, RateLimitExemption, RateLimitUserOverride,
 		ResourceRoleBinding, Role, RoleBinding, Service, System, SystemSecret,
-		Template, Ticket, User, UserDirectoryProfile, VM, VMRevision []ent.Interceptor
+		Template, Ticket, User, UserDirectoryProfile, UserPreference, VM,
+		VMRevision []ent.Interceptor
 	}
 )

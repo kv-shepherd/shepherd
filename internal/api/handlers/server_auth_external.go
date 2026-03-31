@@ -31,6 +31,7 @@ const externalAuthStateTTL = 5 * time.Minute
 const externalAuthBridgeMessageType = "shepherd.external_auth.complete"
 const externalAuthSchemeHTTP = "http"
 const externalAuthSchemeHTTPS = "https"
+const externalAuthBridgeStorageKey = "shepherd-auth"
 
 var errExternalAuthUserDisabled = errors.New("external auth user disabled")
 
@@ -751,9 +752,45 @@ func buildExternalAuthBridgeHTML(payloadJSON, targetOrigin, targetURL string) st
       const payload = ` + payloadJSON + `;
       const targetOrigin = ` + jsonStringLiteral(targetOrigin) + `;
       const targetURL = ` + jsonStringLiteral(targetURL) + `;
+      const authStorageKey = ` + jsonStringLiteral(externalAuthBridgeStorageKey) + `;
+      const successTarget = payload && payload.force_password_change
+        ? '/auth/change-password'
+        : (targetURL || payload.return_to || '/dashboard');
+
+      function persistLogin(payload) {
+        if (!payload || !payload.success || !payload.token || !payload.user) {
+          return;
+        }
+        try {
+          window.localStorage.setItem(authStorageKey, JSON.stringify({
+            state: {
+              token: payload.token,
+              user: payload.user,
+              isAuthenticated: true,
+              forcePasswordChange: !!payload.force_password_change
+            },
+            version: 0
+          }));
+        } catch (_) {
+          // ignore storage failures and continue with redirect
+        }
+      }
+
+      persistLogin(payload);
+
       if (window.opener && targetOrigin) {
-        window.opener.postMessage(payload, targetOrigin);
-        window.close();
+        try {
+          window.opener.postMessage(payload, targetOrigin);
+        } catch (_) {
+          // ignore opener delivery failures and fall through to delayed close
+        }
+        window.setTimeout(function () {
+          window.close();
+        }, 150);
+        return;
+      }
+      if (payload && payload.success && payload.token && payload.user) {
+        window.location.replace(successTarget);
         return;
       }
       if (targetURL) {

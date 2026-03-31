@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormInstance } from "antd";
+import type { TFunction } from "i18next";
 import {
   Alert,
   AutoComplete,
@@ -76,6 +77,62 @@ interface DiscoveredCohortOption {
   cohortKind: string;
   cohortKey: string;
   cohortDisplayName: string;
+}
+
+interface LabeledOption {
+  value: string;
+  label: string;
+}
+
+interface ManualCohortSeedCandidate {
+  cohortKind: string;
+  sourceField: string;
+  values: string[];
+  uniqueCount: number;
+}
+
+function dedupeOptions(options: LabeledOption[]): LabeledOption[] {
+  const seen = new Set<string>();
+  const unique: LabeledOption[] = [];
+  for (const option of options) {
+    const value = option.value.trim();
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    unique.push({ value, label: option.label });
+  }
+  return unique;
+}
+
+function normalizeFieldToken(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+}
+
+function inferManualCohortKind(fieldName: string): string | null {
+  const normalized = normalizeFieldToken(fieldName);
+  if (["department", "departments", "dept"].includes(normalized)) {
+    return "department";
+  }
+  if (["section", "sections", "team", "teams"].includes(normalized)) {
+    return "team";
+  }
+  if (["organization", "organisation", "org", "company"].includes(normalized)) {
+    return "organization";
+  }
+  if (["groups", "group"].includes(normalized)) {
+    return "group";
+  }
+  return null;
+}
+
+function localizeProviderProfileFieldLabel(
+  t: TFunction<["admin", "common"]>,
+  fieldKey: string,
+) {
+  return t(`users.profile_fields.${fieldKey}`, {
+    defaultValue: fieldKey,
+  });
 }
 
 interface ProviderMappingWorkflowCopy {
@@ -165,119 +222,60 @@ function getProviderMappingWorkflowCopy(
   authType: string | undefined,
   t: (key: string, opts?: Record<string, unknown>) => string,
 ): ProviderMappingWorkflowCopy {
-  switch ((authType || "").trim().toLowerCase()) {
-    case "wecom":
-      return {
-        discoveredEmptyTitle: t("authProviders.discovered.empty_wecom_title", {
-          defaultValue: "No discovered departments yet",
-        }),
-        discoveredEmptyDescription: t(
-          "authProviders.discovered.empty_wecom_description",
-          {
-            defaultValue:
-              "Let one WeCom user complete a real login first. The platform will automatically discover departments and profile labels from that login.",
-          },
-        ),
-        sampleEmptyTitle: t("authProviders.sample.empty_wecom_title", {
-          defaultValue: "Connection test does not create sample fields",
-        }),
-        sampleEmptyDescription: t(
-          "authProviders.sample.empty_wecom_description",
-          {
-            defaultValue:
-              "WeCom sample fields appear after the first real WeCom login, not after credential validation.",
-          },
-        ),
-        manualTitle: t("authProviders.sync.manual_title_wecom", {
-          defaultValue: "Manually register known departments",
-        }),
-        manualDescription: t("authProviders.sync.manual_description_wecom", {
-          defaultValue:
-            "Normal path: let one user log in and use the discovered departments above. Only fill this section when you need to pre-create mappings before the first login.",
-        }),
-        cohortKindHint: t("authProviders.sync.cohort_kind_hint_wecom", {
-          defaultValue: "WeCom cohorts are projected as department.",
-        }),
-        sourceFieldHint: t("authProviders.sync.source_field_hint_wecom", {
-          defaultValue:
-            "Use department for manual pre-registration so it matches the runtime WeCom projection.",
-        }),
-        cohortsPlaceholder: t("authProviders.sync.cohorts_placeholder_wecom", {
-          defaultValue: "2\n17\n42",
-        }),
-        guideSteps: [
-          t("authProviders.guide.wecom.step_1", {
-            defaultValue:
-              "Run connection test to validate Corp ID and Agent Secret.",
-          }),
-          t("authProviders.guide.wecom.step_2", {
-            defaultValue: "Have one real WeCom user complete login once.",
-          }),
-          t("authProviders.guide.wecom.step_3", {
-            defaultValue:
-              "Review discovered departments and choose one when creating the mapping.",
-          }),
-          t("authProviders.guide.wecom.step_4", {
-            defaultValue:
-              "Use manual department registration only when you must pre-bind access before the first login.",
-          }),
-        ],
-      };
-    default:
-      return {
-        discoveredEmptyTitle: t("authProviders.discovered.empty_title", {
-          defaultValue: "No discovered cohorts yet",
-        }),
-        discoveredEmptyDescription: t(
-          "authProviders.discovered.empty_description",
-          {
-            defaultValue:
-              "Let one external user complete a real login first. The platform will automatically discover external cohorts from that login.",
-          },
-        ),
-        sampleEmptyTitle: t("authProviders.sample.empty", {
-          defaultValue: "No sample attributes yet",
-        }),
-        sampleEmptyDescription: t("authProviders.sample.empty_description", {
-          defaultValue:
-            "Run a connection test after signing in with this provider to inspect the incoming claims.",
-        }),
-        manualTitle: t("authProviders.sync.manual_title", {
-          defaultValue: "Manually register known cohorts",
-        }),
-        manualDescription: t("authProviders.sync.manual_description", {
-          defaultValue:
-            "Normal path: let one user log in and use discovered cohorts. Only fill this section when you need to pre-create mappings before the first login.",
-        }),
-        cohortKindHint: t("authProviders.sync.cohort_kind_hint", {
-          defaultValue:
-            "Choose the canonical cohort kind that your provider projects into the platform.",
-        }),
-        sourceFieldHint: t("authProviders.sync.source_field_hint", {
-          defaultValue:
-            "Use the raw provider field name that produces this cohort set.",
-        }),
-        cohortsPlaceholder: t("authProviders.sync.cohorts_placeholder", {
-          defaultValue: "ops-team\nplatform-admin",
-        }),
-        guideSteps: [
-          t("authProviders.guide.default.step_1", {
-            defaultValue: "Validate provider connectivity.",
-          }),
-          t("authProviders.guide.default.step_2", {
-            defaultValue: "Have one real external user complete login once.",
-          }),
-          t("authProviders.guide.default.step_3", {
-            defaultValue:
-              "Review discovered cohorts and choose one when creating the mapping.",
-          }),
-          t("authProviders.guide.default.step_4", {
-            defaultValue:
-              "Use manual cohort registration only when you need a mapping before the first real login.",
-          }),
-        ],
-      };
-  }
+  void authType;
+  return {
+    discoveredEmptyTitle: t("authProviders.discovered.empty_title", {
+      defaultValue: "No discovered cohorts yet",
+    }),
+    discoveredEmptyDescription: t(
+      "authProviders.discovered.empty_description",
+      {
+        defaultValue:
+          "Let one external user complete a real login first. The platform will automatically discover external cohorts from that login.",
+      },
+    ),
+    sampleEmptyTitle: t("authProviders.sample.empty", {
+      defaultValue: "No sample attributes yet",
+    }),
+    sampleEmptyDescription: t("authProviders.sample.empty_description", {
+      defaultValue:
+        "Run a connection test after signing in with this provider to inspect the incoming claims.",
+    }),
+    manualTitle: t("authProviders.sync.manual_title", {
+      defaultValue: "Manually register known cohorts",
+    }),
+    manualDescription: t("authProviders.sync.manual_description", {
+      defaultValue:
+        "Normal path: let one user log in and use discovered cohorts. Only fill this section when you need to pre-create mappings before the first login.",
+    }),
+    cohortKindHint: t("authProviders.sync.cohort_kind_hint", {
+      defaultValue:
+        "Choose the canonical cohort kind that your provider projects into the platform.",
+    }),
+    sourceFieldHint: t("authProviders.sync.source_field_hint", {
+      defaultValue:
+        "Use the raw provider field name that produces this cohort set.",
+    }),
+    cohortsPlaceholder: t("authProviders.sync.cohorts_placeholder", {
+      defaultValue: "ops-team\nplatform-admin",
+    }),
+    guideSteps: [
+      t("authProviders.guide.default.step_1", {
+        defaultValue: "Validate provider connectivity.",
+      }),
+      t("authProviders.guide.default.step_2", {
+        defaultValue: "Have one real external user complete login once.",
+      }),
+      t("authProviders.guide.default.step_3", {
+        defaultValue:
+          "Review discovered cohorts and choose one when creating the mapping.",
+      }),
+      t("authProviders.guide.default.step_4", {
+        defaultValue:
+          "Use manual cohort registration only when you need a mapping before the first real login.",
+      }),
+    ],
+  };
 }
 
 function directorySyncModeLabel(
@@ -446,6 +444,10 @@ export function AdminAuthProvidersContent() {
   );
   const createForm = providers.createForm;
   const editForm = providers.editForm;
+  const selectedManualSourceField = Form.useWatch(
+    "source_field",
+    providers.syncForm,
+  ) as string | undefined;
   const filteredDirectorySyncJobs = useMemo(
     () =>
       (providers.directorySyncJobs ?? []).filter((job) =>
@@ -659,11 +661,185 @@ export function AdminAuthProvidersContent() {
       })),
     [providers.cohorts],
   );
+  const manualCohortKindOptions = useMemo<LabeledOption[]>(
+    () =>
+      dedupeOptions([
+        {
+          value: "group",
+          label: t("authProviders.sync.cohort_kind_option.group", {
+            defaultValue: "Group",
+          }),
+        },
+        {
+          value: "department",
+          label: t("authProviders.sync.cohort_kind_option.department", {
+            defaultValue: "Department",
+          }),
+        },
+        {
+          value: "team",
+          label: t("authProviders.sync.cohort_kind_option.team", {
+            defaultValue: "Team",
+          }),
+        },
+        {
+          value: "organization",
+          label: t("authProviders.sync.cohort_kind_option.organization", {
+            defaultValue: "Organization",
+          }),
+        },
+        ...((providers.cohorts ?? []).map((cohort: ExternalCohort) => ({
+          value: cohort.cohort_kind,
+          label: cohort.cohort_kind,
+        })) ?? []),
+      ]),
+    [providers.cohorts, t],
+  );
+  const manualSourceFieldOptions = useMemo<LabeledOption[]>(
+    () =>
+      dedupeOptions([
+        ...((providers.sampleFields ?? []).map((field) => ({
+          value: field.field,
+          label:
+            field.sample && field.sample.length > 0
+              ? `${localizeProviderProfileFieldLabel(t, field.field)} (${field.value_type}; ${field.unique_count} distinct; ${field.sample
+                  .slice(0, 3)
+                  .join(", ")})`
+              : `${localizeProviderProfileFieldLabel(t, field.field)} (${field.value_type}; ${field.unique_count} distinct)`,
+        })) ?? []),
+        ...((providers.cohorts ?? [])
+          .filter((cohort: ExternalCohort) => Boolean(cohort.source_field))
+          .map((cohort: ExternalCohort) => ({
+            value: cohort.source_field as string,
+            label: `${localizeProviderProfileFieldLabel(t, cohort.source_field as string)} (${cohort.cohort_kind})`,
+          })) ?? []),
+      ]),
+    [providers.cohorts, providers.sampleFields, t],
+  );
+  const manualCohortSeedCandidates = useMemo<ManualCohortSeedCandidate[]>(
+    () =>
+      (providers.sampleFields ?? [])
+        .map((field): ManualCohortSeedCandidate | null => {
+          if (field.value_type !== "string" || !field.sample || field.sample.length === 0) {
+            return null;
+          }
+          const cohortKind = inferManualCohortKind(field.field);
+          if (!cohortKind) {
+            return null;
+          }
+          return {
+            cohortKind,
+            sourceField: field.field,
+            values: Array.from(
+              new Set(
+                field.sample
+                  .map((value) => value.trim())
+                  .filter((value) => value.length > 0),
+              ),
+            ),
+            uniqueCount: field.unique_count,
+          };
+        })
+        .filter((candidate): candidate is ManualCohortSeedCandidate => {
+          return candidate !== null && candidate.values.length > 0;
+        }),
+    [providers.sampleFields],
+  );
+  const activeManualCohortSeedCandidate = useMemo(() => {
+    if (selectedManualSourceField) {
+      const matched = manualCohortSeedCandidates.find(
+        (candidate) => candidate.sourceField === selectedManualSourceField,
+      );
+      if (matched) {
+        return matched;
+      }
+    }
+    if (!providers.recommendedCohortDefaults) {
+      return null;
+    }
+    return (
+      manualCohortSeedCandidates.find(
+        (candidate) =>
+          candidate.sourceField === providers.recommendedCohortDefaults?.sourceField,
+      ) ?? null
+    );
+  }, [
+    manualCohortSeedCandidates,
+    providers.recommendedCohortDefaults,
+    selectedManualSourceField,
+  ]);
+  const manualKnownCohortOptions = useMemo<LabeledOption[]>(
+    () =>
+      dedupeOptions([
+        ...(providers.cohorts ?? []).map((cohort: ExternalCohort) => ({
+          value: cohort.cohort_key,
+          label: `${cohort.display_name || cohort.cohort_key} (${cohort.cohort_kind})`,
+        })),
+        ...((activeManualCohortSeedCandidate?.values ?? []).map((value) => ({
+          value,
+          label: `${value} (${activeManualCohortSeedCandidate?.cohortKind}; ${t(
+            "authProviders.sync.sample_value_label",
+            { defaultValue: "sample value" },
+          )})`,
+        })) ?? []),
+      ]),
+    [activeManualCohortSeedCandidate, providers.cohorts, t],
+  );
   const mappingWorkflow = useMemo(
     () =>
       getProviderMappingWorkflowCopy(providers.mappingProvider?.auth_type, t),
     [providers.mappingProvider?.auth_type, t],
   );
+  const recommendedCohortCopy = useMemo(() => {
+    const recommended = providers.recommendedCohortDefaults;
+    if (!recommended) {
+      return null;
+    }
+
+    const reasonText =
+      recommended.reason === "sample_department"
+        ? t("authProviders.sync.recommended_reason.sample_department", {
+            defaultValue:
+              'Observed sample field "department", so department → department is the best starting point.',
+          })
+        : recommended.reason === "sample_section"
+          ? t("authProviders.sync.recommended_reason.sample_section", {
+              defaultValue:
+                'Observed sample field "section", so team → section is the best starting point.',
+            })
+          : recommended.reason === "sample_groups"
+            ? t("authProviders.sync.recommended_reason.sample_groups", {
+                defaultValue:
+                  'Observed sample field "groups", so group → groups is the best starting point.',
+              })
+            : recommended.reason === "sample_organization"
+              ? t("authProviders.sync.recommended_reason.sample_organization", {
+                  defaultValue:
+                    'Observed sample field "organization", so organization → organization is the best starting point.',
+                })
+              : recommended.reason === "discovered_cohort"
+                ? t("authProviders.sync.recommended_reason.discovered_cohort", {
+                    defaultValue:
+                      "Existing discovered cohorts already indicate the right organization type and source field.",
+                  })
+                : t("authProviders.sync.recommended_reason.fallback_groups", {
+                    defaultValue:
+                      "No stronger signal is available yet, so the generic group → groups fallback is selected.",
+                  });
+
+    return {
+      title: t("authProviders.sync.recommended_title", {
+        defaultValue: "Recommended starting point",
+      }),
+      description: t("authProviders.sync.recommended_description", {
+        defaultValue:
+          'Start with external organization type "{{cohortKind}}" and source field "{{sourceField}}". {{reason}}',
+        cohortKind: recommended.cohortKind,
+        sourceField: recommended.sourceField,
+        reason: reasonText,
+      }),
+    };
+  }, [providers.recommendedCohortDefaults, t]);
   const runtimeModeColumns: ColumnsType<
     NonNullable<AuthProviderRuntimeDescriptor["login_modes"]>[number]
   > = [
@@ -981,15 +1157,17 @@ export function AdminAuthProvidersContent() {
       key: "actions",
       width: 120,
       render: (_, record) => (
-        <Button
-          type="link"
-          size="small"
-          onClick={() => providers.openDirectorySyncJobDetail(record)}
-        >
-          {t("common:button.details", {
-            defaultValue: "Details",
-          })}
-        </Button>
+        <Space size={4} wrap className="copy-friendly-actions">
+          <Button
+            type="link"
+            size="small"
+            onClick={() => providers.openDirectorySyncJobDetail(record)}
+          >
+            {t("common:button.details", {
+              defaultValue: "Details",
+            })}
+          </Button>
+        </Space>
       ),
     },
   ];
@@ -1069,7 +1247,7 @@ export function AdminAuthProvidersContent() {
       key: "actions",
       width: 260,
       render: (_, record: AuthProvider) => (
-        <Space size={4} wrap>
+        <Space size={4} wrap className="copy-friendly-actions">
           <Button
             type="link"
             size="small"
@@ -1222,7 +1400,7 @@ export function AdminAuthProvidersContent() {
   ];
 
   return (
-    <div>
+    <div className="auth-providers-page copy-friendly-actions">
       {providers.messageContextHolder}
       <PageHeader
         title={t("authProviders.title")}
@@ -1513,6 +1691,7 @@ export function AdminAuthProvidersContent() {
         onCancel={providers.closeDeleteModal}
         confirmLoading={providers.deletePending}
         okButtonProps={{ danger: true }}
+        rootClassName="copy-friendly-actions"
         data-testid="auth-provider-delete-modal"
       >
         <Text>
@@ -1528,11 +1707,22 @@ export function AdminAuthProvidersContent() {
         })}
         open={providers.mappingOpen}
         onCancel={providers.closeMappingModal}
+        afterOpenChange={(open) => {
+          if (!open) {
+            return;
+          }
+          providers.syncForm.resetFields();
+          providers.directoryRequestForm.resetFields();
+          providers.syncForm.setFieldsValue({
+            cohort_kind: providers.recommendedCohortDefaults.cohortKind,
+            source_field: providers.recommendedCohortDefaults.sourceField,
+          });
+        }}
         footer={null}
         width={980}
-        forceRender={true}
         maskClosable={false}
         keyboard={false}
+        rootClassName="copy-friendly-actions"
         data-testid="auth-provider-mappings-page"
       >
         <Space direction="vertical" size={20} style={{ width: "100%" }}>
@@ -1700,6 +1890,7 @@ export function AdminAuthProvidersContent() {
                     form={providers.directoryRequestForm}
                     namePrefix="provider_request"
                     showJsonFallback={false}
+                    applySchemaDefaults={true}
                     schemaNamespace={
                       providers.mappingProvider?.auth_type
                         ? `authProviders.directoryRequest.${providers.mappingProvider.auth_type}`
@@ -2153,6 +2344,7 @@ export function AdminAuthProvidersContent() {
                   title: t("authProviders.sample.field"),
                   dataIndex: "field",
                   key: "field",
+                  render: (value: string) => localizeProviderProfileFieldLabel(t, value),
                 },
                 {
                   title: t("authProviders.sample.value_type"),
@@ -2507,6 +2699,72 @@ export function AdminAuthProvidersContent() {
                     },
                   )}
                 />
+                {recommendedCohortCopy ? (
+                  <Alert
+                    type="info"
+                    showIcon={true}
+                    message={recommendedCohortCopy.title}
+                    description={recommendedCohortCopy.description}
+                  />
+                ) : null}
+                {manualCohortSeedCandidates.length > 0 ? (
+                  <Card
+                    size="small"
+                    title={t("authProviders.sync.quick_start_title", {
+                      defaultValue: "Quick start from observed values",
+                    })}
+                  >
+                    <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                      <Text type="secondary">
+                        {t("authProviders.sync.quick_start_description", {
+                          defaultValue:
+                            "Choose a discovered provider field and let Shepherd pre-fill the organization type and known sample values for you.",
+                        })}
+                      </Text>
+                      <Space wrap={true} className="copy-friendly-actions">
+                        {manualCohortSeedCandidates.map((candidate) => (
+                          <Button
+                            key={`${candidate.cohortKind}:${candidate.sourceField}`}
+                            size="small"
+                            onClick={() => {
+                              providers.syncForm.setFieldsValue({
+                                cohort_kind: candidate.cohortKind,
+                                source_field: candidate.sourceField,
+                                cohorts_text: candidate.values,
+                              });
+                            }}
+                          >
+                            {t("authProviders.sync.quick_start_button", {
+                              defaultValue:
+                                '{{field}} -> {{cohortKind}} ({{count}} values)',
+                              field: candidate.sourceField,
+                              cohortKind: candidate.cohortKind,
+                              count: candidate.values.length,
+                            })}
+                          </Button>
+                        ))}
+                      </Space>
+                    </Space>
+                  </Card>
+                ) : null}
+                {activeManualCohortSeedCandidate ? (
+                  <Alert
+                    type="success"
+                    showIcon={true}
+                    message={t("authProviders.sync.selected_source_hint_title", {
+                      defaultValue: "Selected source field has known values",
+                    })}
+                    description={t(
+                      "authProviders.sync.selected_source_hint_description",
+                      {
+                        defaultValue:
+                          'Field "{{field}}" currently exposes {{count}} sample values. The cohort list below has been preloaded from those values and still allows manual additions.',
+                        field: activeManualCohortSeedCandidate.sourceField,
+                        count: activeManualCohortSeedCandidate.values.length,
+                      },
+                    )}
+                  />
+                ) : null}
               </Space>
               <Form.Item
                 name="cohort_kind"
@@ -2514,7 +2772,19 @@ export function AdminAuthProvidersContent() {
                 rules={[{ required: true }]}
                 extra={mappingWorkflow.cohortKindHint}
               >
-                <Input />
+                <AutoComplete
+                  options={manualCohortKindOptions}
+                  allowClear={true}
+                  placeholder={t("authProviders.sync.cohort_kind_placeholder", {
+                    defaultValue: "Select or type a canonical cohort kind",
+                  })}
+                  filterOption={(inputValue, option) => {
+                    const search = inputValue.trim().toLowerCase();
+                    const label = String(option?.label ?? "").toLowerCase();
+                    const value = String(option?.value ?? "").toLowerCase();
+                    return label.includes(search) || value.includes(search);
+                  }}
+                />
               </Form.Item>
               <Form.Item
                 name="source_field"
@@ -2522,16 +2792,36 @@ export function AdminAuthProvidersContent() {
                 rules={[{ required: true }]}
                 extra={mappingWorkflow.sourceFieldHint}
               >
-                <Input />
+                <AutoComplete
+                  options={manualSourceFieldOptions}
+                  allowClear={true}
+                  placeholder={t("authProviders.sync.source_field_placeholder", {
+                    defaultValue: "Select a discovered field or type a provider field",
+                  })}
+                  filterOption={(inputValue, option) => {
+                    const search = inputValue.trim().toLowerCase();
+                    const label = String(option?.label ?? "").toLowerCase();
+                    const value = String(option?.value ?? "").toLowerCase();
+                    return label.includes(search) || value.includes(search);
+                  }}
+                />
               </Form.Item>
               <Form.Item
                 name="cohorts_text"
                 label={t("authProviders.sync.cohorts")}
                 rules={[{ required: true }]}
+                extra={t("authProviders.sync.cohorts_help", {
+                  defaultValue:
+                    "Prefer selecting discovered cohorts below. You can still type a new value if the provider has not exposed it yet.",
+                })}
               >
-                <Input.TextArea
-                  rows={4}
+                <Select
+                  mode="tags"
+                  allowClear={true}
+                  showSearch={true}
+                  options={manualKnownCohortOptions}
                   placeholder={mappingWorkflow.cohortsPlaceholder}
+                  tokenSeparators={[",", "\n"]}
                 />
               </Form.Item>
               <Button
@@ -2605,9 +2895,9 @@ export function AdminAuthProvidersContent() {
           void providers.submitEditMapping();
         }}
         confirmLoading={providers.updateMappingPending}
-        forceRender={true}
         maskClosable={false}
         keyboard={false}
+        rootClassName="copy-friendly-actions"
         data-testid="cohort-mapping-edit-modal"
       >
         <Form
@@ -2636,10 +2926,10 @@ export function AdminAuthProvidersContent() {
         }}
         onCancel={providers.closeCreateMappingModal}
         confirmLoading={providers.createMappingPending}
-        forceRender={true}
         width={720}
         maskClosable={false}
         keyboard={false}
+        rootClassName="copy-friendly-actions"
         data-testid="cohort-mapping-create-modal"
       >
         <Form form={providers.mappingForm} layout="vertical" preserve={false}>
@@ -2765,10 +3055,10 @@ function CreateProviderWizard({
       title={t("authProviders.add_title")}
       open={open}
       onCancel={handleCancel}
-      forceRender={true}
       width={680}
       maskClosable={false}
       keyboard={false}
+      rootClassName="copy-friendly-actions"
       footer={footerButtons()}
       data-testid="auth-provider-create-modal"
     >
@@ -2897,6 +3187,7 @@ function CreateProviderWizard({
                     form={form}
                     namePrefix="config"
                     showJsonFallback={false}
+                    applySchemaDefaults={true}
                     schemaNamespace={
                       selectedAuthType
                         ? `authProviders.schema.${selectedAuthType}`
@@ -3167,13 +3458,13 @@ function EditProviderModal({
       onOk={onSubmit}
       onCancel={onCancel}
       confirmLoading={confirmLoading}
-      forceRender={true}
       width={640}
       maskClosable={false}
       keyboard={false}
+      rootClassName="copy-friendly-actions"
       data-testid="auth-provider-edit-modal"
     >
-      <Form form={form} layout="vertical" preserve={false}>
+      <Form form={form} layout="vertical">
         <Form.Item
           name="name"
           label={t("common:table.name")}

@@ -15,6 +15,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/rolebinding"
 	"kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
+	"kv-shepherd.io/shepherd/ent/userpreference"
 )
 
 // UserCreate is the builder for creating a User entity.
@@ -223,6 +224,21 @@ func (_c *UserCreate) SetNillableDirectoryProfileID(id *string) *UserCreate {
 // SetDirectoryProfile sets the "directory_profile" edge to the UserDirectoryProfile entity.
 func (_c *UserCreate) SetDirectoryProfile(v *UserDirectoryProfile) *UserCreate {
 	return _c.SetDirectoryProfileID(v.ID)
+}
+
+// AddPreferenceIDs adds the "preferences" edge to the UserPreference entity by IDs.
+func (_c *UserCreate) AddPreferenceIDs(ids ...string) *UserCreate {
+	_c.mutation.AddPreferenceIDs(ids...)
+	return _c
+}
+
+// AddPreferences adds the "preferences" edges to the UserPreference entity.
+func (_c *UserCreate) AddPreferences(v ...*UserPreference) *UserCreate {
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddPreferenceIDs(ids...)
 }
 
 // AddExternalCohortGrantIDs adds the "external_cohort_grants" edge to the ExternalCohortGrant entity by IDs.
@@ -440,6 +456,22 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userdirectoryprofile.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.PreferencesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PreferencesTable,
+			Columns: []string{user.PreferencesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userpreference.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

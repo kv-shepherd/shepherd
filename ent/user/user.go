@@ -42,6 +42,8 @@ const (
 	EdgeNotifications = "notifications"
 	// EdgeDirectoryProfile holds the string denoting the directory_profile edge name in mutations.
 	EdgeDirectoryProfile = "directory_profile"
+	// EdgePreferences holds the string denoting the preferences edge name in mutations.
+	EdgePreferences = "preferences"
 	// EdgeExternalCohortGrants holds the string denoting the external_cohort_grants edge name in mutations.
 	EdgeExternalCohortGrants = "external_cohort_grants"
 	// Table holds the table name of the user in the database.
@@ -67,6 +69,13 @@ const (
 	DirectoryProfileInverseTable = "user_directory_profiles"
 	// DirectoryProfileColumn is the table column denoting the directory_profile relation/edge.
 	DirectoryProfileColumn = "user_id"
+	// PreferencesTable is the table that holds the preferences relation/edge.
+	PreferencesTable = "user_preferences"
+	// PreferencesInverseTable is the table name for the UserPreference entity.
+	// It exists in this package in order to avoid circular dependency with the "userpreference" package.
+	PreferencesInverseTable = "user_preferences"
+	// PreferencesColumn is the table column denoting the preferences relation/edge.
+	PreferencesColumn = "user_id"
 	// ExternalCohortGrantsTable is the table that holds the external_cohort_grants relation/edge.
 	ExternalCohortGrantsTable = "external_cohort_grants"
 	// ExternalCohortGrantsInverseTable is the table name for the ExternalCohortGrant entity.
@@ -217,6 +226,20 @@ func ByDirectoryProfileField(field string, opts ...sql.OrderTermOption) OrderOpt
 	}
 }
 
+// ByPreferencesCount orders the results by preferences count.
+func ByPreferencesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newPreferencesStep(), opts...)
+	}
+}
+
+// ByPreferences orders the results by preferences terms.
+func ByPreferences(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newPreferencesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByExternalCohortGrantsCount orders the results by external_cohort_grants count.
 func ByExternalCohortGrantsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -249,6 +272,13 @@ func newDirectoryProfileStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(DirectoryProfileInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2O, false, DirectoryProfileTable, DirectoryProfileColumn),
+	)
+}
+func newPreferencesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(PreferencesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, PreferencesTable, PreferencesColumn),
 	)
 }
 func newExternalCohortGrantsStep() *sqlgraph.Step {

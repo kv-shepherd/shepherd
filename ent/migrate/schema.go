@@ -1004,6 +1004,41 @@ var (
 			},
 		},
 	}
+	// UserPreferencesColumns holds the columns for the "user_preferences" table.
+	UserPreferencesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "key", Type: field.TypeString, Size: 120},
+		{Name: "value", Type: field.TypeJSON},
+		{Name: "user_id", Type: field.TypeString},
+	}
+	// UserPreferencesTable holds the schema information for the "user_preferences" table.
+	UserPreferencesTable = &schema.Table{
+		Name:       "user_preferences",
+		Columns:    UserPreferencesColumns,
+		PrimaryKey: []*schema.Column{UserPreferencesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "user_preferences_users_preferences",
+				Columns:    []*schema.Column{UserPreferencesColumns[5]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "userpreference_user_id_key",
+				Unique:  true,
+				Columns: []*schema.Column{UserPreferencesColumns[5], UserPreferencesColumns[3]},
+			},
+			{
+				Name:    "userpreference_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{UserPreferencesColumns[5]},
+			},
+		},
+	}
 	// VmsColumns holds the columns for the "vms" table.
 	VmsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
@@ -1124,6 +1159,7 @@ var (
 		TicketsTable,
 		UsersTable,
 		UserDirectoryProfilesTable,
+		UserPreferencesTable,
 		VmsTable,
 		VMRevisionsTable,
 	}
@@ -1138,6 +1174,7 @@ func init() {
 	RoleBindingsTable.ForeignKeys[1].RefTable = UsersTable
 	ServicesTable.ForeignKeys[0].RefTable = SystemsTable
 	UserDirectoryProfilesTable.ForeignKeys[0].RefTable = UsersTable
+	UserPreferencesTable.ForeignKeys[0].RefTable = UsersTable
 	VmsTable.ForeignKeys[0].RefTable = ServicesTable
 	VMRevisionsTable.ForeignKeys[0].RefTable = VmsTable
 }

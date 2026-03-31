@@ -6,7 +6,6 @@ func builtInAuthProviderAdapters() []AuthProviderAdminAdapter {
 		newOIDCBuiltInAuthProviderAdapter(),
 		newLDAPBuiltInAuthProviderAdapter(),
 		newSSOBuiltInAuthProviderAdapter(),
-		newUpstreamAssertionBuiltInAuthProviderAdapter(),
 		newWeComBuiltInAuthProviderAdapter(),
 	}
 }

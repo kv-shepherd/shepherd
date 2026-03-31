@@ -1157,16 +1157,11 @@ func (s *Server) ListAuthProviderTypes(c *gin.Context) {
 	items := make([]generated.AuthProviderType, 0, len(types))
 	for _, tp := range types {
 		items = append(items, generated.AuthProviderType{
-			Type:        tp.Type,
-			DisplayName: tp.DisplayName,
-			Description: tp.Description,
-			BuiltIn:     tp.BuiltIn,
-			ConfigSchema: func() map[string]interface{} {
-				if tp.ConfigSchema == nil {
-					return map[string]interface{}{}
-				}
-				return tp.ConfigSchema
-			}(),
+			Type:         tp.Type,
+			DisplayName:  tp.DisplayName,
+			Description:  tp.Description,
+			BuiltIn:      tp.BuiltIn,
+			ConfigSchema: tp.ConfigSchema,
 		})
 	}
 
@@ -1179,6 +1174,9 @@ func (s *Server) ListAuthProviders(c *gin.Context) {
 	if !ok {
 		return
 	}
+	revealSensitive := hasGlobalPermission(c, "auth_provider:update") ||
+		hasGlobalPermission(c, "auth_provider:configure") ||
+		hasGlobalPermission(c, "auth_provider:manage")
 
 	providers, err := s.client.AuthProvider.Query().
 		Order(ent.Asc(authprovider.FieldSortOrder), ent.Asc(authprovider.FieldName)).
@@ -1191,9 +1189,9 @@ func (s *Server) ListAuthProviders(c *gin.Context) {
 
 	items := make([]generated.AuthProvider, 0, len(providers))
 	for _, provider := range providers {
-		item, convErr := s.authProviderToAPI(provider)
+		item, convErr := s.authProviderToAPI(provider, revealSensitive)
 		if convErr != nil {
-			logger.Error("failed to sanitize auth provider config", zap.Error(convErr), zap.String("provider_id", provider.ID))
+			logger.Error("failed to convert auth provider config", zap.Error(convErr), zap.String("provider_id", provider.ID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
@@ -1273,9 +1271,9 @@ func (s *Server) CreateAuthProvider(c *gin.Context) {
 		})
 	}
 
-	resp, convErr := s.authProviderToAPI(provider)
+	resp, convErr := s.authProviderToAPI(provider, true)
 	if convErr != nil {
-		logger.Error("failed to sanitize created auth provider config", zap.Error(convErr), zap.String("provider_id", provider.ID))
+		logger.Error("failed to convert created auth provider config", zap.Error(convErr), zap.String("provider_id", provider.ID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1359,9 +1357,9 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerID generated.Provide
 		_ = s.audit.LogAction(ctx, "auth_provider.update", "auth_provider", provider.ID, actor, nil)
 	}
 
-	resp, convErr := s.authProviderToAPI(provider)
+	resp, convErr := s.authProviderToAPI(provider, true)
 	if convErr != nil {
-		logger.Error("failed to sanitize updated auth provider config", zap.Error(convErr), zap.String("provider_id", provider.ID))
+		logger.Error("failed to convert updated auth provider config", zap.Error(convErr), zap.String("provider_id", provider.ID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -2551,14 +2549,18 @@ func roleToAPI(r *ent.Role) generated.Role {
 	}
 }
 
-func (s *Server) authProviderToAPI(p *ent.AuthProvider) (generated.AuthProvider, error) {
+func (s *Server) authProviderToAPI(p *ent.AuthProvider, revealSensitive bool) (generated.AuthProvider, error) {
 	config := p.Config
 	if s != nil && s.authProviderConfig != nil {
-		sanitized, err := s.authProviderConfig.SanitizeForAPI(p.AuthType, p.Config)
+		var err error
+		if revealSensitive {
+			config, err = s.authProviderConfig.DecryptForUse(p.AuthType, p.Config)
+		} else {
+			config, err = s.authProviderConfig.SanitizeForAPI(p.AuthType, p.Config)
+		}
 		if err != nil {
 			return generated.AuthProvider{}, err
 		}
-		config = sanitized
 	}
 	return generated.AuthProvider{
 		Id:        p.ID,

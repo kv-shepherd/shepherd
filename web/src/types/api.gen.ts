@@ -1481,6 +1481,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/preferences/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Current-user preference key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        /** Get a current user preference */
+        get: operations["getCurrentUserPreference"];
+        /** Create or update a current user preference */
+        put: operations["updateCurrentUserPreference"];
+        post?: never;
+        /** Delete a current user preference */
+        delete: operations["deleteCurrentUserPreference"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/namespaces": {
         parameters: {
             query?: never;
@@ -2685,11 +2707,33 @@ export interface components {
             display_name?: string;
             enabled: boolean;
             roles?: string[];
+            profile_attributes?: {
+                [key: string]: unknown;
+            };
             /** Format: date-time */
             created_at: string;
         };
+        UserProfileField: {
+            key: string;
+            label: string;
+            searchable?: boolean;
+        };
+        UserPreference: {
+            key: string;
+            value: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            updated_at: string;
+        };
+        UserPreferenceUpdateRequest: {
+            value: {
+                [key: string]: unknown;
+            };
+        };
         UserList: {
             items?: components["schemas"]["User"][];
+            profile_fields?: components["schemas"]["UserProfileField"][];
             pagination?: components["schemas"]["Pagination"];
         };
         UserCreateRequest: {
@@ -2889,6 +2933,9 @@ export interface components {
             join_key_type?: "username";
             schedule_cron?: string;
             schedule_timezone?: string;
+            provider_request?: {
+                [key: string]: unknown;
+            };
             /** Format: date-time */
             next_run_at?: string;
             last_job_id?: string;
@@ -3454,6 +3501,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     createSystem: {
@@ -3917,6 +3965,7 @@ export interface operations {
                     "application/json": components["schemas"]["VMList"];
                 };
             };
+            403: components["responses"]["Forbidden"];
         };
     };
     getVMRequestContext: {
@@ -5199,6 +5248,7 @@ export interface operations {
                 content?: never;
             };
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     updateAuthProvider: {
@@ -6151,6 +6201,8 @@ export interface operations {
                 "application/x-www-form-urlencoded": {
                     code?: string;
                     state?: string;
+                } & {
+                    [key: string]: string;
                 };
             };
         };
@@ -6235,6 +6287,84 @@ export interface operations {
         };
         responses: {
             /** @description Password changed successfully */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getCurrentUserPreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Current-user preference key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current user preference */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPreference"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateCurrentUserPreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Current-user preference key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserPreferenceUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated current user preference */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPreference"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    deleteCurrentUserPreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Current-user preference key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Preference deleted */
             204: {
                 headers: {
                     [name: string]: unknown;

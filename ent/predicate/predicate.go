@@ -90,6 +90,9 @@ type User func(*sql.Selector)
 // UserDirectoryProfile is the predicate function for userdirectoryprofile builders.
 type UserDirectoryProfile func(*sql.Selector)
 
+// UserPreference is the predicate function for userpreference builders.
+type UserPreference func(*sql.Selector)
+
 // VM is the predicate function for vm builders.
 type VM func(*sql.Selector)
 

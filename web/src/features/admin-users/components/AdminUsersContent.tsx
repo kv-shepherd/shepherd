@@ -4,11 +4,13 @@ import {
     Alert,
     AutoComplete,
     Button,
+    Card,
     DatePicker,
     Drawer,
     Form,
     Input,
     InputNumber,
+    List,
     Modal,
     Popconfirm,
     Select,
@@ -19,9 +21,18 @@ import {
     Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, TeamOutlined } from '@ant-design/icons';
+import {
+    DeleteOutlined,
+    DownOutlined,
+    EditOutlined,
+    PlusOutlined,
+    ReloadOutlined,
+    SettingOutlined,
+    TeamOutlined,
+    UpOutlined,
+} from '@ant-design/icons';
 import type { Dayjs } from 'dayjs';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
@@ -35,6 +46,7 @@ import {
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
+import { useUserPreference } from '@/hooks/useUserPreference';
 import { useAdminUsersController } from '../hooks/useAdminUsersController';
 import {
     MEMBER_ROLE_VALUES,
@@ -43,16 +55,263 @@ import {
     type SystemMember,
     type SystemMemberRoleUpdateRequest,
     type User,
+    type UserProfileField,
 } from '../types';
 
 const { Text } = Typography;
 const EMPTY_VALUE = '—';
 const USER_ROLE_BINDING_SCOPE_VALUES = ['global', 'system', 'service', 'vm'] as const;
 const USER_ROLE_BINDING_ENV_VALUES = ['test', 'prod'] as const;
+const USER_DIRECTORY_COLUMNS_PREFERENCE_KEY = 'admin.users.columns.v1';
+const DEFAULT_VISIBLE_DIRECTORY_PROFILE_COLUMN_COUNT = 2;
+const USER_TABLE_FIXED_IDENTITY_COLUMN_KEY = 'identity';
+const USER_TABLE_FIXED_ACTIONS_COLUMN_KEY = 'actions';
+const USER_TABLE_CORE_COLUMN_KEYS = ['email', 'roles', 'status', 'created_at'] as const;
+
+interface UserSearchFieldOption {
+    value: string;
+    label: string;
+}
+
+interface AdvancedUserSearchCondition {
+    field: string;
+    value: string;
+}
+
+interface UserTableMergedColumnPreference {
+    label?: string;
+    column_keys?: string[];
+    show_labels?: boolean;
+}
+
+interface UserTablePreferenceValue {
+    columns?: string[];
+    merged_columns?: UserTableMergedColumnPreference[];
+    merged_column_keys?: string[];
+    merged_column_label?: string;
+}
+
+interface UserTableColumnOption {
+    key: string;
+    label: string;
+    kind: 'core' | 'profile';
+    profileKey?: string;
+}
+
+interface UserTableMergedColumnDraft {
+    id: string;
+    label: string;
+    columnKeys: string[];
+    showLabels: boolean;
+}
+
+interface NormalizedUserTableMergedColumn {
+    label?: string;
+    columnKeys: string[];
+    showLabels: boolean;
+}
+
+let mergedColumnDraftCounter = 0;
+
+function createMergedColumnDraftId() {
+    mergedColumnDraftCounter += 1;
+    return `merged-column-${mergedColumnDraftCounter}`;
+}
+
+function quoteAdminUserSearchValue(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return '';
+    }
+    if (!/[\s"]/u.test(trimmed)) {
+        return trimmed;
+    }
+    return `"${trimmed.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function buildAdminUserSearchQuery(
+    quickSearch: string,
+    conditions: AdvancedUserSearchCondition[],
+) {
+    const terms: string[] = [];
+    const quick = quickSearch.trim();
+    if (quick) {
+        terms.push(quick);
+    }
+    for (const condition of conditions) {
+        const field = condition.field.trim();
+        const value = quoteAdminUserSearchValue(condition.value);
+        if (!field || !value) {
+            continue;
+        }
+        terms.push(`${field}:${value}`);
+    }
+    return terms.join(' ').trim();
+}
+
+function stringifyUserProfileAttributeValue(value: unknown) {
+    if (typeof value === 'string') {
+        return value || EMPTY_VALUE;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+        return String(value);
+    }
+    return EMPTY_VALUE;
+}
+
+function localizeUserProfileFieldLabel(
+    t: (key: string, options?: { defaultValue?: string }) => string,
+    fieldKey: string,
+    fallback: string,
+) {
+    return t(`users.profile_fields.${fieldKey}`, {
+        defaultValue: fallback,
+    });
+}
+
+function formatAdminUsersLocalDateTime(value?: string | null) {
+    if (!value || value.trim() === '') {
+        return null;
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return value;
+    }
+
+    const formatter = new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+    });
+    const parts = formatter.formatToParts(parsed);
+    const pick = (type: Intl.DateTimeFormatPartTypes) =>
+        parts.find((part) => part.type === type)?.value ?? '';
+    return `${pick('year')}-${pick('month')}-${pick('day')} ${pick('hour')}:${pick('minute')}`;
+}
+
+function buildUserTableColumnOptions(
+    t: (key: string, options?: { defaultValue?: string }) => string,
+    fields: UserProfileField[],
+): UserTableColumnOption[] {
+    return [
+        {
+            key: 'email',
+            label: t('users.table.email', { defaultValue: 'Email' }),
+            kind: 'core',
+        },
+        {
+            key: 'roles',
+            label: t('users.table.roles', { defaultValue: 'Roles' }),
+            kind: 'core',
+        },
+        {
+            key: 'status',
+            label: t('common:table.status', { defaultValue: 'Status' }),
+            kind: 'core',
+        },
+        {
+            key: 'created_at',
+            label: t('common:table.created_at', { defaultValue: 'Created' }),
+            kind: 'core',
+        },
+        ...fields.map((field) => ({
+            key: `profile:${field.key}`,
+            label: localizeUserProfileFieldLabel(t, field.key, field.label),
+            kind: 'profile' as const,
+            profileKey: field.key,
+        })),
+    ];
+}
+
+function buildDefaultUserTableColumnKeys(fields: UserProfileField[]) {
+    return [
+        ...fields
+            .slice(0, DEFAULT_VISIBLE_DIRECTORY_PROFILE_COLUMN_COUNT)
+            .map((field) => `profile:${field.key}`),
+        ...USER_TABLE_CORE_COLUMN_KEYS,
+    ];
+}
+
+function normalizeUserTablePreferenceColumns(
+    storedColumns: string[] | undefined,
+    availableOptions: UserTableColumnOption[],
+    defaultColumns: string[],
+) {
+    const availableKeySet = new Set(availableOptions.map((option) => option.key));
+    const normalized = (storedColumns ?? []).filter((key) => availableKeySet.has(key));
+    if (normalized.length === 0) {
+        return defaultColumns;
+    }
+    return normalized;
+}
+
+function normalizeUserTableMergedColumns(
+    storedGroups: UserTableMergedColumnPreference[] | undefined,
+    selectedColumns: string[],
+    availableOptions: UserTableColumnOption[],
+    legacyKeys?: string[],
+    legacyLabel?: string,
+): NormalizedUserTableMergedColumn[] {
+    const selectedKeySet = new Set(selectedColumns);
+    const availableColumnKeySet = new Set(availableOptions.map((option) => option.key));
+    const sourceGroups =
+        storedGroups && storedGroups.length > 0
+            ? storedGroups
+            : legacyKeys && legacyKeys.length > 0
+                ? [{ column_keys: legacyKeys, label: legacyLabel }]
+                : [];
+    const claimedColumnKeys = new Set<string>();
+    const normalizedGroups: NormalizedUserTableMergedColumn[] = [];
+
+    for (const group of sourceGroups) {
+        const normalizedKeys: string[] = [];
+        for (const key of group.column_keys ?? []) {
+            if (!selectedKeySet.has(key) || !availableColumnKeySet.has(key) || claimedColumnKeys.has(key)) {
+                continue;
+            }
+            claimedColumnKeys.add(key);
+            normalizedKeys.push(key);
+        }
+        if (normalizedKeys.length === 0) {
+            continue;
+        }
+        normalizedGroups.push({
+            label: group.label?.trim() || undefined,
+            columnKeys: normalizedKeys,
+            showLabels: group.show_labels !== false,
+        });
+    }
+
+    return normalizedGroups;
+}
+
+function buildMergedColumnDrafts(groups: NormalizedUserTableMergedColumn[]): UserTableMergedColumnDraft[] {
+    return groups.map((group) => ({
+        id: createMergedColumnDraftId(),
+        label: group.label ?? '',
+        columnKeys: [...group.columnKeys],
+        showLabels: group.showLabels,
+    }));
+}
+
+function estimateUsersTableScrollWidth(visibleConfigurableColumnCount: number) {
+    return 320 + visibleConfigurableColumnCount * 200 + 220;
+}
 
 export function AdminUsersContent() {
     const { t } = useTranslation(['admin', 'common']);
     const users = useAdminUsersController({ t });
+    const { setPage, setSearch } = users;
+    const [quickSearchInput, setQuickSearchInput] = useState('');
+    const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
+    const [advancedSearchConditions, setAdvancedSearchConditions] = useState<AdvancedUserSearchCondition[]>([]);
+    const [columnsDrawerOpen, setColumnsDrawerOpen] = useState(false);
+    const [columnDraftKeys, setColumnDraftKeys] = useState<string[]>([]);
+    const [mergedColumnDrafts, setMergedColumnDrafts] = useState<UserTableMergedColumnDraft[]>([]);
     const [selectedRateLimitUserID, setSelectedRateLimitUserID] = useState<string>('');
     const [exemptionOpen, setExemptionOpen] = useState(false);
     const [overrideOpen, setOverrideOpen] = useState(false);
@@ -104,6 +363,180 @@ export function AdminUsersContent() {
     const enabledUsers = userItems.filter((user) => user.enabled).length;
     const trackedRateLimitUsers = rateLimitItems.length;
     const exemptedUsers = rateLimitItems.filter((item) => item.exempted).length;
+    const userProfileFields = useMemo(
+        () => users.users?.profile_fields ?? [],
+        [users.users?.profile_fields]
+    );
+    const userTableColumnOptions = useMemo(
+        () => buildUserTableColumnOptions(t, userProfileFields),
+        [t, userProfileFields]
+    );
+    const defaultUserTableColumnKeys = useMemo(
+        () => buildDefaultUserTableColumnKeys(userProfileFields),
+        [userProfileFields]
+    );
+    const userTablePreference = useUserPreference<UserTablePreferenceValue>(USER_DIRECTORY_COLUMNS_PREFERENCE_KEY);
+    const selectedUserTableColumnKeys = useMemo(
+        () =>
+            normalizeUserTablePreferenceColumns(
+                userTablePreference.value?.columns,
+                userTableColumnOptions,
+                defaultUserTableColumnKeys,
+            ),
+        [defaultUserTableColumnKeys, userTableColumnOptions, userTablePreference.value?.columns]
+    );
+    const selectedMergedColumns = useMemo(
+        () =>
+            normalizeUserTableMergedColumns(
+                userTablePreference.value?.merged_columns,
+                selectedUserTableColumnKeys,
+                userTableColumnOptions,
+                userTablePreference.value?.merged_column_keys,
+                userTablePreference.value?.merged_column_label,
+            ),
+        [
+            selectedUserTableColumnKeys,
+            userTableColumnOptions,
+            userTablePreference.value?.merged_column_keys,
+            userTablePreference.value?.merged_column_label,
+            userTablePreference.value?.merged_columns,
+        ]
+    );
+    const userSearchFieldOptions = useMemo<UserSearchFieldOption[]>(
+        () => [
+            { value: 'username', label: t('users.search.field.username') },
+            { value: 'display_name', label: t('users.search.field.display_name') },
+            { value: 'email', label: t('users.search.field.email') },
+            ...userProfileFields
+                .filter((field) => field.searchable !== false)
+                .map((field) => ({
+                    value: field.key,
+                    label: field.label,
+                })),
+        ],
+        [t, userProfileFields]
+    );
+    const combinedUserSearch = useMemo(
+        () => buildAdminUserSearchQuery(quickSearchInput, advancedSearchConditions),
+        [quickSearchInput, advancedSearchConditions]
+    );
+
+    const toggleAdvancedSearch = () => {
+        setAdvancedSearchOpen((open) => {
+            const nextOpen = !open;
+            if (nextOpen) {
+                setAdvancedSearchConditions((current) =>
+                    current.length > 0 ? current : [{ field: '', value: '' }]
+                );
+            }
+            return nextOpen;
+        });
+    };
+
+    useEffect(() => {
+        setSearch(combinedUserSearch);
+        setPage(1);
+    }, [combinedUserSearch, setPage, setSearch]);
+
+    const openColumnsDrawer = () => {
+        setColumnDraftKeys(selectedUserTableColumnKeys);
+        setMergedColumnDrafts(buildMergedColumnDrafts(selectedMergedColumns));
+        setColumnsDrawerOpen(true);
+    };
+
+    const addDraftColumn = (columnKey: string) => {
+        setColumnDraftKeys((current) => (current.includes(columnKey) ? current : [...current, columnKey]));
+    };
+
+    const removeDraftColumn = (columnKey: string) => {
+        setColumnDraftKeys((current) => current.filter((key) => key !== columnKey));
+        setMergedColumnDrafts((current) =>
+            current.map((draft) => ({
+                ...draft,
+                columnKeys: draft.columnKeys.filter((key) => key !== columnKey),
+            }))
+        );
+    };
+
+    const moveDraftColumn = (columnKey: string, direction: 'up' | 'down') => {
+        setColumnDraftKeys((current) => {
+            const index = current.indexOf(columnKey);
+            if (index < 0) {
+                return current;
+            }
+            const nextIndex = direction === 'up' ? index - 1 : index + 1;
+            if (nextIndex < 0 || nextIndex >= current.length) {
+                return current;
+            }
+            const next = current.slice();
+            [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+            return next;
+        });
+    };
+
+    const resetDraftColumns = () => {
+        setColumnDraftKeys(defaultUserTableColumnKeys);
+        setMergedColumnDrafts([]);
+    };
+
+    const addMergedColumnDraft = () => {
+        setMergedColumnDrafts((current) => [
+            ...current,
+            { id: createMergedColumnDraftId(), label: '', columnKeys: [], showLabels: true },
+        ]);
+    };
+
+    const updateMergedColumnDraft = (
+        draftId: string,
+        patch: Partial<Pick<UserTableMergedColumnDraft, 'label' | 'columnKeys' | 'showLabels'>>,
+    ) => {
+        setMergedColumnDrafts((current) =>
+            current.map((draft) => (draft.id === draftId ? { ...draft, ...patch } : draft))
+        );
+    };
+
+    const removeMergedColumnDraft = (draftId: string) => {
+        setMergedColumnDrafts((current) => current.filter((draft) => draft.id !== draftId));
+    };
+
+    const saveColumnPreference = async () => {
+        const normalized = normalizeUserTablePreferenceColumns(
+            columnDraftKeys,
+            userTableColumnOptions,
+            defaultUserTableColumnKeys,
+        );
+        if (normalized.length === 0) {
+            await userTablePreference.resetPreference();
+            setColumnsDrawerOpen(false);
+            return;
+        }
+        await userTablePreference.savePreference({
+            value: {
+                columns: normalized,
+                merged_columns: normalizeUserTableMergedColumns(
+                    mergedColumnDrafts.map((draft) => ({
+                        label: draft.label,
+                        column_keys: draft.columnKeys,
+                        show_labels: draft.showLabels,
+                    })),
+                    normalized,
+                    userTableColumnOptions,
+                ).map((group) => ({
+                    label: group.label,
+                    column_keys: group.columnKeys,
+                    show_labels: group.showLabels,
+                })),
+            },
+        });
+        setColumnsDrawerOpen(false);
+    };
+
+    const resetStoredColumnPreference = async () => {
+        await userTablePreference.resetPreference();
+        setColumnDraftKeys(defaultUserTableColumnKeys);
+        setMergedColumnDrafts([]);
+        setColumnsDrawerOpen(false);
+    };
 
     const renderUserIdentity = (
         record: Pick<User, 'username' | 'display_name' | 'email' | 'id'>
@@ -112,7 +545,6 @@ export function AdminUsersContent() {
     ) => {
         const username = 'username' in record ? record.username : undefined;
         const displayName = 'display_name' in record ? record.display_name : undefined;
-        const email = 'email' in record ? record.email : undefined;
         const identityId = 'id' in record ? record.id : record.user_id;
         const primary = displayName?.trim() || username || identityId;
         const secondary = username && username !== primary ? username : identityId;
@@ -121,7 +553,6 @@ export function AdminUsersContent() {
             <Space direction="vertical" size={0}>
                 <Text strong>{primary}</Text>
                 {secondary ? <Text type="secondary" style={{ fontSize: 12 }}>{secondary}</Text> : null}
-                <Text type="secondary" style={{ fontSize: 12 }}>{email || t('users.common.no_email')}</Text>
             </Space>
         );
     };
@@ -144,88 +575,290 @@ export function AdminUsersContent() {
         );
     };
 
+    const visibleUserTableColumns = useMemo(
+        () => {
+            const optionByKey = new Map(userTableColumnOptions.map((option) => [option.key, option] as const));
+            return selectedUserTableColumnKeys
+                .map((key) => optionByKey.get(key))
+                .filter((option): option is UserTableColumnOption => Boolean(option));
+        },
+        [selectedUserTableColumnKeys, userTableColumnOptions]
+    );
+    const mergedColumnDraftOptionsById = useMemo(() => {
+        const optionByKey = new Map(userTableColumnOptions.map((option) => [option.key, option] as const));
+        return new Map(
+            mergedColumnDrafts.map((draft) => {
+                const claimedByOtherGroups = new Set(
+                    mergedColumnDrafts
+                        .filter((candidate) => candidate.id !== draft.id)
+                        .flatMap((candidate) => candidate.columnKeys)
+                );
+                const options = columnDraftKeys
+                    .map((columnKey) => optionByKey.get(columnKey))
+                    .filter((option): option is UserTableColumnOption => Boolean(option))
+                    .filter((option) => !claimedByOtherGroups.has(option.key) || draft.columnKeys.includes(option.key));
+                return [draft.id, options] as const;
+            })
+        );
+    }, [columnDraftKeys, mergedColumnDrafts, userTableColumnOptions]);
+
+    const hiddenUserTableColumns = useMemo(
+        () => {
+            const selectedKeySet = new Set(columnsDrawerOpen ? columnDraftKeys : selectedUserTableColumnKeys);
+            return userTableColumnOptions.filter((option) => !selectedKeySet.has(option.key));
+        },
+        [columnDraftKeys, columnsDrawerOpen, selectedUserTableColumnKeys, userTableColumnOptions]
+    );
+
+    const orderedUserTableDisplayColumns = useMemo(() => {
+        const optionByKey = new Map(visibleUserTableColumns.map((option) => [option.key, option] as const));
+        const mergedGroupIndexByKey = new Map<string, number>();
+        selectedMergedColumns.forEach((group, index) => {
+            group.columnKeys.forEach((key) => {
+                mergedGroupIndexByKey.set(key, index);
+            });
+        });
+        const insertedGroupIndexes = new Set<number>();
+        const items: Array<
+            | { kind: 'single'; column: UserTableColumnOption }
+            | { kind: 'merged'; index: number; label?: string; columns: UserTableColumnOption[]; showLabels: boolean }
+        > = [];
+
+        for (const column of visibleUserTableColumns) {
+            const mergedGroupIndex = mergedGroupIndexByKey.get(column.key);
+            if (mergedGroupIndex === undefined) {
+                items.push({ kind: 'single', column });
+                continue;
+            }
+            if (insertedGroupIndexes.has(mergedGroupIndex)) {
+                continue;
+            }
+            const group = selectedMergedColumns[mergedGroupIndex];
+            const groupColumns = group.columnKeys
+                .map((key) => optionByKey.get(key))
+                .filter((option): option is UserTableColumnOption => Boolean(option));
+            if (groupColumns.length === 0) {
+                continue;
+            }
+            items.push({
+                kind: 'merged',
+                index: mergedGroupIndex,
+                label: group.label,
+                columns: groupColumns,
+                showLabels: group.showLabels,
+            });
+            insertedGroupIndexes.add(mergedGroupIndex);
+        }
+
+        return items;
+    }, [selectedMergedColumns, visibleUserTableColumns]);
+
+    const usersTableScrollX = useMemo(
+        () => estimateUsersTableScrollWidth(orderedUserTableDisplayColumns.length),
+        [orderedUserTableDisplayColumns.length]
+    );
+
     const usersColumns: ColumnsType<User> = [
-        {
-            title: t('users.table.username'),
-            dataIndex: 'username',
-            key: 'username',
-            render: (_, record: User) => renderUserIdentity(record),
-        },
-        {
-            title: t('users.table.email'),
-            dataIndex: 'email',
-            key: 'email',
-            render: (email: string | undefined) => email || EMPTY_VALUE,
-        },
-        {
-            title: t('users.table.roles'),
-            dataIndex: 'roles',
-            key: 'roles',
-            render: (roles: string[] | undefined) => renderRoleTags(roles),
-        },
-        {
-            title: t('common:table.status'),
-            dataIndex: 'enabled',
-            key: 'enabled',
-            width: 120,
-            render: (enabled: boolean) => (
-                <Tag color={enabled ? 'green' : 'default'}>
-                    {enabled ? t('users.status.enabled') : t('users.status.disabled')}
-                </Tag>
-            ),
-        },
-        {
-            title: t('common:table.created_at'),
-            dataIndex: 'created_at',
-            key: 'created_at',
-            width: 170,
-            render: (createdAt: string) => <LocalDateTimeText value={createdAt} />,
-        },
-        {
-            title: t('common:table.actions'),
-            key: 'actions',
-            width: 220,
-            render: (_, record: User) => (
-                <Space size={4} wrap>
-                    <Button
-                        type="link"
-                        size="small"
-                        icon={<EditOutlined />}
-                        data-testid={`user-action-edit-${record.id}`}
-                        onClick={() => users.openEditUserModal(record)}
-                    >
-                        {t('common:button.edit')}
-                    </Button>
-                    <Button
-                        type="link"
-                        size="small"
-                        icon={<TeamOutlined />}
-                        data-testid={`user-action-role-bindings-${record.id}`}
-                        onClick={() => users.openRoleBindingsModal(record)}
-                    >
-                        {t('users.directory.manage_access')}
-                    </Button>
-                    <Popconfirm
-                        title={t('users.directory.delete_confirm', { username: record.username })}
-                        onConfirm={() => users.deleteUser(record.id)}
-                        okText={t('common:button.confirm')}
-                        cancelText={t('common:button.cancel')}
-                    >
+            {
+                title: t('users.table.account', { defaultValue: 'Account' }),
+                dataIndex: 'username',
+                key: USER_TABLE_FIXED_IDENTITY_COLUMN_KEY,
+                width: 320,
+                fixed: 'left' as const,
+                render: (_: unknown, record: User) => renderUserIdentity(record),
+            },
+            ...orderedUserTableDisplayColumns.map((displayColumn) => {
+                if (displayColumn.kind === 'merged') {
+                    return {
+                        title: displayColumn.label || t('users.directory.merged_column_default_label', {
+                            defaultValue: 'Combined details',
+                        }),
+                        key: `merged-column-${displayColumn.index}`,
+                        width: 280,
+                        render: (_: unknown, record: User) => {
+                            const items = displayColumn.columns
+                                .map((column) => ({
+                                    label: column.label,
+                                    value: (() => {
+                                        if (column.kind === 'profile') {
+                                            return stringifyUserProfileAttributeValue(
+                                                record.profile_attributes?.[column.profileKey ?? ''],
+                                            );
+                                        }
+                                        if (column.key === 'email') {
+                                            return record.email || EMPTY_VALUE;
+                                        }
+                                        if (column.key === 'roles') {
+                                            return record.roles && record.roles.length > 0
+                                                ? record.roles.map((roleName) => roleDisplayByName.get(roleName) || roleName).join(', ')
+                                                : EMPTY_VALUE;
+                                        }
+                                        if (column.key === 'status') {
+                                            return record.enabled ? t('users.status.enabled') : t('users.status.disabled');
+                                        }
+                                        if (column.key === 'created_at') {
+                                            return formatAdminUsersLocalDateTime(record.created_at) || EMPTY_VALUE;
+                                        }
+                                        return EMPTY_VALUE;
+                                    })(),
+                                }))
+                                .filter((item) => item.value !== EMPTY_VALUE);
+                            if (items.length === 0) {
+                                return <Text type="secondary">{EMPTY_VALUE}</Text>;
+                            }
+                            if (!displayColumn.showLabels) {
+                                return (
+                                    <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                        {items.map((item) => (
+                                            <div
+                                                key={item.label}
+                                                style={{
+                                                    padding: '8px 10px',
+                                                    borderRadius: 10,
+                                                    background: 'var(--ant-color-fill-secondary)',
+                                                }}
+                                            >
+                                                <Text ellipsis={{ tooltip: item.value }}>{item.value}</Text>
+                                            </div>
+                                        ))}
+                                    </Space>
+                                );
+                            }
+                            return (
+                                <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                    {items.map((item) => (
+                                        <div
+                                            key={item.label}
+                                            style={{
+                                                padding: '8px 10px',
+                                                borderRadius: 10,
+                                                background: 'var(--ant-color-fill-tertiary)',
+                                            }}
+                                        >
+                                            <Text
+                                                type="secondary"
+                                                style={{
+                                                    display: 'block',
+                                                    fontSize: 11,
+                                                    lineHeight: 1.2,
+                                                    marginBottom: 4,
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: '0.04em',
+                                                }}
+                                            >
+                                                {item.label}
+                                            </Text>
+                                            <Text ellipsis={{ tooltip: item.value }}>{item.value}</Text>
+                                        </div>
+                                    ))}
+                                </Space>
+                            );
+                        },
+                    };
+                }
+                const column = displayColumn.column;
+                const profileKey = column.kind === 'profile' ? column.profileKey : undefined;
+                if (profileKey) {
+                    return {
+                        title: column.label,
+                        key: column.key,
+                        width: 200,
+                        render: (_: unknown, record: User) => {
+                            const value = stringifyUserProfileAttributeValue(record.profile_attributes?.[profileKey]);
+                            if (value === EMPTY_VALUE) {
+                                return <Text type="secondary">{EMPTY_VALUE}</Text>;
+                            }
+                            return <Text ellipsis={{ tooltip: value }}>{value}</Text>;
+                        },
+                    };
+                }
+                if (column.key === 'email') {
+                    return {
+                        title: column.label,
+                        key: column.key,
+                        width: 260,
+                        render: (_: unknown, record: User) => {
+                            const value = record.email || EMPTY_VALUE;
+                            if (value === EMPTY_VALUE) {
+                                return <Text type="secondary">{EMPTY_VALUE}</Text>;
+                            }
+                            return <Text ellipsis={{ tooltip: value }}>{value}</Text>;
+                        },
+                    };
+                }
+                if (column.key === 'roles') {
+                    return {
+                        title: column.label,
+                        key: column.key,
+                        width: 220,
+                        render: (_: unknown, record: User) => renderRoleTags(record.roles),
+                    };
+                }
+                if (column.key === 'status') {
+                    return {
+                        title: column.label,
+                        key: column.key,
+                        width: 140,
+                        render: (_: unknown, record: User) => (
+                            <Tag color={record.enabled ? 'green' : 'default'}>
+                                {record.enabled ? t('users.status.enabled') : t('users.status.disabled')}
+                            </Tag>
+                        ),
+                    };
+                }
+                return {
+                    title: column.label,
+                    key: column.key,
+                    width: 180,
+                        render: (_: unknown, record: User) => <LocalDateTimeText value={record.created_at} />,
+                };
+            }),
+            {
+                title: t('common:table.actions'),
+                key: USER_TABLE_FIXED_ACTIONS_COLUMN_KEY,
+                width: 220,
+                fixed: 'right' as const,
+                render: (_: unknown, record: User) => (
+                    <Space size={4} wrap>
                         <Button
                             type="link"
                             size="small"
-                            danger
-                            icon={<DeleteOutlined />}
-                            data-testid={`user-action-delete-${record.id}`}
-                            loading={users.deleteUserPending && users.deletingUserId === record.id}
+                            icon={<EditOutlined />}
+                            data-testid={`user-action-edit-${record.id}`}
+                            onClick={() => users.openEditUserModal(record)}
                         >
-                            {t('common:button.delete')}
+                            {t('common:button.edit')}
                         </Button>
-                    </Popconfirm>
-                </Space>
-            ),
-        },
-    ];
+                        <Button
+                            type="link"
+                            size="small"
+                            icon={<TeamOutlined />}
+                            data-testid={`user-action-role-bindings-${record.id}`}
+                            onClick={() => users.openRoleBindingsModal(record)}
+                        >
+                            {t('users.directory.manage_access')}
+                        </Button>
+                        <Popconfirm
+                            title={t('users.directory.delete_confirm', { username: record.username })}
+                            onConfirm={() => users.deleteUser(record.id)}
+                            okText={t('common:button.confirm')}
+                            cancelText={t('common:button.cancel')}
+                        >
+                            <Button
+                                type="link"
+                                size="small"
+                                danger
+                                icon={<DeleteOutlined />}
+                                data-testid={`user-action-delete-${record.id}`}
+                                loading={users.deleteUserPending && users.deletingUserId === record.id}
+                            >
+                                {t('common:button.delete')}
+                            </Button>
+                        </Popconfirm>
+                    </Space>
+                ),
+            },
+        ];
 
     const memberColumns: ColumnsType<SystemMember> = [
         {
@@ -445,12 +1078,126 @@ export function AdminUsersContent() {
                         </Button>
                     </Space>
                 </Space>
+                <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 16 }}>
+                    <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+                        <Input.Search
+                            allowClear
+                            value={quickSearchInput}
+                            placeholder={t('users.directory.quick_search_placeholder')}
+                            onChange={(event) => setQuickSearchInput(event.target.value)}
+                            onSearch={(value) => setQuickSearchInput(value)}
+                            data-testid="users-directory-search"
+                            style={{ minWidth: 320, flex: 1 }}
+                        />
+                        <Space>
+                            <Button
+                                icon={<SettingOutlined />}
+                                onClick={openColumnsDrawer}
+                                data-testid="users-directory-open-columns-drawer"
+                            >
+                                {t('users.directory.visible_columns_placeholder', {
+                                    defaultValue: 'Displayed columns',
+                                })}
+                            </Button>
+                            <Button
+                                onClick={toggleAdvancedSearch}
+                                data-testid="users-directory-advanced-search-toggle"
+                            >
+                                {advancedSearchOpen
+                                    ? t('users.directory.hide_advanced_search')
+                                    : t('users.directory.show_advanced_search')}
+                            </Button>
+                            {(quickSearchInput.trim() || advancedSearchConditions.length > 0) ? (
+                                <Button
+                                    onClick={() => {
+                                        setQuickSearchInput('');
+                                        setAdvancedSearchConditions([]);
+                                    }}
+                                    data-testid="users-directory-clear-search"
+                                >
+                                    {t('users.directory.clear_search')}
+                                </Button>
+                            ) : null}
+                        </Space>
+                    </Space>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        {t('users.directory.quick_search_help')}
+                    </Text>
+                    {advancedSearchOpen ? (
+                        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                            <Text strong>{t('users.directory.advanced_search_title')}</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                {t('users.directory.advanced_search_help')}
+                            </Text>
+                            {advancedSearchConditions.map((condition, index) => (
+                                <Space
+                                    key={`${condition.field}-${index}`}
+                                    align="start"
+                                    wrap
+                                    data-testid={`users-directory-search-condition-row-${index}`}
+                                >
+                                    <Select
+                                        style={{ minWidth: 220 }}
+                                        placeholder={t('users.directory.advanced_search_field')}
+                                        value={condition.field || undefined}
+                                        data-testid={`users-directory-search-condition-field-${index}`}
+                                        options={userSearchFieldOptions}
+                                        onChange={(value) => {
+                                            setAdvancedSearchConditions((current) =>
+                                                current.map((item, itemIndex) =>
+                                                    itemIndex === index ? { ...item, field: value } : item
+                                                )
+                                            );
+                                        }}
+                                    />
+                                    <Input
+                                        style={{ minWidth: 240 }}
+                                        placeholder={t('users.directory.advanced_search_value')}
+                                        value={condition.value}
+                                        data-testid={`users-directory-search-condition-value-${index}`}
+                                        onChange={(event) => {
+                                            const value = event.target.value;
+                                            setAdvancedSearchConditions((current) =>
+                                                current.map((item, itemIndex) =>
+                                                    itemIndex === index ? { ...item, value } : item
+                                                )
+                                            );
+                                        }}
+                                    />
+                                    <Button
+                                        danger
+                                        icon={<DeleteOutlined />}
+                                        onClick={() => {
+                                            setAdvancedSearchConditions((current) =>
+                                                current.filter((_, itemIndex) => itemIndex !== index)
+                                            );
+                                        }}
+                                        aria-label={t('users.directory.remove_search_condition')}
+                                    />
+                                </Space>
+                            ))}
+                            <Button
+                                icon={<PlusOutlined />}
+                                onClick={() => {
+                                    setAdvancedSearchConditions((current) => [
+                                        ...current,
+                                        { field: '', value: '' },
+                                    ]);
+                                }}
+                                data-testid="users-directory-add-search-condition"
+                            >
+                                {t('users.directory.add_search_condition')}
+                            </Button>
+                        </Space>
+                    ) : null}
+                </Space>
                 <Table<User>
                     style={{ marginTop: 16 }}
                     rowKey="id"
                     columns={usersColumns}
                     dataSource={users.users?.items ?? []}
                     loading={users.usersLoading}
+                    scroll={{ x: usersTableScrollX }}
                     locale={{
                         emptyText: (
                             <div style={{ padding: 40 }}>
@@ -480,6 +1227,251 @@ export function AdminUsersContent() {
                     }}
                 />
             </PageSurface>
+
+            <Drawer
+                title={t('users.directory.columns_drawer_title', { defaultValue: 'Customize displayed columns' })}
+                open={columnsDrawerOpen}
+                width={520}
+                onClose={() => setColumnsDrawerOpen(false)}
+                destroyOnClose={false}
+                footer={
+                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                        <Button
+                            onClick={() => {
+                                void resetStoredColumnPreference();
+                            }}
+                            data-testid="users-directory-columns-reset-defaults"
+                            disabled={userTablePreference.resetPending}
+                        >
+                            {t('users.directory.reset_columns', { defaultValue: 'Reset columns' })}
+                        </Button>
+                        <Space>
+                            <Button onClick={() => setColumnsDrawerOpen(false)}>
+                                {t('common:button.cancel')}
+                            </Button>
+                            <Button
+                                type="primary"
+                                onClick={() => {
+                                    void saveColumnPreference();
+                                }}
+                                loading={userTablePreference.savePending}
+                                data-testid="users-directory-columns-save"
+                            >
+                                {t('common:button.save', { defaultValue: 'Save' })}
+                            </Button>
+                        </Space>
+                    </Space>
+                }
+            >
+                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                    <Alert
+                        type="info"
+                        showIcon
+                        message={t('users.directory.columns_drawer_message', {
+                            defaultValue: 'Account and Actions stay fixed. Add, hide, and reorder the other columns for your own view.',
+                        })}
+                    />
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                        <Text strong>{t('users.directory.columns_visible_title', { defaultValue: 'Visible columns' })}</Text>
+                        <List
+                            bordered
+                            size="small"
+                            dataSource={columnDraftKeys}
+                            locale={{
+                                emptyText: t('users.directory.columns_empty', {
+                                    defaultValue: 'No extra columns selected. The table will still show Account and Actions.',
+                                }),
+                            }}
+                            renderItem={(columnKey) => {
+                                const option = userTableColumnOptions.find((item) => item.key === columnKey);
+                                if (!option) {
+                                    return null;
+                                }
+                                const index = columnDraftKeys.indexOf(columnKey);
+                                return (
+                                    <List.Item
+                                        actions={[
+                                            <Button
+                                                key="up"
+                                                type="text"
+                                                size="small"
+                                                icon={<UpOutlined />}
+                                                aria-label={t('users.directory.move_column_up', { defaultValue: 'Move column up' })}
+                                                disabled={index === 0}
+                                                onClick={() => moveDraftColumn(columnKey, 'up')}
+                                            />,
+                                            <Button
+                                                key="down"
+                                                type="text"
+                                                size="small"
+                                                icon={<DownOutlined />}
+                                                aria-label={t('users.directory.move_column_down', { defaultValue: 'Move column down' })}
+                                                disabled={index === columnDraftKeys.length - 1}
+                                                onClick={() => moveDraftColumn(columnKey, 'down')}
+                                            />,
+                                            <Button
+                                                key="remove"
+                                                type="text"
+                                                size="small"
+                                                danger
+                                                icon={<DeleteOutlined />}
+                                                aria-label={t('users.directory.hide_column', { defaultValue: 'Hide column' })}
+                                                onClick={() => removeDraftColumn(columnKey)}
+                                            />,
+                                        ]}
+                                    >
+                                        <Text>{option.label}</Text>
+                                    </List.Item>
+                                );
+                            }}
+                        />
+                    </Space>
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                        <Text strong>{t('users.directory.columns_add_title', { defaultValue: 'Add column' })}</Text>
+                        <Select
+                            showSearch
+                            allowClear
+                            placeholder={t('users.directory.columns_add_placeholder', { defaultValue: 'Choose another column to show' })}
+                            options={hiddenUserTableColumns.map((option) => ({
+                                value: option.key,
+                                label: option.label,
+                            }))}
+                            onChange={(value) => {
+                                if (value) {
+                                    addDraftColumn(String(value));
+                                }
+                            }}
+                            disabled={hiddenUserTableColumns.length === 0}
+                            data-testid="users-directory-columns-add"
+                            optionFilterProp="label"
+                        />
+                    </Space>
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                        <Text strong>{t('users.directory.columns_merge_title', { defaultValue: 'Combined columns' })}</Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            {t('users.directory.columns_merge_help', {
+                                defaultValue: 'Create one or more combined columns from the currently visible columns.',
+                            })}
+                        </Text>
+                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                            {mergedColumnDrafts.map((draft, index) => (
+                                <Card
+                                    key={draft.id}
+                                    size="small"
+                                    style={{
+                                        width: '100%',
+                                        background: 'var(--ant-color-fill-quaternary)',
+                                        borderColor: 'var(--ant-color-border-secondary)',
+                                    }}
+                                    data-testid={`users-directory-columns-merge-row-${index}`}
+                                >
+                                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                        <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+                                            <Text strong>
+                                                {t('users.directory.columns_merge_group_title', {
+                                                    defaultValue: 'Combined column',
+                                                })} {index + 1}
+                                            </Text>
+                                            <Button
+                                                type="text"
+                                                size="small"
+                                                danger
+                                                icon={<DeleteOutlined />}
+                                                onClick={() => removeMergedColumnDraft(draft.id)}
+                                                data-testid={`users-directory-columns-merge-remove-${index}`}
+                                            >
+                                                {t('users.directory.columns_merge_remove', { defaultValue: 'Remove' })}
+                                            </Button>
+                                        </Space>
+                                        <Input
+                                            value={draft.label}
+                                            onChange={(event) => updateMergedColumnDraft(draft.id, { label: event.target.value })}
+                                            placeholder={t('users.directory.columns_merge_label_placeholder', {
+                                                defaultValue: 'Name this combined column',
+                                            })}
+                                            data-testid={`users-directory-columns-merge-label-${index}`}
+                                        />
+                                        <Select
+                                            mode="multiple"
+                                            value={draft.columnKeys}
+                                            style={{ width: '100%' }}
+                                            placeholder={t('users.directory.columns_merge_placeholder', {
+                                                defaultValue: 'Select columns to combine',
+                                            })}
+                                            options={(mergedColumnDraftOptionsById.get(draft.id) ?? []).map((option) => ({
+                                                value: option.key,
+                                                label: option.label,
+                                            }))}
+                                            onChange={(values) => {
+                                                updateMergedColumnDraft(draft.id, {
+                                                    columnKeys: values.map((value) => String(value)),
+                                                });
+                                            }}
+                                            disabled={(mergedColumnDraftOptionsById.get(draft.id) ?? []).length === 0}
+                                            data-testid={`users-directory-columns-merge-select-${index}`}
+                                            optionFilterProp="label"
+                                        />
+                                        {draft.columnKeys.length > 0 ? (
+                                            <Space size={[6, 6]} wrap>
+                                                {draft.columnKeys
+                                                    .map((key) => (mergedColumnDraftOptionsById.get(draft.id) ?? []).find((option) => option.key === key))
+                                                    .filter((option): option is UserTableColumnOption => Boolean(option))
+                                                    .map((option) => (
+                                                        <Tag key={option.key} color="blue">
+                                                            {option.label}
+                                                        </Tag>
+                                                    ))}
+                                            </Space>
+                                        ) : null}
+                                        <Space
+                                            style={{
+                                                width: '100%',
+                                                justifyContent: 'space-between',
+                                                padding: '8px 10px',
+                                                borderRadius: 8,
+                                                background: 'var(--ant-color-bg-container)',
+                                            }}
+                                            wrap
+                                        >
+                                            <Space direction="vertical" size={0}>
+                                                <Text strong>
+                                                    {t('users.directory.columns_merge_show_labels_title', {
+                                                        defaultValue: 'Show field labels inside the column',
+                                                    })}
+                                                </Text>
+                                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                                    {t('users.directory.columns_merge_show_labels_help', {
+                                                        defaultValue: 'Turn this off for a cleaner stacked value view.',
+                                                    })}
+                                                </Text>
+                                            </Space>
+                                            <Switch
+                                                checked={draft.showLabels}
+                                                onChange={(checked) => updateMergedColumnDraft(draft.id, { showLabels: checked })}
+                                                data-testid={`users-directory-columns-merge-show-labels-${index}`}
+                                            />
+                                        </Space>
+                                    </Space>
+                                </Card>
+                            ))}
+                            <Button
+                                icon={<PlusOutlined />}
+                                onClick={addMergedColumnDraft}
+                                data-testid="users-directory-columns-merge-add"
+                                disabled={columnDraftKeys.length === 0}
+                            >
+                                {t('users.directory.columns_merge_add', { defaultValue: 'Add combined column' })}
+                            </Button>
+                        </Space>
+                    </Space>
+                    <Button
+                        onClick={resetDraftColumns}
+                        data-testid="users-directory-columns-restore-defaults"
+                    >
+                        {t('users.directory.columns_restore_defaults', { defaultValue: 'Restore recommended defaults' })}
+                    </Button>
+                </Space>
+            </Drawer>
 
             <Modal
                 title={t('users.directory.add_title')}

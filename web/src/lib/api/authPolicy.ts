@@ -1,3 +1,5 @@
+import { getLoginEntryPath } from "@/lib/auth/loginEntry";
+
 export function getRequestPath(request: Request, origin = 'http://localhost'): string {
     try {
         return new URL(request.url, origin).pathname;
@@ -40,5 +42,5 @@ export function shouldRedirectToLoginOnUnauthorized(
     if (!shouldLogoutOnUnauthorized(requestPath)) {
         return false;
     }
-    return currentPathname !== '/login';
+    return currentPathname !== getLoginEntryPath();
 }

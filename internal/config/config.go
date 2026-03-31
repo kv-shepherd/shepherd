@@ -112,6 +112,7 @@ type LogConfig struct {
 
 // RiverConfig contains River Queue settings.
 type RiverConfig struct {
+	ConsumeJobs                 bool          `mapstructure:"consume_jobs"`
 	MaxWorkers                  int           `mapstructure:"max_workers"`
 	CompletedJobRetentionPeriod time.Duration `mapstructure:"completed_job_retention_period"`
 }
@@ -332,6 +333,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("log.format", "json")
 
 	// River
+	v.SetDefault("river.consume_jobs", true)
 	v.SetDefault("river.max_workers", 10)
 	v.SetDefault("river.completed_job_retention_period", "24h")
 
@@ -377,6 +379,7 @@ func bindEnvKeys(v *viper.Viper) {
 		"k8s.operation_timeout",
 		"log.level",
 		"log.format",
+		"river.consume_jobs",
 		"river.max_workers",
 		"river.completed_job_retention_period",
 		"security.encryption_key",

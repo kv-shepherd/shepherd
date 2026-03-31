@@ -39,6 +39,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
     const [messageApi, messageContextHolder] = message.useMessage();
     const [page, setPage] = useState(1);
     const [perPage, setPerPage] = useState(20);
+    const [search, setSearch] = useState('');
     const [selectedSystemId, setSelectedSystemId] = useState<string>();
     const [addOpen, setAddOpen] = useState(false);
     const [memberCandidateSearch, setMemberCandidateSearch] = useState('');
@@ -56,12 +57,21 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
     const [createUserForm] = Form.useForm<UserCreateRequest>();
     const [editUserForm] = Form.useForm<UserUpdateRequest>();
     const [roleBindingCreateForm] = Form.useForm<GlobalRoleBindingCreateRequest>();
+    const deferredSearch = useDeferredValue(search.trim());
     const deferredMemberCandidateSearch = useDeferredValue(memberCandidateSearch.trim());
     const { scopeTargetOptionsByType, scopeTargetLoadingByType } = useScopeTargetCatalog(roleBindingCreateOpen);
 
     const usersQuery = useApiGet<UserList>(
-        ['admin-users', page, perPage],
-        () => api.GET('/admin/users', { params: { query: { page, per_page: perPage } } })
+        ['admin-users', page, perPage, deferredSearch],
+        () => api.GET('/admin/users', {
+            params: {
+                query: {
+                    page,
+                    per_page: perPage,
+                    ...(deferredSearch ? { search: deferredSearch } : {}),
+                },
+            },
+        })
     );
 
     const systemsQuery = useApiGet<SystemList>(
@@ -394,8 +404,10 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         usersLoading: usersQuery.isLoading,
         page,
         perPage,
+        search,
         setPage,
         setPerPage,
+        setSearch,
         refetchUsers: usersQuery.refetch,
         systems,
         systemsLoading: systemsQuery.isLoading,

@@ -63,7 +63,9 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 		infra.Close()
 		return nil, fmt.Errorf("init river workers: %w", initRiverErr)
 	}
-	registerPeriodicJobs(infra)
+	if cfg.River.ConsumeJobs {
+		registerPeriodicJobs(infra)
+	}
 
 	// P1-A: Pass vmModule's VMService to ApprovalModule to enable DryRun Pre-flight Gate (ADR-0006 Addendum).
 	approvalModule, err := modules.NewApprovalModule(infra, vmModule.VMService())

@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useAuthStore } from "@/stores/auth";
+import { AUTH_STORAGE_KEY, useAuthStore } from "@/stores/auth";
 
 const { pushMock, messageErrorMock, tMock, postMock, getMock } = vi.hoisted(
   () => ({
@@ -161,6 +161,7 @@ describe("useAuth", () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(useAuthStore.getState().token).toBeNull();
     expect(pushMock).toHaveBeenCalledWith("/login");
+    expect(window.sessionStorage.getItem("shepherd-login-entry-override")).toBe("/login");
   });
 
   it("does nothing when login response has neither data nor error", async () => {
@@ -197,7 +198,7 @@ describe("useAuth", () => {
     const { result } = renderHook(() => useAuth());
     await act(async () => {
       const promise = result.current.startExternalLogin(
-        "wecom-provider",
+        "external-provider",
         "qr",
         "/dashboard",
       );
@@ -210,7 +211,7 @@ describe("useAuth", () => {
             token: "token-ext",
             user: {
               id: "u-ext",
-              username: "wecom-user",
+              username: "external-user",
             },
             return_to: `${window.location.origin}/dashboard`,
           },
@@ -222,7 +223,7 @@ describe("useAuth", () => {
     expect(postMock).toHaveBeenCalledWith(
       "/auth/providers/{provider_id}/login/start",
       expect.objectContaining({
-        params: { path: { provider_id: "wecom-provider" } },
+        params: { path: { provider_id: "external-provider" } },
         body: expect.objectContaining({
           login_mode: "qr",
           return_to: "/dashboard",
@@ -234,6 +235,61 @@ describe("useAuth", () => {
 
     openSpy.mockRestore();
     process.env.NEXT_PUBLIC_API_URL = originalApiUrl;
+  });
+
+  it("recovers external login from persisted storage when the popup closes before postMessage is observed", async () => {
+    vi.useFakeTimers();
+    postMock.mockResolvedValue({
+      data: {
+        redirect_url: "https://login.example.com/start",
+      },
+    });
+
+    const popup = {
+      closed: false,
+      close: vi.fn(),
+    };
+    const openSpy = vi
+      .spyOn(window, "open")
+      .mockImplementation(() => popup as unknown as Window);
+
+    const { result } = renderHook(() => useAuth());
+    let promise: Promise<void>;
+    await act(async () => {
+      promise = result.current.startExternalLogin(
+        "external-provider",
+        "redirect",
+        "/dashboard",
+      );
+      await Promise.resolve();
+      const payload = {
+        state: {
+          token: "token-storage",
+          user: {
+            id: "u-storage",
+            username: "storage-user",
+          },
+          isAuthenticated: true,
+        },
+        version: 0,
+      };
+      window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(payload));
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: AUTH_STORAGE_KEY,
+          newValue: JSON.stringify(payload),
+        }),
+      );
+      popup.closed = true;
+      await vi.runAllTimersAsync();
+      await promise!;
+    });
+
+    expect(useAuthStore.getState().token).toBe("token-storage");
+    expect(pushMock).toHaveBeenCalledWith("/dashboard");
+
+    openSpy.mockRestore();
+    vi.useRealTimers();
   });
 
   it("submits credential-based provider login and stores the returned token", async () => {

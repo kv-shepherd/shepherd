@@ -40,6 +40,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
+	"kv-shepherd.io/shepherd/ent/userpreference"
 	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/ent/vmrevision"
 )
@@ -130,6 +131,7 @@ func checkColumn(t, c string) error {
 			ticket.Table:                ticket.ValidColumn,
 			user.Table:                  user.ValidColumn,
 			userdirectoryprofile.Table:  userdirectoryprofile.ValidColumn,
+			userpreference.Table:        userpreference.ValidColumn,
 			vm.Table:                    vm.ValidColumn,
 			vmrevision.Table:            vmrevision.ValidColumn,
 		})

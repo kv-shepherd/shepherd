@@ -147,6 +147,27 @@ func TestOpenAPIValidatorRejectsUndeclaredQueryParamInStrictMode(t *testing.T) {
 	assertErrorCode(t, resp.Body.Bytes(), "OPENAPI_REQUEST_INVALID")
 }
 
+func TestOpenAPIValidatorAcceptsExternalAuthCallbackPostWithExtraFormFields(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.POST("/api/v1/auth/providers/:provider_id/callback", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"))
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/providers/provider-1/callback",
+		strings.NewReader("state=state-1&token=callback-token"),
+	)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for callback form body, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestOpenAPIValidatorAllowsUndeclaredCookieInStrictMode(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.GET("/api/v1/health/live", func(c *gin.Context) {
@@ -427,6 +448,34 @@ func TestOpenAPIValidatorAllowsDynamicAuthProviderConfigInRequestBody(t *testing
 	}
 }
 
+func TestOpenAPIValidatorAllowsDynamicDirectoryProviderRequestInRequestBody(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.POST("/api/v1/admin/auth-providers/provider-1/directory/preview", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"total_count": 0,
+			"items":       []gin.H{},
+		})
+	})
+
+	reqBody := `{
+		"provider_request":{
+			"department_names":["Engineering","Finance"],
+			"include_nested":true,
+			"limit":50
+		},
+		"conflict_resolution":"skip"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/auth-providers/provider-1/directory/preview", bytes.NewBufferString(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for request with dynamic directory provider_request, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestOpenAPIValidatorAllowsDynamicInstanceSizeSpecOverridesInResponse(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.GET("/api/v1/admin/instance-sizes", func(c *gin.Context) {
@@ -599,6 +648,177 @@ func TestOpenAPIValidatorAllowsDynamicAuthProviderTypeConfigSchemaInStrictMode(t
 	}
 }
 
+func TestOpenAPIValidatorAllowsDynamicDirectorySyncDescriptorRequestSchemaInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/admin/auth-providers/provider-1/directory/descriptor", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"display_name":     "Directory enrichment",
+			"description":      "sync and enrich users from an external directory",
+			"supports_preview": false,
+			"request_schema": gin.H{
+				"type":                 "object",
+				"required":             []string{"department_ids"},
+				"additionalProperties": false,
+				"properties": gin.H{
+					"department_ids": gin.H{
+						"type":  "array",
+						"items": gin.H{"type": "string"},
+					},
+					"include_nested": gin.H{"type": "boolean"},
+				},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/auth-providers/provider-1/directory/descriptor", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dynamic directory request_schema, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsDynamicDirectoryScheduleProviderRequestInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/admin/auth-providers/provider-1/directory/schedule", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"supported":         true,
+			"enabled":           true,
+			"mode":              "enrich_existing_only",
+			"join_key_type":     "username",
+			"schedule_cron":     "0 * * * *",
+			"schedule_timezone": "Asia/Shanghai",
+			"provider_request": gin.H{
+				"department_names": []string{"Engineering", "Finance"},
+				"include_nested":   true,
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/auth-providers/provider-1/directory/schedule", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dynamic directory schedule provider_request, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsDynamicDirectorySyncJobRequestSnapshotInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/admin/auth-providers/provider-1/directory/sync-jobs/job-1", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"id":                  "job-1",
+			"provider_id":         "provider-1",
+			"status":              "completed",
+			"conflict_resolution": "skip",
+			"sync_mode":           "scheduled_enrichment",
+			"join_key_type":       "username",
+			"total_entries":       116,
+			"result_summary": gin.H{
+				"create_count":  0,
+				"update_count":  0,
+				"blocked_count": 116,
+			},
+			"error_count":  0,
+			"errors":       []string{},
+			"triggered_by": "system",
+			"created_at":   "2026-03-30T08:10:00Z",
+			"updated_at":   "2026-03-30T08:10:00Z",
+			"completed_at": "2026-03-30T08:10:00Z",
+			"request_snapshot": gin.H{
+				"department_ids": []string{"1001", "1002"},
+				"include_nested": true,
+				"filters": gin.H{
+					"status": "active",
+				},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/auth-providers/provider-1/directory/sync-jobs/job-1", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dynamic directory request_snapshot, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsDynamicUserProfileAttributesInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/admin/users", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"id":         "user-1",
+					"username":   "alice@example.com",
+					"enabled":    true,
+					"created_at": "2026-03-31T00:00:00Z",
+					"profile_attributes": gin.H{
+						"department":   "Engineering",
+						"section":      "Platform",
+						"phone_number": "13800000000",
+					},
+				},
+			},
+			"profile_fields": []gin.H{
+				{
+					"key":        "department",
+					"label":      "Department",
+					"searchable": true,
+				},
+			},
+			"pagination": gin.H{
+				"page":        1,
+				"per_page":    20,
+				"total":       1,
+				"total_pages": 1,
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dynamic user profile_attributes, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsDynamicUserPreferenceValueInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.PUT("/api/v1/auth/preferences/:key", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"key":        c.Param("key"),
+			"updated_at": "2026-03-31T00:00:00Z",
+			"value": gin.H{
+				"columns": []string{"profile:department", "roles", "status"},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/auth/preferences/admin.users.columns.v1", strings.NewReader(`{
+		"value": {
+			"columns": ["profile:department", "roles", "status"]
+		}
+	}`))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dynamic user preference value, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestOpenAPIValidatorAllowsDynamicTicketPayloadInStrictMode(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.GET("/api/v1/builtin-approval/tasks", func(c *gin.Context) {
@@ -707,6 +927,50 @@ func TestOpenAPIValidatorAllowsDynamicErrorParamsInStrictMode(t *testing.T) {
 
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for error response with dynamic params, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAcceptsDirectorySyncJobDetailWithRequestSnapshot(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/admin/auth-providers/:provider_id/directory/sync-jobs/:job_id", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"id":                  "019d3ea6-c4dd-7656-961d-9d0a771ff490",
+			"provider_id":         "019d3cd8-dd29-7b61-9227-f7aad59505a7",
+			"status":              "completed",
+			"conflict_resolution": "skip",
+			"sync_mode":           "scheduled_enrichment",
+			"join_key_type":       "username",
+			"total_entries":       116,
+			"result_summary": gin.H{
+				"blocked_count": 116,
+				"create_count":  0,
+				"update_count":  0,
+			},
+			"error_count":  0,
+			"errors":       []string{},
+			"triggered_by": "system:directory-enrichment-scheduler",
+			"started_at":   "2026-03-30T20:10:10.110159+08:00",
+			"completed_at": "2026-03-30T20:10:34.465529+08:00",
+			"created_at":   "2026-03-30T20:10:10.013429+08:00",
+			"updated_at":   "2026-03-30T20:10:34.465533+08:00",
+			"request_snapshot": gin.H{
+				"include_nested":   true,
+				"department_names": []string{"Engineering"},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/admin/auth-providers/019d3cd8-dd29-7b61-9227-f7aad59505a7/directory/sync-jobs/019d3ea6-c4dd-7656-961d-9d0a771ff490",
+		http.NoBody,
+	)
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for directory sync job detail, got %d body=%s", resp.Code, resp.Body.String())
 	}
 }
 

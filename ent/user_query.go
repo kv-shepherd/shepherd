@@ -18,6 +18,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/rolebinding"
 	"kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
+	"kv-shepherd.io/shepherd/ent/userpreference"
 )
 
 // UserQuery is the builder for querying User entities.
@@ -30,6 +31,7 @@ type UserQuery struct {
 	withRoleBindings         *RoleBindingQuery
 	withNotifications        *NotificationQuery
 	withDirectoryProfile     *UserDirectoryProfileQuery
+	withPreferences          *UserPreferenceQuery
 	withExternalCohortGrants *ExternalCohortGrantQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -126,6 +128,28 @@ func (_q *UserQuery) QueryDirectoryProfile() *UserDirectoryProfileQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(userdirectoryprofile.Table, userdirectoryprofile.FieldID),
 			sqlgraph.Edge(sqlgraph.O2O, false, user.DirectoryProfileTable, user.DirectoryProfileColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryPreferences chains the current query on the "preferences" edge.
+func (_q *UserQuery) QueryPreferences() *UserPreferenceQuery {
+	query := (&UserPreferenceClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(userpreference.Table, userpreference.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.PreferencesTable, user.PreferencesColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -350,6 +374,7 @@ func (_q *UserQuery) Clone() *UserQuery {
 		withRoleBindings:         _q.withRoleBindings.Clone(),
 		withNotifications:        _q.withNotifications.Clone(),
 		withDirectoryProfile:     _q.withDirectoryProfile.Clone(),
+		withPreferences:          _q.withPreferences.Clone(),
 		withExternalCohortGrants: _q.withExternalCohortGrants.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
@@ -387,6 +412,17 @@ func (_q *UserQuery) WithDirectoryProfile(opts ...func(*UserDirectoryProfileQuer
 		opt(query)
 	}
 	_q.withDirectoryProfile = query
+	return _q
+}
+
+// WithPreferences tells the query-builder to eager-load the nodes that are connected to
+// the "preferences" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithPreferences(opts ...func(*UserPreferenceQuery)) *UserQuery {
+	query := (&UserPreferenceClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withPreferences = query
 	return _q
 }
 
@@ -479,10 +515,11 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [4]bool{
+		loadedTypes = [5]bool{
 			_q.withRoleBindings != nil,
 			_q.withNotifications != nil,
 			_q.withDirectoryProfile != nil,
+			_q.withPreferences != nil,
 			_q.withExternalCohortGrants != nil,
 		}
 	)
@@ -521,6 +558,13 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	if query := _q.withDirectoryProfile; query != nil {
 		if err := _q.loadDirectoryProfile(ctx, query, nodes, nil,
 			func(n *User, e *UserDirectoryProfile) { n.Edges.DirectoryProfile = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withPreferences; query != nil {
+		if err := _q.loadPreferences(ctx, query, nodes,
+			func(n *User) { n.Edges.Preferences = []*UserPreference{} },
+			func(n *User, e *UserPreference) { n.Edges.Preferences = append(n.Edges.Preferences, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -610,6 +654,36 @@ func (_q *UserQuery) loadDirectoryProfile(ctx context.Context, query *UserDirect
 	}
 	query.Where(predicate.UserDirectoryProfile(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(user.DirectoryProfileColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadPreferences(ctx context.Context, query *UserPreferenceQuery, nodes []*User, init func(*User), assign func(*User, *UserPreference)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[string]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(userpreference.FieldUserID)
+	}
+	query.Where(predicate.UserPreference(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.PreferencesColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

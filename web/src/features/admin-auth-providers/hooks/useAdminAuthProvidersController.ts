@@ -2,7 +2,7 @@
 
 import { Form, message } from "antd";
 import type { TFunction } from "i18next";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useApiAction, useApiGet, useApiMutation } from "@/hooks/useApiQuery";
 import { api } from "@/lib/api/client";
@@ -61,7 +61,7 @@ interface EditFormValues {
 interface SyncFormValues {
   cohort_kind: string;
   source_field: string;
-  cohorts_text: string;
+  cohorts_text: string | string[];
 }
 
 interface MappingFormValues {
@@ -88,10 +88,19 @@ interface ExternalAuthSettingsFormValues {
 
 interface SchemaProperty {
   type?: string;
+  default?: unknown;
 }
 
 interface ConfigSchema {
   properties?: Record<string, SchemaProperty>;
+}
+
+type SampleField = NonNullable<AuthProviderSampleResponse["fields"]>[number];
+
+interface CohortDefaults {
+  cohortKind: string;
+  sourceField: string;
+  reason: string;
 }
 
 function localizedAuthProviderTypeLabel(
@@ -104,9 +113,10 @@ function localizedAuthProviderTypeLabel(
   });
 }
 
-function parseCohortText(raw: string): string[] {
+function parseCohortText(raw: string | string[]): string[] {
   const seen = new Set<string>();
-  for (const token of raw.split(/[\n,]/g)) {
+  const tokens = Array.isArray(raw) ? raw : raw.split(/[\n,]/g);
+  for (const token of tokens) {
     const value = token.trim();
     if (!value) continue;
     seen.add(value);
@@ -114,13 +124,92 @@ function parseCohortText(raw: string): string[] {
   return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
 }
 
-function cohortDefaultsForAuthType(authType?: string | null) {
-  switch ((authType || "").trim().toLowerCase()) {
-    case "wecom":
-      return { cohortKind: "department", sourceField: "department" };
-    default:
-      return { cohortKind: "group", sourceField: "groups" };
+function normalizeFieldToken(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+}
+
+function cohortDefaultsForAuthType(
+  authType: string | null | undefined,
+  sampleFields: SampleField[],
+  cohorts: ExternalCohort[],
+): CohortDefaults {
+  void authType;
+
+  const fallback: CohortDefaults = {
+    cohortKind: "group",
+    sourceField: "groups",
+    reason: "fallback_groups",
+  };
+
+  const discoveredCandidates = cohorts
+    .filter(
+      (cohort): cohort is ExternalCohort & { source_field: string } =>
+        typeof cohort.source_field === "string" && cohort.source_field.trim() !== "",
+    )
+    .map((cohort) => ({
+      cohortKind: cohort.cohort_kind,
+      sourceField: cohort.source_field,
+      reason: "discovered_cohort",
+    }));
+  if (discoveredCandidates.length > 0) {
+    return discoveredCandidates.sort((left, right) => {
+      return (
+        left.cohortKind.localeCompare(right.cohortKind) ||
+        left.sourceField.localeCompare(right.sourceField)
+      );
+    })[0];
   }
+
+  const fieldIndex = new Map(
+    sampleFields.map((field) => [normalizeFieldToken(field.field), field]),
+  );
+
+  const preferredFields: Array<{
+    aliases: string[];
+    cohortKind: string;
+    sourceField: string;
+    reason: string;
+  }> = [
+    {
+      aliases: ["department", "departments", "dept"],
+      cohortKind: "department",
+      sourceField: "department",
+      reason: "sample_department",
+    },
+    {
+      aliases: ["section", "sections", "team", "teams"],
+      cohortKind: "team",
+      sourceField: "section",
+      reason: "sample_section",
+    },
+    {
+      aliases: ["groups", "group"],
+      cohortKind: "group",
+      sourceField: "groups",
+      reason: "sample_groups",
+    },
+    {
+      aliases: ["organization", "organisation", "org", "company"],
+      cohortKind: "organization",
+      sourceField: "organization",
+      reason: "sample_organization",
+    },
+  ];
+
+  for (const candidate of preferredFields) {
+    const matchedField = candidate.aliases
+      .map((alias) => fieldIndex.get(alias))
+      .find((field): field is SampleField => Boolean(field));
+    if (matchedField) {
+      return {
+        cohortKind: candidate.cohortKind,
+        sourceField: matchedField.field,
+        reason: candidate.reason,
+      };
+    }
+  }
+
+  return fallback;
 }
 
 function extractConfigObject(
@@ -180,6 +269,80 @@ function schemaFormValuesFromObject(
   );
 }
 
+function schemaDefaultFormValues(
+  schema?: ConfigSchema | null,
+): Record<string, unknown> | undefined {
+  if (!schema?.properties) {
+    return undefined;
+  }
+  const entries = Object.entries(schema.properties)
+    .filter(([, property]) => property.default !== undefined)
+    .map(([key, property]) => {
+      if (
+        property.type === "object" &&
+        property.default &&
+        typeof property.default === "object" &&
+        !Array.isArray(property.default)
+      ) {
+        return [key, JSON.stringify(property.default, null, 2)] as const;
+      }
+      return [key, property.default] as const;
+    });
+  if (entries.length === 0) {
+    return undefined;
+  }
+  return Object.fromEntries(entries);
+}
+
+function buildProviderEditFormValues(
+  provider: AuthProvider,
+  providerTypes: AuthProviderType[],
+): Record<string, unknown> {
+  const editProviderType = providerTypes.find(
+    (tp) => tp.type === provider.auth_type,
+  );
+  const formValues: Record<string, unknown> = {
+    name: provider.name,
+    enabled: provider.enabled,
+    sort_order: provider.sort_order,
+  };
+  const configSchema = (editProviderType?.config_schema ?? null) as ConfigSchema | null;
+  const defaultConfigValues = schemaDefaultFormValues(configSchema);
+  const storedConfigValues =
+    provider.config && typeof provider.config === "object"
+      ? schemaFormValuesFromObject(
+          provider.config as Record<string, unknown>,
+          configSchema,
+        )
+      : undefined;
+  if (defaultConfigValues || storedConfigValues) {
+    formValues.config = {
+      ...(defaultConfigValues ?? {}),
+      ...(storedConfigValues ?? {}),
+    };
+  }
+  return formValues;
+}
+
+function buildDirectoryRequestFormValues(
+  schema?: ConfigSchema | null,
+  providerRequest?: Record<string, unknown> | null,
+): Record<string, unknown> | undefined {
+  const defaultRequestValues = schemaDefaultFormValues(schema);
+  const storedRequestValues = providerRequest
+    ? schemaFormValuesFromObject(providerRequest, schema)
+    : undefined;
+  if (!defaultRequestValues && !storedRequestValues) {
+    return undefined;
+  }
+  return {
+    provider_request: {
+      ...(defaultRequestValues ?? {}),
+      ...(storedRequestValues ?? {}),
+    },
+  };
+}
+
 export function useAdminAuthProvidersController({
   t,
 }: UseAdminAuthProvidersControllerArgs) {
@@ -216,6 +379,7 @@ export function useAdminAuthProvidersController({
   const [directoryRequestForm] = Form.useForm<Record<string, unknown>>();
   const [directoryPreview, setDirectoryPreview] =
     useState<DirectorySyncPreview | null>(null);
+  const directoryRequestHydratedForRef = useRef("");
 
   const providersQuery = useApiGet<AuthProviderList>(
     ["admin-auth-providers"],
@@ -336,8 +500,8 @@ export function useAdminAuthProvidersController({
     invalidateKeys: [["admin-auth-providers"]],
     onSuccess: () => {
       messageApi.success(t("common:message.success"));
-      setCreateOpen(false);
       createForm.resetFields();
+      setCreateOpen(false);
     },
     onError: (err) => messageApi.error(translateApiError(t, err)),
   });
@@ -355,9 +519,9 @@ export function useAdminAuthProvidersController({
       invalidateKeys: [["admin-auth-providers"]],
       onSuccess: () => {
         messageApi.success(t("common:message.success"));
+        editForm.resetFields();
         setEditOpen(false);
         setEditingProvider(null);
-        editForm.resetFields();
       },
       onError: (err) => messageApi.error(translateApiError(t, err)),
     },
@@ -458,9 +622,9 @@ export function useAdminAuthProvidersController({
       ],
       onSuccess: () => {
         messageApi.success(t("common:message.success"));
-        setCreateMappingModalOpen(false);
         mappingForm.resetFields();
         mappingForm.setFieldsValue({ scope_type: "global" });
+        setCreateMappingModalOpen(false);
       },
       onError: (err) => messageApi.error(translateApiError(t, err)),
     },
@@ -488,9 +652,9 @@ export function useAdminAuthProvidersController({
       ],
       onSuccess: () => {
         messageApi.success(t("common:message.success"));
+        mappingEditForm.resetFields();
         setEditMappingOpen(false);
         setEditingMapping(null);
-        mappingEditForm.resetFields();
       },
       onError: (err) => messageApi.error(translateApiError(t, err)),
     },
@@ -613,6 +777,15 @@ export function useAdminAuthProvidersController({
     () => directorySyncJobsQuery.data?.items ?? [],
     [directorySyncJobsQuery.data?.items],
   );
+  const recommendedCohortDefaults = useMemo(
+    () =>
+      cohortDefaultsForAuthType(
+        mappingProvider?.auth_type,
+        sampleFields,
+        cohorts,
+      ),
+    [cohorts, mappingProvider?.auth_type, sampleFields],
+  );
 
   useEffect(() => {
     externalAuthSettingsForm.setFieldsValue({
@@ -620,14 +793,100 @@ export function useAdminAuthProvidersController({
     });
   }, [externalAuthSettingsForm, externalAuthSettingsQuery.data?.public_base_url]);
 
-  const openCreateModal = () => {
+  useEffect(() => {
+    if (!createOpen) {
+      return;
+    }
     createForm.resetFields();
-    const defaultAuthType = providerTypeOptions[0]?.value;
     createForm.setFieldsValue({
-      auth_type: defaultAuthType,
+      auth_type: providerTypeOptions[0]?.value,
       enabled: true,
       sort_order: 0,
     });
+  }, [createForm, createOpen, providerTypeOptions]);
+
+  useEffect(() => {
+    if (!editOpen || !editingProvider) {
+      return;
+    }
+    editForm.setFieldsValue(
+      buildProviderEditFormValues(editingProvider, providerTypes),
+    );
+  }, [editForm, editOpen, editingProvider, providerTypes]);
+
+  useEffect(() => {
+    if (!createMappingModalOpen) {
+      return;
+    }
+    const defaults = recommendedCohortDefaults;
+    mappingForm.resetFields();
+    mappingForm.setFieldsValue({
+      selected_cohort_ref: undefined,
+      cohort_kind: defaults.cohortKind,
+      scope_type: "global",
+    });
+  }, [createMappingModalOpen, mappingForm, recommendedCohortDefaults]);
+
+  useEffect(() => {
+    if (!mappingOpen || !mappingProvider?.id) {
+      return;
+    }
+    if (directoryDescriptorQuery.isLoading || directoryScheduleQuery.isLoading) {
+      return;
+    }
+    if (directoryRequestHydratedForRef.current === mappingProvider.id) {
+      return;
+    }
+
+    const scheduleStatus = directoryScheduleQuery.data as
+      | (DirectoryEnrichmentScheduleStatus & {
+          provider_request?: Record<string, unknown>;
+        })
+      | undefined;
+    const scheduleProviderRequest =
+      scheduleStatus?.provider_request &&
+      typeof scheduleStatus.provider_request === "object" &&
+      !Array.isArray(scheduleStatus.provider_request)
+        ? scheduleStatus.provider_request
+        : undefined;
+
+    const initialValues = buildDirectoryRequestFormValues(
+      (directoryDescriptorQuery.data?.request_schema ?? null) as ConfigSchema | null,
+      scheduleProviderRequest,
+    );
+
+    directoryRequestForm.resetFields();
+    if (initialValues) {
+      directoryRequestForm.setFieldsValue(
+        initialValues as unknown as Record<string, { [key: string]: unknown }>,
+      );
+    }
+    directoryRequestHydratedForRef.current = mappingProvider.id;
+  }, [
+    directoryDescriptorQuery.data?.request_schema,
+    directoryDescriptorQuery.isLoading,
+    directoryRequestForm,
+    directoryScheduleQuery.data,
+    directoryScheduleQuery.isLoading,
+    mappingOpen,
+    mappingProvider?.id,
+  ]);
+
+  useEffect(() => {
+    if (!editMappingOpen || !editingMapping) {
+      return;
+    }
+    mappingEditForm.setFieldsValue({
+      role_id: editingMapping.role_id,
+      scope_type: editingMapping.scope_type || "global",
+      scope_id: editingMapping.scope_id,
+      allowed_environments: editingMapping.allowed_environments as Array<
+        "test" | "prod"
+      >,
+    });
+  }, [editMappingOpen, editingMapping, mappingEditForm]);
+
+  const openCreateModal = () => {
     setCreateOpen(true);
   };
 
@@ -665,29 +924,13 @@ export function useAdminAuthProvidersController({
 
   const openEditModal = (provider: AuthProvider) => {
     setEditingProvider(provider);
-    const editProviderType = providerTypes.find(
-      (tp) => tp.type === provider.auth_type,
-    );
-    const formValues: Record<string, unknown> = {
-      name: provider.name,
-      enabled: provider.enabled,
-      sort_order: provider.sort_order,
-    };
-    // Populate nested config fields for SchemaConfigForm
-    if (provider.config && typeof provider.config === "object") {
-      formValues.config = schemaFormValuesFromObject(
-        provider.config,
-        (editProviderType?.config_schema ?? null) as ConfigSchema | null,
-      );
-    }
-    editForm.setFieldsValue(formValues);
     setEditOpen(true);
   };
 
   const closeEditModal = () => {
+    editForm.resetFields();
     setEditOpen(false);
     setEditingProvider(null);
-    editForm.resetFields();
   };
 
   const submitEdit = async () => {
@@ -799,54 +1042,38 @@ export function useAdminAuthProvidersController({
   };
 
   const openMappingModal = (provider: AuthProvider) => {
-    const defaults = cohortDefaultsForAuthType(provider.auth_type);
     setMappingProvider(provider);
     setSelectedDirectorySyncJobId("");
     setDirectoryPreview(null);
-    mappingForm.resetFields();
-    mappingEditForm.resetFields();
-    syncForm.resetFields();
-    directoryRequestForm.resetFields();
-    syncForm.setFieldsValue({
-      cohort_kind: defaults.cohortKind,
-      source_field: defaults.sourceField,
-    });
-    mappingForm.setFieldsValue({
-      selected_cohort_ref: undefined,
-      cohort_kind: defaults.cohortKind,
-      scope_type: "global",
-    });
     setMappingOpen(true);
   };
 
   const closeMappingModal = () => {
+    syncForm.resetFields();
+    directoryRequestForm.resetFields();
+    directoryRequestHydratedForRef.current = "";
     setMappingOpen(false);
     setMappingProvider(null);
     setDirectoryPreview(null);
     setSelectedDirectorySyncJobId("");
-    setEditMappingOpen(false);
-    setEditingMapping(null);
-    setCreateMappingModalOpen(false);
-    mappingForm.resetFields();
-    mappingEditForm.resetFields();
-    syncForm.resetFields();
-    directoryRequestForm.resetFields();
+    if (editMappingOpen) {
+      mappingEditForm.resetFields();
+      setEditMappingOpen(false);
+      setEditingMapping(null);
+    }
+    if (createMappingModalOpen) {
+      mappingForm.resetFields();
+      setCreateMappingModalOpen(false);
+    }
   };
 
   const openCreateMappingModal = () => {
-    const defaults = cohortDefaultsForAuthType(mappingProvider?.auth_type);
-    mappingForm.resetFields();
-    mappingForm.setFieldsValue({
-      selected_cohort_ref: undefined,
-      cohort_kind: defaults.cohortKind,
-      scope_type: "global",
-    });
     setCreateMappingModalOpen(true);
   };
 
   const closeCreateMappingModal = () => {
-    setCreateMappingModalOpen(false);
     mappingForm.resetFields();
+    setCreateMappingModalOpen(false);
   };
 
   const submitSyncCohorts = async () => {
@@ -891,21 +1118,13 @@ export function useAdminAuthProvidersController({
 
   const openEditMappingModal = (mapping: ExternalCohortMapping) => {
     setEditingMapping(mapping);
-    mappingEditForm.setFieldsValue({
-      role_id: mapping.role_id,
-      scope_type: mapping.scope_type || "global",
-      scope_id: mapping.scope_id,
-      allowed_environments: mapping.allowed_environments as Array<
-        "test" | "prod"
-      >,
-    });
     setEditMappingOpen(true);
   };
 
   const closeEditMappingModal = () => {
+    mappingEditForm.resetFields();
     setEditMappingOpen(false);
     setEditingMapping(null);
-    mappingEditForm.resetFields();
   };
 
   const submitEditMapping = async () => {
@@ -1015,6 +1234,7 @@ export function useAdminAuthProvidersController({
     resetExternalAuthSettingsToDeploymentDefault,
 
     sampleFields,
+    recommendedCohortDefaults,
     sampleLoading: sampleQuery.isLoading,
     cohorts,
     cohortsLoading: cohortsQuery.isLoading,

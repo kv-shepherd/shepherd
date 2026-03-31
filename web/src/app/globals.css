@@ -292,8 +292,8 @@ a {
 .copy-friendly-actions .ant-radio-wrapper *,
 .copy-friendly-actions .ant-dropdown-menu-title-content,
 .copy-friendly-actions .ant-dropdown-menu-title-content * {
-  user-select: text;
-  -webkit-user-select: text;
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 .selectable-inline-text,

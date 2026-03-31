@@ -61,6 +61,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 
 	// River defaults
+	if !cfg.River.ConsumeJobs {
+		t.Errorf("River.ConsumeJobs = %v, want true", cfg.River.ConsumeJobs)
+	}
 	if cfg.River.MaxWorkers != 10 {
 		t.Errorf("River.MaxWorkers = %d, want 10", cfg.River.MaxWorkers)
 	}
@@ -169,6 +172,19 @@ func TestLoad_ServerCORSFlagsFromEnv(t *testing.T) {
 	}
 	if !cfg.Server.UnsafeAllowAllOrigins {
 		t.Fatalf("Server.UnsafeAllowAllOrigins = %v, want true", cfg.Server.UnsafeAllowAllOrigins)
+	}
+}
+
+func TestLoad_RiverConsumeJobsFromEnv(t *testing.T) {
+	t.Setenv("RIVER_CONSUME_JOBS", "false")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.River.ConsumeJobs {
+		t.Fatalf("River.ConsumeJobs = %v, want false", cfg.River.ConsumeJobs)
 	}
 }
 

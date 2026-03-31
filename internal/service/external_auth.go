@@ -79,6 +79,13 @@ func (s *ExternalAuthService) upsertExternalUserNormalized(
 	}
 
 	if ent.IsNotFound(err) {
+		existing, err = s.findClaimableExistingUser(ctx, normalized)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if existing == nil {
 		if conflictErr := s.ensureExternalIdentityConflicts(ctx, authProviderID, "", normalized); conflictErr != nil {
 			return nil, conflictErr
 		}
@@ -149,6 +156,64 @@ func (s *ExternalAuthService) upsertExternalUserNormalized(
 		User:    updatedUser,
 		Updated: true,
 	}, nil
+}
+
+func (s *ExternalAuthService) findClaimableExistingUser(
+	ctx context.Context,
+	result runtimecontract.AuthResult,
+) (*ent.User, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("external auth service is not initialized")
+	}
+
+	candidates := make(map[string]*ent.User, 2)
+	loadCandidate := func(query *ent.UserQuery, conflictLabel string) error {
+		existing, err := query.Only(ctx)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("query %s claim candidate: %w", conflictLabel, err)
+		}
+		candidates[existing.ID] = existing
+		return nil
+	}
+
+	if result.Username != "" {
+		if err := loadCandidate(
+			s.client.User.Query().Where(user.UsernameEQ(result.Username)),
+			"username",
+		); err != nil {
+			return nil, err
+		}
+	}
+	if result.Email != "" {
+		if err := loadCandidate(
+			s.client.User.Query().Where(user.EmailEQ(result.Email)),
+			"email",
+		); err != nil {
+			return nil, err
+		}
+	}
+
+	switch len(candidates) {
+	case 0:
+		return nil, nil
+	case 1:
+		var candidate *ent.User
+		for _, item := range candidates {
+			candidate = item
+		}
+		if candidate == nil {
+			return nil, nil
+		}
+		if strings.TrimSpace(candidate.PasswordHash) != "" {
+			return nil, fmt.Errorf("external identity already belongs to another user")
+		}
+		return candidate, nil
+	default:
+		return nil, fmt.Errorf("external identity already belongs to another user")
+	}
 }
 
 func (s *ExternalAuthService) RecordLogin(ctx context.Context, userID string) error {
@@ -312,8 +377,8 @@ func (s *ExternalAuthService) upsertObservedExternalCohort(
 }
 
 func normalizeExternalAuthResult(result runtimecontract.AuthResult) (runtimecontract.AuthResult, error) {
-	result.ExternalID = strings.TrimSpace(result.ExternalID)
-	result.Username = strings.TrimSpace(result.Username)
+	result.ExternalID = normalizeCanonicalUserIdentity(result.ExternalID)
+	result.Username = normalizeCanonicalUserIdentity(result.Username)
 	result.DisplayName = strings.TrimSpace(result.DisplayName)
 	result.Email = strings.TrimSpace(strings.ToLower(result.Email))
 	result.ProfileAttributes = normalizeDirectoryAttributes(result.ProfileAttributes)
@@ -328,6 +393,14 @@ func normalizeExternalAuthResult(result runtimecontract.AuthResult) (runtimecont
 		result.DisplayName = result.Username
 	}
 	return result, nil
+}
+
+func normalizeCanonicalUserIdentity(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if strings.Contains(trimmed, "@") {
+		return strings.ToLower(trimmed)
+	}
+	return trimmed
 }
 
 func normalizeExternalCohorts(cohorts []runtimecontract.ExternalCohort) []runtimecontract.ExternalCohort {

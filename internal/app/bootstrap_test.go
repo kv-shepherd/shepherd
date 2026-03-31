@@ -96,4 +96,10 @@ func TestRegisterPeriodicJobs_WiringContract(t *testing.T) {
 			t.Fatalf("bootstrap periodic job wiring missing required fragment %q", fragment)
 		}
 	}
+	if !strings.Contains(text, "if cfg.River.ConsumeJobs {") {
+		t.Fatal("bootstrap must guard periodic job registration behind cfg.River.ConsumeJobs")
+	}
+	if !strings.Contains(text, "registerPeriodicJobs(infra)") {
+		t.Fatal("bootstrap must continue wiring registerPeriodicJobs(infra)")
+	}
 }

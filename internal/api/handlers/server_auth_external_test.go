@@ -376,7 +376,7 @@ func TestStartLoginAuthProvider_MapsStructuredStartErrors(t *testing.T) {
 	t.Parallel()
 
 	adapter := registerRuntimeAuthTestAdapter(t, &testRuntimeAuthAdapter{
-		startErr: provider.NewAuthStartError("AUTH_LOGIN_MODE_UNAVAILABLE", "in_wecom login requires the WeCom client browser"),
+		startErr: provider.NewAuthStartError("AUTH_LOGIN_MODE_UNAVAILABLE", "embedded login requires the dedicated client browser"),
 	})
 	srv, client := newExternalAuthTestServer(t, []string{"https://console.example.com"})
 
@@ -395,7 +395,7 @@ func TestStartLoginAuthProvider_MapsStructuredStartErrors(t *testing.T) {
 		t,
 		http.MethodPost,
 		"/auth/providers/runtime-start-error/login/start",
-		`{"login_mode":"in_wecom","return_to":"https://console.example.com/login"}`,
+		`{"login_mode":"embedded","return_to":"https://console.example.com/login"}`,
 	)
 	ctx.Request.Host = "api.example.com"
 	ctx.Request.Header.Set("X-Forwarded-Proto", "https")
@@ -414,13 +414,13 @@ func TestStartLoginAuthProvider_MapsStructuredStartErrors(t *testing.T) {
 func TestCompleteLoginAuthProviderGet_JITProvisionsUserAndReturnsBridge(t *testing.T) {
 	t.Parallel()
 
-	username := "alice.wecom." + strings.ToLower(uuid.NewString()[:8])
+	username := "alice.external." + strings.ToLower(uuid.NewString()[:8])
 	email := username + "@example.com"
 	adapter := registerRuntimeAuthTestAdapter(t, &testRuntimeAuthAdapter{
 		callbackResp: &provider.AuthResult{
-			ExternalID:  "wecom-user-1",
+			ExternalID:  "external-user-1",
 			Username:    username,
-			DisplayName: "Alice WeCom",
+			DisplayName: "Alice External",
 			Email:       email,
 			Enabled:     true,
 			Cohorts: []provider.ExternalCohort{
@@ -487,6 +487,12 @@ func TestCompleteLoginAuthProviderGet_JITProvisionsUserAndReturnsBridge(t *testi
 	if !strings.Contains(w.Body.String(), `"username":"`+username+`"`) {
 		t.Fatalf("callback body missing user payload: %s", w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), `window.localStorage.setItem(authStorageKey`) {
+		t.Fatalf("callback body missing localStorage bridge: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `window.location.replace(successTarget)`) {
+		t.Fatalf("callback body missing success redirect: %s", w.Body.String())
+	}
 	tokenMatch := regexp.MustCompile(`"token":"([^"]+)"`).FindStringSubmatch(w.Body.String())
 	if len(tokenMatch) != 2 {
 		t.Fatalf("callback body missing token payload: %s", w.Body.String())
@@ -502,7 +508,7 @@ func TestCompleteLoginAuthProviderGet_JITProvisionsUserAndReturnsBridge(t *testi
 	createdUser, err := client.User.Query().
 		Where(
 			user.AuthProviderIDEQ("runtime-callback"),
-			user.ExternalIDEQ("wecom-user-1"),
+			user.ExternalIDEQ("external-user-1"),
 		).
 		Only(t.Context())
 	if err != nil {

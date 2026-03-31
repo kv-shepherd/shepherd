@@ -29,6 +29,7 @@ services:
       # Keep wildcard disabled by default; use nginx single-origin ingress instead.
       SERVER_ALLOW_CREDENTIALS: "true"
       SERVER_UNSAFE_ALLOW_ALL_ORIGINS: "false"
+      RIVER_CONSUME_JOBS: "${RIVER_CONSUME_JOBS:-true}"
     depends_on:
       db:
         condition: service_healthy

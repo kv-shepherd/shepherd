@@ -233,130 +233,14 @@ func TestWeComTestConnection_UsesGetToken(t *testing.T) {
 	}
 }
 
-func TestWeComSupportsDirectorySyncCapability(t *testing.T) {
+func TestWeComDoesNotSupportDirectorySyncCapability(t *testing.T) {
 	t.Parallel()
 
 	adapter := newWeComAuthProviderAdapter()
-	if _, ok := interface{}(adapter).(DirectorySyncCapability); !ok {
-		t.Fatal("wecom adapter does not implement DirectorySyncCapability")
+	if _, ok := interface{}(adapter).(DirectorySyncCapability); ok {
+		t.Fatal("wecom adapter unexpectedly implements DirectorySyncCapability")
 	}
-	if _, ok := interface{}(adapter).(ScheduledDirectoryEnrichmentCapability); !ok {
-		t.Fatal("wecom adapter does not implement ScheduledDirectoryEnrichmentCapability")
-	}
-}
-
-func TestWeComListDirectoryUsers_MapsDepartmentCohorts(t *testing.T) {
-	t.Parallel()
-
-	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasPrefix(r.URL.Path, "/cgi-bin/gettoken"):
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"errcode":      0,
-				"errmsg":       "ok",
-				"access_token": "access-token-1",
-			})
-		case strings.HasPrefix(r.URL.Path, "/cgi-bin/user/list"):
-			if got := r.URL.Query().Get("department_id"); got != "2" {
-				t.Fatalf("department_id = %q, want %q", got, "2")
-			}
-			if got := r.URL.Query().Get("fetch_child"); got != "1" {
-				t.Fatalf("fetch_child = %q, want %q", got, "1")
-			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"errcode": 0,
-				"errmsg":  "ok",
-				"userlist": []map[string]interface{}{
-					{
-						"userid":       "alice",
-						"name":         "Alice Zhang",
-						"alias":        "Alice",
-						"mobile":       "13800000000",
-						"email":        "alice@example.com",
-						"position":     "SRE",
-						"avatar":       "https://img.example.com/avatar.png",
-						"english_name": "alice.zhang",
-						"status":       1,
-						"department":   []int{2, 3},
-					},
-				},
-			})
-		case strings.HasPrefix(r.URL.Path, "/cgi-bin/department/list"):
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"errcode": 0,
-				"errmsg":  "ok",
-				"department": []map[string]interface{}{
-					{"id": 2, "name": "Engineering"},
-					{"id": 3, "name": "Platform"},
-				},
-			})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer apiServer.Close()
-
-	adapter := &wecomAuthProviderAdapter{
-		openBaseURL:  defaultWeComOpenBaseURL,
-		oauthBaseURL: defaultWeComOAuthBaseURL,
-		httpClient:   newWeComTestHTTPClient(t, apiServer),
-	}
-
-	records, err := adapter.ListDirectoryUsers(t.Context(), map[string]interface{}{
-		"corp_id":      "wwcorp",
-		"agent_id":     "1000002",
-		"agent_secret": "secret",
-	}, map[string]interface{}{
-		"department_ids": []interface{}{"2"},
-		"include_nested": true,
-	})
-	if err != nil {
-		t.Fatalf("ListDirectoryUsers() error = %v", err)
-	}
-	if len(records) != 1 {
-		t.Fatalf("records len = %d, want 1", len(records))
-	}
-	record := records[0]
-	if record.Username != "alice.zhang" {
-		t.Fatalf("username = %q, want %q", record.Username, "alice.zhang")
-	}
-	if len(record.Cohorts) != 2 {
-		t.Fatalf("cohorts = %#v, want 2 departments", record.Cohorts)
-	}
-	if record.Cohorts[0].Kind != "department" || record.Cohorts[0].Key != "2" {
-		t.Fatalf("first cohort = %#v, want department 2", record.Cohorts[0])
-	}
-	if got := record.Attributes["organization_unit"]; got == nil {
-		t.Fatalf("organization_unit = %#v, want populated departments", got)
-	}
-}
-
-func TestWeComBuildsScheduledDirectoryEnrichmentPlan(t *testing.T) {
-	t.Parallel()
-
-	adapter := newWeComAuthProviderAdapter()
-	plan, err := adapter.BuildScheduledDirectoryEnrichmentPlan(t.Context(), map[string]interface{}{
-		"enrichment_enabled":       true,
-		"schedule_cron":            "15 * * * *",
-		"schedule_timezone":        "Asia/Shanghai",
-		"join_key_type":            string(DirectoryJoinKeyUsername),
-		"scheduled_department_ids": []interface{}{"2", "3"},
-		"scheduled_include_nested": true,
-	})
-	if err != nil {
-		t.Fatalf("BuildScheduledDirectoryEnrichmentPlan() error = %v", err)
-	}
-	if !plan.Enabled {
-		t.Fatal("plan.Enabled = false, want true")
-	}
-	if plan.ProviderRequest["include_nested"] != true {
-		t.Fatalf("include_nested = %#v, want true", plan.ProviderRequest["include_nested"])
-	}
-	rawDepartmentIDs, ok := plan.ProviderRequest["department_ids"].([]string)
-	if !ok {
-		t.Fatalf("department_ids type = %T, want []string", plan.ProviderRequest["department_ids"])
-	}
-	if len(rawDepartmentIDs) != 2 || rawDepartmentIDs[0] != "2" || rawDepartmentIDs[1] != "3" {
-		t.Fatalf("department_ids = %#v, want [2 3]", rawDepartmentIDs)
+	if _, ok := interface{}(adapter).(ScheduledDirectoryEnrichmentCapability); ok {
+		t.Fatal("wecom adapter unexpectedly implements ScheduledDirectoryEnrichmentCapability")
 	}
 }

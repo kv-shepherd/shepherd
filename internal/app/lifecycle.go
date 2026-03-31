@@ -14,7 +14,7 @@ import (
 
 // Start starts all background services (River workers, health checker).
 func (a *Application) Start(ctx context.Context) error {
-	if a.DB != nil && a.DB.RiverClient != nil {
+	if a.Config != nil && a.Config.River.ConsumeJobs && a.DB != nil && a.DB.RiverClient != nil {
 		if err := a.DB.RiverClient.Start(ctx); err != nil {
 			return fmt.Errorf("start river client: %w", err)
 		}

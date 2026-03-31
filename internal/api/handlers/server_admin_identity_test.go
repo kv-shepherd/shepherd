@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -211,6 +212,57 @@ func TestAdminUserRoleBindingAndAuthProviderCRUD(t *testing.T) {
 	}
 }
 
+func TestDeleteAuthProviderReturnsConflictWhenUsersRemainLinked(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+
+	createProviderCtx, createProviderW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/auth-providers",
+		`{"name":"Legacy Corp SSO","auth_type":"oidc","enabled":true,"config":{"issuer":"https://sso.example.com","client_id":"shepherd","client_secret":"secret"}}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.CreateAuthProvider(createProviderCtx)
+	if createProviderW.Code != http.StatusCreated {
+		t.Fatalf("create provider status = %d, want %d, body=%s", createProviderW.Code, http.StatusCreated, createProviderW.Body.String())
+	}
+	var providerRecord generated.AuthProvider
+	mustDecodeJSON(t, createProviderW.Body.Bytes(), &providerRecord)
+
+	if _, err := client.User.Create().
+		SetID("linked-user-auth-provider-conflict").
+		SetUsername("linked.user").
+		SetDisplayName("Linked User").
+		SetPasswordHash("not-used-in-this-test").
+		SetEnabled(true).
+		SetAuthProviderID(providerRecord.Id).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create linked user: %v", err)
+	}
+
+	deleteProviderCtx, deleteProviderW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/auth-providers/"+providerRecord.Id,
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.DeleteAuthProvider(deleteProviderCtx, providerRecord.Id)
+	if got := deleteProviderCtx.Writer.Status(); got != http.StatusConflict {
+		t.Fatalf("delete provider status = %d, want %d, body=%s", got, http.StatusConflict, deleteProviderW.Body.String())
+	}
+
+	var apiErr generated.Error
+	mustDecodeJSON(t, deleteProviderW.Body.Bytes(), &apiErr)
+	if apiErr.Code != "AUTH_PROVIDER_IN_USE" {
+		t.Fatalf("delete provider error code = %q, want %q", apiErr.Code, "AUTH_PROVIDER_IN_USE")
+	}
+}
+
 func TestUserRoleBinding_IncludesRoleAndScopeDisplayNames(t *testing.T) {
 	t.Parallel()
 
@@ -407,9 +459,135 @@ func TestListUsers_SupportsSearch(t *testing.T) {
 	if len(users.Items) != 1 || users.Items[0].Username != "carol" {
 		t.Fatalf("search users = %+v, want only carol", users.Items)
 	}
+
+	quotedCtx, quotedW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		`/admin/users?page=1&per_page=20&search=display_name:"Alice%20Zhang"`,
+		"",
+		"admin-1",
+		[]string{"rbac:read"},
+	)
+	srv.ListUsers(quotedCtx, generated.ListUsersParams{
+		Page:    1,
+		PerPage: 20,
+		Search:  `display_name:"Alice Zhang"`,
+	})
+	if quotedW.Code != http.StatusOK {
+		t.Fatalf("quoted list users search status = %d, want %d, body=%s", quotedW.Code, http.StatusOK, quotedW.Body.String())
+	}
+
+	mustDecodeJSON(t, quotedW.Body.Bytes(), &users)
+	if len(users.Items) != 1 || users.Items[0].Username != "alice" {
+		t.Fatalf("quoted search users = %+v, want only alice", users.Items)
+	}
 }
 
-func TestAuthProviderConfigSecretsAreEncryptedAndSanitized(t *testing.T) {
+func TestListUsers_UsesObservedProfileFieldsForColumnsAndSearch(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	providerEnt, err := client.AuthProvider.Create().
+		SetID("provider-users-profile-fields").
+		SetName("corp-directory").
+		SetAuthType("generic").
+		SetConfig(map[string]interface{}{}).
+		SetEnabled(true).
+		SetSortOrder(0).
+		SetCreatedBy("test").
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create auth provider: %v", err)
+	}
+
+	userEnt, err := client.User.Create().
+		SetID("user-profile-search").
+		SetUsername("alice.directory@example.com").
+		SetDisplayName("Alice Directory").
+		SetEmail("alice.directory@example.com").
+		SetEnabled(true).
+		SetAuthProviderID(providerEnt.ID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	if _, err := client.UserDirectoryProfile.Create().
+		SetID("profile-user-profile-search").
+		SetUserID(userEnt.ID).
+		SetAttributes(map[string]interface{}{
+			"department": "Engineering",
+			"section":    "Platform",
+			"location":   "Site A",
+		}).
+		SetLastSyncedAt(time.Now().UTC()).
+		SetUser(userEnt).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create user directory profile: %v", err)
+	}
+
+	searchCtx, searchW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/users?page=1&per_page=20&search=department:Engineering",
+		"",
+		"admin-1",
+		[]string{"rbac:read"},
+	)
+	srv.ListUsers(searchCtx, generated.ListUsersParams{
+		Page:    1,
+		PerPage: 20,
+		Search:  "department:Engineering",
+	})
+	if searchW.Code != http.StatusOK {
+		t.Fatalf("list users search status = %d, want %d, body=%s", searchW.Code, http.StatusOK, searchW.Body.String())
+	}
+
+	var users generated.UserList
+	mustDecodeJSON(t, searchW.Body.Bytes(), &users)
+	if len(users.Items) != 1 || users.Items[0].Username != "alice.directory@example.com" {
+		t.Fatalf("search users = %+v, want only alice.directory@example.com", users.Items)
+	}
+	if got, ok := users.Items[0].ProfileAttributes["department"].(string); !ok || got != "Engineering" {
+		t.Fatalf("profile_attributes[department] = %#v, want %q", users.Items[0].ProfileAttributes["department"], "Engineering")
+	}
+	if got, ok := users.Items[0].ProfileAttributes["section"].(string); !ok || got != "Platform" {
+		t.Fatalf("profile_attributes[section] = %#v, want %q", users.Items[0].ProfileAttributes["section"], "Platform")
+	}
+	if got, ok := users.Items[0].ProfileAttributes["location"].(string); !ok || got != "Site A" {
+		t.Fatalf("profile_attributes[location] = %#v, want %q", users.Items[0].ProfileAttributes["location"], "Site A")
+	}
+	if len(users.ProfileFields) != 3 {
+		t.Fatalf("profile_fields len = %d, want 3", len(users.ProfileFields))
+	}
+	if got := []string{users.ProfileFields[0].Key, users.ProfileFields[1].Key, users.ProfileFields[2].Key}; !slices.Equal(got, []string{"department", "location", "section"}) {
+		t.Fatalf("profile field keys = %v, want [department location section]", got)
+	}
+
+	observedSearchCtx, observedSearchW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/users?page=1&per_page=20&search=location:Site%20A",
+		"",
+		"admin-1",
+		[]string{"rbac:read"},
+	)
+	srv.ListUsers(observedSearchCtx, generated.ListUsersParams{
+		Page:    1,
+		PerPage: 20,
+		Search:  "location:\"Site A\"",
+	})
+	if observedSearchW.Code != http.StatusOK {
+		t.Fatalf("observed field search status = %d, want %d, body=%s", observedSearchW.Code, http.StatusOK, observedSearchW.Body.String())
+	}
+	var observedUsers generated.UserList
+	mustDecodeJSON(t, observedSearchW.Body.Bytes(), &observedUsers)
+	if len(observedUsers.Items) != 1 || observedUsers.Items[0].Username != "alice.directory@example.com" {
+		t.Fatalf("observed field search users = %+v, want only alice.directory@example.com", observedUsers.Items)
+	}
+}
+
+func TestAuthProviderConfigSecretsStayEncryptedAndRevealOnlyForEditableResponses(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newAdminIdentityTestServer(t)
@@ -438,8 +616,8 @@ func TestAuthProviderConfigSecretsAreEncryptedAndSanitized(t *testing.T) {
 
 	var created generated.AuthProvider
 	mustDecodeJSON(t, createW.Body.Bytes(), &created)
-	if got := created.Config["client_secret"]; got != provider.AuthProviderProtectedFieldMask {
-		t.Fatalf("create response client_secret = %#v, want placeholder", got)
+	if got := created.Config["client_secret"]; got != "top-secret" {
+		t.Fatalf("create response client_secret = %#v, want original secret", got)
 	}
 
 	stored, err := client.AuthProvider.Get(t.Context(), created.Id)
@@ -469,8 +647,26 @@ func TestAuthProviderConfigSecretsAreEncryptedAndSanitized(t *testing.T) {
 	if len(listResp.Items) != 1 {
 		t.Fatalf("listed auth providers = %d, want 1", len(listResp.Items))
 	}
-	if got := listResp.Items[0].Config["client_secret"]; got != provider.AuthProviderProtectedFieldMask {
-		t.Fatalf("list response client_secret = %#v, want placeholder", got)
+	if got := listResp.Items[0].Config["client_secret"]; got != "top-secret" {
+		t.Fatalf("editable list response client_secret = %#v, want original secret", got)
+	}
+
+	readOnlyListCtx, readOnlyListW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/auth-providers",
+		"",
+		"reader-1",
+		[]string{"auth_provider:read"},
+	)
+	srv.ListAuthProviders(readOnlyListCtx)
+	if readOnlyListW.Code != http.StatusOK {
+		t.Fatalf("read-only list providers status = %d, want %d, body=%s", readOnlyListW.Code, http.StatusOK, readOnlyListW.Body.String())
+	}
+	var readOnlyListResp generated.AuthProviderList
+	mustDecodeJSON(t, readOnlyListW.Body.Bytes(), &readOnlyListResp)
+	if got := readOnlyListResp.Items[0].Config["client_secret"]; got != provider.AuthProviderProtectedFieldMask {
+		t.Fatalf("read-only list response client_secret = %#v, want placeholder", got)
 	}
 
 	updateCtx, updateW := newAuthedGinContext(
@@ -727,7 +923,7 @@ func TestListAuthProviderTypesAndRejectUnknownType(t *testing.T) {
 	for _, item := range listResp.Items {
 		typeKeys = append(typeKeys, item.Type)
 	}
-	for _, expected := range []string{"generic", "oidc", "ldap", "upstream_assertion"} {
+	for _, expected := range []string{"generic", "oidc", "ldap", "sso", "wecom"} {
 		if !slices.Contains(typeKeys, expected) {
 			t.Fatalf("provider type list missing %q: %#v", expected, typeKeys)
 		}

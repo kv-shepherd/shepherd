@@ -779,6 +779,29 @@ func HasDirectoryProfileWith(preds ...predicate.UserDirectoryProfile) predicate.
 	})
 }
 
+// HasPreferences applies the HasEdge predicate on the "preferences" edge.
+func HasPreferences() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, PreferencesTable, PreferencesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasPreferencesWith applies the HasEdge predicate on the "preferences" edge with a given conditions (other predicates).
+func HasPreferencesWith(preds ...predicate.UserPreference) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newPreferencesStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasExternalCohortGrants applies the HasEdge predicate on the "external_cohort_grants" edge.
 func HasExternalCohortGrants() predicate.User {
 	return predicate.User(func(s *sql.Selector) {

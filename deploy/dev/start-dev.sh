@@ -121,6 +121,28 @@ compute_allowed_dev_origins() {
     '
 }
 
+append_dev_origin_host() {
+    local csv="$1"
+    local candidate_url="$2"
+    if [[ -z "${candidate_url}" ]]; then
+        printf "%s" "${csv}"
+        return 0
+    fi
+    CSV_INPUT="${csv}" CANDIDATE_URL="${candidate_url}" node -e '
+        const csv = process.env.CSV_INPUT || "";
+        const raw = process.env.CANDIDATE_URL || "";
+        const values = csv.split(",").map(v => v.trim()).filter(Boolean);
+        try {
+            const parsed = new URL(raw);
+            const host = parsed.hostname;
+            if (host && !values.some(v => v.toLowerCase() === host.toLowerCase())) {
+                values.push(host);
+            }
+        } catch {}
+        process.stdout.write(values.join(","));
+    '
+}
+
 compute_allowed_dev_origin_urls() {
     DEV_FRONTEND_PORT="${DEV_FRONTEND_PORT}" DEV_INGRESS_PORT="${DEV_INGRESS_PORT}" DEV_HTTPS_INGRESS_PORT="${DEV_HTTPS_INGRESS_PORT}" node -e '
         const os = require("os");
@@ -367,6 +389,7 @@ start_host_frontend() {
 
     local allowed_origins=""
     allowed_origins="$(compute_allowed_dev_origins)"
+    allowed_origins="$(append_dev_origin_host "${allowed_origins}" "${DEV_PUBLIC_BASE_URL}")"
     local next_args=()
     if [[ "${DEV_FRONTEND_BUILDER}" == "webpack" ]]; then
         next_args+=(--webpack)

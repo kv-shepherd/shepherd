@@ -68,6 +68,8 @@ type Tx struct {
 	User *UserClient
 	// UserDirectoryProfile is the client for interacting with the UserDirectoryProfile builders.
 	UserDirectoryProfile *UserDirectoryProfileClient
+	// UserPreference is the client for interacting with the UserPreference builders.
+	UserPreference *UserPreferenceClient
 	// VM is the client for interacting with the VM builders.
 	VM *VMClient
 	// VMRevision is the client for interacting with the VMRevision builders.
@@ -231,6 +233,7 @@ func (tx *Tx) init() {
 	tx.Ticket = NewTicketClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.UserDirectoryProfile = NewUserDirectoryProfileClient(tx.config)
+	tx.UserPreference = NewUserPreferenceClient(tx.config)
 	tx.VM = NewVMClient(tx.config)
 	tx.VMRevision = NewVMRevisionClient(tx.config)
 }

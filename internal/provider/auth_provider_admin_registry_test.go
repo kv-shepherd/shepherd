@@ -122,20 +122,3 @@ func TestGenericAuthProviderBuildsScheduledDirectoryEnrichmentPlan(t *testing.T)
 		t.Fatalf("plan.ProviderRequest = %#v, want selected_usernames", plan.ProviderRequest)
 	}
 }
-
-func TestUpstreamAssertionAuthProviderSupportsRuntimeCapability(t *testing.T) {
-	adapter := ResolveAuthProviderAdminAdapter("upstream_assertion")
-	if adapter == nil {
-		t.Fatal("upstream_assertion auth provider adapter is nil")
-	}
-	if _, ok := adapter.(AuthRuntimeCapability); !ok {
-		t.Fatal("upstream_assertion auth provider adapter does not implement AuthRuntimeCapability")
-	}
-	describer, ok := adapter.(AuthRuntimeDescriber)
-	if !ok {
-		t.Fatal("upstream_assertion auth provider adapter does not implement AuthRuntimeDescriber")
-	}
-	if got := describer.DescribeRuntimeAuth().DisplayName; got == "" {
-		t.Fatal("runtime descriptor display name is empty")
-	}
-}

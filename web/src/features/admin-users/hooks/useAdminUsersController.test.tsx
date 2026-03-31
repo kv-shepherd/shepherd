@@ -283,6 +283,41 @@ describe('useAdminUsersController', () => {
     });
   });
 
+  it('passes directory search text through the admin users query', async () => {
+    useApiMutationMock.mockImplementation(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }));
+    useApiActionMock.mockImplementation(() => ({ mutate: vi.fn(), isPending: false }));
+    apiGetMock.mockResolvedValue({
+      data: { items: [], pagination: { total: 0, page: 1, per_page: 20, total_pages: 0 } },
+      error: undefined,
+      response: new Response(),
+    });
+
+    const { result } = renderHook(() => useAdminUsersController({ t }));
+
+    act(() => {
+      result.current.setSearch('department:Engineering');
+    });
+
+    const usersCall = [...useApiGetMock.mock.calls]
+      .reverse()
+      .find((call) => Array.isArray(call[0]) && call[0][0] === 'admin-users');
+
+    expect(usersCall?.[0]).toEqual(['admin-users', 1, 20, 'department:Engineering']);
+
+    const fetcher = usersCall?.[1] as (() => Promise<unknown>) | undefined;
+    await fetcher?.();
+
+    expect(apiGetMock).toHaveBeenCalledWith('/admin/users', {
+      params: {
+        query: {
+          page: 1,
+          per_page: 20,
+          search: 'department:Engineering',
+        },
+      },
+    });
+  });
+
   it('closes and refreshes role bindings after creating a binding', async () => {
     const createRoleBindingMutateAsync = vi.fn().mockResolvedValue({
       id: 'binding-1',

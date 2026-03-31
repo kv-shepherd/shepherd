@@ -17,6 +17,7 @@ interface SchemaProperty {
   items?: { type?: string };
   additionalProperties?: unknown;
   enum?: string[];
+  ["x-enum-labels"]?: Record<string, string>;
 }
 
 /**
@@ -50,6 +51,8 @@ interface SchemaConfigFormProps {
   showJsonFallback?: boolean;
   /** Optional translation namespace prefix for provider-specific schema labels */
   schemaNamespace?: string;
+  /** Whether to apply schema defaults when the form does not yet have a value */
+  applySchemaDefaults?: boolean;
 }
 
 function schemaTranslationCandidates(
@@ -86,7 +89,12 @@ function resolveSchemaEnumLabel(
   schemaNamespace: string | undefined,
   fieldKey: string,
   value: string,
+  property?: SchemaProperty,
 ) {
+  const explicitLabel = property?.["x-enum-labels"]?.[value];
+  if (explicitLabel && explicitLabel.trim() !== "") {
+    return explicitLabel;
+  }
   const candidates: string[] = [];
   if (schemaNamespace) {
     candidates.push(`${schemaNamespace}.${fieldKey}.options.${value}`);
@@ -113,6 +121,7 @@ export function SchemaConfigForm({
   namePrefix = "config",
   showJsonFallback = false,
   schemaNamespace,
+  applySchemaDefaults = false,
 }: SchemaConfigFormProps) {
   const { t } = useTranslation(["admin", "common"]);
 
@@ -131,7 +140,6 @@ export function SchemaConfigForm({
         isRequired: required.has(key),
       }));
   }, [schema]);
-
   // No schema or empty properties — show JSON fallback
   if (fields.length === 0) {
     if (!showJsonFallback) return null;
@@ -146,157 +154,157 @@ export function SchemaConfigForm({
     );
   }
 
+  const renderField = (field: (typeof fields)[number]) => {
+    const fieldName = [namePrefix, field.key];
+    const label = resolveSchemaFieldText(
+      t,
+      schemaNamespace,
+      field.key,
+      "label",
+      field.title || field.key,
+    );
+    const description = resolveSchemaFieldText(
+      t,
+      schemaNamespace,
+      field.key,
+      "description",
+      field.description || "",
+    );
+    const placeholder = resolveSchemaFieldText(
+      t,
+      schemaNamespace,
+      field.key,
+      "placeholder",
+      description,
+    );
+    const rules = field.isRequired
+      ? [
+          {
+            required: true,
+            message: t("authProviders.validation.required", {
+              field: label,
+              defaultValue: `${label} is required`,
+            }),
+          },
+        ]
+      : [];
+
+    if (field.format === "password") {
+      return (
+        <Form.Item
+          key={field.key}
+          name={fieldName}
+          label={label}
+          tooltip={description || undefined}
+          rules={rules}
+        >
+          <Input.Password
+            placeholder={placeholder}
+            autoComplete="new-password"
+          />
+        </Form.Item>
+      );
+    }
+
+    if (field.type === "boolean") {
+      return (
+        <Form.Item
+          key={field.key}
+          name={fieldName}
+          label={label}
+          tooltip={description || undefined}
+          valuePropName="checked"
+          initialValue={applySchemaDefaults ? field.default : undefined}
+        >
+          <Switch />
+        </Form.Item>
+      );
+    }
+
+    if (field.type === "array" && field.items?.type === "string") {
+      return (
+        <Form.Item
+          key={field.key}
+          name={fieldName}
+          label={label}
+          tooltip={description || undefined}
+          rules={rules}
+          initialValue={applySchemaDefaults ? field.default : undefined}
+        >
+          <Select
+            mode="tags"
+            style={{ width: "100%" }}
+            placeholder={placeholder}
+            tokenSeparators={[","]}
+          />
+        </Form.Item>
+      );
+    }
+
+    if (field.enum && field.enum.length > 0) {
+      return (
+        <Form.Item
+          key={field.key}
+          name={fieldName}
+          label={label}
+          tooltip={description || undefined}
+          rules={rules}
+          initialValue={applySchemaDefaults ? field.default : undefined}
+        >
+          <Select
+            options={field.enum.map((v) => ({
+              value: v,
+              label: resolveSchemaEnumLabel(t, schemaNamespace, field.key, v, field),
+            }))}
+          />
+        </Form.Item>
+      );
+    }
+
+    if (field.type === "object") {
+      return (
+        <Form.Item
+          key={field.key}
+          name={fieldName}
+          label={label}
+          tooltip={description || undefined}
+          rules={rules}
+          initialValue={
+            applySchemaDefaults
+              ? objectFieldInitialValue(field.default)
+              : undefined
+          }
+        >
+          <Input.TextArea
+            rows={4}
+            style={{ fontFamily: "monospace", fontSize: 13 }}
+            placeholder={placeholder || "{}"}
+          />
+        </Form.Item>
+      );
+    }
+
+    return (
+      <Form.Item
+        key={field.key}
+        name={fieldName}
+        label={label}
+        tooltip={description || undefined}
+        rules={rules}
+        initialValue={applySchemaDefaults ? field.default : undefined}
+      >
+        <Input
+          placeholder={
+            field.format === "uri" ? placeholder || "https://..." : placeholder || ""
+          }
+        />
+      </Form.Item>
+    );
+  };
+
   return (
     <div>
-      {fields.map((field) => {
-        const fieldName = [namePrefix, field.key];
-        const label = resolveSchemaFieldText(
-          t,
-          schemaNamespace,
-          field.key,
-          "label",
-          field.title || field.key,
-        );
-        const description = resolveSchemaFieldText(
-          t,
-          schemaNamespace,
-          field.key,
-          "description",
-          field.description || "",
-        );
-        const placeholder = resolveSchemaFieldText(
-          t,
-          schemaNamespace,
-          field.key,
-          "placeholder",
-          description,
-        );
-        const rules = field.isRequired
-          ? [
-              {
-                required: true,
-                message: t("authProviders.validation.required", {
-                  field: label,
-                  defaultValue: `${label} is required`,
-                }),
-              },
-            ]
-          : [];
-
-        // Password / secret fields
-        if (field.format === "password") {
-          return (
-            <Form.Item
-              key={field.key}
-              name={fieldName}
-              label={label}
-              tooltip={description || undefined}
-              rules={rules}
-            >
-              <Input.Password
-                placeholder={placeholder}
-                autoComplete="new-password"
-              />
-            </Form.Item>
-          );
-        }
-
-        // Boolean fields
-        if (field.type === "boolean") {
-          return (
-            <Form.Item
-              key={field.key}
-              name={fieldName}
-              label={label}
-              tooltip={description || undefined}
-              valuePropName="checked"
-              initialValue={field.default}
-            >
-              <Switch />
-            </Form.Item>
-          );
-        }
-
-        // Array of strings (tags input)
-        if (field.type === "array" && field.items?.type === "string") {
-          return (
-            <Form.Item
-              key={field.key}
-              name={fieldName}
-              label={label}
-              tooltip={description || undefined}
-              rules={rules}
-              initialValue={field.default}
-            >
-              <Select
-                mode="tags"
-                style={{ width: "100%" }}
-                placeholder={placeholder}
-                tokenSeparators={[","]}
-              />
-            </Form.Item>
-          );
-        }
-
-        // Enum fields
-        if (field.enum && field.enum.length > 0) {
-          return (
-            <Form.Item
-              key={field.key}
-              name={fieldName}
-              label={label}
-              tooltip={description || undefined}
-              rules={rules}
-              initialValue={field.default}
-            >
-              <Select
-                options={field.enum.map((v) => ({
-                  value: v,
-                  label: resolveSchemaEnumLabel(t, schemaNamespace, field.key, v),
-                }))}
-              />
-            </Form.Item>
-          );
-        }
-
-        // Object fields — JSON textarea fallback
-        if (field.type === "object") {
-          return (
-            <Form.Item
-              key={field.key}
-              name={fieldName}
-              label={label}
-              tooltip={description || undefined}
-              rules={rules}
-              initialValue={objectFieldInitialValue(field.default)}
-            >
-              <Input.TextArea
-                rows={4}
-                style={{ fontFamily: "monospace", fontSize: 13 }}
-                placeholder={placeholder || "{}"}
-              />
-            </Form.Item>
-          );
-        }
-
-        // Default: string input with optional URI format hint
-        return (
-          <Form.Item
-            key={field.key}
-            name={fieldName}
-            label={label}
-            tooltip={description || undefined}
-            rules={rules}
-            initialValue={field.default}
-          >
-            <Input
-              placeholder={
-                field.format === "uri" ? placeholder || "https://..." : placeholder || ""
-              }
-            />
-          </Form.Item>
-        );
-      })}
+      {fields.map(renderField)}
 
       <Divider dashed style={{ margin: "12px 0" }} />
       <Alert

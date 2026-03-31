@@ -428,6 +428,10 @@ func TestGetAuthProviderDirectorySchedule_ComputesNextAndLastRun(t *testing.T) {
 			JoinKeyType:      provider.DirectoryJoinKeyUsername,
 			ScheduleCron:     "0 * * * *",
 			ScheduleTimezone: "UTC",
+			ProviderRequest: map[string]interface{}{
+				"department_names": []string{"Engineering", "Finance"},
+				"include_nested":   true,
+			},
 		},
 	})
 	providerRow, err := client.AuthProvider.Create().
@@ -481,6 +485,9 @@ func TestGetAuthProviderDirectorySchedule_ComputesNextAndLastRun(t *testing.T) {
 	}
 	if resp.JoinKeyType != generated.Username {
 		t.Fatalf("join_key_type = %q, want %q", resp.JoinKeyType, generated.Username)
+	}
+	if got, ok := resp.ProviderRequest["include_nested"].(bool); !ok || !got {
+		t.Fatalf("provider_request include_nested = %#v, want true", resp.ProviderRequest["include_nested"])
 	}
 	if resp.LastJobId != "directory-schedule-job-1" {
 		t.Fatalf("last_job_id = %q, want %q", resp.LastJobId, "directory-schedule-job-1")
@@ -612,6 +619,9 @@ func TestGetAuthProviderDirectorySyncJob_ReturnsRequestSnapshotAndCanonicalSumma
 	mustDecodeJSON(t, reqW.Body.Bytes(), &resp)
 	if resp.ResultSummary.CreateCount != 1 || resp.ResultSummary.UpdateCount != 1 || resp.ResultSummary.BlockedCount != 1 {
 		t.Fatalf("result_summary = %#v, want create:1 update:1 blocked:1", resp.ResultSummary)
+	}
+	if resp.Errors == nil || len(resp.Errors) != 0 {
+		t.Fatalf("errors = %#v, want empty array", resp.Errors)
 	}
 	if got, ok := resp.RequestSnapshot["include_nested"].(bool); !ok || !got {
 		t.Fatalf("request_snapshot include_nested = %#v, want true", resp.RequestSnapshot["include_nested"])

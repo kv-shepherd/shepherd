@@ -92,9 +92,10 @@ Use the following rule of thumb when new work arrives:
 
 Applied example:
 
-- generic WeCom multi-department sync behavior belongs in the public host
-- enterprise-specific department-name defaults or local field mapping belong in
-  the private repository
+- generic provider seams, callback contracts, and open-standard providers
+  belong in the public host
+- enterprise-specific upstream SSO, enterprise directory enrichment, or local
+  field mapping belong in the private repository
 - runtime auth-provider rows remain runtime/business configuration rather than
   deployment-time `config.yaml`
 
