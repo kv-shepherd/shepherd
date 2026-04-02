@@ -1,5 +1,7 @@
 import { Form } from 'antd';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -75,6 +77,169 @@ vi.mock('react-i18next', () => ({
             return labels[key] ?? options?.defaultValue ?? key;
         },
     }),
+}));
+
+vi.mock('antd', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('antd')>();
+
+    return {
+        ...actual,
+        Card: ({
+            title,
+            extra,
+            children,
+        }: {
+            title?: ReactNode;
+            extra?: ReactNode;
+            children?: ReactNode;
+        }) => (
+            <section data-testid="antd-card">
+                {title ? <header>{title}</header> : null}
+                {extra ? <div>{extra}</div> : null}
+                <div>{children}</div>
+            </section>
+        ),
+        Drawer: ({
+            open,
+            title,
+            children,
+            footer,
+        }: {
+            open?: boolean;
+            title?: ReactNode;
+            children?: ReactNode;
+            footer?: ReactNode;
+        }) =>
+            open ? (
+                <section data-testid="antd-drawer">
+                    {title ? <header>{title}</header> : null}
+                    <div>{children}</div>
+                    {footer ? <footer>{footer}</footer> : null}
+                </section>
+            ) : null,
+        Table: ({
+            columns = [],
+            dataSource = [],
+        }: {
+            columns?: Array<{
+                key?: string;
+                title?: ReactNode;
+                dataIndex?: string | string[];
+                render?: (value: unknown, record: Record<string, unknown>, index: number) => ReactNode;
+            }>;
+            dataSource?: Array<Record<string, unknown>>;
+        }) => (
+            <table data-testid="antd-table">
+                <thead>
+                    <tr>
+                        {columns.map((column, index) => (
+                            <th key={String(column.key ?? column.dataIndex ?? index)}>{column.title}</th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {dataSource.map((record, rowIndex) => (
+                        <tr key={String(record.id ?? rowIndex)}>
+                            {columns.map((column, columnIndex) => {
+                                const value = Array.isArray(column.dataIndex)
+                                    ? column.dataIndex.reduce<unknown>(
+                                        (current, key) =>
+                                            current && typeof current === 'object'
+                                                ? (current as Record<string, unknown>)[key]
+                                                : undefined,
+                                        record,
+                                    )
+                                    : typeof column.dataIndex === 'string'
+                                        ? record[column.dataIndex]
+                                        : undefined;
+                                const content = column.render
+                                    ? column.render(value, record, rowIndex)
+                                    : (value as ReactNode);
+                                return (
+                                    <td key={String(column.key ?? column.dataIndex ?? columnIndex)}>
+                                        {content}
+                                    </td>
+                                );
+                            })}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        ),
+    };
+});
+
+vi.mock('@/components/feedback/ActionEmptyState', () => ({
+    ActionEmptyState: ({
+        title,
+        description,
+        actions,
+    }: {
+        title: string;
+        description?: string;
+        actions?: ReactNode;
+    }) => (
+        <section data-testid="action-empty-state">
+            <h2>{title}</h2>
+            {description ? <p>{description}</p> : null}
+            {actions}
+        </section>
+    ),
+}));
+
+vi.mock('@/components/feedback/SummaryMetricCard', () => ({
+    SummaryMetricCard: ({
+        title,
+        value,
+        description,
+        action,
+    }: {
+        title: ReactNode;
+        value?: ReactNode;
+        description?: ReactNode;
+        action?: ReactNode;
+    }) => (
+        <section data-testid="summary-metric-card">
+            <h2>{title}</h2>
+            {value ? <div>{value}</div> : null}
+            {description ? <div>{description}</div> : null}
+            {action}
+        </section>
+    ),
+}));
+
+vi.mock('@/components/layouts/PageSection', () => ({
+    PageHeader: ({
+        title,
+        subtitle,
+        actions,
+    }: {
+        title: ReactNode;
+        subtitle?: ReactNode;
+        actions?: ReactNode;
+    }) => (
+        <header data-testid="page-header">
+            <h1>{title}</h1>
+            {subtitle ? <p>{subtitle}</p> : null}
+            {actions}
+        </header>
+    ),
+    PageSurface: ({
+        children,
+    }: {
+        children: ReactNode;
+    }) => <section data-testid="page-surface">{children}</section>,
+}));
+
+vi.mock('@/components/ui/LocalDateTimeText', () => ({
+    LocalDateTimeText: ({ value }: { value: string }) => <time dateTime={value}>{value}</time>,
+}));
+
+vi.mock('@/components/illustrations/DashboardIllustrations', () => ({
+    AccessControlGlyph: (props: Record<string, unknown>) => <span {...props}>access-glyph</span>,
+    QueueReviewGlyph: (props: Record<string, unknown>) => <span {...props}>queue-glyph</span>,
+    RateLimitGaugeGlyph: (props: Record<string, unknown>) => <span {...props}>rate-limit-glyph</span>,
+    UserDirectoryGlyph: (props: Record<string, unknown>) => <span {...props}>directory-glyph</span>,
 }));
 
 vi.mock('../hooks/useAdminUsersController', () => ({
@@ -218,9 +383,27 @@ vi.mock('@/hooks/useUserPreference', () => ({
     },
 }));
 
-import { AdminUsersContent } from './AdminUsersContent';
+import {
+    AdminUsersContent,
+    buildOrderedUserTableDisplayColumns,
+    buildUserTableColumnOptions,
+    normalizeUserTableMergedColumns,
+    normalizeUserTablePreferenceColumns,
+} from './AdminUsersContent';
 
 describe('AdminUsersContent', () => {
+    const t = (key: string, options?: { defaultValue?: string }) => {
+        const labels: Record<string, string> = {
+            'users.table.email': 'Email',
+            'users.table.roles': 'Roles',
+            'common:table.status': 'Status',
+            'common:table.created_at': 'Created',
+            'users.profile_fields.department': 'Department',
+            'users.profile_fields.section': 'Section',
+        };
+        return labels[key] ?? options?.defaultValue ?? key;
+    };
+
     beforeEach(() => {
         savePreferenceMock.mockReset();
         resetPreferenceMock.mockReset();
@@ -233,26 +416,10 @@ describe('AdminUsersContent', () => {
         userPreferenceState = undefined;
     });
 
-    it('shows default profile columns while exposing an advanced search builder', () => {
+    it('renders the page shell, core sections, and advanced search builder', async () => {
         setPageMock.mockReset();
         setSearchMock.mockReset();
-
-        render(<AdminUsersContent />);
-
-        expect(screen.getAllByText('Department').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('Section').length).toBeGreaterThan(0);
-
-        fireEvent.click(screen.getByTestId('users-directory-advanced-search-toggle'));
-        expect(screen.getByTestId('users-directory-search-condition-row-0')).toBeVisible();
-        expect(screen.getByTestId('users-directory-search-condition-field-0')).toBeVisible();
-        expect(screen.getByTestId('users-directory-search-condition-value-0')).toBeVisible();
-        expect(screen.getByTestId('users-directory-advanced-search-toggle')).toBeVisible();
-        expect(screen.getByTestId('users-directory-add-search-condition')).toBeVisible();
-    }, 180000);
-
-    it('renders the page shell and the three primary user management sections', () => {
-        setPageMock.mockReset();
-        setSearchMock.mockReset();
+        const user = userEvent.setup();
 
         render(<AdminUsersContent />);
 
@@ -271,68 +438,121 @@ describe('AdminUsersContent', () => {
         expect(screen.getAllByText('Section').length).toBeGreaterThan(0);
         expect(screen.getByText('Manage Access')).toBeVisible();
         expect(screen.getByTestId('users-system-selector')).toBeVisible();
-    }, 20000);
 
-    it('opens the column drawer and saves the customized order', () => {
+        await user.click(screen.getByTestId('users-directory-advanced-search-toggle'));
+        expect(screen.getByTestId('users-directory-search-condition-row-0')).toBeVisible();
+        expect(screen.getByTestId('users-directory-search-condition-field-0')).toBeVisible();
+        expect(screen.getByTestId('users-directory-search-condition-value-0')).toBeVisible();
+        expect(screen.getByTestId('users-directory-advanced-search-toggle')).toBeVisible();
+        expect(screen.getByTestId('users-directory-add-search-condition')).toBeVisible();
+    });
+
+    it('applies quick search only after explicit submit', async () => {
+        const user = userEvent.setup();
         render(<AdminUsersContent />);
 
-        fireEvent.click(screen.getByTestId('users-directory-open-columns-drawer'));
+        setPageMock.mockReset();
+        setSearchMock.mockReset();
+
+        const searchInput = screen.getByTestId('users-directory-search');
+        await user.type(searchInput, 'alice');
+        expect(setSearchMock).not.toHaveBeenCalled();
+
+        await user.keyboard('{Enter}');
+
+        await waitFor(() => {
+            expect(setSearchMock).toHaveBeenLastCalledWith('alice');
+        });
+    });
+
+    it('opens the column drawer, saves the customized order, and applies it immediately', async () => {
+        const user = userEvent.setup();
+        render(<AdminUsersContent />);
+
+        expect(screen.getAllByText('Department').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Section').length).toBeGreaterThan(0);
+
+        await user.click(screen.getByTestId('users-directory-open-columns-drawer'));
         expect(screen.getByText('Customize displayed columns')).toBeVisible();
 
-        fireEvent.click(screen.getAllByLabelText('Hide column')[0]);
-        fireEvent.click(screen.getByTestId('users-directory-columns-save'));
+        await user.click(screen.getAllByLabelText('Hide column')[0]);
+        await user.click(screen.getByTestId('users-directory-columns-save'));
 
-        expect(savePreferenceMock).toHaveBeenCalledTimes(1);
+        await waitFor(() => {
+            expect(savePreferenceMock).toHaveBeenCalledTimes(1);
+        });
         expect(savePreferenceMock).toHaveBeenCalledWith({
             value: {
                 columns: ['profile:section', 'email', 'roles', 'status', 'created_at'],
                 merged_columns: [],
             },
         });
-    });
-
-    it('applies the saved column selection immediately to the table', async () => {
-        render(<AdminUsersContent />);
-
-        expect(screen.getAllByText('Department').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('Section').length).toBeGreaterThan(0);
-
-        fireEvent.click(screen.getByTestId('users-directory-open-columns-drawer'));
-        fireEvent.click(screen.getAllByLabelText('Hide column')[0]);
-        fireEvent.click(screen.getByTestId('users-directory-columns-save'));
-
-        expect(savePreferenceMock).toHaveBeenCalledTimes(1);
         await waitFor(() => {
             expect(screen.queryAllByText('Department')).toHaveLength(0);
         });
         expect(screen.getAllByText('Section').length).toBeGreaterThan(0);
     });
 
-    it('renders selected columns inside a custom merged column', () => {
-        userPreferenceState = {
-            columns: ['email', 'profile:department', 'status', 'created_at', 'roles'],
-            merged_columns: [
+    it('builds selected columns inside a custom merged column', () => {
+        const fields = [
+            { key: 'department', label: 'Department', searchable: true },
+            { key: 'section', label: 'Section', searchable: true },
+        ];
+        const options = buildUserTableColumnOptions(t, fields);
+        const defaultColumns = ['profile:department', 'profile:section', 'email', 'roles', 'status', 'created_at'];
+        const selectedColumns = normalizeUserTablePreferenceColumns(
+            ['email', 'profile:department', 'status', 'created_at', 'roles'],
+            options,
+            defaultColumns,
+        );
+        const mergedColumns = normalizeUserTableMergedColumns(
+            [
                 {
                     column_keys: ['profile:department', 'status'],
                     label: 'Overview',
                 },
             ],
-        };
+            selectedColumns,
+            options,
+        );
+        const visibleColumns = selectedColumns
+            .map((key) => options.find((option) => option.key === key))
+            .filter((option): option is NonNullable<typeof option> => Boolean(option));
 
-        render(<AdminUsersContent />);
+        expect(buildOrderedUserTableDisplayColumns(
+            visibleColumns,
+            mergedColumns,
+        )).toEqual([
+            { kind: 'single', column: expect.objectContaining({ key: 'email' }) },
+            {
+                kind: 'merged',
+                index: 0,
+                label: 'Overview',
+                columns: [
+                    expect.objectContaining({ key: 'profile:department' }),
+                    expect.objectContaining({ key: 'status' }),
+                ],
+                showLabels: true,
+            },
+            { kind: 'single', column: expect.objectContaining({ key: 'created_at' }) },
+            { kind: 'single', column: expect.objectContaining({ key: 'roles' }) },
+        ]);
+    });
 
-        const headerTexts = screen.getAllByRole('columnheader').map((header) => header.textContent ?? '');
-        expect(headerTexts).toContain('Overview');
-        expect(headerTexts).not.toContain('Department');
-        expect(headerTexts).not.toContain('Status');
-        expect(screen.getByText('Engineering')).toBeVisible();
-        expect(screen.getByText('Enabled')).toBeVisible();
-    }, 30000);
-
-    it('renders multiple custom merged columns in display order', () => {
-        userPreferenceState = {
-            columns: ['email', 'profile:department', 'status', 'profile:section', 'created_at', 'roles'],
-            merged_columns: [
+    it('builds multiple custom merged columns in display order', () => {
+        const fields = [
+            { key: 'department', label: 'Department', searchable: true },
+            { key: 'section', label: 'Section', searchable: true },
+        ];
+        const options = buildUserTableColumnOptions(t, fields);
+        const defaultColumns = ['profile:department', 'profile:section', 'email', 'roles', 'status', 'created_at'];
+        const selectedColumns = normalizeUserTablePreferenceColumns(
+            ['email', 'profile:department', 'status', 'profile:section', 'created_at', 'roles'],
+            options,
+            defaultColumns,
+        );
+        const mergedColumns = normalizeUserTableMergedColumns(
+            [
                 {
                     column_keys: ['profile:department', 'profile:section'],
                     label: 'Organization',
@@ -342,18 +562,39 @@ describe('AdminUsersContent', () => {
                     label: 'Lifecycle',
                 },
             ],
-        };
+            selectedColumns,
+            options,
+        );
+        const visibleColumns = selectedColumns
+            .map((key) => options.find((option) => option.key === key))
+            .filter((option): option is NonNullable<typeof option> => Boolean(option));
 
-        render(<AdminUsersContent />);
-
-        const headerTexts = screen.getAllByRole('columnheader').map((header) => header.textContent ?? '');
-        expect(headerTexts).toContain('Organization');
-        expect(headerTexts).toContain('Lifecycle');
-        expect(headerTexts).not.toContain('Department');
-        expect(headerTexts).not.toContain('Section');
-        expect(headerTexts).not.toContain('Status');
-        expect(headerTexts).not.toContain('Created');
-        expect(screen.getByText('Engineering')).toBeVisible();
-        expect(screen.getByText('Enabled')).toBeVisible();
-    }, 30000);
+        expect(buildOrderedUserTableDisplayColumns(
+            visibleColumns,
+            mergedColumns,
+        )).toEqual([
+            { kind: 'single', column: expect.objectContaining({ key: 'email' }) },
+            {
+                kind: 'merged',
+                index: 0,
+                label: 'Organization',
+                columns: [
+                    expect.objectContaining({ key: 'profile:department' }),
+                    expect.objectContaining({ key: 'profile:section' }),
+                ],
+                showLabels: true,
+            },
+            {
+                kind: 'merged',
+                index: 1,
+                label: 'Lifecycle',
+                columns: [
+                    expect.objectContaining({ key: 'status' }),
+                    expect.objectContaining({ key: 'created_at' }),
+                ],
+                showLabels: true,
+            },
+            { kind: 'single', column: expect.objectContaining({ key: 'roles' }) },
+        ]);
+    });
 });

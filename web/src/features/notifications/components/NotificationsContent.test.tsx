@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const controllerState = vi.hoisted(() => ({
@@ -50,8 +51,16 @@ vi.mock('../hooks/useNotificationsController', () => ({
                     message: 'A request is waiting for review.',
                     created_at: '2026-03-17T00:00:00Z',
                 },
+                {
+                    id: 'notif-2',
+                    read: true,
+                    type: 'VM_STATUS_CHANGE',
+                    title: 'VM migrated',
+                    message: 'The VM moved to another node.',
+                    created_at: '2026-03-17T01:00:00Z',
+                },
             ],
-            pagination: { total: 1, page: 1, per_page: 20 },
+            pagination: { total: 2, page: 1, per_page: 20 },
         },
         setUnreadOnly: vi.fn(),
         setPage: vi.fn(),
@@ -93,5 +102,17 @@ describe('NotificationsContent', () => {
         render(<NotificationsContent />);
 
         expect(screen.getByText('No notifications')).toBeVisible();
+    });
+
+    it('filters notifications with the shared quick search', () => {
+        render(<NotificationsContent />);
+
+        fireEvent.change(screen.getByTestId('notifications-quick-search'), {
+            target: { value: 'migrated' },
+        });
+        fireEvent.click(screen.getAllByRole('button', { name: /search/i })[0]);
+
+        expect(screen.getByText('VM migrated')).toBeVisible();
+        expect(screen.queryByText('Approval pending')).not.toBeInTheDocument();
     });
 });

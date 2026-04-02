@@ -10,12 +10,35 @@ import { SETUP_GUIDE_INVALIDATION_KEYS } from '@/features/setup-guide/queryKeys'
 import { api } from '@/lib/api/client';
 import { translateApiError } from '@/lib/api/errorMessage';
 
-import type { System, SystemCreateRequest, SystemList } from '../types';
+import type { System, SystemCreateRequest, SystemFilterOptions, SystemList } from '../types';
 import type { SystemUpdateRequest } from '../types';
 
 interface UseSystemsManagementControllerArgs {
     t: TFunction;
     onCreateSuccess?: (system: System, context: { isFirstSystem: boolean }) => boolean | void;
+}
+
+interface SystemSearchFilters {
+    search: string;
+    createdBy: string;
+    serviceId: string;
+    memberId: string;
+}
+
+const EMPTY_SYSTEM_SEARCH_FILTERS: SystemSearchFilters = {
+    search: '',
+    createdBy: '',
+    serviceId: '',
+    memberId: '',
+};
+
+function normalizeSystemSearchFilters(nextFilters: Partial<SystemSearchFilters>): SystemSearchFilters {
+    return {
+        search: nextFilters.search?.trim() ?? '',
+        createdBy: nextFilters.createdBy?.trim() ?? '',
+        serviceId: nextFilters.serviceId?.trim() ?? '',
+        memberId: nextFilters.memberId?.trim() ?? '',
+    };
 }
 
 export function useSystemsManagementController({
@@ -35,10 +58,26 @@ export function useSystemsManagementController({
     const [editForm] = Form.useForm<SystemUpdateRequest>();
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
+    const [filters, setFilters] = useState<SystemSearchFilters>(EMPTY_SYSTEM_SEARCH_FILTERS);
 
     const systemsQuery = useApiGet<SystemList>(
-        ['systems', page, pageSize],
-        () => api.GET('/systems', { params: { query: { page, per_page: pageSize } } })
+        ['systems', page, pageSize, filters.search, filters.createdBy, filters.serviceId, filters.memberId],
+        () => api.GET('/systems', {
+            params: {
+                query: {
+                    page,
+                    per_page: pageSize,
+                    ...(filters.search ? { search: filters.search } : {}),
+                    ...(filters.createdBy ? { created_by_exact: filters.createdBy } : {}),
+                    ...(filters.serviceId ? { service_id: filters.serviceId } : {}),
+                    ...(filters.memberId ? { member_id: filters.memberId } : {}),
+                },
+            },
+        })
+    );
+    const systemFilterOptionsQuery = useApiGet<SystemFilterOptions>(
+        ['systems', 'filter-options'],
+        () => api.GET('/systems/filter-options'),
     );
 
     const existingSystemsTotal =
@@ -116,6 +155,16 @@ export function useSystemsManagementController({
 
     const openCreateModal = () => {
         setCreateOpen(true);
+    };
+
+    const applyFilters = (nextFilters: Partial<SystemSearchFilters>) => {
+        setFilters(normalizeSystemSearchFilters(nextFilters));
+        setPage(1);
+    };
+
+    const clearFilters = () => {
+        setFilters(EMPTY_SYSTEM_SEARCH_FILTERS);
+        setPage(1);
     };
 
     const closeCreateModal = () => {
@@ -205,14 +254,20 @@ export function useSystemsManagementController({
         setDeleteConfirmName,
         form,
         editForm,
+        filters,
+        hasActiveFilters: Object.values(filters).some((value) => value !== ''),
         page,
         pageSize,
         setPage,
         setPageSize,
         data: systemsQuery.data,
+        systemFilterOptions: systemFilterOptionsQuery.data,
+        systemFilterOptionsLoading: systemFilterOptionsQuery.isLoading,
         isLoading: systemsQuery.isLoading,
         refetch: systemsQuery.refetch,
         openCreateModal,
+        applyFilters,
+        clearFilters,
         closeCreateModal,
         openDeleteModal,
         openEditModal,

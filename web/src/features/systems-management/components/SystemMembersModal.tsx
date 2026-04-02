@@ -118,14 +118,13 @@ export function SystemMembersModal({
         },
     ];
 
-    return (
+    return open ? (
         <Modal
             title={`${t('button.manage_members')}: ${systemName || ''}`}
-            open={open}
+            open={true}
             onCancel={onCancel}
             footer={null}
             width={700}
-            forceRender={true}
             data-testid="system-members-modal"
         >
             <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
@@ -161,51 +160,52 @@ export function SystemMembersModal({
                 }}
             />
 
-            <Modal
-                title={t('button.add_member')}
-                open={members.addMemberOpen}
-                onOk={() => {
-                    void members.submitAddMember();
-                }}
-                onCancel={members.closeAddMemberModal}
-                confirmLoading={members.addMemberPending}
-                forceRender={true}
-                data-testid="member-add-modal"
-            >
-                <Form form={members.addMemberForm} layout="vertical" name="add-system-member" preserve={false}>
-                    <Form.Item
-                        name="user_id"
-                        label={t('members.select_user', 'User')}
-                        rules={[{ required: true, message: t('validation.required') }]}
-                    >
-                        <Select
-                            showSearch
-                            placeholder={t('members.select_user_placeholder', 'Search for a user who is not yet a member')}
-                            data-testid="member-candidate-user-select"
-                            filterOption={false}
-                            loading={members.memberCandidatesLoading}
-                            searchValue={members.memberCandidateSearch}
-                            onSearch={members.setMemberCandidateSearch}
-                            options={memberCandidateOptions}
-                            notFoundContent={
-                                members.memberCandidatesLoading
-                                    ? t('message.loading')
-                                    : members.memberCandidateSearch.trim()
-                                        ? t('members.no_search_results', 'No matching users are available to add')
-                                        : t('members.no_addable_users', 'All visible users are already members of this system')
-                            }
-                        />
-                    </Form.Item>
-                    <Form.Item
-                        name="role"
-                        label={t('table.role')}
-                        rules={[{ required: true, message: t('validation.required') }]}
-                        initialValue="member"
-                    >
-                        <Select options={roleOptions} />
-                    </Form.Item>
-                </Form>
-            </Modal>
+            {members.addMemberOpen ? (
+                <Modal
+                    title={t('button.add_member')}
+                    open={true}
+                    onOk={() => {
+                        void members.submitAddMember();
+                    }}
+                    onCancel={members.closeAddMemberModal}
+                    confirmLoading={members.addMemberPending}
+                    data-testid="member-add-modal"
+                >
+                    <Form form={members.addMemberForm} layout="vertical" name="add-system-member" preserve={false}>
+                        <Form.Item
+                            name="user_id"
+                            label={t('members.select_user', 'User')}
+                            rules={[{ required: true, message: t('validation.required') }]}
+                        >
+                            <Select
+                                showSearch
+                                placeholder={t('members.select_user_placeholder', 'Search for a user who is not yet a member')}
+                                data-testid="member-candidate-user-select"
+                                filterOption={false}
+                                loading={members.memberCandidatesLoading}
+                                searchValue={members.memberCandidateSearch}
+                                onSearch={members.setMemberCandidateSearch}
+                                options={memberCandidateOptions}
+                                notFoundContent={
+                                    members.memberCandidatesLoading
+                                        ? t('message.loading')
+                                        : members.memberCandidateSearch.trim()
+                                            ? t('members.no_search_results', 'No matching users are available to add')
+                                            : t('members.no_addable_users', 'All visible users are already members of this system')
+                                }
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="role"
+                            label={t('table.role')}
+                            rules={[{ required: true, message: t('validation.required') }]}
+                            initialValue="member"
+                        >
+                            <Select options={roleOptions} />
+                        </Form.Item>
+                    </Form>
+                </Modal>
+            ) : null}
         </Modal>
-    );
+    ) : null;
 }

@@ -773,6 +773,16 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 
 	query := s.client.AuditLog.Query()
 
+	if search := strings.TrimSpace(params.Search); search != "" {
+		query = query.Where(
+			auditlog.Or(
+				auditlog.ActionContainsFold(search),
+				auditlog.ActorContainsFold(search),
+				auditlog.ResourceTypeContainsFold(search),
+				auditlog.ResourceIDContainsFold(search),
+			),
+		)
+	}
 	if params.Action != "" {
 		query = query.Where(auditlog.ActionEQ(params.Action))
 	}

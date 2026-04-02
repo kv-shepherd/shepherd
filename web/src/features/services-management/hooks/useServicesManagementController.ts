@@ -24,7 +24,12 @@ interface UseServicesManagementControllerArgs {
     onCreateSuccess?: (service: Service, context: { isFirstService: boolean }) => boolean | void;
 }
 
-const ALL_SYSTEMS_FILTER = '__all__';
+export const ALL_SYSTEMS_FILTER = '__all__';
+
+interface ServiceSearchFilters {
+    search: string;
+    systemId: string;
+}
 
 export function useServicesManagementController({
     t,
@@ -35,9 +40,10 @@ export function useServicesManagementController({
     const [createOpen, setCreateOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
     const [editingService, setEditingService] = useState<Service | null>(null);
-    const [selectedSystemId, setSelectedSystemId] = useState(
-        () => initialSystemId || ALL_SYSTEMS_FILTER,
-    );
+    const [filters, setFilters] = useState<ServiceSearchFilters>(() => ({
+        search: '',
+        systemId: initialSystemId || ALL_SYSTEMS_FILTER,
+    }));
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [form] = Form.useForm<ServiceCreateRequest & { system_id: string }>();
@@ -52,15 +58,16 @@ export function useServicesManagementController({
         () => systemsQuery.data?.items ?? [],
         [systemsQuery.data?.items],
     );
-    const activeSystemId = selectedSystemId;
+    const activeSystemId = filters.systemId;
 
     const servicesQuery = useApiGet<ServiceList>(
-        ['services', activeSystemId, page, pageSize],
+        ['services', activeSystemId, filters.search, page, pageSize],
         () => api.GET('/services', {
             params: {
                 query: {
                     page,
                     per_page: pageSize,
+                    ...(filters.search ? { search: filters.search } : {}),
                     ...(activeSystemId !== ALL_SYSTEMS_FILTER ? { system_id: activeSystemId } : {}),
                 },
             },
@@ -143,8 +150,16 @@ export function useServicesManagementController({
         }
     );
 
-    const changeSystem = (systemId: string) => {
-        setSelectedSystemId(systemId);
+    const applyFilters = (nextFilters: Partial<ServiceSearchFilters>) => {
+        setFilters((current) => ({
+            search: nextFilters.search?.trim() ?? current.search,
+            systemId: nextFilters.systemId ?? current.systemId,
+        }));
+        setPage(1);
+    };
+
+    const clearFilters = () => {
+        setFilters({ search: '', systemId: ALL_SYSTEMS_FILTER });
         setPage(1);
     };
 
@@ -156,7 +171,7 @@ export function useServicesManagementController({
                 : allSystems[0]?.id
         );
         if (targetSystemId) {
-            setSelectedSystemId(targetSystemId);
+            setFilters((current) => ({ ...current, systemId: targetSystemId }));
             setPage(1);
         }
         form.setFieldValue('system_id', targetSystemId || undefined);
@@ -220,6 +235,8 @@ export function useServicesManagementController({
         createOpen,
         editOpen,
         editingService,
+        filters,
+        hasActiveFilters: filters.search !== '' || filters.systemId !== ALL_SYSTEMS_FILTER,
         activeSystemId,
         page,
         pageSize,
@@ -231,7 +248,8 @@ export function useServicesManagementController({
         servicesData: servicesQuery.data,
         isLoading: servicesQuery.isLoading,
         refetch: servicesQuery.refetch,
-        changeSystem,
+        applyFilters,
+        clearFilters,
         openCreateModal,
         closeCreateModal,
         openEditModal,

@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-i18next', () => ({
@@ -58,9 +59,21 @@ vi.mock('../hooks/useAdminRbacController', () => ({
                 built_in: false,
                 enabled: true,
             },
+            {
+                id: 'role-2',
+                name: 'viewer',
+                display_name: 'Viewer',
+                description: 'Read only',
+                permissions: ['vm:read'],
+                built_in: true,
+                enabled: true,
+            },
         ],
         rolesLoading: false,
-        permissions: [{ key: 'vm:create', description: 'Create VMs' }],
+        permissions: [
+            { key: 'vm:create', description: 'Create VMs' },
+            { key: 'vm:read', description: 'Read VMs' },
+        ],
         permissionsLoading: false,
         roleBindings: [{
             id: 'binding-1',
@@ -132,5 +145,16 @@ describe('AdminRbacContent', () => {
         expect(screen.getAllByText('Platform Admin').length).toBeGreaterThan(0);
         expect(screen.getByTestId('rbac-user-selector')).toBeVisible();
         expect(screen.getByText('All platform resources')).toBeVisible();
-    }, 10000);
+    });
+
+    it('filters the role and permission tables with the shared quick search', async () => {
+        const user = userEvent.setup();
+        render(<AdminRbacContent />);
+
+        await user.type(screen.getByTestId('rbac-quick-search'), 'viewer');
+        await user.click(screen.getAllByRole('button', { name: /search/i })[0]);
+
+        expect(screen.getAllByText('Viewer').length).toBeGreaterThan(0);
+        expect(screen.queryByText('Platform Admin')).not.toBeInTheDocument();
+    });
 });

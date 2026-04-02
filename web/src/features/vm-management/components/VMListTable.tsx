@@ -101,52 +101,76 @@ export function VMListTable({
             title: t('field.name'),
             dataIndex: 'name',
             key: 'name',
-            width: 220,
-            render: (name: string, record) => (
-                <Space direction="vertical" size={0}>
-                    <Space>
-                        <DesktopOutlined style={{ color: '#531dab' }} />
-                        <TypographyLink
-                            className="selectable-inline-text"
-                            style={{ fontWeight: 600 }}
-                            data-testid={`vm-action-detail-${record.id}`}
-                            onClick={() => onDetail(record.id)}
-                        >
-                            {name}
-                        </TypographyLink>
-                        <TypographyText
-                            copyable={{ text: name }}
-                            className="selectable-inline-text"
-                        />
+            width: 400,
+            render: (name: string, record) => {
+                const osLabel = formatVMOperatingSystem(record);
+
+                return (
+                    <Space direction="vertical" size={4} className="workbench-table-stack">
+                        <Space size={[8, 6]} wrap className="workbench-table-heading">
+                            <DesktopOutlined style={{ color: '#531dab' }} />
+                            <span className="vm-list-name-shell">
+                                <TypographyLink
+                                    className="selectable-inline-text"
+                                    style={{ fontWeight: 600 }}
+                                    data-testid={`vm-action-detail-${record.id}`}
+                                    onClick={() => onDetail(record.id)}
+                                >
+                                    {name}
+                                </TypographyLink>
+                                <TypographyText
+                                    copyable={{ text: name, tooltips: false, icon: <CopyOutlined /> }}
+                                    className="vm-list-name-copy"
+                                    data-testid={`vm-name-copy-${record.id}`}
+                                >
+                                    {' '}
+                                </TypographyText>
+                            </span>
+                            {record.ip_address ? (
+                                <TypographyText
+                                    copyable={{ text: record.ip_address }}
+                                    className="vm-list-inline-chip selectable-inline-text"
+                                >
+                                    <span className="vm-list-inline-chip__label">{t('field.ip_address')}</span>
+                                    <span className="vm-list-inline-chip__value">{record.ip_address}</span>
+                                </TypographyText>
+                            ) : null}
+                        </Space>
+                        {record.hostname && record.hostname !== name ? (
+                            <TypographyText type="secondary" className="workbench-table-note selectable-inline-text">
+                                {t('field.hostname')}: {record.hostname}
+                            </TypographyText>
+                        ) : null}
+                        {osLabel ? (
+                            <TypographyText type="secondary" className="workbench-table-note selectable-inline-text">
+                                {osLabel}
+                            </TypographyText>
+                        ) : null}
                     </Space>
-                    {record.hostname && record.hostname !== name && (
-                        <TypographyText
-                            type="secondary"
-                            copyable={{ text: record.hostname }}
-                            className="selectable-inline-text"
-                        >
-                            {record.hostname}
-                        </TypographyText>
-                    )}
-                </Space>
-            ),
+                );
+            },
         },
         {
             title: t('common:table.status'),
             dataIndex: 'status',
             key: 'status',
             width: 130,
-            render: (status: VM['status']) => {
+            render: (status: VM['status'], record) => {
                 const mapped = VM_STATUS_MAP[status] ?? VM_STATUS_MAP.UNKNOWN;
                 return (
-                    <Badge status={mapped.badge} text={<Tag color={mapped.color}>{t(`status.${status}`)}</Tag>} />
+                    <Space direction="vertical" size={4} className="workbench-table-stack">
+                        <Badge status={mapped.badge} text={<Tag color={mapped.color}>{t(`status.${status}`)}</Tag>} />
+                        <TypographyText type="secondary" className="workbench-table-note">
+                            {record.created_at ? dayjs(record.created_at).format('YYYY-MM-DD HH:mm') : '—'}
+                        </TypographyText>
+                    </Space>
                 );
             },
         },
         {
             title: t('field.scope'),
             key: 'scope',
-            width: 260,
+            width: 240,
             render: (_, record) => {
                 const inCurrentServiceContext =
                     Boolean(contextSystemId)
@@ -155,111 +179,106 @@ export function VMListTable({
                     && record.service_id === contextServiceId;
 
                 return (
-                <Space direction="vertical" size={0}>
-                    {record.system_id && record.system_name ? (
-                        <TypographyLink
-                            className="selectable-inline-text"
-                            onClick={() => onOpenSystem(record.system_id!)}
-                        >
-                            {record.system_name}
-                        </TypographyLink>
-                    ) : (
-                        <TypographyText>{record.system_name || '—'}</TypographyText>
-                    )}
-                    {record.system_id && record.service_id && record.service_name ? (
-                        <TypographyLink
-                            className="selectable-inline-text"
-                            onClick={() => onOpenService(record.system_id!, record.service_id!)}
-                        >
-                            {record.service_name}
-                        </TypographyLink>
-                    ) : (
-                        <TypographyText type="secondary">{record.service_name || '—'}</TypographyText>
-                    )}
-                    {inCurrentServiceContext && (
-                        <Tag color="green">{t('context.row_badge')}</Tag>
-                    )}
-                    <Tag>{record.namespace}</Tag>
-                </Space>
+                    <Space direction="vertical" size={4} className="workbench-table-stack">
+                        <div className="vm-list-labeled-lines">
+                            <div className="vm-list-labeled-line">
+                                <TypographyText type="secondary" className="vm-list-labeled-line__label">
+                                    {t('field.system', { defaultValue: 'System' })}
+                                </TypographyText>
+                                {record.system_id && record.system_name ? (
+                                    <TypographyLink
+                                        className="selectable-inline-text vm-list-labeled-line__value"
+                                        onClick={() => onOpenSystem(record.system_id!)}
+                                    >
+                                        {record.system_name}
+                                    </TypographyLink>
+                                ) : (
+                                    <TypographyText className="vm-list-labeled-line__value selectable-inline-text">
+                                        {record.system_name || '—'}
+                                    </TypographyText>
+                                )}
+                            </div>
+                            <div className="vm-list-labeled-line">
+                                <TypographyText type="secondary" className="vm-list-labeled-line__label">
+                                    {t('field.service')}
+                                </TypographyText>
+                                {record.system_id && record.service_id && record.service_name ? (
+                                    <TypographyLink
+                                        className="selectable-inline-text vm-list-labeled-line__value"
+                                        onClick={() => onOpenService(record.system_id!, record.service_id!)}
+                                    >
+                                        {record.service_name}
+                                    </TypographyLink>
+                                ) : (
+                                    <TypographyText type="secondary" className="vm-list-labeled-line__value selectable-inline-text">
+                                        {record.service_name || '—'}
+                                    </TypographyText>
+                                )}
+                            </div>
+                        </div>
+                        {inCurrentServiceContext ? <Tag color="green">{t('context.row_badge')}</Tag> : null}
+                    </Space>
                 );
             },
-        },
-        {
-            title: t('field.operating_system'),
-            key: 'os',
-            width: 190,
-            render: (_, record) => {
-                const osLabel = formatVMOperatingSystem(record);
-                return osLabel ? (
-                    <TypographyText className="selectable-inline-text">{osLabel}</TypographyText>
-                ) : (
-                    '—'
-                );
-            },
-        },
-        {
-            title: t('field.cluster'),
-            dataIndex: 'cluster_name',
-            key: 'cluster_name',
-            width: 150,
-            render: (clusterName: string, record) => (
-                <Space direction="vertical" size={0}>
-                    <TypographyText>{clusterName || '—'}</TypographyText>
-                    {record.environment && (
-                        <TypographyText type="secondary" style={{ fontSize: 12 }}>
-                            {record.environment}
-                        </TypographyText>
-                    )}
-                </Space>
-            ),
-        },
-        {
-            title: t('field.ip_address'),
-            key: 'ip_address',
-            width: 220,
-            render: (_, record) => (
-                <Space direction="vertical" size={0}>
-                    {record.ip_address ? (
-                        <TypographyText
-                            copyable={{ text: record.ip_address }}
-                            className="selectable-inline-text"
-                        >
-                            {record.ip_address}
-                        </TypographyText>
-                    ) : (
-                        '—'
-                    )}
-                    {record.host_ip && (
-                        <TypographyText
-                            type="secondary"
-                            className="selectable-inline-text"
-                        >
-                            {`${t('field.host_ip')}: ${record.host_ip}`}
-                        </TypographyText>
-                    )}
-                </Space>
-            ),
         },
         {
             title: t('field.resources'),
             key: 'resources',
-            width: 190,
-            render: (_, record) => (
-                <Space direction="vertical" size={0}>
-                    <TypographyText>{formatCPU(record.cpu_cores)}</TypographyText>
-                    <TypographyText type="secondary">{formatMemory(record.memory_gi ?? 0)}</TypographyText>
-                    <TypographyText type="secondary">{formatDisk(record.disk_gb)}</TypographyText>
-                </Space>
-            ),
-        },
-        {
-            title: t('common:table.created_at'),
-            dataIndex: 'created_at',
-            key: 'created_at',
-            width: 160,
-            render: (date: string) => (
-                <TypographyText type="secondary">{date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '—'}</TypographyText>
-            ),
+            width: 280,
+            render: (_, record) => {
+                const resourceSummary = [
+                    formatCPU(record.cpu_cores),
+                    formatMemory(record.memory_gi ?? 0),
+                    formatDisk(record.disk_gb),
+                ]
+                    .filter((value) => value && value !== '—')
+                    .join(' · ');
+                const placementSummary = [record.namespace, record.cluster_name, record.environment]
+                    .filter(Boolean)
+                    .join(' · ');
+
+                return (
+                    <Space direction="vertical" size={4} className="workbench-table-stack">
+                        <TypographyText className="workbench-table-description selectable-inline-text">
+                            {resourceSummary || '—'}
+                        </TypographyText>
+                        {placementSummary ? (
+                            <div className="vm-list-inline-facts">
+                                {record.namespace ? (
+                                    <span className="vm-list-inline-fact">
+                                        <TypographyText type="secondary" className="vm-list-inline-fact__label">
+                                            {t('field.namespace')}
+                                        </TypographyText>
+                                        <TypographyText className="vm-list-inline-fact__value selectable-inline-text">
+                                            {record.namespace}
+                                        </TypographyText>
+                                    </span>
+                                ) : null}
+                                {record.cluster_name ? (
+                                    <span className="vm-list-inline-fact">
+                                        <TypographyText type="secondary" className="vm-list-inline-fact__label">
+                                            {t('field.cluster')}
+                                        </TypographyText>
+                                        <TypographyText className="vm-list-inline-fact__value selectable-inline-text">
+                                            {record.cluster_name}
+                                        </TypographyText>
+                                    </span>
+                                ) : null}
+                                {record.environment ? (
+                                    <span className="vm-list-inline-fact">
+                                        <TypographyText type="secondary" className="vm-list-inline-fact__label">
+                                            {t('field.environment')}
+                                        </TypographyText>
+                                        <TypographyText className="vm-list-inline-fact__value selectable-inline-text">
+                                            {record.environment}
+                                        </TypographyText>
+                                    </span>
+                                ) : null}
+                            </div>
+                        ) : null}
+                    </Space>
+                );
+            },
         },
         {
             title: t('common:table.actions'),

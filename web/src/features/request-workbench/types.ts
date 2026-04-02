@@ -20,8 +20,12 @@ export interface Ticket {
     operation_type?: string;
     status: ApprovalStatus;
     requester: string;
+    requester_display_name?: string;
+    requester_username?: string;
     reason?: string;
     approver?: string;
+    approver_display_name?: string;
+    approver_username?: string;
     reject_reason?: string;
     created_at: string;
     updated_at?: string;
@@ -37,6 +41,7 @@ export interface TicketList {
     pagination?: { total: number; page: number; per_page: number };
 }
 
+export type RequestTicketOperationType = 'CREATE' | 'MODIFY' | 'DELETE' | 'POWER' | 'VNC_ACCESS';
 export type RequestWorkbenchView = 'drafts' | 'in_progress' | 'history' | 'batch_jobs';
 export type HistoryStatusFilter = Extract<ApprovalStatus, 'SUCCESS' | 'FAILED' | 'REJECTED' | 'CANCELLED'>;
 

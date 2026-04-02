@@ -2,6 +2,7 @@ import type { components } from '@/types/api.gen';
 
 export type System = components['schemas']['System'];
 export type SystemList = components['schemas']['SystemList'];
+export type SystemFilterOptions = components['schemas']['SystemFilterOptionsResponse'];
 export type SystemCreateRequest = components['schemas']['SystemCreateRequest'];
 export type SystemUpdateRequest = components['schemas']['SystemUpdateRequest'];
 export type SystemMember = components['schemas']['SystemMember'];

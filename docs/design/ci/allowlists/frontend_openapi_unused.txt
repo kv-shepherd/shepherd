@@ -2,3 +2,7 @@
 # Format: METHOD /path
 GET /auth/providers/{provider_id}/callback
 POST /auth/providers/{provider_id}/callback
+# Console websocket endpoints are negotiated via POST /vms/{vm_id}/console/request
+# and opened with the browser WebSocket API instead of api.get().
+GET /vms/{vm_id}/serial
+GET /vms/{vm_id}/vnc

@@ -2,7 +2,7 @@
 
 import { Form, message } from 'antd';
 import type { TFunction } from 'i18next';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { SETUP_GUIDE_INVALIDATION_KEYS } from '@/features/setup-guide/queryKeys';
@@ -16,11 +16,42 @@ interface UseAdminTemplatesControllerArgs {
     onCreateSuccess?: (template: Template, context: { isFirstTemplate: boolean }) => boolean | void;
 }
 
+interface TemplateSearchFilters {
+    search: string;
+    osFamily: string;
+    sourceType: string;
+    catalogScope: string;
+    enabled: '' | 'enabled' | 'disabled';
+}
+
 const CREATE_TEMPLATE_DEFAULTS: Pick<TemplateCreateRequest, 'catalog_scope' | 'enabled' | 'source_type'> = {
     catalog_scope: 'unclassified',
     enabled: true,
     source_type: 'cdi_image_import',
 };
+
+const EMPTY_TEMPLATE_SEARCH_FILTERS: TemplateSearchFilters = {
+    search: '',
+    osFamily: '',
+    sourceType: '',
+    catalogScope: '',
+    enabled: '',
+};
+
+function normalizeTemplateSearchFilters(
+    nextFilters: Partial<TemplateSearchFilters>,
+): TemplateSearchFilters {
+    return {
+        search: nextFilters.search?.trim() ?? '',
+        osFamily: nextFilters.osFamily?.trim() ?? '',
+        sourceType: nextFilters.sourceType?.trim() ?? '',
+        catalogScope: nextFilters.catalogScope?.trim() ?? '',
+        enabled:
+            nextFilters.enabled === 'enabled' || nextFilters.enabled === 'disabled'
+                ? nextFilters.enabled
+                : '',
+    };
+}
 
 function buildEditTemplateFormValues(template: Template): TemplateUpdateRequest {
     return {
@@ -71,9 +102,7 @@ export function useAdminTemplatesController({
     const [deletingTemplate, setDeletingTemplate] = useState<Template | null>(null);
 
     const [page, setPage] = useState(1);
-    const [globalSearch, setGlobalSearch] = useState('');
-    const deferredSearch = useDeferredValue(globalSearch);
-    const isStale = globalSearch !== deferredSearch;
+    const [filters, setFilters] = useState<TemplateSearchFilters>(EMPTY_TEMPLATE_SEARCH_FILTERS);
 
     const [searchedColumn, setSearchedColumn] = useState('');
     const [searchText, setSearchText] = useState('');
@@ -82,9 +111,29 @@ export function useAdminTemplatesController({
     const [editForm] = Form.useForm<TemplateUpdateRequest>();
 
     const templatesQuery = useApiGet<TemplateList>(
-        ['admin-templates', page],
+        [
+            'admin-templates',
+            page,
+            filters.search,
+            filters.osFamily,
+            filters.sourceType,
+            filters.catalogScope,
+            filters.enabled,
+        ],
         () => api.GET('/admin/templates', {
-            params: { query: { page, per_page: 20 } },
+            params: {
+                query: {
+                    page,
+                    per_page: 20,
+                    ...(filters.search ? { search: filters.search } : {}),
+                    ...(filters.osFamily ? { os_family: filters.osFamily } : {}),
+                    ...(filters.sourceType ? { source_type: filters.sourceType } : {}),
+                    ...(filters.catalogScope ? { catalog_scope: filters.catalogScope } : {}),
+                    ...(filters.enabled
+                        ? { enabled: filters.enabled === 'enabled' }
+                        : {}),
+                },
+            },
         })
     );
     const existingTemplatesTotal =
@@ -152,19 +201,25 @@ export function useAdminTemplatesController({
         return Array.from(families).sort().map((family) => ({ text: family, value: family }));
     }, [templatesQuery.data?.items]);
 
-    const filteredItems = useMemo(() => {
-        const items = templatesQuery.data?.items ?? [];
-        if (!deferredSearch) {
-            return items;
-        }
-        const query = deferredSearch.toLowerCase();
-        return items.filter((template: Template) =>
-            template.name.toLowerCase().includes(query) ||
-            (template.display_name ?? '').toLowerCase().includes(query) ||
-            (template.description ?? '').toLowerCase().includes(query) ||
-            (template.os_family ?? '').toLowerCase().includes(query)
+    const filteredItems = useMemo(
+        () => templatesQuery.data?.items ?? [],
+        [templatesQuery.data?.items],
+    );
+
+    const applyFilters = (nextFilters: Partial<TemplateSearchFilters>) => {
+        setFilters((current) =>
+            normalizeTemplateSearchFilters({
+                ...current,
+                ...nextFilters,
+            }),
         );
-    }, [templatesQuery.data?.items, deferredSearch]);
+        setPage(1);
+    };
+
+    const clearFilters = () => {
+        setFilters(EMPTY_TEMPLATE_SEARCH_FILTERS);
+        setPage(1);
+    };
 
     const openCreateModal = () => {
         setCreateExperimentalSourcesEnabled(false);
@@ -255,10 +310,14 @@ export function useAdminTemplatesController({
         messageContextHolder,
         page,
         setPage,
-        globalSearch,
-        setGlobalSearch,
-        deferredSearch,
-        isStale,
+        filters,
+        hasActiveFilters: Object.values(filters).some((value) => value !== ''),
+        applyFilters,
+        clearFilters,
+        globalSearch: filters.search,
+        setGlobalSearch: (value: string) => applyFilters({ search: value }),
+        deferredSearch: filters.search,
+        isStale: false,
         searchedColumn,
         setSearchedColumn,
         searchText,

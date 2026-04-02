@@ -16,6 +16,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,7 +46,7 @@ func TestTicketToAPI_NilPayload_WhenPayloadMapNil(t *testing.T) {
 		Status:        entticket.StatusPENDING,
 		CreatedAt:     time.Now(),
 	}
-	got := ticketToAPI(tick, nil, nil, nil, nil)
+	got := ticketToAPI(tick, nil, nil, nil, nil, approvalActorLookup{}, approvalActorLookup{})
 	if got.TicketPayload != nil {
 		t.Fatalf("TicketPayload = %v, want nil when payloadMap is nil", got.TicketPayload)
 	}
@@ -67,7 +68,7 @@ func TestTicketToAPI_PopulatesTicketPayload(t *testing.T) {
 		Status:        entticket.StatusPENDING,
 		CreatedAt:     time.Now(),
 	}
-	got := ticketToAPI(tick, payload, nil, nil, nil)
+	got := ticketToAPI(tick, payload, nil, nil, nil, approvalActorLookup{}, approvalActorLookup{})
 	if got.TicketPayload == nil {
 		t.Fatal("TicketPayload is nil, want non-nil")
 	}
@@ -101,7 +102,7 @@ func TestTicketToAPI_PopulatesPlacementEvaluation(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	got := ticketToAPI(tick, nil, nil, nil, nil)
+	got := ticketToAPI(tick, nil, nil, nil, nil, approvalActorLookup{}, approvalActorLookup{})
 	if got.PlacementEvaluation == nil {
 		t.Fatal("PlacementEvaluation is nil, want non-nil")
 	}
@@ -141,7 +142,7 @@ func TestTicketToAPI_PopulatesPlacementOverride(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	got := ticketToAPI(tick, nil, nil, nil, nil)
+	got := ticketToAPI(tick, nil, nil, nil, nil, approvalActorLookup{}, approvalActorLookup{})
 	if got.PlacementEvaluation == nil {
 		t.Fatal("PlacementEvaluation.Override is nil, want populated override")
 	}
@@ -182,7 +183,7 @@ func TestTicketToAPI_OperationTypePassedThrough(t *testing.T) {
 				Status:        entticket.StatusPENDING,
 				CreatedAt:     time.Now(),
 			}
-			got := ticketToAPI(tick, nil, nil, nil, nil)
+			got := ticketToAPI(tick, nil, nil, nil, nil, approvalActorLookup{}, approvalActorLookup{})
 			if got.OperationType != tc.wantAPI {
 				t.Fatalf("OperationType = %q, want %q", got.OperationType, tc.wantAPI)
 			}
@@ -716,6 +717,153 @@ func TestListApprovals_FiltersByOperationType(t *testing.T) {
 	}
 }
 
+func TestListApprovals_SupportsQuickSearchAcrossTicketIDRequesterAndSelectedCluster(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newApprovalTestServer(t, "approval_search")
+
+	firstEventID := "ev-search-first-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, firstEventID, []byte(`{"seed":"search-first"}`))
+	firstTicketID := "ticket-search-first-" + uuid.NewString()
+	mustCreateTicket(t, client, firstTicketID, firstEventID, entticket.OperationTypeCREATE, "user-a")
+	if err := client.Ticket.UpdateOneID(firstTicketID).
+		SetSelectedClusterID("cluster-finance").
+		SetPlacementEvaluation(map[string]interface{}{
+			"selected_cluster_id":   "cluster-finance",
+			"selected_cluster_name": "Finance Production",
+		}).
+		Exec(t.Context()); err != nil {
+		t.Fatalf("update first ticket cluster: %v", err)
+	}
+
+	secondEventID := "ev-search-second-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, secondEventID, []byte(`{"seed":"search-second"}`))
+	secondTicketID := "ticket-search-second-" + uuid.NewString()
+	mustCreateTicket(t, client, secondTicketID, secondEventID, entticket.OperationTypeCREATE, "approver-b")
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/tickets?search=Finance%20Production",
+		"",
+		"admin-1",
+		[]string{"ticket:view", "platform:admin"},
+	)
+	srv.ListTickets(c, generated.ListTicketsParams{
+		Search: "Finance Production",
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.TicketList
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("items length = %d, want 1", len(resp.Items))
+	}
+	if resp.Items[0].Id != firstTicketID {
+		t.Fatalf("ticket id = %q, want %q", resp.Items[0].Id, firstTicketID)
+	}
+}
+
+func TestListApprovals_SupportsQuickSearchAcrossReason(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newApprovalTestServer(t, "approval_search_reason")
+
+	firstEventID := "ev-search-reason-first-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, firstEventID, []byte(`{"seed":"search-reason-first"}`))
+	firstTicketID := "ticket-search-reason-first-" + uuid.NewString()
+	mustCreateTicket(t, client, firstTicketID, firstEventID, entticket.OperationTypeCREATE, "user-a")
+	if err := client.Ticket.UpdateOneID(firstTicketID).
+		SetReason("Restore finance database backups").
+		Exec(t.Context()); err != nil {
+		t.Fatalf("update first ticket reason: %v", err)
+	}
+
+	secondEventID := "ev-search-reason-second-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, secondEventID, []byte(`{"seed":"search-reason-second"}`))
+	secondTicketID := "ticket-search-reason-second-" + uuid.NewString()
+	mustCreateTicket(t, client, secondTicketID, secondEventID, entticket.OperationTypeCREATE, "user-a")
+	if err := client.Ticket.UpdateOneID(secondTicketID).
+		SetReason("Rotate production certificates").
+		Exec(t.Context()); err != nil {
+		t.Fatalf("update second ticket reason: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/tickets?search=finance%20database",
+		"",
+		"admin-1",
+		[]string{"ticket:view", "platform:admin"},
+	)
+	srv.ListTickets(c, generated.ListTicketsParams{
+		Search: "finance database",
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.TicketList
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("items length = %d, want 1", len(resp.Items))
+	}
+	if resp.Items[0].Id != firstTicketID {
+		t.Fatalf("ticket id = %q, want %q", resp.Items[0].Id, firstTicketID)
+	}
+}
+
+func TestListApprovals_IncludesReadableRequesterAndApproverFields(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newApprovalTestServer(t, "approval_actor_labels")
+
+	requesterID := "user-requester-" + uuid.NewString()
+	approverID := "user-approver-" + uuid.NewString()
+	mustCreateApprovalUser(t, client, requesterID, "alice.ops", "Alice Ops")
+	mustCreateApprovalUser(t, client, approverID, "bob.ops", "Bob Ops")
+
+	eventID := "ev-actor-labels-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, eventID, []byte(`{"seed":"actor-labels"}`))
+	ticketID := "ticket-actor-labels-" + uuid.NewString()
+	mustCreateTicket(t, client, ticketID, eventID, entticket.OperationTypeCREATE, requesterID)
+	if err := client.Ticket.UpdateOneID(ticketID).
+		SetApprover(approverID).
+		Exec(t.Context()); err != nil {
+		t.Fatalf("update ticket approver: %v", err)
+	}
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/tickets", "", "admin-1", []string{"ticket:view", "platform:admin"})
+	srv.ListTickets(c, generated.ListTicketsParams{})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	found := findTicketInList(t, w.Body.Bytes(), ticketID)
+	if found.RequesterDisplayName != "Alice Ops" {
+		t.Fatalf("requester_display_name = %q, want %q", found.RequesterDisplayName, "Alice Ops")
+	}
+	if found.RequesterUsername != "alice.ops" {
+		t.Fatalf("requester_username = %q, want %q", found.RequesterUsername, "alice.ops")
+	}
+	if found.ApproverDisplayName != "Bob Ops" {
+		t.Fatalf("approver_display_name = %q, want %q", found.ApproverDisplayName, "Bob Ops")
+	}
+	if found.ApproverUsername != "bob.ops" {
+		t.Fatalf("approver_username = %q, want %q", found.ApproverUsername, "bob.ops")
+	}
+}
+
 func TestListApprovals_FiltersBySelectedClusterAndPlacementSnapshot(t *testing.T) {
 	t.Parallel()
 
@@ -1023,6 +1171,24 @@ func mustApprovalJSON(t *testing.T, value any) []byte {
 		t.Fatalf("marshal json: %v", err)
 	}
 	return raw
+}
+
+func mustCreateApprovalUser(
+	t *testing.T,
+	client *ent.Client,
+	id, username, displayName string,
+) {
+	t.Helper()
+	create := client.User.Create().
+		SetID(id).
+		SetUsername(username).
+		SetEnabled(true)
+	if strings.TrimSpace(displayName) != "" {
+		create = create.SetDisplayName(displayName)
+	}
+	if _, err := create.Save(t.Context()); err != nil {
+		t.Fatalf("create user %s: %v", id, err)
+	}
 }
 
 // findTicketInList decodes the response body as TicketList and returns the

@@ -1,5 +1,7 @@
 import { Form } from 'antd';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const useSetupGuideMock = vi.fn();
@@ -7,6 +9,8 @@ const useScopedVMRequestLauncherMock = vi.fn();
 const pushMock = vi.fn();
 const useApiGetMock = vi.fn();
 const openWizardMock = vi.fn();
+const changeFiltersMock = vi.fn();
+const resetFiltersMock = vi.fn();
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
@@ -28,6 +32,23 @@ vi.mock('react-i18next', () => ({
                 'context.open_service': 'Open Service',
                 'context.clear': 'Clear Context',
                 'common:button.refresh': 'Refresh',
+                'common:button.search': 'Search',
+                'common:button.clear_filters': 'Clear filters',
+                'common:search.advanced': 'Advanced search',
+                'common:search.hide_advanced': 'Hide advanced search',
+                'common:environment.prod': 'Production',
+                'common:environment.test': 'Test',
+                search_placeholder: 'Search VMs',
+                search_help: 'Search help',
+                advanced_search_title: 'Advanced search',
+                advanced_search_help: 'Advanced search help',
+                'search.status': 'Status',
+                'search.namespace': 'Namespace',
+                'search.cluster': 'Cluster',
+                'search.system': 'System',
+                'search.service': 'Service',
+                'search.operating_system': 'Operating system',
+                'search.ip_address': 'IP address',
             };
             const fallback =
                 typeof options === 'string' ? options : options?.defaultValue;
@@ -45,6 +66,32 @@ vi.mock('react-i18next', () => ({
     }),
 }));
 
+vi.mock('antd', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('antd')>();
+
+    return {
+        ...actual,
+        Modal: ({
+            open,
+            title,
+            children,
+            footer,
+        }: {
+            open?: boolean;
+            title?: ReactNode;
+            children?: ReactNode;
+            footer?: ReactNode;
+        }) =>
+            open ? (
+                <section className="ant-modal">
+                    {title ? <header>{title}</header> : null}
+                    <div>{children}</div>
+                    {footer ? <footer>{footer}</footer> : null}
+                </section>
+            ) : null,
+    };
+});
+
 vi.mock('next/navigation', () => ({
     useRouter: () => ({
         push: pushMock,
@@ -58,6 +105,27 @@ vi.mock('@/hooks/useApiQuery', () => ({
 
 vi.mock('@/components/auth/PermissionGuard', () => ({
     PermissionGuard: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+vi.mock('@/components/layouts/PageSection', () => ({
+    PageHeader: ({
+        title,
+        subtitle,
+        actions,
+    }: {
+        title: ReactNode;
+        subtitle?: ReactNode;
+        actions?: ReactNode;
+    }) => (
+        <header data-testid="page-header">
+            <h1>{title}</h1>
+            {subtitle ? <p>{subtitle}</p> : null}
+            {actions}
+        </header>
+    ),
+    PageSurface: ({ children }: { children: ReactNode }) => (
+        <section data-testid="page-surface">{children}</section>
+    ),
 }));
 
 vi.mock('@/features/setup-guide/components/SetupGuideCard', () => ({
@@ -128,6 +196,18 @@ vi.mock('@/features/vm-management/hooks/useVMManagementController', () => ({
             setWizardStep: vi.fn(),
             requestMode: 'guided',
             setRequestMode: vi.fn(),
+            filters: {
+                search: '',
+                namespace: '',
+                status: '',
+                clusterId: '',
+                systemId: '',
+                serviceId: '',
+                osName: '',
+                ipAddress: '',
+            },
+            changeFilters: changeFiltersMock,
+            resetFilters: resetFiltersMock,
             form,
             wizardSteps: [],
             selectedSystemId: '',
@@ -146,6 +226,16 @@ vi.mock('@/features/vm-management/hooks/useVMManagementController', () => ({
             reasonValue: undefined,
             batchCountValue: 1,
             createVMRequest: { isPending: false },
+            vmFilterOptions: {
+                statuses: [{ value: 'RUNNING', label: 'RUNNING' }],
+                namespaces: [{ value: 'prod-apps', label: 'prod-apps', group: 'prod' }],
+                clusters: [{ value: 'cluster-a', label: 'Cluster A', group: 'prod' }],
+                systems: [{ value: 'sys-1', label: 'Payments' }],
+                services: [{ value: 'svc-1', label: 'Payments / Billing API', group: 'Payments' }],
+                operating_systems: [{ value: 'Ubuntu 24.04', label: 'Ubuntu 24.04' }],
+                ip_addresses: [{ value: '10.6.194.9', label: '10.6.194.9', group: 'test' }],
+            },
+            vmFilterOptionsLoading: false,
             goToNextWizardStep: vi.fn(),
             submitWizard: vi.fn(),
             closeWizard: vi.fn(),
@@ -175,6 +265,8 @@ describe('VMsPage', () => {
     beforeEach(() => {
         pushMock.mockReset();
         openWizardMock.mockReset();
+        changeFiltersMock.mockReset();
+        resetFiltersMock.mockReset();
         useApiGetMock.mockReturnValue({
             data: {
                 service: {
@@ -208,7 +300,8 @@ describe('VMsPage', () => {
         );
     });
 
-    it('shows scoped workspace context and prefills request actions for the selected service', () => {
+    it('shows scoped workspace context and prefills request actions for the selected service', async () => {
+        const user = userEvent.setup();
         useSetupGuideMock.mockReturnValue({
             vmRequestReady: true,
         });
@@ -221,13 +314,29 @@ describe('VMsPage', () => {
         expect(screen.getByText('Billing API')).toBeVisible();
         expect(screen.getByText('2 visible VM(s), 1 recent request(s)')).toBeVisible();
 
-        fireEvent.click(screen.getAllByRole('button', { name: 'Request VM' })[0]);
+        await user.click(screen.getAllByRole('button', { name: 'Request VM' })[0]);
         expect(openWizardMock).toHaveBeenCalledWith({
             systemId: 'sys-1',
             serviceId: 'svc-1',
         });
 
-        fireEvent.click(screen.getByRole('button', { name: 'Open Service' }));
+        await user.click(screen.getByRole('button', { name: 'Open Service' }));
         expect(pushMock).toHaveBeenCalledWith('/services?system_id=sys-1&detail_service_id=svc-1');
-    }, 20000);
+    });
+
+    it('shows advanced search controls for exact VM filters', async () => {
+        const user = userEvent.setup();
+        useSetupGuideMock.mockReturnValue({
+            vmRequestReady: true,
+        });
+
+        render(<VMsPage />);
+
+        expect(screen.getByTestId('vms-quick-search')).toBeVisible();
+        await user.click(screen.getByTestId('vms-advanced-search-toggle'));
+        expect(screen.getByTestId('vms-filter-cluster')).toBeVisible();
+        expect(screen.getByTestId('vms-filter-namespace')).toBeVisible();
+        expect(screen.getByTestId('vms-filter-service')).toBeVisible();
+        expect(screen.getByTestId('vms-advanced-search-submit')).toBeVisible();
+    });
 });

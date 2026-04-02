@@ -24,6 +24,7 @@ import {
   ReloadOutlined,
 } from "@ant-design/icons";
 import type { TFunction } from "i18next";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ActionEmptyState } from "@/components/feedback/ActionEmptyState";
@@ -36,6 +37,7 @@ import {
 } from "@/components/illustrations/DashboardIllustrations";
 import { PageHeader, PageSurface } from "@/components/layouts/PageSection";
 import { LocalDateTimeText } from "@/components/ui/LocalDateTimeText";
+import { PageSearchToolbar, filterOptionByLabel } from "@/components/ui/PageSearchToolbar";
 import {
   HUGEPAGES_PRESET_OPTIONS,
   isValidHugepagesPageSizeValue,
@@ -47,10 +49,59 @@ import { CLUSTER_STATUS_MAP, type Cluster } from "../types";
 
 const { Text } = Typography;
 
+function clusterMatchesSearch(record: Cluster, query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  return [
+    record.display_name,
+    record.name,
+    record.api_server_url,
+    record.kubevirt_version,
+    record.environment,
+    record.status,
+    ...(record.enabled_features ?? []),
+    ...(record.storage_classes ?? []),
+  ]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(normalized));
+}
+
 export function AdminClustersContent() {
   const { t } = useTranslation(["admin", "common"]);
   const clusters = useAdminClustersController({ t });
-  const clusterItems = clusters.data?.items ?? [];
+  const [quickSearch, setQuickSearch] = useState("");
+  const [quickSearchDraft, setQuickSearchDraft] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [environmentFilter, setEnvironmentFilter] = useState<"" | "test" | "prod">("");
+  const [statusFilter, setStatusFilter] = useState<"" | Cluster["status"]>("");
+  const [enabledFilter, setEnabledFilter] = useState<"" | "enabled" | "disabled">("");
+  const [environmentFilterDraft, setEnvironmentFilterDraft] = useState<"" | "test" | "prod">("");
+  const [statusFilterDraft, setStatusFilterDraft] = useState<"" | Cluster["status"]>("");
+  const [enabledFilterDraft, setEnabledFilterDraft] = useState<"" | "enabled" | "disabled">("");
+  const clusterItems = useMemo(
+    () =>
+      (clusters.data?.items ?? []).filter((cluster) => {
+        if (!clusterMatchesSearch(cluster, quickSearch)) {
+          return false;
+        }
+        if (environmentFilter && cluster.environment !== environmentFilter) {
+          return false;
+        }
+        if (statusFilter && cluster.status !== statusFilter) {
+          return false;
+        }
+        if (enabledFilter) {
+          const expected = enabledFilter === "enabled";
+          if (cluster.enabled !== expected) {
+            return false;
+          }
+        }
+        return true;
+      }),
+    [clusters.data?.items, enabledFilter, environmentFilter, quickSearch, statusFilter],
+  );
   const clusterSummary = {
     total: clusterItems.length,
     healthy: clusterItems.filter((cluster) => cluster.status === "HEALTHY").length,
@@ -404,14 +455,121 @@ export function AdminClustersContent() {
       </div>
 
       <PageSurface flush={true}>
+        <PageSearchToolbar
+          searchValue={quickSearch}
+          searchDraftValue={quickSearchDraft}
+          onSearchDraftChange={setQuickSearchDraft}
+          onSearchChange={(value) => {
+            setQuickSearchDraft(value);
+            setQuickSearch(value);
+          }}
+          searchPlaceholder={t("clusters.search_placeholder", "Search clusters by name, endpoint, version, or feature")}
+          searchHelp={t("clusters.search_help", "Press Enter or click Search. Quick search matches cluster names, display names, API endpoints, versions, and enabled features.")}
+          advancedSearch={{
+            open: filtersOpen,
+            onToggle: () => setFiltersOpen((open) => !open),
+            openLabel: t("common:search.advanced", { defaultValue: "Advanced search" }),
+            closeLabel: t("common:search.hide_advanced", { defaultValue: "Hide advanced search" }),
+            title: t("common:search.advanced", { defaultValue: "Advanced search" }),
+            content: (
+              <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                <Text type="secondary">
+                  {t("clusters.advanced_search_help", {
+                    defaultValue:
+                      "Select exact cluster filters here. Options support keyword matching, but the applied filter remains an exact value.",
+                  })}
+                </Text>
+                <Space wrap align="end">
+                <Select
+                  allowClear
+                  showSearch
+                  filterOption={filterOptionByLabel}
+                  optionFilterProp="label"
+                  style={{ width: 180 }}
+                  value={environmentFilterDraft || undefined}
+                  placeholder={t("clusters.environment")}
+                  onChange={(value) => setEnvironmentFilterDraft((value as "test" | "prod" | undefined) ?? "")}
+                  options={[
+                    { value: "test", label: t("clusters.env_test") },
+                    { value: "prod", label: t("clusters.env_prod") },
+                  ]}
+                />
+                <Select
+                  allowClear
+                  showSearch
+                  filterOption={filterOptionByLabel}
+                  optionFilterProp="label"
+                  style={{ width: 180 }}
+                  value={statusFilterDraft || undefined}
+                  placeholder={t("common:table.status")}
+                  onChange={(value) => setStatusFilterDraft((value as Cluster["status"] | undefined) ?? "")}
+                  options={Object.entries(CLUSTER_STATUS_MAP).map(([key]) => ({
+                    value: key,
+                    label: t(`clusters.status.${key.toLowerCase()}`, key),
+                  }))}
+                />
+                <Select
+                  allowClear
+                  showSearch
+                  filterOption={filterOptionByLabel}
+                  optionFilterProp="label"
+                  style={{ width: 180 }}
+                  value={enabledFilterDraft || undefined}
+                  placeholder={t("clusters.enabled")}
+                  onChange={(value) =>
+                    setEnabledFilterDraft((value as "enabled" | "disabled" | undefined) ?? "")
+                  }
+                  options={[
+                    {
+                      value: "enabled",
+                      label: t("clusters.enabled_yes", "Enabled"),
+                    },
+                    {
+                      value: "disabled",
+                      label: t("clusters.enabled_no", "Disabled"),
+                    },
+                  ]}
+                />
+                <Button
+                  type="primary"
+                  data-testid="clusters-advanced-search-submit"
+                  onClick={() => {
+                    setQuickSearch(quickSearchDraft);
+                    setEnvironmentFilter(environmentFilterDraft);
+                    setStatusFilter(statusFilterDraft);
+                    setEnabledFilter(enabledFilterDraft);
+                  }}
+                >
+                  {t("common:button.search")}
+                </Button>
+                </Space>
+              </Space>
+            ),
+          }}
+          hasActiveFilters={Boolean(
+            quickSearch.trim() || environmentFilter || statusFilter || enabledFilter,
+          )}
+          onClear={() => {
+            setQuickSearch("");
+            setQuickSearchDraft("");
+            setEnvironmentFilter("");
+            setEnvironmentFilterDraft("");
+            setStatusFilter("");
+            setStatusFilterDraft("");
+            setEnabledFilter("");
+            setEnabledFilterDraft("");
+          }}
+          clearLabel={t("common:button.clear_filters", { defaultValue: "Clear filters" })}
+        />
         <Table<Cluster>
+          style={{ marginTop: 16 }}
           columns={columns}
           dataSource={clusterItems}
           rowKey="id"
           loading={clusters.isLoading}
           tableLayout="auto"
           pagination={{
-            total: clusters.data?.pagination?.total ?? 0,
+            total: clusterItems.length,
             pageSize: 20,
             showTotal: (total) => t("common:table.total", { total }),
           }}
@@ -430,6 +588,7 @@ export function AdminClustersContent() {
         />
       </PageSurface>
 
+      {clusters.createOpen ? (
       <Modal
         title={t("clusters.add")}
         open={clusters.createOpen}
@@ -438,7 +597,6 @@ export function AdminClustersContent() {
         }}
         onCancel={clusters.closeCreateModal}
         confirmLoading={clusters.createPending}
-        forceRender={true}
         data-testid="cluster-create-modal"
       >
         <Form
@@ -521,6 +679,8 @@ export function AdminClustersContent() {
           </Form.Item>
         </Form>
       </Modal>
+      ) : null}
+      {clusters.editOpen ? (
       <Modal
         title={t("clusters.edit_title", {
           cluster: clusters.editingClusterName || clusters.editingClusterId,
@@ -532,7 +692,6 @@ export function AdminClustersContent() {
         }}
         onCancel={clusters.closeEditModal}
         confirmLoading={clusters.editPending}
-        forceRender={true}
         data-testid="cluster-edit-modal"
       >
         <Form
@@ -624,6 +783,8 @@ export function AdminClustersContent() {
           </Form.Item>
         </Form>
       </Modal>
+      ) : null}
+      {clusters.envModalOpen ? (
       <Modal
         title={t("clusters.set_environment")}
         open={clusters.envModalOpen}
@@ -632,7 +793,6 @@ export function AdminClustersContent() {
         }}
         onCancel={clusters.closeEnvModal}
         confirmLoading={clusters.updateEnvironmentPending}
-        forceRender={true}
         data-testid="cluster-environment-modal"
       >
         <Form form={clusters.envForm} layout="vertical" preserve={false}>
@@ -650,6 +810,8 @@ export function AdminClustersContent() {
           </Form.Item>
         </Form>
       </Modal>
+      ) : null}
+      {clusters.policyModalOpen ? (
       <Modal
         title={t("clusters.edit_policy_title", {
           cluster: clusters.selectedClusterName || clusters.selectedClusterId,
@@ -662,7 +824,6 @@ export function AdminClustersContent() {
         onCancel={clusters.closePolicyModal}
         confirmLoading={clusters.upsertPolicyPending}
         okButtonProps={{ disabled: clusters.policyLoading }}
-        forceRender={true}
         width={720}
         data-testid="cluster-policy-modal"
       >
@@ -914,6 +1075,7 @@ export function AdminClustersContent() {
           </Form.Item>
         </Form>
       </Modal>
+      ) : null}
     </div>
   );
 }

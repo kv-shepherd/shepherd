@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-i18next', () => ({
@@ -30,5 +31,16 @@ describe('AdminPermissionsPage', () => {
         expect(screen.getByText('Request virtual machines')).toBeVisible();
         expect(screen.getByText('vm:create')).toBeVisible();
         expect(screen.getAllByText('VM').length).toBeGreaterThan(0);
+    });
+
+    it('filters the catalog through quick search only after submit', async () => {
+        const user = userEvent.setup();
+        render(<AdminPermissionsPage />);
+
+        await user.type(screen.getByTestId('permissions-quick-search'), 'delete');
+        expect(screen.getByText('vm:create')).toBeVisible();
+
+        await user.keyboard('{Enter}');
+        expect(screen.queryByText('vm:create')).not.toBeInTheDocument();
     });
 });

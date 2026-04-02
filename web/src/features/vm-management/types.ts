@@ -2,6 +2,7 @@ import type { components } from '@/types/api.gen';
 
 export type VM = components['schemas']['VM'];
 export type VMList = components['schemas']['VMList'];
+export type VMFilterOptions = components['schemas']['VMFilterOptionsResponse'];
 export type VMCreateRequest = components['schemas']['VMCreateRequest'];
 export type VMRequestContext = components['schemas']['VMRequestContext'];
 export type VMRequestPrefill = components['schemas']['VMRequestPrefill'];

@@ -1,16 +1,15 @@
 /**
  * Vitest test setup (FRONTEND.md §Testing).
  *
- * Configures jsdom, testing-library matchers, and MSW.
+ * Configures jsdom and testing-library matchers.
+ *
+ * Keep this file lightweight: it runs before every test file. Tests that
+ * need HTTP interception should set it up explicitly inside the test file
+ * instead of paying the setup cost globally.
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
-import { afterAll, afterEach, beforeAll } from 'vitest';
-import { setupServer } from 'msw/node';
-
-import { handlers } from './mocks/handlers';
-
-export const server = setupServer(...handlers);
+import { afterEach, beforeAll } from 'vitest';
 
 function installBrowserTestShims() {
     if (typeof window === 'undefined') {
@@ -69,14 +68,8 @@ function installBrowserTestShims() {
 
 beforeAll(() => {
     installBrowserTestShims();
-    server.listen({ onUnhandledRequest: 'error' });
 });
 
 afterEach(() => {
     cleanup();
-    server.resetHandlers();
-});
-
-afterAll(() => {
-    server.close();
 });

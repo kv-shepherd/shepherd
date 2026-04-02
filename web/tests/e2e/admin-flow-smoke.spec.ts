@@ -464,6 +464,8 @@ test.describe('admin-flow mock smoke interactions', () => {
         // Wait for the table to load with mock data
         await expect(page.locator('tr').filter({ hasText: 'alice' }).first()).toBeVisible({ timeout: 10000 });
         await expect(page.getByTestId('approval-action-approve-ticket-pending-1')).toBeVisible();
+        await expect(page.getByTestId('approval-action-more-ticket-pending-1')).toBeVisible();
+        await page.getByTestId('approval-action-more-ticket-pending-1').click();
         await expect(page.getByTestId('approval-action-reject-ticket-pending-1')).toBeVisible();
         await expect(page.getByTestId('approval-action-cancel-ticket-pending-1')).toBeVisible();
     });
@@ -500,6 +502,8 @@ test.describe('admin-flow mock smoke interactions', () => {
         });
 
         await page.goto('/admin/approval-tasks');
+        await expect(page.getByTestId('approval-action-more-ticket-pending-1')).toBeVisible({ timeout: 10000 });
+        await page.getByTestId('approval-action-more-ticket-pending-1').click();
         await expect(page.getByTestId('approval-action-reject-ticket-pending-1')).toBeVisible({ timeout: 10000 });
         await page.getByTestId('approval-action-reject-ticket-pending-1').click();
 

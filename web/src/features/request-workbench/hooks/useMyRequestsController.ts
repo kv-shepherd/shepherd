@@ -29,6 +29,7 @@ import type {
     BatchActionResponse,
     BatchStatusResponse,
     HistoryStatusFilter,
+    RequestTicketOperationType,
     RequestWorkbenchView,
 } from '../types';
 
@@ -46,6 +47,8 @@ export function useMyRequestsController({ t }: UseMyRequestsControllerArgs) {
     const [historyStatus, setHistoryStatus] = useState<HistoryStatusFilter>('SUCCESS');
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
+    const [search, setSearch] = useState('');
+    const [operationType, setOperationType] = useState<RequestTicketOperationType | ''>('');
     const [savedVmDraft, setSavedVmDraft] = useState<VMRequestDraft | null>(null);
     const [activeBatchID, setActiveBatchID] = useState(
         () => readStoredActiveBatchState().batch_id
@@ -61,7 +64,7 @@ export function useMyRequestsController({ t }: UseMyRequestsControllerArgs) {
     const batchQueryEnabled = view === 'batch_jobs' && activeBatchID !== '';
 
     const { data, isLoading, refetch } = useApiGet<TicketList>(
-        ['my-tickets', view, requestStatus, page, pageSize],
+        ['my-tickets', view, requestStatus, page, pageSize, search, operationType],
         () =>
             api.GET('/tickets', {
                 params: {
@@ -70,6 +73,8 @@ export function useMyRequestsController({ t }: UseMyRequestsControllerArgs) {
                         per_page: pageSize,
                         mine: true,
                         status: requestStatus as never,
+                        search: search || undefined,
+                        operation_type: operationType || undefined,
                     },
                 },
             }) as Promise<{ data?: TicketList; error?: unknown; response?: Response }>,
@@ -148,6 +153,22 @@ export function useMyRequestsController({ t }: UseMyRequestsControllerArgs) {
 
     const changeHistoryStatus = (nextStatus: HistoryStatusFilter) => {
         setHistoryStatus(nextStatus);
+        setPage(1);
+    };
+
+    const applySearch = (nextSearch: string) => {
+        setSearch(nextSearch.trim());
+        setPage(1);
+    };
+
+    const applyOperationType = (nextOperationType: RequestTicketOperationType | '') => {
+        setOperationType(nextOperationType);
+        setPage(1);
+    };
+
+    const clearListFilters = () => {
+        setSearch('');
+        setOperationType('');
         setPage(1);
     };
 
@@ -252,6 +273,8 @@ export function useMyRequestsController({ t }: UseMyRequestsControllerArgs) {
         page,
         pageSize,
         historyStatus,
+        search,
+        operationType,
         savedVmDraft,
         cancelMutation,
         activeBatchID,
@@ -266,6 +289,9 @@ export function useMyRequestsController({ t }: UseMyRequestsControllerArgs) {
         setPageSize,
         changeView,
         changeHistoryStatus,
+        applySearch,
+        applyOperationType,
+        clearListFilters,
         discardSavedVmDraft,
         prepareHistoryReuse,
         refreshBatch: () => {

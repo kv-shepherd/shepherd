@@ -222,3 +222,54 @@ func TestListAuditLogs_PlacementReasonFilterExcludesNonApprovalAuditEntries(t *t
 		t.Fatalf("items len = %d, want 0", got)
 	}
 }
+
+func TestListAuditLogs_SupportsQuickSearchAcrossActionActorAndResource(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	mustCreateAuditLog := func(action, actor, resourceType, resourceID string) {
+		t.Helper()
+		_, err := client.AuditLog.Create().
+			SetID("audit-" + uuid.NewString()).
+			SetAction(action).
+			SetActor(actor).
+			SetResourceType(resourceType).
+			SetResourceID(resourceID).
+			SetDetails(map[string]interface{}{}).
+			Save(ctx)
+		if err != nil {
+			t.Fatalf("create audit log %s: %v", resourceID, err)
+		}
+	}
+
+	mustCreateAuditLog("vm.create", "alice", "vm", "vm-frontend-1")
+	mustCreateAuditLog("service.update", "bob", "service", "svc-payments")
+	mustCreateAuditLog("user.password_change", "carol", "user", "user-carol")
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/audit-logs?search=payments",
+		"",
+		"admin-1",
+		[]string{"audit:read", "platform:admin"},
+	)
+	srv.ListAuditLogs(c, generated.ListAuditLogsParams{
+		Search: "payments",
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.AuditLogList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("items len = %d, want 1", got)
+	}
+	if resp.Items[0].ResourceId != "svc-payments" {
+		t.Fatalf("resource_id = %q, want svc-payments", resp.Items[0].ResourceId)
+	}
+}

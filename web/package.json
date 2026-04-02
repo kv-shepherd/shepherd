@@ -64,7 +64,6 @@
     "js-yaml": "^4.1.1",
     "jsdom": "^28.1.0",
     "knip": "^6.0.5",
-    "msw": "^2.12.14",
     "openapi-typescript": "^7.13.0",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.2",

@@ -22,6 +22,7 @@ import {
     PlusOutlined,
     ReloadOutlined,
 } from '@ant-design/icons';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'next/navigation';
 
@@ -35,6 +36,7 @@ import {
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
+import { PageSearchToolbar, filterOptionByLabel } from '@/components/ui/PageSearchToolbar';
 import {
     buildDashboardSetupResumeHref,
     resolveNextSetupAction,
@@ -49,6 +51,10 @@ const { Text, Paragraph } = Typography;
 export function AdminNamespacesContent() {
     const { t } = useTranslation(['admin', 'common']);
     const router = useRouter();
+    const [filtersOpen, setFiltersOpen] = useState(false);
+    const [quickSearchDraft, setQuickSearchDraft] = useState('');
+    const [envFilterDraft, setEnvFilterDraft] = useState<'' | 'test' | 'prod'>('');
+    const [enabledFilterDraft, setEnabledFilterDraft] = useState<'' | 'enabled' | 'disabled'>('');
     const setupGuide = useSetupGuide();
     const namespaces = useAdminNamespacesController({
         t,
@@ -195,15 +201,6 @@ export function AdminNamespacesContent() {
                 subtitle={t('namespaces.subtitle')}
                 actions={(
                     <Space>
-                    <Select
-                        placeholder={t('namespaces.filter_env')}
-                        allowClear
-                        style={{ width: 160 }}
-                        data-testid="namespaces-env-filter"
-                        value={namespaces.envFilter || undefined}
-                        onChange={namespaces.changeEnvFilter}
-                        options={ENV_OPTIONS.map((item) => ({ ...item }))}
-                    />
                     <Button icon={<ReloadOutlined />} data-testid="namespaces-refresh-btn" onClick={() => namespaces.refetch()}>
                         {t('common:button.refresh')}
                     </Button>
@@ -255,7 +252,100 @@ export function AdminNamespacesContent() {
             </div>
 
             <PageSurface flush={true}>
+                <PageSearchToolbar
+                    searchValue={namespaces.search}
+                    searchDraftValue={quickSearchDraft}
+                    onSearchDraftChange={setQuickSearchDraft}
+                    onSearchChange={(value) => {
+                        setQuickSearchDraft(value);
+                        namespaces.changeSearch(value);
+                    }}
+                    searchPlaceholder={t('namespaces.search_placeholder', 'Search namespaces by name, description, environment, or owner')}
+                    searchHelp={t('namespaces.search_help', 'Press Enter or click Search. Quick search matches namespace names, descriptions, environments, and registry owners.')}
+                    advancedSearch={{
+                        open: filtersOpen,
+                        onToggle: () => setFiltersOpen((open) => !open),
+                        openLabel: t('common:search.advanced', { defaultValue: 'Advanced search' }),
+                        closeLabel: t('common:search.hide_advanced', { defaultValue: 'Hide advanced search' }),
+                        title: t('common:search.advanced', { defaultValue: 'Advanced search' }),
+                        content: (
+                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                <Text type="secondary">
+                                    {t('namespaces.advanced_search_help', {
+                                        defaultValue:
+                                            'Select exact namespace filters here. Options support keyword matching, but the applied filter remains an exact value.',
+                                    })}
+                                </Text>
+                                <Space wrap>
+                                <Select
+                                    placeholder={t('namespaces.filter_env')}
+                                    allowClear
+                                    showSearch
+                                    filterOption={filterOptionByLabel}
+                                    optionFilterProp="label"
+                                    style={{ width: 180 }}
+                                    data-testid="namespaces-env-filter"
+                                    value={envFilterDraft || undefined}
+                                    onChange={(value) => setEnvFilterDraft((value as 'test' | 'prod' | undefined) ?? '')}
+                                    options={ENV_OPTIONS.map((item) => ({ ...item }))}
+                                />
+                                <Select
+                                    placeholder={t('namespaces.enabled')}
+                                    allowClear
+                                    showSearch
+                                    filterOption={filterOptionByLabel}
+                                    optionFilterProp="label"
+                                    style={{ width: 180 }}
+                                    data-testid="namespaces-enabled-filter"
+                                    value={enabledFilterDraft || undefined}
+                                    onChange={(value) =>
+                                        setEnabledFilterDraft(
+                                            (value as 'enabled' | 'disabled' | undefined) ?? '',
+                                        )
+                                    }
+                                    options={[
+                                        {
+                                            value: 'enabled',
+                                            label: t('namespaces.enabled_yes'),
+                                        },
+                                        {
+                                            value: 'disabled',
+                                            label: t('namespaces.enabled_no'),
+                                        },
+                                    ]}
+                                />
+                                <Button
+                                    type="primary"
+                                    data-testid="namespaces-advanced-search-submit"
+                                    onClick={() => {
+                                        namespaces.changeSearch(quickSearchDraft);
+                                        namespaces.changeEnvFilter(envFilterDraft || undefined);
+                                        namespaces.changeEnabledFilter(enabledFilterDraft || undefined);
+                                    }}
+                                >
+                                    {t('common:button.search')}
+                                </Button>
+                                </Space>
+                            </Space>
+                        ),
+                    }}
+                    hasActiveFilters={Boolean(
+                        namespaces.search.trim() ||
+                            namespaces.envFilter ||
+                            namespaces.enabledFilter,
+                    )}
+                    onClear={() => {
+                        setQuickSearchDraft('');
+                        setEnvFilterDraft('');
+                        setEnabledFilterDraft('');
+                        namespaces.changeSearch('');
+                        namespaces.changeEnvFilter(undefined);
+                        namespaces.changeEnabledFilter(undefined);
+                    }}
+                    clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
+                />
                 <Table<NamespaceRegistry>
+                    style={{ marginTop: 16 }}
                     columns={columns}
                     dataSource={namespaceItems}
                     rowKey="id"
@@ -281,76 +371,78 @@ export function AdminNamespacesContent() {
                 />
             </PageSurface>
 
-            <Modal
-                title={t('namespaces.add')}
-                open={namespaces.createOpen}
-                onOk={handleCreate}
-                onCancel={namespaces.closeCreateModal}
-                confirmLoading={namespaces.createPending}
-                forceRender={true}
-                data-testid="namespace-create-modal"
-            >
-                    <Form form={namespaces.createForm} layout="vertical" name="create-namespace" preserve={false}>
-                        <Form.Item
-                            name="name"
-                            label={t('common:table.name')}
-                            rules={[
-                                { required: true, message: t('namespaces.validation.name_required') },
-                                { max: 63, message: t('namespaces.validation.name_max') },
-                                {
-                                    pattern: /^[a-z][a-z0-9-]*$/,
-                                    message: t('namespaces.validation.name_format'),
-                                },
-                            ]}
-                            extra={t('namespaces.name_hint')}
-                        >
-                            <Input placeholder="e.g. prod-shop, dev-analytics" />
-                        </Form.Item>
-                        <Form.Item
-                            name="environment"
-                            label={t('namespaces.environment')}
-                            rules={[{ required: true, message: t('namespaces.validation.env_required') }]}
-                            extra={t('namespaces.env_hint')}
-                        >
-                            <Select options={ENV_OPTIONS.map((item) => ({ ...item }))} />
-                        </Form.Item>
-                        <Form.Item
-                            name="description"
-                            label={t('common:table.description')}
-                        >
-                            <Input.TextArea rows={3} placeholder={t('namespaces.desc_placeholder')} />
-                        </Form.Item>
-                    </Form>
-            </Modal>
+            {namespaces.createOpen ? (
+                <Modal
+                    title={t('namespaces.add')}
+                    open={true}
+                    onOk={handleCreate}
+                    onCancel={namespaces.closeCreateModal}
+                    confirmLoading={namespaces.createPending}
+                    data-testid="namespace-create-modal"
+                >
+                        <Form form={namespaces.createForm} layout="vertical" name="create-namespace" preserve={false}>
+                            <Form.Item
+                                name="name"
+                                label={t('common:table.name')}
+                                rules={[
+                                    { required: true, message: t('namespaces.validation.name_required') },
+                                    { max: 63, message: t('namespaces.validation.name_max') },
+                                    {
+                                        pattern: /^[a-z][a-z0-9-]*$/,
+                                        message: t('namespaces.validation.name_format'),
+                                    },
+                                ]}
+                                extra={t('namespaces.name_hint')}
+                            >
+                                <Input placeholder="e.g. prod-shop, dev-analytics" />
+                            </Form.Item>
+                            <Form.Item
+                                name="environment"
+                                label={t('namespaces.environment')}
+                                rules={[{ required: true, message: t('namespaces.validation.env_required') }]}
+                                extra={t('namespaces.env_hint')}
+                            >
+                                <Select options={ENV_OPTIONS.map((item) => ({ ...item }))} />
+                            </Form.Item>
+                            <Form.Item
+                                name="description"
+                                label={t('common:table.description')}
+                            >
+                                <Input.TextArea rows={3} placeholder={t('namespaces.desc_placeholder')} />
+                            </Form.Item>
+                        </Form>
+                </Modal>
+            ) : null}
 
-            <Modal
-                title={`${t('common:button.edit')}: ${namespaces.editingNs?.name ?? ''}`}
-                open={namespaces.editOpen}
-                onOk={handleUpdate}
-                onCancel={namespaces.closeEditModal}
-                confirmLoading={namespaces.updatePending}
-                forceRender={true}
-                data-testid="namespace-edit-modal"
-            >
-                    <Form form={namespaces.editForm} layout="vertical" name="edit-namespace" preserve={false}>
-                        <Paragraph type="secondary" style={{ marginBottom: 16 }}>
-                            {t('namespaces.edit_note')}
-                        </Paragraph>
-                        <Form.Item
-                            name="description"
-                            label={t('common:table.description')}
-                        >
-                            <Input.TextArea rows={3} />
-                        </Form.Item>
-                        <Form.Item
-                            name="enabled"
-                            label={t('namespaces.enabled')}
-                            valuePropName="checked"
-                        >
-                            <Switch />
-                        </Form.Item>
-                    </Form>
-            </Modal>
+            {namespaces.editOpen ? (
+                <Modal
+                    title={`${t('common:button.edit')}: ${namespaces.editingNs?.name ?? ''}`}
+                    open={true}
+                    onOk={handleUpdate}
+                    onCancel={namespaces.closeEditModal}
+                    confirmLoading={namespaces.updatePending}
+                    data-testid="namespace-edit-modal"
+                >
+                        <Form form={namespaces.editForm} layout="vertical" name="edit-namespace" preserve={false}>
+                            <Paragraph type="secondary" style={{ marginBottom: 16 }}>
+                                {t('namespaces.edit_note')}
+                            </Paragraph>
+                            <Form.Item
+                                name="description"
+                                label={t('common:table.description')}
+                            >
+                                <Input.TextArea rows={3} />
+                            </Form.Item>
+                            <Form.Item
+                                name="enabled"
+                                label={t('namespaces.enabled')}
+                                valuePropName="checked"
+                            >
+                                <Switch />
+                            </Form.Item>
+                        </Form>
+                </Modal>
+            ) : null}
 
             <Modal
                 title={(

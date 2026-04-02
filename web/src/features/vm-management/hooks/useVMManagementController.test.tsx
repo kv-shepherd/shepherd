@@ -150,35 +150,41 @@ describe("useVMManagementController", () => {
     });
     formState.validateFields.mockResolvedValue(undefined);
 
-    let getCall = 0;
-    useApiGetMock.mockImplementation(() => {
-      getCall += 1;
-      const slot = ((getCall - 1) % 9) + 1;
-      if (slot === 1)
+    useApiGetMock.mockImplementation((queryKey: unknown) => {
+      if (!Array.isArray(queryKey)) {
+        return { data: undefined, isLoading: false };
+      }
+
+      if (
+        queryKey[0] === "vms" &&
+        queryKey[1] === 1 &&
+        queryKey[2] === 20
+      ) {
         return { data: { items: [] }, isLoading: false, refetch: vi.fn() };
-      if (slot === 2)
+      }
+
+      if (queryKey[0] === "vms" && queryKey[1] === "filter-options") {
+        return { data: { items: [] }, isLoading: false };
+      }
+
+      if (queryKey[0] === "systems" && queryKey[1] === "vm-wizard") {
         return {
           data: { items: [{ id: "sys-1", name: "System A" }] },
           isLoading: false,
         };
-      if (slot === 3)
+      }
+
+      if (queryKey[0] === "services" && queryKey[2] === "vm-wizard") {
         return {
           data: { items: [{ id: "svc-1", name: "Service A" }] },
           isLoading: false,
         };
-      if (slot === 4) {
-        return {
-          data: {
-            namespaces: ["prod"],
-            templates: [{ id: "tpl-1", name: "Ubuntu Template" }],
-            instance_sizes: [
-              { id: "size-1", name: "small", cpu_cores: 2, memory_gi: 4 },
-            ],
-          },
-          isLoading: false,
-        };
       }
-      if (slot === 5) {
+
+      if (
+        queryKey[0] === "vm-request-context" &&
+        queryKey[1] === "placement-hint"
+      ) {
         return {
           data: {
             placement_hint: {
@@ -190,9 +196,35 @@ describe("useVMManagementController", () => {
           isLoading: false,
         };
       }
-      if (slot === 6) return { data: { items: [] }, isLoading: false };
-      if (slot === 7) return { data: { items: [] }, isLoading: false };
-      if (slot === 8) {
+
+      if (queryKey[0] === "vm-request-context") {
+        return {
+          data: {
+            namespaces: ["prod"],
+            templates: [{ id: "tpl-1", name: "Ubuntu Template" }],
+            instance_sizes: [
+              { id: "size-1", name: "small", cpu_cores: 2, memory_gi: 4 },
+            ],
+          },
+          isLoading: false,
+        };
+      }
+
+      if (
+        queryKey[0] === "templates" &&
+        queryKey[1] === "vm-wizard-fallback"
+      ) {
+        return { data: { items: [] }, isLoading: false };
+      }
+
+      if (
+        queryKey[0] === "instance-sizes" &&
+        queryKey[1] === "vm-wizard-fallback"
+      ) {
+        return { data: { items: [] }, isLoading: false };
+      }
+
+      if (queryKey[0] === "vm-batch") {
         return {
           data: {
             batch_id: "batch-live-1",
@@ -233,7 +265,8 @@ describe("useVMManagementController", () => {
           refetch: batchStatusRefetchMock,
         };
       }
-      if (slot === 9) {
+
+      if (queryKey[0] === "vm-modify-context") {
         return {
           data: {
             vm_id: "vm-1",
@@ -249,6 +282,7 @@ describe("useVMManagementController", () => {
           isLoading: false,
         };
       }
+
       return { data: undefined, isLoading: false };
     });
 
@@ -546,6 +580,10 @@ describe("useVMManagementController", () => {
 
   it("requests placement hint when namespace, template, and size are selected", async () => {
     const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => {
+      result.current.openWizard({ requestMode: "full" });
+    });
 
     expect(result.current.placementHint?.status).toBe("AVAILABLE");
 

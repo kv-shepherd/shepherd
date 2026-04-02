@@ -3,6 +3,7 @@
 import {
     Badge,
     Button,
+    Select,
     Segmented,
     Space,
     Table,
@@ -13,6 +14,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
+import { useMemo, useState } from 'react';
 
 import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
 import { SummaryMetricCard } from '@/components/feedback/SummaryMetricCard';
@@ -24,6 +26,7 @@ import {
     VirtualMachinesOverviewGlyph,
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { PageSearchToolbar, filterOptionByLabel } from '@/components/ui/PageSearchToolbar';
 import { useNotificationsController } from '../hooks/useNotificationsController';
 import type { Notification } from '../types';
 
@@ -55,6 +58,12 @@ const typeConfig: Record<string, { color: string; icon: React.ReactNode; labelKe
 export function NotificationsContent() {
     const { t } = useTranslation('common');
     const notifications = useNotificationsController({ t });
+    const [quickSearch, setQuickSearch] = useState('');
+    const [quickSearchDraft, setQuickSearchDraft] = useState('');
+    const [filtersOpen, setFiltersOpen] = useState(false);
+    const [typeFilter, setTypeFilter] = useState<'all' | Notification['type']>('all');
+    const [typeFilterDraft, setTypeFilterDraft] = useState<'all' | Notification['type']>('all');
+    const normalizedQuickSearch = quickSearch.trim().toLowerCase();
 
     const columns: ColumnsType<Notification> = [
         {
@@ -119,10 +128,33 @@ export function NotificationsContent() {
         },
     ];
 
-    const listItems = notifications.data?.items ?? [];
-    const pendingVisible = listItems.filter((item) => item.type === 'APPROVAL_PENDING').length;
-    const resolvedVisible = listItems.filter((item) => item.type === 'APPROVAL_COMPLETED' || item.type === 'APPROVAL_REJECTED').length;
-    const vmEventsVisible = listItems.filter((item) => item.type === 'VM_STATUS_CHANGE').length;
+    const filteredItems = useMemo(
+        () =>
+            (notifications.data?.items ?? []).filter((item) => {
+                const matchesSearch =
+                    !normalizedQuickSearch ||
+                    [
+                        item.title,
+                        item.message,
+                        t(typeConfig[item.type]?.labelKey ?? 'notification.type.approval_pending'),
+                    ]
+                        .join(' ')
+                        .toLowerCase()
+                        .includes(normalizedQuickSearch);
+                const matchesType = typeFilter === 'all' || item.type === typeFilter;
+                return matchesSearch && matchesType;
+            }),
+        [normalizedQuickSearch, notifications.data?.items, t, typeFilter],
+    );
+    const pendingVisible = filteredItems.filter((item) => item.type === 'APPROVAL_PENDING').length;
+    const resolvedVisible = filteredItems.filter((item) => item.type === 'APPROVAL_COMPLETED' || item.type === 'APPROVAL_REJECTED').length;
+    const vmEventsVisible = filteredItems.filter((item) => item.type === 'VM_STATUS_CHANGE').length;
+    const hasActiveFilters = quickSearch.trim().length > 0 || typeFilter !== 'all';
+    const applyFilters = (nextSearch = quickSearchDraft) => {
+        setQuickSearch(nextSearch);
+        setTypeFilter(typeFilterDraft);
+        notifications.setPage(1);
+    };
 
     return (
         <div>
@@ -197,11 +229,90 @@ export function NotificationsContent() {
             </div>
 
             <PageSurface flush={true}>
-                {listItems.length === 0 && !notifications.isLoading ? (
+                <div style={{ padding: 16, paddingBottom: 0 }}>
+                    <PageSearchToolbar
+                        searchValue={quickSearch}
+                        searchDraftValue={quickSearchDraft}
+                        onSearchDraftChange={setQuickSearchDraft}
+                        onSearchChange={(value) => {
+                            setQuickSearchDraft(value);
+                            setQuickSearch(value);
+                            notifications.setPage(1);
+                        }}
+                        searchPlaceholder={t('notification.search_placeholder', 'Search notifications by title, message, or type')}
+                        searchTestId="notifications-quick-search"
+                        searchHelp={t('notification.search_help', 'Quick search filters notifications visible in the current page.')}
+                        secondaryActions={(
+                            <Segmented
+                                value={notifications.unreadOnly ? 'unread' : 'all'}
+                                options={[
+                                    { value: 'all', label: t('notification.filter_all') },
+                                    { value: 'unread', label: t('notification.filter_unread') },
+                                ]}
+                                onChange={(value) => {
+                                    notifications.setUnreadOnly(value === 'unread');
+                                    notifications.setPage(1);
+                                }}
+                            />
+                        )}
+                        advancedSearch={{
+                            open: filtersOpen,
+                            onToggle: () => setFiltersOpen((current) => !current),
+                            openLabel: t('search.advanced', 'Advanced search'),
+                            closeLabel: t('search.hide_advanced', 'Hide advanced search'),
+                            title: t('search.advanced', 'Advanced search'),
+                            content: (
+                                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                    <Text type="secondary">
+                                        {t('notification.advanced_search_help', 'Select exact notification filters here. Options support keyword matching, but the applied filter remains an exact value.')}
+                                    </Text>
+                                    <Space wrap size={[12, 12]} align="end" style={{ width: '100%' }}>
+                                    <Select
+                                        style={{ minWidth: 240, width: '100%' }}
+                                        placeholder={t('notification.type')}
+                                        showSearch
+                                        filterOption={filterOptionByLabel}
+                                        optionFilterProp="label"
+                                        value={typeFilterDraft}
+                                        onChange={(value) => {
+                                            setTypeFilterDraft(value);
+                                        }}
+                                        options={[
+                                            { value: 'all', label: t('filter.all', 'All') },
+                                            { value: 'APPROVAL_PENDING', label: t('notification.type.approval_pending') },
+                                            { value: 'APPROVAL_COMPLETED', label: t('notification.type.approval_completed') },
+                                            { value: 'APPROVAL_REJECTED', label: t('notification.type.approval_rejected') },
+                                            { value: 'VM_STATUS_CHANGE', label: t('notification.type.vm_status_change') },
+                                        ]}
+                                    />
+                                    <Button
+                                        type="primary"
+                                        data-testid="notifications-advanced-search-submit"
+                                        onClick={() => applyFilters()}
+                                    >
+                                        {t('button.search')}
+                                    </Button>
+                                    </Space>
+                                </Space>
+                            ),
+                        }}
+                        hasActiveFilters={hasActiveFilters}
+                        onClear={() => {
+                            setQuickSearch('');
+                            setQuickSearchDraft('');
+                            setTypeFilter('all');
+                            setTypeFilterDraft('all');
+                            setFiltersOpen(false);
+                            notifications.setPage(1);
+                        }}
+                        clearLabel={t('button.clear_filters', 'Clear filters')}
+                    />
+                </div>
+                {filteredItems.length === 0 && !notifications.isLoading ? (
                     <div style={{ padding: 48 }}>
                         <ActionEmptyState
-                            title={t('notification.empty')}
-                            description={t('notification.empty_description', 'Approval decisions and VM lifecycle changes will appear here.')}
+                            title={hasActiveFilters ? t('notification.empty_filtered', 'No notifications match the current filters') : t('notification.empty')}
+                            description={hasActiveFilters ? t('notification.empty_filtered_description', 'Try a broader search or clear the current filters.') : t('notification.empty_description', 'Approval decisions and VM lifecycle changes will appear here.')}
                             visual={<NotificationInboxGlyph className="action-empty-state__art" />}
                         />
                     </div>
@@ -209,12 +320,12 @@ export function NotificationsContent() {
                     <Table<Notification>
                         rowKey="id"
                         columns={columns}
-                        dataSource={listItems}
+                        dataSource={filteredItems}
                         loading={notifications.isLoading}
                         pagination={{
                             current: notifications.page,
                             pageSize: notifications.pageSize,
-                            total: notifications.data?.pagination?.total ?? 0,
+                            total: filteredItems.length,
                             showTotal: (total) => t('table.total', { total }),
                             onChange: (page, pageSize) => {
                                 notifications.setPage(page);

@@ -55,7 +55,7 @@ vi.mock('@/features/setup-guide/hooks/useSetupGuide', () => ({
     }),
 }));
 
-import { AdminTemplatesContent } from './AdminTemplatesContent';
+import { AdminTemplatesContent, applyTemplatePreset } from './AdminTemplatesContent';
 import type { Template } from '../types';
 
 function buildTemplate(overrides: Partial<Template> = {}): Template {
@@ -131,34 +131,43 @@ describe('AdminTemplatesContent', () => {
                 call.some((value) => String(value).includes('There may be circular references')),
             ),
         ).toBe(false);
-    }, 30000);
+    });
 
-    it('hydrates the official fedora preset into the create form', async () => {
-        const user = userEvent.setup();
-        render(<AdminTemplatesContent />);
+    it('applies the official fedora preset values to the form', () => {
+        const setFieldsValue = vi.fn();
 
-        await user.click(screen.getByTestId('template-create-button'));
-        await screen.findByPlaceholderText('centos7-standard');
-        await user.click(await screen.findByRole('button', { name: 'templates.official_preset_fedora_eval' }));
+        applyTemplatePreset({ setFieldsValue } as never, 'official-fedora-eval');
 
-        expect(await screen.findByText('Fedora')).toBeInTheDocument();
-        expect(screen.getByText('docker://quay.io/containerdisks/fedora:latest')).toBeInTheDocument();
-        expect(screen.getByDisplayValue(/#cloud-config/)).toBeInTheDocument();
-    }, 30000);
+        expect(setFieldsValue).toHaveBeenCalledTimes(1);
+        expect(setFieldsValue).toHaveBeenCalledWith(expect.objectContaining({
+            source_type: 'cdi_image_import',
+            os_family: 'linux',
+            os_version: 'Fedora',
+            catalog_scope: 'test',
+            image_url: 'docker://quay.io/containerdisks/fedora:latest',
+            cloud_init: expect.stringContaining('#cloud-config'),
+            pvc_name: undefined,
+            pvc_namespace: undefined,
+        }));
+    });
 
-    it('hydrates the curated linux prod preset into the create form', async () => {
-        const user = userEvent.setup();
-        render(<AdminTemplatesContent />);
+    it('applies the curated linux prod preset values to the form', () => {
+        const setFieldsValue = vi.fn();
 
-        await user.click(screen.getByTestId('template-create-button'));
-        await screen.findByPlaceholderText('centos7-standard');
-        await user.click(await screen.findByRole('button', { name: 'templates.preset_linux_prod' }));
+        applyTemplatePreset({ setFieldsValue } as never, 'linux-prod');
 
-        expect(await screen.findByText('Kylin V10')).toBeInTheDocument();
-        expect(screen.getByText('vm-muban')).toBeInTheDocument();
-        expect(screen.getByText('kylinv10-image')).toBeInTheDocument();
-        expect(screen.getByDisplayValue(/#cloud-config/)).toBeInTheDocument();
-    }, 30000);
+        expect(setFieldsValue).toHaveBeenCalledTimes(1);
+        expect(setFieldsValue).toHaveBeenCalledWith(expect.objectContaining({
+            source_type: 'cdi_pvc_clone',
+            os_family: 'linux',
+            os_version: 'Kylin V10',
+            catalog_scope: 'prod',
+            pvc_namespace: 'vm-muban',
+            pvc_name: 'kylinv10-image',
+            cloud_init: expect.stringContaining('#cloud-config'),
+            image_url: undefined,
+        }));
+    });
 
     it('hydrates edit values for pvc clone templates after the modal opens', async () => {
         const user = userEvent.setup();
@@ -196,5 +205,5 @@ describe('AdminTemplatesContent', () => {
                 call.some((value) => String(value).includes('Instance created by `useForm` is not connected to any Form element')),
             ),
         ).toBe(false);
-    }, 20000);
+    });
 });

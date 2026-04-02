@@ -10,7 +10,11 @@ type TicketRecord = {
     operation_type?: string;
     status: string;
     requester: string;
+    requester_display_name?: string;
+    requester_username?: string;
     approver?: string;
+    approver_display_name?: string;
+    approver_username?: string;
     reason?: string;
     ticket_payload?: Record<string, unknown> | null;
     request_prefill?: {
@@ -44,6 +48,16 @@ type ApprovalBatchDisplayItem = {
     currentShape?: string;
     targetShape?: string;
     action?: string;
+};
+
+type ApprovalActorSummary = {
+    primary: string;
+    secondary?: string;
+};
+
+type ApprovalSummarySections = {
+    primary: string[];
+    secondary: string[];
 };
 
 function buildApprovalBatchDisplayKey(
@@ -194,7 +208,7 @@ function formatPowerAction(action: string | undefined, t: TFunction): string | u
     return translated === key ? action : translated;
 }
 
-function formatResourceShape(
+export function formatApprovalResourceShape(
     cpu: number | undefined,
     memory: number | undefined,
     disk: number | undefined,
@@ -258,13 +272,14 @@ function fallbackBatchDisplayItems(
             firstNonEmptyString(payloadString(entry.latest_vm_status), payloadString(entry.vm_status)) !== undefined &&
             firstNonEmptyString(payloadString(entry.request_vm_status), payloadString(entry.vm_status)) !==
                 firstNonEmptyString(payloadString(entry.latest_vm_status), payloadString(entry.vm_status)),
-        currentShape: formatResourceShape(
+        currentShape: formatApprovalResourceShape(
+        
             payloadNumber(entry.current_cpu_cores),
             payloadNumber(entry.current_memory_gi),
             payloadNumber(entry.current_disk_gb),
             t,
         ),
-        targetShape: formatResourceShape(
+        targetShape: formatApprovalResourceShape(
             payloadNumber(entry.target_cpu_cores) ?? payloadNumber(entry.cpu_cores),
             payloadNumber(entry.target_memory_gi) ?? payloadNumber(entry.memory_gi),
             payloadNumber(entry.target_disk_gb) ?? payloadNumber(entry.instance_size_disk_gb),
@@ -309,10 +324,11 @@ export function approvalSummaryTitle(ticket: TicketRecord, t: TFunction): string
     }
 }
 
-export function approvalSummaryMeta(ticket: TicketRecord, t: TFunction): string[] {
+function approvalSummarySections(ticket: TicketRecord, t: TFunction): ApprovalSummarySections {
     const summary = ticket.summary ?? undefined;
     const payload = asPayloadRecord(ticket.ticket_payload);
-    const parts: string[] = [];
+    const primary: string[] = [];
+    const secondary: string[] = [];
     const scope = [summarySystem(summary), summaryService(summary)].filter(Boolean).join(' / ');
     const namespace = firstNonEmptyString(
         summary?.namespace,
@@ -330,29 +346,29 @@ export function approvalSummaryMeta(ticket: TicketRecord, t: TFunction): string[
         payloadNumber(payload?.batch_item_count);
 
     if (scope) {
-        parts.push(scope);
+        primary.push(scope);
     }
     if (namespace) {
-        parts.push(namespace);
+        primary.push(namespace);
     }
 
     switch (ticket.operation_type) {
         case 'CREATE':
             if (size) {
-                parts.push(size);
+                secondary.push(size);
             }
             if (cluster) {
-                parts.push(cluster);
+                secondary.push(cluster);
             }
             break;
         case 'MODIFY': {
-            const currentShape = formatResourceShape(
+            const currentShape = formatApprovalResourceShape(
                 summary?.current_cpu_cores,
                 summary?.current_memory_gi,
                 summary?.current_disk_gb,
                 t,
             );
-            const targetShape = formatResourceShape(
+            const targetShape = formatApprovalResourceShape(
                 summary?.target_cpu_cores,
                 summary?.target_memory_gi,
                 summary?.target_disk_gb,
@@ -362,32 +378,32 @@ export function approvalSummaryMeta(ticket: TicketRecord, t: TFunction): string[
                 ? `${currentShape} → ${targetShape}`
                 : targetShape || currentShape;
             if (change) {
-                parts.push(change);
+                secondary.push(change);
             }
             if (cluster) {
-                parts.push(cluster);
+                secondary.push(cluster);
             }
             if (payloadBool(payload?.requires_restart)) {
-                parts.push(t('summary.restart_required_short', { ns: 'approval' }));
+                secondary.push(t('summary.restart_required_short', { ns: 'approval' }));
             }
             break;
         }
         case 'DELETE':
         case 'VNC_ACCESS':
             if (cluster) {
-                parts.push(cluster);
+                secondary.push(cluster);
             }
             const latestStatus = summaryLatestVMStatus(summary);
             if (latestStatus) {
-                parts.push(formatVMStatus(latestStatus, t) ?? latestStatus);
+                secondary.push(formatVMStatus(latestStatus, t) ?? latestStatus);
             }
             break;
         case 'POWER':
             if (cluster) {
-                parts.push(cluster);
+                secondary.push(cluster);
             }
             if (summary?.power_action) {
-                parts.push(formatPowerAction(summary.power_action, t) ?? summary.power_action);
+                secondary.push(formatPowerAction(summary.power_action, t) ?? summary.power_action);
             }
             break;
         default:
@@ -395,20 +411,56 @@ export function approvalSummaryMeta(ticket: TicketRecord, t: TFunction): string[
     }
 
     if (batchCount && batchCount > 1) {
-        parts.push(t('request_batch_count', { ns: 'approval', count: batchCount }));
+        secondary.push(t('request_batch_count', { ns: 'approval', count: batchCount }));
     }
-    if (ticket.reason) {
-        parts.push(ticket.reason);
+    return { primary, secondary };
+}
+
+export function approvalSummaryMeta(ticket: TicketRecord, t: TFunction): string[] {
+    const sections = approvalSummarySections(ticket, t);
+    return [...sections.primary, ...sections.secondary];
+}
+
+function buildApprovalActorSummary(
+    id: string | undefined,
+    displayName: string | undefined,
+    username: string | undefined,
+): ApprovalActorSummary | undefined {
+    const primary = firstNonEmptyString(displayName, username, id);
+    if (!primary) {
+        return undefined;
     }
-    return parts;
+    const normalizedDisplayName = firstNonEmptyString(displayName);
+    const normalizedUsername = firstNonEmptyString(username);
+    const secondary = normalizedDisplayName && normalizedUsername && normalizedDisplayName !== normalizedUsername
+        ? normalizedUsername
+        : undefined;
+    return { primary, secondary };
+}
+
+export function approvalRequesterSummary(ticket: TicketRecord): ApprovalActorSummary | undefined {
+    return buildApprovalActorSummary(
+        ticket.requester,
+        ticket.requester_display_name,
+        ticket.requester_username,
+    );
+}
+
+export function approvalApproverSummary(ticket: TicketRecord): ApprovalActorSummary | undefined {
+    return buildApprovalActorSummary(
+        ticket.approver,
+        ticket.approver_display_name,
+        ticket.approver_username,
+    );
 }
 
 export function buildApprovalOverviewItems(ticket: TicketRecord, t: TFunction): DescriptionItem[] {
     const summary = ticket.summary ?? undefined;
+    const requester = approvalRequesterSummary(ticket);
+    const approver = approvalApproverSummary(ticket);
     return compactDescriptionItems([
-        item('operation', t('operation_type'), ticket.operation_type ? t(`op_type.${ticket.operation_type}`) : undefined),
-        item('requester', t('requester'), ticket.requester || undefined),
-        item('approver', t('approver'), ticket.approver || undefined),
+        item('requester', t('requester'), requester?.primary),
+        item('approver', t('approver'), approver?.primary),
         item('reason', t('reason'), ticket.reason || undefined),
         item('batch_count', t('summary.batch_count', { ns: 'approval' }), summary?.batch_count && summary.batch_count > 1 ? summary.batch_count : undefined),
     ]);
@@ -425,28 +477,26 @@ export function buildApprovalScopeItems(ticket: TicketRecord, t: TFunction): Des
         item('vm', t('summary.virtual_machine', { ns: 'approval' }), summaryVM(summary)),
         item('request_vm_status', t('summary.request_vm_status', { ns: 'approval' }), formatVMStatus(summaryRequestVMStatus(summary), t)),
         item('latest_vm_status', t('summary.latest_vm_status', { ns: 'approval' }), formatVMStatus(summaryLatestVMStatus(summary), t)),
-        item('template', t('summary.template', { ns: 'approval' }), summaryTemplate(summary)),
-        item('size', t('summary.instance_size', { ns: 'approval' }), summaryInstanceSize(summary)),
     ]);
 }
 
 export function buildApprovalChangeItems(ticket: TicketRecord, t: TFunction): DescriptionItem[] {
     const summary = ticket.summary ?? undefined;
     const payload = asPayloadRecord(ticket.ticket_payload);
-    const currentShape = formatResourceShape(
+    const currentShape = formatApprovalResourceShape(
         summary?.current_cpu_cores,
         summary?.current_memory_gi,
         summary?.current_disk_gb,
         t,
     );
-    const targetShape = formatResourceShape(
+    const targetShape = formatApprovalResourceShape(
         summary?.target_cpu_cores,
         summary?.target_memory_gi,
         summary?.target_disk_gb,
         t,
     );
     const powerAction = formatPowerAction(summary?.power_action, t);
-    const currentRequestShape = formatResourceShape(
+    const currentRequestShape = formatApprovalResourceShape(
         payloadNumber(payload?.current_cpu_request),
         payloadNumber(payload?.current_memory_request_gi),
         undefined,
@@ -487,13 +537,13 @@ export function buildApprovalBatchDisplayItems(
                 firstNonEmptyString(entry.request_vm_status) !== undefined &&
                 firstNonEmptyString(entry.latest_vm_status, entry.vm_status) !== undefined &&
                 firstNonEmptyString(entry.request_vm_status) !== firstNonEmptyString(entry.latest_vm_status, entry.vm_status),
-            currentShape: formatResourceShape(
+            currentShape: formatApprovalResourceShape(
                 entry.current_cpu_cores,
                 entry.current_memory_gi,
                 entry.current_disk_gb,
                 t,
             ),
-            targetShape: formatResourceShape(
+            targetShape: formatApprovalResourceShape(
                 entry.target_cpu_cores,
                 entry.target_memory_gi,
                 entry.target_disk_gb,

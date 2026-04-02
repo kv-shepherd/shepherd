@@ -45,6 +45,7 @@ export function useAdminApprovalsController({
   const [statusFilter, setStatusFilter] = useState<"ALL" | ApprovalStatus>(
     "PENDING",
   );
+  const [searchFilter, setSearchFilter] = useState("");
   const [operationFilter, setOperationFilter] = useState<
     "ALL" | ApprovalTask["operation_type"]
   >("ALL");
@@ -79,6 +80,7 @@ export function useAdminApprovalsController({
     approveForm,
   );
   const watchedMemoryLimitGi = Form.useWatch("memory_limit_gi", approveForm);
+  const trimmedSearchFilter = searchFilter.trim();
   const trimmedSelectedClusterFilter = selectedClusterFilter.trim();
   const trimmedPlacementAdvisoryFilter = placementAdvisoryFilter.trim();
 
@@ -86,6 +88,7 @@ export function useAdminApprovalsController({
     [
       "builtin-approval-tasks",
       statusFilter,
+      trimmedSearchFilter,
       operationFilter,
       trimmedSelectedClusterFilter,
       trimmedPlacementAdvisoryFilter,
@@ -98,6 +101,7 @@ export function useAdminApprovalsController({
         params: {
           query: {
             ...(statusFilter !== "ALL" ? { status: statusFilter } : {}),
+            ...(trimmedSearchFilter ? { search: trimmedSearchFilter } : {}),
             ...(operationFilter !== "ALL"
               ? { operation_type: operationFilter }
               : {}),
@@ -115,6 +119,22 @@ export function useAdminApprovalsController({
           },
         },
       }),
+  );
+
+  const filterClusterListQuery = useApiGet<ClusterList>(
+    ["admin-clusters", "approval-filters"],
+    () =>
+      api.GET("/admin/clusters", {
+        params: {
+          query: {
+            page: 1,
+            per_page: 200,
+          },
+        },
+      }),
+    {
+      retry: false,
+    },
   );
 
   const isCreateTicket = approveModal?.operation_type === "CREATE";
@@ -408,6 +428,11 @@ export function useAdminApprovalsController({
     setPage(1);
   };
 
+  const changeSearchFilter = (value: string) => {
+    setSearchFilter(value);
+    setPage(1);
+  };
+
   const changeOperationFilter = (
     value: "ALL" | ApprovalTask["operation_type"],
   ) => {
@@ -434,6 +459,7 @@ export function useAdminApprovalsController({
 
   const resetFilters = () => {
     setStatusFilter("PENDING");
+    setSearchFilter("");
     setOperationFilter("ALL");
     setSelectedClusterFilter("");
     setPlacementAdvisoryFilter("");
@@ -592,6 +618,8 @@ export function useAdminApprovalsController({
     messageContextHolder,
     statusFilter,
     changeStatusFilter,
+    searchFilter,
+    changeSearchFilter,
     operationFilter,
     changeOperationFilter,
     selectedClusterFilter,
@@ -614,6 +642,8 @@ export function useAdminApprovalsController({
     approveForm,
     rejectForm,
     clustersData,
+    filterClusters: filterClusterListQuery.data?.items ?? [],
+    filterClustersLoading: filterClusterListQuery.isLoading,
     clusterQueryError:
       validatedClusterListQuery.error ??
       resolvedClusterListQuery.error ??

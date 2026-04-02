@@ -39,6 +39,7 @@ import {
     TemplateCatalogGlyph,
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 import {
     buildDashboardSetupResumeHref,
     resolveNextSetupAction,
@@ -251,7 +252,7 @@ function ExperimentalSourceGate({
     );
 }
 
-function applyTemplatePreset(
+export function applyTemplatePreset(
     form: FormInstance,
     presetKey: TemplatePresetKey,
     enableExperimentalSources?: () => void,
@@ -377,11 +378,26 @@ export function AdminTemplatesContent() {
     useAutoOpenIntent('create-template', () => {
         templates.openCreateModal();
     });
+    const [quickSearchDraft, setQuickSearchDraft] = useState(() => templates.filters.search);
+    const [filtersOpen, setFiltersOpen] = useState(() => templates.hasActiveFilters);
+    const [osFamilyDraft, setOsFamilyDraft] = useState(() => templates.filters.osFamily);
+    const [sourceTypeDraft, setSourceTypeDraft] = useState(() => templates.filters.sourceType);
+    const [catalogScopeDraft, setCatalogScopeDraft] = useState(() => templates.filters.catalogScope);
+    const [enabledDraft, setEnabledDraft] = useState(() => templates.filters.enabled);
     const catalogScopeOptions = [
         { label: t('templates.scope_unclassified'), value: 'unclassified' },
         { label: t('templates.scope_test'), value: 'test' },
         { label: t('templates.scope_prod'), value: 'prod' },
         { label: t('templates.scope_all'), value: 'all' },
+    ];
+    const sourceTypeOptions = [
+        { label: t('templates.source_containerdisk'), value: 'containerdisk' },
+        { label: t('templates.source_cdi_import'), value: 'cdi_image_import' },
+        { label: t('templates.source_cdi_clone'), value: 'cdi_pvc_clone' },
+    ];
+    const enabledOptions = [
+        { label: t('common:status.active', { defaultValue: 'Enabled' }), value: 'enabled' },
+        { label: t('common:status.disabled', { defaultValue: 'Disabled' }), value: 'disabled' },
     ];
 
     const getColumnSearchProps = (dataIndex: keyof Template): Partial<ColumnsType<Template>[number]> => ({
@@ -623,14 +639,6 @@ export function AdminTemplatesContent() {
                 subtitle={t('templates.subtitle')}
                 actions={(
                     <Space>
-                    <Input
-                        placeholder={t('common:button.search')}
-                        prefix={<SearchOutlined />}
-                        value={templates.globalSearch}
-                        onChange={(e) => templates.setGlobalSearch(e.target.value)}
-                        allowClear
-                        style={{ width: 220 }}
-                    />
                     <Button icon={<ReloadOutlined />} onClick={() => templates.refetch()}>
                         {t('common:button.refresh')}
                     </Button>
@@ -681,7 +689,104 @@ export function AdminTemplatesContent() {
             </div>
 
             <PageSurface flush={true}>
+                <PageSearchToolbar
+                    searchValue={templates.globalSearch}
+                    searchDraftValue={quickSearchDraft}
+                    onSearchDraftChange={setQuickSearchDraft}
+                    onSearchChange={(value) => {
+                        setQuickSearchDraft(value);
+                        templates.applyFilters({ search: value });
+                    }}
+                    searchPlaceholder={t('templates.search_placeholder', 'Search templates by name, display name, operating system, or ID')}
+                    searchHelp={t('templates.search_help', 'Press Enter or click Search. Quick search matches template names, display names, operating systems, key catalog metadata, and IDs.')}
+                    advancedSearch={{
+                        open: filtersOpen,
+                        onToggle: () => setFiltersOpen((open) => !open),
+                        openLabel: t('common:search.advanced', { defaultValue: 'Advanced search' }),
+                        closeLabel: t('common:search.hide_advanced', { defaultValue: 'Hide advanced search' }),
+                        title: t('templates.advanced_search_title', 'Advanced search'),
+                        content: (
+                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                <Text type="secondary">
+                                    {t('templates.advanced_search_help', 'Choose exact template filters here. Options can be searched by keyword, but the applied filter remains an exact value.')}
+                                </Text>
+                                <Space wrap>
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        optionFilterProp="label"
+                                        placeholder={t('templates.os_family', 'OS family')}
+                                        value={osFamilyDraft || undefined}
+                                        options={TEMPLATE_OS_FAMILY_OPTIONS.map((option) => ({
+                                            label: t(option.labelKey),
+                                            value: option.value,
+                                        }))}
+                                        style={{ minWidth: 200 }}
+                                        onChange={(value) => setOsFamilyDraft((value as string | undefined) ?? '')}
+                                    />
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        optionFilterProp="label"
+                                        placeholder={t('templates.source_type', 'Source type')}
+                                        value={sourceTypeDraft || undefined}
+                                        options={sourceTypeOptions}
+                                        style={{ minWidth: 220 }}
+                                        onChange={(value) => setSourceTypeDraft((value as string | undefined) ?? '')}
+                                    />
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        optionFilterProp="label"
+                                        placeholder={t('templates.catalog_scope', 'Catalog scope')}
+                                        value={catalogScopeDraft || undefined}
+                                        options={catalogScopeOptions}
+                                        style={{ minWidth: 200 }}
+                                        onChange={(value) => setCatalogScopeDraft((value as string | undefined) ?? '')}
+                                    />
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        optionFilterProp="label"
+                                        placeholder={t('common:table.status', 'Status')}
+                                        value={enabledDraft || undefined}
+                                        options={enabledOptions}
+                                        style={{ minWidth: 180 }}
+                                        onChange={(value) =>
+                                            setEnabledDraft((value as 'enabled' | 'disabled' | undefined) ?? '')
+                                        }
+                                    />
+                                    <Button
+                                        type="primary"
+                                        onClick={() =>
+                                            templates.applyFilters({
+                                                search: quickSearchDraft,
+                                                osFamily: osFamilyDraft,
+                                                sourceType: sourceTypeDraft,
+                                                catalogScope: catalogScopeDraft,
+                                                enabled: enabledDraft,
+                                            })
+                                        }
+                                    >
+                                        {t('common:button.search')}
+                                    </Button>
+                                </Space>
+                            </Space>
+                        ),
+                    }}
+                    hasActiveFilters={templates.hasActiveFilters}
+                    onClear={() => {
+                        setQuickSearchDraft('');
+                        setOsFamilyDraft('');
+                        setSourceTypeDraft('');
+                        setCatalogScopeDraft('');
+                        setEnabledDraft('');
+                        templates.clearFilters();
+                    }}
+                    clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
+                />
                 <div style={{
+                    marginTop: 16,
                     opacity: templates.isStale ? 0.6 : 1,
                     transition: templates.isStale ? 'opacity 0.2s 0.1s linear' : 'opacity 0s 0s linear',
                 }}>
@@ -722,13 +827,13 @@ export function AdminTemplatesContent() {
             </PageSurface>
 
             {/* ── Create Modal (master-flow Step 3) ── */}
+            {templates.createOpen ? (
             <Modal
                 title={t('common:button.add')}
                 open={templates.createOpen}
                 onOk={() => { void templates.submitCreate(); }}
                 onCancel={templates.closeCreateModal}
                 confirmLoading={templates.createPending}
-                forceRender={true}
                 width={640}
                 data-testid="template-create-modal"
             >
@@ -954,15 +1059,16 @@ export function AdminTemplatesContent() {
                     </Form.Item>
                 </Form>
             </Modal>
+            ) : null}
 
             {/* ── Edit Modal (master-flow Step 3) ── */}
+            {templates.editOpen ? (
             <Modal
                 title={t('common:button.edit')}
                 open={templates.editOpen}
                 onOk={() => { void templates.submitEdit(); }}
                 onCancel={templates.closeEditModal}
                 confirmLoading={templates.updatePending}
-                forceRender={true}
                 width={640}
                 data-testid="template-edit-modal"
             >
@@ -1188,6 +1294,7 @@ export function AdminTemplatesContent() {
                     </Form.Item>
                 </Form>
             </Modal>
+            ) : null}
 
             <Modal
                 title={t('common:button.delete')}

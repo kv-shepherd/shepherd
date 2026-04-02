@@ -33,6 +33,7 @@ import {
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
+import { PageSearchToolbar, filterOptionByLabel } from '@/components/ui/PageSearchToolbar';
 import { WorkbenchDetailModal } from '@/components/workbench/WorkbenchDetailModal';
 import {
     buildDashboardSetupResumeHref,
@@ -44,7 +45,7 @@ import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
 import { useApiGet } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
 import { approvalSummaryMeta, approvalSummaryTitle, formatApprovalRecordID } from '@/features/approval-shared/summary';
-import { useServicesManagementController } from '../hooks/useServicesManagementController';
+import { ALL_SYSTEMS_FILTER, useServicesManagementController } from '../hooks/useServicesManagementController';
 import type { Ticket, Service, ServiceWorkspaceContext, VM } from '../types';
 
 const { Text } = Typography;
@@ -77,6 +78,9 @@ export function ServicesManagementContent() {
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailService, setDetailService] = useState<Service | null>(null);
     const [dismissedQueryDetailServiceId, setDismissedQueryDetailServiceId] = useState<string | null>(null);
+    const [quickSearchDraft, setQuickSearchDraft] = useState(() => services.filters.search);
+    const [systemFilterDraft, setSystemFilterDraft] = useState(() => services.filters.systemId);
+    const [filtersOpen, setFiltersOpen] = useState(() => services.filters.systemId !== ALL_SYSTEMS_FILTER);
 
     useAutoOpenIntent('create-service', (params) => {
         services.openCreateModal(params.get('system_id') ?? undefined);
@@ -255,6 +259,23 @@ export function ServicesManagementContent() {
             ),
         },
     ];
+    const serviceItems = useMemo(
+        () => services.servicesData?.items ?? [],
+        [services.servicesData?.items],
+    );
+    const applySearch = (searchValue = quickSearchDraft) => {
+        services.applyFilters({
+            search: searchValue,
+            systemId: systemFilterDraft,
+        });
+    };
+
+    const clearSearch = () => {
+        setQuickSearchDraft('');
+        setSystemFilterDraft(ALL_SYSTEMS_FILTER);
+        setFiltersOpen(false);
+        services.clearFilters();
+    };
 
     return (
         <div>
@@ -264,23 +285,6 @@ export function ServicesManagementContent() {
                 subtitle={t('services.subtitle')}
                 actions={(
                     <Space>
-                    <Select
-                        data-testid="services-system-selector"
-                        style={{ width: 200 }}
-                        placeholder={t('services.select_system')}
-                        value={services.activeSystemId || undefined}
-                        onChange={services.changeSystem}
-                        options={[
-                            {
-                                label: t('services.all_systems'),
-                                value: '__all__',
-                            },
-                            ...(services.systemsData?.items?.map((system) => ({
-                                label: system.name,
-                                value: system.id,
-                            })) ?? []),
-                        ]}
-                    />
                     <Button icon={<ReloadOutlined />} onClick={() => services.refetch()}>
                         {t('button.refresh')}
                     </Button>
@@ -300,13 +304,78 @@ export function ServicesManagementContent() {
                 )}
             />
 
-            {(services.servicesData?.items?.length ?? 0) === 0 && !services.isLoading ? (
+            {serviceItems.length === 0 && !services.isLoading && !services.hasActiveFilters && services.activeSystemId === ALL_SYSTEMS_FILTER ? (
                 <SetupGuideCard variant="services" />
             ) : (
                 <PageSurface flush={true}>
+                    <div style={{ padding: 16, paddingBottom: 0 }}>
+                        <PageSearchToolbar
+                            searchValue={services.filters.search}
+                            searchDraftValue={quickSearchDraft}
+                            onSearchDraftChange={setQuickSearchDraft}
+                            onSearchChange={(value) => {
+                                setQuickSearchDraft(value);
+                                services.applyFilters({
+                                    search: value,
+                                    systemId: services.filters.systemId,
+                                });
+                            }}
+                            searchPlaceholder={t('services.search_placeholder', 'Search services by name, system, description, or instance index')}
+                            searchTestId="services-quick-search"
+                            searchHelp={t('services.search_help', 'Press Enter or click Search. Quick search matches service names, descriptions, system names, and instance indexes.')}
+                            advancedSearch={{
+                                open: filtersOpen,
+                                onToggle: () => setFiltersOpen((current) => !current),
+                                openLabel: t('search.advanced', 'Advanced search'),
+                                closeLabel: t('search.hide_advanced', 'Hide advanced search'),
+                                title: t('search.advanced', 'Advanced search'),
+                                content: (
+                                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                        <Text type="secondary">
+                                            {t('services.advanced_search_help', 'Select exact service filters here. Options support keyword matching, but the applied filter remains an exact value.')}
+                                        </Text>
+                                        <Space wrap size={[12, 12]} align="end">
+                                        <Select
+                                            data-testid="services-system-selector"
+                                            style={{ minWidth: 240 }}
+                                            placeholder={t('services.select_system')}
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            value={systemFilterDraft || undefined}
+                                            onChange={(value) => {
+                                                setSystemFilterDraft((value as string | undefined) ?? ALL_SYSTEMS_FILTER);
+                                            }}
+                                            options={[
+                                                {
+                                                    label: t('services.all_systems'),
+                                                    value: ALL_SYSTEMS_FILTER,
+                                                },
+                                                ...(services.systemsData?.items?.map((system) => ({
+                                                    label: system.name,
+                                                    value: system.id,
+                                                })) ?? []),
+                                            ]}
+                                        />
+                                        <Button
+                                            type="primary"
+                                            data-testid="services-advanced-search-submit"
+                                            onClick={() => applySearch()}
+                                        >
+                                            {t('button.search')}
+                                        </Button>
+                                        </Space>
+                                    </Space>
+                                ),
+                            }}
+                            hasActiveFilters={services.hasActiveFilters}
+                            onClear={clearSearch}
+                            clearLabel={t('button.clear_filters', 'Clear filters')}
+                        />
+                    </div>
                     <Table<Service>
                         columns={columns}
-                        dataSource={services.servicesData?.items ?? []}
+                        dataSource={serviceItems}
                         rowKey="id"
                         loading={services.isLoading}
                         scroll={{ x: 'max-content' }}
@@ -321,6 +390,16 @@ export function ServicesManagementContent() {
                             },
                         }}
                         size="middle"
+                        locale={{
+                            emptyText: (
+                                <ActionEmptyState
+                                    compact={true}
+                                    title={t('services.empty_filtered_title', 'No services match the current search')}
+                                    description={t('services.empty_filtered_description', 'Try a broader search or clear the current filters.')}
+                                    visual={<ServiceWorkspaceGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                                />
+                            ),
+                        }}
                     />
                 </PageSurface>
             )}
@@ -333,7 +412,6 @@ export function ServicesManagementContent() {
                 }}
                 onCancel={services.closeCreateModal}
                 confirmLoading={services.createPending}
-                forceRender={true}
                 data-testid="service-create-modal"
             >
                 <Form form={services.form} layout="vertical" name="create-service">
@@ -416,7 +494,6 @@ export function ServicesManagementContent() {
                 }}
                 onCancel={services.closeEditModal}
                 confirmLoading={services.updatePending}
-                forceRender={true}
                 data-testid="service-edit-modal"
             >
                 <Form form={services.editForm} layout="vertical" name="edit-service">
@@ -467,8 +544,9 @@ export function ServicesManagementContent() {
                     </Form.Item>
                 </Form>
             </Modal>
+            {detailModalOpen && activeDetailService ? (
             <WorkbenchDetailModal
-                title={activeDetailService?.name}
+                title={activeDetailService.name}
                 open={detailModalOpen}
                 onCancel={closeDetailModal}
                 footer={[
@@ -476,9 +554,6 @@ export function ServicesManagementContent() {
                         key="request-vm"
                         type="primary"
                         onClick={() => {
-                            if (!activeDetailService) {
-                                return;
-                            }
                             const params = new URLSearchParams({
                                 request: 'create',
                                 system_id: activeDetailService.system_id,
@@ -503,7 +578,6 @@ export function ServicesManagementContent() {
                         {t('button.close', 'Close')}
                     </Button>
                 ]}
-                forceRender
                 width="min(1120px, calc(100vw - 16px))"
                 contentMinWidth={1080}
             >
@@ -707,6 +781,7 @@ export function ServicesManagementContent() {
                     </Card>
                 </Space>
             </WorkbenchDetailModal>
+            ) : null}
         </div>
     );
 }

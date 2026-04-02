@@ -350,7 +350,6 @@ func (s *Server) OpenVMSerial(c *gin.Context, vmID generated.VMID) {
 }
 
 func (s *Server) openVMConsole(c *gin.Context, vmID generated.VMID, consoleType generated.VMConsoleType) {
-	ctx := c.Request.Context()
 	vm, claims, websocketUpgrade, ok := s.resolveConsoleTarget(c, vmID)
 	if !ok {
 		return
@@ -365,20 +364,6 @@ func (s *Server) openVMConsole(c *gin.Context, vmID generated.VMID, consoleType 
 		c.JSON(http.StatusServiceUnavailable, generated.Error{Code: "VNC_UNAVAILABLE"})
 		return
 	}
-	backend, err := s.openConsoleStream(ctx, vm, consoleType)
-	if err != nil {
-		logger.Error("failed to preflight kubevirt console stream",
-			zap.Error(err),
-			zap.String("vm_id", vm.ID),
-			zap.String("console_type", string(consoleType)),
-		)
-		c.JSON(http.StatusBadGateway, generated.Error{
-			Code:    "VNC_UNAVAILABLE",
-			Message: err.Error(),
-		})
-		return
-	}
-	_ = backend.Close()
 
 	c.JSON(http.StatusOK, generated.VMConsoleSessionResponse{
 		Status:        generated.VMConsoleSessionResponseStatusSESSIONREADY,
@@ -591,12 +576,20 @@ func (s *Server) resolvePreferredConsolePath(ctx context.Context, vm *ent.VM, pr
 	serialPath := fmt.Sprintf("/api/v1/vms/%s/serial", vm.ID)
 	trySerial := preferredConsoleType == nil || *preferredConsoleType == generated.SERIAL
 	tryVNC := preferredConsoleType == nil || *preferredConsoleType == generated.VNC
+	if preferredConsoleType != nil {
+		switch *preferredConsoleType {
+		case generated.SERIAL:
+			return generated.SERIAL, serialPath, nil
+		case generated.VNC:
+			return generated.VNC, fmt.Sprintf("/api/v1/vms/%s/vnc", vm.ID), nil
+		default:
+			return "", "", fmt.Errorf("requested console type is unavailable")
+		}
+	}
 	if trySerial {
 		if backend, err := s.vmService.OpenSerialConsoleStream(ctx, vm.ClusterID, vm.Namespace, vm.Name); err == nil {
 			_ = backend.Close()
 			return generated.SERIAL, serialPath, nil
-		} else if preferredConsoleType != nil {
-			return "", "", err
 		}
 	}
 

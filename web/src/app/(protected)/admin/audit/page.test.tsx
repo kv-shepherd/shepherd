@@ -49,12 +49,13 @@ describe('AuditLogPage', () => {
         expect(screen.getByText('audit.title')).toBeInTheDocument();
         expect(screen.getAllByText('Decision').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Placement').length).toBeGreaterThan(0);
-        expect(screen.getByPlaceholderText('audit.filter.placement_advisory_code')).toBeInTheDocument();
-        expect(screen.getByPlaceholderText('audit.filter.placement_reason_code')).toBeInTheDocument();
+        expect(screen.getByRole('searchbox')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'common:search.advanced' })).toBeInTheDocument();
     }, 10000);
 
     it('builds query params for approval decision and placement advisory/reason filters', () => {
         expect(buildAuditLogQuery(1, 20, {
+            search: '',
             action: '',
             approval_decision: 'validation_failed',
             actor: '',

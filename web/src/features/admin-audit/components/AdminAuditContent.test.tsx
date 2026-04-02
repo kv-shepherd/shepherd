@@ -14,7 +14,15 @@ vi.mock('react-i18next', () => ({
                 'audit.filter.actor': 'Actor',
                 'audit.filter.placement_advisory_code': 'Advisory Code',
                 'audit.filter.placement_reason_code': 'Reason Code',
+                'audit.filter.resource_id': 'Resource ID',
+                'audit.search_placeholder': 'Search action, actor, resource type, or resource ID',
+                'audit.search_help': 'Quick search matches action, actor, resource type, and resource ID.',
+                'audit.advanced_search_title': 'Advanced search',
+                'audit.advanced_search_help': 'Use advanced search for approval decisions, placement diagnostics, and exact resource context.',
                 'common:button.search': 'Search',
+                'common:button.clear': 'Clear',
+                'common:search.advanced': 'Advanced search',
+                'common:search.hide_advanced': 'Hide advanced search',
                 'audit.action': 'Action',
                 'audit.decision': 'Decision',
                 'audit.actor': 'Actor',
@@ -73,8 +81,9 @@ describe('AdminAuditContent', () => {
         render(<AdminAuditContent />);
 
         expect(screen.getByText('Audit Logs')).toBeVisible();
-        expect(screen.getByText('Refresh')).toBeVisible();
-        expect(screen.getByText('Search')).toBeVisible();
+        expect(screen.getAllByText('Refresh')[0]).toBeVisible();
+        expect(screen.getByPlaceholderText('Search action, actor, resource type, or resource ID')).toBeVisible();
+        expect(screen.getByText('Advanced search')).toBeVisible();
         expect(screen.getByText('alice')).toBeVisible();
         expect(screen.getByText('Eligible')).toBeVisible();
     });

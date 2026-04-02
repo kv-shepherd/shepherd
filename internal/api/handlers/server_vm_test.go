@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"testing"
 	"time"
 
@@ -409,6 +410,345 @@ func TestListVMs_MarksUnknownWhenClusterIsUnavailable(t *testing.T) {
 	}
 }
 
+func TestListVMs_SupportsQuickSearchAcrossScopeAndOperatingSystem(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "list_vms_search_scope_os")
+	_ = logger.Init("error", "json")
+
+	clusterAID := "cluster-a-" + uuid.NewString()
+	clusterBID := "cluster-b-" + uuid.NewString()
+	mustCreateClusterWithLabels(t, client, clusterAID, "prod-cluster", "Production Cluster", entcluster.EnvironmentProd)
+	mustCreateClusterWithLabels(t, client, clusterBID, "test-cluster", "Test Cluster", entcluster.EnvironmentTest)
+
+	systemA := mustCreateSystem(t, client, "sys-a-"+uuid.NewString(), "payments", "owner-a")
+	systemB := mustCreateSystem(t, client, "sys-b-"+uuid.NewString(), "finance", "owner-b")
+	serviceA := mustCreateService(t, client, "svc-a-"+uuid.NewString(), "billing-api", systemA.ID, "seed")
+	serviceB := mustCreateService(t, client, "svc-b-"+uuid.NewString(), "ledger-api", systemB.ID, "seed")
+
+	vmAID := "vm-a-" + uuid.NewString()
+	vmBID := "vm-b-" + uuid.NewString()
+	_, err := client.VM.Create().
+		SetID(vmAID).
+		SetName("billing-vm").
+		SetInstance("01").
+		SetNamespace("prod-apps").
+		SetStatus(entvm.StatusRUNNING).
+		SetCreatedBy("alice.ops").
+		SetClusterID(clusterAID).
+		SetServiceID(serviceA.ID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create vm A: %v", err)
+	}
+	_, err = client.VM.Create().
+		SetID(vmBID).
+		SetName("ledger-vm").
+		SetInstance("01").
+		SetNamespace("test-apps").
+		SetStatus(entvm.StatusSTOPPED).
+		SetCreatedBy("bob.ops").
+		SetClusterID(clusterBID).
+		SetServiceID(serviceB.ID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create vm B: %v", err)
+	}
+
+	mock := provider.NewMockProvider()
+	mock.Seed([]*domain.VM{
+		{
+			Name:            "billing-vm",
+			Namespace:       "prod-apps",
+			Cluster:         clusterAID,
+			Status:          domain.VMStatusRunning,
+			IPAddress:       "10.20.1.10",
+			OSName:          "Ubuntu 24.04",
+			OSVersion:       "24.04",
+			OSFamily:        "linux",
+			ResourceVersion: "rv-billing",
+		},
+		{
+			Name:            "ledger-vm",
+			Namespace:       "test-apps",
+			Cluster:         clusterBID,
+			Status:          domain.VMStatusStopped,
+			IPAddress:       "10.20.2.20",
+			OSName:          "Windows Server 2022",
+			OSVersion:       "2022",
+			OSFamily:        "windows",
+			ResourceVersion: "rv-ledger",
+		},
+	})
+
+	srv := NewServer(ServerDeps{
+		EntClient: client,
+		VMService: service.NewVMService(mock),
+	})
+
+	testCases := []struct {
+		name       string
+		search     string
+		expectedID string
+	}{
+		{
+			name:       "matches service name",
+			search:     "billing api",
+			expectedID: vmAID,
+		},
+		{
+			name:       "matches cluster name",
+			search:     "production cluster",
+			expectedID: vmAID,
+		},
+		{
+			name:       "matches operating system",
+			search:     "windows",
+			expectedID: vmBID,
+		},
+		{
+			name:       "matches ip address",
+			search:     "10.20.1.10",
+			expectedID: vmAID,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, w := newAuthedGinContext(t, http.MethodGet, "/vms", "", "user-search", []string{"vm:read", "platform:admin"})
+			srv.ListVMs(c, generated.ListVMsParams{Search: tc.search})
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+			}
+
+			var resp generated.VMList
+			if decodeErr := json.Unmarshal(w.Body.Bytes(), &resp); decodeErr != nil {
+				t.Fatalf("decode response: %v", decodeErr)
+			}
+			if len(resp.Items) != 1 {
+				t.Fatalf("items = %d, want 1", len(resp.Items))
+			}
+			if resp.Items[0].Id != tc.expectedID {
+				t.Fatalf("first item id = %q, want %q", resp.Items[0].Id, tc.expectedID)
+			}
+		})
+	}
+}
+
+func TestListVMs_SupportsExactAdvancedFilters(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "list_vms_exact_filters")
+	_ = logger.Init("error", "json")
+
+	clusterAID := "cluster-a-" + uuid.NewString()
+	clusterBID := "cluster-b-" + uuid.NewString()
+	mustCreateClusterWithLabels(t, client, clusterAID, "prod-cluster", "Production Cluster", entcluster.EnvironmentProd)
+	mustCreateClusterWithLabels(t, client, clusterBID, "test-cluster", "Test Cluster", entcluster.EnvironmentTest)
+
+	systemA := mustCreateSystem(t, client, "sys-a-"+uuid.NewString(), "payments", "owner-a")
+	systemB := mustCreateSystem(t, client, "sys-b-"+uuid.NewString(), "finance", "owner-b")
+	serviceA := mustCreateService(t, client, "svc-a-"+uuid.NewString(), "billing-api", systemA.ID, "seed")
+	serviceB := mustCreateService(t, client, "svc-b-"+uuid.NewString(), "ledger-api", systemB.ID, "seed")
+
+	vmAID := "vm-a-" + uuid.NewString()
+	vmBID := "vm-b-" + uuid.NewString()
+	_, err := client.VM.Create().
+		SetID(vmAID).
+		SetName("billing-vm").
+		SetInstance("01").
+		SetNamespace("prod-apps").
+		SetStatus(entvm.StatusRUNNING).
+		SetCreatedBy("alice.ops").
+		SetClusterID(clusterAID).
+		SetServiceID(serviceA.ID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create vm A: %v", err)
+	}
+	_, err = client.VM.Create().
+		SetID(vmBID).
+		SetName("ledger-vm").
+		SetInstance("01").
+		SetNamespace("test-apps").
+		SetStatus(entvm.StatusSTOPPED).
+		SetCreatedBy("bob.ops").
+		SetClusterID(clusterBID).
+		SetServiceID(serviceB.ID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create vm B: %v", err)
+	}
+
+	mock := provider.NewMockProvider()
+	mock.Seed([]*domain.VM{
+		{
+			Name:            "billing-vm",
+			Namespace:       "prod-apps",
+			Cluster:         clusterAID,
+			Status:          domain.VMStatusRunning,
+			IPAddress:       "10.20.1.10",
+			OSName:          "Ubuntu 24.04",
+			OSVersion:       "24.04",
+			OSFamily:        "linux",
+			ResourceVersion: "rv-billing",
+		},
+		{
+			Name:            "ledger-vm",
+			Namespace:       "test-apps",
+			Cluster:         clusterBID,
+			Status:          domain.VMStatusStopped,
+			IPAddress:       "10.20.2.20",
+			OSName:          "Windows Server 2022",
+			OSVersion:       "2022",
+			OSFamily:        "windows",
+			ResourceVersion: "rv-ledger",
+		},
+	})
+
+	srv := NewServer(ServerDeps{
+		EntClient: client,
+		VMService: service.NewVMService(mock),
+	})
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms", "", "user-search", []string{"vm:read", "platform:admin"})
+	srv.ListVMs(c, generated.ListVMsParams{
+		Status:    string(entvm.StatusRUNNING),
+		Namespace: "prod-apps",
+		ClusterId: clusterAID,
+		SystemId:  systemA.ID,
+		ServiceId: serviceA.ID,
+		OsName:    "Ubuntu 24.04",
+		IpAddress: "10.20.1.10",
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.VMList
+	if decodeErr := json.Unmarshal(w.Body.Bytes(), &resp); decodeErr != nil {
+		t.Fatalf("decode response: %v", decodeErr)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(resp.Items))
+	}
+	if resp.Items[0].Id != vmAID {
+		t.Fatalf("first item id = %q, want %q", resp.Items[0].Id, vmAID)
+	}
+}
+
+func TestGetVMFilterOptions_ReturnsReadableOptionLabels(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "vm_filter_options")
+	_ = logger.Init("error", "json")
+
+	clusterAID := "cluster-a-" + uuid.NewString()
+	clusterBID := "cluster-b-" + uuid.NewString()
+	mustCreateClusterWithLabels(t, client, clusterAID, "prod-cluster", "Production Cluster", entcluster.EnvironmentProd)
+	mustCreateClusterWithLabels(t, client, clusterBID, "test-cluster", "Test Cluster", entcluster.EnvironmentTest)
+
+	systemA := mustCreateSystem(t, client, "sys-a-"+uuid.NewString(), "payments", "owner-a")
+	systemB := mustCreateSystem(t, client, "sys-b-"+uuid.NewString(), "finance", "owner-b")
+	serviceA := mustCreateService(t, client, "svc-a-"+uuid.NewString(), "billing-api", systemA.ID, "seed")
+	serviceB := mustCreateService(t, client, "svc-b-"+uuid.NewString(), "ledger-api", systemB.ID, "seed")
+
+	_, err := client.VM.Create().
+		SetID("vm-a-" + uuid.NewString()).
+		SetName("billing-vm").
+		SetInstance("01").
+		SetNamespace("prod-apps").
+		SetStatus(entvm.StatusRUNNING).
+		SetCreatedBy("alice.ops").
+		SetClusterID(clusterAID).
+		SetServiceID(serviceA.ID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create vm A: %v", err)
+	}
+	_, err = client.VM.Create().
+		SetID("vm-b-" + uuid.NewString()).
+		SetName("ledger-vm").
+		SetInstance("01").
+		SetNamespace("test-apps").
+		SetStatus(entvm.StatusSTOPPED).
+		SetCreatedBy("bob.ops").
+		SetClusterID(clusterBID).
+		SetServiceID(serviceB.ID).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create vm B: %v", err)
+	}
+
+	mock := provider.NewMockProvider()
+	mock.Seed([]*domain.VM{
+		{
+			Name:            "billing-vm",
+			Namespace:       "prod-apps",
+			Cluster:         clusterAID,
+			Status:          domain.VMStatusRunning,
+			IPAddress:       "10.20.1.10",
+			OSName:          "Ubuntu 24.04",
+			ResourceVersion: "rv-billing",
+		},
+		{
+			Name:            "ledger-vm",
+			Namespace:       "test-apps",
+			Cluster:         clusterBID,
+			Status:          domain.VMStatusStopped,
+			IPAddress:       "10.20.2.20",
+			OSName:          "Windows Server 2022",
+			ResourceVersion: "rv-ledger",
+		},
+	})
+
+	srv := NewServer(ServerDeps{
+		EntClient: client,
+		VMService: service.NewVMService(mock),
+	})
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms/filter-options", "", "user-search", []string{"vm:read", "platform:admin"})
+	srv.GetVMFilterOptions(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.VMFilterOptionsResponse
+	if decodeErr := json.Unmarshal(w.Body.Bytes(), &resp); decodeErr != nil {
+		t.Fatalf("decode response: %v", decodeErr)
+	}
+
+	if len(resp.Clusters) != 2 {
+		t.Fatalf("clusters = %d, want 2", len(resp.Clusters))
+	}
+	if resp.Clusters[0].Label != "Production Cluster" {
+		t.Fatalf("first cluster label = %q, want %q", resp.Clusters[0].Label, "Production Cluster")
+	}
+	if len(resp.Namespaces) != 2 {
+		t.Fatalf("namespaces = %d, want 2", len(resp.Namespaces))
+	}
+	if resp.Namespaces[0].Group == "" {
+		t.Fatal("expected namespace option to include environment group")
+	}
+	if len(resp.Services) != 2 {
+		t.Fatalf("services = %d, want 2", len(resp.Services))
+	}
+	serviceLabels := []string{resp.Services[0].Label, resp.Services[1].Label}
+	sort.Strings(serviceLabels)
+	if serviceLabels[0] != "finance / ledger-api" || serviceLabels[1] != "payments / billing-api" {
+		t.Fatalf("service labels = %#v, want system/service labels", resp.Services)
+	}
+	if len(resp.OperatingSystems) != 2 {
+		t.Fatalf("operating systems = %d, want 2", len(resp.OperatingSystems))
+	}
+	if len(resp.IpAddresses) != 2 {
+		t.Fatalf("ip addresses = %d, want 2", len(resp.IpAddresses))
+	}
+}
+
 // ---- Integration: GetVM ------------------------------------------------------------------
 
 func TestGetVM_PopulatesEnvironmentFromCluster(t *testing.T) {
@@ -769,9 +1109,15 @@ func TestGetVM_ReturnsNotFound_ForUnknownID(t *testing.T) {
 
 func mustCreateClusterWithEnv(t *testing.T, client *ent.Client, id string, env entcluster.Environment) {
 	t.Helper()
+	mustCreateClusterWithLabels(t, client, id, "cl"+id[len(id)-4:], "cl"+id[len(id)-4:], env)
+}
+
+func mustCreateClusterWithLabels(t *testing.T, client *ent.Client, id, name, displayName string, env entcluster.Environment) {
+	t.Helper()
 	_, err := client.Cluster.Create().
 		SetID(id).
-		SetName("cl" + id[len(id)-4:]).
+		SetName(name).
+		SetDisplayName(displayName).
 		SetAPIServerURL("https://k8s.example.com").
 		SetEncryptedKubeconfig([]byte("fake-kubeconfig")).
 		SetCreatedBy("test-seed").

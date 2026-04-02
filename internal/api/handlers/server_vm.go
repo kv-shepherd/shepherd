@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -18,6 +19,8 @@ import (
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	entservice "kv-shepherd.io/shepherd/ent/service"
+	entsystem "kv-shepherd.io/shepherd/ent/system"
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
@@ -82,27 +85,51 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 		query = query.Where(entvm.NamespaceIn(visibleNamespaces...))
 	}
 
-	// Filter by status.
-	if params.Status != "" {
-		query = query.Where(entvm.StatusEQ(entvm.Status(params.Status)))
-	}
-	// Filter by namespace.
-	if params.Namespace != "" {
-		query = query.Where(entvm.NamespaceEQ(params.Namespace))
-	}
-	// Exclude VM tombstones (DELETING status = K8s deleted, DB hard-delete failed).
-	// Unless the user explicitly filters by DELETING status.
-	if params.Status == "" || entvm.Status(params.Status) != entvm.StatusDELETING {
-		query = query.Where(entvm.StatusNEQ(entvm.StatusDELETING))
-	}
+	query = applyVMExactFilters(query, params)
 
 	query = query.WithService(func(serviceQuery *ent.ServiceQuery) {
 		serviceQuery.WithSystem()
 	})
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
-	offset := (page - 1) * perPage
+	searchText := strings.TrimSpace(params.Search)
+	osNameFilter := strings.TrimSpace(params.OsName)
+	ipAddressFilter := strings.TrimSpace(params.IpAddress)
+	requiresHydratedFiltering := searchText != "" || osNameFilter != "" || ipAddressFilter != ""
 
+	if requiresHydratedFiltering {
+		vms, listErr := query.
+			Order(ent.Desc(entvm.FieldCreatedAt)).
+			All(ctx)
+		if listErr != nil {
+			if isRequestContextCanceled(listErr) {
+				logger.Debug("request canceled while listing filtered VMs", zap.Error(listErr))
+				return
+			}
+			logger.Error("failed to list filtered VMs", zap.Error(listErr))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+
+		items := s.hydrateVMListItems(ctx, vms)
+
+		filteredItems := filterHydratedVMItems(items, searchText, osNameFilter, ipAddressFilter)
+		pagedItems, total := paginateHydratedVMItems(filteredItems, page, perPage)
+		totalPages := (total + perPage - 1) / perPage
+
+		c.JSON(http.StatusOK, generated.VMList{
+			Items: pagedItems,
+			Pagination: generated.Pagination{
+				Page:       page,
+				PerPage:    perPage,
+				Total:      total,
+				TotalPages: totalPages,
+			},
+		})
+		return
+	}
+
+	offset := (page - 1) * perPage
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
 		if isRequestContextCanceled(err) {
@@ -128,31 +155,152 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	items := s.hydrateVMListItems(ctx, vms)
+
+	totalPages := (total + perPage - 1) / perPage
+	c.JSON(http.StatusOK, generated.VMList{
+		Items: items,
+		Pagination: generated.Pagination{
+			Page:       page,
+			PerPage:    perPage,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	})
+}
+
+func (s *Server) GetVMFilterOptions(c *gin.Context) {
+	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "vm:read") {
+		return
+	}
+
+	query := s.client.VM.Query()
+	visibility, err := s.resolveNamespaceVisibility(c)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while resolving VM filter visibility", zap.Error(err))
+			return
+		}
+		logger.Error("failed to resolve VM filter visibility", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if visibility.restricted {
+		visibleNamespaces, listErr := s.listVisibleNamespaceNames(ctx, visibility)
+		if listErr != nil {
+			if isRequestContextCanceled(listErr) {
+				logger.Debug("request canceled while listing VM filter namespaces", zap.Error(listErr))
+				return
+			}
+			logger.Error("failed to load VM filter namespaces", zap.Error(listErr))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+		if len(visibleNamespaces) == 0 {
+			c.JSON(http.StatusOK, generated.VMFilterOptionsResponse{})
+			return
+		}
+		query = query.Where(entvm.NamespaceIn(visibleNamespaces...))
+	}
+	query = query.
+		Where(entvm.StatusNEQ(entvm.StatusDELETING)).
+		WithService(func(serviceQuery *ent.ServiceQuery) {
+			serviceQuery.WithSystem()
+		})
+
+	vms, err := query.
+		Order(ent.Desc(entvm.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while listing VM filter options", zap.Error(err))
+			return
+		}
+		logger.Error("failed to list VM filter options", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	items := s.hydrateVMListItems(ctx, vms)
+
+	statuses := make([]generated.FilterOption, 0, len(VMStatusValues()))
+	for _, status := range VMStatusValues() {
+		statuses = append(statuses, generated.FilterOption{
+			Value: string(status),
+			Label: string(status),
+		})
+	}
+
+	filterOptions := buildVMFilterOptionsFromItems(items)
+
+	c.JSON(http.StatusOK, generated.VMFilterOptionsResponse{
+		Statuses:         statuses,
+		Namespaces:       filterOptions.Namespaces,
+		Clusters:         filterOptions.Clusters,
+		Systems:          filterOptions.Systems,
+		Services:         filterOptions.Services,
+		OperatingSystems: filterOptions.OperatingSystems,
+		IpAddresses:      filterOptions.IPAddresses,
+	})
+}
+
+func applyVMExactFilters(query *ent.VMQuery, params generated.ListVMsParams) *ent.VMQuery {
+	if params.Status != "" {
+		query = query.Where(entvm.StatusEQ(entvm.Status(params.Status)))
+	}
+	if params.Namespace != "" {
+		query = query.Where(entvm.NamespaceEQ(params.Namespace))
+	}
+	if params.ClusterId != "" {
+		query = query.Where(entvm.ClusterIDEQ(params.ClusterId))
+	}
+	if params.SystemId != "" {
+		query = query.Where(
+			entvm.HasServiceWith(
+				entservice.HasSystemWith(entsystem.IDEQ(params.SystemId)),
+			),
+		)
+	}
+	if params.ServiceId != "" {
+		query = query.Where(
+			entvm.HasServiceWith(entservice.IDEQ(params.ServiceId)),
+		)
+	}
+	// Exclude VM tombstones (DELETING status = K8s deleted, DB hard-delete failed)
+	// unless the user explicitly filters by DELETING status.
+	if params.Status == "" || entvm.Status(params.Status) != entvm.StatusDELETING {
+		query = query.Where(entvm.StatusNEQ(entvm.StatusDELETING))
+	}
+	return query
+}
+
+func (s *Server) hydrateVMListItems(ctx context.Context, vms []*ent.VM) []generated.VM {
 	vms = s.refreshVMLiveStates(ctx, vms)
 	liveVMByID := s.loadObservedLiveVMsByID(ctx, vms)
 
-	// Batch-fetch cluster environments to fill VM.environment (ADR-0015 §15).
-	// Collect unique non-empty cluster IDs from this page.
 	clusterIDs := make([]string, 0)
 	clusterIDSet := make(map[string]struct{})
 	for _, vm := range vms {
-		if vm.ClusterID != "" {
-			if _, seen := clusterIDSet[vm.ClusterID]; !seen {
-				clusterIDSet[vm.ClusterID] = struct{}{}
-				clusterIDs = append(clusterIDs, vm.ClusterID)
-			}
+		if vm.ClusterID == "" {
+			continue
 		}
+		if _, seen := clusterIDSet[vm.ClusterID]; seen {
+			continue
+		}
+		clusterIDSet[vm.ClusterID] = struct{}{}
+		clusterIDs = append(clusterIDs, vm.ClusterID)
 	}
-	clusterEnvMap := make(map[string]string)  // cluster_id → environment string
-	clusterNameMap := make(map[string]string) // cluster_id → display name fallback chain
+
+	clusterEnvMap := make(map[string]string)
+	clusterNameMap := make(map[string]string)
 	if len(clusterIDs) > 0 {
-		clusters, clusterErr := s.client.Cluster.Query().
+		clusters, err := s.client.Cluster.Query().
 			Where(entcluster.IDIn(clusterIDs...)).
 			Select(entcluster.FieldID, entcluster.FieldEnvironment, entcluster.FieldDisplayName, entcluster.FieldName).
 			All(ctx)
-		if clusterErr != nil {
-			// Non-fatal: log and continue without environment info.
-			logger.Warn("failed to fetch cluster info for VM list", zap.Error(clusterErr))
+		if err != nil {
+			logger.Warn("failed to fetch cluster info for VM list", zap.Error(err))
 		} else {
 			for _, cl := range clusters {
 				clusterEnvMap[cl.ID] = string(cl.Environment)
@@ -172,17 +320,217 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 		name := clusterNameMap[vm.ClusterID]
 		items = append(items, vmToAPI(vm, env, name, liveVMByID[vm.ID], vmSnapshotInfoByTicketID[vm.TicketID], nil))
 	}
+	return items
+}
 
-	totalPages := (total + perPage - 1) / perPage
-	c.JSON(http.StatusOK, generated.VMList{
-		Items: items,
-		Pagination: generated.Pagination{
-			Page:       page,
-			PerPage:    perPage,
-			Total:      total,
-			TotalPages: totalPages,
-		},
+func filterHydratedVMItems(items []generated.VM, search, osName, ipAddress string) []generated.VM {
+	trimmedSearch := strings.TrimSpace(search)
+	trimmedOSName := strings.TrimSpace(osName)
+	trimmedIPAddress := strings.TrimSpace(ipAddress)
+	if trimmedSearch == "" && trimmedOSName == "" && trimmedIPAddress == "" {
+		return items
+	}
+
+	filtered := make([]generated.VM, 0, len(items))
+	for index := range items {
+		item := &items[index]
+		if trimmedOSName != "" && !strings.EqualFold(strings.TrimSpace(item.OsName), trimmedOSName) {
+			continue
+		}
+		if trimmedIPAddress != "" && !strings.EqualFold(strings.TrimSpace(item.IpAddress), trimmedIPAddress) {
+			continue
+		}
+		if trimmedSearch != "" && !vmMatchesQuickSearch(*item, trimmedSearch) {
+			continue
+		}
+		filtered = append(filtered, *item)
+	}
+	return filtered
+}
+
+func vmMatchesQuickSearch(item generated.VM, search string) bool {
+	search = normalizeQuickSearchText(search)
+	if search == "" {
+		return true
+	}
+	fields := []string{
+		item.Name,
+		item.Hostname,
+		item.Namespace,
+		item.ClusterName,
+		item.ServiceName,
+		item.SystemName,
+		item.IpAddress,
+		item.HostIp,
+		item.OsName,
+		string(item.Environment),
+	}
+	for _, field := range fields {
+		if strings.Contains(normalizeQuickSearchText(field), search) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeQuickSearchText(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	normalized := strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsLetter(r), unicode.IsDigit(r):
+			return unicode.ToLower(r)
+		default:
+			return ' '
+		}
+	}, value)
+	return strings.Join(strings.Fields(normalized), " ")
+}
+
+func paginateHydratedVMItems(items []generated.VM, page, perPage int) (paged []generated.VM, total int) {
+	total = len(items)
+	if total == 0 {
+		return []generated.VM{}, 0
+	}
+	offset := (page - 1) * perPage
+	if offset >= total {
+		return []generated.VM{}, total
+	}
+	limit := offset + perPage
+	if limit > total {
+		limit = total
+	}
+	return items[offset:limit], total
+}
+
+type vmFilterOptionsCatalog struct {
+	Namespaces       []generated.FilterOption
+	Clusters         []generated.FilterOption
+	Systems          []generated.FilterOption
+	Services         []generated.FilterOption
+	OperatingSystems []generated.FilterOption
+	IPAddresses      []generated.FilterOption
+}
+
+func buildVMFilterOptionsFromItems(items []generated.VM) vmFilterOptionsCatalog {
+	options := vmFilterOptionsCatalog{
+		Namespaces:       make([]generated.FilterOption, 0),
+		Clusters:         make([]generated.FilterOption, 0),
+		Systems:          make([]generated.FilterOption, 0),
+		Services:         make([]generated.FilterOption, 0),
+		OperatingSystems: make([]generated.FilterOption, 0),
+		IPAddresses:      make([]generated.FilterOption, 0),
+	}
+
+	seenNamespaces := make(map[string]struct{})
+	seenClusters := make(map[string]struct{})
+	seenSystems := make(map[string]struct{})
+	seenServices := make(map[string]struct{})
+	seenOperatingSystems := make(map[string]struct{})
+	seenIPAddresses := make(map[string]struct{})
+
+	for index := range items {
+		item := &items[index]
+		if value := strings.TrimSpace(item.Namespace); value != "" {
+			if _, seen := seenNamespaces[value]; !seen {
+				seenNamespaces[value] = struct{}{}
+				options.Namespaces = append(options.Namespaces, generated.FilterOption{
+					Value: value,
+					Label: value,
+					Group: string(item.Environment),
+				})
+			}
+		}
+		if value := strings.TrimSpace(item.ClusterId); value != "" {
+			if _, seen := seenClusters[value]; !seen {
+				seenClusters[value] = struct{}{}
+				options.Clusters = append(options.Clusters, generated.FilterOption{
+					Value: value,
+					Label: firstNonEmptyString(item.ClusterName, value),
+					Group: string(item.Environment),
+				})
+			}
+		}
+		if value := strings.TrimSpace(item.SystemId); value != "" {
+			if _, seen := seenSystems[value]; !seen {
+				seenSystems[value] = struct{}{}
+				options.Systems = append(options.Systems, generated.FilterOption{
+					Value: value,
+					Label: firstNonEmptyString(item.SystemName, value),
+				})
+			}
+		}
+		if value := strings.TrimSpace(item.ServiceId); value != "" {
+			if _, seen := seenServices[value]; !seen {
+				seenServices[value] = struct{}{}
+				serviceLabel := firstNonEmptyString(item.ServiceName, value)
+				if systemLabel := strings.TrimSpace(item.SystemName); systemLabel != "" {
+					serviceLabel = fmt.Sprintf("%s / %s", systemLabel, serviceLabel)
+				}
+				options.Services = append(options.Services, generated.FilterOption{
+					Value: value,
+					Label: serviceLabel,
+					Group: item.SystemName,
+				})
+			}
+		}
+		if value := strings.TrimSpace(item.OsName); value != "" {
+			normalized := strings.ToLower(value)
+			if _, seen := seenOperatingSystems[normalized]; !seen {
+				seenOperatingSystems[normalized] = struct{}{}
+				options.OperatingSystems = append(options.OperatingSystems, generated.FilterOption{
+					Value: value,
+					Label: value,
+				})
+			}
+		}
+		if value := strings.TrimSpace(item.IpAddress); value != "" {
+			if _, seen := seenIPAddresses[value]; !seen {
+				seenIPAddresses[value] = struct{}{}
+				options.IPAddresses = append(options.IPAddresses, generated.FilterOption{
+					Value: value,
+					Label: value,
+					Group: string(item.Environment),
+				})
+			}
+		}
+	}
+
+	sortFilterOptions(options.Namespaces)
+	sortFilterOptions(options.Clusters)
+	sortFilterOptions(options.Systems)
+	sortFilterOptions(options.Services)
+	sortFilterOptions(options.OperatingSystems)
+	sortFilterOptions(options.IPAddresses)
+
+	return options
+}
+
+func sortFilterOptions(options []generated.FilterOption) {
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].Group != options[j].Group {
+			return strings.ToLower(options[i].Group) < strings.ToLower(options[j].Group)
+		}
+		return strings.ToLower(options[i].Label) < strings.ToLower(options[j].Label)
 	})
+}
+
+func VMStatusValues() []entvm.Status {
+	return []entvm.Status{
+		entvm.StatusRUNNING,
+		entvm.StatusSTOPPED,
+		entvm.StatusSTARTING,
+		entvm.StatusSTOPPING,
+		entvm.StatusCREATING,
+		entvm.StatusPENDING,
+		entvm.StatusMIGRATING,
+		entvm.StatusPAUSED,
+		entvm.StatusFAILED,
+		entvm.StatusUNKNOWN,
+		entvm.StatusNOT_FOUND,
+		entvm.StatusDELETING,
+	}
 }
 
 // GetVMRequestContext handles GET /vms/request-context.

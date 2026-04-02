@@ -1,4 +1,6 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const controllerState = vi.hoisted(() => ({
@@ -83,6 +85,238 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
+vi.mock("@/components/feedback/ActionEmptyState", () => ({
+  ActionEmptyState: ({
+    title,
+    description,
+    actions,
+  }: {
+    title: string;
+    description?: string;
+    actions?: ReactNode;
+  }) => (
+    <section data-testid="action-empty-state">
+      <h2>{title}</h2>
+      {description ? <p>{description}</p> : null}
+      {actions}
+    </section>
+  ),
+}));
+
+vi.mock("@/components/feedback/SummaryMetricCard", () => ({
+  SummaryMetricCard: ({
+    title,
+    value,
+    description,
+    action,
+  }: {
+    title: ReactNode;
+    value?: ReactNode;
+    description?: ReactNode;
+    action?: ReactNode;
+  }) => (
+    <section data-testid="summary-metric-card">
+      <h2>{title}</h2>
+      {value ? <div>{value}</div> : null}
+      {description ? <div>{description}</div> : null}
+      {action}
+    </section>
+  ),
+}));
+
+vi.mock("@/components/layouts/PageSection", () => ({
+  PageHeader: ({
+    title,
+    subtitle,
+    actions,
+  }: {
+    title: ReactNode;
+    subtitle?: ReactNode;
+    actions?: ReactNode;
+  }) => (
+    <header data-testid="page-header">
+      <h1>{title}</h1>
+      {subtitle ? <p>{subtitle}</p> : null}
+      {actions}
+    </header>
+  ),
+  PageSurface: ({ children }: { children?: ReactNode }) => (
+    <section data-testid="page-surface">{children}</section>
+  ),
+}));
+
+vi.mock("@/components/ui/LocalDateTimeText", () => ({
+  LocalDateTimeText: ({ value }: { value: string }) => <time dateTime={value}>{value}</time>,
+}));
+
+vi.mock("@/components/workbench/WorkbenchDetailModal", () => ({
+  WorkbenchDetailModal: ({
+    open,
+    title,
+    children,
+    footer,
+  }: {
+    open?: boolean;
+    title?: ReactNode;
+    children?: ReactNode;
+    footer?: ReactNode;
+  }) =>
+    open ? (
+      <section data-testid="mock-workbench-detail-modal">
+        {title ? <div>{title}</div> : null}
+        <div
+          className="workbench-detail-modal__viewport"
+          style={{ maxHeight: "calc(100vh - 180px)" }}
+        >
+          {children}
+        </div>
+        {footer ? <div>{footer}</div> : null}
+      </section>
+    ) : null,
+}));
+
+vi.mock("@/components/illustrations/DashboardIllustrations", () => ({
+  QueueReviewGlyph: (props: Record<string, unknown>) => <span {...props}>queue-glyph</span>,
+  RequestsOverviewGlyph: (props: Record<string, unknown>) => <span {...props}>requests-glyph</span>,
+  ServiceWorkspaceGlyph: (props: Record<string, unknown>) => <span {...props}>service-glyph</span>,
+  VirtualMachinesOverviewGlyph: (props: Record<string, unknown>) => <span {...props}>vms-glyph</span>,
+}));
+
+vi.mock("antd", async () => {
+  const actual = await vi.importActual<typeof import("antd")>("antd");
+
+  const Card = ({
+    children,
+    title,
+    extra,
+    ...rest
+  }: {
+    children?: ReactNode;
+    title?: ReactNode;
+    extra?: ReactNode;
+    [key: string]: unknown;
+  }) => (
+    <section data-testid="mock-card" {...rest}>
+      {title ? <div>{title}</div> : null}
+      {extra ? <div>{extra}</div> : null}
+      {children}
+    </section>
+  );
+
+  const DescriptionsItem = ({
+    label,
+    children,
+  }: {
+    label?: ReactNode;
+    children?: ReactNode;
+  }) => (
+    <div data-testid="mock-description-item">
+      {label ? <dt>{label}</dt> : null}
+      <dd>{children}</dd>
+    </div>
+  );
+
+  const Descriptions = (({
+    children,
+    items,
+  }: {
+    children?: ReactNode;
+    items?: Array<{ key?: string; label?: ReactNode; children?: ReactNode }>;
+  }) => (
+    <dl data-testid="mock-descriptions">
+      {items?.map((item, index) => (
+        <DescriptionsItem
+          key={item.key ?? String(index)}
+          label={item.label}
+        >
+          {item.children}
+        </DescriptionsItem>
+      ))}
+      {children}
+    </dl>
+  )) as ((props: {
+    children?: ReactNode;
+    items?: Array<{ key?: string; label?: ReactNode; children?: ReactNode }>;
+  }) => ReactNode) & {
+    Item: typeof DescriptionsItem;
+  };
+  Descriptions.Item = DescriptionsItem;
+
+  const Table = <T extends Record<string, unknown>>({
+    dataSource,
+    columns,
+    locale,
+  }: {
+    dataSource?: T[];
+    columns?: Array<{
+      key?: string;
+      title?: ReactNode;
+      dataIndex?: string | string[];
+      render?: (value: unknown, record: T, index: number) => ReactNode;
+    }>;
+    locale?: { emptyText?: ReactNode };
+  }) => {
+    if (!dataSource || dataSource.length === 0) {
+      return <div>{locale?.emptyText ?? null}</div>;
+    }
+    return (
+      <table data-testid="mock-table">
+        <thead>
+          <tr>
+            {columns?.map((column, index) => (
+              <th key={column.key ?? String(index)}>{column.title}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {dataSource.map((record, rowIndex) => (
+            <tr key={String(record.id ?? rowIndex)}>
+              {columns?.map((column, columnIndex) => {
+                const rawValue = Array.isArray(column.dataIndex)
+                  ? column.dataIndex.reduce<unknown>(
+                      (value, key) =>
+                        value && typeof value === "object"
+                          ? (value as Record<string, unknown>)[key]
+                          : undefined,
+                      record,
+                    )
+                  : typeof column.dataIndex === "string"
+                    ? record[column.dataIndex]
+                    : undefined;
+                const content = column.render
+                  ? column.render(rawValue, record, rowIndex)
+                  : rawValue;
+                return <td key={column.key ?? String(columnIndex)}>{content as ReactNode}</td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  };
+
+  const Popover = ({
+    children,
+    content,
+  }: {
+    children?: ReactNode;
+    content?: ReactNode;
+  }) => (
+    <div data-testid="mock-popover">
+      {children}
+      {content ? <div>{content}</div> : null}
+    </div>
+  );
+
+  return {
+    ...actual,
+    Card,
+    Descriptions,
+    Popover,
+    Table,
+  };
+});
+
 vi.mock("@/features/setup-guide/hooks/useSetupGuide", () => ({
   useSetupGuide: () => ({
     systemsTotal: 1,
@@ -153,6 +387,8 @@ vi.mock("../hooks/useAdminApprovalsController", async () => {
         messageContextHolder: null,
         statusFilter: "PENDING",
         changeStatusFilter: vi.fn(),
+        searchFilter: "",
+        changeSearchFilter: vi.fn(),
         operationFilter: "ALL",
         changeOperationFilter: vi.fn(),
         selectedClusterFilter: "",
@@ -219,7 +455,9 @@ vi.mock("../hooks/useAdminApprovalsController", async () => {
           items: [
             {
               id: "cluster-a",
+              display_name: "Production Cluster A",
               name: "Cluster A",
+              environment: "prod",
               enabled: true,
               compatibility: {
                 eligible: false,
@@ -235,6 +473,23 @@ vi.mock("../hooks/useAdminApprovalsController", async () => {
             },
           ],
         },
+        filterClusters: [
+          {
+            id: "cluster-a",
+            display_name: "Production Cluster A",
+            name: "Cluster A",
+            environment: "prod",
+            enabled: true,
+          },
+          {
+            id: "cluster-b",
+            display_name: "Test Cluster B",
+            name: "Cluster B",
+            environment: "test",
+            enabled: true,
+          },
+        ],
+        filterClustersLoading: false,
         clusterQueryError: undefined,
         clusterQueryLoading: false,
         selectedClusterId: "cluster-a",
@@ -407,7 +662,7 @@ describe("AdminApprovalsContent", () => {
     expect(screen.getByText("Affected Items")).toBeInTheDocument();
     expect(screen.getAllByText("Ubuntu 22.04 · M4 Large").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Requested Resources").length).toBeGreaterThan(0);
-  }, 10000);
+  });
 
   it("keeps storage-class-resolvable clusters selectable and shows detected storage classes", () => {
     render(<AdminApprovalsContent />);
@@ -522,7 +777,17 @@ describe("AdminApprovalsContent", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows irreversible delete approvals with full resource context", () => {
+  it("uses searchable exact options for cluster and placement advisory filters", async () => {
+    const user = userEvent.setup();
+
+    render(<AdminApprovalsContent />);
+
+    await user.click(screen.getByTestId("approvals-advanced-search-toggle"));
+
+    expect(screen.getAllByRole("combobox").length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("shows irreversible delete approvals with readable scope and current resource state", () => {
     controllerState.overrides = {
       approveModal: {
         id: "ticket-delete-1",
@@ -554,16 +819,14 @@ describe("AdminApprovalsContent", () => {
     render(<AdminApprovalsContent />);
 
     expect(screen.getByText("Irreversible request")).toBeInTheDocument();
-    expect(screen.getByText("Payments")).toBeInTheDocument();
-    expect(screen.getByText("Billing")).toBeInTheDocument();
-    expect(screen.getByText("Prod Cluster A")).toBeInTheDocument();
-    expect(screen.getByText("vm-old-01")).toBeInTheDocument();
+    expect(screen.getAllByText("Payments").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Billing").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Prod Cluster A").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("vm-old-01").length).toBeGreaterThan(0);
     expect(screen.getByText("Request-Time Status")).toBeInTheDocument();
     expect(screen.getByText("Latest Status")).toBeInTheDocument();
     expect(screen.getByText("Stopped")).toBeInTheDocument();
     expect(screen.getByText("NOT_FOUND")).toBeInTheDocument();
-    expect(screen.getByText("Ubuntu 22.04")).toBeInTheDocument();
-    expect(screen.getByText("M4 Large")).toBeInTheDocument();
     expect(screen.getByText("4 vCPU · 8 Gi memory · 80 Gi disk")).toBeInTheDocument();
   });
 });

@@ -148,80 +148,82 @@ export default function ProfilePage() {
                 </Space>
             </PageSurface>
 
-            <Modal
-                title={t('auth.change_password')}
-                open={changePasswordOpen}
-                onOk={handleSubmit}
-                onCancel={() => {
-                    setChangePasswordOpen(false);
-                    form.resetFields();
-                    setError(null);
-                }}
-                confirmLoading={changePasswordMutation.isPending}
-                forceRender                data-testid="change-password-modal"
-            >
-                    {error && (
-                        <Alert
-                            message={error}
-                            type="error"
-                            showIcon
-                            closable
-                            onClose={() => setError(null)}
-                            style={{ marginBottom: 16 }}
-                        />
-                    )}
-                    <Form form={form} layout="vertical" name="change-password-form">
-                        <Form.Item
-                            name="current_password"
-                            label={t('auth.current_password')}
-                            rules={[{ required: true, message: t('validation.password_required') }]}
-                        >
-                            <Input.Password
-                                prefix={<LockOutlined />}
-                                placeholder={t('auth.current_password')}
-                                data-testid="change-password-current-input"
+            {changePasswordOpen ? (
+                <Modal
+                    title={t('auth.change_password')}
+                    open={true}
+                    onOk={handleSubmit}
+                    onCancel={() => {
+                        setChangePasswordOpen(false);
+                        form.resetFields();
+                        setError(null);
+                    }}
+                    confirmLoading={changePasswordMutation.isPending}
+                    data-testid="change-password-modal"
+                >
+                        {error && (
+                            <Alert
+                                message={error}
+                                type="error"
+                                showIcon
+                                closable
+                                onClose={() => setError(null)}
+                                style={{ marginBottom: 16 }}
                             />
-                        </Form.Item>
-                        <Form.Item
-                            name="new_password"
-                            label={t('auth.new_password')}
-                            rules={[
-                                { required: true, message: t('validation.password_required') },
-                                { min: 8, message: t('validation.password_min') },
-                            ]}
-                        >
-                            <Input.Password
-                                prefix={<LockOutlined />}
-                                placeholder={t('auth.new_password')}
-                                data-testid="change-password-new-input"
-                            />
-                        </Form.Item>
-                        <Form.Item
-                            name="confirm_password"
-                            label={t('auth.confirm_password')}
-                            dependencies={['new_password']}
-                            rules={[
-                                { required: true, message: t('validation.confirm_password_required') },
-                                ({ getFieldValue }) => ({
-                                    validator(_, value) {
-                                        if (!value || getFieldValue('new_password') === value) {
-                                            return Promise.resolve();
-                                        }
-                                        return Promise.reject(
-                                            new Error(t('validation.password_mismatch'))
-                                        );
-                                    },
-                                }),
-                            ]}
-                        >
-                            <Input.Password
-                                prefix={<LockOutlined />}
-                                placeholder={t('auth.confirm_password')}
-                                data-testid="change-password-confirm-input"
-                            />
-                        </Form.Item>
-                    </Form>
-            </Modal>
+                        )}
+                        <Form form={form} layout="vertical" name="change-password-form">
+                            <Form.Item
+                                name="current_password"
+                                label={t('auth.current_password')}
+                                rules={[{ required: true, message: t('validation.password_required') }]}
+                            >
+                                <Input.Password
+                                    prefix={<LockOutlined />}
+                                    placeholder={t('auth.current_password')}
+                                    data-testid="change-password-current-input"
+                                />
+                            </Form.Item>
+                            <Form.Item
+                                name="new_password"
+                                label={t('auth.new_password')}
+                                rules={[
+                                    { required: true, message: t('validation.password_required') },
+                                    { min: 8, message: t('validation.password_min') },
+                                ]}
+                            >
+                                <Input.Password
+                                    prefix={<LockOutlined />}
+                                    placeholder={t('auth.new_password')}
+                                    data-testid="change-password-new-input"
+                                />
+                            </Form.Item>
+                            <Form.Item
+                                name="confirm_password"
+                                label={t('auth.confirm_password')}
+                                dependencies={['new_password']}
+                                rules={[
+                                    { required: true, message: t('validation.confirm_password_required') },
+                                    ({ getFieldValue }) => ({
+                                        validator(_, value) {
+                                            if (!value || getFieldValue('new_password') === value) {
+                                                return Promise.resolve();
+                                            }
+                                            return Promise.reject(
+                                                new Error(t('validation.password_mismatch'))
+                                            );
+                                        },
+                                    }),
+                                ]}
+                            >
+                                <Input.Password
+                                    prefix={<LockOutlined />}
+                                    placeholder={t('auth.confirm_password')}
+                                    data-testid="change-password-confirm-input"
+                                />
+                            </Form.Item>
+                        </Form>
+                </Modal>
+            ) : null}
         </div>
     );
 }

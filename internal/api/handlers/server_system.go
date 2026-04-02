@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -12,10 +14,12 @@ import (
 	"kv-shepherd.io/shepherd/ent"
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	entpredicate "kv-shepherd.io/shepherd/ent/predicate"
 	rrb "kv-shepherd.io/shepherd/ent/resourcerolebinding"
 	entservice "kv-shepherd.io/shepherd/ent/service"
 	entsystem "kv-shepherd.io/shepherd/ent/system"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
+	entuser "kv-shepherd.io/shepherd/ent/user"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
@@ -64,6 +68,17 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 		query = query.Where(entsystem.IDIn(systemIDs...))
 	}
 
+	filteredQuery, err := s.applySystemSearchFilters(ctx, query, params)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			return
+		}
+		logger.Error("failed to apply system search filters", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	query = filteredQuery
+
 	// Pagination.
 	page, perPage := defaultPagination(params.Page, params.PerPage)
 	offset := (page - 1) * perPage
@@ -108,6 +123,98 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 			Total:      total,
 			TotalPages: totalPages,
 		},
+	})
+}
+
+func (s *Server) GetSystemFilterOptions(c *gin.Context) {
+	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "system:read") {
+		return
+	}
+
+	query := s.client.System.Query()
+	if !hasPlatformAdmin(c) {
+		actor := middleware.GetUserID(ctx)
+		systemIDs, err := s.visibleSystemIDs(ctx, actor)
+		if err != nil {
+			if isRequestContextCanceled(err) {
+				return
+			}
+			logger.Error("failed to resolve visible systems for filter options", zap.Error(err), zap.String("actor", actor))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+		if len(systemIDs) == 0 {
+			c.JSON(http.StatusOK, generated.SystemFilterOptionsResponse{})
+			return
+		}
+		query = query.Where(entsystem.IDIn(systemIDs...))
+	}
+
+	systems, err := query.
+		Order(ent.Asc(entsystem.FieldName)).
+		All(ctx)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			return
+		}
+		logger.Error("failed to list systems for filter options", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if len(systems) == 0 {
+		c.JSON(http.StatusOK, generated.SystemFilterOptionsResponse{})
+		return
+	}
+
+	systemIDs := make([]string, 0, len(systems))
+	creatorOptions := make([]generated.FilterOption, 0)
+	seenCreators := make(map[string]struct{})
+	for _, system := range systems {
+		systemIDs = append(systemIDs, system.ID)
+
+		creator := strings.TrimSpace(system.CreatedBy)
+		if creator == "" {
+			continue
+		}
+		if _, seen := seenCreators[creator]; seen {
+			continue
+		}
+		seenCreators[creator] = struct{}{}
+		creatorOptions = append(creatorOptions, generated.FilterOption{
+			Value: creator,
+			Label: creator,
+		})
+	}
+
+	serviceOptions, err := s.buildSystemServiceFilterOptions(ctx, systemIDs)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			return
+		}
+		logger.Error("failed to load system service filter options", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	memberOptions, err := s.buildSystemMemberFilterOptions(ctx, systemIDs)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			return
+		}
+		logger.Error("failed to load system member filter options", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	sortFilterOptions(creatorOptions)
+	sortFilterOptions(serviceOptions)
+	sortFilterOptions(memberOptions)
+
+	c.JSON(http.StatusOK, generated.SystemFilterOptionsResponse{
+		Creators: creatorOptions,
+		Services: serviceOptions,
+		Members:  memberOptions,
 	})
 }
 
@@ -351,6 +458,17 @@ func (s *Server) ListServicesOverview(c *gin.Context, params generated.ListServi
 	query := s.client.Service.Query()
 	if params.SystemId != "" {
 		query = query.Where(entservice.HasSystemWith(entsystem.IDEQ(params.SystemId)))
+	}
+	if search := strings.TrimSpace(params.Search); search != "" {
+		predicates := []entpredicate.Service{
+			entservice.NameContainsFold(search),
+			entservice.DescriptionContainsFold(search),
+			entservice.HasSystemWith(entsystem.NameContainsFold(search)),
+		}
+		if nextIndex, err := strconv.Atoi(search); err == nil {
+			predicates = append(predicates, entservice.NextInstanceIndexEQ(nextIndex))
+		}
+		query = query.Where(entservice.Or(predicates...))
 	}
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
@@ -1060,6 +1178,8 @@ func (s *Server) loadServiceContextRecentRequests(
 				vmByID,
 			),
 			buildApprovalRequestPrefill(payloadMap, systemIDByServiceID),
+			approvalActorLookup{},
+			approvalActorLookup{},
 		))
 	}
 
@@ -1139,6 +1259,294 @@ func (s *Server) visibleSystemIDs(ctx context.Context, actor string) ([]string, 
 	}
 
 	return systemIDs, nil
+}
+
+func (s *Server) applySystemSearchFilters(
+	ctx context.Context,
+	query *ent.SystemQuery,
+	params generated.ListSystemsParams,
+) (*ent.SystemQuery, error) {
+	search := strings.TrimSpace(params.Search)
+	createdBy := strings.TrimSpace(params.CreatedBy)
+	createdByExact := strings.TrimSpace(params.CreatedByExact)
+	serviceSearch := strings.TrimSpace(params.ServiceSearch)
+	serviceID := strings.TrimSpace(params.ServiceId)
+	memberSearch := strings.TrimSpace(params.MemberSearch)
+	memberID := strings.TrimSpace(params.MemberId)
+
+	if createdByExact != "" {
+		query = query.Where(entsystem.CreatedByEQ(createdByExact))
+	} else if createdBy != "" {
+		query = query.Where(entsystem.CreatedByContainsFold(createdBy))
+	}
+
+	if serviceID != "" {
+		query = query.Where(entsystem.HasServicesWith(entservice.IDEQ(serviceID)))
+	} else if serviceSearch != "" {
+		query = query.Where(entsystem.HasServicesWith(
+			entservice.Or(
+				entservice.NameContainsFold(serviceSearch),
+				entservice.IDContainsFold(serviceSearch),
+				entservice.DescriptionContainsFold(serviceSearch),
+			),
+		))
+	}
+
+	if memberID != "" {
+		memberSystemIDs, err := s.matchingSystemIDsByMemberID(ctx, memberID)
+		if err != nil {
+			return nil, err
+		}
+		if len(memberSystemIDs) == 0 {
+			return query.Where(entsystem.IDEQ("__no_matching_system__")), nil
+		}
+		query = query.Where(entsystem.IDIn(memberSystemIDs...))
+	} else if memberSearch != "" {
+		memberSystemIDs, err := s.matchingSystemIDsByMemberSearch(ctx, memberSearch)
+		if err != nil {
+			return nil, err
+		}
+		if len(memberSystemIDs) == 0 {
+			return query.Where(entsystem.IDEQ("__no_matching_system__")), nil
+		}
+		query = query.Where(entsystem.IDIn(memberSystemIDs...))
+	}
+
+	if search == "" {
+		return query, nil
+	}
+
+	predicates := []entpredicate.System{
+		entsystem.IDContainsFold(search),
+		entsystem.NameContainsFold(search),
+		entsystem.DescriptionContainsFold(search),
+		entsystem.CreatedByContainsFold(search),
+		entsystem.HasServicesWith(
+			entservice.Or(
+				entservice.IDContainsFold(search),
+				entservice.NameContainsFold(search),
+				entservice.DescriptionContainsFold(search),
+			),
+		),
+	}
+
+	memberSystemIDs, err := s.matchingSystemIDsByMemberSearch(ctx, search)
+	if err != nil {
+		return nil, err
+	}
+	if len(memberSystemIDs) > 0 {
+		predicates = append(predicates, entsystem.IDIn(memberSystemIDs...))
+	}
+
+	return query.Where(entsystem.Or(predicates...)), nil
+}
+
+func (s *Server) matchingSystemIDsByMemberSearch(ctx context.Context, term string) ([]string, error) {
+	trimmed := strings.TrimSpace(term)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	users, err := s.client.User.Query().
+		Where(
+			entuser.Or(
+				entuser.IDContainsFold(trimmed),
+				entuser.UsernameContainsFold(trimmed),
+				entuser.EmailContainsFold(trimmed),
+				entuser.DisplayNameContainsFold(trimmed),
+			),
+		).
+		All(ctx)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while querying system members", zap.Error(err), zap.String("term", trimmed))
+			return nil, err
+		}
+		logger.Error("failed to query matching users for system member search", zap.Error(err), zap.String("term", trimmed))
+		return nil, err
+	}
+
+	if len(users) == 0 {
+		return nil, nil
+	}
+
+	userIDs := make([]string, 0, len(users))
+	for _, user := range users {
+		userIDs = append(userIDs, user.ID)
+	}
+
+	bindings, err := s.client.ResourceRoleBinding.Query().
+		Where(
+			rrb.ResourceTypeEQ("system"),
+			rrb.UserIDIn(userIDs...),
+		).
+		All(ctx)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while querying system member bindings", zap.Error(err), zap.String("term", trimmed))
+			return nil, err
+		}
+		logger.Error("failed to query system member bindings", zap.Error(err), zap.String("term", trimmed))
+		return nil, err
+	}
+
+	systemIDs := make([]string, 0, len(bindings))
+	seen := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		if _, ok := seen[binding.ResourceID]; ok {
+			continue
+		}
+		seen[binding.ResourceID] = struct{}{}
+		systemIDs = append(systemIDs, binding.ResourceID)
+	}
+
+	return systemIDs, nil
+}
+
+func (s *Server) matchingSystemIDsByMemberID(ctx context.Context, userID string) ([]string, error) {
+	trimmed := strings.TrimSpace(userID)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	bindings, err := s.client.ResourceRoleBinding.Query().
+		Where(
+			rrb.ResourceTypeEQ("system"),
+			rrb.UserIDEQ(trimmed),
+		).
+		All(ctx)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while querying system member bindings by id", zap.Error(err), zap.String("user_id", trimmed))
+			return nil, err
+		}
+		logger.Error("failed to query system member bindings by id", zap.Error(err), zap.String("user_id", trimmed))
+		return nil, err
+	}
+
+	systemIDs := make([]string, 0, len(bindings))
+	seen := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		if _, ok := seen[binding.ResourceID]; ok {
+			continue
+		}
+		seen[binding.ResourceID] = struct{}{}
+		systemIDs = append(systemIDs, binding.ResourceID)
+	}
+	return systemIDs, nil
+}
+
+func (s *Server) buildSystemServiceFilterOptions(
+	ctx context.Context,
+	systemIDs []string,
+) ([]generated.FilterOption, error) {
+	services, err := s.client.Service.Query().
+		Where(entservice.HasSystemWith(entsystem.IDIn(systemIDs...))).
+		WithSystem(func(query *ent.SystemQuery) {
+			query.Select(entsystem.FieldID, entsystem.FieldName)
+		}).
+		Order(ent.Asc(entservice.FieldName)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	options := make([]generated.FilterOption, 0, len(services))
+	seen := make(map[string]struct{}, len(services))
+	for _, service := range services {
+		if _, ok := seen[service.ID]; ok {
+			continue
+		}
+		seen[service.ID] = struct{}{}
+
+		systemLabel := ""
+		if service.Edges.System != nil {
+			systemLabel = strings.TrimSpace(service.Edges.System.Name)
+		}
+		serviceLabel := firstNonEmptyString(strings.TrimSpace(service.Name), service.ID)
+		label := serviceLabel
+		if systemLabel != "" {
+			label = systemLabel + " / " + serviceLabel
+		}
+
+		options = append(options, generated.FilterOption{
+			Value: service.ID,
+			Label: label,
+			Group: systemLabel,
+		})
+	}
+
+	return options, nil
+}
+
+func (s *Server) buildSystemMemberFilterOptions(
+	ctx context.Context,
+	systemIDs []string,
+) ([]generated.FilterOption, error) {
+	bindings, err := s.client.ResourceRoleBinding.Query().
+		Where(
+			rrb.ResourceTypeEQ("system"),
+			rrb.ResourceIDIn(systemIDs...),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(bindings) == 0 {
+		return []generated.FilterOption{}, nil
+	}
+
+	userIDs := make([]string, 0, len(bindings))
+	seenUserIDs := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		if _, ok := seenUserIDs[binding.UserID]; ok {
+			continue
+		}
+		seenUserIDs[binding.UserID] = struct{}{}
+		userIDs = append(userIDs, binding.UserID)
+	}
+
+	users, err := s.client.User.Query().
+		Where(entuser.IDIn(userIDs...)).
+		Order(ent.Asc(entuser.FieldDisplayName), ent.Asc(entuser.FieldUsername)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	options := make([]generated.FilterOption, 0, len(users))
+	for _, user := range users {
+		labelParts := make([]string, 0, 3)
+		if displayName := strings.TrimSpace(user.DisplayName); displayName != "" {
+			labelParts = append(labelParts, displayName)
+		}
+		if username := strings.TrimSpace(user.Username); username != "" && !containsString(labelParts, username) {
+			labelParts = append(labelParts, username)
+		}
+		if email := strings.TrimSpace(user.Email); email != "" && !containsString(labelParts, email) {
+			labelParts = append(labelParts, email)
+		}
+		label := strings.Join(labelParts, " · ")
+		if label == "" {
+			label = user.ID
+		}
+
+		options = append(options, generated.FilterOption{
+			Value: user.ID,
+			Label: label,
+		})
+	}
+
+	return options, nil
+}
+
+func containsString(values []string, candidate string) bool {
+	for _, value := range values {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 // serviceToAPI converts ent Service to generated Service.

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, type RefObject } from 'react';
+import { useMemo, useRef, useState, type RefObject } from 'react';
 import {
     Alert,
     Button,
@@ -43,6 +43,7 @@ import {
     ServiceWorkspaceGlyph,
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 import { UnitInputNumber } from '@/components/form/UnitInputNumber';
 import {
     buildDashboardSetupResumeHref,
@@ -815,6 +816,12 @@ export function AdminInstanceSizesContent() {
         },
     });
     const searchInputRef = useRef<InputRef>(null);
+    const [quickSearchDraft, setQuickSearchDraft] = useState(() => sizes.filters.search);
+    const [filtersOpen, setFiltersOpen] = useState(() => sizes.hasActiveFilters);
+    const [catalogScopeDraft, setCatalogScopeDraft] = useState(() => sizes.filters.catalogScope);
+    const [enabledDraft, setEnabledDraft] = useState(() => sizes.filters.enabled);
+    const [publicationDraft, setPublicationDraft] = useState(() => sizes.filters.publication);
+    const [capabilityDraft, setCapabilityDraft] = useState(() => sizes.filters.capability);
 
     useAutoOpenIntent('create-instance-size', () => {
         sizes.openCreateModal();
@@ -829,6 +836,23 @@ export function AdminInstanceSizesContent() {
         text: option.label,
         value: option.value,
     }));
+    const enabledOptions = [
+        { label: t('common:status.active', { defaultValue: 'Enabled' }), value: 'enabled' },
+        { label: t('common:status.disabled', { defaultValue: 'Disabled' }), value: 'disabled' },
+    ];
+    const publicationOptions = [
+        { label: t('instanceSizes.catalog_status_ready', { defaultValue: 'Visible in requests' }), value: 'ready' },
+        { label: t('instanceSizes.catalog_status_hidden', { defaultValue: 'Hidden from requests' }), value: 'hidden' },
+        { label: t('common:status.disabled', { defaultValue: 'Disabled' }), value: 'disabled' },
+    ];
+    const capabilityOptions = [
+        { label: t('instanceSizes.capability_gpu', { defaultValue: 'GPU' }), value: 'gpu' },
+        { label: t('instanceSizes.capability_sriov', { defaultValue: 'SR-IOV' }), value: 'sriov' },
+        { label: t('instanceSizes.capability_hugepages', { defaultValue: 'Hugepages' }), value: 'hugepages' },
+        { label: t('instanceSizes.capability_dedicated_cpu', { defaultValue: 'Dedicated CPU' }), value: 'dedicated_cpu' },
+        { label: t('instanceSizes.enable_cpu_overcommit', { defaultValue: 'CPU Overcommit' }), value: 'cpu_overcommit' },
+        { label: t('instanceSizes.enable_memory_overcommit', { defaultValue: 'Memory Overcommit' }), value: 'memory_overcommit' },
+    ];
 
     // Refs for DynamicSchemaForm imperative sync (antd best practice).
     // formRef.current?.sync() is called in onValuesChange to update spec_text.
@@ -1083,14 +1107,6 @@ export function AdminInstanceSizesContent() {
                 subtitle={t('instanceSizes.subtitle')}
                 actions={(
                     <Space>
-                    <Input
-                        placeholder={t('common:button.search')}
-                        prefix={<SearchOutlined />}
-                        value={sizes.globalSearch}
-                        onChange={(e) => sizes.setGlobalSearch(e.target.value)}
-                        allowClear
-                        style={{ width: 220 }}
-                    />
                     <Button icon={<ReloadOutlined />} onClick={() => sizes.refetch()}>
                         {t('common:button.refresh')}
                     </Button>
@@ -1141,11 +1157,119 @@ export function AdminInstanceSizesContent() {
             </div>
 
             <PageSurface flush={true}>
+                <PageSearchToolbar
+                    searchValue={sizes.globalSearch}
+                    searchDraftValue={quickSearchDraft}
+                    onSearchDraftChange={setQuickSearchDraft}
+                    onSearchChange={(value) => {
+                        setQuickSearchDraft(value);
+                        sizes.applyFilters({ search: value });
+                    }}
+                    searchPlaceholder={t('instanceSizes.search_placeholder', 'Search profiles by name, display name, resource settings, or ID')}
+                    searchHelp={t('instanceSizes.search_help', 'Press Enter or click Search. Quick search matches profile names, display names, CPU, memory, disk, capabilities, key catalog flags, and IDs.')}
+                    advancedSearch={{
+                        open: filtersOpen,
+                        onToggle: () => setFiltersOpen((open) => !open),
+                        openLabel: t('common:search.advanced', { defaultValue: 'Advanced search' }),
+                        closeLabel: t('common:search.hide_advanced', { defaultValue: 'Hide advanced search' }),
+                        title: t('instanceSizes.advanced_search_title', 'Advanced search'),
+                        content: (
+                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                <Text type="secondary">
+                                    {t('instanceSizes.advanced_search_help', 'Choose exact profile filters here. Options can be searched by keyword, but the applied filter remains an exact value.')}
+                                </Text>
+                                <Space wrap>
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        optionFilterProp="label"
+                                        placeholder={t('instanceSizes.catalog_scope', 'Catalog scope')}
+                                        value={catalogScopeDraft || undefined}
+                                        options={catalogScopeOptions}
+                                        style={{ minWidth: 200 }}
+                                        onChange={(value) => setCatalogScopeDraft((value as string | undefined) ?? '')}
+                                    />
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        optionFilterProp="label"
+                                        placeholder={t('common:table.status', 'Status')}
+                                        value={enabledDraft || undefined}
+                                        options={enabledOptions}
+                                        style={{ minWidth: 180 }}
+                                        onChange={(value) =>
+                                            setEnabledDraft((value as 'enabled' | 'disabled' | undefined) ?? '')
+                                        }
+                                    />
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        optionFilterProp="label"
+                                        placeholder={t('instanceSizes.catalog_publication', 'Catalog publication')}
+                                        value={publicationDraft || undefined}
+                                        options={publicationOptions}
+                                        style={{ minWidth: 220 }}
+                                        onChange={(value) =>
+                                            setPublicationDraft((value as 'ready' | 'hidden' | 'disabled' | undefined) ?? '')
+                                        }
+                                    />
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        optionFilterProp="label"
+                                        placeholder={t('instanceSizes.capabilities', 'Capabilities')}
+                                        value={capabilityDraft || undefined}
+                                        options={capabilityOptions}
+                                        style={{ minWidth: 220 }}
+                                        onChange={(value) =>
+                                            setCapabilityDraft(
+                                                (
+                                                    value as
+                                                        | 'gpu'
+                                                        | 'sriov'
+                                                        | 'hugepages'
+                                                        | 'dedicated_cpu'
+                                                        | 'cpu_overcommit'
+                                                        | 'memory_overcommit'
+                                                        | undefined
+                                                ) ?? '',
+                                            )
+                                        }
+                                    />
+                                    <Button
+                                        type="primary"
+                                        onClick={() =>
+                                            sizes.applyFilters({
+                                                search: quickSearchDraft,
+                                                catalogScope: catalogScopeDraft,
+                                                enabled: enabledDraft,
+                                                publication: publicationDraft,
+                                                capability: capabilityDraft,
+                                            })
+                                        }
+                                    >
+                                        {t('common:button.search')}
+                                    </Button>
+                                </Space>
+                            </Space>
+                        ),
+                    }}
+                    hasActiveFilters={sizes.hasActiveFilters}
+                    onClear={() => {
+                        setQuickSearchDraft('');
+                        setCatalogScopeDraft('');
+                        setEnabledDraft('');
+                        setPublicationDraft('');
+                        setCapabilityDraft('');
+                        sizes.clearFilters();
+                    }}
+                    clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
+                />
                 {sizes.listError && (
                     <Alert
                         type="error"
                         showIcon
-                        style={{ margin: 16, marginBottom: 0 }}
+                        style={{ margin: 16, marginTop: 16, marginBottom: 0 }}
                         message={t('instanceSizes.load_error', 'Failed to load instance sizes')}
                         description={translateApiError(t, sizes.listError)}
                         action={
@@ -1156,6 +1280,7 @@ export function AdminInstanceSizesContent() {
                     />
                 )}
                 <div style={{
+                    marginTop: sizes.listError ? 0 : 16,
                     opacity: sizes.isStale ? 0.6 : 1,
                     transition: sizes.isStale ? 'opacity 0.2s 0.1s linear' : 'opacity 0s 0s linear',
                 }}>

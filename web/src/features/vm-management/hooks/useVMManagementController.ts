@@ -31,6 +31,7 @@ import type {
   VMBatchSubmitResponse,
   TicketResponse,
   VMCreateRequest,
+  VMFilterOptions,
   VMPlacementHint,
   VMRequestDraft,
   VMList,
@@ -52,6 +53,17 @@ import {
 
 interface UseVMManagementControllerArgs {
   t: TFunction;
+}
+
+interface VMListFilters {
+  search: string;
+  namespace: string;
+  status: string;
+  clusterId: string;
+  systemId: string;
+  serviceId: string;
+  osName: string;
+  ipAddress: string;
 }
 
 type VMCreateFormValues = VMCreateRequest & { batch_count?: number };
@@ -151,6 +163,16 @@ export function useVMManagementController({
   const user = useAuthStore((state) => state.user);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [filters, setFilters] = useState<VMListFilters>({
+    search: "",
+    namespace: "",
+    status: "",
+    clusterId: "",
+    systemId: "",
+    serviceId: "",
+    osName: "",
+    ipAddress: "",
+  });
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
   const [requestMode, setRequestMode] = useState<VMRequestMode>("guided");
@@ -214,8 +236,42 @@ export function useVMManagementController({
   );
   const draftOwner = resolveVMRequestDraftOwner(user);
 
-  const vmListQuery = useApiGet<VMList>(["vms", page, pageSize], () =>
-    api.GET("/vms", { params: { query: { page, per_page: pageSize } } }),
+  const vmListQuery = useApiGet<VMList>(
+    [
+      "vms",
+      page,
+      pageSize,
+      filters.search,
+      filters.namespace,
+      filters.status,
+      filters.clusterId,
+      filters.systemId,
+      filters.serviceId,
+      filters.osName,
+      filters.ipAddress,
+    ],
+    () =>
+      api.GET("/vms", {
+        params: {
+          query: {
+            page,
+            per_page: pageSize,
+            ...(filters.search ? { search: filters.search } : {}),
+            ...(filters.namespace ? { namespace: filters.namespace } : {}),
+            ...(filters.status ? { status: filters.status } : {}),
+            ...(filters.clusterId ? { cluster_id: filters.clusterId } : {}),
+            ...(filters.systemId ? { system_id: filters.systemId } : {}),
+            ...(filters.serviceId ? { service_id: filters.serviceId } : {}),
+            ...(filters.osName ? { os_name: filters.osName } : {}),
+            ...(filters.ipAddress ? { ip_address: filters.ipAddress } : {}),
+          },
+        },
+      }),
+  );
+
+  const vmFilterOptionsQuery = useApiGet<VMFilterOptions>(
+    ["vms", "filter-options"],
+    () => api.GET("/vms/filter-options"),
   );
 
   const systemsQuery = useApiGet<SystemList>(
@@ -1123,6 +1179,28 @@ export function useVMManagementController({
     });
   };
 
+  const changeFilters = (nextFilters: Partial<VMListFilters>) => {
+    setPage(1);
+    setFilters((current) => ({
+      ...current,
+      ...nextFilters,
+    }));
+  };
+
+  const resetFilters = () => {
+    setPage(1);
+    setFilters({
+      search: "",
+      namespace: "",
+      status: "",
+      clusterId: "",
+      systemId: "",
+      serviceId: "",
+      osName: "",
+      ipAddress: "",
+    });
+  };
+
   return {
     messageContextHolder,
     page,
@@ -1134,6 +1212,9 @@ export function useVMManagementController({
     setWizardStep,
     requestMode,
     setRequestMode,
+    filters,
+    changeFilters,
+    resetFilters,
     form,
     selectedSystemId,
     selectedTemplate,
@@ -1150,6 +1231,8 @@ export function useVMManagementController({
     vmData: vmListQuery.data,
     isLoading: vmListQuery.isLoading,
     refetch: vmListQuery.refetch,
+    vmFilterOptions: vmFilterOptionsQuery.data,
+    vmFilterOptionsLoading: vmFilterOptionsQuery.isLoading,
     systemsData: systemsQuery.data,
     servicesData: servicesQuery.data,
     templatesData,

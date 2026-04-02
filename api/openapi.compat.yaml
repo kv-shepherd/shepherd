@@ -120,6 +120,13 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/SystemCreatedBySearch'
+        - $ref: '#/components/parameters/SystemCreatedByExact'
+        - $ref: '#/components/parameters/SystemServiceSearch'
+        - $ref: '#/components/parameters/SystemServiceIDFilter'
+        - $ref: '#/components/parameters/SystemMemberSearch'
+        - $ref: '#/components/parameters/SystemMemberIDFilter'
         - $ref: '#/components/parameters/SortBy'
         - $ref: '#/components/parameters/SortOrder'
       responses:
@@ -154,6 +161,22 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           $ref: '#/components/responses/Conflict'
+  /systems/filter-options:
+    get:
+      tags: [systems]
+      summary: List system filter options
+      operationId: getSystemFilterOptions
+      responses:
+        '200':
+          description: Searchable exact filter options for the systems list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemFilterOptionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /systems/{system_id}:
     get:
       tags: [systems]
@@ -340,6 +363,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
         - $ref: '#/components/parameters/SystemIDFilter'
       responses:
         '200':
@@ -485,11 +509,29 @@ paths:
         - $ref: '#/components/parameters/PerPage'
         - $ref: '#/components/parameters/SortBy'
         - $ref: '#/components/parameters/SortOrder'
+        - $ref: '#/components/parameters/Search'
         - name: namespace
           in: query
           schema:
             type: string
         - name: status
+          in: query
+          schema:
+            type: string
+        - name: cluster_id
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/SystemIDFilter'
+        - name: service_id
+          in: query
+          schema:
+            type: string
+        - name: os_name
+          in: query
+          schema:
+            type: string
+        - name: ip_address
           in: query
           schema:
             type: string
@@ -500,6 +542,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /vms/filter-options:
+    get:
+      tags: [vms]
+      summary: Get VM filter options
+      description: |
+        Returns the current user's visible VM filter catalogs for exact-match advanced filtering.
+        Option values are stable identifiers when available, while labels stay human-readable.
+      operationId: getVMFilterOptions
+      responses:
+        '200':
+          description: VM filter option catalogs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMFilterOptionsResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
   /vms/request-context:
@@ -1011,6 +1070,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
         - name: status
           in: query
           schema:
@@ -1061,6 +1121,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
         - name: status
           in: query
           schema:
@@ -2077,6 +2138,27 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - name: os_family
+          in: query
+          description: Exact operating system family filter
+          schema:
+            type: string
+        - name: source_type
+          in: query
+          description: Exact template source type filter
+          schema:
+            type: string
+        - name: catalog_scope
+          in: query
+          description: Exact catalog scope filter
+          schema:
+            type: string
+        - name: enabled
+          in: query
+          description: Filter by enabled state
+          schema:
+            type: boolean
       responses:
         '200':
           description: Template list
@@ -2493,12 +2575,18 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
         - name: environment
           in: query
           description: Filter by environment type
           schema:
             type: string
             enum: [test, prod]
+        - name: enabled
+          in: query
+          description: Filter by enabled state
+          schema:
+            type: boolean
       responses:
         '200':
           description: Namespace list
@@ -2731,6 +2819,11 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
+        - name: search
+          in: query
+          description: Fuzzy search across action, actor, resource type, and resource ID
+          schema:
+            type: string
         - name: action
           in: query
           schema:
@@ -2801,6 +2894,42 @@ components:
       name: search
       in: query
       description: Case-insensitive search text
+      schema:
+        type: string
+    SystemCreatedBySearch:
+      name: created_by
+      in: query
+      description: Case-insensitive creator filter for systems
+      schema:
+        type: string
+    SystemCreatedByExact:
+      name: created_by_exact
+      in: query
+      description: Exact creator filter for systems
+      schema:
+        type: string
+    SystemServiceSearch:
+      name: service_search
+      in: query
+      description: Case-insensitive filter across related service names and descriptions
+      schema:
+        type: string
+    SystemServiceIDFilter:
+      name: service_id
+      in: query
+      description: Exact related service filter for systems
+      schema:
+        type: string
+    SystemMemberSearch:
+      name: member_search
+      in: query
+      description: Case-insensitive filter across related system member username, email, or display name
+      schema:
+        type: string
+    SystemMemberIDFilter:
+      name: member_id
+      in: query
+      description: Exact related system member filter
       schema:
         type: string
     SortBy:
@@ -3163,6 +3292,21 @@ components:
             $ref: '#/components/schemas/System'
         pagination:
           $ref: '#/components/schemas/Pagination'
+    SystemFilterOptionsResponse:
+      type: object
+      properties:
+        creators:
+          type: array
+          items:
+            $ref: '#/components/schemas/FilterOption'
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/FilterOption'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/FilterOption'
     # ── Service ─────────────────────────────────────
     Service:
       type: object
@@ -4017,8 +4161,20 @@ components:
           description: Type of operation this ticket represents (ADR-0015)
         requester:
           type: string
+        requester_display_name:
+          type: string
+          description: Preferred human-readable requester label, typically display name or username.
+        requester_username:
+          type: string
+          description: Requester username when available.
         approver:
           type: string
+        approver_display_name:
+          type: string
+          description: Preferred human-readable approver label, typically display name or username.
+        approver_username:
+          type: string
+          description: Approver username when available.
         reason:
           type: string
         reject_reason:
@@ -5053,6 +5209,47 @@ components:
             $ref: '#/components/schemas/UserProfileField'
         pagination:
           $ref: '#/components/schemas/Pagination'
+    FilterOption:
+      type: object
+      required: [value, label]
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+        group:
+          type: string
+    VMFilterOptionsResponse:
+      type: object
+      properties:
+        statuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/FilterOption'
+        namespaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/FilterOption'
+        clusters:
+          type: array
+          items:
+            $ref: '#/components/schemas/FilterOption'
+        systems:
+          type: array
+          items:
+            $ref: '#/components/schemas/FilterOption'
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/FilterOption'
+        operating_systems:
+          type: array
+          items:
+            $ref: '#/components/schemas/FilterOption'
+        ip_addresses:
+          type: array
+          items:
+            $ref: '#/components/schemas/FilterOption'
     UserCreateRequest:
       type: object
       required: [username, password]

@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 const useApiGetMock = vi.fn();
@@ -99,5 +100,51 @@ describe('VMBatchListPage', () => {
         expect(screen.getByText('IN_PROGRESS')).toBeVisible();
         expect(screen.getByText('Batch ID: batch-12…7890')).toBeVisible();
         expect(screen.getByTestId('batch-action-detail-batch-1234567890')).toBeVisible();
+    });
+
+    it('filters batch jobs through quick search only after submit', async () => {
+        const user = userEvent.setup();
+        useApiGetMock.mockReturnValue({
+            data: {
+                items: [
+                    {
+                        id: 'batch-start-1234567890',
+                        operation: 'START',
+                        status: 'IN_PROGRESS',
+                        child_count: 3,
+                        success_count: 1,
+                        failed_count: 1,
+                        pending_count: 1,
+                        created_at: '2026-03-17T00:00:00Z',
+                    },
+                    {
+                        id: 'batch-stop-0987654321',
+                        operation: 'STOP',
+                        status: 'COMPLETED',
+                        child_count: 1,
+                        success_count: 1,
+                        failed_count: 0,
+                        pending_count: 0,
+                        created_at: '2026-03-18T00:00:00Z',
+                    },
+                ],
+            },
+            isLoading: false,
+            refetch: vi.fn(),
+        });
+        useApiMutationMock.mockReturnValue({
+            isPending: false,
+            mutate: vi.fn(),
+        });
+
+        render(<VMBatchListPage />);
+
+        await user.type(screen.getByTestId('batch-quick-search'), 'stop');
+        expect(screen.getByText('STOP')).toBeVisible();
+        expect(screen.getByText('START')).toBeVisible();
+
+        await user.keyboard('{Enter}');
+        expect(screen.getByText('STOP')).toBeVisible();
+        expect(screen.queryByText('START')).not.toBeInTheDocument();
     });
 });

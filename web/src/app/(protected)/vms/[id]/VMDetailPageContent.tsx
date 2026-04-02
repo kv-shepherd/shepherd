@@ -217,7 +217,7 @@ export default function VMDetailPage() {
     {
       enabled: Boolean(vmId && isRunning && consoleAvailable),
       staleTime: 15_000,
-      refetchInterval: activeConsoleTarget ? 15_000 : undefined,
+      refetchInterval: activeConsoleTarget ? undefined : 15_000,
     },
   );
   const openConsoleChooser = () => {
@@ -681,55 +681,56 @@ export default function VMDetailPage() {
         onChange={setSelectedConsoleType}
         onConfirm={() => void confirmConsoleChooser()}
       />
-      <Modal
-        title={
-          <Space>
-            <ExclamationCircleOutlined style={{ color: "#ff4d4f" }} />
-            {t("action.delete_confirm")}
-          </Space>
-        }
-        open={deleteOpen}
-        onOk={() => {
-          if (!vmData?.name) {
-            return;
+      {deleteOpen ? (
+        <Modal
+          title={
+            <Space>
+              <ExclamationCircleOutlined style={{ color: "#ff4d4f" }} />
+              {t("action.delete_confirm")}
+            </Space>
           }
-          if (requiresNameConfirm && deleteConfirmName !== vmData.name) {
-            void messageApi.warning(t("action.delete_type_name_hint"));
-            return;
-          }
-          deleteMutation.mutate();
-        }}
-        onCancel={() => {
-          setDeleteOpen(false);
-          setDeleteConfirmName("");
-        }}
-        confirmLoading={deleteMutation.isPending}
-        okButtonProps={{ danger: true, disabled: !deleteConfirmMatched }}
-        okText={t("common:button.delete")}
-        forceRender={true}
-        data-testid="vm-delete-modal"
-      >
-        <Paragraph>
-          {t("action.delete_confirm_name", { name: vmData?.name ?? vmId })}
-        </Paragraph>
-        {requiresNameConfirm && (
-          <>
-            <Paragraph type="secondary">
-              {t("action.delete_type_name_hint")}
-            </Paragraph>
-            <Input
-              value={deleteConfirmName}
-              onChange={(e) => setDeleteConfirmName(e.target.value)}
-              placeholder={vmData?.name ?? vmId}
-              status={
-                deleteConfirmName && deleteConfirmName !== vmData?.name
-                  ? "error"
-                  : undefined
-              }
-            />
-          </>
-        )}
-      </Modal>
+          open={true}
+          onOk={() => {
+            if (!vmData?.name) {
+              return;
+            }
+            if (requiresNameConfirm && deleteConfirmName !== vmData.name) {
+              void messageApi.warning(t("action.delete_type_name_hint"));
+              return;
+            }
+            deleteMutation.mutate();
+          }}
+          onCancel={() => {
+            setDeleteOpen(false);
+            setDeleteConfirmName("");
+          }}
+          confirmLoading={deleteMutation.isPending}
+          okButtonProps={{ danger: true, disabled: !deleteConfirmMatched }}
+          okText={t("common:button.delete")}
+          data-testid="vm-delete-modal"
+        >
+          <Paragraph>
+            {t("action.delete_confirm_name", { name: vmData?.name ?? vmId })}
+          </Paragraph>
+          {requiresNameConfirm && (
+            <>
+              <Paragraph type="secondary">
+                {t("action.delete_type_name_hint")}
+              </Paragraph>
+              <Input
+                value={deleteConfirmName}
+                onChange={(e) => setDeleteConfirmName(e.target.value)}
+                placeholder={vmData?.name ?? vmId}
+                status={
+                  deleteConfirmName && deleteConfirmName !== vmData?.name
+                    ? "error"
+                    : undefined
+                }
+              />
+            </>
+          )}
+        </Modal>
+      ) : null}
     </div>
   );
 }

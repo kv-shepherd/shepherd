@@ -80,3 +80,105 @@ func TestDeleteNamespace_RejectsActiveCreateRequests(t *testing.T) {
 		t.Fatalf("error code = %q, want NAMESPACE_HAS_ACTIVE_REQUESTS", resp.Code)
 	}
 }
+
+func TestListNamespaces_FiltersBySearchAcrossNameDescriptionAndActor(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	createNamespace := func(id, name, description, createdBy string) {
+		t.Helper()
+		builder := client.NamespaceRegistry.Create().
+			SetID(id).
+			SetName(name).
+			SetEnvironment(namespaceregistry.EnvironmentTest).
+			SetEnabled(true).
+			SetCreatedBy(createdBy)
+		if description != "" {
+			builder = builder.SetDescription(description)
+		}
+		if _, err := builder.Save(ctx); err != nil {
+			t.Fatalf("create namespace %s: %v", id, err)
+		}
+	}
+
+	createNamespace("ns-1", "finance-core", "finance workloads", "alice")
+	createNamespace("ns-2", "platform-core", "platform workloads", "bob")
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/namespaces?page=1&per_page=20&search=finance",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListNamespaces(c, generated.ListNamespacesParams{
+		Page:    1,
+		PerPage: 20,
+		Search:  "finance",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("list namespaces status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.NamespaceRegistryList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("items len = %d, want 1", got)
+	}
+	if resp.Items[0].Name != "finance-core" {
+		t.Fatalf("items[0].name = %q, want finance-core", resp.Items[0].Name)
+	}
+}
+
+func TestListNamespaces_FiltersByEnabledState(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	createNamespace := func(id, name string, enabled bool) {
+		t.Helper()
+		_, err := client.NamespaceRegistry.Create().
+			SetID(id).
+			SetName(name).
+			SetEnvironment(namespaceregistry.EnvironmentTest).
+			SetEnabled(enabled).
+			SetCreatedBy("alice").
+			Save(ctx)
+		if err != nil {
+			t.Fatalf("create namespace %s: %v", id, err)
+		}
+	}
+
+	createNamespace("ns-enabled", "team-enabled", true)
+	createNamespace("ns-disabled", "team-disabled", false)
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/namespaces?page=1&per_page=20&enabled=true",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListNamespaces(c, generated.ListNamespacesParams{
+		Page:    1,
+		PerPage: 20,
+		Enabled: true,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("list namespaces status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.NamespaceRegistryList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("items len = %d, want 1", got)
+	}
+	if resp.Items[0].Name != "team-enabled" {
+		t.Fatalf("items[0].name = %q, want team-enabled", resp.Items[0].Name)
+	}
+}

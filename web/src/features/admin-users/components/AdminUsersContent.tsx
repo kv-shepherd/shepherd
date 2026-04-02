@@ -46,6 +46,7 @@ import {
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
+import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 import { useUserPreference } from '@/hooks/useUserPreference';
 import { useAdminUsersController } from '../hooks/useAdminUsersController';
 import {
@@ -69,6 +70,11 @@ const USER_TABLE_FIXED_ACTIONS_COLUMN_KEY = 'actions';
 const USER_TABLE_CORE_COLUMN_KEYS = ['email', 'roles', 'status', 'created_at'] as const;
 
 interface UserSearchFieldOption {
+    value: string;
+    label: string;
+}
+
+interface UserSearchValueOption {
     value: string;
     label: string;
 }
@@ -149,6 +155,36 @@ function buildAdminUserSearchQuery(
     return terms.join(' ').trim();
 }
 
+function normalizeAdvancedUserSearchConditions(conditions: AdvancedUserSearchCondition[]) {
+    return conditions
+        .map((condition) => ({
+            field: condition.field.trim(),
+            value: condition.value.trim(),
+        }))
+        .filter((condition) => condition.field && condition.value);
+}
+
+function dedupeUserSearchValueOptions(options: UserSearchValueOption[]) {
+    const seen = new Set<string>();
+    const normalized: UserSearchValueOption[] = [];
+    for (const option of options) {
+        const value = option.value.trim();
+        if (!value) {
+            continue;
+        }
+        const key = value.toLowerCase();
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        normalized.push({
+            value,
+            label: option.label || value,
+        });
+    }
+    return normalized.sort((left, right) => left.label.localeCompare(right.label));
+}
+
 function stringifyUserProfileAttributeValue(value: unknown) {
     if (typeof value === 'string') {
         return value || EMPTY_VALUE;
@@ -193,7 +229,7 @@ function formatAdminUsersLocalDateTime(value?: string | null) {
     return `${pick('year')}-${pick('month')}-${pick('day')} ${pick('hour')}:${pick('minute')}`;
 }
 
-function buildUserTableColumnOptions(
+export function buildUserTableColumnOptions(
     t: (key: string, options?: { defaultValue?: string }) => string,
     fields: UserProfileField[],
 ): UserTableColumnOption[] {
@@ -236,7 +272,7 @@ function buildDefaultUserTableColumnKeys(fields: UserProfileField[]) {
     ];
 }
 
-function normalizeUserTablePreferenceColumns(
+export function normalizeUserTablePreferenceColumns(
     storedColumns: string[] | undefined,
     availableOptions: UserTableColumnOption[],
     defaultColumns: string[],
@@ -249,7 +285,7 @@ function normalizeUserTablePreferenceColumns(
     return normalized;
 }
 
-function normalizeUserTableMergedColumns(
+export function normalizeUserTableMergedColumns(
     storedGroups: UserTableMergedColumnPreference[] | undefined,
     selectedColumns: string[],
     availableOptions: UserTableColumnOption[],
@@ -302,13 +338,61 @@ function estimateUsersTableScrollWidth(visibleConfigurableColumnCount: number) {
     return 320 + visibleConfigurableColumnCount * 200 + 220;
 }
 
+export function buildOrderedUserTableDisplayColumns(
+    visibleUserTableColumns: UserTableColumnOption[],
+    selectedMergedColumns: NormalizedUserTableMergedColumn[],
+) {
+    const optionByKey = new Map(visibleUserTableColumns.map((option) => [option.key, option] as const));
+    const mergedGroupIndexByKey = new Map<string, number>();
+    selectedMergedColumns.forEach((group, index) => {
+        group.columnKeys.forEach((key) => {
+            mergedGroupIndexByKey.set(key, index);
+        });
+    });
+    const insertedGroupIndexes = new Set<number>();
+    const items: Array<
+        | { kind: 'single'; column: UserTableColumnOption }
+        | { kind: 'merged'; index: number; label?: string; columns: UserTableColumnOption[]; showLabels: boolean }
+    > = [];
+
+    for (const column of visibleUserTableColumns) {
+        const mergedGroupIndex = mergedGroupIndexByKey.get(column.key);
+        if (mergedGroupIndex === undefined) {
+            items.push({ kind: 'single', column });
+            continue;
+        }
+        if (insertedGroupIndexes.has(mergedGroupIndex)) {
+            continue;
+        }
+        const group = selectedMergedColumns[mergedGroupIndex];
+        const groupColumns = group.columnKeys
+            .map((key) => optionByKey.get(key))
+            .filter((option): option is UserTableColumnOption => Boolean(option));
+        if (groupColumns.length === 0) {
+            continue;
+        }
+        items.push({
+            kind: 'merged',
+            index: mergedGroupIndex,
+            label: group.label,
+            columns: groupColumns,
+            showLabels: group.showLabels,
+        });
+        insertedGroupIndexes.add(mergedGroupIndex);
+    }
+
+    return items;
+}
+
 export function AdminUsersContent() {
     const { t } = useTranslation(['admin', 'common']);
     const users = useAdminUsersController({ t });
     const { setPage, setSearch } = users;
-    const [quickSearchInput, setQuickSearchInput] = useState('');
+    const [quickSearch, setQuickSearch] = useState('');
+    const [quickSearchDraft, setQuickSearchDraft] = useState('');
     const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
     const [advancedSearchConditions, setAdvancedSearchConditions] = useState<AdvancedUserSearchCondition[]>([]);
+    const [advancedSearchDraftConditions, setAdvancedSearchDraftConditions] = useState<AdvancedUserSearchCondition[]>([]);
     const [columnsDrawerOpen, setColumnsDrawerOpen] = useState(false);
     const [columnDraftKeys, setColumnDraftKeys] = useState<string[]>([]);
     const [mergedColumnDrafts, setMergedColumnDrafts] = useState<UserTableMergedColumnDraft[]>([]);
@@ -325,9 +409,18 @@ export function AdminUsersContent() {
         cooldown_seconds?: number | null;
         reason?: string;
     }>();
-    const userItems = users.users?.items ?? [];
-    const memberItems = users.members?.items ?? [];
-    const rateLimitItems = users.rateLimitStatus?.items ?? [];
+    const userItems = useMemo(
+        () => users.users?.items ?? [],
+        [users.users?.items]
+    );
+    const memberItems = useMemo(
+        () => users.members?.items ?? [],
+        [users.members?.items]
+    );
+    const rateLimitItems = useMemo(
+        () => users.rateLimitStatus?.items ?? [],
+        [users.rateLimitStatus?.items]
+    );
     const roleCatalog = useMemo(
         () => users.roles?.items ?? [],
         [users.roles?.items]
@@ -407,6 +500,8 @@ export function AdminUsersContent() {
             { value: 'username', label: t('users.search.field.username') },
             { value: 'display_name', label: t('users.search.field.display_name') },
             { value: 'email', label: t('users.search.field.email') },
+            { value: 'role', label: t('users.search.field.role', { defaultValue: 'Role' }) },
+            { value: 'status', label: t('users.search.field.status', { defaultValue: 'Status' }) },
             ...userProfileFields
                 .filter((field) => field.searchable !== false)
                 .map((field) => ({
@@ -416,17 +511,108 @@ export function AdminUsersContent() {
         ],
         [t, userProfileFields]
     );
+    const userSearchValueOptionsByField = useMemo(() => {
+        const valueOptions = new Map<string, { kind: 'select' | 'suggest'; options: UserSearchValueOption[] }>();
+        const statusOptions = dedupeUserSearchValueOptions([
+            {
+                value: 'enabled',
+                label: t('users.status.enabled'),
+            },
+            {
+                value: 'disabled',
+                label: t('users.status.disabled'),
+            },
+        ]);
+        valueOptions.set('status', { kind: 'select', options: statusOptions });
+        valueOptions.set(
+            'role',
+            {
+                kind: 'select',
+                options: dedupeUserSearchValueOptions(
+                    roleCatalog.map((role) => ({
+                        value: role.display_name || role.name || role.id,
+                        label: localizeRoleLabel(t, role),
+                    })),
+                ),
+            },
+        );
+        valueOptions.set(
+            'username',
+            {
+                kind: 'suggest',
+                options: dedupeUserSearchValueOptions(
+                    userItems
+                        .filter((user) => Boolean(user.username))
+                        .map((user) => ({
+                            value: user.username,
+                            label: user.display_name
+                                ? `${user.display_name} (${user.username})`
+                                : user.username,
+                        })),
+                ),
+            },
+        );
+        valueOptions.set(
+            'display_name',
+            {
+                kind: 'suggest',
+                options: dedupeUserSearchValueOptions(
+                    userItems
+                        .filter((user) => Boolean(user.display_name))
+                        .map((user) => ({
+                            value: user.display_name as string,
+                            label: `${user.display_name}${user.username ? ` (${user.username})` : ''}`,
+                        })),
+                ),
+            },
+        );
+        valueOptions.set(
+            'email',
+            {
+                kind: 'suggest',
+                options: dedupeUserSearchValueOptions(
+                    userItems
+                        .filter((user) => Boolean(user.email))
+                        .map((user) => ({
+                            value: user.email as string,
+                            label: user.email as string,
+                        })),
+                ),
+            },
+        );
+        for (const field of userProfileFields) {
+            if (field.searchable === false) {
+                continue;
+            }
+            const options = dedupeUserSearchValueOptions(
+                userItems
+                    .map((user) => stringifyUserProfileAttributeValue(user.profile_attributes?.[field.key]))
+                    .filter((value) => value !== EMPTY_VALUE)
+                    .map((value) => ({
+                        value,
+                        label: value,
+                    })),
+            );
+            valueOptions.set(field.key, {
+                kind: 'suggest',
+                options,
+            });
+        }
+        return valueOptions;
+    }, [roleCatalog, t, userItems, userProfileFields]);
     const combinedUserSearch = useMemo(
-        () => buildAdminUserSearchQuery(quickSearchInput, advancedSearchConditions),
-        [quickSearchInput, advancedSearchConditions]
+        () => buildAdminUserSearchQuery(quickSearch, advancedSearchConditions),
+        [advancedSearchConditions, quickSearch]
     );
 
     const toggleAdvancedSearch = () => {
         setAdvancedSearchOpen((open) => {
             const nextOpen = !open;
             if (nextOpen) {
-                setAdvancedSearchConditions((current) =>
-                    current.length > 0 ? current : [{ field: '', value: '' }]
+                setAdvancedSearchDraftConditions(
+                    advancedSearchConditions.length > 0
+                        ? advancedSearchConditions
+                        : [{ field: '', value: '' }]
                 );
             }
             return nextOpen;
@@ -437,6 +623,18 @@ export function AdminUsersContent() {
         setSearch(combinedUserSearch);
         setPage(1);
     }, [combinedUserSearch, setPage, setSearch]);
+
+    const applyQuickSearch = (value = quickSearchDraft) => {
+        setQuickSearchDraft(value);
+        setQuickSearch(value);
+    };
+
+    const applyAdvancedSearch = () => {
+        setQuickSearch(quickSearchDraft);
+        setAdvancedSearchConditions(
+            normalizeAdvancedUserSearchConditions(advancedSearchDraftConditions),
+        );
+    };
 
     const openColumnsDrawer = () => {
         setColumnDraftKeys(selectedUserTableColumnKeys);
@@ -610,48 +808,10 @@ export function AdminUsersContent() {
         [columnDraftKeys, columnsDrawerOpen, selectedUserTableColumnKeys, userTableColumnOptions]
     );
 
-    const orderedUserTableDisplayColumns = useMemo(() => {
-        const optionByKey = new Map(visibleUserTableColumns.map((option) => [option.key, option] as const));
-        const mergedGroupIndexByKey = new Map<string, number>();
-        selectedMergedColumns.forEach((group, index) => {
-            group.columnKeys.forEach((key) => {
-                mergedGroupIndexByKey.set(key, index);
-            });
-        });
-        const insertedGroupIndexes = new Set<number>();
-        const items: Array<
-            | { kind: 'single'; column: UserTableColumnOption }
-            | { kind: 'merged'; index: number; label?: string; columns: UserTableColumnOption[]; showLabels: boolean }
-        > = [];
-
-        for (const column of visibleUserTableColumns) {
-            const mergedGroupIndex = mergedGroupIndexByKey.get(column.key);
-            if (mergedGroupIndex === undefined) {
-                items.push({ kind: 'single', column });
-                continue;
-            }
-            if (insertedGroupIndexes.has(mergedGroupIndex)) {
-                continue;
-            }
-            const group = selectedMergedColumns[mergedGroupIndex];
-            const groupColumns = group.columnKeys
-                .map((key) => optionByKey.get(key))
-                .filter((option): option is UserTableColumnOption => Boolean(option));
-            if (groupColumns.length === 0) {
-                continue;
-            }
-            items.push({
-                kind: 'merged',
-                index: mergedGroupIndex,
-                label: group.label,
-                columns: groupColumns,
-                showLabels: group.showLabels,
-            });
-            insertedGroupIndexes.add(mergedGroupIndex);
-        }
-
-        return items;
-    }, [selectedMergedColumns, visibleUserTableColumns]);
+    const orderedUserTableDisplayColumns = useMemo(
+        () => buildOrderedUserTableDisplayColumns(visibleUserTableColumns, selectedMergedColumns),
+        [selectedMergedColumns, visibleUserTableColumns]
+    );
 
     const usersTableScrollX = useMemo(
         () => estimateUsersTableScrollWidth(orderedUserTableDisplayColumns.length),
@@ -1079,17 +1239,15 @@ export function AdminUsersContent() {
                     </Space>
                 </Space>
                 <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 16 }}>
-                    <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-                        <Input.Search
-                            allowClear
-                            value={quickSearchInput}
-                            placeholder={t('users.directory.quick_search_placeholder')}
-                            onChange={(event) => setQuickSearchInput(event.target.value)}
-                            onSearch={(value) => setQuickSearchInput(value)}
-                            data-testid="users-directory-search"
-                            style={{ minWidth: 320, flex: 1 }}
-                        />
-                        <Space>
+                    <PageSearchToolbar
+                        searchValue={quickSearch}
+                        searchDraftValue={quickSearchDraft}
+                        onSearchDraftChange={setQuickSearchDraft}
+                        onSearchChange={applyQuickSearch}
+                        searchPlaceholder={t('users.directory.quick_search_placeholder')}
+                        searchHelp={t('users.directory.quick_search_help')}
+                        searchTestId="users-directory-search"
+                        secondaryActions={(
                             <Button
                                 icon={<SettingOutlined />}
                                 onClick={openColumnsDrawer}
@@ -1099,97 +1257,137 @@ export function AdminUsersContent() {
                                     defaultValue: 'Displayed columns',
                                 })}
                             </Button>
-                            <Button
-                                onClick={toggleAdvancedSearch}
-                                data-testid="users-directory-advanced-search-toggle"
-                            >
-                                {advancedSearchOpen
-                                    ? t('users.directory.hide_advanced_search')
-                                    : t('users.directory.show_advanced_search')}
-                            </Button>
-                            {(quickSearchInput.trim() || advancedSearchConditions.length > 0) ? (
-                                <Button
-                                    onClick={() => {
-                                        setQuickSearchInput('');
-                                        setAdvancedSearchConditions([]);
-                                    }}
-                                    data-testid="users-directory-clear-search"
-                                >
-                                    {t('users.directory.clear_search')}
-                                </Button>
-                            ) : null}
-                        </Space>
-                    </Space>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                        {t('users.directory.quick_search_help')}
-                    </Text>
-                    {advancedSearchOpen ? (
-                        <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                            <Text strong>{t('users.directory.advanced_search_title')}</Text>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                {t('users.directory.advanced_search_help')}
-                            </Text>
-                            {advancedSearchConditions.map((condition, index) => (
-                                <Space
-                                    key={`${condition.field}-${index}`}
-                                    align="start"
-                                    wrap
-                                    data-testid={`users-directory-search-condition-row-${index}`}
-                                >
-                                    <Select
-                                        style={{ minWidth: 220 }}
-                                        placeholder={t('users.directory.advanced_search_field')}
-                                        value={condition.field || undefined}
-                                        data-testid={`users-directory-search-condition-field-${index}`}
-                                        options={userSearchFieldOptions}
-                                        onChange={(value) => {
-                                            setAdvancedSearchConditions((current) =>
-                                                current.map((item, itemIndex) =>
-                                                    itemIndex === index ? { ...item, field: value } : item
-                                                )
-                                            );
-                                        }}
-                                    />
-                                    <Input
-                                        style={{ minWidth: 240 }}
-                                        placeholder={t('users.directory.advanced_search_value')}
-                                        value={condition.value}
-                                        data-testid={`users-directory-search-condition-value-${index}`}
-                                        onChange={(event) => {
-                                            const value = event.target.value;
-                                            setAdvancedSearchConditions((current) =>
-                                                current.map((item, itemIndex) =>
-                                                    itemIndex === index ? { ...item, value } : item
-                                                )
-                                            );
-                                        }}
-                                    />
+                        )}
+                        advancedSearch={{
+                            open: advancedSearchOpen,
+                            onToggle: toggleAdvancedSearch,
+                            openLabel: t('users.directory.show_advanced_search'),
+                            closeLabel: t('users.directory.hide_advanced_search'),
+                            toggleTestId: 'users-directory-advanced-search-toggle',
+                            content: (
+                                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                    <Text strong>{t('users.directory.advanced_search_title')}</Text>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        {t('users.directory.advanced_search_help')}
+                                    </Text>
+                                    {advancedSearchDraftConditions.map((condition, index) => {
+                                        const valueOptions = userSearchValueOptionsByField.get(condition.field);
+                                        return (
+                                        <Space
+                                            key={`${condition.field}-${index}`}
+                                            align="start"
+                                            wrap
+                                            data-testid={`users-directory-search-condition-row-${index}`}
+                                        >
+                                            <Select
+                                                style={{ minWidth: 220 }}
+                                                showSearch
+                                                optionFilterProp="label"
+                                                placeholder={t('users.directory.advanced_search_field')}
+                                                value={condition.field || undefined}
+                                                data-testid={`users-directory-search-condition-field-${index}`}
+                                                options={userSearchFieldOptions}
+                                                onChange={(value) => {
+                                                    setAdvancedSearchDraftConditions((current) =>
+                                                        current.map((item, itemIndex) =>
+                                                            itemIndex === index ? { field: String(value), value: '' } : item
+                                                        )
+                                                    );
+                                                }}
+                                            />
+                                            {valueOptions?.kind === 'select' ? (
+                                                <Select
+                                                    allowClear
+                                                    showSearch
+                                                    optionFilterProp="label"
+                                                    style={{ minWidth: 240 }}
+                                                    placeholder={t('users.directory.advanced_search_value')}
+                                                    value={condition.value || undefined}
+                                                    data-testid={`users-directory-search-condition-value-${index}`}
+                                                    options={valueOptions.options}
+                                                    onChange={(value) => {
+                                                        setAdvancedSearchDraftConditions((current) =>
+                                                            current.map((item, itemIndex) =>
+                                                                itemIndex === index
+                                                                    ? { ...item, value: String(value ?? '') }
+                                                                    : item
+                                                            )
+                                                        );
+                                                    }}
+                                                />
+                                            ) : (
+                                                <AutoComplete
+                                                    style={{ minWidth: 240 }}
+                                                    options={valueOptions?.options ?? []}
+                                                    placeholder={t('users.directory.advanced_search_value')}
+                                                    value={condition.value}
+                                                    data-testid={`users-directory-search-condition-value-${index}`}
+                                                    filterOption={(inputValue, option) => {
+                                                        const search = inputValue.trim().toLowerCase();
+                                                        if (!search) {
+                                                            return true;
+                                                        }
+                                                        const label = String(option?.label ?? '').toLowerCase();
+                                                        const value = String(option?.value ?? '').toLowerCase();
+                                                        return label.includes(search) || value.includes(search);
+                                                    }}
+                                                    onChange={(value) => {
+                                                        setAdvancedSearchDraftConditions((current) =>
+                                                            current.map((item, itemIndex) =>
+                                                                itemIndex === index ? { ...item, value } : item
+                                                            )
+                                                        );
+                                                    }}
+                                                >
+                                                    <Input />
+                                                </AutoComplete>
+                                            )}
+                                            <Button
+                                                danger
+                                                icon={<DeleteOutlined />}
+                                                onClick={() => {
+                                                    setAdvancedSearchDraftConditions((current) =>
+                                                        current.filter((_, itemIndex) => itemIndex !== index)
+                                                    );
+                                                }}
+                                                aria-label={t('users.directory.remove_search_condition')}
+                                            />
+                                        </Space>
+                                        );
+                                    })}
                                     <Button
-                                        danger
-                                        icon={<DeleteOutlined />}
+                                        icon={<PlusOutlined />}
                                         onClick={() => {
-                                            setAdvancedSearchConditions((current) =>
-                                                current.filter((_, itemIndex) => itemIndex !== index)
-                                            );
+                                            setAdvancedSearchDraftConditions((current) => [
+                                                ...current,
+                                                { field: '', value: '' },
+                                            ]);
                                         }}
-                                        aria-label={t('users.directory.remove_search_condition')}
-                                    />
+                                        data-testid="users-directory-add-search-condition"
+                                    >
+                                        {t('users.directory.add_search_condition')}
+                                    </Button>
+                                    <Button
+                                        type="primary"
+                                        onClick={applyAdvancedSearch}
+                                        data-testid="users-directory-advanced-search-submit"
+                                    >
+                                        {t('common:button.search')}
+                                    </Button>
                                 </Space>
-                            ))}
-                            <Button
-                                icon={<PlusOutlined />}
-                                onClick={() => {
-                                    setAdvancedSearchConditions((current) => [
-                                        ...current,
-                                        { field: '', value: '' },
-                                    ]);
-                                }}
-                                data-testid="users-directory-add-search-condition"
-                            >
-                                {t('users.directory.add_search_condition')}
-                            </Button>
-                        </Space>
-                    ) : null}
+                            ),
+                        }}
+                        hasActiveFilters={Boolean(quickSearch.trim() || advancedSearchConditions.length > 0)}
+                        onClear={() => {
+                            setQuickSearch('');
+                            setQuickSearchDraft('');
+                            setAdvancedSearchConditions([]);
+                            setAdvancedSearchDraftConditions([]);
+                            setAdvancedSearchOpen(false);
+                        }}
+                        clearLabel={t('users.directory.clear_search')}
+                        clearTestId="users-directory-clear-search"
+                    />
                 </Space>
                 <Table<User>
                     style={{ marginTop: 16 }}
@@ -1228,348 +1426,352 @@ export function AdminUsersContent() {
                 />
             </PageSurface>
 
-            <Drawer
-                title={t('users.directory.columns_drawer_title', { defaultValue: 'Customize displayed columns' })}
-                open={columnsDrawerOpen}
-                width={520}
-                onClose={() => setColumnsDrawerOpen(false)}
-                destroyOnClose={false}
-                footer={
-                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                        <Button
-                            onClick={() => {
-                                void resetStoredColumnPreference();
-                            }}
-                            data-testid="users-directory-columns-reset-defaults"
-                            disabled={userTablePreference.resetPending}
-                        >
-                            {t('users.directory.reset_columns', { defaultValue: 'Reset columns' })}
-                        </Button>
-                        <Space>
-                            <Button onClick={() => setColumnsDrawerOpen(false)}>
-                                {t('common:button.cancel')}
-                            </Button>
+            {columnsDrawerOpen ? (
+                <Drawer
+                    title={t('users.directory.columns_drawer_title', { defaultValue: 'Customize displayed columns' })}
+                    open={columnsDrawerOpen}
+                    width={520}
+                    onClose={() => setColumnsDrawerOpen(false)}
+                    destroyOnClose={true}
+                    footer={
+                        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                             <Button
-                                type="primary"
                                 onClick={() => {
-                                    void saveColumnPreference();
+                                    void resetStoredColumnPreference();
                                 }}
-                                loading={userTablePreference.savePending}
-                                data-testid="users-directory-columns-save"
+                                data-testid="users-directory-columns-reset-defaults"
+                                disabled={userTablePreference.resetPending}
                             >
-                                {t('common:button.save', { defaultValue: 'Save' })}
+                                {t('users.directory.reset_columns', { defaultValue: 'Reset columns' })}
                             </Button>
-                        </Space>
-                    </Space>
-                }
-            >
-                <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                    <Alert
-                        type="info"
-                        showIcon
-                        message={t('users.directory.columns_drawer_message', {
-                            defaultValue: 'Account and Actions stay fixed. Add, hide, and reorder the other columns for your own view.',
-                        })}
-                    />
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                        <Text strong>{t('users.directory.columns_visible_title', { defaultValue: 'Visible columns' })}</Text>
-                        <List
-                            bordered
-                            size="small"
-                            dataSource={columnDraftKeys}
-                            locale={{
-                                emptyText: t('users.directory.columns_empty', {
-                                    defaultValue: 'No extra columns selected. The table will still show Account and Actions.',
-                                }),
-                            }}
-                            renderItem={(columnKey) => {
-                                const option = userTableColumnOptions.find((item) => item.key === columnKey);
-                                if (!option) {
-                                    return null;
-                                }
-                                const index = columnDraftKeys.indexOf(columnKey);
-                                return (
-                                    <List.Item
-                                        actions={[
-                                            <Button
-                                                key="up"
-                                                type="text"
-                                                size="small"
-                                                icon={<UpOutlined />}
-                                                aria-label={t('users.directory.move_column_up', { defaultValue: 'Move column up' })}
-                                                disabled={index === 0}
-                                                onClick={() => moveDraftColumn(columnKey, 'up')}
-                                            />,
-                                            <Button
-                                                key="down"
-                                                type="text"
-                                                size="small"
-                                                icon={<DownOutlined />}
-                                                aria-label={t('users.directory.move_column_down', { defaultValue: 'Move column down' })}
-                                                disabled={index === columnDraftKeys.length - 1}
-                                                onClick={() => moveDraftColumn(columnKey, 'down')}
-                                            />,
-                                            <Button
-                                                key="remove"
-                                                type="text"
-                                                size="small"
-                                                danger
-                                                icon={<DeleteOutlined />}
-                                                aria-label={t('users.directory.hide_column', { defaultValue: 'Hide column' })}
-                                                onClick={() => removeDraftColumn(columnKey)}
-                                            />,
-                                        ]}
-                                    >
-                                        <Text>{option.label}</Text>
-                                    </List.Item>
-                                );
-                            }}
-                        />
-                    </Space>
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                        <Text strong>{t('users.directory.columns_add_title', { defaultValue: 'Add column' })}</Text>
-                        <Select
-                            showSearch
-                            allowClear
-                            placeholder={t('users.directory.columns_add_placeholder', { defaultValue: 'Choose another column to show' })}
-                            options={hiddenUserTableColumns.map((option) => ({
-                                value: option.key,
-                                label: option.label,
-                            }))}
-                            onChange={(value) => {
-                                if (value) {
-                                    addDraftColumn(String(value));
-                                }
-                            }}
-                            disabled={hiddenUserTableColumns.length === 0}
-                            data-testid="users-directory-columns-add"
-                            optionFilterProp="label"
-                        />
-                    </Space>
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                        <Text strong>{t('users.directory.columns_merge_title', { defaultValue: 'Combined columns' })}</Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                            {t('users.directory.columns_merge_help', {
-                                defaultValue: 'Create one or more combined columns from the currently visible columns.',
-                            })}
-                        </Text>
-                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                            {mergedColumnDrafts.map((draft, index) => (
-                                <Card
-                                    key={draft.id}
-                                    size="small"
-                                    style={{
-                                        width: '100%',
-                                        background: 'var(--ant-color-fill-quaternary)',
-                                        borderColor: 'var(--ant-color-border-secondary)',
+                            <Space>
+                                <Button onClick={() => setColumnsDrawerOpen(false)}>
+                                    {t('common:button.cancel')}
+                                </Button>
+                                <Button
+                                    type="primary"
+                                    onClick={() => {
+                                        void saveColumnPreference();
                                     }}
-                                    data-testid={`users-directory-columns-merge-row-${index}`}
+                                    loading={userTablePreference.savePending}
+                                    data-testid="users-directory-columns-save"
                                 >
-                                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                                        <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-                                            <Text strong>
-                                                {t('users.directory.columns_merge_group_title', {
-                                                    defaultValue: 'Combined column',
-                                                })} {index + 1}
-                                            </Text>
-                                            <Button
-                                                type="text"
-                                                size="small"
-                                                danger
-                                                icon={<DeleteOutlined />}
-                                                onClick={() => removeMergedColumnDraft(draft.id)}
-                                                data-testid={`users-directory-columns-merge-remove-${index}`}
-                                            >
-                                                {t('users.directory.columns_merge_remove', { defaultValue: 'Remove' })}
-                                            </Button>
-                                        </Space>
-                                        <Input
-                                            value={draft.label}
-                                            onChange={(event) => updateMergedColumnDraft(draft.id, { label: event.target.value })}
-                                            placeholder={t('users.directory.columns_merge_label_placeholder', {
-                                                defaultValue: 'Name this combined column',
-                                            })}
-                                            data-testid={`users-directory-columns-merge-label-${index}`}
-                                        />
-                                        <Select
-                                            mode="multiple"
-                                            value={draft.columnKeys}
-                                            style={{ width: '100%' }}
-                                            placeholder={t('users.directory.columns_merge_placeholder', {
-                                                defaultValue: 'Select columns to combine',
-                                            })}
-                                            options={(mergedColumnDraftOptionsById.get(draft.id) ?? []).map((option) => ({
-                                                value: option.key,
-                                                label: option.label,
-                                            }))}
-                                            onChange={(values) => {
-                                                updateMergedColumnDraft(draft.id, {
-                                                    columnKeys: values.map((value) => String(value)),
-                                                });
-                                            }}
-                                            disabled={(mergedColumnDraftOptionsById.get(draft.id) ?? []).length === 0}
-                                            data-testid={`users-directory-columns-merge-select-${index}`}
-                                            optionFilterProp="label"
-                                        />
-                                        {draft.columnKeys.length > 0 ? (
-                                            <Space size={[6, 6]} wrap>
-                                                {draft.columnKeys
-                                                    .map((key) => (mergedColumnDraftOptionsById.get(draft.id) ?? []).find((option) => option.key === key))
-                                                    .filter((option): option is UserTableColumnOption => Boolean(option))
-                                                    .map((option) => (
-                                                        <Tag key={option.key} color="blue">
-                                                            {option.label}
-                                                        </Tag>
-                                                    ))}
-                                            </Space>
-                                        ) : null}
-                                        <Space
-                                            style={{
-                                                width: '100%',
-                                                justifyContent: 'space-between',
-                                                padding: '8px 10px',
-                                                borderRadius: 8,
-                                                background: 'var(--ant-color-bg-container)',
-                                            }}
-                                            wrap
-                                        >
-                                            <Space direction="vertical" size={0}>
-                                                <Text strong>
-                                                    {t('users.directory.columns_merge_show_labels_title', {
-                                                        defaultValue: 'Show field labels inside the column',
-                                                    })}
-                                                </Text>
-                                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                                    {t('users.directory.columns_merge_show_labels_help', {
-                                                        defaultValue: 'Turn this off for a cleaner stacked value view.',
-                                                    })}
-                                                </Text>
-                                            </Space>
-                                            <Switch
-                                                checked={draft.showLabels}
-                                                onChange={(checked) => updateMergedColumnDraft(draft.id, { showLabels: checked })}
-                                                data-testid={`users-directory-columns-merge-show-labels-${index}`}
-                                            />
-                                        </Space>
-                                    </Space>
-                                </Card>
-                            ))}
-                            <Button
-                                icon={<PlusOutlined />}
-                                onClick={addMergedColumnDraft}
-                                data-testid="users-directory-columns-merge-add"
-                                disabled={columnDraftKeys.length === 0}
-                            >
-                                {t('users.directory.columns_merge_add', { defaultValue: 'Add combined column' })}
-                            </Button>
+                                    {t('common:button.save', { defaultValue: 'Save' })}
+                                </Button>
+                            </Space>
                         </Space>
+                    }
+                >
+                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                        <Alert
+                            type="info"
+                            showIcon
+                            message={t('users.directory.columns_drawer_message', {
+                                defaultValue: 'Account and Actions stay fixed. Add, hide, and reorder the other columns for your own view.',
+                            })}
+                        />
+                        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                            <Text strong>{t('users.directory.columns_visible_title', { defaultValue: 'Visible columns' })}</Text>
+                            <List
+                                bordered
+                                size="small"
+                                dataSource={columnDraftKeys}
+                                locale={{
+                                    emptyText: t('users.directory.columns_empty', {
+                                        defaultValue: 'No extra columns selected. The table will still show Account and Actions.',
+                                    }),
+                                }}
+                                renderItem={(columnKey) => {
+                                    const option = userTableColumnOptions.find((item) => item.key === columnKey);
+                                    if (!option) {
+                                        return null;
+                                    }
+                                    const index = columnDraftKeys.indexOf(columnKey);
+                                    return (
+                                        <List.Item
+                                            actions={[
+                                                <Button
+                                                    key="up"
+                                                    type="text"
+                                                    size="small"
+                                                    icon={<UpOutlined />}
+                                                    aria-label={t('users.directory.move_column_up', { defaultValue: 'Move column up' })}
+                                                    disabled={index === 0}
+                                                    onClick={() => moveDraftColumn(columnKey, 'up')}
+                                                />,
+                                                <Button
+                                                    key="down"
+                                                    type="text"
+                                                    size="small"
+                                                    icon={<DownOutlined />}
+                                                    aria-label={t('users.directory.move_column_down', { defaultValue: 'Move column down' })}
+                                                    disabled={index === columnDraftKeys.length - 1}
+                                                    onClick={() => moveDraftColumn(columnKey, 'down')}
+                                                />,
+                                                <Button
+                                                    key="remove"
+                                                    type="text"
+                                                    size="small"
+                                                    danger
+                                                    icon={<DeleteOutlined />}
+                                                    aria-label={t('users.directory.hide_column', { defaultValue: 'Hide column' })}
+                                                    onClick={() => removeDraftColumn(columnKey)}
+                                                />,
+                                            ]}
+                                        >
+                                            <Text>{option.label}</Text>
+                                        </List.Item>
+                                    );
+                                }}
+                            />
+                        </Space>
+                        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                            <Text strong>{t('users.directory.columns_add_title', { defaultValue: 'Add column' })}</Text>
+                            <Select
+                                showSearch
+                                allowClear
+                                placeholder={t('users.directory.columns_add_placeholder', { defaultValue: 'Choose another column to show' })}
+                                options={hiddenUserTableColumns.map((option) => ({
+                                    value: option.key,
+                                    label: option.label,
+                                }))}
+                                onChange={(value) => {
+                                    if (value) {
+                                        addDraftColumn(String(value));
+                                    }
+                                }}
+                                disabled={hiddenUserTableColumns.length === 0}
+                                data-testid="users-directory-columns-add"
+                                optionFilterProp="label"
+                            />
+                        </Space>
+                        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                            <Text strong>{t('users.directory.columns_merge_title', { defaultValue: 'Combined columns' })}</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                {t('users.directory.columns_merge_help', {
+                                    defaultValue: 'Create one or more combined columns from the currently visible columns.',
+                                })}
+                            </Text>
+                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                {mergedColumnDrafts.map((draft, index) => (
+                                    <Card
+                                        key={draft.id}
+                                        size="small"
+                                        style={{
+                                            width: '100%',
+                                            background: 'var(--ant-color-fill-quaternary)',
+                                            borderColor: 'var(--ant-color-border-secondary)',
+                                        }}
+                                        data-testid={`users-directory-columns-merge-row-${index}`}
+                                    >
+                                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                            <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+                                                <Text strong>
+                                                    {t('users.directory.columns_merge_group_title', {
+                                                        defaultValue: 'Combined column',
+                                                    })} {index + 1}
+                                                </Text>
+                                                <Button
+                                                    type="text"
+                                                    size="small"
+                                                    danger
+                                                    icon={<DeleteOutlined />}
+                                                    onClick={() => removeMergedColumnDraft(draft.id)}
+                                                    data-testid={`users-directory-columns-merge-remove-${index}`}
+                                                >
+                                                    {t('users.directory.columns_merge_remove', { defaultValue: 'Remove' })}
+                                                </Button>
+                                            </Space>
+                                            <Input
+                                                value={draft.label}
+                                                onChange={(event) => updateMergedColumnDraft(draft.id, { label: event.target.value })}
+                                                placeholder={t('users.directory.columns_merge_label_placeholder', {
+                                                    defaultValue: 'Name this combined column',
+                                                })}
+                                                data-testid={`users-directory-columns-merge-label-${index}`}
+                                            />
+                                            <Select
+                                                mode="multiple"
+                                                value={draft.columnKeys}
+                                                style={{ width: '100%' }}
+                                                placeholder={t('users.directory.columns_merge_placeholder', {
+                                                    defaultValue: 'Select columns to combine',
+                                                })}
+                                                options={(mergedColumnDraftOptionsById.get(draft.id) ?? []).map((option) => ({
+                                                    value: option.key,
+                                                    label: option.label,
+                                                }))}
+                                                onChange={(values) => {
+                                                    updateMergedColumnDraft(draft.id, {
+                                                        columnKeys: values.map((value) => String(value)),
+                                                    });
+                                                }}
+                                                disabled={(mergedColumnDraftOptionsById.get(draft.id) ?? []).length === 0}
+                                                data-testid={`users-directory-columns-merge-select-${index}`}
+                                                optionFilterProp="label"
+                                            />
+                                            {draft.columnKeys.length > 0 ? (
+                                                <Space size={[6, 6]} wrap>
+                                                    {draft.columnKeys
+                                                        .map((key) => (mergedColumnDraftOptionsById.get(draft.id) ?? []).find((option) => option.key === key))
+                                                        .filter((option): option is UserTableColumnOption => Boolean(option))
+                                                        .map((option) => (
+                                                            <Tag key={option.key} color="blue">
+                                                                {option.label}
+                                                            </Tag>
+                                                        ))}
+                                                </Space>
+                                            ) : null}
+                                            <Space
+                                                style={{
+                                                    width: '100%',
+                                                    justifyContent: 'space-between',
+                                                    padding: '8px 10px',
+                                                    borderRadius: 8,
+                                                    background: 'var(--ant-color-bg-container)',
+                                                }}
+                                                wrap
+                                            >
+                                                <Space direction="vertical" size={0}>
+                                                    <Text strong>
+                                                        {t('users.directory.columns_merge_show_labels_title', {
+                                                            defaultValue: 'Show field labels inside the column',
+                                                        })}
+                                                    </Text>
+                                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                                        {t('users.directory.columns_merge_show_labels_help', {
+                                                            defaultValue: 'Turn this off for a cleaner stacked value view.',
+                                                        })}
+                                                    </Text>
+                                                </Space>
+                                                <Switch
+                                                    checked={draft.showLabels}
+                                                    onChange={(checked) => updateMergedColumnDraft(draft.id, { showLabels: checked })}
+                                                    data-testid={`users-directory-columns-merge-show-labels-${index}`}
+                                                />
+                                            </Space>
+                                        </Space>
+                                    </Card>
+                                ))}
+                                <Button
+                                    icon={<PlusOutlined />}
+                                    onClick={addMergedColumnDraft}
+                                    data-testid="users-directory-columns-merge-add"
+                                    disabled={columnDraftKeys.length === 0}
+                                >
+                                    {t('users.directory.columns_merge_add', { defaultValue: 'Add combined column' })}
+                                </Button>
+                            </Space>
+                        </Space>
+                        <Button
+                            onClick={resetDraftColumns}
+                            data-testid="users-directory-columns-restore-defaults"
+                        >
+                            {t('users.directory.columns_restore_defaults', { defaultValue: 'Restore recommended defaults' })}
+                        </Button>
                     </Space>
-                    <Button
-                        onClick={resetDraftColumns}
-                        data-testid="users-directory-columns-restore-defaults"
-                    >
-                        {t('users.directory.columns_restore_defaults', { defaultValue: 'Restore recommended defaults' })}
-                    </Button>
-                </Space>
-            </Drawer>
+                </Drawer>
+            ) : null}
 
-            <Modal
-                title={t('users.directory.add_title')}
-                open={users.createUserOpen}
-                onOk={() => {
-                    void users.submitCreateUser();
-                }}
-                onCancel={users.closeCreateUserModal}
-                confirmLoading={users.createUserPending}
-                forceRender={true}
-                maskClosable={false}
-                keyboard={false}
-                data-testid="user-create-modal"
-            >
-                <Form form={users.createUserForm} layout="vertical" preserve={false}>
-                    <Form.Item
-                        name="username"
-                        label={t('common:auth.username')}
-                        rules={[
-                            { required: true, message: t('common:validation.username_required') },
-                            { min: 2, message: t('common:validation.username_min') },
-                        ]}
-                    >
-                        <Input autoComplete="off" />
-                    </Form.Item>
-                    <Form.Item
-                        name="password"
-                        label={t('common:auth.password')}
-                        rules={[
-                            { required: true, message: t('common:validation.password_required') },
-                            { min: 8, message: t('common:validation.password_min') },
-                        ]}
-                    >
-                        <Input.Password autoComplete="new-password" />
-                    </Form.Item>
-                    <Form.Item name="display_name" label={t('common:table.display_name')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="email" label={t('users.table.email')}>
-                        <Input type="email" />
-                    </Form.Item>
-                    <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked" initialValue={true}>
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item
-                        name="force_password_change"
-                        label={t('users.directory.force_password_change')}
-                        valuePropName="checked"
-                        initialValue={true}
-                    >
-                        <Switch />
-                    </Form.Item>
-                </Form>
-            </Modal>
+            {users.createUserOpen ? (
+                <Modal
+                    title={t('users.directory.add_title')}
+                    open={users.createUserOpen}
+                    onOk={() => {
+                        void users.submitCreateUser();
+                    }}
+                    onCancel={users.closeCreateUserModal}
+                    confirmLoading={users.createUserPending}
+                    maskClosable={false}
+                    keyboard={false}
+                    data-testid="user-create-modal"
+                >
+                    <Form form={users.createUserForm} layout="vertical" preserve={false}>
+                        <Form.Item
+                            name="username"
+                            label={t('common:auth.username')}
+                            rules={[
+                                { required: true, message: t('common:validation.username_required') },
+                                { min: 2, message: t('common:validation.username_min') },
+                            ]}
+                        >
+                            <Input autoComplete="off" />
+                        </Form.Item>
+                        <Form.Item
+                            name="password"
+                            label={t('common:auth.password')}
+                            rules={[
+                                { required: true, message: t('common:validation.password_required') },
+                                { min: 8, message: t('common:validation.password_min') },
+                            ]}
+                        >
+                            <Input.Password autoComplete="new-password" />
+                        </Form.Item>
+                        <Form.Item name="display_name" label={t('common:table.display_name')}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="email" label={t('users.table.email')}>
+                            <Input type="email" />
+                        </Form.Item>
+                        <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked" initialValue={true}>
+                            <Switch />
+                        </Form.Item>
+                        <Form.Item
+                            name="force_password_change"
+                            label={t('users.directory.force_password_change')}
+                            valuePropName="checked"
+                            initialValue={true}
+                        >
+                            <Switch />
+                        </Form.Item>
+                    </Form>
+                </Modal>
+            ) : null}
 
-            <Modal
-                title={t('users.directory.edit_title', {
-                    username: editingUser?.display_name || editingUser?.username || '',
-                })}
-                open={users.editUserOpen}
-                onOk={() => {
-                    void users.submitEditUser();
-                }}
-                onCancel={users.closeEditUserModal}
-                confirmLoading={users.updateUserPending}
-                forceRender={true}
-                maskClosable={false}
-                keyboard={false}
-                data-testid="user-edit-modal"
-            >
-                <Form form={users.editUserForm} layout="vertical" preserve={false}>
-                    <Form.Item name="display_name" label={t('common:table.display_name')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="email" label={t('users.table.email')}>
-                        <Input type="email" />
-                    </Form.Item>
-                    <Form.Item
-                        name="password"
-                        label={t('users.directory.password')}
-                        rules={[
-                            { min: 8, message: t('common:validation.password_min') },
-                        ]}
-                    >
-                        <Input.Password autoComplete="new-password" allowClear={true} />
-                    </Form.Item>
-                    <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item
-                        name="force_password_change"
-                        label={t('users.directory.force_password_change')}
-                        valuePropName="checked"
-                    >
-                        <Switch />
-                    </Form.Item>
-                </Form>
-            </Modal>
+            {users.editUserOpen ? (
+                <Modal
+                    title={t('users.directory.edit_title', {
+                        username: editingUser?.display_name || editingUser?.username || '',
+                    })}
+                    open={users.editUserOpen}
+                    onOk={() => {
+                        void users.submitEditUser();
+                    }}
+                    onCancel={users.closeEditUserModal}
+                    confirmLoading={users.updateUserPending}
+                    maskClosable={false}
+                    keyboard={false}
+                    data-testid="user-edit-modal"
+                >
+                    <Form form={users.editUserForm} layout="vertical" preserve={false}>
+                        <Form.Item name="display_name" label={t('common:table.display_name')}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="email" label={t('users.table.email')}>
+                            <Input type="email" />
+                        </Form.Item>
+                        <Form.Item
+                            name="password"
+                            label={t('users.directory.password')}
+                            rules={[
+                                { min: 8, message: t('common:validation.password_min') },
+                            ]}
+                        >
+                            <Input.Password autoComplete="new-password" allowClear={true} />
+                        </Form.Item>
+                        <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked">
+                            <Switch />
+                        </Form.Item>
+                        <Form.Item
+                            name="force_password_change"
+                            label={t('users.directory.force_password_change')}
+                            valuePropName="checked"
+                        >
+                            <Switch />
+                        </Form.Item>
+                    </Form>
+                </Modal>
+            ) : null}
 
             <PageSurface>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
@@ -1689,156 +1891,160 @@ export function AdminUsersContent() {
                 />
             </PageSurface>
 
-            <Modal
-                title={t('users.members.add_title')}
-                open={users.addOpen}
-                onOk={() => {
-                    void users.submitAddMember();
-                }}
-                onCancel={users.closeAddModal}
-                confirmLoading={users.addPending}
-                forceRender={true}
-                maskClosable={false}
-                keyboard={false}
-                data-testid="member-add-modal"
-            >
-                <Form form={users.addForm} layout="vertical" preserve={false}>
-                    <Form.Item
-                        name="user_id"
-                        label={t('users.members.select_user')}
-                        rules={[{ required: true, message: t('users.members.validation.user_required') }]}
-                    >
-                        <Select
-                            showSearch
-                            placeholder={t('users.members.select_user_placeholder')}
-                            data-testid="member-candidate-user-select"
-                            filterOption={false}
-                            loading={users.memberCandidatesLoading}
-                            searchValue={users.memberCandidateSearch}
-                            onSearch={users.setMemberCandidateSearch}
-                            options={memberCandidateOptions}
-                            notFoundContent={
-                                users.memberCandidatesLoading
-                                    ? t('common:message.loading')
-                                    : users.memberCandidateSearch.trim()
-                                        ? t('users.members.no_search_results')
-                                        : t('users.members.no_addable_users')
-                            }
-                        />
-                    </Form.Item>
-                    <Form.Item
-                        name="role"
-                        label={t('users.members.select_role')}
-                        rules={[{ required: true, message: t('users.members.validation.role_required') }]}
-                        initialValue="viewer"
-                    >
-                        <Select options={memberRoleOptions} />
-                    </Form.Item>
-                    <Form.Item label={t('users.members.note_label')}>
-                        <Input.TextArea rows={3} value={t('users.members.note')} readOnly />
-                    </Form.Item>
-                </Form>
-            </Modal>
+            {users.addOpen ? (
+                <Modal
+                    title={t('users.members.add_title')}
+                    open={users.addOpen}
+                    onOk={() => {
+                        void users.submitAddMember();
+                    }}
+                    onCancel={users.closeAddModal}
+                    confirmLoading={users.addPending}
+                    maskClosable={false}
+                    keyboard={false}
+                    data-testid="member-add-modal"
+                >
+                    <Form form={users.addForm} layout="vertical" preserve={false}>
+                        <Form.Item
+                            name="user_id"
+                            label={t('users.members.select_user')}
+                            rules={[{ required: true, message: t('users.members.validation.user_required') }]}
+                        >
+                            <Select
+                                showSearch
+                                placeholder={t('users.members.select_user_placeholder')}
+                                data-testid="member-candidate-user-select"
+                                filterOption={false}
+                                loading={users.memberCandidatesLoading}
+                                searchValue={users.memberCandidateSearch}
+                                onSearch={users.setMemberCandidateSearch}
+                                options={memberCandidateOptions}
+                                notFoundContent={
+                                    users.memberCandidatesLoading
+                                        ? t('common:message.loading')
+                                        : users.memberCandidateSearch.trim()
+                                            ? t('users.members.no_search_results')
+                                            : t('users.members.no_addable_users')
+                                }
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="role"
+                            label={t('users.members.select_role')}
+                            rules={[{ required: true, message: t('users.members.validation.role_required') }]}
+                            initialValue="viewer"
+                        >
+                            <Select options={memberRoleOptions} />
+                        </Form.Item>
+                        <Form.Item label={t('users.members.note_label')}>
+                            <Input.TextArea rows={3} value={t('users.members.note')} readOnly />
+                        </Form.Item>
+                    </Form>
+                </Modal>
+            ) : null}
 
-            <Modal
-                title={t('users.rate_limit.add_exemption')}
-                open={exemptionOpen}
-                onCancel={() => {
-                    setExemptionOpen(false);
-                    setSelectedRateLimitUserID('');
-                    exemptionForm.resetFields();
-                }}
-                onOk={() => {
-                    void exemptionForm.validateFields().then((values) => {
-                        users.applyRateLimitExemption({
-                            user_id: selectedRateLimitUserID,
-                            reason: values.reason || '',
-                            expires_at: values.expires_at ? values.expires_at.toISOString() : null,
-                        });
+            {exemptionOpen ? (
+                <Modal
+                    title={t('users.rate_limit.add_exemption')}
+                    open={exemptionOpen}
+                    onCancel={() => {
                         setExemptionOpen(false);
                         setSelectedRateLimitUserID('');
                         exemptionForm.resetFields();
-                    });
-                }}
-                confirmLoading={users.rateLimitMutationPending}
-                forceRender={true}
-                maskClosable={false}
-                keyboard={false}
-                data-testid="rate-limit-exemption-create-modal"
-            >
-                <Form form={exemptionForm} layout="vertical" preserve={false}>
-                    <Form.Item label={t('users.rate_limit.user')}>
-                        <Input
-                            value={
-                                selectedRateLimitRecord?.display_name?.trim()
-                                || selectedRateLimitRecord?.username
-                                || selectedRateLimitUserID
-                            }
-                            readOnly
-                        />
-                    </Form.Item>
-                    <Form.Item name="reason" label={t('users.rate_limit.reason')}>
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                    <Form.Item name="expires_at" label={t('users.rate_limit.expires_at')}>
-                        <DatePicker showTime style={{ width: '100%' }} />
-                    </Form.Item>
-                </Form>
-            </Modal>
-
-            <Modal
-                title={t('users.rate_limit.override')}
-                open={overrideOpen}
-                onCancel={() => {
-                    setOverrideOpen(false);
-                    setSelectedRateLimitUserID('');
-                    overrideForm.resetFields();
-                }}
-                onOk={() => {
-                    void overrideForm.validateFields().then((values) => {
-                        users.updateRateLimitOverride(selectedRateLimitUserID, {
-                            max_pending_parents: values.max_pending_parents ?? null,
-                            max_pending_children: values.max_pending_children ?? null,
-                            cooldown_seconds: values.cooldown_seconds ?? null,
-                            reason: values.reason || '',
+                    }}
+                    onOk={() => {
+                        void exemptionForm.validateFields().then((values) => {
+                            users.applyRateLimitExemption({
+                                user_id: selectedRateLimitUserID,
+                                reason: values.reason || '',
+                                expires_at: values.expires_at ? values.expires_at.toISOString() : null,
+                            });
+                            setExemptionOpen(false);
+                            setSelectedRateLimitUserID('');
+                            exemptionForm.resetFields();
                         });
+                    }}
+                    confirmLoading={users.rateLimitMutationPending}
+                    maskClosable={false}
+                    keyboard={false}
+                    data-testid="rate-limit-exemption-create-modal"
+                >
+                    <Form form={exemptionForm} layout="vertical" preserve={false}>
+                        <Form.Item label={t('users.rate_limit.user')}>
+                            <Input
+                                value={
+                                    selectedRateLimitRecord?.display_name?.trim()
+                                    || selectedRateLimitRecord?.username
+                                    || selectedRateLimitUserID
+                                }
+                                readOnly
+                            />
+                        </Form.Item>
+                        <Form.Item name="reason" label={t('users.rate_limit.reason')}>
+                            <Input.TextArea rows={3} />
+                        </Form.Item>
+                        <Form.Item name="expires_at" label={t('users.rate_limit.expires_at')}>
+                            <DatePicker showTime style={{ width: '100%' }} />
+                        </Form.Item>
+                    </Form>
+                </Modal>
+            ) : null}
+
+            {overrideOpen ? (
+                <Modal
+                    title={t('users.rate_limit.override')}
+                    open={overrideOpen}
+                    onCancel={() => {
                         setOverrideOpen(false);
                         setSelectedRateLimitUserID('');
                         overrideForm.resetFields();
-                    });
-                }}
-                confirmLoading={users.rateLimitMutationPending}
-                forceRender={true}
-                maskClosable={false}
-                keyboard={false}
-                data-testid="rate-limit-user-edit-modal"
-            >
-                <Form form={overrideForm} layout="vertical" preserve={false}>
-                    <Form.Item label={t('users.rate_limit.user')}>
-                        <Input
-                            value={
-                                selectedRateLimitRecord?.display_name?.trim()
-                                || selectedRateLimitRecord?.username
-                                || selectedRateLimitUserID
-                            }
-                            readOnly
-                        />
-                    </Form.Item>
-                    <Form.Item name="max_pending_parents" label={t('users.rate_limit.max_parents')}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="max_pending_children" label={t('users.rate_limit.max_children')}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="cooldown_seconds" label={t('users.rate_limit.cooldown')}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="reason" label={t('users.rate_limit.reason')}>
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                </Form>
-            </Modal>
+                    }}
+                    onOk={() => {
+                        void overrideForm.validateFields().then((values) => {
+                            users.updateRateLimitOverride(selectedRateLimitUserID, {
+                                max_pending_parents: values.max_pending_parents ?? null,
+                                max_pending_children: values.max_pending_children ?? null,
+                                cooldown_seconds: values.cooldown_seconds ?? null,
+                                reason: values.reason || '',
+                            });
+                            setOverrideOpen(false);
+                            setSelectedRateLimitUserID('');
+                            overrideForm.resetFields();
+                        });
+                    }}
+                    confirmLoading={users.rateLimitMutationPending}
+                    maskClosable={false}
+                    keyboard={false}
+                    data-testid="rate-limit-user-edit-modal"
+                >
+                    <Form form={overrideForm} layout="vertical" preserve={false}>
+                        <Form.Item label={t('users.rate_limit.user')}>
+                            <Input
+                                value={
+                                    selectedRateLimitRecord?.display_name?.trim()
+                                    || selectedRateLimitRecord?.username
+                                    || selectedRateLimitUserID
+                                }
+                                readOnly
+                            />
+                        </Form.Item>
+                        <Form.Item name="max_pending_parents" label={t('users.rate_limit.max_parents')}>
+                            <InputNumber min={0} style={{ width: '100%' }} />
+                        </Form.Item>
+                        <Form.Item name="max_pending_children" label={t('users.rate_limit.max_children')}>
+                            <InputNumber min={0} style={{ width: '100%' }} />
+                        </Form.Item>
+                        <Form.Item name="cooldown_seconds" label={t('users.rate_limit.cooldown')}>
+                            <InputNumber min={0} style={{ width: '100%' }} />
+                        </Form.Item>
+                        <Form.Item name="reason" label={t('users.rate_limit.reason')}>
+                            <Input.TextArea rows={3} />
+                        </Form.Item>
+                    </Form>
+                </Modal>
+            ) : null}
             {/* ── User Role Bindings Drawer ─────────────────────────────── */}
+            {users.roleBindingsUserId ? (
             <Drawer
                 title={t('users.role_bindings.drawer_title')}
                 open={Boolean(users.roleBindingsUserId)}
@@ -1958,8 +2164,10 @@ export function AdminUsersContent() {
                     ]}
                 />
             </Drawer>
+            ) : null}
 
             {/* ── Create Role Binding Modal ────────────────────────────── */}
+            {users.roleBindingCreateOpen ? (
             <Modal
                 title={t('users.role_bindings.create_modal_title')}
                 open={users.roleBindingCreateOpen}
@@ -1971,7 +2179,6 @@ export function AdminUsersContent() {
                 maskClosable={false}
                 keyboard={false}
                 destroyOnHidden={true}
-                forceRender={true}
                 data-testid="role-binding-create-modal"
             >
                 <Alert
@@ -2041,6 +2248,7 @@ export function AdminUsersContent() {
                     </Form.Item>
                 </Form>
             </Modal>
+            ) : null}
         </div>
     );
 }

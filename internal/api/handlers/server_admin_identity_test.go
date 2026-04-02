@@ -512,7 +512,7 @@ func TestListUsers_UsesObservedProfileFieldsForColumnsAndSearch(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 
-	if _, err := client.UserDirectoryProfile.Create().
+	if _, createErr := client.UserDirectoryProfile.Create().
 		SetID("profile-user-profile-search").
 		SetUserID(userEnt.ID).
 		SetAttributes(map[string]interface{}{
@@ -522,8 +522,29 @@ func TestListUsers_UsesObservedProfileFieldsForColumnsAndSearch(t *testing.T) {
 		}).
 		SetLastSyncedAt(time.Now().UTC()).
 		SetUser(userEnt).
+		Save(t.Context()); createErr != nil {
+		t.Fatalf("create user directory profile: %v", createErr)
+	}
+
+	roleEnt, err := client.Role.Create().
+		SetID("role-user-profile-search").
+		SetName("TeamLead").
+		SetDisplayName("Team Lead").
+		SetPermissions([]string{"user:manage"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+
+	if _, err := client.RoleBinding.Create().
+		SetID("binding-user-profile-search").
+		SetUserID(userEnt.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy("test").
 		Save(t.Context()); err != nil {
-		t.Fatalf("create user directory profile: %v", err)
+		t.Fatalf("create role binding: %v", err)
 	}
 
 	searchCtx, searchW := newAuthedGinContext(
@@ -584,6 +605,50 @@ func TestListUsers_UsesObservedProfileFieldsForColumnsAndSearch(t *testing.T) {
 	mustDecodeJSON(t, observedSearchW.Body.Bytes(), &observedUsers)
 	if len(observedUsers.Items) != 1 || observedUsers.Items[0].Username != "alice.directory@example.com" {
 		t.Fatalf("observed field search users = %+v, want only alice.directory@example.com", observedUsers.Items)
+	}
+
+	statusSearchCtx, statusSearchW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/users?page=1&per_page=20&search=status:enabled",
+		"",
+		"admin-1",
+		[]string{"rbac:read"},
+	)
+	srv.ListUsers(statusSearchCtx, generated.ListUsersParams{
+		Page:    1,
+		PerPage: 20,
+		Search:  "status:enabled",
+	})
+	if statusSearchW.Code != http.StatusOK {
+		t.Fatalf("status field search status = %d, want %d, body=%s", statusSearchW.Code, http.StatusOK, statusSearchW.Body.String())
+	}
+	var statusUsers generated.UserList
+	mustDecodeJSON(t, statusSearchW.Body.Bytes(), &statusUsers)
+	if len(statusUsers.Items) != 1 || statusUsers.Items[0].Username != "alice.directory@example.com" {
+		t.Fatalf("status field search users = %+v, want only alice.directory@example.com", statusUsers.Items)
+	}
+
+	roleSearchCtx, roleSearchW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/users?page=1&per_page=20&search=role:Team%20Lead",
+		"",
+		"admin-1",
+		[]string{"rbac:read"},
+	)
+	srv.ListUsers(roleSearchCtx, generated.ListUsersParams{
+		Page:    1,
+		PerPage: 20,
+		Search:  "role:\"Team Lead\"",
+	})
+	if roleSearchW.Code != http.StatusOK {
+		t.Fatalf("role field search status = %d, want %d, body=%s", roleSearchW.Code, http.StatusOK, roleSearchW.Body.String())
+	}
+	var roleUsers generated.UserList
+	mustDecodeJSON(t, roleSearchW.Body.Bytes(), &roleUsers)
+	if len(roleUsers.Items) != 1 || roleUsers.Items[0].Username != "alice.directory@example.com" {
+		t.Fatalf("role field search users = %+v, want only alice.directory@example.com", roleUsers.Items)
 	}
 }
 

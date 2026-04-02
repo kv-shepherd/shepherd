@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -9,6 +10,7 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	"kv-shepherd.io/shepherd/ent/predicate"
 	"kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
@@ -49,6 +51,23 @@ func (s *Server) ListNamespaces(c *gin.Context, params generated.ListNamespacesP
 		query = query.Where(namespaceregistry.EnvironmentEQ(
 			namespaceregistry.Environment(params.Environment),
 		))
+	}
+	if _, hasEnabledFilter := c.GetQuery("enabled"); hasEnabledFilter {
+		query = query.Where(namespaceregistry.EnabledEQ(params.Enabled))
+	}
+	if search := strings.TrimSpace(params.Search); search != "" {
+		predicates := []predicate.NamespaceRegistry{
+			namespaceregistry.NameContainsFold(search),
+			namespaceregistry.DescriptionContainsFold(search),
+			namespaceregistry.CreatedByContainsFold(search),
+		}
+		switch strings.ToLower(search) {
+		case envProd, "production":
+			predicates = append(predicates, namespaceregistry.EnvironmentEQ(namespaceregistry.EnvironmentProd))
+		case envTest:
+			predicates = append(predicates, namespaceregistry.EnvironmentEQ(namespaceregistry.EnvironmentTest))
+		}
+		query = query.Where(namespaceregistry.Or(predicates...))
 	}
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)

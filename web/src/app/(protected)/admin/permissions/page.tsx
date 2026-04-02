@@ -5,8 +5,9 @@
  * RBAC permissions catalog. Admin only.
  * data-testid="admin-permissions-page" required by E2E contract.
  */
-import { Table, Tag, Typography } from 'antd';
+import { Button as ActionButton, Table, Tag, Typography, Select, Space } from 'antd';
 import { KeyOutlined } from '@ant-design/icons';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
@@ -18,8 +19,14 @@ import {
     VirtualMachinesOverviewGlyph,
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 
 const { Text } = Typography;
+
+const filterOptionByLabel = (input: string, option?: { label?: unknown }) => {
+    const label = typeof option?.label === 'string' ? option.label : '';
+    return label.toLowerCase().includes(input.trim().toLowerCase());
+};
 
 const STATIC_PERMISSIONS = [
     { key: 'vm:create', scope: 'vm', labelKey: 'rbac.permissions.catalog.vm_create.label', descriptionKey: 'rbac.permissions.catalog.vm_create.description' },
@@ -36,10 +43,44 @@ const STATIC_PERMISSIONS = [
 
 export default function AdminPermissionsPage() {
     const { t } = useTranslation(['admin', 'common']);
+    const [quickSearchDraft, setQuickSearchDraft] = useState('');
+    const [search, setSearch] = useState('');
+    const [scopeDraft, setScopeDraft] = useState('');
+    const [scopeFilter, setScopeFilter] = useState('');
+    const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
     const totalCount = STATIC_PERMISSIONS.length;
     const vmCount = STATIC_PERMISSIONS.filter((permission) => permission.scope === 'vm').length;
     const resourceCount = STATIC_PERMISSIONS.filter((permission) => permission.scope === 'system' || permission.scope === 'service').length;
     const governanceCount = STATIC_PERMISSIONS.filter((permission) => permission.scope === 'rbac' || permission.scope === 'admin').length;
+    const scopeOptions = useMemo(
+        () =>
+            Array.from(new Set(STATIC_PERMISSIONS.map((permission) => permission.scope)))
+                .sort((left, right) => left.localeCompare(right))
+                .map((scope) => ({
+                    value: scope,
+                    label: t(`rbac.scope.${scope}`, { defaultValue: scope }),
+                })),
+        [t],
+    );
+    const filteredPermissions = useMemo(() => {
+        const normalizedSearch = search.trim().toLowerCase();
+        return STATIC_PERMISSIONS.filter((permission) => {
+            if (scopeFilter !== '' && permission.scope !== scopeFilter) {
+                return false;
+            }
+            if (normalizedSearch === '') {
+                return true;
+            }
+            const label = t(permission.labelKey).toLowerCase();
+            const description = t(permission.descriptionKey).toLowerCase();
+            return [
+                permission.key,
+                permission.scope,
+                label,
+                description,
+            ].some((value) => value.toLowerCase().includes(normalizedSearch));
+        });
+    }, [scopeFilter, search, t]);
 
     const columns = [
         {
@@ -124,8 +165,68 @@ export default function AdminPermissionsPage() {
             </div>
 
             <PageSurface flush={true}>
+                <div style={{ padding: 16, paddingBottom: 0 }}>
+                    <PageSearchToolbar
+                        searchValue={search}
+                        searchDraftValue={quickSearchDraft}
+                        onSearchDraftChange={setQuickSearchDraft}
+                        onSearchChange={(value) => {
+                            const nextValue = value.trim();
+                            setQuickSearchDraft(nextValue);
+                            setSearch(nextValue);
+                        }}
+                        searchPlaceholder={t('rbac.permissions.search_placeholder', { defaultValue: 'Search permissions, keys, or use cases' })}
+                        searchTestId="permissions-quick-search"
+                        searchHelp={t('rbac.permissions.search_help', { defaultValue: 'Press Enter or click Search. Quick search matches permission labels, keys, scopes, and typical use descriptions.' })}
+                        advancedSearch={{
+                            open: advancedSearchOpen,
+                            onToggle: () => setAdvancedSearchOpen((open) => !open),
+                            openLabel: t('common:search.advanced', { defaultValue: 'Advanced search' }),
+                            closeLabel: t('common:search.hide_advanced', { defaultValue: 'Hide advanced search' }),
+                            title: t('common:search.advanced', { defaultValue: 'Advanced search' }),
+                            toggleTestId: 'permissions-advanced-search-toggle',
+                            content: (
+                                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                    <Text type="secondary">
+                                        {t('rbac.permissions.advanced_search_help', { defaultValue: 'Select exact filters here. Options support keyword matching, but the applied filter remains an exact match.' })}
+                                    </Text>
+                                    <Space wrap size={[12, 12]}>
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            style={{ minWidth: 220 }}
+                                            data-testid="permissions-filter-scope"
+                                            placeholder={t('rbac.bindings.scope', { defaultValue: 'Scope' })}
+                                            options={scopeOptions}
+                                            value={scopeDraft || undefined}
+                                            onChange={(value) => setScopeDraft(value ?? '')}
+                                        />
+                                        <ActionButton
+                                            type="primary"
+                                            data-testid="permissions-advanced-search-submit"
+                                            onClick={() => setScopeFilter(scopeDraft)}
+                                        >
+                                            {t('common:button.search')}
+                                        </ActionButton>
+                                    </Space>
+                                </Space>
+                            ),
+                        }}
+                        hasActiveFilters={search !== '' || scopeFilter !== ''}
+                        onClear={() => {
+                            setQuickSearchDraft('');
+                            setSearch('');
+                            setScopeDraft('');
+                            setScopeFilter('');
+                            setAdvancedSearchOpen(false);
+                        }}
+                        clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
+                    />
+                </div>
                 <Table
-                    dataSource={STATIC_PERMISSIONS}
+                    dataSource={filteredPermissions}
                     columns={columns}
                     rowKey="key"
                     pagination={false}

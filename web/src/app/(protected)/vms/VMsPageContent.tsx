@@ -15,15 +15,18 @@ import {
     InputNumber,
     Modal,
     Popconfirm,
+    Select,
     Space,
     Tag,
     Typography,
 } from 'antd';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PermissionGuard } from '@/components/auth/PermissionGuard';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 import type { ServiceWorkspaceContext } from '@/features/services-management/types';
 import { SetupGuideCard } from '@/features/setup-guide/components/SetupGuideCard';
 import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
@@ -36,6 +39,11 @@ import { useApiGet } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
 
 const { Paragraph, Text } = Typography;
+
+const filterOptionByLabel = (input: string, option?: { label?: unknown }) => {
+    const label = typeof option?.label === 'string' ? option.label : '';
+    return label.toLowerCase().includes(input.trim().toLowerCase());
+};
 
 export default function VMsPageContent() {
     const { t } = useTranslation(['vm', 'common']);
@@ -66,6 +74,122 @@ export default function VMsPageContent() {
     const scopedWorkspace = scopedWorkspaceQuery.data?.service;
     const scopedSystemLabel = scopedWorkspace?.system_name || '—';
     const scopedServiceLabel = scopedWorkspace?.name || '—';
+    const [quickSearchDraft, setQuickSearchDraft] = useState(() => vm.filters.search);
+    const [statusDraft, setStatusDraft] = useState(() => vm.filters.status);
+    const [namespaceDraft, setNamespaceDraft] = useState(() => vm.filters.namespace);
+    const [clusterDraft, setClusterDraft] = useState(() => vm.filters.clusterId);
+    const [systemDraft, setSystemDraft] = useState(() => vm.filters.systemId);
+    const [serviceDraft, setServiceDraft] = useState(() => vm.filters.serviceId);
+    const [osDraft, setOsDraft] = useState(() => vm.filters.osName);
+    const [ipAddressDraft, setIpAddressDraft] = useState(() => vm.filters.ipAddress);
+    const [advancedSearchOpen, setAdvancedSearchOpen] = useState(
+        () =>
+            vm.filters.status !== ''
+            || vm.filters.namespace !== ''
+            || vm.filters.clusterId !== ''
+            || vm.filters.systemId !== ''
+            || vm.filters.serviceId !== ''
+            || vm.filters.osName !== ''
+            || vm.filters.ipAddress !== '',
+    );
+
+    const formatGroupedLabel = (label: string, group?: string) => {
+        const trimmedGroup = (group ?? '').trim();
+        if (trimmedGroup === '') {
+            return label;
+        }
+        if (trimmedGroup === 'prod') {
+            return `${t('field.environment')}: ${t('common:environment.prod', { defaultValue: 'Production' })} · ${label}`;
+        }
+        if (trimmedGroup === 'test') {
+            return `${t('field.environment')}: ${t('common:environment.test', { defaultValue: 'Test' })} · ${label}`;
+        }
+        return `${trimmedGroup} · ${label}`;
+    };
+
+    const statusOptions = useMemo(
+        () =>
+            (vm.vmFilterOptions?.statuses ?? []).map((option) => ({
+                value: option.value,
+                label: t(`status.${option.value}`, { defaultValue: option.label }),
+            })),
+        [t, vm.vmFilterOptions?.statuses],
+    );
+
+    const namespaceOptions = (vm.vmFilterOptions?.namespaces ?? []).map((option) => ({
+        value: option.value,
+        label: formatGroupedLabel(option.label, option.group),
+    }));
+
+    const clusterOptions = (vm.vmFilterOptions?.clusters ?? []).map((option) => ({
+        value: option.value,
+        label: formatGroupedLabel(option.label, option.group),
+    }));
+
+    const systemOptions = useMemo(
+        () =>
+            (vm.vmFilterOptions?.systems ?? []).map((option) => ({
+                value: option.value,
+                label: option.label,
+            })),
+        [vm.vmFilterOptions?.systems],
+    );
+
+    const serviceOptions = useMemo(
+        () =>
+            (vm.vmFilterOptions?.services ?? []).map((option) => ({
+                value: option.value,
+                label: option.label,
+            })),
+        [vm.vmFilterOptions?.services],
+    );
+
+    const operatingSystemOptions = useMemo(
+        () =>
+            (vm.vmFilterOptions?.operating_systems ?? []).map((option) => ({
+                value: option.value,
+                label: option.label,
+            })),
+        [vm.vmFilterOptions?.operating_systems],
+    );
+
+    const ipAddressOptions = (vm.vmFilterOptions?.ip_addresses ?? []).map((option) => ({
+        value: option.value,
+        label: formatGroupedLabel(option.label, option.group),
+    }));
+
+    const applyQuickSearch = (value = quickSearchDraft) => {
+        const nextValue = value.trim();
+        setQuickSearchDraft(nextValue);
+        vm.changeFilters({ search: nextValue });
+    };
+
+    const applyAdvancedFilters = () => {
+        vm.changeFilters({
+            status: statusDraft,
+            namespace: namespaceDraft,
+            clusterId: clusterDraft,
+            systemId: systemDraft,
+            serviceId: serviceDraft,
+            osName: osDraft,
+            ipAddress: ipAddressDraft,
+        });
+    };
+
+    const resetFilters = () => {
+        setQuickSearchDraft('');
+        setStatusDraft('');
+        setNamespaceDraft('');
+        setClusterDraft('');
+        setSystemDraft('');
+        setServiceDraft('');
+        setOsDraft('');
+        setIpAddressDraft('');
+        vm.resetFilters();
+    };
+
+    const hasActiveFilters = Object.values(vm.filters).some((value) => value !== '');
+
     const openCreateRequest = () => {
         if (hasScopedWorkspace) {
             vm.openWizard({ systemId: scopedSystemId, serviceId: scopedServiceId });
@@ -105,9 +229,10 @@ export default function VMsPageContent() {
                     </Space>
                 )}
             />
+            <div className="vm-page-stack">
 
             {vm.savedDraft && !vm.wizardOpen && (
-                <div style={{ marginBottom: 16 }}>
+                <div>
                     <VMSavedDraftBanner
                         t={t}
                         draft={vm.savedDraft}
@@ -120,19 +245,19 @@ export default function VMsPageContent() {
             {!setupGuide.vmRequestReady ? <SetupGuideCard variant="vm" /> : null}
 
             {hasScopedWorkspace && (
-                <PageSurface style={{ marginBottom: 16 }}>
-                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                        <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-                            <Space direction="vertical" size={0}>
+                <PageSurface className="vm-page-surface">
+                    <Space direction="vertical" size={8} className="vm-page-block">
+                        <Space className="vm-page-header-row" wrap>
+                            <Space direction="vertical" size={2}>
                                 <Text strong>{t('context.title')}</Text>
-                                <Text type="secondary">
+                                <Text type="secondary" className="vm-page-supporting-text">
                                     {t('context.description', {
                                         system: scopedSystemLabel,
                                         service: scopedServiceLabel,
                                     })}
                                 </Text>
                             </Space>
-                            <Space wrap className="copy-friendly-actions">
+                            <Space wrap className="copy-friendly-actions vm-page-actions">
                                 <PermissionGuard permission="vm:create">
                                     <Button
                                         type="primary"
@@ -157,6 +282,7 @@ export default function VMsPageContent() {
                             </Space>
                         </Space>
                         <Descriptions
+                            className="vm-page-descriptions"
                             size="small"
                             column={3}
                             items={[
@@ -184,13 +310,13 @@ export default function VMsPageContent() {
                 </PageSurface>
             )}
 
-            <PageSurface style={{ marginBottom: 16 }}>
-                <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-                    <Space direction="vertical" size={0}>
+            <PageSurface className="vm-page-surface vm-page-surface--tight">
+                <Space className="vm-page-header-row" wrap>
+                    <Space direction="vertical" size={2}>
                         <Text strong>{t('batch.title')}</Text>
-                        <Text type="secondary">{t('batch.subtitle')}</Text>
+                        <Text type="secondary" className="vm-page-supporting-text">{t('batch.subtitle')}</Text>
                     </Space>
-                    <Space wrap className="copy-friendly-actions">
+                    <Space wrap className="copy-friendly-actions vm-page-actions">
                         <Tag color="blue">{t('batch.selected', { count: vm.selectedVMIDs.length })}</Tag>
                         <PermissionGuard permission="vm:operate">
                             <Popconfirm
@@ -274,12 +400,138 @@ export default function VMsPageContent() {
                     </Space>
                 </Space>
                 {vm.batchRateLimited && (
-                    <div style={{ marginTop: 12 }}>
+                    <div className="vm-page-inline-alert">
                         <Text type="warning">
                             {t('batch.rate_limited_wait', { seconds: vm.batchRetryAfterSeconds })}
                         </Text>
                     </div>
                 )}
+            </PageSurface>
+
+            <PageSurface className="vm-page-surface vm-page-surface--tight">
+                <div className="vm-page-search-shell">
+                    <PageSearchToolbar
+                        searchValue={vm.filters.search}
+                        searchDraftValue={quickSearchDraft}
+                        onSearchDraftChange={setQuickSearchDraft}
+                        onSearchChange={applyQuickSearch}
+                        searchPlaceholder={t('search_placeholder', 'Search VM name, scope, cluster, or operating system')}
+                        searchHelp={t('search_help', 'Press Enter or click Search. Quick search matches VM name, hostname, namespace, cluster, system, service, IP, and operating system.')}
+                        searchTestId="vms-quick-search"
+                        advancedSearch={{
+                            open: advancedSearchOpen,
+                            onToggle: () => setAdvancedSearchOpen((open) => !open),
+                            openLabel: t('common:search.advanced', { defaultValue: 'Advanced search' }),
+                            closeLabel: t('common:search.hide_advanced', { defaultValue: 'Hide advanced search' }),
+                            title: t('advanced_search_title', 'Advanced search'),
+                            toggleTestId: 'vms-advanced-search-toggle',
+                            content: (
+                                <Space direction="vertical" size={10} className="vm-page-search-advanced">
+                                    <Text type="secondary" className="vm-page-supporting-text">
+                                        {t('advanced_search_help', 'Select exact filters here. Options support keyword matching, but the applied filter remains an exact match.')}
+                                    </Text>
+                                    <Space wrap className="vm-page-filter-grid">
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            placeholder={t('search.status', 'Status')}
+                                            value={statusDraft || undefined}
+                                            options={statusOptions}
+                                            className="vm-page-filter vm-page-filter--sm"
+                                            onChange={(value) => setStatusDraft(value ?? '')}
+                                            data-testid="vms-filter-status"
+                                        />
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            placeholder={t('search.namespace', 'Namespace')}
+                                            value={namespaceDraft || undefined}
+                                            options={namespaceOptions}
+                                            className="vm-page-filter"
+                                            onChange={(value) => setNamespaceDraft(value ?? '')}
+                                            data-testid="vms-filter-namespace"
+                                        />
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            placeholder={t('search.cluster', 'Cluster')}
+                                            value={clusterDraft || undefined}
+                                            options={clusterOptions}
+                                            className="vm-page-filter"
+                                            onChange={(value) => setClusterDraft(value ?? '')}
+                                            data-testid="vms-filter-cluster"
+                                        />
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            placeholder={t('search.system', 'System')}
+                                            value={systemDraft || undefined}
+                                            options={systemOptions}
+                                            className="vm-page-filter"
+                                            onChange={(value) => setSystemDraft(value ?? '')}
+                                            data-testid="vms-filter-system"
+                                        />
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            placeholder={t('search.service', 'Service')}
+                                            value={serviceDraft || undefined}
+                                            options={serviceOptions}
+                                            className="vm-page-filter vm-page-filter--lg"
+                                            onChange={(value) => setServiceDraft(value ?? '')}
+                                            data-testid="vms-filter-service"
+                                        />
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            placeholder={t('search.operating_system', 'Operating system')}
+                                            value={osDraft || undefined}
+                                            options={operatingSystemOptions}
+                                            className="vm-page-filter vm-page-filter--lg"
+                                            onChange={(value) => setOsDraft(value ?? '')}
+                                            data-testid="vms-filter-os"
+                                        />
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            placeholder={t('search.ip_address', 'IP address')}
+                                            value={ipAddressDraft || undefined}
+                                            options={ipAddressOptions}
+                                            className="vm-page-filter"
+                                            onChange={(value) => setIpAddressDraft(value ?? '')}
+                                            data-testid="vms-filter-ip-address"
+                                        />
+                                        <Button
+                                            type="primary"
+                                            onClick={applyAdvancedFilters}
+                                            data-testid="vms-advanced-search-submit"
+                                        >
+                                            {t('common:button.search')}
+                                        </Button>
+                                    </Space>
+                                </Space>
+                            ),
+                        }}
+                        hasActiveFilters={hasActiveFilters}
+                        onClear={resetFilters}
+                        clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
+                        clearTestId="vms-clear-filters"
+                    />
+                </div>
             </PageSurface>
 
             <VMListTable
@@ -310,7 +562,7 @@ export default function VMsPageContent() {
                 onSelectionChange={vm.setSelectedVMIDs}
             />
             {vm.activeBatchID && (
-                <PageSurface style={{ marginTop: 16 }}>
+                <PageSurface className="vm-page-surface">
                     <div
                         data-testid="batch-status-live"
                         aria-live="polite"
@@ -334,10 +586,10 @@ export default function VMsPageContent() {
                             pending_count: vm.batchStatus?.pending_count ?? 0,
                         })}
                     </div>
-                    <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-                        <Space direction="vertical" size={4}>
+                    <Space className="vm-page-header-row" wrap>
+                        <Space direction="vertical" size={2}>
                             <Text strong>{t('batch.current_batch')}</Text>
-                            <Text type="secondary">
+                            <Text type="secondary" className="vm-page-supporting-text">
                                 {t('batch.live_status_summary', {
                                     batch_id: vm.activeBatchID,
                                     status: vm.batchStatus?.status ?? '—',
@@ -347,10 +599,10 @@ export default function VMsPageContent() {
                                 })}
                             </Text>
                             {lastBatchActionFeedback !== '' && (
-                                <Text type="secondary">{lastBatchActionFeedback}</Text>
+                                <Text type="secondary" className="vm-page-supporting-text">{lastBatchActionFeedback}</Text>
                             )}
                         </Space>
-                        <Space wrap className="copy-friendly-actions">
+                        <Space wrap className="copy-friendly-actions vm-page-actions">
                             <Button
                                 icon={<ReloadOutlined />}
                                 onClick={vm.refreshBatch}
@@ -371,6 +623,7 @@ export default function VMsPageContent() {
                     </Space>
                 </PageSurface>
             )}
+            </div>
 
             <VMRequestWizard
                 t={t}
@@ -402,159 +655,161 @@ export default function VMsPageContent() {
                 onSubmit={vm.submitWizard}
             />
 
-            <Modal
-                title={
-                    vm.modifyScope === 'batch'
-                        ? t('modify.batch_title', { count: vm.selectedVMIDs.length })
-                        : t('modify.title', { name: vm.modifyTargetVM?.name ?? 'VM' })
-                }
-                open={vm.modifyOpen}
-                onOk={() => void vm.submitModify()}
-                onCancel={vm.closeModifyModal}
-                confirmLoading={vm.modifySubmitPending}
-                okButtonProps={{ disabled: vm.modifySubmitDisabled }}
-                okText={t('modify.submit')}
-                forceRender={true}
-                width={720}
-                data-testid="vm-modify-modal"
-            >
-                <Form form={vm.modifyForm} layout="vertical" preserve={false}>
-                    {vm.modifyScope === 'single' && vm.modifyContext && (
-                        <Descriptions
-                            size="small"
-                            column={3}
-                            items={[
-                                {
-                                    key: 'cpu',
-                                    label: t('modify.current_cpu'),
-                                    children: vm.modifyContext.current_cpu_cores,
-                                },
-                                {
-                                    key: 'memory',
-                                    label: t('modify.current_memory'),
-                                    children: `${vm.modifyContext.current_memory_gi} Gi`,
-                                },
-                                {
-                                    key: 'disk',
-                                    label: t('modify.current_disk'),
-                                    children: `${vm.modifyContext.current_disk_gb} Gi`,
-                                },
-                            ]}
-                            style={{ marginBottom: 16 }}
-                        />
-                    )}
-                    {vm.modifyScope === 'single' && vm.modifyContextLoading && (
-                        <Alert
-                            type="info"
-                            showIcon={true}
-                            message={t('modify.loading')}
-                            style={{ marginBottom: 16 }}
-                        />
-                    )}
-                    <Form.Item
-                        name="reason"
-                        label={t('modify.reason')}
-                        rules={[{ required: true, message: t('modify.reason_required') }]}
-                    >
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                    <Form.Item
-                        name="target_cpu_cores"
-                        label={t('modify.target_cpu')}
-                        extra={
-                            vm.modifyScope === 'single' && vm.modifyContext && !vm.modifyContext.cpu_supported
-                                ? vm.modifyContext.cpu_reason
-                                : t('modify.target_cpu_hint')
-                        }
-                    >
-                        <InputNumber
-                            min={1}
-                            step={1}
-                            precision={0}
-                            style={{ width: '100%' }}
-                            disabled={vm.modifyScope === 'single' && !!vm.modifyContext && !vm.modifyContext.cpu_supported}
-                        />
-                    </Form.Item>
-                    <Form.Item
-                        name="target_memory_gi"
-                        label={t('modify.target_memory')}
-                        extra={
-                            vm.modifyScope === 'single' && vm.modifyContext && !vm.modifyContext.memory_supported
-                                ? vm.modifyContext.memory_reason
-                                : t('modify.target_memory_hint')
-                        }
-                    >
-                        <InputNumber
-                            min={0.5}
-                            step={0.5}
-                            precision={1}
-                            style={{ width: '100%' }}
-                            disabled={vm.modifyScope === 'single' && !!vm.modifyContext && !vm.modifyContext.memory_supported}
-                        />
-                    </Form.Item>
-                    <Form.Item
-                        name="target_disk_gb"
-                        label={t('modify.target_disk')}
-                        extra={
-                            vm.modifyScope === 'single' && vm.modifyContext && !vm.modifyContext.disk_supported
-                                ? vm.modifyContext.disk_reason
-                                : t('modify.target_disk_hint')
-                        }
-                    >
-                        <InputNumber
-                            min={1}
-                            step={1}
-                            precision={0}
-                            style={{ width: '100%' }}
-                            disabled={vm.modifyScope === 'single' && !!vm.modifyContext && !vm.modifyContext.disk_supported}
-                        />
-                    </Form.Item>
-                    {vm.modifyScope === 'batch' && (
-                        <Alert
-                            type="info"
-                            showIcon={true}
-                            message={t('modify.batch_scope', { count: vm.selectedVMIDs.length })}
-                        />
-                    )}
-                </Form>
-            </Modal>
+            {vm.modifyOpen ? (
+                <Modal
+                    title={
+                        vm.modifyScope === 'batch'
+                            ? t('modify.batch_title', { count: vm.selectedVMIDs.length })
+                            : t('modify.title', { name: vm.modifyTargetVM?.name ?? 'VM' })
+                    }
+                    open={vm.modifyOpen}
+                    onOk={() => void vm.submitModify()}
+                    onCancel={vm.closeModifyModal}
+                    confirmLoading={vm.modifySubmitPending}
+                    okButtonProps={{ disabled: vm.modifySubmitDisabled }}
+                    okText={t('modify.submit')}
+                    width={720}
+                    data-testid="vm-modify-modal"
+                >
+                    <Form form={vm.modifyForm} layout="vertical" preserve={false}>
+                        {vm.modifyScope === 'single' && vm.modifyContext && (
+                            <Descriptions
+                                size="small"
+                                column={3}
+                                items={[
+                                    {
+                                        key: 'cpu',
+                                        label: t('modify.current_cpu'),
+                                        children: vm.modifyContext.current_cpu_cores,
+                                    },
+                                    {
+                                        key: 'memory',
+                                        label: t('modify.current_memory'),
+                                        children: `${vm.modifyContext.current_memory_gi} Gi`,
+                                    },
+                                    {
+                                        key: 'disk',
+                                        label: t('modify.current_disk'),
+                                        children: `${vm.modifyContext.current_disk_gb} Gi`,
+                                    },
+                                ]}
+                                style={{ marginBottom: 16 }}
+                            />
+                        )}
+                        {vm.modifyScope === 'single' && vm.modifyContextLoading && (
+                            <Alert
+                                type="info"
+                                showIcon={true}
+                                message={t('modify.loading')}
+                                style={{ marginBottom: 16 }}
+                            />
+                        )}
+                        <Form.Item
+                            name="reason"
+                            label={t('modify.reason')}
+                            rules={[{ required: true, message: t('modify.reason_required') }]}
+                        >
+                            <Input.TextArea rows={3} />
+                        </Form.Item>
+                        <Form.Item
+                            name="target_cpu_cores"
+                            label={t('modify.target_cpu')}
+                            extra={
+                                vm.modifyScope === 'single' && vm.modifyContext && !vm.modifyContext.cpu_supported
+                                    ? vm.modifyContext.cpu_reason
+                                    : t('modify.target_cpu_hint')
+                            }
+                        >
+                            <InputNumber
+                                min={1}
+                                step={1}
+                                precision={0}
+                                style={{ width: '100%' }}
+                                disabled={vm.modifyScope === 'single' && !!vm.modifyContext && !vm.modifyContext.cpu_supported}
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="target_memory_gi"
+                            label={t('modify.target_memory')}
+                            extra={
+                                vm.modifyScope === 'single' && vm.modifyContext && !vm.modifyContext.memory_supported
+                                    ? vm.modifyContext.memory_reason
+                                    : t('modify.target_memory_hint')
+                            }
+                        >
+                            <InputNumber
+                                min={0.5}
+                                step={0.5}
+                                precision={1}
+                                style={{ width: '100%' }}
+                                disabled={vm.modifyScope === 'single' && !!vm.modifyContext && !vm.modifyContext.memory_supported}
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="target_disk_gb"
+                            label={t('modify.target_disk')}
+                            extra={
+                                vm.modifyScope === 'single' && vm.modifyContext && !vm.modifyContext.disk_supported
+                                    ? vm.modifyContext.disk_reason
+                                    : t('modify.target_disk_hint')
+                            }
+                        >
+                            <InputNumber
+                                min={1}
+                                step={1}
+                                precision={0}
+                                style={{ width: '100%' }}
+                                disabled={vm.modifyScope === 'single' && !!vm.modifyContext && !vm.modifyContext.disk_supported}
+                            />
+                        </Form.Item>
+                        {vm.modifyScope === 'batch' && (
+                            <Alert
+                                type="info"
+                                showIcon={true}
+                                message={t('modify.batch_scope', { count: vm.selectedVMIDs.length })}
+                            />
+                        )}
+                    </Form>
+                </Modal>
+            ) : null}
 
-            <Modal
-                title={(
-                    <Space>
-                        <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
-                        {t('action.delete_confirm')}
-                    </Space>
-                )}
-                open={vm.deleteOpen}
-                onOk={vm.submitDelete}
-                onCancel={vm.closeDeleteModal}
-                confirmLoading={vm.deletePending}
-                okButtonProps={{
-                    danger: true,
-                    disabled: vm.deletingVM?.environment !== 'test' ? vm.deleteConfirmName !== vm.deletingVM?.name : false,
-                }}
-                okText={t('common:button.delete')}
-                forceRender={true}
-                data-testid="vm-delete-modal"
-            >
-                <Paragraph>
-                    {t('action.delete_confirm_name', { name: vm.deletingVM?.name })}
-                </Paragraph>
-                {vm.deletingVM?.environment !== 'test' && (
-                    <>
-                        <Paragraph type="secondary">
-                            {t('action.delete_type_name_hint')}
-                        </Paragraph>
-                        <Input
-                            value={vm.deleteConfirmName}
-                            onChange={(e) => vm.setDeleteConfirmName(e.target.value)}
-                            placeholder={vm.deletingVM?.name}
-                            status={vm.deleteConfirmName && vm.deleteConfirmName !== vm.deletingVM?.name ? 'error' : undefined}
-                        />
-                    </>
-                )}
-            </Modal>
+            {vm.deleteOpen ? (
+                <Modal
+                    title={(
+                        <Space>
+                            <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
+                            {t('action.delete_confirm')}
+                        </Space>
+                    )}
+                    open={vm.deleteOpen}
+                    onOk={vm.submitDelete}
+                    onCancel={vm.closeDeleteModal}
+                    confirmLoading={vm.deletePending}
+                    okButtonProps={{
+                        danger: true,
+                        disabled: vm.deletingVM?.environment !== 'test' ? vm.deleteConfirmName !== vm.deletingVM?.name : false,
+                    }}
+                    okText={t('common:button.delete')}
+                    data-testid="vm-delete-modal"
+                >
+                    <Paragraph>
+                        {t('action.delete_confirm_name', { name: vm.deletingVM?.name })}
+                    </Paragraph>
+                    {vm.deletingVM?.environment !== 'test' && (
+                        <>
+                            <Paragraph type="secondary">
+                                {t('action.delete_type_name_hint')}
+                            </Paragraph>
+                            <Input
+                                value={vm.deleteConfirmName}
+                                onChange={(e) => vm.setDeleteConfirmName(e.target.value)}
+                                placeholder={vm.deletingVM?.name}
+                                status={vm.deleteConfirmName && vm.deleteConfirmName !== vm.deletingVM?.name ? 'error' : undefined}
+                            />
+                        </>
+                    )}
+                </Modal>
+            ) : null}
         </div>
     );
 }

@@ -73,6 +73,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/systems/filter-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List system filter options */
+        get: operations["getSystemFilterOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/systems/{system_id}": {
         parameters: {
             query?: never;
@@ -246,6 +263,27 @@ export interface paths {
         };
         /** List VMs */
         get: operations["listVMs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vms/filter-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get VM filter options
+         * @description Returns the current user's visible VM filter catalogs for exact-match advanced filtering.
+         *     Option values are stable identifiers when available, while labels stay human-readable.
+         */
+        get: operations["getVMFilterOptions"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1777,6 +1815,11 @@ export interface components {
             items?: components["schemas"]["System"][];
             pagination?: components["schemas"]["Pagination"];
         };
+        SystemFilterOptionsResponse: {
+            creators?: components["schemas"]["FilterOption"][];
+            services?: components["schemas"]["FilterOption"][];
+            members?: components["schemas"]["FilterOption"][];
+        };
         Service: {
             id: string;
             name: string;
@@ -2214,7 +2257,15 @@ export interface components {
              */
             operation_type?: "CREATE" | "MODIFY" | "DELETE" | "POWER" | "VNC_ACCESS";
             requester: string;
+            /** @description Preferred human-readable requester label, typically display name or username. */
+            requester_display_name?: string;
+            /** @description Requester username when available. */
+            requester_username?: string;
             approver?: string;
+            /** @description Preferred human-readable approver label, typically display name or username. */
+            approver_display_name?: string;
+            /** @description Approver username when available. */
+            approver_username?: string;
             reason?: string;
             reject_reason?: string;
             /** @description For DELETE tickets, the VM being deleted */
@@ -2735,6 +2786,20 @@ export interface components {
             items?: components["schemas"]["User"][];
             profile_fields?: components["schemas"]["UserProfileField"][];
             pagination?: components["schemas"]["Pagination"];
+        };
+        FilterOption: {
+            value: string;
+            label: string;
+            group?: string;
+        };
+        VMFilterOptionsResponse: {
+            statuses?: components["schemas"]["FilterOption"][];
+            namespaces?: components["schemas"]["FilterOption"][];
+            clusters?: components["schemas"]["FilterOption"][];
+            systems?: components["schemas"]["FilterOption"][];
+            services?: components["schemas"]["FilterOption"][];
+            operating_systems?: components["schemas"]["FilterOption"][];
+            ip_addresses?: components["schemas"]["FilterOption"][];
         };
         UserCreateRequest: {
             username: string;
@@ -3365,6 +3430,18 @@ export interface components {
         PerPage: number;
         /** @description Case-insensitive search text */
         Search: string;
+        /** @description Case-insensitive creator filter for systems */
+        SystemCreatedBySearch: string;
+        /** @description Exact creator filter for systems */
+        SystemCreatedByExact: string;
+        /** @description Case-insensitive filter across related service names and descriptions */
+        SystemServiceSearch: string;
+        /** @description Exact related service filter for systems */
+        SystemServiceIDFilter: string;
+        /** @description Case-insensitive filter across related system member username, email, or display name */
+        SystemMemberSearch: string;
+        /** @description Exact related system member filter */
+        SystemMemberIDFilter: string;
         /** @description Field to sort by */
         SortBy: string;
         /** @description Sort direction */
@@ -3480,6 +3557,20 @@ export interface operations {
                 page?: components["parameters"]["Page"];
                 /** @description Items per page */
                 per_page?: components["parameters"]["PerPage"];
+                /** @description Case-insensitive search text */
+                search?: components["parameters"]["Search"];
+                /** @description Case-insensitive creator filter for systems */
+                created_by?: components["parameters"]["SystemCreatedBySearch"];
+                /** @description Exact creator filter for systems */
+                created_by_exact?: components["parameters"]["SystemCreatedByExact"];
+                /** @description Case-insensitive filter across related service names and descriptions */
+                service_search?: components["parameters"]["SystemServiceSearch"];
+                /** @description Exact related service filter for systems */
+                service_id?: components["parameters"]["SystemServiceIDFilter"];
+                /** @description Case-insensitive filter across related system member username, email, or display name */
+                member_search?: components["parameters"]["SystemMemberSearch"];
+                /** @description Exact related system member filter */
+                member_id?: components["parameters"]["SystemMemberIDFilter"];
                 /** @description Field to sort by */
                 sort_by?: components["parameters"]["SortBy"];
                 /** @description Sort direction */
@@ -3528,6 +3619,28 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    getSystemFilterOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Searchable exact filter options for the systems list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemFilterOptionsResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     getSystem: {
@@ -3756,6 +3869,8 @@ export interface operations {
                 page?: components["parameters"]["Page"];
                 /** @description Items per page */
                 per_page?: components["parameters"]["PerPage"];
+                /** @description Case-insensitive search text */
+                search?: components["parameters"]["Search"];
                 /** @description Filter services by parent system id */
                 system_id?: components["parameters"]["SystemIDFilter"];
             };
@@ -3947,8 +4062,16 @@ export interface operations {
                 sort_by?: components["parameters"]["SortBy"];
                 /** @description Sort direction */
                 sort_order?: components["parameters"]["SortOrder"];
+                /** @description Case-insensitive search text */
+                search?: components["parameters"]["Search"];
                 namespace?: string;
                 status?: string;
+                cluster_id?: string;
+                /** @description Filter services by parent system id */
+                system_id?: components["parameters"]["SystemIDFilter"];
+                service_id?: string;
+                os_name?: string;
+                ip_address?: string;
             };
             header?: never;
             path?: never;
@@ -3963,6 +4086,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VMList"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getVMFilterOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description VM filter option catalogs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMFilterOptionsResponse"];
                 };
             };
             403: components["responses"]["Forbidden"];
@@ -4545,6 +4689,8 @@ export interface operations {
                 page?: components["parameters"]["Page"];
                 /** @description Items per page */
                 per_page?: components["parameters"]["PerPage"];
+                /** @description Case-insensitive search text */
+                search?: components["parameters"]["Search"];
                 status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
                 /**
                  * @description When true, return only tickets requested by the current
@@ -4584,6 +4730,8 @@ export interface operations {
                 page?: components["parameters"]["Page"];
                 /** @description Items per page */
                 per_page?: components["parameters"]["PerPage"];
+                /** @description Case-insensitive search text */
+                search?: components["parameters"]["Search"];
                 status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
                 /** @description Filter by task operation type. */
                 operation_type?: "CREATE" | "MODIFY" | "DELETE" | "POWER" | "VNC_ACCESS";
@@ -5843,6 +5991,16 @@ export interface operations {
                 page?: components["parameters"]["Page"];
                 /** @description Items per page */
                 per_page?: components["parameters"]["PerPage"];
+                /** @description Case-insensitive search text */
+                search?: components["parameters"]["Search"];
+                /** @description Exact operating system family filter */
+                os_family?: string;
+                /** @description Exact template source type filter */
+                source_type?: string;
+                /** @description Exact catalog scope filter */
+                catalog_scope?: string;
+                /** @description Filter by enabled state */
+                enabled?: boolean;
             };
             header?: never;
             path?: never;
@@ -6382,8 +6540,12 @@ export interface operations {
                 page?: components["parameters"]["Page"];
                 /** @description Items per page */
                 per_page?: components["parameters"]["PerPage"];
+                /** @description Case-insensitive search text */
+                search?: components["parameters"]["Search"];
                 /** @description Filter by environment type */
                 environment?: "test" | "prod";
+                /** @description Filter by enabled state */
+                enabled?: boolean;
             };
             header?: never;
             path?: never;
@@ -6679,6 +6841,8 @@ export interface operations {
                 page?: components["parameters"]["Page"];
                 /** @description Items per page */
                 per_page?: components["parameters"]["PerPage"];
+                /** @description Fuzzy search across action, actor, resource type, and resource ID */
+                search?: string;
                 action?: string;
                 actor?: string;
                 resource_type?: string;

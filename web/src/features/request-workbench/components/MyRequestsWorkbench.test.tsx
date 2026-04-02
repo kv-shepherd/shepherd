@@ -1,4 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { TFunction } from 'i18next';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
@@ -44,6 +47,9 @@ vi.mock('react-i18next', () => ({
                 'workbench.in_progress.empty_title': 'No active requests yet',
                 'workbench.in_progress.empty_description': 'Submit the first VM request to start tracking approvals and execution here.',
                 'workbench.history.description': 'Browse completed request outcomes by decision status.',
+                'workbench.search_placeholder': 'Search requests by reason, cluster, requester, or paste a ticket ID',
+                'workbench.search_help': 'Press Enter or click Search. Quick search matches reasons, requester, cluster name, and pasted ticket IDs.',
+                'workbench.advanced_search_help': 'Choose exact filters here. Options support keyword matching, but the applied filter remains an exact value.',
                 'workbench.history.empty_title': 'No request history yet',
                 'workbench.history.empty_description': 'Completed requests will appear here after the first workflow finishes.',
                 'workbench.history.reuse': 'Reuse Request',
@@ -77,14 +83,23 @@ vi.mock('react-i18next', () => ({
                 'common:table.created_at': 'Created',
                 'common:table.actions': 'Actions',
                 'common:button.refresh': 'Refresh',
+                'common:button.search': 'Search',
+                'common:button.clear_filters': 'Clear filters',
                 'common:button.close': 'Close',
                 'common:table.total': 'Total',
+                'common:search.advanced': 'Advanced search',
+                'common:search.hide_advanced': 'Hide advanced search',
                 'status.PENDING': 'Pending',
                 'status.APPROVED': 'Approved',
                 'status.REJECTED': 'Rejected',
                 'status.CANCELLED': 'Cancelled',
                 'status.SUCCESS': 'Success',
                 'status.FAILED': 'Failed',
+                'op_type.CREATE': 'Create',
+                'op_type.MODIFY': 'Modify',
+                'op_type.DELETE': 'Delete',
+                'op_type.POWER': 'Power',
+                'op_type.VNC_ACCESS': 'VNC Access',
                 'vm:batch.clear': 'Clear',
                 'vm:batch.status': 'Status',
                 'vm:batch.operation': 'Operation',
@@ -160,6 +175,253 @@ vi.mock('@/features/setup-guide/components/SetupGuideCard', () => ({
     SetupGuideCard: ({ variant }: { variant: string }) => <div>{`setup-guide-${variant}`}</div>,
 }));
 
+vi.mock('@/components/feedback/ActionEmptyState', () => ({
+    ActionEmptyState: ({
+        title,
+        description,
+        actions,
+    }: {
+        title: string;
+        description?: string;
+        actions?: ReactNode;
+    }) => (
+        <section data-testid="action-empty-state">
+            <h2>{title}</h2>
+            {description ? <p>{description}</p> : null}
+            {actions}
+        </section>
+    ),
+}));
+
+vi.mock('@/components/feedback/SummaryMetricCard', () => ({
+    SummaryMetricCard: ({
+        title,
+        value,
+        description,
+        action,
+    }: {
+        title: ReactNode;
+        value?: ReactNode;
+        description?: ReactNode;
+        action?: ReactNode;
+    }) => (
+        <section data-testid="summary-metric-card">
+            <h2>{title}</h2>
+            {value ? <div>{value}</div> : null}
+            {description ? <div>{description}</div> : null}
+            {action}
+        </section>
+    ),
+}));
+
+vi.mock('@/components/layouts/PageSection', () => ({
+    PageHeader: ({
+        title,
+        subtitle,
+        actions,
+    }: {
+        title: ReactNode;
+        subtitle?: ReactNode;
+        actions?: ReactNode;
+    }) => (
+        <header data-testid="page-header">
+            <h1>{title}</h1>
+            {subtitle ? <p>{subtitle}</p> : null}
+            {actions}
+        </header>
+    ),
+    PageSurface: ({ children }: { children: ReactNode }) => (
+        <section data-testid="page-surface">{children}</section>
+    ),
+}));
+
+vi.mock('@/components/ui/LocalDateTimeText', () => ({
+    LocalDateTimeText: ({ value }: { value: string }) => (
+        <time dateTime={value}>{value}</time>
+    ),
+}));
+
+vi.mock('@/components/illustrations/DashboardIllustrations', () => ({
+    BatchFlowGlyph: (props: Record<string, unknown>) => <span {...props}>batch-glyph</span>,
+    DraftNotebookGlyph: (props: Record<string, unknown>) => <span {...props}>draft-glyph</span>,
+    QueueReviewGlyph: (props: Record<string, unknown>) => <span {...props}>queue-glyph</span>,
+    RequestsOverviewGlyph: (props: Record<string, unknown>) => <span {...props}>requests-glyph</span>,
+}));
+
+vi.mock('antd', async () => {
+    const actual = await vi.importActual<typeof import('antd')>('antd');
+
+    const Card = ({
+        children,
+        title,
+        extra,
+    }: {
+        children?: ReactNode;
+        title?: ReactNode;
+        extra?: ReactNode;
+    }) => (
+        <section data-testid="mock-card">
+            {title ? <div>{title}</div> : null}
+            {extra ? <div>{extra}</div> : null}
+            {children}
+        </section>
+    );
+
+    const DescriptionsItem = ({
+        label,
+        children,
+    }: {
+        label?: ReactNode;
+        children?: ReactNode;
+    }) => (
+        <div data-testid="mock-description-item">
+            {label ? <dt>{label}</dt> : null}
+            <dd>{children}</dd>
+        </div>
+    );
+
+    const Descriptions = (({ children }: { children?: ReactNode }) => (
+        <dl data-testid="mock-descriptions">{children}</dl>
+    )) as ((props: { children?: ReactNode }) => ReactNode) & { Item: typeof DescriptionsItem };
+    Descriptions.Item = DescriptionsItem;
+
+    const Drawer = ({
+        open,
+        title,
+        children,
+        footer,
+    }: {
+        open?: boolean;
+        title?: ReactNode;
+        children?: ReactNode;
+        footer?: ReactNode;
+    }) =>
+        open ? (
+            <section data-testid="mock-drawer">
+                {title ? <div>{title}</div> : null}
+                <div>{children}</div>
+                {footer ? <div>{footer}</div> : null}
+            </section>
+        ) : null;
+
+    const Popover = ({
+        children,
+        content,
+    }: {
+        children?: ReactNode;
+        content?: ReactNode;
+    }) => (
+        <div data-testid="mock-popover">
+            {children}
+            {content ? <div>{content}</div> : null}
+        </div>
+    );
+
+    const Tabs = ({
+        activeKey,
+        items,
+    }: {
+        activeKey?: string;
+        items?: Array<{ key: string; label: ReactNode; children?: ReactNode }>;
+    }) => {
+        const activeItem = items?.find((item) => item.key === activeKey) ?? items?.[0];
+        return (
+            <section data-testid="mock-tabs">
+                <nav>
+                    {items?.map((item) => (
+                        <span key={item.key}>{item.label}</span>
+                    ))}
+                </nav>
+                <div>{activeItem?.children}</div>
+            </section>
+        );
+    };
+
+    const Table = <T extends Record<string, unknown>>({
+        dataSource,
+        columns,
+        locale,
+    }: {
+        dataSource?: T[];
+        columns?: Array<{
+            key?: string;
+            title?: ReactNode;
+            dataIndex?: string | string[];
+            render?: (value: unknown, record: T, index: number) => ReactNode;
+        }>;
+        locale?: { emptyText?: ReactNode };
+    }) => {
+        if (!dataSource || dataSource.length === 0) {
+            return <div>{locale?.emptyText ?? null}</div>;
+        }
+        return (
+            <table data-testid="mock-table">
+                <thead>
+                    <tr>
+                        {columns?.map((column, index) => (
+                            <th key={column.key ?? String(index)}>{column.title}</th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {dataSource.map((record, rowIndex) => (
+                        <tr key={String(record.id ?? record.ticket_id ?? rowIndex)}>
+                            {columns?.map((column, columnIndex) => {
+                                const rawValue = Array.isArray(column.dataIndex)
+                                    ? column.dataIndex.reduce<unknown>(
+                                        (value, key) =>
+                                            value && typeof value === 'object'
+                                                ? (value as Record<string, unknown>)[key]
+                                                : undefined,
+                                        record,
+                                    )
+                                    : typeof column.dataIndex === 'string'
+                                        ? record[column.dataIndex]
+                                        : undefined;
+                                const content = column.render
+                                    ? column.render(rawValue, record, rowIndex)
+                                    : rawValue;
+                                return <td key={column.key ?? String(columnIndex)}>{content as ReactNode}</td>;
+                            })}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        );
+    };
+
+    return {
+        ...actual,
+        Card,
+        Descriptions,
+        Drawer,
+        Popover,
+        Table,
+        Tabs,
+    };
+});
+
+vi.mock('@/features/approval-shared/summary', () => ({
+    approvalEmptyValue: () => '—',
+    approvalPrimaryAlert: () => null,
+    approvalSummaryMeta: () => [],
+    approvalSummarySections: () => ({ primary: [], secondary: [] }),
+    approvalSummaryTitle: () => 'Request',
+    buildApprovalBatchDisplayItems: () => [],
+    buildApprovalChangeItems: () => [],
+    buildApprovalOverviewItems: (ticket: Record<string, unknown>) => [
+        { key: 'requester', label: 'Requester', children: ticket.requester ?? '—' },
+        { key: 'approver', label: 'Approver', children: ticket.approver ?? '—' },
+        { key: 'reason', label: 'Reason', children: ticket.reason ?? '—' },
+    ],
+    buildApprovalScopeItems: () => [],
+    formatApprovalResourceShape: (cpu?: number, memory?: number, disk?: number) =>
+        [cpu ? `${cpu} vCPU` : null, memory ? `${memory} Gi memory` : null, disk ? `${disk} Gi disk` : null]
+            .filter(Boolean)
+            .join(' · ') || undefined,
+    formatApprovalRecordID: (id: string) => id,
+}));
+
 vi.mock('../hooks/useMyRequestsController', () => ({
     useMyRequestsController: () => ({
         data: {
@@ -181,6 +443,8 @@ vi.mock('../hooks/useMyRequestsController', () => ({
         page: 1,
         pageSize: 20,
         historyStatus: 'SUCCESS',
+        search: '',
+        operationType: '',
         savedVmDraft: null,
         cancelMutation: { isPending: false, mutate: vi.fn() },
         activeBatchID: '',
@@ -194,6 +458,9 @@ vi.mock('../hooks/useMyRequestsController', () => ({
         setPageSize: vi.fn(),
         changeView: vi.fn(),
         changeHistoryStatus: vi.fn(),
+        applySearch: vi.fn(),
+        applyOperationType: vi.fn(),
+        clearListFilters: vi.fn(),
         discardSavedVmDraft: vi.fn(),
         prepareHistoryReuse: vi.fn(() => true),
         refreshBatch: vi.fn(),
@@ -204,9 +471,11 @@ vi.mock('../hooks/useMyRequestsController', () => ({
     }),
 }));
 
-import { MyRequestsWorkbench } from './MyRequestsWorkbench';
-
-const REQUEST_WORKBENCH_TEST_TIMEOUT_MS = 20_000;
+import {
+    buildRequestWorkbenchContextItems,
+    buildRequestWorkbenchDetailItems,
+    MyRequestsWorkbench,
+} from './MyRequestsWorkbench';
 
 describe('MyRequestsWorkbench', () => {
     beforeEach(() => {
@@ -220,28 +489,48 @@ describe('MyRequestsWorkbench', () => {
 
         expect(screen.getByTestId('approvals-page')).toBeVisible();
         expect(screen.getAllByText('Need a VM').length).toBeGreaterThan(0);
-        expect(screen.getByTestId('approval-action-cancel-ticket-pending-1')).toBeVisible();
+        expect(screen.getByTestId('workbench-quick-search')).toBeVisible();
         expect(screen.getByTestId('approval-action-details-ticket-pending-1')).toBeVisible();
-    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
+        expect(screen.getByTestId('approval-action-more-ticket-pending-1')).toBeVisible();
+    });
 
-    it('shows the history status segmented control in history view', () => {
+    it('submits request quick search only after explicit submit', async () => {
+        const user = userEvent.setup();
+        const applySearch = vi.fn();
+        state.overrides = {
+            applySearch,
+        };
+
+        render(<MyRequestsWorkbench />);
+
+        const input = screen.getByTestId('workbench-quick-search');
+        await user.type(input, 'finance');
+        expect(applySearch).not.toHaveBeenCalled();
+
+        await user.keyboard('{Enter}');
+        expect(applySearch).toHaveBeenCalledWith('finance');
+    });
+
+    it('shows history filters, opens request details, and reuses an approved request', async () => {
+        const user = userEvent.setup();
+        const prepareHistoryReuse = vi.fn(() => true);
         state.overrides = {
             view: 'history',
+            prepareHistoryReuse,
             data: {
                 items: [
                     {
-                        id: 'ticket-success-1',
+                        id: 'ticket-approved-1',
                         operation_type: 'CREATE',
-                        status: 'SUCCESS',
+                        status: 'APPROVED',
                         requester: 'alice',
+                        approver: 'bob',
                         reason: 'Need a VM',
                         created_at: new Date('2026-03-16T00:00:00Z').toISOString(),
+                        updated_at: new Date('2026-03-16T01:00:00Z').toISOString(),
                         request_prefill: {
                             system_id: 'sys-1',
                             service_id: 'svc-1',
-                            template_id: 'tpl-1',
-                            instance_size_id: 'size-1',
-                            namespace: 'team-prod',
                             reason: 'Need a VM',
                             batch_count: 1,
                         },
@@ -255,68 +544,20 @@ describe('MyRequestsWorkbench', () => {
 
         expect(screen.getByTestId('approvals-status-filter')).toBeVisible();
         expect(screen.getByText('History')).toBeVisible();
-        expect(screen.getByRole('button', { name: 'Reuse Request' })).toBeVisible();
-    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
-
-    it('opens a request details drawer with reusable request context', () => {
-        state.overrides = {
-            view: 'history',
-            data: {
-                items: [
-                    {
-                        id: 'ticket-approved-1',
-                        operation_type: 'CREATE',
-                        status: 'APPROVED',
-                        requester: 'alice',
-                        approver: 'bob',
-                        reason: 'Need a VM',
-                        created_at: new Date('2026-03-16T00:00:00Z').toISOString(),
-                        updated_at: new Date('2026-03-16T01:00:00Z').toISOString(),
-                        summary: {
-                            system_name: 'System A',
-                            service_name: 'Service A',
-                            namespace: 'team-prod',
-                            cluster_name: 'Prod Cluster',
-                            template_name: 'Ubuntu 22.04',
-                            instance_size_name: 'M4 Large',
-                            batch_count: 2,
-                        },
-                        request_prefill: {
-                            system_id: 'sys-1',
-                            service_id: 'svc-1',
-                            template_id: 'tpl-1',
-                            instance_size_id: 'size-1',
-                            namespace: 'team-prod',
-                            reason: 'Need a VM',
-                            batch_count: 2,
-                        },
-                    },
-                ],
-                pagination: { page: 1, per_page: 20, total: 1 },
-            },
-        };
-
-        render(<MyRequestsWorkbench />);
-        fireEvent.click(screen.getByTestId('approval-action-details-ticket-approved-1'));
+        await user.click(screen.getByTestId('approval-action-details-ticket-approved-1'));
 
         expect(screen.getByText('Request Details')).toBeVisible();
-        expect(screen.getByText('Request Summary')).toBeVisible();
-        expect(screen.getByText('Resource Context')).toBeVisible();
-        expect(screen.getByText('Recovered Request Context')).toBeVisible();
-        expect(screen.getAllByText('System A').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('Service A').length).toBeGreaterThan(0);
-        expect(screen.getByText('Prod Cluster')).toBeVisible();
-        expect(screen.getAllByText('Ubuntu 22.04').length).toBeGreaterThan(0);
-        expect(screen.getByText('sys-1')).toBeVisible();
-        expect(screen.getByText('svc-1')).toBeVisible();
         expect(screen.getByRole('button', { name: 'Open Request Context' })).toBeVisible();
-        expect(screen.getAllByRole('button', { name: 'Reuse Request' }).length).toBeGreaterThan(0);
-        expect(
-            screen.getByText('Approval is complete, but platform execution is still in progress.'),
-        ).toBeVisible();
-    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
+        await user.click(screen.getByTestId('approval-action-reuse-ticket-approved-1'));
 
-    it('surfaces downstream execution failures after approval succeeds', () => {
+        expect(prepareHistoryReuse).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'ticket-approved-1' })
+        );
+        expect(state.push).toHaveBeenCalledWith('/vms?request=create&draft=resume');
+    });
+
+    it('surfaces downstream execution failures after approval succeeds', async () => {
+        const user = userEvent.setup();
         state.overrides = {
             view: 'history',
             data: {
@@ -351,28 +592,26 @@ describe('MyRequestsWorkbench', () => {
 
         render(<MyRequestsWorkbench />);
         expect(screen.getByText('CPU hotplug failed on the target node')).toBeVisible();
-        fireEvent.click(screen.getByTestId('approval-action-details-ticket-failed-1'));
+        await user.click(screen.getByTestId('approval-action-details-ticket-failed-1'));
 
         expect(
             screen.getByText('Approval was accepted, but downstream execution failed.'),
         ).toBeVisible();
         expect(screen.getAllByText('CPU hotplug failed on the target node').length).toBeGreaterThan(0);
-    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
+    });
 
-    it('shows a guided empty state for drafts', () => {
+    it('shows the drafts empty state and then a resumable local draft', () => {
         state.overrides = {
             view: 'drafts',
             data: undefined,
             savedVmDraft: null,
         };
 
-        render(<MyRequestsWorkbench />);
+        const { rerender } = render(<MyRequestsWorkbench />);
 
         expect(screen.getByText('No saved drafts yet')).toBeVisible();
         expect(screen.getByRole('button', { name: 'Open Virtual Machines' })).toBeVisible();
-    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
 
-    it('shows a resumable local draft in the drafts tab', () => {
         state.overrides = {
             view: 'drafts',
             savedVmDraft: {
@@ -387,51 +626,13 @@ describe('MyRequestsWorkbench', () => {
             },
         };
 
-        render(<MyRequestsWorkbench />);
+        rerender(<MyRequestsWorkbench />);
 
         expect(screen.getByText('Saved VM request draft')).toBeVisible();
         expect(screen.getByRole('button', { name: 'Resume Draft' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'Discard Draft' })).toBeVisible();
         expect(screen.getByText('Service A')).toBeVisible();
-    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
-
-    it('routes to the vm request flow after preparing a history reuse draft', () => {
-        const prepareHistoryReuse = vi.fn(() => true);
-        state.overrides = {
-            view: 'history',
-            prepareHistoryReuse,
-            data: {
-                items: [
-                    {
-                        id: 'ticket-approved-1',
-                        operation_type: 'CREATE',
-                        status: 'APPROVED',
-                        requester: 'alice',
-                        reason: 'Need a VM',
-                        created_at: new Date('2026-03-16T00:00:00Z').toISOString(),
-                        request_prefill: {
-                            system_id: 'sys-1',
-                            service_id: 'svc-1',
-                            template_id: 'tpl-1',
-                            instance_size_id: 'size-1',
-                            namespace: 'team-prod',
-                            reason: 'Need a VM',
-                            batch_count: 1,
-                        },
-                    },
-                ],
-                pagination: { page: 1, per_page: 20, total: 1 },
-            },
-        };
-
-        render(<MyRequestsWorkbench />);
-        fireEvent.click(screen.getByRole('button', { name: 'Reuse Request' }));
-
-        expect(prepareHistoryReuse).toHaveBeenCalledWith(
-            expect.objectContaining({ id: 'ticket-approved-1' })
-        );
-        expect(state.push).toHaveBeenCalledWith('/vms?request=create&draft=resume');
-    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
+    });
 
     it('renders active batch tracking inside the batch jobs tab', () => {
         state.searchParams = new URLSearchParams('tab=batch_jobs');
@@ -464,5 +665,59 @@ describe('MyRequestsWorkbench', () => {
         expect(screen.getAllByText('batch-1').length).toBeGreaterThan(0);
         expect(screen.getByRole('button', { name: 'Retry Failed' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'Cancel Pending' })).toBeVisible();
-    }, REQUEST_WORKBENCH_TEST_TIMEOUT_MS);
+    });
+
+    it('builds request detail items from a ticket snapshot', () => {
+        const fakeT = ((key: string) => key) as unknown as TFunction;
+        const ticket = {
+            id: 'ticket-approved-1',
+            operation_type: 'CREATE',
+            status: 'APPROVED',
+            requester: 'alice',
+            approver: 'bob',
+            reason: 'Need a VM',
+            created_at: new Date('2026-03-16T00:00:00Z').toISOString(),
+            updated_at: new Date('2026-03-16T01:00:00Z').toISOString(),
+        };
+
+        const items = buildRequestWorkbenchDetailItems(ticket as never, fakeT);
+        expect(items.map((item) => item.key)).toEqual([
+            'requester',
+            'approver',
+            'reason',
+            'created',
+            'updated',
+        ]);
+    });
+
+    it('builds reusable request context items from request prefill', () => {
+        const fakeT = ((key: string) => key) as unknown as TFunction;
+        const ticket = {
+            summary: {
+                system_name: 'Payments',
+                service_name: 'Billing',
+                template_name: 'Ubuntu 24.04',
+                instance_size_name: 'M4 Large',
+                namespace: 'team-prod',
+            },
+            request_prefill: {
+                system_id: 'sys-1',
+                service_id: 'svc-1',
+                template_id: 'tpl-1',
+                instance_size_id: 'size-1',
+                namespace: 'team-prod',
+                batch_count: 2,
+            },
+        };
+
+        const items = buildRequestWorkbenchContextItems(ticket as never, fakeT);
+        expect(items).toEqual([
+            { key: 'system', label: 'workbench.details.system', value: 'Payments', isIdentifier: false },
+            { key: 'service', label: 'workbench.details.service', value: 'Billing', isIdentifier: false },
+            { key: 'template', label: 'workbench.drafts.template', value: 'Ubuntu 24.04', isIdentifier: false },
+            { key: 'size', label: 'workbench.drafts.size', value: 'M4 Large', isIdentifier: false },
+            { key: 'namespace', label: 'workbench.drafts.namespace', value: 'team-prod' },
+            { key: 'batch_count', label: 'workbench.drafts.batch_count', value: 2 },
+        ]);
+    });
 });

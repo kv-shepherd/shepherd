@@ -1094,6 +1094,11 @@ test.describe("master-flow mock smoke interactions", () => {
       vncSession: false,
       preferredConsoleType: "",
     };
+    page.on("websocket", (ws) => {
+      if (ws.url().includes("/api/v1/vms/vm-1/vnc")) {
+        seen.vncSession = true;
+      }
+    });
     await mockMasterFlowBaselineApi(page, {
       onRequest: () => {},
     });
@@ -1152,21 +1157,6 @@ test.describe("master-flow mock smoke interactions", () => {
           status: "APPROVED",
           console_type: "VNC",
           console_url: "/api/v1/vms/vm-1/vnc",
-        }),
-      });
-    });
-
-    await page.route("**/api/v1/vms/vm-1/vnc", async (route) => {
-      if (route.request().method() !== "GET") {
-        return route.fallback();
-      }
-      seen.vncSession = true;
-      await route.fulfill({
-        status: 503,
-        contentType: "application/json",
-        body: JSON.stringify({
-          code: "VNC_UNAVAILABLE",
-          message: "mock smoke does not open a live websocket session",
         }),
       });
     });

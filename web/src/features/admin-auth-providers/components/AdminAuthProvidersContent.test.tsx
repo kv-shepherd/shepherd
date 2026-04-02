@@ -1,5 +1,7 @@
 import { Form } from "antd";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("react-i18next", () => ({
@@ -30,6 +32,274 @@ vi.mock("react-i18next", () => ({
       return labels[key] ?? options?.defaultValue ?? key;
     },
   }),
+}));
+
+vi.mock("antd", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("antd")>();
+
+  const DescriptionsItem = ({
+    label,
+    children,
+  }: {
+    label?: ReactNode;
+    children?: ReactNode;
+  }) => (
+    <div data-testid="antd-descriptions-item">
+      {label ? <dt>{label}</dt> : null}
+      <dd>{children}</dd>
+    </div>
+  );
+
+  const Descriptions = (({
+    items,
+    children,
+  }: {
+    items?: Array<{ key?: string; label?: ReactNode; children?: ReactNode }>;
+    children?: ReactNode;
+  }) => (
+    <div data-testid="antd-descriptions">
+      {items
+        ? items.map((item, index) => (
+            <DescriptionsItem
+              key={String(item.key ?? index)}
+              label={item.label}
+            >
+              {item.children}
+            </DescriptionsItem>
+          ))
+        : children}
+    </div>
+  )) as typeof actual.Descriptions;
+  Descriptions.Item = DescriptionsItem as typeof actual.Descriptions.Item;
+
+  return {
+    ...actual,
+    Card: ({
+      title,
+      extra,
+      children,
+    }: {
+      title?: ReactNode;
+      extra?: ReactNode;
+      children?: ReactNode;
+    }) => (
+      <section data-testid="antd-card">
+        {title ? <header>{title}</header> : null}
+        {extra ? <div>{extra}</div> : null}
+        <div>{children}</div>
+      </section>
+    ),
+    Collapse: ({
+      items,
+    }: {
+      items?: Array<{ key?: string; label?: ReactNode; children?: ReactNode }>;
+    }) => (
+      <section data-testid="antd-collapse">
+        {items?.map((item, index) => (
+          <div key={String(item.key ?? index)}>
+            {item.label ? <div>{item.label}</div> : null}
+            <div>{item.children}</div>
+          </div>
+        ))}
+      </section>
+    ),
+    Descriptions,
+    Drawer: ({
+      open,
+      title,
+      children,
+      footer,
+    }: {
+      open?: boolean;
+      title?: ReactNode;
+      children?: ReactNode;
+      footer?: ReactNode;
+    }) =>
+      open ? (
+        <section data-testid="antd-drawer">
+          {title ? <header>{title}</header> : null}
+          <div>{children}</div>
+          {footer ? <footer>{footer}</footer> : null}
+        </section>
+      ) : null,
+    Modal: ({
+      open,
+      title,
+      children,
+      footer,
+    }: {
+      open?: boolean;
+      title?: ReactNode;
+      children?: ReactNode;
+      footer?: ReactNode;
+    }) =>
+      open ? (
+        <section className="ant-modal">
+          {title ? <header>{title}</header> : null}
+          <div>{children}</div>
+          {footer ? <footer>{footer}</footer> : null}
+        </section>
+      ) : null,
+    Steps: ({
+      items = [],
+      current = 0,
+    }: {
+      items?: Array<{ title?: ReactNode; description?: ReactNode }>;
+      current?: number;
+    }) => (
+      <ol data-testid="antd-steps">
+        {items.map((item, index) => (
+          <li key={index} data-current={index === current}>
+            {item.title}
+            {item.description}
+          </li>
+        ))}
+      </ol>
+    ),
+    Table: ({
+      columns = [],
+      dataSource = [],
+    }: {
+      columns?: Array<{
+        key?: string;
+        title?: ReactNode;
+        dataIndex?: string | string[];
+        render?: (value: unknown, record: Record<string, unknown>, index: number) => ReactNode;
+      }>;
+      dataSource?: Array<Record<string, unknown>>;
+    }) => (
+      <table data-testid="antd-table">
+        <thead>
+          <tr>
+            {columns.map((column, index) => (
+              <th key={String(column.key ?? column.dataIndex ?? index)}>
+                {column.title}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {dataSource.map((record, rowIndex) => (
+            <tr key={String(record.id ?? rowIndex)}>
+              {columns.map((column, columnIndex) => {
+                const value = Array.isArray(column.dataIndex)
+                  ? column.dataIndex.reduce<unknown>(
+                      (current, key) =>
+                        current && typeof current === "object"
+                          ? (current as Record<string, unknown>)[key]
+                          : undefined,
+                      record,
+                    )
+                  : typeof column.dataIndex === "string"
+                    ? record[column.dataIndex]
+                    : undefined;
+                const content = column.render
+                  ? column.render(value, record, rowIndex)
+                  : (value as ReactNode);
+                return (
+                  <td
+                    key={String(column.key ?? column.dataIndex ?? columnIndex)}
+                  >
+                    {content}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    ),
+  };
+});
+
+vi.mock("@/components/feedback/ActionEmptyState", () => ({
+  ActionEmptyState: ({
+    title,
+    description,
+    actions,
+  }: {
+    title: ReactNode;
+    description?: ReactNode;
+    actions?: ReactNode;
+  }) => (
+    <section data-testid="action-empty-state">
+      <h2>{title}</h2>
+      {description ? <p>{description}</p> : null}
+      {actions}
+    </section>
+  ),
+}));
+
+vi.mock("@/components/feedback/SummaryMetricCard", () => ({
+  SummaryMetricCard: ({
+    title,
+    value,
+    description,
+    action,
+  }: {
+    title: ReactNode;
+    value?: ReactNode;
+    description?: ReactNode;
+    action?: ReactNode;
+  }) => (
+    <section data-testid="summary-metric-card">
+      <h2>{title}</h2>
+      {value ? <div>{value}</div> : null}
+      {description ? <div>{description}</div> : null}
+      {action}
+    </section>
+  ),
+}));
+
+vi.mock("@/components/layouts/PageSection", () => ({
+  PageHeader: ({
+    title,
+    subtitle,
+    actions,
+  }: {
+    title: ReactNode;
+    subtitle?: ReactNode;
+    actions?: ReactNode;
+  }) => (
+    <header data-testid="page-header">
+      <h1>{title}</h1>
+      {subtitle ? <p>{subtitle}</p> : null}
+      {actions}
+    </header>
+  ),
+  PageSurface: ({ children }: { children: ReactNode }) => (
+    <section data-testid="page-surface">{children}</section>
+  ),
+}));
+
+vi.mock("@/components/ui/LocalDateTimeText", () => ({
+  LocalDateTimeText: ({ value }: { value?: string | null }) =>
+    value ? <time dateTime={value}>{value}</time> : null,
+}));
+
+vi.mock("@/components/illustrations/DashboardIllustrations", () => ({
+  AccessControlGlyph: (props: Record<string, unknown>) => (
+    <span {...props}>access-glyph</span>
+  ),
+  NotificationInboxGlyph: (props: Record<string, unknown>) => (
+    <span {...props}>notification-glyph</span>
+  ),
+  QueueReviewGlyph: (props: Record<string, unknown>) => (
+    <span {...props}>queue-glyph</span>
+  ),
+  RateLimitGaugeGlyph: (props: Record<string, unknown>) => (
+    <span {...props}>rate-limit-glyph</span>
+  ),
+  RequestsOverviewGlyph: (props: Record<string, unknown>) => (
+    <span {...props}>requests-glyph</span>
+  ),
+  ServiceWorkspaceGlyph: (props: Record<string, unknown>) => (
+    <span {...props}>service-glyph</span>
+  ),
+}));
+
+vi.mock("./SchemaConfigForm", () => ({
+  SchemaConfigForm: () => <div data-testid="schema-config-form" />,
 }));
 
 function buildMockControllerOverrides(): Record<string, unknown> {
@@ -172,11 +442,12 @@ describe("AdminAuthProvidersContent", () => {
     expect(
       screen.getByTestId("auth-provider-action-test-provider-1"),
     ).toBeVisible();
-  }, 30000);
+  });
 
   it(
     "opens the latest blocked job from the preview summary card",
     async () => {
+      const user = userEvent.setup();
       const openDirectorySyncJobDetail = vi.fn();
       mockControllerOverrides = {
         ...buildMockControllerOverrides(),
@@ -244,7 +515,7 @@ describe("AdminAuthProvidersContent", () => {
       const actionButton = await screen.findByTestId(
         "directory-preview-latest-blocked-job",
       );
-      fireEvent.click(actionButton);
+      await user.click(actionButton);
 
       await waitFor(() =>
         expect(openDirectorySyncJobDetail).toHaveBeenCalledWith(
@@ -252,7 +523,6 @@ describe("AdminAuthProvidersContent", () => {
         ),
       );
     },
-    60000,
   );
 
 });

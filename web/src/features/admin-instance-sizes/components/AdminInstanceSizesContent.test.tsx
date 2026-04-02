@@ -57,6 +57,16 @@ vi.mock('../hooks/useAdminInstanceSizesController', async () => {
             const [editForm] = Form.useForm();
             return {
                 messageContextHolder: null,
+                filters: {
+                    search: '',
+                    catalogScope: '',
+                    enabled: '',
+                    publication: '',
+                    capability: '',
+                },
+                hasActiveFilters: false,
+                applyFilters: vi.fn(),
+                clearFilters: vi.fn(),
                 globalSearch: '',
                 setGlobalSearch: vi.fn(),
                 deferredSearch: '',
@@ -184,7 +194,7 @@ describe('AdminInstanceSizesContent', () => {
 
         consoleErrorSpy.mockRestore();
         controllerState.createOpen = false;
-    }, 15000);
+    });
 
     it('writes preset request values on the first apply', () => {
         const setFieldsValue = vi.fn();
@@ -224,7 +234,7 @@ describe('AdminInstanceSizesContent', () => {
         await screen.findByTestId('instance-size-action-edit-size-1');
         const nameCells = screen.getAllByText('m4.large');
         expect(nameCells).toHaveLength(2);
-    }, 15000);
+    });
 
     it('renders overcommit request values and gpu device labels', async () => {
         render(<AdminInstanceSizesContent />);

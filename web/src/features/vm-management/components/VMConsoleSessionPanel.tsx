@@ -11,8 +11,6 @@ import type {
   ResolvedConsoleTarget,
   VMConsoleType,
 } from "@/features/vm-management/console";
-import { api } from "@/lib/api/client";
-import { translateApiError } from "@/lib/api/errorMessage";
 
 const { Paragraph, Text } = Typography;
 
@@ -42,12 +40,24 @@ interface VMConsoleSessionPanelProps {
 }
 
 const connectionClosedMessage = "\r\n\x1b[31mConnection closed\x1b[0m";
+const shouldTraceConsoleLifecycle =
+  process.env.NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE === "1";
 
 const toWebSocketURL = (path: string): string => {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}${normalized}`;
 };
+
+function logConsoleLifecycle(event: string, details: Record<string, unknown>) {
+  if (!shouldTraceConsoleLifecycle) {
+    return;
+  }
+  console.warn("[vm-console]", {
+    event,
+    ...details,
+  });
+}
 
 function SerialConsoleSession({
   vmId,
@@ -59,6 +69,7 @@ function SerialConsoleSession({
   onReconnectConsole?: (consoleType: VMConsoleType) => Promise<boolean>;
 }) {
   const { t } = useTranslation(["vm", "common"]);
+  const unavailableMessage = t("console.unavailable");
   const [errorMessage, setErrorMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
@@ -104,19 +115,8 @@ function SerialConsoleSession({
 
     const connect = async () => {
       try {
-        const { data, error } = await api.GET("/vms/{vm_id}/serial", {
-          params: { path: { vm_id: vmId } },
-        });
-        if (cancelled) {
-          return;
-        }
-        if (error) {
-          setErrorMessage(translateApiError(t, error));
-          setLoading(false);
-          return;
-        }
         if (!containerRef.current) {
-          setErrorMessage(t("console.unavailable"));
+          setErrorMessage(unavailableMessage);
           setLoading(false);
           return;
         }
@@ -136,8 +136,7 @@ function SerialConsoleSession({
         terminal.open(containerRef.current);
         fitAddon.fit();
 
-        const websocketPath = (data?.websocket_path ?? path).trim();
-        socket = new WebSocket(toWebSocketURL(websocketPath));
+        socket = new WebSocket(toWebSocketURL(path.trim()));
         socket.binaryType = "arraybuffer";
 
         disposeInput = terminal.onData((input: string) => {
@@ -155,6 +154,10 @@ function SerialConsoleSession({
           if (cancelled) {
             return;
           }
+          logConsoleLifecycle("serial-open", {
+            vmId,
+            path,
+          });
           connectedRef.current = true;
           setConnected(true);
           setLoading(false);
@@ -177,10 +180,23 @@ function SerialConsoleSession({
           void writeIncomingData(event.data);
         });
 
-        socket.addEventListener("close", () => {
+        socket.addEventListener("close", (event) => {
           if (cancelled) {
             return;
           }
+          logConsoleLifecycle("serial-close", {
+            vmId,
+            path,
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+            readyState: socket?.readyState,
+            receivedOutput: receivedOutputRef.current,
+            visibilityState: document.visibilityState,
+            hasFocus: typeof document.hasFocus === "function"
+              ? document.hasFocus()
+              : undefined,
+          });
           connectedRef.current = false;
           setConnected(false);
           setLoading(false);
@@ -193,8 +209,14 @@ function SerialConsoleSession({
           if (cancelled) {
             return;
           }
+          logConsoleLifecycle("serial-error", {
+            vmId,
+            path,
+            readyState: socket?.readyState,
+            receivedOutput: receivedOutputRef.current,
+          });
           if (!connectedRef.current) {
-            setErrorMessage(t("console.unavailable"));
+            setErrorMessage(unavailableMessage);
             setLoading(false);
             setSessionClosed(true);
             setReconnecting(false);
@@ -203,7 +225,7 @@ function SerialConsoleSession({
       } catch (error) {
         if (!cancelled) {
           setErrorMessage(
-            error instanceof Error ? error.message : t("console.unavailable"),
+            error instanceof Error ? error.message : unavailableMessage,
           );
           setLoading(false);
           setReconnecting(false);
@@ -211,16 +233,39 @@ function SerialConsoleSession({
       }
     };
 
-    void connect();
+    const connectTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        void connect();
+      }
+    }, 0);
 
     return () => {
+      const liveSocket =
+        socket &&
+        (socket.readyState === WebSocket.CONNECTING ||
+          socket.readyState === WebSocket.OPEN);
+      if (liveSocket) {
+        logConsoleLifecycle("serial-cleanup", {
+          vmId,
+          path,
+          readyState: socket?.readyState,
+          receivedOutput: receivedOutputRef.current,
+          visibilityState:
+            typeof document !== "undefined"
+              ? document.visibilityState
+              : undefined,
+        });
+      }
       cancelled = true;
+      if (connectTimer !== undefined) {
+        window.clearTimeout(connectTimer);
+      }
       resizeObserver?.disconnect();
       disposeInput?.dispose();
       socket?.close();
       terminal?.dispose();
     };
-  }, [path, reconnectTick, t, vmId]);
+  }, [path, reconnectTick, unavailableMessage, vmId]);
 
   const reconnectSerialConsole = async () => {
     setErrorMessage("");
@@ -326,6 +371,7 @@ function VNCConsoleSession({
   path: string;
 }) {
   const { t } = useTranslation(["vm", "common"]);
+  const unavailableMessage = t("console.unavailable");
   const [errorMessage, setErrorMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
@@ -337,21 +383,8 @@ function VNCConsoleSession({
 
     const connect = async () => {
       try {
-        const { data, error } = await api.GET("/vms/{vm_id}/vnc", {
-          params: { path: { vm_id: vmId } },
-        });
-        if (cancelled) {
-          return;
-        }
-        if (error) {
-          setErrorMessage(translateApiError(t, error));
-          setLoading(false);
-          return;
-        }
-
-        const websocketPath = (data?.websocket_path ?? path).trim();
         if (!containerRef.current) {
-          setErrorMessage(t("console.unavailable"));
+          setErrorMessage(unavailableMessage);
           setLoading(false);
           return;
         }
@@ -363,7 +396,7 @@ function VNCConsoleSession({
           return;
         }
 
-        rfb = new RFB(containerRef.current, toWebSocketURL(websocketPath));
+        rfb = new RFB(containerRef.current, toWebSocketURL(path.trim()));
         rfb.scaleViewport = true;
         rfb.resizeSession = false;
         rfb.viewOnly = false;
@@ -382,20 +415,27 @@ function VNCConsoleSession({
       } catch (error) {
         if (!cancelled) {
           setErrorMessage(
-            error instanceof Error ? error.message : t("console.unavailable"),
+            error instanceof Error ? error.message : unavailableMessage,
           );
           setLoading(false);
         }
       }
     };
 
-    void connect();
+    const connectTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        void connect();
+      }
+    }, 0);
 
     return () => {
       cancelled = true;
+      if (connectTimer !== undefined) {
+        window.clearTimeout(connectTimer);
+      }
       rfb?.disconnect();
     };
-  }, [path, t, vmId]);
+  }, [path, unavailableMessage, vmId]);
 
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>

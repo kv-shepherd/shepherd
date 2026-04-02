@@ -20,6 +20,8 @@ import (
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/predicate"
 	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
+	entrole "kv-shepherd.io/shepherd/ent/role"
+	"kv-shepherd.io/shepherd/ent/rolebinding"
 	entuser "kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
 	"kv-shepherd.io/shepherd/internal/api/generated"
@@ -203,8 +205,8 @@ func (s *Server) AddSystemMember(c *gin.Context, systemID generated.SystemID) {
 		return
 	}
 
-	role := string(req.Role)
-	if !isValidMemberRole(role) {
+	roleName := string(req.Role)
+	if !isValidMemberRole(roleName) {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_ROLE"})
 		return
 	}
@@ -226,7 +228,7 @@ func (s *Server) AddSystemMember(c *gin.Context, systemID generated.SystemID) {
 		SetUserID(req.UserId).
 		SetResourceType("system").
 		SetResourceID(systemID).
-		SetRole(resourcerolebinding.Role(role)).
+		SetRole(resourcerolebinding.Role(roleName)).
 		SetCreatedBy(actor).
 		Save(ctx)
 	if err != nil {
@@ -246,7 +248,7 @@ func (s *Server) AddSystemMember(c *gin.Context, systemID generated.SystemID) {
 	if s.audit != nil {
 		_ = s.audit.LogAction(ctx, "system.member.add", "system", systemID, actor, map[string]interface{}{
 			"user_id": req.UserId,
-			"role":    role,
+			"role":    roleName,
 		})
 	}
 
@@ -269,8 +271,8 @@ func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemID generated.Syste
 		return
 	}
 
-	role := string(req.Role)
-	if !isValidMemberRole(role) {
+	roleName := string(req.Role)
+	if !isValidMemberRole(roleName) {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_ROLE"})
 		return
 	}
@@ -297,7 +299,7 @@ func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemID generated.Syste
 	}
 
 	updated, err := s.client.ResourceRoleBinding.UpdateOneID(existing.ID).
-		SetRole(resourcerolebinding.Role(role)).
+		SetRole(resourcerolebinding.Role(roleName)).
 		Save(ctx)
 	if err != nil {
 		logger.Error("failed to update member role",
@@ -320,7 +322,7 @@ func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemID generated.Syste
 		_ = s.audit.LogAction(ctx, "system.member.update_role", "system", systemID, actor, map[string]interface{}{
 			"user_id":  userID,
 			"old_role": existing.Role.String(),
-			"new_role": role,
+			"new_role": roleName,
 		})
 	}
 
@@ -428,7 +430,7 @@ func (s *Server) requireSystemRole(c *gin.Context, systemID, action string) (str
 	}
 
 	checker := middleware.NewResourceRoleChecker(s.client)
-	role, found, err := checker.CheckResourceRole(ctx, actor, "system", systemID)
+	bindingRole, found, err := checker.CheckResourceRole(ctx, actor, "system", systemID)
 	if err != nil {
 		if isRequestContextCanceled(err) {
 			logger.Debug("request canceled while checking system role", zap.Error(err), zap.String("system_id", systemID), zap.String("actor", actor))
@@ -442,7 +444,7 @@ func (s *Server) requireSystemRole(c *gin.Context, systemID, action string) (str
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return "", false
 	}
-	if !found || !middleware.RoleCanPerform(role, action) {
+	if !found || !middleware.RoleCanPerform(bindingRole, action) {
 		c.JSON(http.StatusForbidden, generated.Error{Code: "FORBIDDEN"})
 		return "", false
 	}
@@ -462,8 +464,8 @@ func hasPlatformAdmin(c *gin.Context) bool {
 	return slices.Contains(permList, "platform:admin")
 }
 
-func isValidMemberRole(role string) bool {
-	switch role {
+func isValidMemberRole(roleName string) bool {
+	switch roleName {
 	case resourcerolebinding.RoleOwner.String(),
 		resourcerolebinding.RoleAdmin.String(),
 		resourcerolebinding.RoleMember.String(),
@@ -712,23 +714,32 @@ func buildUserSearchPredicate(
 	if term.Field != "" {
 		switch normalizeUserSearchField(term.Field) {
 		case "username":
-			return entuser.UsernameContainsFold(term.Value)
+			return entuser.UsernameEqualFold(term.Value)
 		case "display_name", "displayname", "name":
-			return entuser.DisplayNameContainsFold(term.Value)
+			return entuser.DisplayNameEqualFold(term.Value)
 		case "email", "mail":
-			return entuser.EmailContainsFold(term.Value)
+			return entuser.EmailEqualFold(term.Value)
+		case "status", "enabled":
+			if enabled, ok := parseUserEnabledSearchValue(term.Value); ok {
+				return entuser.EnabledEQ(enabled)
+			}
+			return impossibleUserSearchPredicate()
+		case "role", "roles":
+			return userHasRoleNameEqualFold(term.Value)
 		default:
 			if field, ok := normalizedProfileFields[normalizeUserSearchField(term.Field)]; ok {
-				return userProfileAttributeContains(field, term.Value)
+				return userProfileAttributeEqualFold(field, term.Value)
 			}
 			return impossibleUserSearchPredicate()
 		}
 	}
 
 	predicates := []predicate.User{
+		entuser.IDContainsFold(term.Value),
 		entuser.UsernameContainsFold(term.Value),
 		entuser.DisplayNameContainsFold(term.Value),
 		entuser.EmailContainsFold(term.Value),
+		userHasRoleNameContainsFold(term.Value),
 	}
 	for _, field := range searchableProfileFields {
 		predicates = append(predicates, userProfileAttributeContains(field, term.Value))
@@ -755,6 +766,50 @@ func userProfileAttributeContains(field, value string) predicate.User {
 			builder.Arg("%" + strings.ToLower(value) + "%")
 		}))
 	}))
+}
+
+func userProfileAttributeEqualFold(field, value string) predicate.User {
+	field = strings.TrimSpace(field)
+	value = strings.TrimSpace(value)
+	return entuser.HasDirectoryProfileWith(predicate.UserDirectoryProfile(func(s *sql.Selector) {
+		s.Where(sql.P(func(builder *sql.Builder) {
+			builder.WriteString("LOWER(")
+			builder.Join(sqljson.ValuePath(userdirectoryprofile.FieldAttributes, sqljson.Path(field), sqljson.Unquote(true)))
+			builder.WriteString(") = ")
+			builder.Arg(strings.ToLower(value))
+		}))
+	}))
+}
+
+func userHasRoleNameContainsFold(value string) predicate.User {
+	return entuser.HasRoleBindingsWith(
+		rolebinding.HasRoleWith(entrole.Or(
+			entrole.NameContainsFold(value),
+			entrole.DisplayNameContainsFold(value),
+			entrole.IDContainsFold(value),
+		)),
+	)
+}
+
+func userHasRoleNameEqualFold(value string) predicate.User {
+	return entuser.HasRoleBindingsWith(
+		rolebinding.HasRoleWith(entrole.Or(
+			entrole.NameEqualFold(value),
+			entrole.DisplayNameEqualFold(value),
+			entrole.IDEqualFold(value),
+		)),
+	)
+}
+
+func parseUserEnabledSearchValue(value string) (enabled, ok bool) {
+	switch normalizeUserSearchField(value) {
+	case "enabled", "active", "true", "yes", "y", "1", "on":
+		return true, true
+	case "disabled", "inactive", "false", "no", "n", "0", "off":
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 func normalizeUserSearchField(raw string) string {

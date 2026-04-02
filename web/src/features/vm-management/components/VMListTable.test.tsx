@@ -16,9 +16,14 @@ describe('VMListTable', () => {
                 'field.host_ip': 'Host IP',
                 'field.ip_address': 'IP Address',
                 'field.operating_system': 'Operating System',
+                'field.system': 'System',
                 'field.scope': 'Scope',
                 'field.cluster': 'Cluster',
                 'field.resources': 'Resources',
+                'field.cpu': 'CPU',
+                'field.memory': 'Memory',
+                'field.disk': 'Disk',
+                'field.created_at': 'Created',
                 'common:table.created_at': 'Created',
                 'common:table.actions': 'Actions',
                 'context.row_badge': 'Current service',
@@ -91,19 +96,19 @@ describe('VMListTable', () => {
             />
         );
 
-        expect(screen.getByText('vm-alpha')).toBeVisible();
+        expect(screen.getAllByText('vm-alpha').length).toBeGreaterThan(0);
         expect(screen.getByText('Running')).toBeVisible();
-        expect(screen.getByText('team-prod')).toBeVisible();
-        expect(screen.getByText('Production Cluster')).toBeVisible();
-        expect(screen.getByText('10.0.0.18')).toBeVisible();
-        expect(screen.getByText('Host IP: 10.1.2.3')).toBeVisible();
+        expect(screen.getByText(/team-prod/)).toBeVisible();
+        expect(screen.getByText(/Production Cluster/)).toBeVisible();
+        expect(screen.getByText(/10\.0\.0\.18/)).toBeVisible();
         expect(screen.getByText('Payments')).toBeVisible();
         expect(screen.getByText('Billing API')).toBeVisible();
         expect(screen.getByText('Current service')).toBeVisible();
-        expect(screen.getByText('Ubuntu 24.04.2 LTS')).toBeVisible();
-        expect(screen.getByText('4 vCPU')).toBeVisible();
-        expect(screen.getByText('8 Gi')).toBeVisible();
-        expect(screen.getByText('60 Gi')).toBeVisible();
+        expect(screen.getByText(/Ubuntu 24\.04\.2 LTS/)).toBeVisible();
+        expect(screen.getByText(/4 vCPU/)).toBeVisible();
+        expect(screen.getByText(/8 Gi/)).toBeVisible();
+        expect(screen.getByText(/60 Gi/)).toBeVisible();
+        expect(screen.getByTestId('vm-name-copy-vm-1')).toBeVisible();
         expect(screen.getByTestId('vm-action-console-vm-1')).toBeVisible();
         expect(screen.getByTestId('vm-action-detail-vm-1')).toBeVisible();
         expect(screen.getByTestId('vm-action-more-vm-1')).toBeVisible();
@@ -125,9 +130,14 @@ describe('VMListTable', () => {
                 'field.host_ip': 'Host IP',
                 'field.ip_address': 'IP Address',
                 'field.operating_system': 'Operating System',
+                'field.system': 'System',
                 'field.scope': 'Scope',
                 'field.cluster': 'Cluster',
                 'field.resources': 'Resources',
+                'field.cpu': 'CPU',
+                'field.memory': 'Memory',
+                'field.disk': 'Disk',
+                'field.created_at': 'Created',
                 'common:table.created_at': 'Created',
                 'common:table.actions': 'Actions',
                 'action.start': 'Start',
@@ -190,12 +200,17 @@ describe('VMListTable', () => {
                 'field.name': 'Name',
                 'common:table.status': 'Status',
                 'field.namespace': 'Namespace',
+                'field.system': 'System',
                 'field.host_ip': 'Host IP',
                 'field.ip_address': 'IP Address',
                 'field.operating_system': 'Operating System',
                 'field.scope': 'Scope',
                 'field.cluster': 'Cluster',
                 'field.resources': 'Resources',
+                'field.cpu': 'CPU',
+                'field.memory': 'Memory',
+                'field.disk': 'Disk',
+                'field.created_at': 'Created',
                 'common:table.created_at': 'Created',
                 'common:table.actions': 'Actions',
                 'action.start': 'Start',

@@ -57,6 +57,7 @@ import {
 } from "@/components/illustrations/DashboardIllustrations";
 import { PageHeader, PageSurface } from "@/components/layouts/PageSection";
 import { LocalDateTimeText } from "@/components/ui/LocalDateTimeText";
+import { PageSearchToolbar, filterOptionByLabel } from "@/components/ui/PageSearchToolbar";
 import { useAdminAuthProvidersController } from "../hooks/useAdminAuthProvidersController";
 import {
   type AuthProvider,
@@ -438,9 +439,74 @@ export function AdminAuthProvidersContent() {
     useState<DirectoryPreviewFilter>("all");
   const [directoryJobFilter, setDirectoryJobFilter] =
     useState<DirectoryJobFilter>("all");
-  const providerItems = useMemo(
+  const [quickSearch, setQuickSearch] = useState("");
+  const [quickSearchDraft, setQuickSearchDraft] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [providerNameFilter, setProviderNameFilter] = useState("");
+  const [providerNameFilterDraft, setProviderNameFilterDraft] = useState("");
+  const [authTypeFilter, setAuthTypeFilter] = useState("");
+  const [authTypeFilterDraft, setAuthTypeFilterDraft] = useState("");
+  const [statusFilter, setStatusFilter] =
+    useState<"all" | "enabled" | "disabled">("all");
+  const [statusFilterDraft, setStatusFilterDraft] =
+    useState<"all" | "enabled" | "disabled">("all");
+  const providerTypeMetadataByType = useMemo(
+    () =>
+      Object.fromEntries(
+        (providers.providerTypes ?? []).map((item) => [item.type, item] as const),
+      ),
+    [providers.providerTypes],
+  );
+  const allProviderItems = useMemo(
     () => providers.providers ?? [],
     [providers.providers],
+  );
+  const providerItems = useMemo(() => {
+    const query = quickSearch.trim().toLowerCase();
+    return allProviderItems.filter((provider) => {
+      if (providerNameFilter && provider.name !== providerNameFilter) {
+        return false;
+      }
+      if (authTypeFilter && provider.auth_type !== authTypeFilter) {
+        return false;
+      }
+      if (statusFilter === "enabled" && !provider.enabled) {
+        return false;
+      }
+      if (statusFilter === "disabled" && provider.enabled) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      const providerTypeMetadata = providerTypeMetadataByType[provider.auth_type];
+      const displayName =
+        providers.providerTypeLabelByKey[provider.auth_type] ??
+        providerTypeMetadata?.display_name ??
+        provider.auth_type;
+      const description = providerTypeMetadata?.description ?? "";
+      return [provider.id, provider.name, provider.auth_type, displayName, description]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query));
+    });
+  }, [
+    allProviderItems,
+    authTypeFilter,
+    providerNameFilter,
+    providerTypeMetadataByType,
+    providers.providerTypeLabelByKey,
+    quickSearch,
+    statusFilter,
+  ]);
+  const providerNameOptions = useMemo(
+    () =>
+      Array.from(new Set(allProviderItems.map((provider) => provider.name).filter(Boolean)))
+        .sort((left, right) => left.localeCompare(right))
+        .map((name) => ({
+          value: name,
+          label: name,
+        })),
+    [allProviderItems],
   );
   const createForm = providers.createForm;
   const editForm = providers.editForm;
@@ -1617,6 +1683,139 @@ export function AdminAuthProvidersContent() {
             </Button>
           </Space>
         </Space>
+        <div style={{ marginTop: 16 }}>
+          <PageSearchToolbar
+            searchValue={quickSearch}
+            searchDraftValue={quickSearchDraft}
+            onSearchDraftChange={setQuickSearchDraft}
+            onSearchChange={(value) => {
+              setQuickSearchDraft(value);
+              setQuickSearch(value);
+            }}
+            searchPlaceholder={t("authProviders.search_placeholder", {
+              defaultValue: "Search providers by name, type, or description",
+            })}
+            searchHelp={t("authProviders.search_help", {
+              defaultValue:
+                "Press Enter or click Search. Quick search matches provider names, types, display names, descriptions, and pasted IDs.",
+            })}
+            advancedSearch={{
+              open: filtersOpen,
+              onToggle: () => setFiltersOpen((open) => !open),
+              openLabel: t("common:search.advanced", { defaultValue: "Advanced search" }),
+              closeLabel: t("common:search.hide_advanced", {
+                defaultValue: "Hide advanced search",
+              }),
+              title: t("common:search.advanced", { defaultValue: "Advanced search" }),
+              content: (
+                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                  <Text type="secondary">
+                    {t("authProviders.advanced_search_help", {
+                      defaultValue:
+                        "Select exact provider filters here. Options support keyword matching, but the applied filter remains an exact value.",
+                    })}
+                  </Text>
+                  <Space wrap align="end">
+                  <Select
+                    allowClear
+                    showSearch
+                    filterOption={filterOptionByLabel}
+                    optionFilterProp="label"
+                    style={{ width: 220 }}
+                    placeholder={t("authProviders.filter_name", {
+                      defaultValue: "Provider name",
+                    })}
+                    value={providerNameFilterDraft || undefined}
+                    onChange={(value) => setProviderNameFilterDraft(String(value ?? ""))}
+                    options={providerNameOptions}
+                  />
+                  <Select
+                    allowClear
+                    showSearch
+                    filterOption={filterOptionByLabel}
+                    optionFilterProp="label"
+                    style={{ width: 220 }}
+                    placeholder={t("authProviders.filter_type", {
+                      defaultValue: "Provider type",
+                    })}
+                    value={authTypeFilterDraft || undefined}
+                    onChange={(value) => setAuthTypeFilterDraft(String(value ?? ""))}
+                    options={(providers.providerTypes ?? []).map((type) => ({
+                      value: type.type,
+                      label:
+                        providers.providerTypeLabelByKey[type.type] ??
+                        type.display_name,
+                    }))}
+                  />
+                  <Select
+                    showSearch
+                    filterOption={filterOptionByLabel}
+                    optionFilterProp="label"
+                    style={{ width: 180 }}
+                    value={statusFilterDraft}
+                    onChange={(value) =>
+                      setStatusFilterDraft(
+                        value as "all" | "enabled" | "disabled",
+                      )
+                    }
+                    options={[
+                      {
+                        value: "all",
+                        label: t("common:filter.all", {
+                          defaultValue: "All",
+                        }),
+                      },
+                      {
+                        value: "enabled",
+                        label: t("authProviders.status_enabled", {
+                          defaultValue: "Enabled",
+                        }),
+                      },
+                      {
+                        value: "disabled",
+                        label: t("authProviders.status_disabled", {
+                          defaultValue: "Disabled",
+                        }),
+                      },
+                    ]}
+                  />
+                  <Button
+                    type="primary"
+                    data-testid="auth-providers-advanced-search-submit"
+                    onClick={() => {
+                      setQuickSearch(quickSearchDraft);
+                      setProviderNameFilter(providerNameFilterDraft);
+                      setAuthTypeFilter(authTypeFilterDraft);
+                      setStatusFilter(statusFilterDraft);
+                    }}
+                  >
+                    {t("common:button.search")}
+                  </Button>
+                  </Space>
+                </Space>
+              ),
+            }}
+            hasActiveFilters={Boolean(
+              quickSearch.trim() ||
+                providerNameFilter ||
+                authTypeFilter ||
+                statusFilter !== "all",
+            )}
+            onClear={() => {
+              setQuickSearch("");
+              setQuickSearchDraft("");
+              setProviderNameFilter("");
+              setProviderNameFilterDraft("");
+              setAuthTypeFilter("");
+              setAuthTypeFilterDraft("");
+              setStatusFilter("all");
+              setStatusFilterDraft("all");
+            }}
+            clearLabel={t("common:button.clear_filters", {
+              defaultValue: "Clear filters",
+            })}
+          />
+        </div>
         <Alert
           showIcon={true}
           type="info"

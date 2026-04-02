@@ -47,6 +47,157 @@ func TestSystemHandler_ListSystems_RespectsResourceBindings(t *testing.T) {
 	}
 }
 
+func TestSystemHandler_ListSystems_SupportsSearchAcrossSystemCreatorServiceAndMember(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+
+	sysMatch := mustCreateSystem(t, client, "sys-platform", "platform core", "alice.ops")
+	sysOther := mustCreateSystem(t, client, "sys-finance", "finance ops", "charlie.ops")
+	mustCreateService(t, client, "svc-billing", "billing-api", sysMatch.ID, "Handles partner billing")
+	mustCreateService(t, client, "svc-ledger", "ledger-api", sysOther.ID, "Handles accounting")
+	mustCreateUserForSystemSearch(t, client, "user-bob", "bob.builder@example.com", "Bob Builder")
+	mustCreateUserForSystemSearch(t, client, "user-dana", "dana.lee@example.com", "Dana Lee")
+	mustCreateSystemBinding(t, client, "user-bob", sysMatch.ID, "viewer")
+	mustCreateSystemBinding(t, client, "user-dana", sysOther.ID, "viewer")
+
+	assertListSystems := func(t *testing.T, rawQuery string, params generated.ListSystemsParams, wantIDs ...string) {
+		t.Helper()
+
+		c, w := newAuthedGinContext(
+			t,
+			http.MethodGet,
+			"/systems"+rawQuery,
+			"",
+			"platform-admin",
+			[]string{"system:read", "platform:admin"},
+		)
+		srv.ListSystems(c, params)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		var resp generated.SystemList
+		mustDecodeJSON(t, w.Body.Bytes(), &resp)
+		if got := len(resp.Items); got != len(wantIDs) {
+			t.Fatalf("items len = %d, want %d", got, len(wantIDs))
+		}
+		for idx, wantID := range wantIDs {
+			if got := resp.Items[idx].Id; got != wantID {
+				t.Fatalf("items[%d].id = %q, want %q", idx, got, wantID)
+			}
+		}
+	}
+
+	t.Run("quick search matches creator", func(t *testing.T) {
+		assertListSystems(
+			t,
+			"?search=alice",
+			generated.ListSystemsParams{Search: "alice"},
+			sysMatch.ID,
+		)
+	})
+
+	t.Run("quick search matches related service", func(t *testing.T) {
+		assertListSystems(
+			t,
+			"?search=billing",
+			generated.ListSystemsParams{Search: "billing"},
+			sysMatch.ID,
+		)
+	})
+
+	t.Run("quick search matches related member", func(t *testing.T) {
+		assertListSystems(
+			t,
+			"?search=builder",
+			generated.ListSystemsParams{Search: "builder"},
+			sysMatch.ID,
+		)
+	})
+
+	t.Run("advanced filters narrow by creator service and member", func(t *testing.T) {
+		assertListSystems(
+			t,
+			"?created_by=alice&service_search=billing&member_search=bob",
+			generated.ListSystemsParams{
+				CreatedBy:     "alice",
+				ServiceSearch: "billing",
+				MemberSearch:  "bob",
+			},
+			sysMatch.ID,
+		)
+	})
+
+	t.Run("exact filters narrow by creator service id and member id", func(t *testing.T) {
+		assertListSystems(
+			t,
+			"?created_by_exact=alice.ops&service_id=svc-billing&member_id=user-bob",
+			generated.ListSystemsParams{
+				CreatedByExact: "alice.ops",
+				ServiceId:      "svc-billing",
+				MemberId:       "user-bob",
+			},
+			sysMatch.ID,
+		)
+	})
+}
+
+func TestSystemHandler_GetSystemFilterOptions_ReturnsReadableVisibleOptions(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+
+	sysVisible := mustCreateSystem(t, client, "sys-visible", "shop", "alice.ops")
+	sysHidden := mustCreateSystem(t, client, "sys-hidden", "finance", "charlie.ops")
+	_ = mustCreateService(t, client, "svc-visible", "billing-api", sysVisible.ID, "Handles partner billing")
+	_ = mustCreateService(t, client, "svc-hidden", "ledger-api", sysHidden.ID, "Handles accounting")
+	mustCreateUserForSystemSearch(t, client, "user-a", "alice.ops@example.com", "Alice Ops")
+	mustCreateUserForSystemSearch(t, client, "user-bob", "bob.builder@example.com", "Bob Builder")
+	mustCreateUserForSystemSearch(t, client, "user-dana", "dana.lee@example.com", "Dana Lee")
+	mustCreateSystemBinding(t, client, "user-a", sysVisible.ID, "viewer")
+	mustCreateSystemBinding(t, client, "user-bob", sysVisible.ID, "viewer")
+	mustCreateSystemBinding(t, client, "user-dana", sysHidden.ID, "viewer")
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/systems/filter-options", "", "user-a", []string{"system:read"})
+	srv.GetSystemFilterOptions(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.SystemFilterOptionsResponse
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+
+	if len(resp.Creators) != 1 {
+		t.Fatalf("creators len = %d, want 1", len(resp.Creators))
+	}
+	if got := resp.Creators[0].Label; got != "alice.ops" {
+		t.Fatalf("creator label = %q, want %q", got, "alice.ops")
+	}
+
+	if len(resp.Services) != 1 {
+		t.Fatalf("services len = %d, want 1", len(resp.Services))
+	}
+	if got := resp.Services[0].Label; got != "shop / billing-api" {
+		t.Fatalf("service label = %q, want %q", got, "shop / billing-api")
+	}
+	if got := resp.Services[0].Value; got != "svc-visible" {
+		t.Fatalf("service value = %q, want %q", got, "svc-visible")
+	}
+
+	if len(resp.Members) != 2 {
+		t.Fatalf("members len = %d, want 2", len(resp.Members))
+	}
+	memberLabels := map[string]struct{}{}
+	for _, option := range resp.Members {
+		memberLabels[option.Label] = struct{}{}
+	}
+	if _, ok := memberLabels["Bob Builder · bob.builder@example.com"]; !ok {
+		t.Fatalf("member labels = %#v, want Bob Builder option", memberLabels)
+	}
+	if _, ok := memberLabels["Alice Ops · alice.ops@example.com"]; !ok {
+		t.Fatalf("member labels = %#v, want Alice Ops option", memberLabels)
+	}
+}
+
 func TestSystemHandler_ListServicesOverview_RespectsVisibilityAndFilter(t *testing.T) {
 	srv, client := newSystemBehaviorTestServer(t)
 
@@ -115,6 +266,31 @@ func TestSystemHandler_ListServicesOverview_RespectsVisibilityAndFilter(t *testi
 	}
 	if got := resp.Items[0].SystemId; got != sysVisibleB.ID {
 		t.Fatalf("filtered system_id = %q, want %q", got, sysVisibleB.ID)
+	}
+
+	searchContext, searchWriter := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/services?page=1&per_page=20&search=payments",
+		"",
+		"user-a",
+		[]string{"service:read"},
+	)
+	srv.ListServicesOverview(searchContext, generated.ListServicesOverviewParams{
+		Page:    1,
+		PerPage: 20,
+		Search:  "payments",
+	})
+
+	if searchWriter.Code != http.StatusOK {
+		t.Fatalf("search status = %d, want %d body=%s", searchWriter.Code, http.StatusOK, searchWriter.Body.String())
+	}
+	mustDecodeJSON(t, searchWriter.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("search items len = %d, want 1", got)
+	}
+	if got := resp.Items[0].SystemId; got != sysVisibleB.ID {
+		t.Fatalf("search system_id = %q, want %q", got, sysVisibleB.ID)
 	}
 }
 
@@ -636,5 +812,19 @@ func mustCreateSystemBinding(t *testing.T, client *ent.Client, userID, systemID,
 		Save(t.Context())
 	if err != nil {
 		t.Fatalf("create resource role binding: %v", err)
+	}
+}
+
+func mustCreateUserForSystemSearch(t *testing.T, client *ent.Client, id, email, displayName string) {
+	t.Helper()
+	_, err := client.User.Create().
+		SetID(id).
+		SetUsername(email).
+		SetEmail(email).
+		SetDisplayName(displayName).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create user: %v", err)
 	}
 }

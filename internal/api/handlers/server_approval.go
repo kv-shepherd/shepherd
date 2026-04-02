@@ -23,6 +23,7 @@ import (
 	entservice "kv-shepherd.io/shepherd/ent/service"
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
+	entuser "kv-shepherd.io/shepherd/ent/user"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
@@ -41,11 +42,17 @@ type ticketListOptions struct {
 	mine                  bool
 	page                  int
 	perPage               int
+	search                string
 	status                string
 	operationType         string
 	selectedClusterID     string
 	placementAdvisoryCode string
 	placementSnapshot     string
+}
+
+type approvalActorLookup struct {
+	DisplayName string
+	Username    string
 }
 
 // ListTickets handles GET /tickets.
@@ -64,6 +71,7 @@ func (s *Server) ListTickets(c *gin.Context, params generated.ListTicketsParams)
 		mine:                  params.Mine,
 		page:                  params.Page,
 		perPage:               params.PerPage,
+		search:                params.Search,
 		status:                string(params.Status),
 		operationType:         string(params.OperationType),
 		selectedClusterID:     params.SelectedClusterId,
@@ -87,6 +95,7 @@ func (s *Server) ListBuiltinApprovalTasks(c *gin.Context, params generated.ListB
 	s.writeTicketListResponse(c, actor, ticketListOptions{
 		page:                  params.Page,
 		perPage:               params.PerPage,
+		search:                params.Search,
 		status:                string(params.Status),
 		operationType:         string(params.OperationType),
 		selectedClusterID:     params.SelectedClusterId,
@@ -101,6 +110,25 @@ func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options t
 	query = query.Where(entticket.ParentTicketIDIsNil())
 	if options.mine {
 		query = query.Where(entticket.RequesterEQ(actor))
+	}
+	if search := strings.TrimSpace(options.search); search != "" {
+		query = query.Where(
+			entticket.Or(
+				entticket.IDContainsFold(search),
+				entticket.RequesterContainsFold(search),
+				entticket.ApproverContainsFold(search),
+				entticket.ReasonContainsFold(search),
+				entticket.RejectReasonContainsFold(search),
+				entticket.SelectedClusterIDContainsFold(search),
+				predicate.Ticket(func(s *entsql.Selector) {
+					s.Where(sqljson.StringContains(
+						entticket.FieldPlacementEvaluation,
+						search,
+						sqljson.Path("selected_cluster_name"),
+					))
+				}),
+			),
+		)
 	}
 
 	// Filter by status (omitzero: empty string = not specified).
@@ -246,6 +274,8 @@ func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options t
 		}
 	}
 
+	actorByID := s.loadApprovalActorLookups(ctx, tickets)
+
 	items := make([]generated.Ticket, 0, len(tickets))
 	for _, t := range tickets {
 		// Deserialize raw event payload into map for ticket_payload field.
@@ -276,6 +306,8 @@ func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options t
 				vmByID,
 			),
 			buildApprovalRequestPrefill(payloadMap, systemIDByServiceID),
+			actorByID[t.Requester],
+			actorByID[t.Approver],
 		)
 		// Enrich VM-targeting tickets with target VM info.
 		if t.OperationType == entticket.OperationTypeDELETE || t.OperationType == entticket.OperationTypeMODIFY {
@@ -455,18 +487,30 @@ func ticketToAPI(
 	provisioning *generated.ProvisioningStatus,
 	summary *generated.TicketSummary,
 	requestPrefill *generated.VMRequestPrefill,
+	requester approvalActorLookup,
+	approver approvalActorLookup,
 ) generated.Ticket {
 	var placementEvaluation *generated.PlacementEvaluation
 	if len(t.PlacementEvaluation) > 0 {
 		placementEvaluation = placementEvaluationToAPI(t.PlacementEvaluation)
 	}
 	return generated.Ticket{
-		Id:                  t.ID,
-		EventId:             t.EventID,
-		OperationType:       generated.TicketOperationType(t.OperationType),
-		Requester:           t.Requester,
-		Status:              generated.TicketStatus(t.Status),
-		Approver:            t.Approver,
+		Id:            t.ID,
+		EventId:       t.EventID,
+		OperationType: generated.TicketOperationType(t.OperationType),
+		Requester:     t.Requester,
+		RequesterDisplayName: firstNonEmptyString(
+			strings.TrimSpace(requester.DisplayName),
+			strings.TrimSpace(requester.Username),
+		),
+		RequesterUsername: strings.TrimSpace(requester.Username),
+		Status:            generated.TicketStatus(t.Status),
+		Approver:          t.Approver,
+		ApproverDisplayName: firstNonEmptyString(
+			strings.TrimSpace(approver.DisplayName),
+			strings.TrimSpace(approver.Username),
+		),
+		ApproverUsername:    strings.TrimSpace(approver.Username),
 		Reason:              t.Reason,
 		RejectReason:        t.RejectReason,
 		Summary:             summary,
@@ -476,6 +520,52 @@ func ticketToAPI(
 		PlacementEvaluation: placementEvaluation,
 		CreatedAt:           t.CreatedAt,
 	}
+}
+
+func (s *Server) loadApprovalActorLookups(
+	ctx context.Context,
+	tickets []*ent.Ticket,
+) map[string]approvalActorLookup {
+	idSet := make(map[string]struct{})
+	for _, ticket := range tickets {
+		if ticket == nil {
+			continue
+		}
+		if requester := strings.TrimSpace(ticket.Requester); requester != "" {
+			idSet[requester] = struct{}{}
+		}
+		if approver := strings.TrimSpace(ticket.Approver); approver != "" {
+			idSet[approver] = struct{}{}
+		}
+	}
+	if len(idSet) == 0 {
+		return map[string]approvalActorLookup{}
+	}
+
+	userIDs := make([]string, 0, len(idSet))
+	for userID := range idSet {
+		userIDs = append(userIDs, userID)
+	}
+
+	users, err := s.client.User.Query().
+		Where(entuser.IDIn(userIDs...)).
+		All(ctx)
+	if err != nil {
+		logger.Warn("failed to fetch users for approval task actors", zap.Error(err))
+		return map[string]approvalActorLookup{}
+	}
+
+	byID := make(map[string]approvalActorLookup, len(users))
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		byID[user.ID] = approvalActorLookup{
+			DisplayName: strings.TrimSpace(user.DisplayName),
+			Username:    strings.TrimSpace(user.Username),
+		}
+	}
+	return byID
 }
 
 func placementEvaluationToAPI(snapshot map[string]interface{}) *generated.PlacementEvaluation {

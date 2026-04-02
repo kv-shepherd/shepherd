@@ -484,7 +484,7 @@ func TestVMConsole_OpenVNC_PreviewDoesNotConsumeBootstrapToken(t *testing.T) {
 	}
 }
 
-func TestVMConsole_OpenVNC_PreviewReturnsNativeStreamError(t *testing.T) {
+func TestVMConsole_OpenVNC_PreviewDoesNotEagerlyDialNativeStream(t *testing.T) {
 	t.Parallel()
 
 	_ = logger.Init("error", "json")
@@ -529,15 +529,15 @@ func TestVMConsole_OpenVNC_PreviewReturnsNativeStreamError(t *testing.T) {
 	openCtx.Request.AddCookie(&http.Cookie{Name: vncBootstrapCookieName, Value: token})
 	srv.OpenVMVNC(openCtx, vm.ID)
 
-	if openW.Code != http.StatusBadGateway {
-		t.Fatalf("preview status = %d, want %d body=%s", openW.Code, http.StatusBadGateway, openW.Body.String())
+	if openW.Code != http.StatusOK {
+		t.Fatalf("preview status = %d, want %d body=%s", openW.Code, http.StatusOK, openW.Body.String())
 	}
 	resp := decodeJSONMap(t, openW.Body.Bytes())
-	if got := toStringValue(resp["code"]); got != "VNC_UNAVAILABLE" {
-		t.Fatalf("code = %q, want %q", got, "VNC_UNAVAILABLE")
+	if got := toStringValue(resp["status"]); got != "SESSION_READY" {
+		t.Fatalf("status = %q, want %q", got, "SESSION_READY")
 	}
-	if got := toStringValue(resp["message"]); got == "" || got == "VNC_UNAVAILABLE" {
-		t.Fatalf("message = %q, want native kubevirt error", got)
+	if got := toStringValue(resp["websocket_path"]); got != "/api/v1/vms/"+vm.ID+"/vnc" {
+		t.Fatalf("websocket_path = %q, want %q", got, "/api/v1/vms/"+vm.ID+"/vnc")
 	}
 }
 

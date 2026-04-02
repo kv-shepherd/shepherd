@@ -143,11 +143,13 @@ describe('useServicesManagementController', () => {
 
     renderHook(() => useServicesManagementController({ t }));
 
-    expect(useApiGetMock).toHaveBeenNthCalledWith(
-      2,
-      ['services', '__all__', 1, 20],
-      expect.any(Function),
+    const servicesCall = useApiGetMock.mock.calls.find(
+      (call) => Array.isArray(call[0]) && call[0][0] === 'services',
     );
+
+    expect(servicesCall).toBeDefined();
+    expect(servicesCall?.[0]).toEqual(['services', '__all__', '', 1, 20]);
+    expect(servicesCall?.[1]).toEqual(expect.any(Function));
   });
 
   it('prefills and focuses the selected system when create flow is launched with system context', () => {

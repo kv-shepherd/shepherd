@@ -436,7 +436,7 @@ export function VMRequestWizard({
             </Space>
         );
 
-    return (
+    return open ? (
         <Modal
             title={(
                 <Space direction="vertical" size={2}>
@@ -446,12 +446,11 @@ export function VMRequestWizard({
                     </Text>
                 </Space>
             )}
-            open={open}
+            open={true}
             onCancel={onCancel}
             width={720}
             footer={footer}
             styles={{ body: { paddingTop: 8 } }}
-            forceRender={true}
             data-testid="vm-request-wizard-modal"
         >
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -483,7 +482,7 @@ export function VMRequestWizard({
                 </Form>
             </Space>
         </Modal>
-    );
+    ) : null;
 }
 
 function renderPlacementHintDescription(hint: VMPlacementHint, t: TFunction): ReactNode {

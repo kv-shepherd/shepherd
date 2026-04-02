@@ -17,7 +17,7 @@ import {
 } from 'antd';
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
@@ -35,6 +35,7 @@ import {
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
+import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 import { useAdminRbacController } from '../hooks/useAdminRbacController';
 import {
     ENVIRONMENT_VALUES,
@@ -53,6 +54,16 @@ function permissionCatalogTranslationKey(permissionKey: string) {
 export function AdminRbacContent() {
     const { t } = useTranslation(['admin', 'common']);
     const rbac = useAdminRbacController({ t });
+    const [quickSearch, setQuickSearch] = useState('');
+    const [quickSearchDraft, setQuickSearchDraft] = useState('');
+    const [filtersOpen, setFiltersOpen] = useState(false);
+    const [roleFilter, setRoleFilter] = useState('');
+    const [roleFilterDraft, setRoleFilterDraft] = useState('');
+    const [scopeTypeFilter, setScopeTypeFilter] = useState('');
+    const [scopeTypeFilterDraft, setScopeTypeFilterDraft] = useState('');
+    const [environmentFilter, setEnvironmentFilter] = useState('');
+    const [environmentFilterDraft, setEnvironmentFilterDraft] = useState('');
+    const normalizedQuickSearch = quickSearch.trim().toLowerCase();
     const bindingScopeType = Form.useWatch('scope_type', rbac.bindingForm);
     const permissionCatalogMetadata = useMemo(
         () => new Map(
@@ -95,7 +106,79 @@ export function AdminRbacContent() {
         () => new Map(rbac.roles.map((role) => [role.id, roleCatalogMetadata.get(role.id)?.label || role.display_name?.trim() || role.name])),
         [rbac.roles, roleCatalogMetadata]
     );
-    const customRoleCount = rbac.roles.filter((role) => !role.built_in).length;
+    const filteredRoles = useMemo(
+        () =>
+            rbac.roles.filter((role) => {
+                if (roleFilter && role.id !== roleFilter) {
+                    return false;
+                }
+                if (!normalizedQuickSearch) {
+                    return true;
+                }
+                return [
+                    role.name,
+                    role.display_name,
+                    role.description,
+                    ...(role.permissions ?? []),
+                ]
+                    .filter(Boolean)
+                    .join(' ')
+                    .toLowerCase()
+                    .includes(normalizedQuickSearch);
+            }),
+        [normalizedQuickSearch, rbac.roles, roleFilter],
+    );
+    const filteredRoleBindings = useMemo(
+        () =>
+            rbac.roleBindings.filter((binding) => {
+                if (roleFilter && binding.role_id !== roleFilter) {
+                    return false;
+                }
+                if (scopeTypeFilter && binding.scope_type !== scopeTypeFilter) {
+                    return false;
+                }
+                if (environmentFilter && !(binding.allowed_environments ?? []).includes(environmentFilter as 'test' | 'prod')) {
+                    return false;
+                }
+                if (!normalizedQuickSearch) {
+                    return true;
+                }
+                return [
+                    binding.role_name,
+                    binding.role_display_name,
+                    binding.scope_type,
+                    binding.scope_display_name,
+                    binding.scope_id,
+                    ...(binding.allowed_environments ?? []),
+                ]
+                    .filter(Boolean)
+                    .join(' ')
+                    .toLowerCase()
+                    .includes(normalizedQuickSearch);
+            }),
+        [environmentFilter, normalizedQuickSearch, rbac.roleBindings, roleFilter, scopeTypeFilter],
+    );
+    const filteredPermissions = useMemo(
+        () =>
+            rbac.permissions.filter((permission) => {
+                if (roleFilter) {
+                    const selectedRole = rbac.roles.find((role) => role.id === roleFilter);
+                    if (selectedRole && !(selectedRole.permissions ?? []).includes(permission.key)) {
+                        return false;
+                    }
+                }
+                if (!normalizedQuickSearch) {
+                    return true;
+                }
+                return [permission.key, permission.description]
+                    .filter(Boolean)
+                    .join(' ')
+                    .toLowerCase()
+                    .includes(normalizedQuickSearch);
+            }),
+        [normalizedQuickSearch, rbac.permissions, rbac.roles, roleFilter],
+    );
+    const customRoleCount = filteredRoles.filter((role) => !role.built_in).length;
 
     const renderRoleIdentity = (role: Role) => {
         const primary = roleCatalogMetadata.get(role.id)?.label || role.display_name?.trim() || role.name;
@@ -331,11 +414,101 @@ export function AdminRbacContent() {
                 title={t('rbac.title')}
                 subtitle={t('rbac.subtitle')}
             />
+            <PageSurface style={{ marginBottom: 16 }}>
+                <PageSearchToolbar
+                    searchValue={quickSearch}
+                    searchDraftValue={quickSearchDraft}
+                    onSearchDraftChange={setQuickSearchDraft}
+                    onSearchChange={(value) => {
+                        setQuickSearchDraft(value);
+                        setQuickSearch(value);
+                    }}
+                    searchPlaceholder={t('rbac.search_placeholder', { defaultValue: 'Search roles, bindings, or permissions' })}
+                    searchTestId="rbac-quick-search"
+                    searchHelp={t('rbac.search_help', { defaultValue: 'Press Enter or click Search. Quick search filters the role catalog, visible bindings, and permission directory on this page.' })}
+                    advancedSearch={{
+                        open: filtersOpen,
+                        onToggle: () => setFiltersOpen((open) => !open),
+                        openLabel: t('common:search.advanced', { defaultValue: 'Advanced search' }),
+                        closeLabel: t('common:search.hide_advanced', { defaultValue: 'Hide advanced search' }),
+                        title: t('rbac.advanced_search_title', { defaultValue: 'Advanced search' }),
+                        content: (
+                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                <Text type="secondary">
+                                    {t('rbac.advanced_search_help', {
+                                        defaultValue: 'Choose exact RBAC filters here. Options can be searched by keyword, but the applied filter remains an exact value.',
+                                    })}
+                                </Text>
+                                <Space wrap>
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        optionFilterProp="label"
+                                        style={{ minWidth: 240 }}
+                                        placeholder={t('rbac.bindings.role', { defaultValue: 'Role' })}
+                                        value={roleFilterDraft || undefined}
+                                        options={roleOptions}
+                                        onChange={(value) => setRoleFilterDraft((value as string | undefined) ?? '')}
+                                    />
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        optionFilterProp="label"
+                                        style={{ minWidth: 180 }}
+                                        placeholder={t('rbac.bindings.scope_type', { defaultValue: 'Scope type' })}
+                                        value={scopeTypeFilterDraft || undefined}
+                                        options={scopeOptions}
+                                        onChange={(value) => setScopeTypeFilterDraft((value as string | undefined) ?? '')}
+                                    />
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        optionFilterProp="label"
+                                        style={{ minWidth: 180 }}
+                                        placeholder={t('rbac.bindings.allowed_envs', { defaultValue: 'Allowed environments' })}
+                                        value={environmentFilterDraft || undefined}
+                                        options={environmentOptions}
+                                        onChange={(value) => setEnvironmentFilterDraft((value as string | undefined) ?? '')}
+                                    />
+                                    <Button
+                                        type="primary"
+                                        onClick={() => {
+                                            setQuickSearch(quickSearchDraft);
+                                            setRoleFilter(roleFilterDraft);
+                                            setScopeTypeFilter(scopeTypeFilterDraft);
+                                            setEnvironmentFilter(environmentFilterDraft);
+                                        }}
+                                    >
+                                        {t('common:button.search')}
+                                    </Button>
+                                </Space>
+                            </Space>
+                        ),
+                    }}
+                    hasActiveFilters={
+                        quickSearch.trim().length > 0 ||
+                        roleFilter.length > 0 ||
+                        scopeTypeFilter.length > 0 ||
+                        environmentFilter.length > 0
+                    }
+                    onClear={() => {
+                        setQuickSearch('');
+                        setQuickSearchDraft('');
+                        setRoleFilter('');
+                        setRoleFilterDraft('');
+                        setScopeTypeFilter('');
+                        setScopeTypeFilterDraft('');
+                        setEnvironmentFilter('');
+                        setEnvironmentFilterDraft('');
+                    }}
+                    clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
+                />
+            </PageSurface>
 
             <div className="summary-card-grid">
                 <SummaryMetricCard
                     title={t('rbac.summary.roles_title')}
-                    value={rbac.roles.length}
+                    value={filteredRoles.length}
                     description={t('rbac.summary.roles_description')}
                     visual={<RoleCatalogGlyph className="summary-metric-card__art" />}
                     accentColor="#D97706"
@@ -351,7 +524,7 @@ export function AdminRbacContent() {
                 />
                 <SummaryMetricCard
                     title={t('rbac.summary.bindings_title')}
-                    value={rbac.roleBindings.length}
+                    value={filteredRoleBindings.length}
                     description={rbac.selectedUserDisplayLabel
                         ? t('rbac.summary.bindings_description_selected', { user: rbac.selectedUserDisplayLabel })
                         : t('rbac.summary.bindings_description')}
@@ -361,7 +534,7 @@ export function AdminRbacContent() {
                 />
                 <SummaryMetricCard
                     title={t('rbac.summary.permissions_title')}
-                    value={rbac.permissions.length}
+                    value={filteredPermissions.length}
                     description={t('rbac.summary.permissions_description')}
                     visual={<UserDirectoryGlyph className="summary-metric-card__art" />}
                     accentColor="#6D4DE3"
@@ -399,7 +572,7 @@ export function AdminRbacContent() {
                     style={{ marginTop: 16 }}
                     rowKey="id"
                     columns={roleColumns}
-                    dataSource={rbac.roles}
+                    dataSource={filteredRoles}
                     loading={rbac.rolesLoading}
                     locale={{
                         emptyText: (
@@ -493,7 +666,7 @@ export function AdminRbacContent() {
                 <Table<GlobalRoleBinding>
                     rowKey="id"
                     columns={bindingColumns}
-                    dataSource={rbac.roleBindings}
+                    dataSource={filteredRoleBindings}
                     loading={rbac.roleBindingsLoading}
                     locale={{
                         emptyText: rbac.selectedUserId
@@ -542,7 +715,7 @@ export function AdminRbacContent() {
                 <Table<Permission>
                     rowKey="key"
                     columns={permissionColumns}
-                    dataSource={rbac.permissions}
+                    dataSource={filteredPermissions}
                     loading={rbac.permissionsLoading}
                     locale={{
                         emptyText: (
@@ -560,66 +733,68 @@ export function AdminRbacContent() {
                 />
             </PageSurface>
 
-            <Modal
-                title={t('rbac.roles.add_title')}
-                open={rbac.createRoleOpen}
-                onOk={() => {
-                    void rbac.submitCreateRole();
-                }}
-                onCancel={rbac.closeCreateRoleModal}
-                confirmLoading={rbac.createRolePending}
-                forceRender={true}
-                maskClosable={false}
-                keyboard={false}
-                data-testid="rbac-role-create-modal"
-            >
-                <Form form={rbac.roleCreateForm} layout="vertical" preserve={false}>
-                    <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="display_name" label={t('common:table.display_name')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="description" label={t('common:table.description')}>
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                    <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}>
-                        <Select mode="multiple" options={localizedPermissionOptions} optionFilterProp="label" />
-                    </Form.Item>
-                    <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked" initialValue={true}>
-                        <Switch />
-                    </Form.Item>
-                </Form>
-            </Modal>
+            {rbac.createRoleOpen ? (
+                <Modal
+                    title={t('rbac.roles.add_title')}
+                    open={rbac.createRoleOpen}
+                    onOk={() => {
+                        void rbac.submitCreateRole();
+                    }}
+                    onCancel={rbac.closeCreateRoleModal}
+                    confirmLoading={rbac.createRolePending}
+                    maskClosable={false}
+                    keyboard={false}
+                    data-testid="rbac-role-create-modal"
+                >
+                    <Form form={rbac.roleCreateForm} layout="vertical" preserve={false}>
+                        <Form.Item name="name" label={t('common:table.name')} rules={[{ required: true }]}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="display_name" label={t('common:table.display_name')}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="description" label={t('common:table.description')}>
+                            <Input.TextArea rows={3} />
+                        </Form.Item>
+                        <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}>
+                            <Select mode="multiple" options={localizedPermissionOptions} optionFilterProp="label" />
+                        </Form.Item>
+                        <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked" initialValue={true}>
+                            <Switch />
+                        </Form.Item>
+                    </Form>
+                </Modal>
+            ) : null}
 
-            <Modal
-                title={t('rbac.roles.edit_title', { name: rbac.editingRole?.display_name || rbac.editingRole?.name || '' })}
-                open={rbac.editRoleOpen}
-                onOk={() => {
-                    void rbac.submitEditRole();
-                }}
-                onCancel={rbac.closeEditRoleModal}
-                confirmLoading={rbac.updateRolePending}
-                forceRender={true}
-                maskClosable={false}
-                keyboard={false}
-                data-testid="rbac-role-edit-modal"
-            >
-                <Form form={rbac.roleEditForm} layout="vertical" preserve={false}>
-                    <Form.Item name="display_name" label={t('common:table.display_name')}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="description" label={t('common:table.description')}>
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                    <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}>
-                        <Select mode="multiple" options={localizedPermissionOptions} optionFilterProp="label" />
-                    </Form.Item>
-                    <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                </Form>
-            </Modal>
+            {rbac.editRoleOpen ? (
+                <Modal
+                    title={t('rbac.roles.edit_title', { name: rbac.editingRole?.display_name || rbac.editingRole?.name || '' })}
+                    open={rbac.editRoleOpen}
+                    onOk={() => {
+                        void rbac.submitEditRole();
+                    }}
+                    onCancel={rbac.closeEditRoleModal}
+                    confirmLoading={rbac.updateRolePending}
+                    maskClosable={false}
+                    keyboard={false}
+                    data-testid="rbac-role-edit-modal"
+                >
+                    <Form form={rbac.roleEditForm} layout="vertical" preserve={false}>
+                        <Form.Item name="display_name" label={t('common:table.display_name')}>
+                            <Input />
+                        </Form.Item>
+                        <Form.Item name="description" label={t('common:table.description')}>
+                            <Input.TextArea rows={3} />
+                        </Form.Item>
+                        <Form.Item name="permissions" label={t('rbac.roles.permissions')} rules={[{ required: true }]}>
+                            <Select mode="multiple" options={localizedPermissionOptions} optionFilterProp="label" />
+                        </Form.Item>
+                        <Form.Item name="enabled" label={t('common:table.status')} valuePropName="checked">
+                            <Switch />
+                        </Form.Item>
+                    </Form>
+                </Modal>
+            ) : null}
 
             <Modal
                 title={t('rbac.roles.delete_title')}
@@ -632,63 +807,64 @@ export function AdminRbacContent() {
                 <Text>{t('rbac.roles.delete_confirm', { name: rbac.deletingRole?.display_name || rbac.deletingRole?.name || '' })}</Text>
             </Modal>
 
-            <Modal
-                title={t('rbac.bindings.add_title')}
-                open={rbac.addBindingOpen}
-                onOk={() => {
-                    void rbac.submitAddBinding();
-                }}
-                onCancel={rbac.closeAddBindingModal}
-                confirmLoading={rbac.createBindingPending}
-                forceRender={true}
-                maskClosable={false}
-                keyboard={false}
-                data-testid="rbac-binding-add-modal"
-            >
-                <Form form={rbac.bindingForm} layout="vertical" preserve={false}>
-                    <Form.Item label={t('rbac.bindings.select_user')}>
-                        <Input value={rbac.selectedUserDisplayLabel} readOnly />
-                    </Form.Item>
-                    <Form.Item name="role_id" label={t('rbac.bindings.role')} rules={[{ required: true }]}>
-                        <Select options={roleOptions} optionFilterProp="label" showSearch />
-                    </Form.Item>
-                    <Form.Item name="scope_type" label={t('rbac.bindings.scope_type')} rules={[{ required: true }]} initialValue="global">
-                        <Select
-                            options={scopeOptions}
-                            onChange={(value) => {
-                                rbac.bindingForm.setFieldsValue({ scope_type: value, scope_id: undefined });
-                            }}
-                        />
-                    </Form.Item>
-                    {bindingScopeType && bindingScopeType !== 'global' ? (
-                        <Form.Item
-                            name="scope_id"
-                            label={t('rbac.bindings.scope_id')}
-                            extra={t('rbac.bindings.scope_id_help', {
-                                scope: t(`rbac.scope.${bindingScopeType}`, { defaultValue: bindingScopeType }),
-                            })}
-                        >
-                            <AutoComplete
-                                options={scopeTargetOptions}
-                                allowClear={true}
-                                placeholder={t('rbac.bindings.scope_id_placeholder')}
-                                filterOption={(inputValue, option) => {
-                                    const label = String(option?.label ?? '').toLowerCase();
-                                    const value = String(option?.value ?? '').toLowerCase();
-                                    const search = inputValue.trim().toLowerCase();
-                                    return label.includes(search) || value.includes(search);
+            {rbac.addBindingOpen ? (
+                <Modal
+                    title={t('rbac.bindings.add_title')}
+                    open={rbac.addBindingOpen}
+                    onOk={() => {
+                        void rbac.submitAddBinding();
+                    }}
+                    onCancel={rbac.closeAddBindingModal}
+                    confirmLoading={rbac.createBindingPending}
+                    maskClosable={false}
+                    keyboard={false}
+                    data-testid="rbac-binding-add-modal"
+                >
+                    <Form form={rbac.bindingForm} layout="vertical" preserve={false}>
+                        <Form.Item label={t('rbac.bindings.select_user')}>
+                            <Input value={rbac.selectedUserDisplayLabel} readOnly />
+                        </Form.Item>
+                        <Form.Item name="role_id" label={t('rbac.bindings.role')} rules={[{ required: true }]}>
+                            <Select options={roleOptions} optionFilterProp="label" showSearch />
+                        </Form.Item>
+                        <Form.Item name="scope_type" label={t('rbac.bindings.scope_type')} rules={[{ required: true }]} initialValue="global">
+                            <Select
+                                options={scopeOptions}
+                                onChange={(value) => {
+                                    rbac.bindingForm.setFieldsValue({ scope_type: value, scope_id: undefined });
                                 }}
-                                notFoundContent={scopeTargetLoading
-                                    ? t('common:status.loading', { defaultValue: 'Loading…' })
-                                    : t('rbac.bindings.scope_target_empty', { defaultValue: 'No suggested targets yet' })}
                             />
                         </Form.Item>
-                    ) : null}
-                    <Form.Item name="allowed_environments" label={t('rbac.bindings.allowed_envs')}>
-                        <Select mode="multiple" options={environmentOptions} />
-                    </Form.Item>
-                </Form>
-            </Modal>
+                        {bindingScopeType && bindingScopeType !== 'global' ? (
+                            <Form.Item
+                                name="scope_id"
+                                label={t('rbac.bindings.scope_id')}
+                                extra={t('rbac.bindings.scope_id_help', {
+                                    scope: t(`rbac.scope.${bindingScopeType}`, { defaultValue: bindingScopeType }),
+                                })}
+                            >
+                                <AutoComplete
+                                    options={scopeTargetOptions}
+                                    allowClear={true}
+                                    placeholder={t('rbac.bindings.scope_id_placeholder')}
+                                    filterOption={(inputValue, option) => {
+                                        const label = String(option?.label ?? '').toLowerCase();
+                                        const value = String(option?.value ?? '').toLowerCase();
+                                        const search = inputValue.trim().toLowerCase();
+                                        return label.includes(search) || value.includes(search);
+                                    }}
+                                    notFoundContent={scopeTargetLoading
+                                        ? t('common:status.loading', { defaultValue: 'Loading…' })
+                                        : t('rbac.bindings.scope_target_empty', { defaultValue: 'No suggested targets yet' })}
+                                />
+                            </Form.Item>
+                        ) : null}
+                        <Form.Item name="allowed_environments" label={t('rbac.bindings.allowed_envs')}>
+                            <Select mode="multiple" options={environmentOptions} />
+                        </Form.Item>
+                    </Form>
+                </Modal>
+            ) : null}
         </div>
     );
 }

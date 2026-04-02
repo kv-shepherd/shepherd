@@ -7,6 +7,7 @@ import {
     Form,
     Input,
     Modal,
+    Select,
     Space,
     Table,
     Typography,
@@ -36,6 +37,7 @@ import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
 import { SystemsOverviewGlyph } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
+import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 import { WorkbenchDetailModal } from '@/components/workbench/WorkbenchDetailModal';
 import { useApiGet } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
@@ -54,6 +56,11 @@ import type { components } from '@/types/api.gen';
 const { Text, Paragraph } = Typography;
 type Service = components['schemas']['Service'];
 type ServiceList = components['schemas']['ServiceList'];
+
+const filterOptionByLabel = (input: string, option?: { label?: unknown }) => {
+    const label = typeof option?.label === 'string' ? option.label : '';
+    return label.toLowerCase().includes(input.trim().toLowerCase());
+};
 
 interface SystemServicesCellProps {
     systemId: string;
@@ -133,6 +140,15 @@ export function SystemsManagementContent() {
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailSystem, setDetailSystem] = useState<System | null>(null);
     const [dismissedQueryDetailSystemId, setDismissedQueryDetailSystemId] = useState<string | null>(null);
+    const [quickSearchDraft, setQuickSearchDraft] = useState(() => systems.filters.search);
+    const [createdByDraft, setCreatedByDraft] = useState(() => systems.filters.createdBy);
+    const [serviceIdDraft, setServiceIdDraft] = useState(() => systems.filters.serviceId);
+    const [memberIdDraft, setMemberIdDraft] = useState(() => systems.filters.memberId);
+    const [filtersOpen, setFiltersOpen] = useState(
+        () => systems.filters.createdBy !== ''
+            || systems.filters.serviceId !== ''
+            || systems.filters.memberId !== '',
+    );
     const detailSystemIdFromQuery = searchParams.get('detail_system_id') || undefined;
 
     const activeDetailSystem = useMemo(() => {
@@ -277,6 +293,48 @@ export function SystemsManagementContent() {
             ),
         },
     ];
+    const systemItems = useMemo(() => systems.data?.items ?? [], [systems.data?.items]);
+    const creatorOptions = useMemo(
+        () =>
+            (systems.systemFilterOptions?.creators ?? []).map((option) => ({
+                value: option.value,
+                label: option.label,
+            })),
+        [systems.systemFilterOptions?.creators],
+    );
+    const serviceOptions = useMemo(
+        () =>
+            (systems.systemFilterOptions?.services ?? []).map((option) => ({
+                value: option.value,
+                label: option.group ? `${option.group} · ${option.label}` : option.label,
+            })),
+        [systems.systemFilterOptions?.services],
+    );
+    const memberOptions = useMemo(
+        () =>
+            (systems.systemFilterOptions?.members ?? []).map((option) => ({
+                value: option.value,
+                label: option.label,
+            })),
+        [systems.systemFilterOptions?.members],
+    );
+    const applySearch = (searchValue = quickSearchDraft) => {
+        systems.applyFilters({
+            search: searchValue,
+            createdBy: createdByDraft,
+            serviceId: serviceIdDraft,
+            memberId: memberIdDraft,
+        });
+    };
+
+    const clearSearch = () => {
+        setQuickSearchDraft('');
+        setCreatedByDraft('');
+        setServiceIdDraft('');
+        setMemberIdDraft('');
+        setFiltersOpen(false);
+        systems.clearFilters();
+    };
 
     return (
         <div>
@@ -286,30 +344,115 @@ export function SystemsManagementContent() {
                 subtitle={t('systems.subtitle')}
                 actions={(
                     <Space>
-                    <Button icon={<ReloadOutlined />} onClick={() => systems.refetch()}>
-                        {t('button.refresh')}
-                    </Button>
-                    <PermissionGuard permission="system:write">
-                        <Button
-                            type="primary"
-                            icon={<PlusOutlined />}
-                            data-testid="system-create-button"
-                            onClick={systems.openCreateModal}
-                        >
-                            {t('button.create')}
+                        <Button icon={<ReloadOutlined />} onClick={() => systems.refetch()}>
+                            {t('button.refresh')}
                         </Button>
-                    </PermissionGuard>
+                        <PermissionGuard permission="system:write">
+                            <Button
+                                type="primary"
+                                icon={<PlusOutlined />}
+                                data-testid="system-create-button"
+                                onClick={systems.openCreateModal}
+                            >
+                                {t('button.create')}
+                            </Button>
+                        </PermissionGuard>
                     </Space>
                 )}
             />
 
-            {(systems.data?.items?.length ?? 0) === 0 && !systems.isLoading ? (
+            {systemItems.length === 0 && !systems.isLoading && !systems.hasActiveFilters ? (
                 <SetupGuideCard variant="systems" />
             ) : (
                 <PageSurface flush={true}>
+                    <div style={{ padding: 16, paddingBottom: 0 }}>
+                        <PageSearchToolbar
+                            searchValue={systems.filters.search}
+                            searchDraftValue={quickSearchDraft}
+                            onSearchDraftChange={setQuickSearchDraft}
+                            onSearchChange={(value) => {
+                                setQuickSearchDraft(value);
+                                systems.applyFilters({
+                                    search: value,
+                                    createdBy: systems.filters.createdBy,
+                                    serviceId: systems.filters.serviceId,
+                                    memberId: systems.filters.memberId,
+                                });
+                            }}
+                            searchPlaceholder={t('systems.search_placeholder', 'Search systems, services, or members')}
+                            searchTestId="systems-quick-search"
+                            searchHelp={t('systems.search_help', 'Press Enter or click Search. Quick search matches system names, descriptions, creators, related services, members, and pasted IDs.')}
+                            advancedSearch={{
+                                open: filtersOpen,
+                                onToggle: () => setFiltersOpen((open) => !open),
+                                openLabel: t('search.advanced', { defaultValue: 'Advanced search' }),
+                                closeLabel: t('search.hide_advanced', { defaultValue: 'Hide advanced search' }),
+                                title: t('search.advanced', { defaultValue: 'Advanced search' }),
+                                toggleTestId: 'systems-search-filters-toggle',
+                                content: (
+                                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                        <Text type="secondary">
+                                            {t('systems.search.advanced_help', 'Select exact filters here. Options support keyword matching, but the applied filter remains an exact match.')}
+                                        </Text>
+                                        <Space wrap size={[12, 12]} align="end">
+                                            <Select
+                                                allowClear
+                                                showSearch
+                                                filterOption={filterOptionByLabel}
+                                                optionFilterProp="label"
+                                                style={{ width: 220 }}
+                                                data-testid="systems-filter-created-by"
+                                                placeholder={t('systems.search.created_by', 'Created by')}
+                                                value={createdByDraft || undefined}
+                                                options={creatorOptions}
+                                                loading={systems.systemFilterOptionsLoading}
+                                                onChange={(value) => setCreatedByDraft(value ?? '')}
+                                            />
+                                            <Select
+                                                allowClear
+                                                showSearch
+                                                filterOption={filterOptionByLabel}
+                                                optionFilterProp="label"
+                                                style={{ width: 260 }}
+                                                data-testid="systems-filter-service"
+                                                placeholder={t('systems.search.service', 'Related service')}
+                                                value={serviceIdDraft || undefined}
+                                                options={serviceOptions}
+                                                loading={systems.systemFilterOptionsLoading}
+                                                onChange={(value) => setServiceIdDraft(value ?? '')}
+                                            />
+                                            <Select
+                                                allowClear
+                                                showSearch
+                                                filterOption={filterOptionByLabel}
+                                                optionFilterProp="label"
+                                                style={{ width: 280 }}
+                                                data-testid="systems-filter-member"
+                                                placeholder={t('systems.search.member', 'Member')}
+                                                value={memberIdDraft || undefined}
+                                                options={memberOptions}
+                                                loading={systems.systemFilterOptionsLoading}
+                                                onChange={(value) => setMemberIdDraft(value ?? '')}
+                                            />
+                                            <Button
+                                                type="primary"
+                                                data-testid="systems-advanced-search-submit"
+                                                onClick={() => applySearch()}
+                                            >
+                                                {t('button.search')}
+                                            </Button>
+                                        </Space>
+                                    </Space>
+                                ),
+                            }}
+                            hasActiveFilters={systems.hasActiveFilters}
+                            onClear={clearSearch}
+                            clearLabel={t('button.clear_filters', { defaultValue: 'Clear filters' })}
+                        />
+                    </div>
                     <Table<System>
                         columns={columns}
-                        dataSource={systems.data?.items ?? []}
+                        dataSource={systemItems}
                         rowKey="id"
                         loading={systems.isLoading}
                         scroll={{ x: 'max-content' }}
@@ -324,10 +467,21 @@ export function SystemsManagementContent() {
                             },
                         }}
                         size="middle"
+                        locale={{
+                            emptyText: (
+                                <ActionEmptyState
+                                    compact={true}
+                                    title={t('systems.empty_filtered_title', 'No systems match the current search')}
+                                    description={t('systems.empty_filtered_description', 'Try a broader search or clear the current query.')}
+                                    visual={<SystemsOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                                />
+                            ),
+                        }}
                     />
                 </PageSurface>
             )}
 
+            {systems.createOpen ? (
             <Modal
                 title={t('systems.modal.create_title')}
                 open={systems.createOpen}
@@ -336,7 +490,6 @@ export function SystemsManagementContent() {
                 }}
                 onCancel={systems.closeCreateModal}
                 confirmLoading={systems.createPending}
-                forceRender={true}
                 data-testid="system-create-modal"
             >
                 <Form form={systems.form} layout="vertical" name="create-system">
@@ -401,7 +554,9 @@ export function SystemsManagementContent() {
                     </Form.Item>
                 </Form>
             </Modal>
+            ) : null}
 
+            {systems.editOpen ? (
             <Modal
                 title={t('systems.modal.edit_title')}
                 open={systems.editOpen}
@@ -410,7 +565,6 @@ export function SystemsManagementContent() {
                 }}
                 onCancel={systems.closeEditModal}
                 confirmLoading={systems.updatePending}
-                forceRender={true}
                 data-testid="system-edit-modal"
             >
                 <Form form={systems.editForm} layout="vertical" name="edit-system">
@@ -461,7 +615,9 @@ export function SystemsManagementContent() {
                     </Form.Item>
                 </Form>
             </Modal>
+            ) : null}
 
+            {systems.deleteOpen ? (
             <Modal
                 title={(
                     <Space>
@@ -478,7 +634,6 @@ export function SystemsManagementContent() {
                     disabled: systems.deleteConfirmName !== systems.deletingSystem?.name,
                 }}
                 okText={t('button.delete')}
-                forceRender={true}
                 data-testid="system-delete-modal"
             >
                 <Paragraph>
@@ -494,6 +649,7 @@ export function SystemsManagementContent() {
                     status={systems.deleteConfirmName && systems.deleteConfirmName !== systems.deletingSystem?.name ? 'error' : undefined}
                 />
             </Modal>
+            ) : null}
 
             <SystemMembersModal
                 open={systems.membersOpen}
@@ -502,6 +658,7 @@ export function SystemsManagementContent() {
                 systemName={systems.membersSystem?.name}
             />
 
+            {detailModalOpen && activeDetailSystem ? (
             <WorkbenchDetailModal
                 title={activeDetailSystem?.name}
                 open={detailModalOpen}
@@ -524,7 +681,6 @@ export function SystemsManagementContent() {
                         {t('button.close', 'Close')}
                     </Button>
                 ]}
-                forceRender
                 width="min(1120px, calc(100vw - 16px))"
                 contentMinWidth={1040}
             >
@@ -625,6 +781,7 @@ export function SystemsManagementContent() {
                     </div>
                 </Space>
             </WorkbenchDetailModal>
+            ) : null}
         </div>
     );
 }

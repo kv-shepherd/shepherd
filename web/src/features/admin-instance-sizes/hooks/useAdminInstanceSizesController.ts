@@ -2,7 +2,7 @@
 
 import { Form, message } from 'antd';
 import type { TFunction } from 'i18next';
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { SETUP_GUIDE_INVALIDATION_KEYS } from '@/features/setup-guide/queryKeys';
@@ -11,6 +11,8 @@ import { translateApiError } from '@/lib/api/errorMessage';
 
 import {
     getCapabilityLabels,
+    hasCPUOvercommit,
+    hasMemoryOvercommit,
     type InstanceSize,
     type InstanceSizeCreateRequest,
     type InstanceSizeList,
@@ -20,6 +22,21 @@ import {
 interface UseAdminInstanceSizesControllerArgs {
     t: TFunction;
     onCreateSuccess?: (instanceSize: InstanceSize, context: { isFirstInstanceSize: boolean }) => boolean | void;
+}
+
+interface InstanceSizeSearchFilters {
+    search: string;
+    catalogScope: string;
+    enabled: '' | 'enabled' | 'disabled';
+    publication: '' | 'ready' | 'hidden' | 'disabled';
+    capability:
+        | ''
+        | 'gpu'
+        | 'sriov'
+        | 'hugepages'
+        | 'dedicated_cpu'
+        | 'cpu_overcommit'
+        | 'memory_overcommit';
 }
 
 
@@ -65,6 +82,126 @@ const INSTANCE_SIZE_CREATE_INITIAL_VALUES: Partial<InstanceSizeFormValues> = {
     dv_access_modes: undefined,
     dv_volume_mode: undefined,
 };
+
+const EMPTY_INSTANCE_SIZE_SEARCH_FILTERS: InstanceSizeSearchFilters = {
+    search: '',
+    catalogScope: '',
+    enabled: '',
+    publication: '',
+    capability: '',
+};
+
+function normalizeInstanceSizeSearchFilters(
+    nextFilters: Partial<InstanceSizeSearchFilters>,
+): InstanceSizeSearchFilters {
+    return {
+        search: nextFilters.search?.trim() ?? '',
+        catalogScope: nextFilters.catalogScope?.trim() ?? '',
+        enabled:
+            nextFilters.enabled === 'enabled' || nextFilters.enabled === 'disabled'
+                ? nextFilters.enabled
+                : '',
+        publication:
+            nextFilters.publication === 'ready' ||
+            nextFilters.publication === 'hidden' ||
+            nextFilters.publication === 'disabled'
+                ? nextFilters.publication
+                : '',
+        capability:
+            nextFilters.capability === 'gpu' ||
+            nextFilters.capability === 'sriov' ||
+            nextFilters.capability === 'hugepages' ||
+            nextFilters.capability === 'dedicated_cpu' ||
+            nextFilters.capability === 'cpu_overcommit' ||
+            nextFilters.capability === 'memory_overcommit'
+                ? nextFilters.capability
+                : '',
+    };
+}
+
+export function resolveInstanceSizePublicationState(record: Pick<InstanceSize, 'enabled' | 'catalog_scope'>) {
+    if (record.enabled === false) {
+        return 'disabled';
+    }
+    if ((record.catalog_scope ?? 'unclassified') === 'unclassified') {
+        return 'hidden';
+    }
+    return 'ready';
+}
+
+export function matchesInstanceSizeCapabilityFilter(
+    record: InstanceSize,
+    capability: InstanceSizeSearchFilters['capability'],
+) {
+    switch (capability) {
+        case '':
+            return true;
+        case 'gpu':
+            return record.requires_gpu || getCapabilityLabels(record).some((label) => label.startsWith('GPU '));
+        case 'sriov':
+            return record.requires_sriov === true;
+        case 'hugepages':
+            return record.requires_hugepages === true;
+        case 'dedicated_cpu':
+            return record.dedicated_cpu === true;
+        case 'cpu_overcommit':
+            return hasCPUOvercommit(record);
+        case 'memory_overcommit':
+            return hasMemoryOvercommit(record);
+        default:
+            return true;
+    }
+}
+
+export function filterAdminInstanceSizes(
+    items: InstanceSize[],
+    filters: InstanceSizeSearchFilters,
+) {
+    const search = filters.search.toLowerCase();
+    return items.filter((instanceSize) => {
+        if (search) {
+            const searchTokens = [
+                instanceSize.id,
+                instanceSize.name,
+                instanceSize.display_name ?? '',
+                instanceSize.description ?? '',
+                instanceSize.catalog_scope ?? '',
+                instanceSize.enabled === false ? 'disabled' : 'enabled',
+                resolveInstanceSizePublicationState(instanceSize),
+                String(instanceSize.cpu_cores),
+                String(instanceSize.memory_gi),
+                String(instanceSize.disk_gb ?? ''),
+                ...getCapabilityLabels(instanceSize),
+                ...(instanceSize.dv_access_modes ?? []),
+                instanceSize.dv_volume_mode ?? '',
+            ]
+                .join(' ')
+                .toLowerCase();
+            if (!searchTokens.includes(search)) {
+                return false;
+            }
+        }
+        if (filters.catalogScope && instanceSize.catalog_scope !== filters.catalogScope) {
+            return false;
+        }
+        if (filters.enabled) {
+            const isEnabled = instanceSize.enabled !== false;
+            if (filters.enabled === 'enabled' && !isEnabled) {
+                return false;
+            }
+            if (filters.enabled === 'disabled' && isEnabled) {
+                return false;
+            }
+        }
+        if (filters.publication && resolveInstanceSizePublicationState(instanceSize) !== filters.publication) {
+            return false;
+        }
+        if (!matchesInstanceSizeCapabilityFilter(instanceSize, filters.capability)) {
+            return false;
+        }
+        return true;
+    });
+}
 
 
 /**
@@ -173,9 +310,7 @@ export function useAdminInstanceSizesController({
     onCreateSuccess,
 }: UseAdminInstanceSizesControllerArgs) {
     const [messageApi, messageContextHolder] = message.useMessage();
-    const [globalSearch, setGlobalSearch] = useState('');
-    const deferredSearch = useDeferredValue(globalSearch);
-    const isStale = globalSearch !== deferredSearch;
+    const [filters, setFilters] = useState<InstanceSizeSearchFilters>(EMPTY_INSTANCE_SIZE_SEARCH_FILTERS);
 
     const [searchedColumn, setSearchedColumn] = useState('');
     const [searchText, setSearchText] = useState('');
@@ -249,22 +384,25 @@ export function useAdminInstanceSizesController({
 
     const filteredItems = useMemo(() => {
         const items = instanceSizesQuery.data?.items ?? [];
-        if (!deferredSearch) {
-            return items;
-        }
-        const query = deferredSearch.toLowerCase();
-        return items.filter((instanceSize: InstanceSize) =>
-            instanceSize.name.toLowerCase().includes(query) ||
-            (instanceSize.display_name ?? '').toLowerCase().includes(query) ||
-            (instanceSize.description ?? '').toLowerCase().includes(query) ||
-            getCapabilityLabels(instanceSize).some((label) => label.toLowerCase().includes(query)) ||
-            getRootVolumeModeLabels(instanceSize).some((label) => label.toLowerCase().includes(query))
-        );
-    }, [instanceSizesQuery.data?.items, deferredSearch]);
+        return filterAdminInstanceSizes(items, filters);
+    }, [instanceSizesQuery.data?.items, filters]);
     const editInitialValues = useMemo(
         () => (editingItem ? instanceSizeToFormValues(editingItem) : undefined),
         [editingItem]
     );
+
+    const applyFilters = (nextFilters: Partial<InstanceSizeSearchFilters>) => {
+        setFilters((current) =>
+            normalizeInstanceSizeSearchFilters({
+                ...current,
+                ...nextFilters,
+            }),
+        );
+    };
+
+    const clearFilters = () => {
+        setFilters(EMPTY_INSTANCE_SIZE_SEARCH_FILTERS);
+    };
 
     const openCreateModal = () => {
         setCreateOpen(true);
@@ -307,10 +445,14 @@ export function useAdminInstanceSizesController({
 
     return {
         messageContextHolder,
-        globalSearch,
-        setGlobalSearch,
-        deferredSearch,
-        isStale,
+        filters,
+        hasActiveFilters: Object.values(filters).some((value) => value !== ''),
+        applyFilters,
+        clearFilters,
+        globalSearch: filters.search,
+        setGlobalSearch: (value: string) => applyFilters({ search: value }),
+        deferredSearch: filters.search,
+        isStale: false,
         searchedColumn,
         setSearchedColumn,
         searchText,
@@ -369,11 +511,4 @@ function normalizeStringList(values: string[] | undefined): string[] {
         normalized.push(value);
     }
     return normalized;
-}
-
-function getRootVolumeModeLabels(record: InstanceSize): string[] {
-    if (!record.dv_volume_mode || !record.dv_access_modes?.length) {
-        return ['Root Volume Auto'];
-    }
-    return [`Root Volume ${record.dv_volume_mode} ${record.dv_access_modes.join('/')}`];
 }

@@ -11,7 +11,7 @@
  *   vm-batch-page
  *   batch-action-detail-{id}
  */
-import { Button, Space, Table, Tag, Typography } from 'antd';
+import { Button, Select, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
     EyeOutlined,
@@ -23,6 +23,7 @@ import {
 import dayjs from 'dayjs';
 import type { TFunction } from 'i18next';
 import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useApiGet } from '@/lib/api/useApiGet';
@@ -31,8 +32,14 @@ import { api } from '@/lib/api/client';
 import { translateApiError } from '@/lib/api/errorMessage';
 import { useMessage } from '@/lib/hooks/useMessage';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 
 const { Text } = Typography;
+
+const filterOptionByLabel = (input: string, option?: { label?: unknown }) => {
+    const label = typeof option?.label === 'string' ? option.label : '';
+    return label.toLowerCase().includes(input.trim().toLowerCase());
+};
 
 interface BatchJobSummary {
     id: string;
@@ -82,6 +89,13 @@ export default function VMBatchListPage() {
     const { t } = useTranslation(['vm', 'common']);
     const router = useRouter();
     const { messageApi, messageContextHolder } = useMessage();
+    const [quickSearchDraft, setQuickSearchDraft] = useState('');
+    const [search, setSearch] = useState('');
+    const [operationDraft, setOperationDraft] = useState('');
+    const [statusDraft, setStatusDraft] = useState('');
+    const [operationFilter, setOperationFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
+    const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
 
     const { data, isLoading, refetch } = useApiGet<BatchJobList>(
         ['vm-batch-list'],
@@ -117,6 +131,48 @@ export default function VMBatchListPage() {
     const canRetry = (status: string) => status === 'FAILED' || status === 'PARTIAL_SUCCESS';
     const canCancel = (status: string) =>
         status === 'PENDING_APPROVAL' || status === 'IN_PROGRESS';
+    const batchItems = useMemo(() => data?.items ?? [], [data?.items]);
+    const operationOptions = useMemo(
+        () =>
+            Array.from(new Set(batchItems.map((item) => item.operation).filter(Boolean)))
+                .sort((left, right) => left.localeCompare(right))
+                .map((operation) => ({
+                    value: operation,
+                    label: batchOperationLabel(operation, t),
+                })),
+        [batchItems, t],
+    );
+    const statusOptions = useMemo(
+        () =>
+            Array.from(new Set(batchItems.map((item) => item.status).filter(Boolean)))
+                .sort((left, right) => left.localeCompare(right))
+                .map((status) => ({
+                    value: status,
+                    label: batchStatusLabel(status, t),
+                })),
+        [batchItems, t],
+    );
+    const filteredBatchItems = useMemo(() => {
+        const normalizedSearch = search.trim().toLowerCase();
+        return batchItems.filter((item) => {
+            if (operationFilter !== '' && item.operation !== operationFilter) {
+                return false;
+            }
+            if (statusFilter !== '' && item.status !== statusFilter) {
+                return false;
+            }
+            if (normalizedSearch === '') {
+                return true;
+            }
+            return [
+                item.id,
+                item.operation,
+                item.status,
+                batchOperationLabel(item.operation, t),
+                batchStatusLabel(item.status, t),
+            ].some((value) => value.toLowerCase().includes(normalizedSearch));
+        });
+    }, [batchItems, operationFilter, search, statusFilter, t]);
 
     const columns: ColumnsType<BatchJobSummary> = [
         {
@@ -233,9 +289,86 @@ export default function VMBatchListPage() {
             />
 
             <PageSurface flush={true}>
+                <div style={{ padding: 16, paddingBottom: 0 }}>
+                    <PageSearchToolbar
+                        searchValue={search}
+                        searchDraftValue={quickSearchDraft}
+                        onSearchDraftChange={setQuickSearchDraft}
+                        onSearchChange={(value) => {
+                            const nextValue = value.trim();
+                            setQuickSearchDraft(nextValue);
+                            setSearch(nextValue);
+                        }}
+                        searchPlaceholder={t('batch.search_placeholder', { defaultValue: 'Search batch operations or paste a batch ID' })}
+                        searchTestId="batch-quick-search"
+                        searchHelp={t('batch.search_help', { defaultValue: 'Press Enter or click Search. Quick search matches operation, status, and pasted batch IDs.' })}
+                        advancedSearch={{
+                            open: advancedSearchOpen,
+                            onToggle: () => setAdvancedSearchOpen((open) => !open),
+                            openLabel: t('common:search.advanced', { defaultValue: 'Advanced search' }),
+                            closeLabel: t('common:search.hide_advanced', { defaultValue: 'Hide advanced search' }),
+                            title: t('batch.advanced_search_title', { defaultValue: 'Advanced search' }),
+                            toggleTestId: 'batch-advanced-search-toggle',
+                            content: (
+                                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                    <Text type="secondary">
+                                        {t('batch.advanced_search_help', { defaultValue: 'Select exact filters here. Options support keyword matching, but the applied filter remains an exact match.' })}
+                                    </Text>
+                                    <Space wrap size={[12, 12]}>
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            style={{ minWidth: 220 }}
+                                            data-testid="batch-filter-operation"
+                                            placeholder={t('batch.operation', { defaultValue: 'Operation' })}
+                                            options={operationOptions}
+                                            value={operationDraft || undefined}
+                                            onChange={(value) => setOperationDraft(value ?? '')}
+                                        />
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            style={{ minWidth: 220 }}
+                                            data-testid="batch-filter-status"
+                                            placeholder={t('batch.status', { defaultValue: 'Status' })}
+                                            options={statusOptions}
+                                            value={statusDraft || undefined}
+                                            onChange={(value) => setStatusDraft(value ?? '')}
+                                        />
+                                        <Button
+                                            type="primary"
+                                            data-testid="batch-advanced-search-submit"
+                                            onClick={() => {
+                                                setOperationFilter(operationDraft);
+                                                setStatusFilter(statusDraft);
+                                            }}
+                                        >
+                                            {t('common:button.search')}
+                                        </Button>
+                                    </Space>
+                                </Space>
+                            ),
+                        }}
+                        hasActiveFilters={search !== '' || operationFilter !== '' || statusFilter !== ''}
+                        onClear={() => {
+                            setQuickSearchDraft('');
+                            setSearch('');
+                            setOperationDraft('');
+                            setStatusDraft('');
+                            setOperationFilter('');
+                            setStatusFilter('');
+                            setAdvancedSearchOpen(false);
+                        }}
+                        clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
+                    />
+                </div>
                 <Table<BatchJobSummary>
                     columns={columns}
-                    dataSource={data?.items ?? []}
+                    dataSource={filteredBatchItems}
                     rowKey="id"
                     loading={isLoading}
                     pagination={false}

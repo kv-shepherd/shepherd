@@ -1,10 +1,13 @@
 import { Form } from 'antd';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const pushMock = vi.fn();
 const useApiGetMock = vi.fn();
 const openCreateModalMock = vi.fn();
+const applyFiltersMock = vi.fn();
+const clearFiltersMock = vi.fn();
 
 vi.mock('next/navigation', () => ({
     useRouter: () => ({
@@ -48,6 +51,9 @@ vi.mock('react-i18next', () => ({
                 'button.refresh': 'Refresh',
                 'button.create': 'Create',
                 'button.close': 'Close',
+                'button.filter': 'Filters',
+                'button.hide_filters': 'Hide filters',
+                'button.search': 'Search',
                 'services.request_vm': 'Request VM',
                 'table.total': 'Total',
                 'message.confirm_delete': 'Delete?',
@@ -78,8 +84,182 @@ vi.mock('react-i18next', () => ({
     }),
 }));
 
+vi.mock('antd', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('antd')>();
+
+    return {
+        ...actual,
+        Card: ({
+            title,
+            extra,
+            children,
+        }: {
+            title?: ReactNode;
+            extra?: ReactNode;
+            children?: ReactNode;
+        }) => (
+            <section data-testid="antd-card">
+                {title ? <header>{title}</header> : null}
+                {extra ? <div>{extra}</div> : null}
+                <div>{children}</div>
+            </section>
+        ),
+        Modal: ({
+            open,
+            title,
+            children,
+            footer,
+        }: {
+            open?: boolean;
+            title?: ReactNode;
+            children?: ReactNode;
+            footer?: ReactNode;
+        }) =>
+            open ? (
+                <section className="ant-modal">
+                    {title ? <header>{title}</header> : null}
+                    <div>{children}</div>
+                    {footer ? <footer>{footer}</footer> : null}
+                </section>
+            ) : null,
+        Table: ({
+            columns = [],
+            dataSource = [],
+        }: {
+            columns?: Array<{
+                key?: string;
+                title?: ReactNode;
+                dataIndex?: string | string[];
+                render?: (value: unknown, record: Record<string, unknown>, index: number) => ReactNode;
+            }>;
+            dataSource?: Array<Record<string, unknown>>;
+        }) => (
+            <table data-testid="antd-table">
+                <thead>
+                    <tr>
+                        {columns.map((column, index) => (
+                            <th key={String(column.key ?? column.dataIndex ?? index)}>{column.title}</th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {dataSource.map((record, rowIndex) => (
+                        <tr key={String(record.id ?? rowIndex)}>
+                            {columns.map((column, columnIndex) => {
+                                const value = Array.isArray(column.dataIndex)
+                                    ? column.dataIndex.reduce<unknown>(
+                                        (current, key) =>
+                                            current && typeof current === 'object'
+                                                ? (current as Record<string, unknown>)[key]
+                                                : undefined,
+                                        record,
+                                    )
+                                    : typeof column.dataIndex === 'string'
+                                        ? record[column.dataIndex]
+                                        : undefined;
+                                const content = column.render
+                                    ? column.render(value, record, rowIndex)
+                                    : (value as ReactNode);
+                                return (
+                                    <td key={String(column.key ?? column.dataIndex ?? columnIndex)}>
+                                        {content}
+                                    </td>
+                                );
+                            })}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        ),
+    };
+});
+
 vi.mock('@/hooks/useApiQuery', () => ({
     useApiGet: (...args: unknown[]) => useApiGetMock(...args),
+}));
+
+vi.mock('@/components/feedback/ActionEmptyState', () => ({
+    ActionEmptyState: ({
+        title,
+        description,
+        actions,
+    }: {
+        title: string;
+        description?: string;
+        actions?: ReactNode;
+    }) => (
+        <section data-testid="action-empty-state">
+            <h2>{title}</h2>
+            {description ? <p>{description}</p> : null}
+            {actions}
+        </section>
+    ),
+}));
+
+vi.mock('@/components/layouts/PageSection', () => ({
+    PageHeader: ({
+        title,
+        subtitle,
+        actions,
+    }: {
+        title: ReactNode;
+        subtitle?: ReactNode;
+        actions?: ReactNode;
+    }) => (
+        <header data-testid="page-header">
+            <h1>{title}</h1>
+            {subtitle ? <p>{subtitle}</p> : null}
+            {actions}
+        </header>
+    ),
+    PageSurface: ({
+        children,
+    }: {
+        children: ReactNode;
+    }) => <section data-testid="page-surface">{children}</section>,
+}));
+
+vi.mock('@/components/ui/LocalDateTimeText', () => ({
+    LocalDateTimeText: ({ value }: { value: string }) => <time dateTime={value}>{value}</time>,
+}));
+
+vi.mock('@/components/illustrations/DashboardIllustrations', () => ({
+    RequestsOverviewGlyph: (props: Record<string, unknown>) => <span {...props}>requests-glyph</span>,
+    ServiceWorkspaceGlyph: (props: Record<string, unknown>) => <span {...props}>service-glyph</span>,
+    VirtualMachinesOverviewGlyph: (props: Record<string, unknown>) => <span {...props}>vms-glyph</span>,
+}));
+
+vi.mock('react-markdown', () => ({
+    default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock('remark-gfm', () => ({
+    default: [],
+}));
+
+vi.mock('rehype-sanitize', () => ({
+    default: [],
+}));
+
+vi.mock('@/components/workbench/WorkbenchDetailModal', () => ({
+    WorkbenchDetailModal: ({
+        open,
+        title,
+        children,
+        footer,
+    }: {
+        open?: boolean;
+        title?: React.ReactNode;
+        children?: React.ReactNode;
+        footer?: React.ReactNode;
+    }) =>
+        open ? (
+            <div className="ant-modal">
+                <div>{title}</div>
+                <div>{children}</div>
+                <div>{footer}</div>
+            </div>
+        ) : null,
 }));
 
 vi.mock('@/components/auth/PermissionGuard', () => ({
@@ -87,6 +267,7 @@ vi.mock('@/components/auth/PermissionGuard', () => ({
 }));
 
 vi.mock('../hooks/useServicesManagementController', () => ({
+    ALL_SYSTEMS_FILTER: '__all__',
     useServicesManagementController: () => {
         const [form] = Form.useForm();
         const [editForm] = Form.useForm();
@@ -96,7 +277,12 @@ vi.mock('../hooks/useServicesManagementController', () => ({
             createOpen: false,
             editOpen: false,
             editingService: null,
-            activeSystemId: 'sys-1',
+            filters: {
+                search: '',
+                systemId: '__all__',
+            },
+            hasActiveFilters: false,
+            activeSystemId: '__all__',
             page: 1,
             pageSize: 20,
             setPage: vi.fn(),
@@ -117,12 +303,22 @@ vi.mock('../hooks/useServicesManagementController', () => ({
                         next_instance_index: 3,
                         created_at: '2026-03-16T00:00:00Z',
                     },
+                    {
+                        id: 'svc-2',
+                        system_id: 'sys-1',
+                        system_name: 'System A',
+                        name: 'Payments',
+                        description: 'settlement',
+                        next_instance_index: 8,
+                        created_at: '2026-03-17T00:00:00Z',
+                    },
                 ],
-                pagination: { page: 1, per_page: 20, total: 1 },
+                pagination: { page: 1, per_page: 20, total: 2 },
             },
             isLoading: false,
             refetch: vi.fn(),
-            changeSystem: vi.fn(),
+            applyFilters: applyFiltersMock,
+            clearFilters: clearFiltersMock,
             openCreateModal: openCreateModalMock,
             closeCreateModal: vi.fn(),
             openEditModal: vi.fn(),
@@ -166,6 +362,8 @@ describe('ServicesManagementContent', () => {
     beforeEach(() => {
         pushMock.mockReset();
         openCreateModalMock.mockReset();
+        applyFiltersMock.mockReset();
+        clearFiltersMock.mockReset();
         window.history.replaceState({}, '', '/services');
         useApiGetMock.mockReturnValue({
             data: {
@@ -226,6 +424,37 @@ describe('ServicesManagementContent', () => {
         expect(pushMock).toHaveBeenCalledWith('/vms?request=create&system_id=sys-1&service_id=svc-1');
     });
 
+    it('submits quick search only when the user confirms it', () => {
+        render(<ServicesManagementContent />);
+
+        fireEvent.change(screen.getByTestId('services-quick-search'), {
+            target: { value: 'payment' },
+        });
+
+        expect(applyFiltersMock).not.toHaveBeenCalled();
+        fireEvent.keyDown(screen.getByTestId('services-quick-search'), {
+            key: 'Enter',
+            code: 'Enter',
+        });
+
+        expect(applyFiltersMock).toHaveBeenCalledWith({
+            search: 'payment',
+            systemId: '__all__',
+        });
+    });
+
+    it('shows advanced filters and submits them explicitly', () => {
+        render(<ServicesManagementContent />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Advanced search' }));
+        fireEvent.click(screen.getByTestId('services-advanced-search-submit'));
+
+        expect(applyFiltersMock).toHaveBeenCalledWith({
+            search: '',
+            systemId: '__all__',
+        });
+    });
+
     it('renders the owning system as a clickable link without exposing the raw system id', () => {
         render(<ServicesManagementContent />);
 
@@ -233,9 +462,9 @@ describe('ServicesManagementContent', () => {
 
         expect(pushMock).toHaveBeenCalledWith('/systems?detail_system_id=sys-1');
         expect(screen.queryByText('sys-1')).not.toBeInTheDocument();
-    }, 15000);
+    });
 
-    it('shows a service context modal with related VMs and requests', async () => {
+    it('shows a service context modal with related VMs and requests, then opens the VM workspace', async () => {
         render(<ServicesManagementContent />);
 
         fireEvent.click(screen.getByTestId('service-action-detail-svc-1'));
@@ -251,7 +480,6 @@ describe('ServicesManagementContent', () => {
         expect(modalQueries.getByText('My Recent Requests')).toBeInTheDocument();
         expect(modalQueries.getByText('vm-a')).toBeInTheDocument();
         expect(modalQueries.getByText('Create')).toBeInTheDocument();
-        expect(modalQueries.getByText('Need a VM')).toBeInTheDocument();
         expect(modalQueries.getByText('Ticket ID: ticket-1')).toBeInTheDocument();
         expect(
             modalQueries.getByRole('button', { name: 'Request VM' }),
@@ -262,7 +490,16 @@ describe('ServicesManagementContent', () => {
         expect(
             modalQueries.getByRole('button', { name: 'Open VM Workspace' }),
         ).toBeInTheDocument();
-    }, 20000);
+        const openWorkspaceButton = modalQueries.getByRole('button', {
+            name: 'Open VM Workspace',
+        });
+
+        fireEvent.click(openWorkspaceButton);
+
+        await waitFor(() => {
+            expect(pushMock).toHaveBeenCalledWith('/vms?system_id=sys-1&service_id=svc-1');
+        });
+    });
 
     it('opens the service detail modal from deep link context', async () => {
         window.history.replaceState({}, '', '/services?system_id=sys-1&detail_service_id=svc-1');
@@ -277,26 +514,5 @@ describe('ServicesManagementContent', () => {
         expect(modalQueries.getByText('Service A')).toBeInTheDocument();
         expect(modalQueries.getByText('System A')).toBeInTheDocument();
         expect(modalQueries.getByText('vm-a')).toBeInTheDocument();
-    }, 20000);
-
-    it('keeps system and service context when opening the VM workspace from service detail', async () => {
-        render(<ServicesManagementContent />);
-
-        fireEvent.click(screen.getByTestId('service-action-detail-svc-1'));
-
-        const detailModalTitle = await screen.findByText('Service Context');
-        const detailModal = detailModalTitle.closest('.ant-modal') as HTMLElement | null;
-
-        expect(detailModal).not.toBeNull();
-
-        const openWorkspaceButton = within(detailModal!).getByRole('button', {
-            name: 'Open VM Workspace',
-        });
-
-        fireEvent.click(openWorkspaceButton);
-
-        await waitFor(() => {
-            expect(pushMock).toHaveBeenCalledWith('/vms?system_id=sys-1&service_id=svc-1');
-        });
-    }, 20000);
+    });
 });

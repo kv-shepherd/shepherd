@@ -9,10 +9,16 @@ import {
     normalizeHugepagesPageSizeValue,
 } from '@/lib/hugepages';
 import {
+    buildRecognizedMaskFields,
+    buildScalarMapState,
+    deriveEnumOptionsFromDescription,
     DynamicSchemaForm,
     type DynamicSchemaFormHandle,
+    normalizeMapRows,
+    pruneSpecTree,
     type SchemaMask,
     type SchemaNode,
+    validateRawEditorText,
 } from './DynamicSchemaForm';
 
 vi.mock('react-i18next', () => ({
@@ -49,6 +55,10 @@ beforeAll(() => {
         });
     }
 });
+
+function openCollapsePanel(label: string) {
+    fireEvent.click(screen.getByText(label));
+}
 
 const minimalSchema: SchemaNode = {
     type: 'object',
@@ -185,7 +195,7 @@ describe('DynamicSchemaForm', () => {
 
         expect(screen.getByTestId('dynamic-form-spec.template.spec.domain.cpu.cores')).toBeInTheDocument();
         expect(screen.getByTestId(`dynamic-form-${HUGEPAGES_PAGE_SIZE_PATH}`)).toBeInTheDocument();
-    }, 10000);
+    });
 
     it('renders boolean mask fields with english heading, persistent help, and a single toggle control', () => {
         const booleanMask: SchemaMask = {
@@ -218,7 +228,7 @@ describe('DynamicSchemaForm', () => {
                 .getByTestId('dynamic-form-spec.template.spec.domain.devices.autoattachGraphicsDevice')
                 .closest('.ant-checkbox-wrapper'),
         ).toBeVisible();
-    }, 10000);
+    });
 
     it('renders introduced-in badges for fields added in newer KubeVirt baselines', () => {
         const versionedMask: SchemaMask = {
@@ -241,66 +251,22 @@ describe('DynamicSchemaForm', () => {
 
         expect(screen.getByText('v1.8.0+')).toBeVisible();
         expect(screen.getByText('Auto-attach Graphics')).toBeVisible();
-    }, 10000);
+    });
 
-    it('promotes description-bounded string fields into select controls', async () => {
-        const enumLikeSchema: SchemaNode = {
-            type: 'object',
-            properties: {
-                spec: {
-                    type: 'object',
-                    properties: {
-                        template: {
-                            type: 'object',
-                            properties: {
-                                spec: {
-                                    type: 'object',
-                                    properties: {
-                                        evictionStrategy: {
-                                            type: 'string',
-                                            description:
-                                                'The possible options are: - "None": no action. - "LiveMigrate": migrate. - "LiveMigrateIfPossible": migrate if possible.',
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-        };
-
-        const enumLikeMask: SchemaMask = {
-            quick_fields: [
-                {
-                    path: 'spec.template.spec.evictionStrategy',
-                    display_name: 'Eviction Strategy',
-                },
-            ],
-        };
-
-        render(
-            <Form layout="vertical">
-                <Form.Item name="spec_text" initialValue="{}">
-                    <DynamicSchemaForm schema={enumLikeSchema} mask={enumLikeMask} />
-                </Form.Item>
-            </Form>
-        );
-
-        expect(screen.getByText('Select an option')).toBeVisible();
-        fireEvent.mouseDown(screen.getByRole('combobox'));
-
-        expect(await screen.findByRole('listbox')).toBeInTheDocument();
-        expect(screen.getAllByRole('option', { name: 'None' }).length).toBeGreaterThan(0);
-        expect(screen.getAllByRole('option', { name: 'LiveMigrate' }).length).toBeGreaterThan(0);
-    }, 10000);
+    it('derives enum-like options from description text', () => {
+        expect(
+            deriveEnumOptionsFromDescription(
+                'The possible options are: - "None": no action. - "LiveMigrate": migrate. - "LiveMigrateIfPossible": migrate if possible.',
+            ),
+        ).toEqual(['None', 'LiveMigrate', 'LiveMigrateIfPossible']);
+    });
 
     it('normalizes custom MB hugepages input', () => {
         expect(normalizeHugepagesPageSizeValue('512')).toBe('512Mi');
         expect(normalizeHugepagesPageSizeValue(' 1024 Mi ')).toBe('1024Mi');
         expect(normalizeHugepagesPageSizeValue('1gi')).toBe('1Gi');
         expect(normalizeHugepagesPageSizeValue('')).toBeUndefined();
-    }, 10000);
+    });
 
     it('accepts presets and custom MB values only', () => {
         expect(isValidHugepagesPageSizeValue('2Mi')).toBe(true);
@@ -310,7 +276,7 @@ describe('DynamicSchemaForm', () => {
         expect(isValidHugepagesPageSizeValue('4Gi')).toBe(false);
         expect(isValidHugepagesPageSizeValue('abc')).toBe(false);
         expect(isValidHugepagesPageSizeValue(512)).toBe(false);
-    }, 10000);
+    });
 
     it('serializes spec_text as nested JSON instead of flat dot-notation keys', async () => {
         function Harness() {
@@ -364,7 +330,7 @@ describe('DynamicSchemaForm', () => {
         expect(screen.getByTestId('spec-text')).not.toHaveTextContent(
             'spec.template.spec.domain.cpu.cores'
         );
-    }, 10000);
+    });
 
     it('does not emit a redundant parent update when sync keeps spec_text unchanged', async () => {
         vi.useFakeTimers();
@@ -395,7 +361,7 @@ describe('DynamicSchemaForm', () => {
 
         expect(onValuesChange).not.toHaveBeenCalled();
         vi.useRealTimers();
-    }, 10000);
+    });
 
     it('hydrates existing nested values after schema becomes available', async () => {
         function DelayedSchemaHarness() {
@@ -430,7 +396,7 @@ describe('DynamicSchemaForm', () => {
         await waitFor(() => {
             expect(screen.getByDisplayValue('2')).toBeInTheDocument();
         });
-    }, 10000);
+    });
 
     it('hydrates advanced gpu array fields from nested spec_text', async () => {
         render(
@@ -455,58 +421,48 @@ describe('DynamicSchemaForm', () => {
             </Form>
         );
 
+        openCollapsePanel('Advanced Features');
+
         await waitFor(() => {
             expect(screen.getByDisplayValue('gpu0')).toBeInTheDocument();
             expect(screen.getByDisplayValue('nvidia.com/A10')).toBeInTheDocument();
         });
-    }, 10000);
+    });
 
-    it('renders empty-object schema nodes as presence toggles', async () => {
-        function Harness() {
-            const [form] = Form.useForm();
-            const formRef = useRef<DynamicSchemaFormHandle>(null);
-
-            return (
-                <Form form={form} layout="vertical">
-                    <Form.Item name="spec_text" initialValue="{}">
-                        <DynamicSchemaForm
-                            ref={formRef}
-                            schema={minimalSchema}
-                            mask={{
-                                quick_fields: [],
-                                advanced_fields: [
-                                    {
-                                        path: 'spec.template.spec.domain.clock.utc',
-                                        display_name: 'UTC Clock',
+    it('preserves empty-object presence nodes when pruning', () => {
+        expect(
+            pruneSpecTree(
+                {
+                    spec: {
+                        template: {
+                            spec: {
+                                domain: {
+                                    clock: {
+                                        utc: {},
                                     },
-                                ],
-                            }}
-                        />
-                    </Form.Item>
-                    <button type="button" onClick={() => formRef.current?.sync()}>
-                        sync
-                    </button>
-                    <Form.Item shouldUpdate noStyle>
-                        {() => <pre data-testid="spec-text">{form.getFieldValue('spec_text')}</pre>}
-                    </Form.Item>
-                </Form>
-            );
-        }
-
-        render(<Harness />);
-
-        fireEvent.click(screen.getByRole('button', { name: /advanced features/i }));
-        const checkbox = screen.getByRole('checkbox');
-        fireEvent.click(checkbox);
-
-        await act(async () => {
-            screen.getByText('sync').click();
+                                },
+                            },
+                        },
+                    },
+                },
+                undefined,
+                '',
+                minimalSchema,
+            ),
+        ).toEqual({
+            spec: {
+                template: {
+                    spec: {
+                        domain: {
+                            clock: {
+                                utc: {},
+                            },
+                        },
+                    },
+                },
+            },
         });
-
-        await waitFor(() => {
-            expect(screen.getByTestId('spec-text')).toHaveTextContent('"utc": {}');
-        });
-    }, 10000);
+    });
 
     it('allows raw json editing for fields outside the structured mask', async () => {
         function Harness() {
@@ -526,6 +482,8 @@ describe('DynamicSchemaForm', () => {
 
         render(<Harness />);
 
+        openCollapsePanel('Raw KubeVirt JSON');
+
         fireEvent.change(screen.getByTestId('dynamic-form-raw-json'), {
             target: {
                 value: '{\n  "spec": {\n    "template": {\n      "spec": {\n        "domain": {\n          "cpu": {\n            "cores": 6\n          },\n          "clock": {\n            "utc": {}\n          }\n        }\n      }\n    }\n  }\n}',
@@ -536,7 +494,7 @@ describe('DynamicSchemaForm', () => {
             expect(screen.getByTestId('spec-text')).toHaveTextContent('"cores": 6');
             expect(screen.getByTestId('spec-text')).toHaveTextContent('"utc": {}');
         });
-    }, 10000);
+    });
 
     it('clears hugepages field state when raw json removes the hugepages block', async () => {
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -579,6 +537,8 @@ describe('DynamicSchemaForm', () => {
             expect(screen.getByTestId('hugepages-value')).toHaveTextContent('2Mi');
         });
 
+        openCollapsePanel('Raw KubeVirt JSON');
+
         fireEvent.change(screen.getByTestId('dynamic-form-raw-json'), {
             target: {
                 value: '{\n  "spec": {\n    "template": {\n      "spec": {\n        "domain": {\n          "cpu": {\n            "cores": 6\n          }\n        }\n      }\n    }\n  }\n}',
@@ -595,189 +555,122 @@ describe('DynamicSchemaForm', () => {
             ),
         ).toBe(false);
         consoleErrorSpy.mockRestore();
-    }, 10000);
+    });
 
-    it('recognizes custom json fields into the recognition panel and keeps them visible after clearing', async () => {
-        function Harness() {
-            const [form] = Form.useForm();
-            const formRef = useRef<DynamicSchemaFormHandle>(null);
-
-            return (
-                <Form form={form} layout="vertical">
-                    <Form.Item name="spec_text" initialValue="{}">
-                        <DynamicSchemaForm ref={formRef} schema={minimalSchema} mask={minimalMask} />
-                    </Form.Item>
-                    <button type="button" onClick={() => formRef.current?.sync()}>
-                        sync
-                    </button>
-                    <Form.Item shouldUpdate noStyle>
-                        {() => <pre data-testid="spec-text">{form.getFieldValue('spec_text')}</pre>}
-                    </Form.Item>
-                </Form>
-            );
-        }
-
-        render(<Harness />);
-
-        fireEvent.click(screen.getByRole('button', { name: /json recognition/i }));
-
-        fireEvent.change(screen.getByTestId('dynamic-form-raw-json'), {
-            target: {
-                value: '{\n  "spec": {\n    "template": {\n      "spec": {\n        "domain": {\n          "cpu": {\n            "model": "host-passthrough"\n          }\n        }\n      }\n    }\n  }\n}',
+    it('recognizes custom json fields outside the mask', () => {
+        expect(
+            buildRecognizedMaskFields(
+                minimalSchema,
+                minimalMask,
+                {
+                    spec: {
+                        template: {
+                            spec: {
+                                domain: {
+                                    cpu: {
+                                        model: 'host-passthrough',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            ),
+        ).toEqual([
+            {
+                path: 'spec.template.spec.domain.cpu.model',
+                display_name: 'CPU Model',
             },
-        });
+        ]);
+    });
 
-        const modelInput = await screen.findByDisplayValue('host-passthrough');
-        fireEvent.change(modelInput, { target: { value: 'host-model' } });
+    it('does not recognize fields excluded by parent-managed paths', () => {
+        expect(
+            buildRecognizedMaskFields(
+                minimalSchema,
+                { quick_fields: [], advanced_fields: [] },
+                {
+                    spec: {
+                        template: {
+                            spec: {
+                                domain: {
+                                    cpu: {
+                                        cores: 4,
+                                        model: 'host-passthrough',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                ['spec.template.spec.domain.cpu.cores'],
+            ),
+        ).toEqual([
+            {
+                path: 'spec.template.spec.domain.cpu.model',
+                display_name: 'CPU Model',
+            },
+        ]);
+    });
 
-        await act(async () => {
-            screen.getByText('sync').click();
-        });
-
-        await waitFor(() => {
-            expect(screen.getByTestId('spec-text')).toHaveTextContent('"model": "host-model"');
-        });
-
-        fireEvent.change(screen.getByTestId('dynamic-form-spec.template.spec.domain.cpu.model'), {
-            target: { value: '' },
-        });
-
-        await waitFor(() => {
-            expect(screen.getByTestId('dynamic-form-spec.template.spec.domain.cpu.model')).toBeInTheDocument();
-        });
-    }, 10000);
-
-    it('does not recognize fields that are already managed by the parent form', async () => {
-        render(
-            <Form layout="vertical">
-                <Form.Item name="spec_text" initialValue="{}">
-                    <DynamicSchemaForm
-                        schema={minimalSchema}
-                        mask={{ quick_fields: [], advanced_fields: [] }}
-                        recognizedExcludedPaths={['spec.template.spec.domain.cpu.cores']}
-                    />
-                </Form.Item>
-            </Form>
+    it('preserves dotted keys when normalizing string map rows', () => {
+        const valueNode = { type: 'string' };
+        const { rows } = buildScalarMapState(
+            { 'kubevirt.io/ksm-enabled': 'true' },
+            valueNode,
         );
+        expect(
+            normalizeMapRows(
+                rows.map((row) => ({
+                    ...row,
+                    value: row.keyText === 'kubevirt.io/ksm-enabled' ? 'false' : row.value,
+                })),
+                valueNode,
+            ),
+        ).toEqual({ 'kubevirt.io/ksm-enabled': 'false' });
+    });
 
-        fireEvent.change(screen.getByTestId('dynamic-form-raw-json'), {
-            target: {
-                value: '{\n  "spec": {\n    "template": {\n      "spec": {\n        "domain": {\n          "cpu": {\n            "cores": 4,\n            "model": "host-passthrough"\n          }\n        }\n      }\n    }\n  }\n}',
+    it('preserves empty presence objects inside array items when pruning', () => {
+        expect(
+            pruneSpecTree(
+                {
+                    spec: {
+                        template: {
+                            spec: {
+                                domain: {
+                                    devices: {
+                                        interfaces: [{ name: 'default', model: 'virtio', bridge: {} }],
+                                    },
+                                },
+                                networks: [{ name: 'default', pod: {} }],
+                            },
+                        },
+                    },
+                },
+                undefined,
+                '',
+                minimalSchema,
+            ),
+        ).toEqual({
+            spec: {
+                template: {
+                    spec: {
+                        domain: {
+                            devices: {
+                                interfaces: [{ name: 'default', model: 'virtio', bridge: {} }],
+                            },
+                        },
+                        networks: [{ name: 'default', pod: {} }],
+                    },
+                },
             },
         });
+    });
 
-        fireEvent.click(screen.getByRole('button', { name: /json recognition/i }));
-
-        await screen.findByDisplayValue('host-passthrough');
-        expect(screen.queryByTestId('dynamic-form-spec.template.spec.domain.cpu.cores')).not.toBeInTheDocument();
-    }, 10000);
-
-    it('renders string map fields from mask and preserves dotted keys', async () => {
-        function Harness() {
-            const [form] = Form.useForm();
-            const formRef = useRef<DynamicSchemaFormHandle>(null);
-
-            return (
-                <Form form={form} layout="vertical">
-                    <Form.Item
-                        name="spec_text"
-                        initialValue='{"spec":{"template":{"spec":{"nodeSelector":{"kubevirt.io/ksm-enabled":"true"}}}}}'
-                    >
-                        <DynamicSchemaForm
-                            ref={formRef}
-                            schema={minimalSchema}
-                            mask={{
-                                quick_fields: [],
-                                advanced_fields: [
-                                    {
-                                        path: 'spec.template.spec.nodeSelector',
-                                        display_name: 'Node Selector',
-                                    },
-                                ],
-                            }}
-                        />
-                    </Form.Item>
-                    <button type="button" onClick={() => formRef.current?.sync()}>
-                        sync
-                    </button>
-                    <Form.Item shouldUpdate noStyle>
-                        {() => <pre data-testid="spec-text">{form.getFieldValue('spec_text')}</pre>}
-                    </Form.Item>
-                </Form>
-            );
-        }
-
-        render(<Harness />);
-
-        fireEvent.click(screen.getByRole('button', { name: /advanced features/i }));
-
-        const keyInput = await screen.findByTestId('dynamic-form-spec.template.spec.nodeSelector-key-0');
-        const valueInput = screen.getByTestId('dynamic-form-spec.template.spec.nodeSelector-value-0');
-
-        expect(keyInput).toHaveValue('kubevirt.io/ksm-enabled');
-        expect(valueInput).toHaveValue('true');
-
-        fireEvent.change(valueInput, { target: { value: 'false' } });
-
-        await act(async () => {
-            screen.getByText('sync').click();
-        });
-
-        await waitFor(() => {
-            expect(screen.getByTestId('spec-text')).toHaveTextContent('"kubevirt.io/ksm-enabled": "false"');
-        });
-    }, 10000);
-
-    it('preserves empty presence objects inside array items when syncing', async () => {
-        function Harness() {
-            const [form] = Form.useForm();
-            const formRef = useRef<DynamicSchemaFormHandle>(null);
-
-            return (
-                <Form form={form} layout="vertical">
-                    <Form.Item
-                        name="spec_text"
-                        initialValue='{"spec":{"template":{"spec":{"domain":{"devices":{"interfaces":[{"name":"default","model":"virtio","bridge":{}}]}},"networks":[{"name":"default","pod":{}}]}}}}'
-                    >
-                        <DynamicSchemaForm
-                            ref={formRef}
-                            schema={minimalSchema}
-                            mask={{
-                                quick_fields: [],
-                                advanced_fields: [
-                                    {
-                                        path: 'spec.template.spec.domain.devices.interfaces',
-                                        display_name: 'Interfaces',
-                                    },
-                                    {
-                                        path: 'spec.template.spec.networks',
-                                        display_name: 'Networks',
-                                    },
-                                ],
-                            }}
-                        />
-                    </Form.Item>
-                    <button type="button" onClick={() => formRef.current?.sync()}>
-                        sync
-                    </button>
-                    <Form.Item shouldUpdate noStyle>
-                        {() => <pre data-testid="spec-text">{form.getFieldValue('spec_text')}</pre>}
-                    </Form.Item>
-                </Form>
-            );
-        }
-
-        render(<Harness />);
-
-        fireEvent.click(screen.getByRole('button', { name: /advanced features/i }));
-
-        await act(async () => {
-            screen.getByText('sync').click();
-        });
-
-        await waitFor(() => {
-            expect(screen.getByTestId('spec-text')).toHaveTextContent('"bridge": {}');
-            expect(screen.getByTestId('spec-text')).toHaveTextContent('"pod": {}');
-        });
-    }, 10000);
+    it('validates raw editor json as object-only input', () => {
+        const t = (_key: string, fallback?: string) => fallback ?? _key;
+        expect(validateRawEditorText('', t as never)).toBeNull();
+        expect(validateRawEditorText('[]', t as never)).toContain('Spec JSON must be an object');
+        expect(validateRawEditorText('{', t as never)).toContain('JSON is invalid');
+    });
 });

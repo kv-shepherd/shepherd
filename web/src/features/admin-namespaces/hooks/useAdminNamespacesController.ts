@@ -34,18 +34,25 @@ export function useAdminNamespacesController({
     const [deletingNs, setDeletingNs] = useState<NamespaceRegistry | null>(null);
     const [deleteConfirmName, setDeleteConfirmName] = useState('');
     const [envFilter, setEnvFilter] = useState('');
+    const [enabledFilter, setEnabledFilter] = useState<'' | 'enabled' | 'disabled'>('');
+    const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
     const [createForm] = Form.useForm<NamespaceCreateRequest>();
     const [editForm] = Form.useForm<NamespaceUpdateRequest>();
+    const trimmedSearch = search.trim();
 
     const namespaceListQuery = useApiGet<NamespaceRegistryList>(
-        ['admin-namespaces', page, envFilter],
+        ['admin-namespaces', page, envFilter, enabledFilter, trimmedSearch],
         () => api.GET('/admin/namespaces', {
             params: {
                 query: {
                     page,
                     per_page: 20,
                     ...(envFilter ? { environment: envFilter as 'test' | 'prod' } : {}),
+                    ...(enabledFilter
+                        ? { enabled: enabledFilter === 'enabled' }
+                        : {}),
+                    ...(trimmedSearch ? { search: trimmedSearch } : {}),
                 },
             },
         })
@@ -207,6 +214,16 @@ export function useAdminNamespacesController({
         setPage(1);
     };
 
+    const changeEnabledFilter = (value: 'enabled' | 'disabled' | undefined) => {
+        setEnabledFilter(value ?? '');
+        setPage(1);
+    };
+
+    const changeSearch = (value: string) => {
+        setSearch(value);
+        setPage(1);
+    };
+
     return {
         messageContextHolder,
         data: namespaceListQuery.data,
@@ -220,7 +237,11 @@ export function useAdminNamespacesController({
         deleteConfirmName,
         setDeleteConfirmName,
         envFilter,
+        enabledFilter,
+        search,
+        changeSearch,
         changeEnvFilter,
+        changeEnabledFilter,
         page,
         setPage,
         createForm,

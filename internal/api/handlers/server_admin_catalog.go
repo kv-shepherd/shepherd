@@ -18,6 +18,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/externalcohort"
 	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
 	"kv-shepherd.io/shepherd/ent/instancesize"
+	"kv-shepherd.io/shepherd/ent/predicate"
 	"kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
@@ -88,6 +89,13 @@ type instanceSizeCreateRequest struct {
 	SortOrder         *int                   `json:"sort_order"`
 	Enabled           *bool                  `json:"enabled"`
 }
+
+const (
+	envTest                   = "test"
+	envProd                   = "prod"
+	templateCatalogScopeAll   = "all"
+	templateSearchStateActive = "enabled"
+)
 
 type instanceSizeUpdateRequest struct {
 	Name              *string                 `json:"name"`
@@ -200,6 +208,51 @@ func (s *Server) ListAdminTemplates(c *gin.Context, params generated.ListAdminTe
 
 	query := s.client.Template.Query().
 		Order(ent.Desc(enttemplate.FieldUpdatedAt))
+
+	if search := strings.TrimSpace(params.Search); search != "" {
+		normalizedSearch := strings.ToLower(search)
+		predicates := []predicate.Template{
+			enttemplate.IDContainsFold(search),
+			enttemplate.NameContainsFold(search),
+			enttemplate.DisplayNameContainsFold(search),
+			enttemplate.DescriptionContainsFold(search),
+			enttemplate.OsFamilyContainsFold(search),
+			enttemplate.OsVersionContainsFold(search),
+			enttemplate.SourceTypeContainsFold(search),
+			enttemplate.ImageURLContainsFold(search),
+			enttemplate.PvcNameContainsFold(search),
+			enttemplate.PvcNamespaceContainsFold(search),
+		}
+		switch normalizedSearch {
+		case envTest:
+			predicates = append(predicates, enttemplate.CatalogScopeEQ(enttemplate.CatalogScopeTest))
+		case envProd, "production":
+			predicates = append(predicates, enttemplate.CatalogScopeEQ(enttemplate.CatalogScopeProd))
+		case templateCatalogScopeAll:
+			predicates = append(predicates, enttemplate.CatalogScopeEQ(enttemplate.CatalogScopeAll))
+		case "unclassified", "hidden":
+			predicates = append(predicates, enttemplate.CatalogScopeEQ(enttemplate.CatalogScopeUnclassified))
+		case templateSearchStateActive, "active":
+			predicates = append(predicates, enttemplate.EnabledEQ(true))
+		case "disabled", "inactive":
+			predicates = append(predicates, enttemplate.EnabledEQ(false))
+		}
+		query = query.Where(enttemplate.Or(predicates...))
+	}
+	if osFamily := strings.TrimSpace(params.OsFamily); osFamily != "" {
+		query = query.Where(enttemplate.OsFamilyContainsFold(osFamily))
+	}
+	if sourceType := strings.TrimSpace(params.SourceType); sourceType != "" {
+		query = query.Where(enttemplate.SourceTypeEQ(service.NormalizeTemplateSourceType(sourceType)))
+	}
+	if catalogScope := strings.TrimSpace(params.CatalogScope); catalogScope != "" {
+		query = query.Where(enttemplate.CatalogScopeEQ(
+			enttemplate.CatalogScope(service.NormalizeCatalogScope(catalogScope)),
+		))
+	}
+	if _, hasEnabledFilter := c.GetQuery("enabled"); hasEnabledFilter {
+		query = query.Where(enttemplate.EnabledEQ(params.Enabled))
+	}
 
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
@@ -2084,11 +2137,6 @@ func normalizeExternalCohortAllowedEnvironmentsUpdate(raw []generated.ExternalCo
 }
 
 func normalizeExternalCohortAllowedEnvironments(raw []string) []string {
-	const (
-		envTest = "test"
-		envProd = "prod"
-	)
-
 	seen := make(map[string]struct{}, len(raw))
 	out := make([]string, 0, len(raw))
 	for _, env := range raw {

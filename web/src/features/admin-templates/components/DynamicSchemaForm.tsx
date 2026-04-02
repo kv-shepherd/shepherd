@@ -96,7 +96,7 @@ export interface DynamicSchemaFormHandle {
 
 // ─── Spec Overrides Serialisation ─────────────────────────────────────────────
 
-function pruneSpecTree(
+export function pruneSpecTree(
   value: unknown,
   preserveEmptyObjectPaths?: Set<string>,
   currentPath = "",
@@ -306,7 +306,7 @@ function buildDetectedFieldLabel(path: string): string {
   return compactSegments.map(humanizeFieldSegment).join(" ");
 }
 
-function deriveEnumOptionsFromDescription(description?: string): string[] {
+export function deriveEnumOptionsFromDescription(description?: string): string[] {
   if (typeof description !== "string") {
     return [];
   }
@@ -327,7 +327,7 @@ function deriveEnumOptionsFromDescription(description?: string): string[] {
   return unique.length >= 2 ? unique : [];
 }
 
-function buildRecognizedMaskFields(
+export function buildRecognizedMaskFields(
   schema: SchemaNode,
   mask: SchemaMask,
   committedValue: Record<string, unknown>,
@@ -443,7 +443,7 @@ function coerceMapValue(
   return rawValue === undefined || rawValue === null ? "" : String(rawValue);
 }
 
-function buildScalarMapState(
+export function buildScalarMapState(
   value: Record<string, unknown> | undefined,
   valueNode: SchemaNode,
   startID = 0,
@@ -457,7 +457,7 @@ function buildScalarMapState(
   return { rows, nextID };
 }
 
-function normalizeMapRows(
+export function normalizeMapRows(
   rows: ScalarMapRow[],
   valueNode: SchemaNode,
 ): Record<string, unknown> | undefined {
@@ -495,7 +495,7 @@ function normalizeMapRows(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-function validateRawEditorText(
+export function validateRawEditorText(
   rawText: string,
   t: ReturnType<typeof useTranslation>["t"],
 ): string | null {
@@ -1237,7 +1237,6 @@ export const DynamicSchemaForm = React.forwardRef<
       key: "advanced",
       label: t("dynamic_form.advanced_settings", "Advanced Features"),
       children: renderMaskElements(advancedFields),
-      forceRender: true,
     });
   }
   if (professionalFields.length > 0) {
@@ -1245,13 +1244,11 @@ export const DynamicSchemaForm = React.forwardRef<
       key: "professional",
       label: t("dynamic_form.professional_features", "Professional Features"),
       children: renderMaskElements(professionalFields),
-      forceRender: true,
     });
   }
   collapseItems.push({
     key: "json-recognition",
     label: t("dynamic_form.supplemental_fields", "JSON Recognition"),
-    forceRender: true,
     children: (
       <Space direction="vertical" size={8} style={{ width: "100%" }}>
         <Text type="secondary">
@@ -1278,7 +1275,6 @@ export const DynamicSchemaForm = React.forwardRef<
   collapseItems.push({
     key: "raw-json",
     label: t("dynamic_form.raw_json", "Raw KubeVirt JSON"),
-    forceRender: true,
     children: (
       <Space direction="vertical" size={8} style={{ width: "100%" }}>
         <Text type="secondary">

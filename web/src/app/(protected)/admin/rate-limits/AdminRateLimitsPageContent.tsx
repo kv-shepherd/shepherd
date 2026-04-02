@@ -14,8 +14,8 @@
  *   rate-limit-status-page
  */
 import { ReloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Space, Table, Tag, Typography } from 'antd';
-import { useMemo } from 'react';
+import { Alert, Button, Select, Space, Table, Tag, Typography } from 'antd';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
@@ -28,6 +28,7 @@ import {
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
+import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 import { api } from '@/lib/api/client';
 import { translateApiError } from '@/lib/api/errorMessage';
 import { useApiGet } from '@/lib/api/useApiGet';
@@ -39,6 +40,11 @@ type RateLimitStatus = components['schemas']['RateLimitUserStatus'];
 type RateLimitStatusList = components['schemas']['RateLimitStatusList'];
 type RateLimitExemption = components['schemas']['RateLimitExemption'];
 type RateLimitExemptionList = components['schemas']['RateLimitExemptionList'];
+
+const filterOptionByLabel = (input: string, option?: { label?: unknown }) => {
+    const label = typeof option?.label === 'string' ? option.label : '';
+    return label.toLowerCase().includes(input.trim().toLowerCase());
+};
 
 function renderUserIdentity(
     t: (key: string, options?: Record<string, unknown>) => string,
@@ -63,6 +69,15 @@ function renderUserIdentity(
 
 export default function AdminRateLimitsPageContent() {
     const { t } = useTranslation(['admin', 'common']);
+    const [quickSearchDraft, setQuickSearchDraft] = useState('');
+    const [search, setSearch] = useState('');
+    const [userDraft, setUserDraft] = useState('');
+    const [exemptionDraft, setExemptionDraft] = useState('');
+    const [cooldownDraft, setCooldownDraft] = useState('');
+    const [userFilter, setUserFilter] = useState('');
+    const [exemptionFilter, setExemptionFilter] = useState('');
+    const [cooldownFilter, setCooldownFilter] = useState('');
+    const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
 
     const { data, isLoading, error: statusError, refetch } = useApiGet<RateLimitStatusList>(
         ['admin-rate-limits-status'],
@@ -93,6 +108,106 @@ export default function AdminRateLimitsPageContent() {
             exemptionsTotal: exemptionItems.length,
         };
     }, [exemptionItems.length, statusItems]);
+    const userOptions = useMemo(() => {
+        const users = new Map<string, string>();
+        for (const item of statusItems) {
+            const labelParts = [
+                item.display_name?.trim(),
+                item.username?.trim(),
+                item.email?.trim(),
+            ].filter((value, index, array): value is string => Boolean(value) && array.indexOf(value) === index);
+            users.set(item.user_id, labelParts.join(' · ') || item.user_id);
+        }
+        for (const item of exemptionItems) {
+            const labelParts = [
+                item.display_name?.trim(),
+                item.username?.trim(),
+                item.email?.trim(),
+            ].filter((value, index, array): value is string => Boolean(value) && array.indexOf(value) === index);
+            users.set(item.user_id, labelParts.join(' · ') || item.user_id);
+        }
+        return Array.from(users.entries())
+            .sort((left, right) => left[1].localeCompare(right[1]))
+            .map(([value, label]) => ({ value, label }));
+    }, [exemptionItems, statusItems]);
+    const exemptionOptions = useMemo(
+        () => [
+            {
+                value: 'exempted',
+                label: t('rate_limits.table.exempted_yes', { defaultValue: 'Exempted' }),
+            },
+            {
+                value: 'standard',
+                label: t('rate_limits.table.exempted_no', { defaultValue: 'Standard policy' }),
+            },
+        ],
+        [t],
+    );
+    const cooldownOptions = useMemo(
+        () => [
+            {
+                value: 'cooling',
+                label: t('rate_limits.table.cooldown_filter_active', { defaultValue: 'Cooling down' }),
+            },
+            {
+                value: 'ready',
+                label: t('rate_limits.table.cooldown_ready', { defaultValue: 'Ready' }),
+            },
+        ],
+        [t],
+    );
+    const filteredStatusItems = useMemo(() => {
+        const normalizedSearch = search.trim().toLowerCase();
+        return statusItems.filter((item) => {
+            if (userFilter !== '' && item.user_id !== userFilter) {
+                return false;
+            }
+            if (exemptionFilter === 'exempted' && !item.exempted) {
+                return false;
+            }
+            if (exemptionFilter === 'standard' && item.exempted) {
+                return false;
+            }
+            const isCooling = (item.cooldown_remaining_seconds ?? 0) > 0;
+            if (cooldownFilter === 'cooling' && !isCooling) {
+                return false;
+            }
+            if (cooldownFilter === 'ready' && isCooling) {
+                return false;
+            }
+            if (normalizedSearch === '') {
+                return true;
+            }
+            return [
+                item.user_id,
+                item.username ?? '',
+                item.display_name ?? '',
+                item.email ?? '',
+            ].some((value) => value.toLowerCase().includes(normalizedSearch));
+        });
+    }, [cooldownFilter, exemptionFilter, search, statusItems, userFilter]);
+    const filteredExemptionItems = useMemo(() => {
+        const normalizedSearch = search.trim().toLowerCase();
+        return exemptionItems.filter((item) => {
+            if (userFilter !== '' && item.user_id !== userFilter) {
+                return false;
+            }
+            if (exemptionFilter === 'standard') {
+                return false;
+            }
+            if (normalizedSearch === '') {
+                return true;
+            }
+            return [
+                item.user_id,
+                item.username ?? '',
+                item.display_name ?? '',
+                item.email ?? '',
+                item.reason ?? '',
+                item.exempted_by ?? '',
+            ].some((value) => value.toLowerCase().includes(normalizedSearch));
+        });
+    }, [exemptionFilter, exemptionItems, search, userFilter]);
 
     const columns = [
         {
@@ -263,6 +378,98 @@ export default function AdminRateLimitsPageContent() {
             </div>
 
             <PageSurface flush={true}>
+                <div style={{ padding: 16, paddingBottom: 0 }}>
+                    <PageSearchToolbar
+                        searchValue={search}
+                        searchDraftValue={quickSearchDraft}
+                        onSearchDraftChange={setQuickSearchDraft}
+                        onSearchChange={(value) => {
+                            const nextValue = value.trim();
+                            setQuickSearchDraft(nextValue);
+                            setSearch(nextValue);
+                        }}
+                        searchPlaceholder={t('rate_limits.search_placeholder', { defaultValue: 'Search users, emails, usernames, reasons, or paste a user ID' })}
+                        searchTestId="rate-limits-quick-search"
+                        searchHelp={t('rate_limits.search_help', { defaultValue: 'Press Enter or click Search. Quick search matches users, usernames, emails, exemption reasons, and pasted user IDs.' })}
+                        advancedSearch={{
+                            open: advancedSearchOpen,
+                            onToggle: () => setAdvancedSearchOpen((open) => !open),
+                            openLabel: t('common:search.advanced', { defaultValue: 'Advanced search' }),
+                            closeLabel: t('common:search.hide_advanced', { defaultValue: 'Hide advanced search' }),
+                            title: t('common:search.advanced', { defaultValue: 'Advanced search' }),
+                            toggleTestId: 'rate-limits-advanced-search-toggle',
+                            content: (
+                                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                    <Text type="secondary">
+                                        {t('rate_limits.advanced_search_help', { defaultValue: 'Select exact filters here. Options support keyword matching, but the applied filter remains an exact match.' })}
+                                    </Text>
+                                    <Space wrap size={[12, 12]}>
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            style={{ minWidth: 280 }}
+                                            data-testid="rate-limits-filter-user"
+                                            placeholder={t('rate_limits.table.user', { defaultValue: 'User' })}
+                                            options={userOptions}
+                                            value={userDraft || undefined}
+                                            onChange={(value) => setUserDraft(value ?? '')}
+                                        />
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            style={{ minWidth: 220 }}
+                                            data-testid="rate-limits-filter-exemption"
+                                            placeholder={t('rate_limits.table.exemption', { defaultValue: 'Exemption' })}
+                                            options={exemptionOptions}
+                                            value={exemptionDraft || undefined}
+                                            onChange={(value) => setExemptionDraft(value ?? '')}
+                                        />
+                                        <Select
+                                            allowClear
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            style={{ minWidth: 220 }}
+                                            data-testid="rate-limits-filter-cooldown"
+                                            placeholder={t('rate_limits.table.cooldown', { defaultValue: 'Cooldown' })}
+                                            options={cooldownOptions}
+                                            value={cooldownDraft || undefined}
+                                            onChange={(value) => setCooldownDraft(value ?? '')}
+                                        />
+                                        <Button
+                                            type="primary"
+                                            data-testid="rate-limits-advanced-search-submit"
+                                            onClick={() => {
+                                                setUserFilter(userDraft);
+                                                setExemptionFilter(exemptionDraft);
+                                                setCooldownFilter(cooldownDraft);
+                                            }}
+                                        >
+                                            {t('common:button.search')}
+                                        </Button>
+                                    </Space>
+                                </Space>
+                            ),
+                        }}
+                        hasActiveFilters={search !== '' || userFilter !== '' || exemptionFilter !== '' || cooldownFilter !== ''}
+                        onClear={() => {
+                            setQuickSearchDraft('');
+                            setSearch('');
+                            setUserDraft('');
+                            setExemptionDraft('');
+                            setCooldownDraft('');
+                            setUserFilter('');
+                            setExemptionFilter('');
+                            setCooldownFilter('');
+                            setAdvancedSearchOpen(false);
+                        }}
+                        clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
+                    />
+                </div>
                 {loadError ? (
                     <Alert
                         type="error"
@@ -273,7 +480,7 @@ export default function AdminRateLimitsPageContent() {
                     />
                 ) : null}
                 <Table
-                    dataSource={statusItems}
+                    dataSource={filteredStatusItems}
                     columns={columns}
                     rowKey="user_id"
                     loading={isLoading}
@@ -299,7 +506,7 @@ export default function AdminRateLimitsPageContent() {
                 styles={{ body: { padding: 0 } }}
             >
                 <Table
-                    dataSource={exemptionItems}
+                    dataSource={filteredExemptionItems}
                     columns={exemptionColumns}
                     rowKey="user_id"
                     loading={exemptionsLoading}
