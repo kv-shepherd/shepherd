@@ -40,10 +40,12 @@ describe('getMenuRoutes', () => {
         const route = getMenuRoutes(t, true);
         const admin = route.routes?.find((item: MenuRouteItem) => item.key === 'admin');
         const approvalTasks = admin?.routes?.find((item: MenuRouteItem) => item.path === '/admin/approval-tasks');
+        const rateLimits = admin?.routes?.find((item: MenuRouteItem) => item.path === '/admin/rate-limits');
 
         expect(admin?.name).toBe('nav.admin');
         expect(admin?.path).toBe('/admin');
         expect(approvalTasks?.name).toBe('nav.approval_tasks');
+        expect(rateLimits?.name).toBe('nav.rate_limits');
     });
 
     it('resolves grouped menu hrefs to the first child route', () => {

@@ -47,3 +47,19 @@ export function localizeRoleDescription(
         defaultValue: role.description?.trim() || '',
     });
 }
+
+export function localizeRoleAssignmentPolicy(
+    t: TFunction,
+    role: {
+        name: string;
+        built_in?: boolean;
+    }
+) {
+    if (!role.built_in) {
+        return '';
+    }
+    const catalogKey = builtInRoleCatalogTranslationKey(role.name);
+    return t(`rbac.roles.catalog.${catalogKey}.assignment`, {
+        defaultValue: '',
+    });
+}

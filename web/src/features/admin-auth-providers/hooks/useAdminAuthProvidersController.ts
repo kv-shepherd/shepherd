@@ -1,6 +1,6 @@
 "use client";
 
-import { Form, message } from "antd";
+import { App, Form } from "antd";
 import type { TFunction } from "i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -346,7 +346,8 @@ function buildDirectoryRequestFormValues(
 export function useAdminAuthProvidersController({
   t,
 }: UseAdminAuthProvidersControllerArgs) {
-  const [messageApi, messageContextHolder] = message.useMessage();
+  const { message: messageApi } = App.useApp();
+  const messageContextHolder = null;
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);

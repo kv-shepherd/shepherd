@@ -1,6 +1,6 @@
 'use client';
 
-import { Form, message } from 'antd';
+import { App, Form } from 'antd';
 import type { TFunction } from 'i18next';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -92,7 +92,8 @@ export function useAdminTemplatesController({
     t,
     onCreateSuccess,
 }: UseAdminTemplatesControllerArgs) {
-    const [messageApi, messageContextHolder] = message.useMessage();
+    const { message: messageApi } = App.useApp();
+    const messageContextHolder = null;
     const [createOpen, setCreateOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);

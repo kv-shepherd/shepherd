@@ -78,23 +78,22 @@ const {
 });
 
 vi.mock("antd", () => ({
+  App: {
+    useApp: () => ({
+      message: {
+        success: messageSuccessMock,
+        error: messageErrorMock,
+        warning: messageWarningMock,
+        info: messageInfoMock,
+      },
+    }),
+  },
   Form: {
     useForm: vi.fn(() => [formState]),
     useWatch: (
       field: string,
       options?: { form?: unknown; preserve?: boolean },
     ) => useWatchMock(field, options),
-  },
-  message: {
-    useMessage: () => [
-      {
-        success: messageSuccessMock,
-        error: messageErrorMock,
-        warning: messageWarningMock,
-        info: messageInfoMock,
-      },
-      null,
-    ],
   },
 }));
 

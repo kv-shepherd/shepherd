@@ -7,6 +7,7 @@ import {
     BellOutlined,
     CloudServerOutlined,
     ClusterOutlined,
+    ControlOutlined,
     DashboardOutlined,
     DesktopOutlined,
     FileTextOutlined,
@@ -118,6 +119,11 @@ export const getMenuRoutes = (
                     path: '/admin/rbac',
                     name: t('nav.rbac'),
                     icon: <SafetyCertificateOutlined />,
+                },
+                {
+                    path: '/admin/rate-limits',
+                    name: t('nav.rate_limits'),
+                    icon: <ControlOutlined />,
                 },
                 {
                     path: '/admin/auth-providers',

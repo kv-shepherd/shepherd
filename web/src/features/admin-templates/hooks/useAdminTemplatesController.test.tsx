@@ -31,17 +31,16 @@ const {
 }));
 
 vi.mock('antd', () => ({
-  Form: {
-    useForm: (...args: unknown[]) => useFormMock(...args),
-  },
-  message: {
-    useMessage: () => [
-      {
+  App: {
+    useApp: () => ({
+      message: {
         success: messageSuccessMock,
         error: messageErrorMock,
       },
-      null,
-    ],
+    }),
+  },
+  Form: {
+    useForm: (...args: unknown[]) => useFormMock(...args),
   },
 }));
 

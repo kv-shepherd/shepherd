@@ -1,6 +1,6 @@
 'use client';
 
-import { message } from 'antd';
+import { App } from 'antd';
 import type { TFunction } from 'i18next';
 import { useState } from 'react';
 
@@ -15,7 +15,8 @@ interface UseNotificationsControllerArgs {
 }
 
 export function useNotificationsController({ t }: UseNotificationsControllerArgs) {
-    const [messageApi, messageContextHolder] = message.useMessage();
+    const { message: messageApi } = App.useApp();
+    const messageContextHolder = null;
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [unreadOnly, setUnreadOnly] = useState(false);

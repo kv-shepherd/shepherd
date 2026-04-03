@@ -5,11 +5,9 @@ import {
     AutoComplete,
     Button,
     Card,
-    DatePicker,
     Drawer,
     Form,
     Input,
-    InputNumber,
     List,
     Modal,
     Popconfirm,
@@ -18,6 +16,7 @@ import {
     Switch,
     Table,
     Tag,
+    Tooltip,
     Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -27,47 +26,51 @@ import {
     EditOutlined,
     PlusOutlined,
     ReloadOutlined,
+    SafetyCertificateOutlined,
     SettingOutlined,
-    TeamOutlined,
     UpOutlined,
 } from '@ant-design/icons';
-import type { Dayjs } from 'dayjs';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
 import { SummaryMetricCard } from '@/components/feedback/SummaryMetricCard';
-import { localizeRoleLabel } from '@/features/rbac-shared/roleCatalogI18n';
+import {
+    localizeRoleAssignmentPolicy,
+    localizeRoleDescription,
+    localizeRoleLabel,
+} from '@/features/rbac-shared/roleCatalogI18n';
 import {
     AccessControlGlyph,
     QueueReviewGlyph,
-    RateLimitGaugeGlyph,
+    RoleCatalogGlyph,
     UserDirectoryGlyph,
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 import { useUserPreference } from '@/hooks/useUserPreference';
+import {
+    getRoleAccessTagColor,
+    isPrivilegedRole,
+    isPrivilegedRoleBinding,
+} from '@/features/rbac-shared/privilegedAccess';
+import { useUserRoleBindingsManager } from '@/features/rbac-shared/useUserRoleBindingsManager';
 import { useAdminUsersController } from '../hooks/useAdminUsersController';
 import {
-    MEMBER_ROLE_VALUES,
-    type GlobalRoleBinding,
-    type RateLimitUserStatus,
-    type SystemMember,
-    type SystemMemberRoleUpdateRequest,
     type User,
     type UserProfileField,
 } from '../types';
+import { ENVIRONMENT_VALUES, RBAC_SCOPE_VALUES, type GlobalRoleBinding } from '@/features/admin-rbac/types';
 
 const { Text } = Typography;
 const EMPTY_VALUE = '—';
-const USER_ROLE_BINDING_SCOPE_VALUES = ['global', 'system', 'service', 'vm'] as const;
-const USER_ROLE_BINDING_ENV_VALUES = ['test', 'prod'] as const;
-const USER_DIRECTORY_COLUMNS_PREFERENCE_KEY = 'admin.users.columns.v1';
+const USER_DIRECTORY_COLUMNS_PREFERENCE_KEY = 'admin.users.columns.v4';
 const DEFAULT_VISIBLE_DIRECTORY_PROFILE_COLUMN_COUNT = 2;
 const USER_TABLE_FIXED_IDENTITY_COLUMN_KEY = 'identity';
 const USER_TABLE_FIXED_ACTIONS_COLUMN_KEY = 'actions';
-const USER_TABLE_CORE_COLUMN_KEYS = ['email', 'roles', 'status', 'created_at'] as const;
+const USER_TABLE_CORE_COLUMN_KEYS = ['email', 'roles', 'created_at'] as const;
 
 interface UserSearchFieldOption {
     value: string;
@@ -75,11 +78,6 @@ interface UserSearchFieldOption {
 }
 
 interface UserSearchValueOption {
-    value: string;
-    label: string;
-}
-
-interface UserSelectOption {
     value: string;
     label: string;
 }
@@ -391,8 +389,10 @@ export function buildOrderedUserTableDisplayColumns(
 
 export function AdminUsersContent() {
     const { t } = useTranslation(['admin', 'common']);
+    const router = useRouter();
     const users = useAdminUsersController({ t });
     const { setPage, setSearch } = users;
+    const [selectedAccessUser, setSelectedAccessUser] = useState<Pick<User, 'id' | 'username' | 'display_name'> | null>(null);
     const [quickSearch, setQuickSearch] = useState('');
     const [quickSearchDraft, setQuickSearchDraft] = useState('');
     const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
@@ -401,106 +401,37 @@ export function AdminUsersContent() {
     const [columnsDrawerOpen, setColumnsDrawerOpen] = useState(false);
     const [columnDraftKeys, setColumnDraftKeys] = useState<string[]>([]);
     const [mergedColumnDrafts, setMergedColumnDrafts] = useState<UserTableMergedColumnDraft[]>([]);
-    const [selectedRateLimitUserID, setSelectedRateLimitUserID] = useState<string>('');
-    const [exemptionOpen, setExemptionOpen] = useState(false);
-    const [overrideOpen, setOverrideOpen] = useState(false);
-    const [exemptionForm] = Form.useForm<{
-        user_id: string;
-        reason?: string;
-        expires_at?: Dayjs | null;
-    }>();
-    const [overrideForm] = Form.useForm<{
-        max_pending_parents?: number | null;
-        max_pending_children?: number | null;
-        cooldown_seconds?: number | null;
-        reason?: string;
-    }>();
     const userItems = useMemo(
         () => users.users?.items ?? [],
         [users.users?.items]
-    );
-    const memberItems = useMemo(
-        () => users.members?.items ?? [],
-        [users.members?.items]
-    );
-    const rateLimitItems = useMemo(
-        () => users.rateLimitStatus?.items ?? [],
-        [users.rateLimitStatus?.items]
     );
     const roleCatalog = useMemo(
         () => users.roles?.items ?? [],
         [users.roles?.items]
     );
-    const selectedSystem = users.systems.find((system) => system.id === users.selectedSystemId);
-    const selectedRateLimitRecord = rateLimitItems.find((item) => item.user_id === selectedRateLimitUserID);
-    const rateLimitUserOptions = useMemo<UserSelectOption[]>(
-        () => {
-            const seen = new Set<string>();
-            return [
-                ...rateLimitItems.map((item) => ({
-                    id: item.user_id,
-                    username: item.username,
-                    display_name: item.display_name,
-                    email: item.email,
-                })),
-                ...(users.rateLimitUserCandidates?.items ?? []),
-                ...userItems,
-            ]
-                .filter((user) => {
-                    if (!user.id || seen.has(user.id)) {
-                        return false;
-                    }
-                    seen.add(user.id);
-                    return true;
-                })
-                .map((user) => ({
-                    value: user.id,
-                    label: user.display_name?.trim()
-                        ? `${user.display_name} (${user.username})`
-                        : user.email?.trim()
-                            ? `${user.username} · ${user.email}`
-                            : user.username || user.id,
-                }));
-        },
-        [rateLimitItems, userItems, users.rateLimitUserCandidates?.items]
+    const roleCatalogById = useMemo(
+        () => new Map(roleCatalog.map((role) => [role.id, role])),
+        [roleCatalog]
     );
-    const selectedRateLimitUserLabel = useMemo(
-        () =>
-            rateLimitUserOptions.find((option) => option.value === selectedRateLimitUserID)?.label
-            || selectedRateLimitRecord?.display_name?.trim()
-            || selectedRateLimitRecord?.username
-            || selectedRateLimitUserID,
-        [rateLimitUserOptions, selectedRateLimitRecord, selectedRateLimitUserID]
+    const roleCatalogByName = useMemo(
+        () => new Map(roleCatalog.map((role) => [role.name, role])),
+        [roleCatalog]
     );
     const roleDisplayByName = useMemo(
         () => new Map(roleCatalog.map((role) => [role.name, localizeRoleLabel(t, role)])),
         [roleCatalog, t]
     );
-    const roleDisplayById = useMemo(
-        () => new Map(roleCatalog.map((role) => [role.id, localizeRoleLabel(t, role)])),
+    const roleOptions = useMemo(
+        () => roleCatalog.map((role) => ({
+            value: role.id,
+            label: localizeRoleLabel(t, role),
+        })),
         [roleCatalog, t]
     );
-    const roleBindingScopeType = Form.useWatch('scope_type', users.roleBindingCreateForm);
-    const roleBindingScopeOptions = useMemo(
-        () => USER_ROLE_BINDING_SCOPE_VALUES.map((scope) => ({
-            value: scope,
-            label: t(`rbac.scope.${scope}`, { defaultValue: scope }),
-        })),
-        [t]
-    );
-    const roleBindingEnvironmentOptions = useMemo(
-        () => USER_ROLE_BINDING_ENV_VALUES.map((env) => ({
-            value: env,
-            label: t(`rbac.env.${env}`, { defaultValue: env }),
-        })),
-        [t]
-    );
-    const roleBindingScopeTargetOptions = users.scopeTargetOptionsByType?.[roleBindingScopeType || 'global'] ?? [];
-    const roleBindingScopeTargetLoading = Boolean(users.scopeTargetLoadingByType?.[roleBindingScopeType || 'global']);
     const totalUsers = users.users?.pagination?.total ?? userItems.length;
     const enabledUsers = userItems.filter((user) => user.enabled).length;
-    const trackedRateLimitUsers = rateLimitItems.length;
-    const exemptedUsers = rateLimitItems.filter((item) => item.exempted).length;
+    const usersWithExplicitRoles = userItems.filter((user) => (user.roles ?? []).length > 0).length;
+    const usersWithDirectoryProfiles = userItems.filter((user) => Object.keys(user.profile_attributes ?? {}).length > 0).length;
     const userProfileFields = useMemo(
         () => users.users?.profile_fields ?? [],
         [users.users?.profile_fields]
@@ -649,6 +580,33 @@ export function AdminUsersContent() {
         () => buildAdminUserSearchQuery(quickSearch, advancedSearchConditions),
         [advancedSearchConditions, quickSearch]
     );
+    const selectedAccessUserId = selectedAccessUser?.id ?? '';
+    const accessBindings = useUserRoleBindingsManager({
+        t,
+        selectedUserId: selectedAccessUserId,
+        messageApi: users.messageApi,
+        enabled: Boolean(selectedAccessUserId),
+    });
+    const bindingScopeType = Form.useWatch('scope_type', {
+        form: accessBindings.bindingForm,
+        preserve: true,
+    });
+    const selectedBindingRoleID = Form.useWatch('role_id', {
+        form: accessBindings.bindingForm,
+        preserve: true,
+    });
+    const selectedBindingRole = useMemo(
+        () => roleCatalog.find((role) => role.id === selectedBindingRoleID),
+        [roleCatalog, selectedBindingRoleID]
+    );
+    const runtimeBindings = useMemo(
+        () => accessBindings.roleBindings.filter((binding) => !isPrivilegedRoleBinding(binding, roleCatalogById)),
+        [accessBindings.roleBindings, roleCatalogById]
+    );
+    const elevatedBindings = useMemo(
+        () => accessBindings.roleBindings.filter((binding) => isPrivilegedRoleBinding(binding, roleCatalogById)),
+        [accessBindings.roleBindings, roleCatalogById]
+    );
 
     const toggleAdvancedSearch = () => {
         setAdvancedSearchOpen((open) => {
@@ -782,41 +740,157 @@ export function AdminUsersContent() {
     };
 
     const renderUserIdentity = (
-        record: Pick<User, 'username' | 'display_name' | 'email' | 'id'>
-        | Pick<SystemMember, 'username' | 'display_name' | 'email' | 'user_id'>
-        | Pick<RateLimitUserStatus, 'username' | 'display_name' | 'email' | 'user_id'>
+        record: Pick<User, 'username' | 'display_name' | 'email' | 'id' | 'enabled'>
     ) => {
         const username = 'username' in record ? record.username : undefined;
         const displayName = 'display_name' in record ? record.display_name : undefined;
-        const identityId = 'id' in record ? record.id : record.user_id;
+        const identityId = record.id;
         const primary = displayName?.trim() || username || identityId;
         const secondary = username && username !== primary ? username : identityId;
+        const statusClassName = record.enabled
+            ? 'admin-users-table__identity-primary--enabled'
+            : 'admin-users-table__identity-primary--disabled';
+        const statusDotClassName = record.enabled
+            ? 'admin-users-table__identity-status-dot--enabled'
+            : 'admin-users-table__identity-status-dot--disabled';
 
         return (
-            <Space direction="vertical" size={0}>
-                <Text strong>{primary}</Text>
-                {secondary ? <Text type="secondary" style={{ fontSize: 12 }}>{secondary}</Text> : null}
-            </Space>
+            <div className="admin-users-table__identity">
+                <div className="admin-users-table__identity-primary-row">
+                    <span
+                        aria-hidden="true"
+                        className={`admin-users-table__identity-status-dot ${statusDotClassName}`}
+                    />
+                    <Text strong className={`admin-users-table__identity-primary ${statusClassName}`}>
+                        {primary}
+                    </Text>
+                </div>
+                {secondary ? (
+                    <Text type="secondary" className="admin-users-table__identity-secondary">{secondary}</Text>
+                ) : null}
+            </div>
         );
     };
 
     const renderRoleTags = (roles: string[] | undefined) => {
         if (!roles || roles.length === 0) {
-            return <Text type="secondary">{t('users.directory.no_roles')}</Text>;
+            return <Text type="secondary" className="admin-users-table__empty-value">{t('users.directory.no_roles')}</Text>;
         }
         return (
-            <Space wrap>
+            <div className="admin-users-table__roles">
                 {roles.map((roleName) => {
+                    const role = roleCatalogByName.get(roleName);
                     const label = roleDisplayByName.get(roleName) || roleName;
                     return (
-                        <Tag key={roleName} title={roleName} color="processing">
+                        <Tag
+                            key={roleName}
+                            title={roleName}
+                            color={getRoleAccessTagColor(role)}
+                            className="admin-users-table__role-tag"
+                        >
                             {label}
                         </Tag>
                     );
                 })}
+            </div>
+        );
+    };
+
+    const openAccessBindingsDrawer = (user: Pick<User, 'id' | 'username' | 'display_name'>) => {
+        setSelectedAccessUser({
+            id: user.id,
+            username: user.username,
+            display_name: user.display_name,
+        });
+    };
+
+    const closeAccessBindingsDrawer = () => {
+        setSelectedAccessUser(null);
+        accessBindings.closeAddBindingModal();
+    };
+
+    const renderBindingScope = (binding: GlobalRoleBinding) => {
+        const scopeLabel = t(`rbac.scope.${binding.scope_type}`, { defaultValue: binding.scope_type });
+        const scopeDisplay = binding.scope_display_name || binding.scope_id || t('rbac.bindings.global_scope');
+        return (
+            <Space direction="vertical" size={0}>
+                <Tag>{scopeLabel}</Tag>
+                <Text type="secondary" style={{ fontSize: 12 }}>{scopeDisplay}</Text>
             </Space>
         );
     };
+
+    const bindingColumns: ColumnsType<GlobalRoleBinding> = [
+        {
+            title: t('rbac.bindings.role'),
+            dataIndex: 'role_name',
+            key: 'role_name',
+            render: (roleName: string, record: GlobalRoleBinding) => {
+                const role = roleCatalogById.get(record.role_id);
+                const localizedRoleLabel = role ? localizeRoleLabel(t, role) : record.role_display_name || roleName || record.role_id;
+                return (
+                    <Space direction="vertical" size={0}>
+                        <Tag color={getRoleAccessTagColor(role)}>
+                            {localizedRoleLabel}
+                        </Tag>
+                        {localizedRoleLabel !== (roleName || record.role_id) ? (
+                            <Text type="secondary" style={{ fontSize: 12 }}>{roleName || record.role_id}</Text>
+                        ) : null}
+                    </Space>
+                );
+            },
+        },
+        {
+            title: t('rbac.bindings.scope'),
+            key: 'scope',
+            render: (_: unknown, binding: GlobalRoleBinding) => renderBindingScope(binding),
+        },
+        {
+            title: t('rbac.bindings.allowed_envs'),
+            dataIndex: 'allowed_environments',
+            key: 'allowed_environments',
+            width: 180,
+            render: (envs?: Array<'test' | 'prod'>) => (
+                <Space wrap>
+                    {(envs || []).length > 0
+                        ? (envs || []).map((env) => (
+                            <Tag key={env}>{t(`rbac.env.${env}`, { defaultValue: env })}</Tag>
+                        ))
+                        : <Tag color="gold">{t('rbac.bindings.all_environments')}</Tag>}
+                </Space>
+            ),
+        },
+        {
+            title: t('common:table.created_at'),
+            dataIndex: 'created_at',
+            key: 'created_at',
+            width: 170,
+            render: (value?: string) => <LocalDateTimeText value={value} />,
+        },
+        {
+            title: t('common:table.actions'),
+            key: 'actions',
+            width: 120,
+            render: (_: unknown, binding: GlobalRoleBinding) => (
+                <Popconfirm
+                    title={t('rbac.bindings.delete_confirm')}
+                    onConfirm={() => accessBindings.deleteRoleBinding(binding.id)}
+                    okText={t('common:button.confirm')}
+                    cancelText={t('common:button.cancel')}
+                >
+                    <Button
+                        type="link"
+                        danger
+                        size="small"
+                        data-testid={`user-binding-action-delete-${binding.id}`}
+                        loading={accessBindings.deleteBindingPending && accessBindings.deletingBindingId === binding.id}
+                    >
+                        {t('common:button.delete')}
+                    </Button>
+                </Popconfirm>
+            ),
+        },
+    ];
 
     const visibleUserTableColumns = useMemo(
         () => {
@@ -868,7 +942,7 @@ export function AdminUsersContent() {
                 title: t('users.table.account', { defaultValue: 'Account' }),
                 dataIndex: 'username',
                 key: USER_TABLE_FIXED_IDENTITY_COLUMN_KEY,
-                width: 320,
+                width: 280,
                 fixed: 'left' as const,
                 render: (_: unknown, record: User) => renderUserIdentity(record),
             },
@@ -879,7 +953,7 @@ export function AdminUsersContent() {
                             defaultValue: 'Combined details',
                         }),
                         key: `merged-column-${displayColumn.index}`,
-                        width: 280,
+                        width: 240,
                         render: (_: unknown, record: User) => {
                             const items = displayColumn.columns
                                 .map((column) => ({
@@ -909,54 +983,30 @@ export function AdminUsersContent() {
                                 }))
                                 .filter((item) => item.value !== EMPTY_VALUE);
                             if (items.length === 0) {
-                                return <Text type="secondary">{EMPTY_VALUE}</Text>;
+                                return <Text type="secondary" className="admin-users-table__empty-value">{EMPTY_VALUE}</Text>;
                             }
                             if (!displayColumn.showLabels) {
                                 return (
-                                    <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                    <div className="admin-users-table__merged-values">
                                         {items.map((item) => (
-                                            <div
-                                                key={item.label}
-                                                style={{
-                                                    padding: '8px 10px',
-                                                    borderRadius: 10,
-                                                    background: 'var(--ant-color-fill-secondary)',
-                                                }}
-                                            >
+                                            <span key={item.label} className="admin-users-table__merged-pill">
                                                 <Text ellipsis={{ tooltip: item.value }}>{item.value}</Text>
-                                            </div>
+                                            </span>
                                         ))}
-                                    </Space>
+                                    </div>
                                 );
                             }
                             return (
-                                <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                <div className="admin-users-table__merged-values admin-users-table__merged-values--labeled">
                                     {items.map((item) => (
-                                        <div
-                                            key={item.label}
-                                            style={{
-                                                padding: '8px 10px',
-                                                borderRadius: 10,
-                                                background: 'var(--ant-color-fill-tertiary)',
-                                            }}
-                                        >
-                                            <Text
-                                                type="secondary"
-                                                style={{
-                                                    display: 'block',
-                                                    fontSize: 11,
-                                                    lineHeight: 1.2,
-                                                    marginBottom: 4,
-                                                    textTransform: 'uppercase',
-                                                    letterSpacing: '0.04em',
-                                                }}
-                                            >
+                                        <span key={item.label} className="admin-users-table__merged-pill admin-users-table__merged-pill--labeled">
+                                            <Text type="secondary" className="admin-users-table__merged-pill-label">
                                                 {item.label}
                                             </Text>
                                             <Text ellipsis={{ tooltip: item.value }}>{item.value}</Text>
-                                        </div>
+                                        </span>
                                     ))}
-                                </Space>
+                                </div>
                             );
                         },
                     };
@@ -967,13 +1017,13 @@ export function AdminUsersContent() {
                     return {
                         title: column.label,
                         key: column.key,
-                        width: 200,
+                        width: 170,
                         render: (_: unknown, record: User) => {
                             const value = stringifyUserProfileAttributeValue(record.profile_attributes?.[profileKey]);
                             if (value === EMPTY_VALUE) {
-                                return <Text type="secondary">{EMPTY_VALUE}</Text>;
+                                return <Text type="secondary" className="admin-users-table__empty-value">{EMPTY_VALUE}</Text>;
                             }
-                            return <Text ellipsis={{ tooltip: value }}>{value}</Text>;
+                            return <Text className="admin-users-table__single-line" ellipsis={{ tooltip: value }}>{value}</Text>;
                         },
                     };
                 }
@@ -981,13 +1031,13 @@ export function AdminUsersContent() {
                     return {
                         title: column.label,
                         key: column.key,
-                        width: 260,
+                        width: 220,
                         render: (_: unknown, record: User) => {
                             const value = record.email || EMPTY_VALUE;
                             if (value === EMPTY_VALUE) {
-                                return <Text type="secondary">{EMPTY_VALUE}</Text>;
+                                return <Text type="secondary" className="admin-users-table__empty-value">{EMPTY_VALUE}</Text>;
                             }
-                            return <Text ellipsis={{ tooltip: value }}>{value}</Text>;
+                            return <Text className="admin-users-table__single-line" ellipsis={{ tooltip: value }}>{value}</Text>;
                         },
                     };
                 }
@@ -995,7 +1045,7 @@ export function AdminUsersContent() {
                     return {
                         title: column.label,
                         key: column.key,
-                        width: 220,
+                        width: 190,
                         render: (_: unknown, record: User) => renderRoleTags(record.roles),
                     };
                 }
@@ -1003,9 +1053,9 @@ export function AdminUsersContent() {
                     return {
                         title: column.label,
                         key: column.key,
-                        width: 140,
+                        width: 110,
                         render: (_: unknown, record: User) => (
-                            <Tag color={record.enabled ? 'green' : 'default'}>
+                            <Tag color={record.enabled ? 'green' : 'default'} className="admin-users-table__status-tag">
                                 {record.enabled ? t('users.status.enabled') : t('users.status.disabled')}
                             </Tag>
                         ),
@@ -1014,216 +1064,68 @@ export function AdminUsersContent() {
                 return {
                     title: column.label,
                     key: column.key,
-                    width: 180,
-                        render: (_: unknown, record: User) => <LocalDateTimeText value={record.created_at} />,
+                    width: 150,
+                        render: (_: unknown, record: User) => (
+                            <Text className="admin-users-table__single-line admin-users-table__created-at">
+                                <LocalDateTimeText value={record.created_at} />
+                            </Text>
+                        ),
                 };
             }),
             {
                 title: t('common:table.actions'),
                 key: USER_TABLE_FIXED_ACTIONS_COLUMN_KEY,
-                width: 220,
+                width: 148,
                 fixed: 'right' as const,
                 render: (_: unknown, record: User) => (
-                    <Space size={4} wrap>
-                        <Button
-                            type="link"
-                            size="small"
-                            icon={<EditOutlined />}
-                            data-testid={`user-action-edit-${record.id}`}
-                            onClick={() => users.openEditUserModal(record)}
-                        >
-                            {t('common:button.edit')}
-                        </Button>
-                        <Button
-                            type="link"
-                            size="small"
-                            icon={<TeamOutlined />}
-                            data-testid={`user-action-role-bindings-${record.id}`}
-                            onClick={() => users.openRoleBindingsModal(record)}
-                        >
-                            {t('users.directory.manage_access')}
-                        </Button>
+                    <Space size={0} wrap className="admin-users-table__actions">
+                        <Tooltip title={t('common:button.edit')}>
+                            <Button
+                                type="text"
+                                size="small"
+                                icon={<EditOutlined />}
+                                aria-label={t('common:button.edit')}
+                                data-testid={`user-action-edit-${record.id}`}
+                                onClick={() => users.openEditUserModal(record)}
+                            />
+                        </Tooltip>
+                        <Tooltip title={t('users.directory.manage_access')}>
+                            <Button
+                                type="text"
+                                size="small"
+                                icon={<SafetyCertificateOutlined />}
+                                aria-label={t('users.directory.manage_access')}
+                                data-testid={`user-action-role-bindings-${record.id}`}
+                                onClick={() => openAccessBindingsDrawer(record)}
+                            />
+                        </Tooltip>
                         <Popconfirm
                             title={t('users.directory.delete_confirm', { username: record.username })}
                             onConfirm={() => users.deleteUser(record.id)}
                             okText={t('common:button.confirm')}
                             cancelText={t('common:button.cancel')}
                         >
-                            <Button
-                                type="link"
-                                size="small"
-                                danger
-                                icon={<DeleteOutlined />}
-                                data-testid={`user-action-delete-${record.id}`}
-                                loading={users.deleteUserPending && users.deletingUserId === record.id}
-                            >
-                                {t('common:button.delete')}
-                            </Button>
+                            <Tooltip title={t('common:button.delete')}>
+                                <Button
+                                    type="text"
+                                    size="small"
+                                    danger
+                                    icon={<DeleteOutlined />}
+                                    aria-label={t('common:button.delete')}
+                                    data-testid={`user-action-delete-${record.id}`}
+                                    loading={users.deleteUserPending && users.deletingUserId === record.id}
+                                />
+                            </Tooltip>
                         </Popconfirm>
                     </Space>
                 ),
             },
         ];
 
-    const memberColumns: ColumnsType<SystemMember> = [
-        {
-            title: t('users.table.username'),
-            dataIndex: 'username',
-            key: 'username',
-            render: (_, record: SystemMember) => renderUserIdentity(record),
-        },
-        {
-            title: t('users.table.email'),
-            dataIndex: 'email',
-            key: 'email',
-            render: (email: string | undefined) => email || EMPTY_VALUE,
-        },
-        {
-            title: t('users.members.role'),
-            dataIndex: 'role',
-            key: 'role',
-            width: 220,
-            render: (role: SystemMember['role'], record: SystemMember) => (
-                <Select
-                    value={role}
-                    options={memberRoleOptions}
-                    style={{ width: 170 }}
-                    data-testid={`member-role-select-${record.user_id}`}
-                    onChange={(nextRole) => users.updateMemberRole(
-                        record.user_id,
-                        nextRole as NonNullable<SystemMemberRoleUpdateRequest['role']>
-                    )}
-                    loading={users.updatePending}
-                />
-            ),
-        },
-        {
-            title: t('common:table.actions'),
-            key: 'actions',
-            width: 120,
-            render: (_, record: SystemMember) => (
-                <Popconfirm
-                    title={t('users.members.remove_confirm', { username: record.username })}
-                    onConfirm={() => users.removeMember(record.user_id)}
-                    okText={t('common:button.confirm')}
-                    cancelText={t('common:button.cancel')}
-                >
-                    <Button type="link" danger size="small" data-testid={`member-action-remove-${record.user_id}`} loading={users.removePending}>
-                        {t('common:button.delete')}
-                    </Button>
-                </Popconfirm>
-            ),
-        },
-    ];
-
-    const rateLimitColumns: ColumnsType<RateLimitUserStatus> = [
-        {
-            title: t('users.rate_limit.user'),
-            dataIndex: 'user_id',
-            key: 'user_id',
-            render: (_, record: RateLimitUserStatus) => renderUserIdentity(record),
-        },
-        {
-            title: t('users.rate_limit.exempted'),
-            dataIndex: 'exempted',
-            key: 'exempted',
-            width: 110,
-            render: (exempted: boolean) => (
-                <Tag color={exempted ? 'green' : 'default'}>
-                    {exempted ? t('users.rate_limit.exempted_yes') : t('users.rate_limit.exempted_no')}
-                </Tag>
-            ),
-        },
-        {
-            title: t('users.rate_limit.effective'),
-            key: 'effective',
-            render: (_, record) => (
-                <Space direction="vertical" size={0}>
-                    <Text type="secondary">{t('users.rate_limit.max_parents')}: {record.effective_max_pending_parents}</Text>
-                    <Text type="secondary">{t('users.rate_limit.max_children')}: {record.effective_max_pending_children}</Text>
-                    <Text type="secondary">{t('users.rate_limit.cooldown')}: {record.effective_cooldown_seconds}s</Text>
-                </Space>
-            ),
-        },
-        {
-            title: t('users.rate_limit.current'),
-            key: 'current',
-            render: (_, record) => (
-                <Space direction="vertical" size={0}>
-                    <Text type="secondary">{t('users.rate_limit.pending_parents')}: {record.current_pending_parents}</Text>
-                    <Text type="secondary">{t('users.rate_limit.pending_children')}: {record.current_pending_children}</Text>
-                    <Text type="secondary">{t('users.rate_limit.remaining')}: {record.cooldown_remaining_seconds}s</Text>
-                </Space>
-            ),
-        },
-        {
-            title: t('common:table.actions'),
-            key: 'actions',
-            width: 320,
-            render: (_, record) => (
-                <Space wrap>
-                    <Button
-                        type="link"
-                        size="small"
-                        data-testid={`ratelimit-action-exempt-${record.user_id}`}
-                        onClick={() => {
-                            setSelectedRateLimitUserID(record.user_id);
-                            exemptionForm.resetFields();
-                            exemptionForm.setFieldsValue({ user_id: record.user_id });
-                            users.setRateLimitUserSearch('');
-                            setExemptionOpen(true);
-                        }}
-                    >
-                        {t('users.rate_limit.add_exemption')}
-                    </Button>
-                    <Button
-                        type="link"
-                        size="small"
-                        data-testid={`rate-limit-user-action-edit-${record.user_id}`}
-                        onClick={() => {
-                            setSelectedRateLimitUserID(record.user_id);
-                            overrideForm.setFieldsValue({
-                                max_pending_parents: record.effective_max_pending_parents,
-                                max_pending_children: record.effective_max_pending_children,
-                                cooldown_seconds: record.effective_cooldown_seconds,
-                            });
-                            setOverrideOpen(true);
-                        }}
-                    >
-                        {t('users.rate_limit.edit_limits')}
-                    </Button>
-                    <Popconfirm
-                        title={t('users.rate_limit.remove_exemption_confirm')}
-                        onConfirm={() => users.removeRateLimitExemption(record.user_id)}
-                        okText={t('common:button.confirm')}
-                        cancelText={t('common:button.cancel')}
-                    >
-                        <Button type="link" size="small" danger data-testid={`rate-limit-exemption-action-delete-${record.user_id}`} disabled={!record.exempted} loading={users.rateLimitMutationPending}>
-                            {t('users.rate_limit.remove_exemption')}
-                        </Button>
-                    </Popconfirm>
-                </Space>
-            ),
-        },
-    ];
-
     const editingUser = useMemo(
         () => (users.users?.items ?? []).find((u) => u.id === users.editingUserId),
         [users.editingUserId, users.users?.items]
     );
-    const memberCandidateOptions = useMemo(
-        () => (users.memberCandidates?.items ?? []).map((user) => ({
-            value: user.id,
-            label: user.display_name
-                ? `${user.display_name} (${user.username})`
-                : user.username,
-        })),
-        [users.memberCandidates?.items]
-    );
-    const memberRoleOptions = MEMBER_ROLE_VALUES.map((role) => ({
-        value: role,
-        label: t(`users.members.role_option.${role}`, { defaultValue: role }),
-    }));
 
     return (
         <div data-testid="admin-users-page">
@@ -1251,24 +1153,44 @@ export function AdminUsersContent() {
                     surfaceColor="#E8FFF2"
                 />
                 <SummaryMetricCard
-                    title={t('users.summary.members_title', { system: selectedSystem?.name || t('users.members.select_system_placeholder') })}
-                    value={users.selectedSystemId ? memberItems.length : users.systems.length}
-                    description={users.selectedSystemId
-                        ? t('users.summary.members_description_selected', { system: selectedSystem?.name || EMPTY_VALUE })
-                        : t('users.summary.members_description')}
-                    visual={<QueueReviewGlyph className="summary-metric-card__art" />}
+                    title={t('users.summary.roles_title')}
+                    value={usersWithExplicitRoles}
+                    description={t('users.summary.roles_description')}
+                    visual={<RoleCatalogGlyph className="summary-metric-card__art" />}
                     accentColor="#D97706"
                     surfaceColor="#FFF4E5"
                 />
                 <SummaryMetricCard
-                    title={t('users.summary.rate_limit_title')}
-                    value={trackedRateLimitUsers}
-                    description={t('users.summary.rate_limit_description', { exempted: exemptedUsers })}
-                    visual={<RateLimitGaugeGlyph className="summary-metric-card__art" />}
+                    title={t('users.summary.profile_title')}
+                    value={usersWithDirectoryProfiles}
+                    description={t('users.summary.profile_description')}
+                    visual={<QueueReviewGlyph className="summary-metric-card__art" />}
                     accentColor="#6D4DE3"
                     surfaceColor="#F5EDFF"
                 />
             </div>
+
+            <PageSurface style={{ marginBottom: 16 }}>
+                <Alert
+                    showIcon
+                    type="info"
+                    message={t('users.directory.boundary_title')}
+                    description={t('users.directory.boundary_description')}
+                    action={(
+                        <Space wrap>
+                            <Button onClick={() => router.push('/admin/rbac')}>
+                                {t('users.directory.open_rbac')}
+                            </Button>
+                            <Button onClick={() => router.push('/systems')}>
+                                {t('users.directory.open_systems')}
+                            </Button>
+                            <Button onClick={() => router.push('/admin/rate-limits')}>
+                                {t('users.directory.open_rate_limits')}
+                            </Button>
+                        </Space>
+                    )}
+                />
+            </PageSurface>
 
             <PageSurface style={{ marginBottom: 16 }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
@@ -1437,12 +1359,15 @@ export function AdminUsersContent() {
                     />
                 </Space>
                 <Table<User>
+                    className="admin-users-table"
                     style={{ marginTop: 16 }}
+                    size="small"
                     rowKey="id"
                     columns={usersColumns}
                     dataSource={users.users?.items ?? []}
                     loading={users.usersLoading}
                     scroll={{ x: usersTableScrollX }}
+                    rowClassName={() => 'admin-users-table__row'}
                     locale={{
                         emptyText: (
                             <div style={{ padding: 40 }}>
@@ -1720,6 +1645,194 @@ export function AdminUsersContent() {
                 </Drawer>
             ) : null}
 
+            {selectedAccessUser ? (
+                <Drawer
+                    title={t('users.directory.manage_access_title', {
+                        user: selectedAccessUser.display_name?.trim() || selectedAccessUser.username || selectedAccessUser.id,
+                    })}
+                    open={Boolean(selectedAccessUser)}
+                    width={920}
+                    onClose={closeAccessBindingsDrawer}
+                    destroyOnClose={true}
+                    footer={
+                        <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+                            <Text type="secondary">
+                                {t('users.directory.manage_access_footer', {
+                                    defaultValue: 'Use role, scope, and allowed environments together to keep access narrow. Elevated platform-facing roles are highlighted here; Access & Roles remains available for audit.',
+                                })}
+                            </Text>
+                            <Space>
+                                <Button onClick={closeAccessBindingsDrawer}>
+                                    {t('common:button.close', { defaultValue: 'Close' })}
+                                </Button>
+                                <Button
+                                    type="primary"
+                                    icon={<PlusOutlined />}
+                                    data-testid="user-binding-create-button"
+                                    onClick={accessBindings.openAddBindingModal}
+                                >
+                                    {t('rbac.bindings.add')}
+                                </Button>
+                            </Space>
+                        </Space>
+                    }
+                >
+                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                        <Alert
+                            showIcon
+                            type="info"
+                            message={t('users.directory.manage_access_help_title')}
+                            description={t('users.directory.manage_access_help_description')}
+                        />
+                        <div className="summary-card-grid">
+                            <SummaryMetricCard
+                                title={t('users.directory.manage_access_summary.standard_title')}
+                                value={runtimeBindings.length}
+                                description={t('users.directory.manage_access_summary.standard_description')}
+                                visual={<AccessControlGlyph className="summary-metric-card__art" />}
+                                accentColor="#1D5BFF"
+                                surfaceColor="#E6F4FF"
+                            />
+                            <SummaryMetricCard
+                                title={t('users.directory.manage_access_summary.privileged_title')}
+                                value={elevatedBindings.length}
+                                description={t('users.directory.manage_access_summary.privileged_description')}
+                                visual={<SafetyCertificateOutlined />}
+                                accentColor="#6D4DE3"
+                                surfaceColor="#F5EDFF"
+                            />
+                        </div>
+                        <Space direction="vertical" size={0}>
+                            <Text strong>{t('users.directory.manage_access_bindings_title')}</Text>
+                            <Text type="secondary">{t('users.directory.manage_access_bindings_subtitle')}</Text>
+                        </Space>
+                        <Table<GlobalRoleBinding>
+                            rowKey="id"
+                            columns={bindingColumns}
+                            dataSource={accessBindings.roleBindings}
+                            loading={accessBindings.roleBindingsLoading}
+                            locale={{
+                                emptyText: (
+                                    <div style={{ padding: 32 }}>
+                                        <ActionEmptyState
+                                            compact={true}
+                                            title={t('users.directory.manage_access_empty')}
+                                            description={t('users.directory.manage_access_empty_description')}
+                                            visual={<AccessControlGlyph className="action-empty-state__art" />}
+                                            actions={(
+                                                <Button type="primary" size="small" icon={<PlusOutlined />} onClick={accessBindings.openAddBindingModal}>
+                                                    {t('rbac.bindings.add')}
+                                                </Button>
+                                            )}
+                                        />
+                                    </div>
+                                ),
+                            }}
+                            pagination={false}
+                        />
+                    </Space>
+                </Drawer>
+            ) : null}
+
+            {accessBindings.addBindingOpen ? (
+                <Modal
+                    title={t('users.directory.add_binding_title', {
+                        user: selectedAccessUser?.display_name?.trim() || selectedAccessUser?.username || selectedAccessUser?.id || '',
+                    })}
+                    open={accessBindings.addBindingOpen}
+                    onOk={() => {
+                        void accessBindings.submitAddBinding();
+                    }}
+                    onCancel={accessBindings.closeAddBindingModal}
+                    confirmLoading={accessBindings.createBindingPending}
+                    maskClosable={false}
+                    keyboard={false}
+                    data-testid="user-binding-add-modal"
+                >
+                    <Form form={accessBindings.bindingForm} layout="vertical" preserve={false}>
+                        <Form.Item label={t('rbac.bindings.select_user')}>
+                            <Input
+                                value={selectedAccessUser?.display_name?.trim() || selectedAccessUser?.username || selectedAccessUser?.id || ''}
+                                readOnly={true}
+                            />
+                        </Form.Item>
+                        <Form.Item name="role_id" label={t('rbac.bindings.role')} rules={[{ required: true }]}>
+                            <Select
+                                options={roleOptions}
+                                optionFilterProp="label"
+                                showSearch={true}
+                                placeholder={t('users.directory.role_placeholder', {
+                                    defaultValue: 'Search roles',
+                                })}
+                            />
+                        </Form.Item>
+                        {selectedBindingRole ? (
+                            <Alert
+                                showIcon
+                                type={selectedBindingRole && isPrivilegedRole(selectedBindingRole) ? 'warning' : 'info'}
+                                style={{ marginBottom: 16 }}
+                                message={t('rbac.bindings.role_policy_title')}
+                                description={
+                                    localizeRoleAssignmentPolicy(t, selectedBindingRole)
+                                    || localizeRoleDescription(t, selectedBindingRole)
+                                }
+                            />
+                        ) : null}
+                        <Form.Item name="scope_type" label={t('rbac.bindings.scope_type')} rules={[{ required: true }]} initialValue="global">
+                            <Select
+                                options={RBAC_SCOPE_VALUES.map((scope) => ({
+                                    value: scope,
+                                    label: t(`rbac.scope.${scope}`),
+                                }))}
+                                onChange={(value) => {
+                                    accessBindings.bindingForm.setFieldsValue({ scope_type: value, scope_id: undefined });
+                                }}
+                            />
+                        </Form.Item>
+                        {bindingScopeType && bindingScopeType !== 'global' ? (
+                            <Form.Item
+                                name="scope_id"
+                                label={t('rbac.bindings.scope_id')}
+                                extra={t('rbac.bindings.scope_id_help', {
+                                    scope: t(`rbac.scope.${bindingScopeType}`, { defaultValue: bindingScopeType }),
+                                })}
+                            >
+                                <AutoComplete
+                                    options={(accessBindings.scopeTargetOptionsByType?.[bindingScopeType || 'global'] ?? []).map((option) => ({
+                                        value: option.value,
+                                        label: option.label,
+                                    }))}
+                                    allowClear={true}
+                                    placeholder={t('rbac.bindings.scope_id_placeholder')}
+                                    filterOption={(inputValue, option) => {
+                                        const label = String(option?.label ?? '').toLowerCase();
+                                        const value = String(option?.value ?? '').toLowerCase();
+                                        const search = inputValue.trim().toLowerCase();
+                                        return label.includes(search) || value.includes(search);
+                                    }}
+                                    notFoundContent={accessBindings.scopeTargetLoadingByType?.[bindingScopeType || 'global']
+                                        ? t('common:status.loading', { defaultValue: 'Loading…' })
+                                        : t('rbac.bindings.scope_target_empty', { defaultValue: 'No suggested targets yet' })}
+                                />
+                            </Form.Item>
+                        ) : null}
+                        <Form.Item
+                            name="allowed_environments"
+                            label={t('rbac.bindings.allowed_envs')}
+                            extra={t('rbac.bindings.allowed_envs_help')}
+                        >
+                            <Select
+                                mode="multiple"
+                                options={ENVIRONMENT_VALUES.map((env) => ({
+                                    value: env,
+                                    label: t(`rbac.env.${env}`),
+                                }))}
+                            />
+                        </Form.Item>
+                    </Form>
+                </Modal>
+            ) : null}
+
             {users.createUserOpen ? (
                 <Modal
                     title={t('users.directory.add_title')}
@@ -1818,496 +1931,6 @@ export function AdminUsersContent() {
                         </Form.Item>
                     </Form>
                 </Modal>
-            ) : null}
-
-            <PageSurface>
-                <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-                    <Space direction="vertical" size={0}>
-                        <Text strong>{t('users.members.title')}</Text>
-                        <Text type="secondary">{t('users.members.subtitle')}</Text>
-                    </Space>
-                    <Space>
-                        <Button icon={<ReloadOutlined />} onClick={() => users.refetchMembers()} disabled={!users.selectedSystemId}>
-                            {t('common:button.refresh')}
-                        </Button>
-                        <Button
-                            type="primary"
-                            icon={<PlusOutlined />}
-                            data-testid="member-add-button"
-                            onClick={users.openAddModal}
-                            disabled={!users.selectedSystemId}
-                        >
-                            {t('users.members.add')}
-                        </Button>
-                    </Space>
-                </Space>
-
-                <Space align="center" style={{ marginTop: 16, marginBottom: 16 }}>
-                    <TeamOutlined />
-                    <Text>{t('users.members.select_system')}</Text>
-                    <Select
-                        style={{ minWidth: 280 }}
-                        loading={users.systemsLoading}
-                        value={users.selectedSystemId}
-                        placeholder={t('users.members.select_system_placeholder')}
-                        data-testid="users-system-selector"
-                        onChange={(value) => users.setSelectedSystemId(value)}
-                        options={users.systems.map((system) => ({ value: system.id, label: system.name }))}
-                        showSearch
-                        optionFilterProp="label"
-                    />
-                </Space>
-
-                <Table<SystemMember>
-                    rowKey="user_id"
-                    columns={memberColumns}
-                    dataSource={memberItems}
-                    loading={users.membersLoading}
-                    locale={{
-                        emptyText: users.selectedSystemId ? (
-                            <div style={{ padding: 40 }}>
-                                <ActionEmptyState
-                                    compact={true}
-                                    title={t('users.members.empty')}
-                                    description={t('users.members.empty_description', { system: selectedSystem?.name || EMPTY_VALUE })}
-                                    visual={<AccessControlGlyph className="action-empty-state__art" />}
-                                    actions={(
-                                        <Button type="primary" size="small" icon={<PlusOutlined />} onClick={users.openAddModal}>
-                                            {t('users.members.add')}
-                                        </Button>
-                                    )}
-                                />
-                            </div>
-                        ) : (
-                            <div style={{ padding: 40 }}>
-                                <ActionEmptyState
-                                    compact={true}
-                                    title={t('users.members.select_system_first')}
-                                    description={t('users.members.select_system_help')}
-                                    visual={<QueueReviewGlyph className="action-empty-state__art" />}
-                                />
-                            </div>
-                        ),
-                    }}
-                    pagination={false}
-                />
-            </PageSurface>
-
-            <PageSurface style={{ marginTop: 16 }}>
-                <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-                    <Space direction="vertical" size={0}>
-                        <Text strong>{t('users.rate_limit.title')}</Text>
-                        <Text type="secondary">{t('users.rate_limit.subtitle')}</Text>
-                    </Space>
-                    <Space>
-                        <Button icon={<ReloadOutlined />} onClick={() => users.refetchRateLimitStatus()}>
-                            {t('common:button.refresh')}
-                        </Button>
-                        <Button
-                            type="primary"
-                            icon={<PlusOutlined />}
-                            data-testid="rate-limit-exemption-create-button"
-                            onClick={() => {
-                                setSelectedRateLimitUserID('');
-                                users.setRateLimitUserSearch('');
-                                exemptionForm.resetFields();
-                                setExemptionOpen(true);
-                            }}
-                        >
-                            {t('users.rate_limit.add_exemption')}
-                        </Button>
-                    </Space>
-                </Space>
-                <Table<RateLimitUserStatus>
-                    style={{ marginTop: 16 }}
-                    rowKey="user_id"
-                    columns={rateLimitColumns}
-                    dataSource={rateLimitItems}
-                    loading={users.rateLimitLoading}
-                    locale={{
-                        emptyText: (
-                            <div style={{ padding: 40 }}>
-                                <ActionEmptyState
-                                    compact={true}
-                                    title={t('users.rate_limit.empty')}
-                                    description={t('users.rate_limit.empty_description')}
-                                    visual={<RateLimitGaugeGlyph className="action-empty-state__art" />}
-                                />
-                            </div>
-                        ),
-                    }}
-                    pagination={false}
-                />
-            </PageSurface>
-
-            {users.addOpen ? (
-                <Modal
-                    title={t('users.members.add_title')}
-                    open={users.addOpen}
-                    onOk={() => {
-                        void users.submitAddMember();
-                    }}
-                    onCancel={users.closeAddModal}
-                    confirmLoading={users.addPending}
-                    maskClosable={false}
-                    keyboard={false}
-                    data-testid="member-add-modal"
-                >
-                    <Form form={users.addForm} layout="vertical" preserve={false}>
-                        <Form.Item
-                            name="user_id"
-                            label={t('users.members.select_user')}
-                            rules={[{ required: true, message: t('users.members.validation.user_required') }]}
-                        >
-                            <Select
-                                showSearch
-                                placeholder={t('users.members.select_user_placeholder')}
-                                data-testid="member-candidate-user-select"
-                                filterOption={false}
-                                loading={users.memberCandidatesLoading}
-                                searchValue={users.memberCandidateSearch}
-                                onSearch={users.setMemberCandidateSearch}
-                                options={memberCandidateOptions}
-                                notFoundContent={
-                                    users.memberCandidatesLoading
-                                        ? t('common:message.loading')
-                                        : users.memberCandidateSearch.trim()
-                                            ? t('users.members.no_search_results')
-                                            : t('users.members.no_addable_users')
-                                }
-                            />
-                        </Form.Item>
-                        <Form.Item
-                            name="role"
-                            label={t('users.members.select_role')}
-                            rules={[{ required: true, message: t('users.members.validation.role_required') }]}
-                            initialValue="viewer"
-                        >
-                            <Select options={memberRoleOptions} />
-                        </Form.Item>
-                        <Form.Item label={t('users.members.note_label')}>
-                            <Input.TextArea rows={3} value={t('users.members.note')} readOnly />
-                        </Form.Item>
-                    </Form>
-                </Modal>
-            ) : null}
-
-            {exemptionOpen ? (
-                <Modal
-                    title={t('users.rate_limit.add_exemption')}
-                    open={exemptionOpen}
-                    onCancel={() => {
-                        setExemptionOpen(false);
-                        setSelectedRateLimitUserID('');
-                        users.setRateLimitUserSearch('');
-                        exemptionForm.resetFields();
-                    }}
-                    onOk={() => {
-                        void exemptionForm.validateFields().then((values) => {
-                            users.applyRateLimitExemption({
-                                user_id: values.user_id,
-                                reason: values.reason || '',
-                                expires_at: values.expires_at ? values.expires_at.toISOString() : null,
-                            });
-                            setExemptionOpen(false);
-                            setSelectedRateLimitUserID('');
-                            users.setRateLimitUserSearch('');
-                            exemptionForm.resetFields();
-                        });
-                    }}
-                    confirmLoading={users.rateLimitMutationPending}
-                    maskClosable={false}
-                    keyboard={false}
-                    data-testid="rate-limit-exemption-create-modal"
-                >
-                    <Form form={exemptionForm} layout="vertical" preserve={false}>
-                        <Form.Item
-                            name="user_id"
-                            label={t('users.rate_limit.user')}
-                            rules={[{ required: true, message: t('users.rate_limit.user_required', { defaultValue: 'Select a user' }) }]}
-                        >
-                            <Select
-                                showSearch
-                                filterOption={false}
-                                data-testid="rate-limit-exemption-user-select"
-                                placeholder={t('users.rate_limit.user_placeholder', { defaultValue: 'Search a user by name, username, or email' })}
-                                loading={users.rateLimitUserCandidatesLoading}
-                                searchValue={users.rateLimitUserSearch}
-                                onSearch={users.setRateLimitUserSearch}
-                                onChange={(value) => setSelectedRateLimitUserID(value)}
-                                options={rateLimitUserOptions}
-                                optionLabelProp="label"
-                                notFoundContent={
-                                    users.rateLimitUserCandidatesLoading
-                                        ? t('common:message.loading')
-                                        : t('users.rate_limit.no_user_results', { defaultValue: 'No matching users found' })
-                                }
-                            />
-                        </Form.Item>
-                        <Form.Item name="reason" label={t('users.rate_limit.reason')}>
-                            <Input.TextArea rows={3} />
-                        </Form.Item>
-                        <Form.Item name="expires_at" label={t('users.rate_limit.expires_at')}>
-                            <DatePicker showTime style={{ width: '100%' }} />
-                        </Form.Item>
-                    </Form>
-                </Modal>
-            ) : null}
-
-            {overrideOpen ? (
-                <Modal
-                    title={t('users.rate_limit.override')}
-                    open={overrideOpen}
-                    onCancel={() => {
-                        setOverrideOpen(false);
-                        setSelectedRateLimitUserID('');
-                        overrideForm.resetFields();
-                    }}
-                    onOk={() => {
-                        void overrideForm.validateFields().then((values) => {
-                            users.updateRateLimitOverride(selectedRateLimitUserID, {
-                                max_pending_parents: values.max_pending_parents ?? null,
-                                max_pending_children: values.max_pending_children ?? null,
-                                cooldown_seconds: values.cooldown_seconds ?? null,
-                                reason: values.reason || '',
-                            });
-                            setOverrideOpen(false);
-                            setSelectedRateLimitUserID('');
-                            overrideForm.resetFields();
-                        });
-                    }}
-                    confirmLoading={users.rateLimitMutationPending}
-                    maskClosable={false}
-                    keyboard={false}
-                    data-testid="rate-limit-user-edit-modal"
-                >
-                    <Form form={overrideForm} layout="vertical" preserve={false}>
-                        <Form.Item label={t('users.rate_limit.user')}>
-                            <Input
-                                value={selectedRateLimitUserLabel}
-                                readOnly
-                            />
-                        </Form.Item>
-                        <Form.Item name="max_pending_parents" label={t('users.rate_limit.max_parents')}>
-                            <InputNumber min={0} style={{ width: '100%' }} />
-                        </Form.Item>
-                        <Form.Item name="max_pending_children" label={t('users.rate_limit.max_children')}>
-                            <InputNumber min={0} style={{ width: '100%' }} />
-                        </Form.Item>
-                        <Form.Item name="cooldown_seconds" label={t('users.rate_limit.cooldown')}>
-                            <InputNumber min={0} style={{ width: '100%' }} />
-                        </Form.Item>
-                        <Form.Item name="reason" label={t('users.rate_limit.reason')}>
-                            <Input.TextArea rows={3} />
-                        </Form.Item>
-                    </Form>
-                </Modal>
-            ) : null}
-            {/* ── User Role Bindings Drawer ─────────────────────────────── */}
-            {users.roleBindingsUserId ? (
-            <Drawer
-                title={t('users.role_bindings.drawer_title')}
-                open={Boolean(users.roleBindingsUserId)}
-                onClose={users.closeRoleBindingsModal}
-                width={700}
-                zIndex={1000}
-                destroyOnClose
-                maskClosable={false}
-                data-testid="user-role-bindings-page"
-            >
-                <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
-                    <Text strong>{users.roleBindingsUserLabel || users.roleBindingsUserId}</Text>
-                    <Text type="secondary">
-                        {t('users.role_bindings.drawer_subtitle')}
-                    </Text>
-                </Space>
-                <Alert
-                    showIcon
-                    type="info"
-                    style={{ marginBottom: 16 }}
-                    message={t('users.role_bindings.drawer_help_title')}
-                    description={t('users.role_bindings.drawer_help_description')}
-                />
-                <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'flex-end' }}>
-                    <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        data-testid="role-binding-create-button"
-                        onClick={users.openRoleBindingCreateModal}
-                    >
-                        {t('users.role_bindings.create')}
-                    </Button>
-                </Space>
-                <Table<GlobalRoleBinding>
-                    rowKey="id"
-                    loading={users.roleBindingsLoading}
-                    dataSource={users.roleBindings?.items ?? []}
-                    pagination={false}
-                    locale={{
-                        emptyText: (
-                            <div style={{ padding: 32 }}>
-                                <ActionEmptyState
-                                    compact={true}
-                                    title={t('users.role_bindings.empty')}
-                                    description={t('users.role_bindings.empty_description')}
-                                    visual={<AccessControlGlyph className="action-empty-state__art" />}
-                                    actions={(
-                                        <Button type="primary" size="small" icon={<PlusOutlined />} onClick={users.openRoleBindingCreateModal}>
-                                            {t('users.role_bindings.create')}
-                                        </Button>
-                                    )}
-                                />
-                            </div>
-                        ),
-                    }}
-                    columns={[
-                        {
-                            title: t('users.role_bindings.role_name'),
-                            dataIndex: 'role_name',
-                            key: 'role_name',
-                            render: (roleName: string, record: GlobalRoleBinding) => (
-                                <Space direction="vertical" size={0}>
-                                    <Text strong>{record.role_display_name || roleDisplayById.get(record.role_id) || roleName}</Text>
-                                    {(record.role_display_name || roleDisplayById.get(record.role_id))
-                                        && (record.role_display_name || roleDisplayById.get(record.role_id)) !== roleName ? (
-                                            <Text type="secondary" style={{ fontSize: 12 }}>{roleName}</Text>
-                                        ) : null}
-                                </Space>
-                            ),
-                        },
-                        {
-                            title: t('users.role_bindings.scope'),
-                            key: 'scope',
-                            render: (_: unknown, record: GlobalRoleBinding) => (
-                                <Space direction="vertical" size={0}>
-                                    <Space size={8} wrap>
-                                        <Tag>{t(`rbac.scope.${record.scope_type}`, { defaultValue: record.scope_type })}</Tag>
-                                        {record.allowed_environments?.length ? record.allowed_environments.map((env) => (
-                                            <Tag key={`${record.id}-${env}`} color="processing">
-                                                {t(`rbac.env.${env}`, { defaultValue: env })}
-                                            </Tag>
-                                        )) : <Tag>{t('users.role_bindings.all_environments')}</Tag>}
-                                    </Space>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                        {record.scope_display_name || record.scope_id || t('users.role_bindings.global_scope')}
-                                    </Text>
-                                </Space>
-                            ),
-                        },
-                        {
-                            title: t('users.role_bindings.created_at'),
-                            dataIndex: 'created_at',
-                            key: 'created_at',
-                            render: (val: string) => <LocalDateTimeText value={val} />,
-                        },
-                        {
-                            title: t('common:table.actions'),
-                            key: 'actions',
-                            render: (_: unknown, record: GlobalRoleBinding) => (
-                                <Popconfirm
-                                    title={t('users.role_bindings.delete_confirm')}
-                                    onConfirm={() => users.deleteRoleBinding(record.id)}
-                                    okText={t('common:button.confirm')}
-                                    cancelText={t('common:button.cancel')}
-                                >
-                                    <Button
-                                        type="link"
-                                        size="small"
-                                        danger
-                                        icon={<DeleteOutlined />}
-                                        loading={users.deletingBindingId === record.id && users.deleteRoleBindingPending}
-                                        data-testid={`role-binding-action-delete-${record.id}`}
-                                    />
-                                </Popconfirm>
-                            ),
-                        },
-                    ]}
-                />
-            </Drawer>
-            ) : null}
-
-            {/* ── Create Role Binding Modal ────────────────────────────── */}
-            {users.roleBindingCreateOpen ? (
-            <Modal
-                title={t('users.role_bindings.create_modal_title')}
-                open={users.roleBindingCreateOpen}
-                onCancel={users.closeRoleBindingCreateModal}
-                onOk={users.submitCreateRoleBinding}
-                confirmLoading={users.createRoleBindingPending}
-                width={560}
-                zIndex={1100}
-                maskClosable={false}
-                keyboard={false}
-                destroyOnHidden={true}
-                data-testid="role-binding-create-modal"
-            >
-                <Alert
-                    showIcon
-                    type="info"
-                    style={{ marginBottom: 16 }}
-                    message={t('users.role_bindings.create_help_title')}
-                    description={t('users.role_bindings.create_help_description')}
-                />
-                <Form form={users.roleBindingCreateForm} layout="vertical" preserve={false}>
-                    <Form.Item label={t('users.role_bindings.target_user')}>
-                        <Input value={users.roleBindingsUserLabel || users.roleBindingsUserId} readOnly />
-                    </Form.Item>
-                    <Form.Item
-                        name="role_id"
-                        label={t('users.role_bindings.role')}
-                        rules={[{ required: true }]}
-                    >
-                        <Select
-                            placeholder={t('users.role_bindings.select_role')}
-                            loading={users.rolesLoading}
-                            options={(users.roles?.items ?? []).map((r) => ({
-                                value: r.id,
-                                label: localizeRoleLabel(t, r),
-                            }))}
-                        />
-                    </Form.Item>
-                    <Form.Item
-                        name="scope_type"
-                        label={t('users.role_bindings.scope_type')}
-                        initialValue="global"
-                        rules={[{ required: true }]}
-                    >
-                        <Select
-                            options={roleBindingScopeOptions}
-                            onChange={(value) => {
-                                users.roleBindingCreateForm.setFieldsValue({ scope_type: value, scope_id: undefined });
-                            }}
-                        />
-                    </Form.Item>
-                    {roleBindingScopeType && roleBindingScopeType !== 'global' ? (
-                        <Form.Item
-                            name="scope_id"
-                            label={t('users.role_bindings.scope_id')}
-                            extra={t('users.role_bindings.scope_id_help', {
-                                scope: t(`rbac.scope.${roleBindingScopeType}`, { defaultValue: roleBindingScopeType }),
-                            })}
-                        >
-                            <AutoComplete
-                                options={roleBindingScopeTargetOptions}
-                                allowClear
-                                placeholder={t('users.role_bindings.scope_id_placeholder')}
-                                filterOption={(inputValue, option) => {
-                                    const label = String(option?.label ?? '').toLowerCase();
-                                    const value = String(option?.value ?? '').toLowerCase();
-                                    const search = inputValue.trim().toLowerCase();
-                                    return label.includes(search) || value.includes(search);
-                                }}
-                                notFoundContent={roleBindingScopeTargetLoading
-                                    ? t('common:status.loading', { defaultValue: 'Loading…' })
-                                    : t('users.role_bindings.scope_target_empty')}
-                            />
-                        </Form.Item>
-                    ) : null}
-                    <Form.Item name="allowed_environments" label={t('users.role_bindings.allowed_envs')}>
-                        <Select mode="multiple" options={roleBindingEnvironmentOptions} />
-                    </Form.Item>
-                </Form>
-            </Modal>
             ) : null}
         </div>
     );

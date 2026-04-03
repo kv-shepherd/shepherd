@@ -1,6 +1,6 @@
 'use client';
 
-import { Form, message } from 'antd';
+import { App, Form } from 'antd';
 import type { TFunction } from 'i18next';
 import { useState } from 'react';
 
@@ -45,7 +45,8 @@ export function useSystemsManagementController({
     t,
     onCreateSuccess,
 }: UseSystemsManagementControllerArgs) {
-    const [messageApi, messageContextHolder] = message.useMessage();
+    const { message: messageApi } = App.useApp();
+    const messageContextHolder = null;
     const [createOpen, setCreateOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
     const [editingSystem, setEditingSystem] = useState<System | null>(null);

@@ -1,6 +1,6 @@
 'use client';
 
-import { Form, message } from 'antd';
+import { App, Form } from 'antd';
 import type { TFunction } from 'i18next';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -36,7 +36,8 @@ export function useServicesManagementController({
     initialSystemId,
     onCreateSuccess,
 }: UseServicesManagementControllerArgs) {
-    const [messageApi, messageContextHolder] = message.useMessage();
+    const { message: messageApi } = App.useApp();
+    const messageContextHolder = null;
     const [createOpen, setCreateOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
     const [editingService, setEditingService] = useState<Service | null>(null);

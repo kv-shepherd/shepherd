@@ -19,14 +19,13 @@ const {
 }));
 
 vi.mock('antd', () => ({
-    message: {
-        useMessage: () => [
-            {
+    App: {
+        useApp: () => ({
+            message: {
                 success: messageSuccessMock,
                 error: messageErrorMock,
             },
-            null,
-        ],
+        }),
     },
 }));
 

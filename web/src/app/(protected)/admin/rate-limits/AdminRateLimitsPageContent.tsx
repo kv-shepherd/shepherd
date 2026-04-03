@@ -5,16 +5,39 @@
  * master-flow.md §10: Rate Limit management.
  *
  * API contracts:
- *   GET  /admin/rate-limits/status             → RateLimitStatusList
- *   GET  /admin/rate-limits/exemptions         → RateLimitExemptionList
- *   POST /admin/rate-limits/exemptions         → RateLimitExemption
- *   DELETE /admin/rate-limits/exemptions/{id}  → 204
+ *   GET    /admin/rate-limits/status               → RateLimitStatusList
+ *   GET    /admin/rate-limits/exemptions           → RateLimitExemptionList
+ *   POST   /admin/rate-limits/exemptions           → RateLimitExemption
+ *   DELETE /admin/rate-limits/exemptions/{user_id} → 204
+ *   PUT    /admin/rate-limits/users/{user_id}      → RateLimitUserOverride
  *
  * E2E data-testid requirements:
  *   rate-limit-status-page
  */
-import { ReloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Select, Space, Table, Tag, Typography } from 'antd';
+import {
+    DeleteOutlined,
+    EditOutlined,
+    PlusOutlined,
+    ReloadOutlined,
+    SettingOutlined,
+} from '@ant-design/icons';
+import {
+    Alert,
+    App,
+    Button,
+    DatePicker,
+    Form,
+    Input,
+    InputNumber,
+    Modal,
+    Popconfirm,
+    Select,
+    Space,
+    Table,
+    Tag,
+    Typography,
+} from 'antd';
+import dayjs, { type Dayjs } from 'dayjs';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -28,10 +51,11 @@ import {
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
-import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
+import { PageSearchToolbar, filterOptionByLabel } from '@/components/ui/PageSearchToolbar';
 import { api } from '@/lib/api/client';
 import { translateApiError } from '@/lib/api/errorMessage';
 import { useApiGet } from '@/lib/api/useApiGet';
+import { useApiMutation } from '@/lib/api/useApiMutation';
 import type { components } from '@/types/api.gen';
 
 const { Text } = Typography;
@@ -40,11 +64,24 @@ type RateLimitStatus = components['schemas']['RateLimitUserStatus'];
 type RateLimitStatusList = components['schemas']['RateLimitStatusList'];
 type RateLimitExemption = components['schemas']['RateLimitExemption'];
 type RateLimitExemptionList = components['schemas']['RateLimitExemptionList'];
+type RateLimitExemptionCreateRequest = components['schemas']['RateLimitExemptionCreateRequest'];
+type RateLimitUserOverride = components['schemas']['RateLimitUserOverride'];
+type RateLimitUserOverrideRequest = components['schemas']['RateLimitUserOverrideRequest'];
+type UserList = components['schemas']['UserList'];
 
-const filterOptionByLabel = (input: string, option?: { label?: unknown }) => {
-    const label = typeof option?.label === 'string' ? option.label : '';
-    return label.toLowerCase().includes(input.trim().toLowerCase());
-};
+interface ExemptionFormValues {
+    user_id: string;
+    reason?: string;
+    expires_at?: Dayjs | null;
+}
+
+interface OverrideFormValues {
+    user_id: string;
+    max_pending_parents?: number | null;
+    max_pending_children?: number | null;
+    cooldown_seconds?: number | null;
+    reason?: string;
+}
 
 function renderUserIdentity(
     t: (key: string, options?: Record<string, unknown>) => string,
@@ -67,8 +104,17 @@ function renderUserIdentity(
     );
 }
 
+function buildUserOptionLabel(displayName?: string, username?: string, email?: string, fallback?: string) {
+    return [displayName?.trim(), username?.trim(), email?.trim()]
+        .filter((value, index, array): value is string => Boolean(value) && array.indexOf(value) === index)
+        .join(' · ') || fallback || '';
+}
+
 export default function AdminRateLimitsPageContent() {
     const { t } = useTranslation(['admin', 'common']);
+    const { message: messageApi } = App.useApp();
+    const [exemptionForm] = Form.useForm<ExemptionFormValues>();
+    const [overrideForm] = Form.useForm<OverrideFormValues>();
     const [quickSearchDraft, setQuickSearchDraft] = useState('');
     const [search, setSearch] = useState('');
     const [userDraft, setUserDraft] = useState('');
@@ -78,10 +124,14 @@ export default function AdminRateLimitsPageContent() {
     const [exemptionFilter, setExemptionFilter] = useState('');
     const [cooldownFilter, setCooldownFilter] = useState('');
     const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
+    const [exemptionModalOpen, setExemptionModalOpen] = useState(false);
+    const [overrideModalOpen, setOverrideModalOpen] = useState(false);
+    const [exemptionUserLocked, setExemptionUserLocked] = useState(false);
+    const [overrideUserLocked, setOverrideUserLocked] = useState(false);
 
     const { data, isLoading, error: statusError, refetch } = useApiGet<RateLimitStatusList>(
         ['admin-rate-limits-status'],
-        () => api.GET('/admin/rate-limits/status', {}) as Promise<{ data?: RateLimitStatusList; error?: unknown; response?: Response }>
+        () => api.GET('/admin/rate-limits/status', {}) as Promise<{ data?: RateLimitStatusList; error?: unknown; response?: Response }>,
     );
 
     const {
@@ -91,12 +141,29 @@ export default function AdminRateLimitsPageContent() {
         refetch: refetchExemptions,
     } = useApiGet<RateLimitExemptionList>(
         ['admin-rate-limits-exemptions'],
-        () => api.GET('/admin/rate-limits/exemptions', { params: { query: { page: 1, per_page: 100 } } }) as Promise<{ data?: RateLimitExemptionList; error?: unknown; response?: Response }>
+        () =>
+            api.GET('/admin/rate-limits/exemptions', {
+                params: { query: { page: 1, per_page: 100 } },
+            }) as Promise<{ data?: RateLimitExemptionList; error?: unknown; response?: Response }>,
+    );
+
+    const { data: userDirectoryData } = useApiGet<UserList>(
+        ['admin-rate-limits-users'],
+        () =>
+            api.GET('/admin/users', {
+                params: { query: { page: 1, per_page: 200 } },
+            }) as Promise<{ data?: UserList; error?: unknown; response?: Response }>,
+        { staleTime: 60_000 },
     );
 
     const loadError = statusError ?? exemptionsError;
     const statusItems = useMemo(() => data?.items ?? [], [data?.items]);
     const exemptionItems = useMemo(() => exemptionData?.items ?? [], [exemptionData?.items]);
+
+    const refetchAll = async () => {
+        await Promise.all([refetch(), refetchExemptions()]);
+    };
+
     const rateLimitSummary = useMemo(() => {
         const trackedUsers = new Set(statusItems.map((item) => item.user_id).filter(Boolean)).size;
         const coolingDownUsers = statusItems.filter((item) => (item.cooldown_remaining_seconds ?? 0) > 0).length;
@@ -108,28 +175,23 @@ export default function AdminRateLimitsPageContent() {
             exemptionsTotal: exemptionItems.length,
         };
     }, [exemptionItems.length, statusItems]);
+
     const userOptions = useMemo(() => {
         const users = new Map<string, string>();
+        for (const item of userDirectoryData?.items ?? []) {
+            users.set(item.id, buildUserOptionLabel(item.display_name, item.username, item.email, item.id));
+        }
         for (const item of statusItems) {
-            const labelParts = [
-                item.display_name?.trim(),
-                item.username?.trim(),
-                item.email?.trim(),
-            ].filter((value, index, array): value is string => Boolean(value) && array.indexOf(value) === index);
-            users.set(item.user_id, labelParts.join(' · ') || item.user_id);
+            users.set(item.user_id, buildUserOptionLabel(item.display_name, item.username, item.email, item.user_id));
         }
         for (const item of exemptionItems) {
-            const labelParts = [
-                item.display_name?.trim(),
-                item.username?.trim(),
-                item.email?.trim(),
-            ].filter((value, index, array): value is string => Boolean(value) && array.indexOf(value) === index);
-            users.set(item.user_id, labelParts.join(' · ') || item.user_id);
+            users.set(item.user_id, buildUserOptionLabel(item.display_name, item.username, item.email, item.user_id));
         }
         return Array.from(users.entries())
             .sort((left, right) => left[1].localeCompare(right[1]))
             .map(([value, label]) => ({ value, label }));
-    }, [exemptionItems, statusItems]);
+    }, [exemptionItems, statusItems, userDirectoryData?.items]);
+
     const exemptionOptions = useMemo(
         () => [
             {
@@ -143,6 +205,7 @@ export default function AdminRateLimitsPageContent() {
         ],
         [t],
     );
+
     const cooldownOptions = useMemo(
         () => [
             {
@@ -156,6 +219,7 @@ export default function AdminRateLimitsPageContent() {
         ],
         [t],
     );
+
     const filteredStatusItems = useMemo(() => {
         const normalizedSearch = search.trim().toLowerCase();
         return statusItems.filter((item) => {
@@ -186,6 +250,7 @@ export default function AdminRateLimitsPageContent() {
             ].some((value) => value.toLowerCase().includes(normalizedSearch));
         });
     }, [cooldownFilter, exemptionFilter, search, statusItems, userFilter]);
+
     const filteredExemptionItems = useMemo(() => {
         const normalizedSearch = search.trim().toLowerCase();
         return exemptionItems.filter((item) => {
@@ -209,7 +274,113 @@ export default function AdminRateLimitsPageContent() {
         });
     }, [exemptionFilter, exemptionItems, search, userFilter]);
 
-    const columns = [
+    const createExemptionMutation = useApiMutation<RateLimitExemption, RateLimitExemptionCreateRequest>(
+        (body) =>
+            api.POST('/admin/rate-limits/exemptions', {
+                body,
+            }) as Promise<{ data?: RateLimitExemption; error?: unknown; response?: Response }>,
+        {
+            onSuccess: async () => {
+                messageApi.success(t('rate_limits.exemptions.save_success', { defaultValue: 'Rate-limit exemption saved.' }));
+                setExemptionModalOpen(false);
+                exemptionForm.resetFields();
+                await refetchAll();
+            },
+            onError: (error) => {
+                messageApi.error(translateApiError(t, error));
+            },
+        },
+    );
+
+    const deleteExemptionMutation = useApiMutation<void, string>(
+        (userId) =>
+            api.DELETE('/admin/rate-limits/exemptions/{user_id}', {
+                params: { path: { user_id: userId } },
+            }) as Promise<{ data?: void; error?: unknown; response?: Response }>,
+        {
+            onSuccess: async () => {
+                messageApi.success(t('rate_limits.exemptions.delete_success', { defaultValue: 'Rate-limit exemption removed.' }));
+                await refetchAll();
+            },
+            onError: (error) => {
+                messageApi.error(translateApiError(t, error));
+            },
+        },
+    );
+
+    const updateOverrideMutation = useApiMutation<
+        RateLimitUserOverride,
+        { userId: string; body: RateLimitUserOverrideRequest }
+    >(
+        ({ userId, body }) =>
+            api.PUT('/admin/rate-limits/users/{user_id}', {
+                params: { path: { user_id: userId } },
+                body,
+            }) as Promise<{ data?: RateLimitUserOverride; error?: unknown; response?: Response }>,
+        {
+            onSuccess: async () => {
+                messageApi.success(t('rate_limits.overrides.save_success', { defaultValue: 'User rate-limit override saved.' }));
+                setOverrideModalOpen(false);
+                overrideForm.resetFields();
+                await refetchAll();
+            },
+            onError: (error) => {
+                messageApi.error(translateApiError(t, error));
+            },
+        },
+    );
+
+    const openCreateExemptionModal = () => {
+        setExemptionUserLocked(false);
+        exemptionForm.resetFields();
+        setExemptionModalOpen(true);
+    };
+
+    const openEditExemptionModal = (record: Pick<RateLimitExemption, 'user_id' | 'reason' | 'expires_at'>) => {
+        setExemptionUserLocked(true);
+        exemptionForm.setFieldsValue({
+            user_id: record.user_id,
+            reason: record.reason ?? '',
+            expires_at: record.expires_at ? dayjs(record.expires_at) : null,
+        });
+        setExemptionModalOpen(true);
+    };
+
+    const openOverrideModal = (record?: Pick<RateLimitStatus, 'user_id' | 'effective_max_pending_parents' | 'effective_max_pending_children' | 'effective_cooldown_seconds'>) => {
+        setOverrideUserLocked(Boolean(record));
+        overrideForm.setFieldsValue({
+            user_id: record?.user_id ?? '',
+            max_pending_parents: record?.effective_max_pending_parents ?? null,
+            max_pending_children: record?.effective_max_pending_children ?? null,
+            cooldown_seconds: record?.effective_cooldown_seconds ?? null,
+            reason: '',
+        });
+        setOverrideModalOpen(true);
+    };
+
+    const submitExemption = async () => {
+        const values = await exemptionForm.validateFields();
+        createExemptionMutation.mutate({
+            user_id: values.user_id,
+            reason: values.reason?.trim() || undefined,
+            expires_at: values.expires_at ? values.expires_at.toISOString() : null,
+        });
+    };
+
+    const submitOverride = async () => {
+        const values = await overrideForm.validateFields();
+        updateOverrideMutation.mutate({
+            userId: values.user_id,
+            body: {
+                max_pending_parents: values.max_pending_parents ?? null,
+                max_pending_children: values.max_pending_children ?? null,
+                cooldown_seconds: values.cooldown_seconds ?? null,
+                reason: values.reason?.trim() || undefined,
+            },
+        });
+    };
+
+    const statusColumns = [
         {
             title: t('rate_limits.table.user', { defaultValue: 'User' }),
             dataIndex: 'user_id',
@@ -285,6 +456,39 @@ export default function AdminRateLimitsPageContent() {
                 </Space>
             ),
         },
+        {
+            title: t('common:table.actions', { defaultValue: 'Actions' }),
+            key: 'actions',
+            width: 240,
+            render: (_: unknown, record: RateLimitStatus) => (
+                <Space wrap>
+                    <Button
+                        size="small"
+                        icon={<SettingOutlined />}
+                        onClick={() => openOverrideModal(record)}
+                        data-testid={`rate-limits-edit-override-${record.user_id}`}
+                    >
+                        {t('rate_limits.overrides.edit_action', { defaultValue: 'Set override' })}
+                    </Button>
+                    <Button
+                        size="small"
+                        icon={record.exempted ? <EditOutlined /> : <PlusOutlined />}
+                        onClick={() =>
+                            openEditExemptionModal({
+                                user_id: record.user_id,
+                                reason: '',
+                                expires_at: record.exemption_expires_at ?? undefined,
+                            })
+                        }
+                        data-testid={`rate-limits-edit-exemption-${record.user_id}`}
+                    >
+                        {record.exempted
+                            ? t('rate_limits.exemptions.edit_action', { defaultValue: 'Edit exemption' })
+                            : t('rate_limits.exemptions.add_action', { defaultValue: 'Add exemption' })}
+                    </Button>
+                </Space>
+            ),
+        },
     ];
 
     const exemptionColumns = [
@@ -319,6 +523,40 @@ export default function AdminRateLimitsPageContent() {
             key: 'created_at',
             render: (value: string) => <LocalDateTimeText value={value} />,
         },
+        {
+            title: t('common:table.actions', { defaultValue: 'Actions' }),
+            key: 'actions',
+            width: 180,
+            render: (_: unknown, record: RateLimitExemption) => (
+                <Space wrap>
+                    <Button
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => openEditExemptionModal(record)}
+                        data-testid={`rate-limits-edit-existing-exemption-${record.user_id}`}
+                    >
+                        {t('common:button.edit', { defaultValue: 'Edit' })}
+                    </Button>
+                    <Popconfirm
+                        title={t('rate_limits.exemptions.delete_confirm_title', { defaultValue: 'Remove exemption?' })}
+                        description={t('rate_limits.exemptions.delete_confirm_description', { defaultValue: 'This user will go back to the standard rate-limit policy.' })}
+                        okText={t('common:button.delete', { defaultValue: 'Delete' })}
+                        cancelText={t('common:button.cancel', { defaultValue: 'Cancel' })}
+                        onConfirm={() => deleteExemptionMutation.mutate(record.user_id)}
+                    >
+                        <Button
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            loading={deleteExemptionMutation.isPending}
+                            data-testid={`rate-limits-delete-exemption-${record.user_id}`}
+                        >
+                            {t('common:button.delete', { defaultValue: 'Delete' })}
+                        </Button>
+                    </Popconfirm>
+                </Space>
+            ),
+        },
     ];
 
     return (
@@ -333,8 +571,7 @@ export default function AdminRateLimitsPageContent() {
                         <Button
                             icon={<ReloadOutlined />}
                             onClick={() => {
-                                void refetch()
-                                void refetchExemptions()
+                                void refetchAll();
                             }}
                         >
                             {t('common:button.refresh')}
@@ -391,6 +628,24 @@ export default function AdminRateLimitsPageContent() {
                         searchPlaceholder={t('rate_limits.search_placeholder', { defaultValue: 'Search users, emails, usernames, reasons, or paste a user ID' })}
                         searchTestId="rate-limits-quick-search"
                         searchHelp={t('rate_limits.search_help', { defaultValue: 'Press Enter or click Search. Quick search matches users, usernames, emails, exemption reasons, and pasted user IDs.' })}
+                        primaryActions={(
+                            <Space wrap>
+                                <Button
+                                    icon={<PlusOutlined />}
+                                    onClick={openCreateExemptionModal}
+                                    data-testid="rate-limits-create-exemption"
+                                >
+                                    {t('rate_limits.exemptions.add_action', { defaultValue: 'Add exemption' })}
+                                </Button>
+                                <Button
+                                    icon={<SettingOutlined />}
+                                    onClick={() => openOverrideModal()}
+                                    data-testid="rate-limits-create-override"
+                                >
+                                    {t('rate_limits.overrides.add_action', { defaultValue: 'Set user override' })}
+                                </Button>
+                            </Space>
+                        )}
                         advancedSearch={{
                             open: advancedSearchOpen,
                             onToggle: () => setAdvancedSearchOpen((open) => !open),
@@ -481,7 +736,7 @@ export default function AdminRateLimitsPageContent() {
                 ) : null}
                 <Table
                     dataSource={filteredStatusItems}
-                    columns={columns}
+                    columns={statusColumns}
                     rowKey="user_id"
                     loading={isLoading}
                     pagination={false}
@@ -525,6 +780,115 @@ export default function AdminRateLimitsPageContent() {
                     }}
                 />
             </PageSurface>
+
+            <Modal
+                open={exemptionModalOpen}
+                title={t('rate_limits.exemptions.modal_title', { defaultValue: 'Manage rate-limit exemption' })}
+                okText={t('common:button.save', { defaultValue: 'Save' })}
+                cancelText={t('common:button.cancel', { defaultValue: 'Cancel' })}
+                confirmLoading={createExemptionMutation.isPending}
+                onOk={() => void submitExemption()}
+                onCancel={() => {
+                    setExemptionModalOpen(false);
+                    exemptionForm.resetFields();
+                }}
+                destroyOnHidden
+            >
+                <Form form={exemptionForm} layout="vertical">
+                    <Form.Item
+                        name="user_id"
+                        label={t('rate_limits.exemptions.user', { defaultValue: 'User' })}
+                        rules={[{
+                            required: true,
+                            message: t('rate_limits.exemptions.user_required', { defaultValue: 'Select a user.' }),
+                        }]}
+                    >
+                        <Select
+                            showSearch
+                            disabled={exemptionUserLocked}
+                            placeholder={t('rate_limits.exemptions.user_placeholder', { defaultValue: 'Search by name, username, or email' })}
+                            optionFilterProp="label"
+                            filterOption={filterOptionByLabel}
+                            options={userOptions}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="reason"
+                        label={t('rate_limits.exemptions.reason', { defaultValue: 'Reason' })}
+                    >
+                        <Input.TextArea rows={3} maxLength={240} />
+                    </Form.Item>
+                    <Form.Item
+                        name="expires_at"
+                        label={t('rate_limits.exemptions.expires_at', { defaultValue: 'Expires At' })}
+                    >
+                        <DatePicker
+                            showTime
+                            format="YYYY-MM-DD HH:mm"
+                            style={{ width: '100%' }}
+                            placeholder={t('rate_limits.exemptions.never_expires', { defaultValue: 'Never expires' })}
+                        />
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal
+                open={overrideModalOpen}
+                title={t('rate_limits.overrides.modal_title', { defaultValue: 'Manage user rate-limit override' })}
+                okText={t('common:button.save', { defaultValue: 'Save' })}
+                cancelText={t('common:button.cancel', { defaultValue: 'Cancel' })}
+                confirmLoading={updateOverrideMutation.isPending}
+                onOk={() => void submitOverride()}
+                onCancel={() => {
+                    setOverrideModalOpen(false);
+                    overrideForm.resetFields();
+                }}
+                destroyOnHidden
+            >
+                <Form form={overrideForm} layout="vertical">
+                    <Form.Item
+                        name="user_id"
+                        label={t('rate_limits.exemptions.user', { defaultValue: 'User' })}
+                        rules={[{
+                            required: true,
+                            message: t('rate_limits.exemptions.user_required', { defaultValue: 'Select a user.' }),
+                        }]}
+                    >
+                        <Select
+                            showSearch
+                            disabled={overrideUserLocked}
+                            placeholder={t('rate_limits.exemptions.user_placeholder', { defaultValue: 'Search by name, username, or email' })}
+                            optionFilterProp="label"
+                            filterOption={filterOptionByLabel}
+                            options={userOptions}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="max_pending_parents"
+                        label={t('rate_limits.overrides.max_pending_parents', { defaultValue: 'Parent request limit' })}
+                    >
+                        <InputNumber min={1} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item
+                        name="max_pending_children"
+                        label={t('rate_limits.overrides.max_pending_children', { defaultValue: 'Child request limit' })}
+                    >
+                        <InputNumber min={1} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item
+                        name="cooldown_seconds"
+                        label={t('rate_limits.overrides.cooldown_seconds', { defaultValue: 'Cooldown (seconds)' })}
+                    >
+                        <InputNumber min={0} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item
+                        name="reason"
+                        label={t('rate_limits.exemptions.reason', { defaultValue: 'Reason' })}
+                    >
+                        <Input.TextArea rows={3} maxLength={240} />
+                    </Form.Item>
+                </Form>
+            </Modal>
         </div>
     );
 }

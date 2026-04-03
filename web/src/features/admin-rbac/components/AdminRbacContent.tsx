@@ -17,19 +17,25 @@ import {
 } from 'antd';
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
 import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
 import { SummaryMetricCard } from '@/components/feedback/SummaryMetricCard';
 import {
+    localizeRoleAssignmentPolicy,
     localizeRoleDescription,
     localizeRoleLabel,
 } from '@/features/rbac-shared/roleCatalogI18n';
+import {
+    getRoleAccessTagColor,
+    isPrivilegedRole,
+    isPrivilegedRoleBinding,
+} from '@/features/rbac-shared/privilegedAccess';
 import type { ScopeTargetOption } from '@/features/rbac-shared/useScopeTargetCatalog';
 import {
     AccessControlGlyph,
-    QueueReviewGlyph,
     RoleCatalogGlyph,
     UserDirectoryGlyph,
 } from '@/components/illustrations/DashboardIllustrations';
@@ -53,7 +59,9 @@ function permissionCatalogTranslationKey(permissionKey: string) {
 
 export function AdminRbacContent() {
     const { t } = useTranslation(['admin', 'common']);
+    const searchParams = useSearchParams();
     const rbac = useAdminRbacController({ t });
+    const { selectedUserId, selectUser } = rbac;
     const [quickSearch, setQuickSearch] = useState('');
     const [quickSearchDraft, setQuickSearchDraft] = useState('');
     const [filtersOpen, setFiltersOpen] = useState(false);
@@ -64,7 +72,14 @@ export function AdminRbacContent() {
     const [environmentFilter, setEnvironmentFilter] = useState('');
     const [environmentFilterDraft, setEnvironmentFilterDraft] = useState('');
     const normalizedQuickSearch = quickSearch.trim().toLowerCase();
-    const bindingScopeType = Form.useWatch('scope_type', rbac.bindingForm);
+    const bindingScopeType = Form.useWatch('scope_type', {
+        form: rbac.bindingForm,
+        preserve: true,
+    });
+    const bindingRoleID = Form.useWatch('role_id', {
+        form: rbac.bindingForm,
+        preserve: true,
+    });
     const permissionCatalogMetadata = useMemo(
         () => new Map(
             rbac.permissions.map((permission) => {
@@ -96,6 +111,7 @@ export function AdminRbacContent() {
                     {
                         label: localizeRoleLabel(t, role),
                         description: localizeRoleDescription(t, role) || EMPTY_VALUE,
+                        assignment: localizeRoleAssignmentPolicy(t, role),
                     },
                 ];
             })
@@ -105,6 +121,18 @@ export function AdminRbacContent() {
     const roleDisplayById = useMemo(
         () => new Map(rbac.roles.map((role) => [role.id, roleCatalogMetadata.get(role.id)?.label || role.display_name?.trim() || role.name])),
         [rbac.roles, roleCatalogMetadata]
+    );
+    const elevatedRoles = useMemo(
+        () => rbac.roles.filter((role) => isPrivilegedRole(role)),
+        [rbac.roles],
+    );
+    const elevatedRoleCatalogById = useMemo(
+        () => new Map(elevatedRoles.map((role) => [role.id, role] as const)),
+        [elevatedRoles],
+    );
+    const selectedBindingRole = useMemo(
+        () => elevatedRoles.find((role) => role.id === bindingRoleID),
+        [bindingRoleID, elevatedRoles]
     );
     const filteredRoles = useMemo(
         () =>
@@ -131,6 +159,9 @@ export function AdminRbacContent() {
     const filteredRoleBindings = useMemo(
         () =>
             rbac.roleBindings.filter((binding) => {
+                if (!isPrivilegedRoleBinding(binding, elevatedRoleCatalogById)) {
+                    return false;
+                }
                 if (roleFilter && binding.role_id !== roleFilter) {
                     return false;
                 }
@@ -156,7 +187,7 @@ export function AdminRbacContent() {
                     .toLowerCase()
                     .includes(normalizedQuickSearch);
             }),
-        [environmentFilter, normalizedQuickSearch, rbac.roleBindings, roleFilter, scopeTypeFilter],
+        [elevatedRoleCatalogById, environmentFilter, normalizedQuickSearch, rbac.roleBindings, roleFilter, scopeTypeFilter],
     );
     const filteredPermissions = useMemo(
         () =>
@@ -213,7 +244,20 @@ export function AdminRbacContent() {
             title: t('common:table.description'),
             dataIndex: 'description',
             key: 'description',
-            render: (_description: string | undefined, role: Role) => roleCatalogMetadata.get(role.id)?.description || EMPTY_VALUE,
+            render: (_description: string | undefined, role: Role) => {
+                const metadata = roleCatalogMetadata.get(role.id);
+                const assignment = metadata?.assignment?.trim();
+                return (
+                    <Space direction="vertical" size={2}>
+                        <Text>{metadata?.description || EMPTY_VALUE}</Text>
+                        {assignment ? (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                {assignment}
+                            </Text>
+                        ) : null}
+                    </Space>
+                );
+            },
         },
         {
             title: t('rbac.roles.permissions'),
@@ -291,9 +335,12 @@ export function AdminRbacContent() {
             key: 'role_name',
             render: (roleName: string, record: GlobalRoleBinding) => {
                 const localizedRoleLabel = roleDisplayById.get(record.role_id) || record.role_display_name || roleName || record.role_id;
+                const role = elevatedRoleCatalogById.get(record.role_id);
                 return (
                     <Space direction="vertical" size={0}>
-                        <Text strong>{localizedRoleLabel}</Text>
+                        <Tag color={getRoleAccessTagColor(role)}>
+                            {localizedRoleLabel}
+                        </Tag>
                         {localizedRoleLabel !== (roleName || record.role_id) ? (
                             <Text type="secondary" style={{ fontSize: 12 }}>{roleName || record.role_id}</Text>
                         ) : null}
@@ -317,7 +364,7 @@ export function AdminRbacContent() {
                         ? (envs || []).map((env) => (
                             <Tag key={env}>{t(`rbac.env.${env}`, { defaultValue: env })}</Tag>
                         ))
-                        : <Text type="secondary">{t('rbac.bindings.all_environments')}</Text>}
+                        : <Tag color="gold">{t('rbac.bindings.all_environments')}</Tag>}
                 </Space>
             ),
         },
@@ -380,6 +427,13 @@ export function AdminRbacContent() {
         })),
         [rbac.roles, roleDisplayById]
     );
+    const elevatedRoleOptions = useMemo(
+        () => elevatedRoles.map((role) => ({
+            value: role.id,
+            label: roleDisplayById.get(role.id) || role.display_name || role.name,
+        })),
+        [elevatedRoles, roleDisplayById],
+    );
     const localizedPermissionOptions = useMemo(
         () => rbac.permissions.map((permission) => {
             const metadata = permissionCatalogMetadata.get(permission.key);
@@ -407,6 +461,15 @@ export function AdminRbacContent() {
         [t]
     );
 
+    useEffect(() => {
+        const userId = searchParams.get('user_id')?.trim() ?? '';
+        if (!userId || userId === selectedUserId) {
+            return;
+        }
+        const userLabel = searchParams.get('user_label')?.trim() ?? '';
+        selectUser(userId, userLabel);
+    }, [searchParams, selectUser, selectedUserId]);
+
     return (
         <div data-testid="admin-rbac-page">
             {rbac.messageContextHolder}
@@ -415,6 +478,13 @@ export function AdminRbacContent() {
                 subtitle={t('rbac.subtitle')}
             />
             <PageSurface style={{ marginBottom: 16 }}>
+                <Alert
+                    showIcon
+                    type="info"
+                    style={{ marginBottom: 16 }}
+                    message={t('rbac.bindings.help_title')}
+                    description={t('rbac.bindings.help_description')}
+                />
                 <PageSearchToolbar
                     searchValue={quickSearch}
                     searchDraftValue={quickSearchDraft}
@@ -425,7 +495,7 @@ export function AdminRbacContent() {
                     }}
                     searchPlaceholder={t('rbac.search_placeholder', { defaultValue: 'Search roles, bindings, or permissions' })}
                     searchTestId="rbac-quick-search"
-                    searchHelp={t('rbac.search_help', { defaultValue: 'Press Enter or click Search. Quick search filters the role catalog, visible bindings, and permission directory on this page.' })}
+                    searchHelp={t('rbac.search_help', { defaultValue: 'Press Enter or click Search. Quick search filters the role catalog, elevated bindings, and permission directory on this page.' })}
                     advancedSearch={{
                         open: filtersOpen,
                         onToggle: () => setFiltersOpen((open) => !open),
@@ -528,9 +598,9 @@ export function AdminRbacContent() {
                     description={rbac.selectedUserDisplayLabel
                         ? t('rbac.summary.bindings_description_selected', { user: rbac.selectedUserDisplayLabel })
                         : t('rbac.summary.bindings_description')}
-                    visual={<QueueReviewGlyph className="summary-metric-card__art" />}
-                    accentColor="#1D5BFF"
-                    surfaceColor="#E6F4FF"
+                    visual={<SafetyCertificateOutlined className="summary-metric-card__art" />}
+                    accentColor="#6D4DE3"
+                    surfaceColor="#F5EDFF"
                 />
                 <SummaryMetricCard
                     title={t('rbac.summary.permissions_title')}
@@ -627,7 +697,6 @@ export function AdminRbacContent() {
                     <Text>{t('rbac.bindings.select_user')}</Text>
                     <Select
                         allowClear
-                        labelInValue
                         showSearch
                         filterOption={false}
                         style={{ minWidth: 320 }}
@@ -637,12 +706,16 @@ export function AdminRbacContent() {
                         data-testid="rbac-user-selector"
                         searchValue={rbac.userSearch}
                         onSearch={rbac.setUserSearch}
-                        onChange={(value) => {
+                        onChange={(value, option) => {
                             if (!value) {
                                 rbac.selectUser('', '');
                                 return;
                             }
-                            rbac.selectUser(value.value, typeof value.label === 'string' ? value.label : '');
+                            const resolvedLabel =
+                                !Array.isArray(option) && option && typeof option === 'object' && 'label' in option && typeof option.label === 'string'
+                                    ? option.label
+                                    : '';
+                            rbac.selectUser(String(value), resolvedLabel);
                         }}
                         options={rbac.userOptions}
                         notFoundContent={
@@ -825,8 +898,20 @@ export function AdminRbacContent() {
                             <Input value={rbac.selectedUserDisplayLabel} readOnly />
                         </Form.Item>
                         <Form.Item name="role_id" label={t('rbac.bindings.role')} rules={[{ required: true }]}>
-                            <Select options={roleOptions} optionFilterProp="label" showSearch />
+                            <Select options={elevatedRoleOptions} optionFilterProp="label" showSearch />
                         </Form.Item>
+                        {selectedBindingRole ? (
+                            <Alert
+                                showIcon
+                                type="warning"
+                                style={{ marginBottom: 16 }}
+                                message={t('rbac.bindings.role_policy_title')}
+                                description={
+                                    localizeRoleAssignmentPolicy(t, selectedBindingRole)
+                                    || localizeRoleDescription(t, selectedBindingRole)
+                                }
+                            />
+                        ) : null}
                         <Form.Item name="scope_type" label={t('rbac.bindings.scope_type')} rules={[{ required: true }]} initialValue="global">
                             <Select
                                 options={scopeOptions}
@@ -859,7 +944,11 @@ export function AdminRbacContent() {
                                 />
                             </Form.Item>
                         ) : null}
-                        <Form.Item name="allowed_environments" label={t('rbac.bindings.allowed_envs')}>
+                        <Form.Item
+                            name="allowed_environments"
+                            label={t('rbac.bindings.allowed_envs')}
+                            extra={t('rbac.bindings.allowed_envs_help')}
+                        >
                             <Select mode="multiple" options={environmentOptions} />
                         </Form.Item>
                     </Form>

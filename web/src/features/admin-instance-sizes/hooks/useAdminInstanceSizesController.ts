@@ -1,6 +1,6 @@
 'use client';
 
-import { Form, message } from 'antd';
+import { App, Form } from 'antd';
 import type { TFunction } from 'i18next';
 import { useMemo, useState } from 'react';
 
@@ -309,7 +309,8 @@ export function useAdminInstanceSizesController({
     t,
     onCreateSuccess,
 }: UseAdminInstanceSizesControllerArgs) {
-    const [messageApi, messageContextHolder] = message.useMessage();
+    const { message: messageApi } = App.useApp();
+    const messageContextHolder = null;
     const [filters, setFilters] = useState<InstanceSizeSearchFilters>(EMPTY_INSTANCE_SIZE_SEARCH_FILTERS);
 
     const [searchedColumn, setSearchedColumn] = useState('');

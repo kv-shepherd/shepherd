@@ -1,8 +1,9 @@
 /**
  * useMessage — thin wrapper around Ant Design's App.useApp() message API.
  *
- * Provides a stable `messageApi` and `messageContextHolder` for use in
- * page components that are NOT wrapped in an Ant Design App context.
+ * Provides a stable `messageApi` for pages already wrapped by the root
+ * Ant Design <App>. `messageContextHolder` remains for compatibility and
+ * is always null.
  *
  * Usage:
  *   const { messageApi, messageContextHolder } = useMessage();
@@ -11,12 +12,12 @@
  */
 'use client';
 
-import { message } from 'antd';
+import { App } from 'antd';
 
 export function useMessage() {
-    const [messageApi, contextHolder] = message.useMessage();
+    const { message: messageApi } = App.useApp();
     return {
         messageApi,
-        messageContextHolder: contextHolder,
+        messageContextHolder: null,
     };
 }

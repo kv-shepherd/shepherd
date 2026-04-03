@@ -9,8 +9,6 @@ export type PermissionList = components['schemas']['PermissionList'];
 export type User = components['schemas']['User'];
 export type UserList = components['schemas']['UserList'];
 export type GlobalRoleBinding = components['schemas']['GlobalRoleBinding'];
-export type GlobalRoleBindingList = components['schemas']['GlobalRoleBindingList'];
-export type GlobalRoleBindingCreateRequest = components['schemas']['GlobalRoleBindingCreateRequest'];
 
 export const RBAC_SCOPE_VALUES = ['global', 'system', 'service', 'vm'] as const;
 

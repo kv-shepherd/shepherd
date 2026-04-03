@@ -58,19 +58,18 @@ const {
 }));
 
 vi.mock("antd", () => ({
-  Form: {
-    useForm: (...args: unknown[]) => useFormMock(...args),
-    useWatch: (...args: unknown[]) => useWatchMock(...args),
-  },
-  message: {
-    useMessage: () => [
-      {
+  App: {
+    useApp: () => ({
+      message: {
         success: messageSuccessMock,
         info: messageInfoMock,
         error: messageErrorMock,
       },
-      null,
-    ],
+    }),
+  },
+  Form: {
+    useForm: (...args: unknown[]) => useFormMock(...args),
+    useWatch: (...args: unknown[]) => useWatchMock(...args),
   },
 }));
 

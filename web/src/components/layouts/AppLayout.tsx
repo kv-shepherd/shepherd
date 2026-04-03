@@ -144,7 +144,7 @@ export default function AppLayout({
         <ProLayout
             style={{ minHeight: '100vh' }}
             title="Shepherd"
-            logo={<Image src="/logo-icon.svg" alt="Shepherd" width={32} height={32} />}
+            logo={<Image src="/logo-icon.svg" alt="Shepherd" width={32} height={32} style={{ width: 'auto', height: 32 }} />}
             route={route}
             location={{ pathname }}
             fixSiderbar

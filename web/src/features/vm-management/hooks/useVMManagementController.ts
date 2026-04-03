@@ -1,6 +1,6 @@
 "use client";
 
-import { Form, message } from "antd";
+import { App, Form } from "antd";
 import type { TFunction } from "i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -166,7 +166,8 @@ const extractRetryAfterSeconds = (error: ApiErrorResponse): number => {
 export function useVMManagementController({
   t,
 }: UseVMManagementControllerArgs) {
-  const [messageApi, messageContextHolder] = message.useMessage();
+  const { message: messageApi } = App.useApp();
+  const messageContextHolder = null;
   const user = useAuthStore((state) => state.user);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);

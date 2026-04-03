@@ -1,6 +1,6 @@
 "use client";
 
-import { Form, message } from "antd";
+import { App, Form } from "antd";
 import type { TFunction } from "i18next";
 import { useEffect, useRef, useState } from "react";
 
@@ -40,7 +40,8 @@ interface ClusterCreateFormValues extends ClusterEditorFormValues {
 export function useAdminClustersController({
   t,
 }: UseAdminClustersControllerArgs) {
-  const [messageApi, messageContextHolder] = message.useMessage();
+  const { message: messageApi } = App.useApp();
+  const messageContextHolder = null;
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingClusterId, setEditingClusterId] = useState("");

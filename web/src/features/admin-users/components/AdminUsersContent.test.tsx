@@ -5,10 +5,21 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const pushMock = vi.fn();
 const setPageMock = vi.fn();
+const setPerPageMock = vi.fn();
 const setSearchMock = vi.fn();
+const refetchUsersMock = vi.fn();
+const openCreateUserModalMock = vi.fn();
+const openEditUserModalMock = vi.fn();
+const deleteUserMock = vi.fn();
 const savePreferenceMock = vi.fn();
 const resetPreferenceMock = vi.fn();
+const openAddBindingModalMock = vi.fn();
+const closeAddBindingModalMock = vi.fn();
+const submitAddBindingMock = vi.fn();
+const deleteRoleBindingMock = vi.fn();
+
 let userPreferenceState:
     | {
         columns?: string[];
@@ -20,62 +31,141 @@ let userPreferenceState:
     }
     | undefined;
 
+vi.mock('next/navigation', () => ({
+    useRouter: () => ({ push: pushMock }),
+}));
+
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
-        t: (key: string, options?: { defaultValue?: string }) => {
+        t: (key: string, options?: { defaultValue?: string; [key: string]: unknown }) => {
             const labels: Record<string, string> = {
-                'users.title': 'Users',
-                'users.subtitle': 'Manage platform users and memberships',
+                'users.title': 'User Management',
+                'users.subtitle': 'Manage platform accounts and per-user access bindings here. Systems and Rate Limits remain in their dedicated pages, while Access & Roles stays available for role catalog and elevated-access audit views.',
                 'users.directory.title': 'User Directory',
-                'users.directory.subtitle': 'Create and manage accounts',
+                'users.directory.subtitle': 'Create and maintain platform accounts, and grant explicit access bindings here. System members and rate limits stay in their dedicated pages, while Access & Roles remains available for role catalog and elevated-access audit views.',
                 'users.directory.add': 'Add User',
-                'users.directory.manage_access': 'Manage Access',
-                'users.directory.role_bindings': 'Role Bindings',
-                'users.members.title': 'System Members',
-                'users.members.subtitle': 'Manage per-system membership',
-                'users.members.add': 'Add Member',
-                'users.members.select_system': 'Select System',
-                'users.members.select_system_placeholder': 'Select a system',
-                'users.members.select_system_first': 'Select system first',
-                'users.rate_limit.title': 'Rate Limits',
-                'users.rate_limit.subtitle': 'Manage user-specific rate limits',
-                'users.rate_limit.add_exemption': 'Add Exemption',
-                'users.rate_limit.user': 'User',
-                'users.rate_limit.user_required': 'Select a user',
-                'users.rate_limit.user_placeholder': 'Search users by name, username, or email',
-                'users.rate_limit.no_user_results': 'No matching users found',
-                'users.rate_limit.user_id': 'User ID',
-                'users.rate_limit.exempted': 'Exempted',
-                'users.rate_limit.exempted_yes': 'Yes',
-                'users.rate_limit.exempted_no': 'No',
-                'users.rate_limit.effective': 'Effective',
-                'users.rate_limit.current': 'Current',
-                'users.rate_limit.max_parents': 'Max Parents',
-                'users.rate_limit.max_children': 'Max Children',
-                'users.rate_limit.cooldown': 'Cooldown',
-                'users.rate_limit.pending_parents': 'Pending Parents',
-                'users.rate_limit.pending_children': 'Pending Children',
-                'users.rate_limit.remaining': 'Remaining',
-                'users.table.username': 'Username',
-                'users.table.email': 'Email',
-                'users.table.roles': 'Roles',
-                'users.directory.merged_column_default_label': 'Combined details',
+                'users.directory.add_title': 'Create User',
+                'users.directory.edit_title': `Edit User: ${options?.username ?? ''}`,
+                'users.directory.password': 'Reset Password',
+                'users.directory.force_password_change': 'Force password change at next login',
+                'users.directory.manage_access': 'Access Bindings',
+                'users.directory.manage_access_title': `Access bindings: ${options?.user ?? ''}`,
+                'users.directory.manage_access_help_title': 'Manage explicit access here',
+                'users.directory.manage_access_help_description': 'Grant both runtime and elevated roles from this drawer. Elevated platform-facing roles are highlighted with stronger colors so administrators can spot them quickly before saving.',
+                'users.directory.manage_access_bindings_title': 'Current bindings',
+                'users.directory.manage_access_bindings_subtitle': 'Review the exact roles this user currently holds. Blue tags indicate runtime access, while purple tags indicate elevated platform-facing access.',
+                'users.directory.manage_access_empty': 'No explicit bindings for this user',
+                'users.directory.manage_access_empty_description': 'Add the first role binding here and keep the scope and environments as narrow as practical.',
+                'users.directory.manage_access_footer': 'Use role, scope, and allowed environments together to keep access narrow. Elevated platform-facing roles stay highlighted here, while Access & Roles remains available for cross-user audit.',
+                'users.directory.add_binding_title': `Add binding: ${options?.user ?? ''}`,
+                'users.directory.role_placeholder': 'Search roles',
+                'users.directory.manage_access_summary.standard_title': 'Runtime bindings',
+                'users.directory.manage_access_summary.standard_description': 'System, service, and virtual-machine access currently assigned on this user.',
+                'users.directory.manage_access_summary.privileged_title': 'Elevated bindings',
+                'users.directory.manage_access_summary.privileged_description': 'Platform administration or approval-sensitive access highlighted for extra review.',
+                'users.directory.boundary_title': 'User Management is the primary workspace for accounts and access',
+                'users.directory.boundary_description': 'Grant or revoke explicit bindings directly here. Systems still owns system membership, Rate Limits still owns throttling overrides, and Access & Roles remains available for role catalog and elevated-access audit views.',
+                'users.directory.open_rbac': 'Open Access & Roles',
+                'users.directory.open_systems': 'Open Systems',
+                'users.directory.open_rate_limits': 'Open Rate Limits',
+                'users.directory.quick_search_placeholder': 'Quick search users, email, or directory fields',
+                'users.directory.quick_search_help': 'Press Enter or click Search.',
+                'users.directory.show_advanced_search': 'Advanced Search',
+                'users.directory.hide_advanced_search': 'Hide Advanced Search',
+                'users.directory.clear_search': 'Clear Search',
+                'users.directory.advanced_search_title': 'Advanced Search',
+                'users.directory.advanced_search_help': 'Choose one or more fields.',
+                'users.directory.advanced_search_field': 'Search field',
+                'users.directory.advanced_search_value': 'Search value',
+                'users.directory.add_search_condition': 'Add Condition',
+                'users.directory.remove_search_condition': 'Remove search condition',
+                'users.directory.visible_columns_placeholder': 'Displayed columns',
+                'users.directory.columns_drawer_title': 'Customize displayed columns',
+                'users.directory.columns_drawer_message': 'Account and Actions stay fixed.',
+                'users.directory.columns_visible_title': 'Visible columns',
+                'users.directory.columns_empty': 'No extra columns selected.',
+                'users.directory.columns_add_title': 'Add column',
+                'users.directory.columns_add_placeholder': 'Choose another column to show',
+                'users.directory.columns_merge_title': 'Combined columns',
+                'users.directory.columns_merge_help': 'Create one or more combined columns from the currently visible columns.',
+                'users.directory.columns_merge_placeholder': 'Select columns to combine',
+                'users.directory.columns_merge_label_placeholder': 'Name this combined column',
+                'users.directory.columns_merge_group_title': 'Combined column',
                 'users.directory.columns_merge_add': 'Add combined column',
                 'users.directory.columns_merge_remove': 'Remove',
-                'users.directory.columns_merge_group_title': 'Combined column',
-                'users.summary.directory_title': 'User Directory',
+                'users.directory.columns_merge_show_labels_title': 'Show field labels inside the column',
+                'users.directory.columns_merge_show_labels_help': 'Turn this off for a cleaner stacked value view.',
+                'users.directory.merged_column_default_label': 'Combined details',
+                'users.directory.columns_restore_defaults': 'Restore recommended defaults',
+                'users.directory.reset_columns': 'Reset columns',
+                'users.directory.move_column_up': 'Move column up',
+                'users.directory.move_column_down': 'Move column down',
+                'users.directory.hide_column': 'Hide column',
+                'users.directory.no_roles': 'No global roles',
+                'users.directory.empty': 'No users yet',
+                'users.directory.empty_description': 'Create the first platform account before assigning explicit access, system membership, or rate-limit policy from their dedicated pages.',
+                'users.directory.delete_confirm': `Delete user ${options?.username ?? ''}?`,
+                'users.search.field.username': 'Username',
+                'users.search.field.display_name': 'Display Name',
+                'users.search.field.email': 'Email',
+                'users.search.field.role': 'Role',
+                'users.search.field.status': 'Status',
+                'users.profile_fields.department': 'Department',
+                'users.profile_fields.section': 'Section',
+                'users.table.account': 'Account',
+                'users.table.email': 'Email',
+                'users.table.roles': 'Roles',
                 'users.status.enabled': 'Enabled',
                 'users.status.disabled': 'Disabled',
+                'users.summary.directory_title': 'User directory',
+                'users.summary.directory_description': 'Total user accounts currently available in the platform.',
+                'users.summary.enabled_title': 'Enabled on this page',
+                'users.summary.enabled_description': 'Accounts on the current page that can sign in right now.',
+                'users.summary.roles_title': 'Users with explicit roles',
+                'users.summary.roles_description': 'Accounts on this page that currently hold at least one explicit global role binding.',
+                'users.summary.profile_title': 'Directory-backed users',
+                'users.summary.profile_description': 'Accounts on this page that currently expose synced or projected directory profile fields.',
                 'common:table.status': 'Status',
                 'common:table.created_at': 'Created',
+                'common:table.display_name': 'Display Name',
+                'common:table.total': `Total ${options?.total ?? ''} items`,
                 'common:table.actions': 'Actions',
+                'common:button.search': 'Search',
+                'common:button.save': 'Save',
+                'common:button.cancel': 'Cancel',
+                'common:button.close': 'Close',
+                'common:button.confirm': 'Confirm',
                 'common:button.refresh': 'Refresh',
                 'common:button.edit': 'Edit',
                 'common:button.delete': 'Delete',
-                'common:button.confirm': 'Confirm',
-                'common:button.cancel': 'Cancel',
-                'common:table.total': 'Total',
                 'common:message.no_data': 'No data',
+                'common:message.success': 'Success',
+                'common:auth.username': 'Username',
+                'common:auth.password': 'Password',
+                'common:validation.username_required': 'Username is required',
+                'common:validation.username_min': 'Username must be at least 2 characters',
+                'common:validation.password_required': 'Password is required',
+                'common:validation.password_min': 'Password must be at least 8 characters',
+                'rbac.bindings.add': 'Add Binding',
+                'rbac.bindings.role': 'Role',
+                'rbac.bindings.scope': 'Scope',
+                'rbac.bindings.scope_type': 'Scope type',
+                'rbac.bindings.scope_id': 'Scope ID',
+                'rbac.bindings.scope_id_help': 'Choose a known target',
+                'rbac.bindings.scope_id_placeholder': 'Paste the target resource ID',
+                'rbac.bindings.scope_target_empty': 'No suggested targets yet',
+                'rbac.bindings.allowed_envs': 'Allowed environments',
+                'rbac.bindings.allowed_envs_help': 'This is the real test/prod boundary',
+                'rbac.bindings.all_environments': 'All environments',
+                'rbac.bindings.global_scope': 'All platform resources',
+                'rbac.bindings.delete_confirm': 'Delete this role binding?',
+                'rbac.bindings.role_policy_title': 'Typical assignment guidance',
+                'rbac.env.test': 'Test',
+                'rbac.env.prod': 'Prod',
+                'rbac.scope.global': 'Global',
+                'rbac.scope.system': 'System',
+                'rbac.scope.service': 'Service',
+                'rbac.scope.vm': 'VM',
             };
             return labels[key] ?? options?.defaultValue ?? key;
         },
@@ -241,7 +331,7 @@ vi.mock('@/components/ui/LocalDateTimeText', () => ({
 vi.mock('@/components/illustrations/DashboardIllustrations', () => ({
     AccessControlGlyph: (props: Record<string, unknown>) => <span {...props}>access-glyph</span>,
     QueueReviewGlyph: (props: Record<string, unknown>) => <span {...props}>queue-glyph</span>,
-    RateLimitGaugeGlyph: (props: Record<string, unknown>) => <span {...props}>rate-limit-glyph</span>,
+    RoleCatalogGlyph: (props: Record<string, unknown>) => <span {...props}>role-glyph</span>,
     UserDirectoryGlyph: (props: Record<string, unknown>) => <span {...props}>directory-glyph</span>,
 }));
 
@@ -249,8 +339,6 @@ vi.mock('../hooks/useAdminUsersController', () => ({
     useAdminUsersController: () => {
         const [createUserForm] = Form.useForm();
         const [editUserForm] = Form.useForm();
-        const [addForm] = Form.useForm();
-        const [roleBindingCreateForm] = Form.useForm();
 
         return {
             messageContextHolder: null,
@@ -263,8 +351,9 @@ vi.mock('../hooks/useAdminUsersController', () => ({
                         email: 'alice@example.com',
                         profile_attributes: {
                             department: 'Engineering',
+                            section: 'Platform',
                         },
-                        roles: ['platform-admin'],
+                        roles: ['DevelopmentEngineer', 'PlatformAdmin'],
                         enabled: true,
                         created_at: '2026-03-17T00:00:00Z',
                     },
@@ -288,89 +377,92 @@ vi.mock('../hooks/useAdminUsersController', () => ({
             perPage: 20,
             search: '',
             setPage: setPageMock,
-            setPerPage: vi.fn(),
+            setPerPage: setPerPageMock,
             setSearch: setSearchMock,
-            refetchUsers: vi.fn(),
-            openCreateUserModal: vi.fn(),
-            openEditUserModal: vi.fn(),
-            openRoleBindingsModal: vi.fn(),
-            deleteUser: vi.fn(),
-            deleteUserPending: false,
-            deletingUserId: '',
+            refetchUsers: refetchUsersMock,
             createUserOpen: false,
             editUserOpen: false,
-            createUserPending: false,
-            updateUserPending: false,
+            editingUserId: '',
+            deletingUserId: '',
             createUserForm,
             editUserForm,
-            submitCreateUser: vi.fn(),
-            submitEditUser: vi.fn(),
+            openCreateUserModal: openCreateUserModalMock,
             closeCreateUserModal: vi.fn(),
+            submitCreateUser: vi.fn(),
+            openEditUserModal: openEditUserModalMock,
             closeEditUserModal: vi.fn(),
-            editingUserId: '',
-            members: { items: [], pagination: { total: 0, page: 1, per_page: 20 } },
-            membersLoading: false,
-            selectedSystemId: '',
-            systems: [{ id: 'sys-1', name: 'System A' }],
-            systemsLoading: false,
-            refetchMembers: vi.fn(),
-            memberCandidates: { items: [], pagination: { total: 0, page: 1, per_page: 50 } },
-            memberCandidatesLoading: false,
-            refetchMemberCandidates: vi.fn(),
-            memberCandidateSearch: '',
-            setMemberCandidateSearch: vi.fn(),
-            openAddModal: vi.fn(),
-            addOpen: false,
-            addPending: false,
-            addForm,
-            submitAddMember: vi.fn(),
-            closeAddModal: vi.fn(),
-            setSelectedSystemId: vi.fn(),
-            updateMemberRole: vi.fn(),
-            updatePending: false,
-            removeMember: vi.fn(),
-            removePending: false,
-            rateLimitStatus: { items: [], pagination: { total: 0, page: 1, per_page: 20 } },
-            rateLimitLoading: false,
-            refetchRateLimitStatus: vi.fn(),
-            rateLimitUserCandidates: {
+            submitEditUser: vi.fn(),
+            deleteUser: deleteUserMock,
+            createUserPending: false,
+            updateUserPending: false,
+            deleteUserPending: false,
+            rolesLoading: false,
+            roles: {
                 items: [
                     {
-                        id: 'user-1',
-                        username: 'alice',
-                        display_name: 'Alice',
-                        email: 'alice@example.com',
+                        id: 'role-1',
+                        name: 'PlatformAdmin',
+                        display_name: 'Platform Admin',
+                        permissions: ['platform:admin'],
+                        description: 'High privilege',
+                        built_in: true,
                         enabled: true,
-                        created_at: '2026-03-17T00:00:00Z',
+                    },
+                    {
+                        id: 'role-2',
+                        name: 'DevelopmentEngineer',
+                        display_name: 'Development Engineer',
+                        permissions: ['vm:create', 'vm:operate'],
+                        description: 'Standard access',
+                        built_in: true,
+                        enabled: true,
                     },
                 ],
-                pagination: { total: 1, page: 1, per_page: 50 },
             },
-            rateLimitUserCandidatesLoading: false,
-            rateLimitUserSearch: '',
-            setRateLimitUserSearch: vi.fn(),
-            rateLimitMutationPending: false,
-            applyRateLimitExemption: vi.fn(),
-            updateRateLimitOverride: vi.fn(),
-            removeRateLimitExemption: vi.fn(),
-            roleBindingsUserId: '',
-            roleBindingsUserLabel: '',
+        };
+    },
+}));
+
+vi.mock('@/features/rbac-shared/useUserRoleBindingsManager', () => ({
+    useUserRoleBindingsManager: () => {
+        const [bindingForm] = Form.useForm();
+        return {
+            messageContextHolder: null,
+            roleBindings: [
+                {
+                    id: 'binding-standard-1',
+                    role_id: 'role-2',
+                    role_name: 'DevelopmentEngineer',
+                    role_display_name: 'Development Engineer',
+                    scope_type: 'system',
+                    scope_display_name: 'Payments',
+                    allowed_environments: ['test'],
+                    created_at: '2026-03-18T00:00:00Z',
+                },
+                {
+                    id: 'binding-privileged-1',
+                    role_id: 'role-1',
+                    role_name: 'PlatformAdmin',
+                    role_display_name: 'Platform Admin',
+                    scope_type: 'global',
+                    scope_display_name: 'All platform resources',
+                    allowed_environments: [],
+                    created_at: '2026-03-18T00:00:00Z',
+                },
+            ],
             roleBindingsLoading: false,
-            roleBindings: { items: [], pagination: { total: 0, page: 1, per_page: 20 } },
-            openRoleBindingCreateModal: vi.fn(),
-            closeRoleBindingsModal: vi.fn(),
-            roleBindingCreateOpen: false,
-            createRoleBindingPending: false,
-            roleBindingCreateForm,
-            submitCreateRoleBinding: vi.fn(),
-            closeRoleBindingCreateModal: vi.fn(),
-            rolesLoading: false,
-            roles: { items: [{ id: 'role-1', name: 'platform-admin' }] },
+            refetchRoleBindings: vi.fn(),
+            addBindingOpen: false,
+            deletingBindingId: '',
+            bindingForm,
+            openAddBindingModal: openAddBindingModalMock,
+            closeAddBindingModal: closeAddBindingModalMock,
+            submitAddBinding: submitAddBindingMock,
+            deleteRoleBinding: deleteRoleBindingMock,
+            createBindingPending: false,
+            deleteBindingPending: false,
             scopeTargetOptionsByType: {},
             scopeTargetLoadingByType: {},
-            deletingBindingId: '',
-            deleteRoleBindingPending: false,
-            deleteRoleBinding: vi.fn(),
         };
     },
 }));
@@ -386,7 +478,7 @@ vi.mock('@/hooks/useUserPreference', () => ({
                 userPreferenceState = payload.value;
                 setValue(payload.value);
                 return {
-                    key: 'admin.users.columns.v1',
+                    key: 'admin.users.columns.v4',
                     updated_at: '2026-03-31T00:00:00Z',
                     value: payload.value,
                 };
@@ -424,46 +516,57 @@ describe('AdminUsersContent', () => {
     };
 
     beforeEach(() => {
+        pushMock.mockReset();
+        setPageMock.mockReset();
+        setPerPageMock.mockReset();
+        setSearchMock.mockReset();
+        refetchUsersMock.mockReset();
+        openCreateUserModalMock.mockReset();
+        openEditUserModalMock.mockReset();
+        deleteUserMock.mockReset();
+        openAddBindingModalMock.mockReset();
+        closeAddBindingModalMock.mockReset();
+        submitAddBindingMock.mockReset();
+        deleteRoleBindingMock.mockReset();
         savePreferenceMock.mockReset();
         resetPreferenceMock.mockReset();
         userPreferenceState = undefined;
     });
 
     afterEach(() => {
-        savePreferenceMock.mockReset();
-        resetPreferenceMock.mockReset();
         userPreferenceState = undefined;
     });
 
-    it('renders the page shell, core sections, and advanced search builder', async () => {
-        setPageMock.mockReset();
-        setSearchMock.mockReset();
+    it('renders the user directory shell and keeps access binding management on the users page', async () => {
         const user = userEvent.setup();
 
         render(<AdminUsersContent />);
 
         expect(screen.getByTestId('admin-users-page')).toBeVisible();
-        expect(screen.getByText('Users')).toBeVisible();
+        expect(screen.getByText('User Management')).toBeVisible();
+        expect(screen.getByText('User Management is the primary workspace for accounts and access')).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Open Access & Roles' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Open Systems' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Open Rate Limits' })).toBeVisible();
         expect(screen.getByTestId('user-create-button')).toBeVisible();
         expect(screen.getByTestId('users-directory-search')).toBeVisible();
         expect(screen.getByTestId('users-directory-open-columns-drawer')).toBeVisible();
-        expect(screen.getByTestId('member-add-button')).toBeVisible();
-        expect(screen.getByTestId('rate-limit-exemption-create-button')).toBeVisible();
-        expect(screen.getByText('Alice')).toBeVisible();
-        expect(screen.getAllByText('Email').length).toBeGreaterThan(0);
+        expect(screen.getByText('Alice').closest('.admin-users-table__identity-primary')).toHaveClass(
+            'admin-users-table__identity-primary--enabled',
+        );
         expect(screen.getByText('alice@example.com')).toBeVisible();
-        expect(screen.getAllByText('Department').length).toBeGreaterThan(0);
         expect(screen.getByText('Engineering')).toBeVisible();
-        expect(screen.getAllByText('Section').length).toBeGreaterThan(0);
-        expect(screen.getByText('Manage Access')).toBeVisible();
-        expect(screen.getByTestId('users-system-selector')).toBeVisible();
+        expect(screen.getByText('Platform')).toBeVisible();
+        expect(screen.getAllByText('Platform Admin').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Development Engineer').length).toBeGreaterThan(0);
+        expect(screen.getByTestId('user-action-role-bindings-user-1')).toBeVisible();
+        expect(screen.queryByText('System Members')).not.toBeInTheDocument();
+        expect(screen.queryByText('Rate Limits')).not.toBeInTheDocument();
 
         await user.click(screen.getByTestId('users-directory-advanced-search-toggle'));
         expect(screen.getByTestId('users-directory-search-condition-row-0')).toBeVisible();
         expect(screen.getByTestId('users-directory-search-condition-field-0')).toBeVisible();
         expect(screen.getByTestId('users-directory-search-condition-value-0')).toBeVisible();
-        expect(screen.getByTestId('users-directory-advanced-search-toggle')).toBeVisible();
-        expect(screen.getByTestId('users-directory-add-search-condition')).toBeVisible();
     });
 
     it('applies quick search only after explicit submit', async () => {
@@ -502,7 +605,7 @@ describe('AdminUsersContent', () => {
         });
         expect(savePreferenceMock).toHaveBeenCalledWith({
             value: {
-                columns: ['profile:section', 'email', 'roles', 'status', 'created_at'],
+                columns: ['profile:section', 'email', 'roles', 'created_at'],
                 merged_columns: [],
             },
         });
@@ -512,15 +615,18 @@ describe('AdminUsersContent', () => {
         expect(screen.getAllByText('Section').length).toBeGreaterThan(0);
     });
 
-    it('allows selecting a user when creating a rate-limit exemption', async () => {
+    it('opens the access-bindings drawer for a selected user and shows runtime plus elevated roles explicitly', async () => {
         const user = userEvent.setup();
         render(<AdminUsersContent />);
 
-        await user.click(screen.getByTestId('rate-limit-exemption-create-button'));
+        await user.click(screen.getByTestId('user-action-role-bindings-user-1'));
 
-        expect(screen.getByTestId('rate-limit-exemption-create-modal')).toBeVisible();
-        expect(screen.getByLabelText('User')).toBeInTheDocument();
-        expect(screen.getByTestId('rate-limit-exemption-user-select')).toBeInTheDocument();
+        expect(screen.getByText('Access bindings: Alice')).toBeVisible();
+        expect(screen.getByText('Current bindings')).toBeVisible();
+        expect(screen.getAllByText('Development Engineer').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Platform Admin').length).toBeGreaterThan(0);
+        expect(screen.getByText('Payments')).toBeVisible();
+        expect(screen.queryByText('1 high-privilege')).not.toBeInTheDocument();
     });
 
     it('builds selected columns inside a custom merged column', () => {
@@ -529,7 +635,7 @@ describe('AdminUsersContent', () => {
             { key: 'section', label: 'Section', searchable: true },
         ];
         const options = buildUserTableColumnOptions(t, fields);
-        const defaultColumns = ['profile:department', 'profile:section', 'email', 'roles', 'status', 'created_at'];
+        const defaultColumns = ['profile:department', 'profile:section', 'email', 'roles', 'created_at'];
         const selectedColumns = normalizeUserTablePreferenceColumns(
             ['email', 'profile:department', 'status', 'created_at', 'roles'],
             options,
@@ -575,7 +681,7 @@ describe('AdminUsersContent', () => {
             { key: 'section', label: 'Section', searchable: true },
         ];
         const options = buildUserTableColumnOptions(t, fields);
-        const defaultColumns = ['profile:department', 'profile:section', 'email', 'roles', 'status', 'created_at'];
+        const defaultColumns = ['profile:department', 'profile:section', 'email', 'roles', 'created_at'];
         const selectedColumns = normalizeUserTablePreferenceColumns(
             ['email', 'profile:department', 'status', 'profile:section', 'created_at', 'roles'],
             options,
