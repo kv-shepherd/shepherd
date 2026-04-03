@@ -8,12 +8,19 @@ type ExternalCohort = runtimecontract.ExternalCohort
 // AuthProfileAttributes stores display-only external profile metadata.
 type AuthProfileAttributes = runtimecontract.AuthProfileAttributes
 
+// AuthDirectoryAuthorityMode controls whether a runtime auth provider is
+// allowed to take over canonical directory ownership and profile sync.
+type AuthDirectoryAuthorityMode = runtimecontract.AuthDirectoryAuthorityMode
+
 // AuthInteractionType identifies the login interaction style.
 type AuthInteractionType = runtimecontract.AuthInteractionType
 
 const (
 	AuthInteractionRedirect    = runtimecontract.AuthInteractionRedirect
 	AuthInteractionCredentials = runtimecontract.AuthInteractionCredentials
+
+	AuthDirectoryAuthorityAuthoritative = runtimecontract.AuthDirectoryAuthorityAuthoritative
+	AuthDirectoryAuthorityLoginOnly     = runtimecontract.AuthDirectoryAuthorityLoginOnly
 )
 
 // AuthResult is the canonical runtime auth result consumed by core.

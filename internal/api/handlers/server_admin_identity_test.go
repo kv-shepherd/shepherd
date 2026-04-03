@@ -263,6 +263,68 @@ func TestDeleteAuthProviderReturnsConflictWhenUsersRemainLinked(t *testing.T) {
 	}
 }
 
+func TestListPermissions_ExcludesUnknownPermissionsStoredInRoles(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+
+	if _, err := client.Role.Create().
+		SetID("role-legacy-compat").
+		SetName("LegacyCompatRole").
+		SetDisplayName("Legacy Compat Role").
+		SetPermissions([]string{"legacy:compat"}).
+		SetBuiltIn(false).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create legacy role: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/permissions",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListPermissions(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list permissions status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var response generated.PermissionList
+	mustDecodeJSON(t, w.Body.Bytes(), &response)
+	for _, permission := range response.Items {
+		if permission.Key == "legacy:compat" {
+			t.Fatalf("unexpected legacy permission in catalog: %s", permission.Key)
+		}
+	}
+}
+
+func TestCreateRole_RejectsUnsupportedPermissionKeys(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newAdminIdentityTestServer(t)
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/roles",
+		`{"name":"CompatRole","permissions":["cluster:manage"],"enabled":true}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.CreateRole(c)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("create role status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+
+	var apiErr generated.Error
+	mustDecodeJSON(t, w.Body.Bytes(), &apiErr)
+	if apiErr.Message != "unsupported permission key: cluster:manage" {
+		t.Fatalf("unexpected error message = %q", apiErr.Message)
+	}
+}
+
 func TestUserRoleBinding_IncludesRoleAndScopeDisplayNames(t *testing.T) {
 	t.Parallel()
 

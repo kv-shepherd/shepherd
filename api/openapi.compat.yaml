@@ -372,6 +372,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ServiceList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /systems/{system_id}/services:
     get:
       tags: [services]
@@ -388,6 +390,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ServiceList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [services]
       summary: Create service (self-service, no approval)
@@ -409,6 +413,8 @@ paths:
                 $ref: '#/components/schemas/Service'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
   /systems/{system_id}/services/{service_id}:
@@ -426,6 +432,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Service'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     patch:
@@ -471,6 +479,8 @@ paths:
       responses:
         '204':
           description: Service deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -665,6 +675,14 @@ paths:
                 $ref: '#/components/schemas/VMBatchSubmitResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Batch request conflicts with current resource state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '429':
           description: Rate limit exceeded
           content:
@@ -694,6 +712,8 @@ paths:
                 $ref: '#/components/schemas/VMBatchSubmitResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '429':
           description: Rate limit exceeded
           content:
@@ -5686,7 +5706,7 @@ components:
       properties:
         code:
           type: string
-          enum: [same_external_identity, username_conflict, email_conflict, ambiguous_existing_user]
+          enum: [same_external_identity, same_canonical_identity, username_conflict, email_conflict, ambiguous_existing_user]
         field:
           type: string
         existing_user_id:
@@ -5749,7 +5769,7 @@ components:
           type: string
         matched_by:
           type: string
-          enum: [external_id]
+          enum: [external_id, canonical_identity]
     DirectorySyncPreview:
       type: object
       required: [total_count, items]

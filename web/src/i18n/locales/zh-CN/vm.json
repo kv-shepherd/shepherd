@@ -267,6 +267,7 @@
     "batch.rate_limited_wait": "批量操作触发限流，请在 {{seconds}} 秒后重试",
     "batch.live_status_summary": "批次 {{batch_id}} 状态 {{status}}，成功 {{success_count}}，失败 {{failed_count}}，待处理 {{pending_count}}",
     "batch.no_selection": "请至少选择一台虚拟机",
+    "batch.delete_requires_stopped": "请先停止再批量删除。{{count}} 台虚拟机当前不可删除：{{names}}。允许状态：{{allowed_states}}。",
     "batch.delete_reason": "从虚拟机列表发起批量删除",
     "batch.power_reason": "批量电源操作：{{operation}}",
     "capability.gpu": "GPU",

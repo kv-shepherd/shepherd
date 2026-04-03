@@ -68,6 +68,8 @@ func (s *ExternalAuthService) upsertExternalUserNormalized(
 	authProviderID string,
 	normalized runtimecontract.AuthResult,
 ) (*ExternalAuthUpsertResult, error) {
+	directoryAuthoritative := normalized.DirectoryAuthority != runtimecontract.AuthDirectoryAuthorityLoginOnly
+
 	existing, err := s.client.User.Query().
 		Where(
 			user.AuthProviderIDEQ(authProviderID),
@@ -109,14 +111,16 @@ func (s *ExternalAuthService) upsertExternalUserNormalized(
 		if createErr != nil {
 			return nil, fmt.Errorf("create external user: %w", createErr)
 		}
-		if cohortErr := s.syncObservedExternalCohorts(ctx, authProviderID, normalized.Cohorts); cohortErr != nil {
-			return nil, cohortErr
-		}
-		if profileErr := s.upsertExternalProfile(ctx, createdUser.ID, normalized); profileErr != nil {
-			return nil, profileErr
-		}
-		if reconcileErr := s.reconcileExternalCohortRBAC(ctx, createdUser.ID, authProviderID, normalized.Cohorts); reconcileErr != nil {
-			return nil, reconcileErr
+		if directoryAuthoritative {
+			if cohortErr := s.syncObservedExternalCohorts(ctx, authProviderID, normalized.Cohorts); cohortErr != nil {
+				return nil, cohortErr
+			}
+			if profileErr := s.upsertExternalProfile(ctx, createdUser.ID, normalized); profileErr != nil {
+				return nil, profileErr
+			}
+			if reconcileErr := s.reconcileExternalCohortRBAC(ctx, createdUser.ID, authProviderID, normalized.Cohorts); reconcileErr != nil {
+				return nil, reconcileErr
+			}
 		}
 		return &ExternalAuthUpsertResult{
 			User:    createdUser,
@@ -128,29 +132,47 @@ func (s *ExternalAuthService) upsertExternalUserNormalized(
 		return nil, conflictErr
 	}
 
-	update := s.client.User.UpdateOneID(existing.ID).
-		SetUsername(normalized.Username).
-		SetDisplayName(normalized.DisplayName).
-		SetAuthProviderID(authProviderID).
-		SetExternalID(normalized.ExternalID).
-		SetEnabled(normalized.Enabled)
-	if normalized.Email != "" {
-		update = update.SetEmail(normalized.Email)
+	preserveExistingDirectoryOwner := !directoryAuthoritative &&
+		strings.TrimSpace(existing.AuthProviderID) != "" &&
+		existing.AuthProviderID != authProviderID
+
+	update := s.client.User.UpdateOneID(existing.ID).SetEnabled(normalized.Enabled)
+	if preserveExistingDirectoryOwner {
+		if strings.TrimSpace(existing.DisplayName) == "" && normalized.DisplayName != "" {
+			update = update.SetDisplayName(normalized.DisplayName)
+		}
+		if strings.TrimSpace(existing.Username) == "" && normalized.Username != "" {
+			update = update.SetUsername(normalized.Username)
+		}
+		if strings.TrimSpace(existing.Email) == "" && normalized.Email != "" {
+			update = update.SetEmail(normalized.Email)
+		}
 	} else {
-		update = update.ClearEmail()
+		update = update.
+			SetUsername(normalized.Username).
+			SetDisplayName(normalized.DisplayName).
+			SetAuthProviderID(authProviderID).
+			SetExternalID(normalized.ExternalID)
+		if normalized.Email != "" {
+			update = update.SetEmail(normalized.Email)
+		} else {
+			update = update.ClearEmail()
+		}
 	}
 	updatedUser, updateErr := update.Save(ctx)
 	if updateErr != nil {
 		return nil, fmt.Errorf("update external user: %w", updateErr)
 	}
-	if cohortErr := s.syncObservedExternalCohorts(ctx, authProviderID, normalized.Cohorts); cohortErr != nil {
-		return nil, cohortErr
-	}
-	if profileErr := s.upsertExternalProfile(ctx, updatedUser.ID, normalized); profileErr != nil {
-		return nil, profileErr
-	}
-	if reconcileErr := s.reconcileExternalCohortRBAC(ctx, updatedUser.ID, authProviderID, normalized.Cohorts); reconcileErr != nil {
-		return nil, reconcileErr
+	if directoryAuthoritative {
+		if cohortErr := s.syncObservedExternalCohorts(ctx, authProviderID, normalized.Cohorts); cohortErr != nil {
+			return nil, cohortErr
+		}
+		if profileErr := s.upsertExternalProfile(ctx, updatedUser.ID, normalized); profileErr != nil {
+			return nil, profileErr
+		}
+		if reconcileErr := s.reconcileExternalCohortRBAC(ctx, updatedUser.ID, authProviderID, normalized.Cohorts); reconcileErr != nil {
+			return nil, reconcileErr
+		}
 	}
 	return &ExternalAuthUpsertResult{
 		User:    updatedUser,

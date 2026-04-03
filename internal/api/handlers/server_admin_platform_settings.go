@@ -20,7 +20,7 @@ import (
 const platformSettingKeyExternalAuth = "external_auth"
 
 func (s *Server) GetExternalAuthPlatformSettings(c *gin.Context) {
-	_, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
+	_, _, ok := requireActorWithAnyAuthProviderPermission(c)
 	if !ok {
 		return
 	}
@@ -29,7 +29,7 @@ func (s *Server) GetExternalAuthPlatformSettings(c *gin.Context) {
 }
 
 func (s *Server) UpdateExternalAuthPlatformSettings(c *gin.Context) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:update", "auth_provider:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:update")
 	if !ok {
 		return
 	}

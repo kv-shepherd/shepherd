@@ -267,6 +267,7 @@
     "batch.rate_limited_wait": "Batch actions are rate-limited. Retry in {{seconds}}s",
     "batch.live_status_summary": "Batch {{batch_id}} status {{status}}, success {{success_count}}, failed {{failed_count}}, pending {{pending_count}}",
     "batch.no_selection": "Please select at least one VM",
+    "batch.delete_requires_stopped": "Stop VMs before batch delete. {{count}} selected VM(s) are not deletable yet: {{names}}. Allowed states: {{allowed_states}}.",
     "batch.delete_reason": "Batch delete from VM list",
     "batch.power_reason": "Batch power operation: {{operation}}",
     "capability.gpu": "GPU",

@@ -24,7 +24,7 @@ import (
 
 // GetAuthProviderDirectoryDescriptor handles GET /admin/auth-providers/{provider_id}/directory/descriptor.
 func (s *Server) GetAuthProviderDirectoryDescriptor(c *gin.Context, providerID generated.ProviderID) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
+	ctx, _, ok := requireActorWithAnyAuthProviderPermission(c)
 	if !ok {
 		return
 	}
@@ -39,7 +39,7 @@ func (s *Server) GetAuthProviderDirectoryDescriptor(c *gin.Context, providerID g
 
 // GetAuthProviderDirectorySchedule handles GET /admin/auth-providers/{provider_id}/directory/schedule.
 func (s *Server) GetAuthProviderDirectorySchedule(c *gin.Context, providerID generated.ProviderID) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
+	ctx, _, ok := requireActorWithAnyAuthProviderPermission(c)
 	if !ok {
 		return
 	}
@@ -80,7 +80,7 @@ func (s *Server) GetAuthProviderDirectorySchedule(c *gin.Context, providerID gen
 
 // PreviewAuthProviderDirectory handles POST /admin/auth-providers/{provider_id}/directory/preview.
 func (s *Server) PreviewAuthProviderDirectory(c *gin.Context, providerID generated.ProviderID) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:sync", "auth_provider:manage")
+	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:sync")
 	if !ok {
 		return
 	}
@@ -138,7 +138,7 @@ func (s *Server) PreviewAuthProviderDirectory(c *gin.Context, providerID generat
 
 // SyncAuthProviderDirectory handles POST /admin/auth-providers/{provider_id}/directory/sync.
 func (s *Server) SyncAuthProviderDirectory(c *gin.Context, providerID generated.ProviderID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:sync", "auth_provider:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:sync")
 	if !ok {
 		return
 	}
@@ -230,7 +230,7 @@ func (s *Server) SyncAuthProviderDirectory(c *gin.Context, providerID generated.
 
 // ListAuthProviderDirectorySyncJobs handles GET /admin/auth-providers/{provider_id}/directory/sync-jobs.
 func (s *Server) ListAuthProviderDirectorySyncJobs(c *gin.Context, providerID generated.ProviderID, params generated.ListAuthProviderDirectorySyncJobsParams) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
+	ctx, _, ok := requireActorWithAnyAuthProviderPermission(c)
 	if !ok {
 		return
 	}
@@ -265,7 +265,7 @@ func (s *Server) ListAuthProviderDirectorySyncJobs(c *gin.Context, providerID ge
 
 // GetAuthProviderDirectorySyncJob handles GET /admin/auth-providers/{provider_id}/directory/sync-jobs/{job_id}.
 func (s *Server) GetAuthProviderDirectorySyncJob(c *gin.Context, providerID generated.ProviderID, jobID generated.DirectorySyncJobID) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
+	ctx, _, ok := requireActorWithAnyAuthProviderPermission(c)
 	if !ok {
 		return
 	}

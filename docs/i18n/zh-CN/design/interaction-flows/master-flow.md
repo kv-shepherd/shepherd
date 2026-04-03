@@ -420,54 +420,56 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  │    ('vm:operate', 'vm', 'operate', 'VM操作(启停)'),                                │       │
 │  │    ('vm:delete', 'vm', 'delete', '删除VM'),                                       │       │
 │  │    ('vnc:access', 'vnc', 'access', 'VNC控制台'),                                   │       │
-│  │    ('approval:approve', 'approval', 'approve', '审批请求'),                        │       │
-│  │    ('approval:view', 'approval', 'view', '查看待审批'),                             │       │
-│  │    ('cluster:manage', 'cluster', 'manage', '管理集群'),                            │       │
-│  │    ('template:manage', 'template', 'manage', '管理模板'),                          │       │
+│  │    ('builtin_approval:approve', 'builtin_approval', 'approve', '审批请求'),        │       │
+│  │    ('builtin_approval:view', 'builtin_approval', 'view', '查看待审批'),             │       │
+│  │    ('cluster:read', 'cluster', 'read', '查看集群'),                                │       │
+│  │    ('cluster:write', 'cluster', 'write', '创建/更新/删除集群'),                    │       │
+│  │    ('template:read', 'template', 'read', '查看模板'),                              │       │
+│  │    ('template:write', 'template', 'write', '创建/更新/删除模板'),                  │       │
 │  │    ('rbac:manage', 'rbac', 'manage', '管理权限'),                                  │       │
 │  │    ('platform:admin', 'platform', 'admin', '超级管理员权限（显式）');               │       │
 │  │    -- ⚠️ ADR-0019 RBAC 合规:                                                        │       │
 │  │    -- 所有角色使用显式权限。通配符模式 (*:*) 已禁止。                                │       │
 │  │    -- platform:admin 是显式超管权限（编译时常量）。                                  │       │
-│  │    -- Bootstrap 角色使用 platform:admin 且必须在初始化后禁用。                       │       │
-│  │    -- Bootstrap 角色禁用 SOP 见框后 Markdown 说明。                             │       │
+│  │    -- 环境范围通过 RoleBindings.allowed_environments 表达。                         │       │
+│  │    -- 预上线清理已移除 bootstrap 专用和兼容时代的内置角色。                          │       │
 │  │                                                                                    │       │
 │  │  -- 2. 内置角色 (ADR-0019 合规)                                                    │       │
 │  │  INSERT INTO roles (id, name, is_builtin, description) VALUES                     │       │
-│  │    ('role-bootstrap', 'Bootstrap', true, '初始化专用 - 部署后必须禁用'),            │       │
 │  │    ('role-platform-admin', 'PlatformAdmin', true, '平台管理员'),                   │       │
-│  │    ('role-system-admin', 'SystemAdmin', true, '系统管理员'),                        │       │
-│  │    ('role-approver', 'Approver', true, '审批员'),                                  │       │
-│  │    ('role-operator', 'Operator', true, '运维人员'),                                 │       │
+│  │    ('role-approval-admin', 'ApprovalAdmin', true, '审批管理员'),                    │       │
+│  │    ('role-development-engineer', 'DevelopmentEngineer', true, '开发工程师'),        │       │
+│  │    ('role-test-engineer', 'TestEngineer', true, '测试工程师'),                      │       │
+│  │    ('role-system-operator', 'SystemOperator', true, '系统运维'),                    │       │
 │  │    ('role-viewer', 'Viewer', true, '只读用户');                                    │       │
 │  │                                                                                    │       │
 │  │  -- 3. 角色-权限关联 (ADR-0019: 禁止通配符，仅使用显式权限)                          │       │
 │  │  INSERT INTO role_permissions (role_id, permission_id) VALUES                     │       │
-│  │    -- Bootstrap 角色: platform:admin (显式超管权限，初始化后必须禁用)                │       │
-│  │    ('role-bootstrap', 'platform:admin'),                                           │       │
 │  │    -- PlatformAdmin: platform:admin (ADR-0019 显式超管权限)                         │       │
 │  │    ('role-platform-admin', 'platform:admin'),                                      │       │
-│  │    -- Approver: 显式权限 (ADR-0019 禁止通配符)                                       │       │
-│  │    ('role-approver', 'approval:approve'), ('role-approver', 'approval:view'),      │       │
-│  │    ('role-approver', 'vm:read'), ('role-approver', 'system:read'),                 │       │
-│  │    ('role-approver', 'service:read'),                                              │       │
-│  │    -- SystemAdmin, Operator, Viewer: 显式权限                                       │       │
-│  │    ('role-system-admin', 'system:read'), ('role-system-admin', 'system:write'),    │       │
-│  │    ('role-system-admin', 'system:delete'), ('role-system-admin', 'service:read'),  │       │
-│  │    ('role-system-admin', 'service:create'), ('role-system-admin', 'service:delete'),│      │
-│  │    ('role-system-admin', 'vm:read'), ('role-system-admin', 'vm:create'),           │       │
-│  │    ('role-system-admin', 'vm:operate'), ('role-system-admin', 'vm:delete'),        │       │
-│  │    ('role-system-admin', 'vnc:access'), ('role-system-admin', 'rbac:manage'),      │       │
-│  │    ('role-operator', 'system:read'), ('role-operator', 'service:read'),            │       │
-│  │    ('role-operator', 'vm:read'), ('role-operator', 'vm:create'),                   │       │
-│  │    ('role-operator', 'vm:operate'), ('role-operator', 'vnc:access'),               │       │
+│  │    -- ApprovalAdmin: 审批队列负责人，不承担平台管理                                  │       │
+│  │    ('role-approval-admin', 'builtin_approval:approve'),                             │       │
+│  │    ('role-approval-admin', 'builtin_approval:view'),                                │       │
+│  │    ('role-approval-admin', 'ticket:view'), ('role-approval-admin', 'vm:read'),     │       │
+│  │    ('role-approval-admin', 'system:read'), ('role-approval-admin', 'service:read'),│       │
+│  │    -- 工程/运维角色: 相同能力包，由绑定控制 test/prod 环境                           │       │
+│  │    ('role-development-engineer', 'system:read'), ('role-development-engineer', 'system:write'),│
+│  │    ('role-development-engineer', 'service:create'), ('role-development-engineer', 'service:read'),│
+│  │    ('role-development-engineer', 'vm:read'), ('role-development-engineer', 'vm:create'),│
+│  │    ('role-development-engineer', 'vm:operate'), ('role-development-engineer', 'vm:delete'),│
+│  │    ('role-development-engineer', 'vnc:access'),                                     │       │
+│  │    ('role-test-engineer', 'system:read'), ('role-test-engineer', 'system:write'),  │       │
+│  │    ('role-test-engineer', 'service:create'), ('role-test-engineer', 'service:read'),│       │
+│  │    ('role-test-engineer', 'vm:read'), ('role-test-engineer', 'vm:create'),         │       │
+│  │    ('role-test-engineer', 'vm:operate'), ('role-test-engineer', 'vm:delete'),      │       │
+│  │    ('role-test-engineer', 'vnc:access'),                                            │       │
+│  │    ('role-system-operator', 'system:read'), ('role-system-operator', 'system:write'),│      │
+│  │    ('role-system-operator', 'service:create'), ('role-system-operator', 'service:read'),│      │
+│  │    ('role-system-operator', 'vm:read'), ('role-system-operator', 'vm:create'),     │       │
+│  │    ('role-system-operator', 'vm:operate'), ('role-system-operator', 'vm:delete'),  │       │
+│  │    ('role-system-operator', 'vnc:access'),                                          │       │
 │  │    ('role-viewer', 'system:read'), ('role-viewer', 'service:read'),                │       │
 │  │    ('role-viewer', 'vm:read');                                                     │       │
-│  │                                                                                    │       │
-│  │  -- ⚠️ ADR-0019 安全 SOP:                                                           │       │
-│  │  -- 平台初始化完成后，必须禁用 bootstrap 角色:                                        │       │
-│  │  --   DELETE FROM role_bindings WHERE role_id = 'role-bootstrap';                  │       │
-│  │  -- 完整执行步骤见框后 Markdown 说明。                                             │       │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -486,9 +488,10 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  │  │  角色列表:                                                                        │   │   │
 │  │  │  ──────────────────────────────────────────────────────────────────────────    │   │   │
 │  │  │  [🔒] PlatformAdmin          内置    平台管理员-全部权限                          │   │   │
-│  │  │  [🔒] SystemAdmin            内置    系统管理员                                   │   │   │
-│  │  │  [🔒] Approver               内置    审批员                                       │   │   │
-│  │  │  [🔒] Operator               内置    运维人员                                     │   │   │
+│  │  │  [🔒] ApprovalAdmin          内置    审批管理员                                   │   │   │
+│  │  │  [🔒] DevelopmentEngineer    内置    开发工程师                                   │   │   │
+│  │  │  [🔒] TestEngineer           内置    测试工程师                                   │   │   │
+│  │  │  [🔒] SystemOperator         内置    系统运维                                     │   │   │
 │  │  │  [🔒] Viewer                 内置    只读用户                                     │   │   │
 │  │  │  [  ] DevLead                自定义   开发主管 (可编辑/删除)                       │   │   │
 │  │  │  [  ] QA-Manager             自定义   QA 管理员 (可编辑/删除)                      │   │   │
@@ -507,13 +510,13 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  │  │                                                                                  │   │   │
 │  │  │  选择权限 (全局权限):                                                              │   │   │
 │  │  │  ┌─ 系统管理 ─────────────────┐  ┌─ 审批管理 ─────────────────┐                   │   │   │
-│  │  │  │ ☑ system:read              │  │ ☐ approval:approve        │                   │   │   │
-│  │  │  │ ☑ system:write             │  │ ☐ approval:view           │                   │   │   │
+│  │  │  │ ☑ system:read              │  │ ☐ builtin_approval:approve │                   │   │   │
+│  │  │  │ ☑ system:write             │  │ ☐ builtin_approval:view    │                   │   │   │
 │  │  │  │ ☐ system:delete            │  └────────────────────────────┘                   │   │   │
 │  │  │  └────────────────────────────┘                                                    │   │   │
 │  │  │  ┌─ 服务管理 ─────────────────┐  ┌─ 平台管理 ─────────────────┐                   │   │   │
-│  │  │  │ ☑ service:read             │  │ ☐ cluster:manage          │                   │   │   │
-│  │  │  │ ☑ service:create           │  │ ☐ template:manage         │                   │   │   │
+│  │  │  │ ☑ service:read             │  │ ☐ cluster:write           │                   │   │   │
+│  │  │  │ ☑ service:create           │  │ ☐ template:write          │                   │   │   │
 │  │  │  │ ☐ service:delete           │  │ ☐ rbac:manage             │                   │   │   │
 │  │  │  └────────────────────────────┘  └────────────────────────────┘                   │   │   │
 │  │  │  ┌─ VM 管理 ──────────────────┐                                                    │   │   │
@@ -634,13 +637,13 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
 │  │  │  IdP 组              Shepherd 角色      可访问环境                               │   │   │
 │  │  │  ──────────────────────────────────────────────────────────────────────────    │   │   │
-│  │  │  Platform-Admin     [PlatformAdmin ▼]   ☑ test  ☑ prod                         │   │   │
-│  │  │  DevOps-Team        [SystemAdmin ▼]     ☑ test  ☑ prod                         │   │   │
-│  │  │  QA-Team            [Operator ▼]        ☑ test  ☐ prod                         │   │   │
+│  │  │  Platform-Admin     [PlatformAdmin ▼]      ☑ test  ☑ prod                      │   │   │
+│  │  │  DevOps-Team        [SystemOperator ▼]     ☑ test  ☑ prod                      │   │   │
+│  │  │  QA-Team            [TestEngineer ▼]       ☑ test  ☐ prod                      │   │   │
 │  │  │  IT-Support         [Viewer ▼]          ☑ test  ☐ prod                         │   │   │
 │  │  │  HR-Department      [无映射 ▼]          -                                       │   │   │
 │  │  │                                                                                  │   │   │
-│  │  │  💡 未映射的组默认获得: Viewer 权限 + 仅 test 环境                                 │   │   │
+│  │  │  💡 未映射的组默认不授予权限，必须显式映射后才能获得平台访问                        │   │   │
 │  │  │                                                                                  │   │   │
 │  │  │  [保存映射]                                                                       │   │   │
 │  │  └────────────────────────────────────────────────────────────────────────────────┘   │   │
@@ -656,13 +659,13 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  │         ('sg-003', 'idp-001', 'QA-Team', 'groups');                               │       │
 │  │                                                                                    │       │
 │  │  -- 保存映射关系                                                                    │       │
-│  │  INSERT INTO idp_group_mappings (id, auth_provider_id, idp_group_id, role_id,     │       │
-│  │                                  scope_type, allowed_environments) VALUES         │       │
+│  │  INSERT INTO external_cohort_mappings (id, auth_provider_id, cohort_kind, cohort_key, │     │
+│  │                                       role_id, scope_type, allowed_environments) VALUES │     │
 │  │    ('map-001', 'idp-001', 'Platform-Admin', 'role-platform-admin',                │       │
 │  │     'global', ARRAY['test', 'prod']),                                             │       │
-│  │    ('map-002', 'idp-001', 'DevOps-Team', 'role-system-admin',                     │       │
+│  │    ('map-002', 'idp-001', 'DevOps-Team', 'role-system-operator',                  │       │
 │  │     'global', ARRAY['test', 'prod']),                                             │       │
-│  │    ('map-003', 'idp-001', 'QA-Team', 'role-operator',                             │       │
+│  │    ('map-003', 'idp-001', 'QA-Team', 'role-test-engineer',                        │       │
 │  │     'global', ARRAY['test']);                                                     │       │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
@@ -690,7 +693,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  │  5. Shepherd 处理:                                                                      │ │
 │  │     a. 验证 Token (签名、issuer、audience)                                             │ │
 │  │     b. 提取用户信息 (sub, email, name, groups)                                         │ │
-│  │     c. 根据 groups 查找 idp_group_mappings                                             │ │
+│  │     c. 根据 groups / cohorts 查找 external_cohort_mappings                           │ │
 │  │     d. 创建/更新用户记录                                                                │ │
 │  │     e. 创建 RoleBindings (基于映射)                                                     │ │
 │  │     f. 返回 JWT Session Token                                                          │ │
@@ -706,16 +709,16 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  │          'idp-001', NOW())                                                         │       │
 │  │  ON CONFLICT (external_id) DO UPDATE SET last_login_at = NOW();                   │       │
 │  │                                                                                    │       │
-│  │  -- 2. 删除旧的 IdP 自动分配的 RoleBindings (标记为 auto_assigned)                   │       │
+│  │  -- 2. 删除旧的自动分配 RoleBindings                                                 │       │
 │  │  DELETE FROM role_bindings                                                         │       │
-│  │  WHERE user_id = 'user-001' AND source = 'idp_mapping';                           │       │
+│  │  WHERE user_id = 'user-001' AND source = 'external_cohort';                       │       │
 │  │                                                                                    │       │
-│  │  -- 3. 根据用户的 groups 重新创建 RoleBindings                                       │       │
-│  │  -- (用户 groups: ['DevOps-Team'] → 映射到 role-system-admin)                       │       │
+│  │  -- 3. 根据用户的 groups / cohorts 重新创建 RoleBindings                             │       │
+│  │  -- (用户 group:DevOps-Team → 映射到 role-system-operator)                          │       │
 │  │  INSERT INTO role_bindings (id, user_id, role_id, scope_type,                     │       │
 │  │                             allowed_environments, source) VALUES                  │       │
-│  │    ('rb-auto-001', 'user-001', 'role-system-admin', 'global',                     │       │
-│  │     ARRAY['test', 'prod'], 'idp_mapping');                                        │       │
+│  │    ('rb-auto-001', 'user-001', 'role-system-operator', 'global',                  │       │
+│  │     ARRAY['test', 'prod'], 'external_cohort');                                    │       │
 │  │                                                                                    │       │
 │  │  COMMIT;                                                                          │       │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
@@ -737,7 +740,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 |------|-----------|-------------|
 | **存储表** | `role_bindings` | `resource_role_bindings` |
 | **权限范围** | 平台级操作 | 特定资源访问 |
-| **角色类型** | PlatformAdmin, SystemAdmin, Approver, Operator, Viewer, 自定义角色 | Owner, Admin, Member, Viewer |
+| **角色类型** | PlatformAdmin, ApprovalAdmin, DevelopmentEngineer, TestEngineer, SystemOperator, Viewer, 自定义角色 | Owner, Admin, Member, Viewer |
 | **授权方式** | 管理员通过 OIDC 组映射或手动分配 | 资源创建者自行添加成员 |
 | **典型场景** | "张三可以审批 VM 请求" | "李四可以访问张三的 shop 系统" |
 | **可见性控制** | 无（全局权限） | 有（仅成员可见） |
@@ -770,7 +773,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 └───────────────────────────────────────────────────────────────────────────────────┘
 
 示例 1: 张三 (DevOps-Team) 访问自己创建的 System
-1. 全局权限: system:read ∈ SystemAdmin 权限 → 继续
+1. 全局权限: system:read ∈ SystemOperator 权限 → 继续
 2. 资源权限: resource_role_bindings 中 role='owner' → ✅ 允许
 
 示例 2: 李四 (IT-Support) 访问张三的 System
@@ -791,11 +794,12 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 3. 结果: 李四继承 System 的 member 权限 → ✅ 可以查看该 VM
 ```
 
-#### 阶段 2 Bootstrap 角色安全说明
+#### 阶段 2 平台管理员引导说明
 
-- Bootstrap 角色（`role-bootstrap`）仅用于初始化，首次部署完成后必须禁用。
+- 预上线 RBAC 基线中不再存在独立的 `role-bootstrap`。
+- 首次初始化使用默认管理员账号，然后移交给命名的 `PlatformAdmin` 绑定。
 - 操作流程：
-  [operations/bootstrap-role-sop.md](../../../../operations/bootstrap-role-sop.md)
+  [operations/platform-admin-sop.md](../../../../operations/platform-admin-sop.md)
 - 治理与审计基线：
   [04-governance.md §7 Audit Logging](../../../../design/phases/04-governance.md#7-audit-logging)
 
@@ -809,7 +813,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 
 #### Failure & Edge Cases
 
-- Bootstrap 角色在初始化后必须禁用，避免遗留超管风险。
+- 默认管理员账号在初始化完成后必须按运维策略收口，避免长期共享超管入口。
 - 外部 IdP 映射漂移不得导致静默提权。
 - 继承链无绑定时必须默认拒绝可见性与操作。
 
@@ -2025,7 +2029,7 @@ UI 故事板（父子队列）：
 │  │        '用户 X 在命名空间 Y 提交了一个请求',                                            │        │
 │  │        '{"ticket_id": "TKT-001", "requester": "user-a"}'                             │        │
 │  │ FROM role_bindings                                                                   │        │
-│  │ WHERE role_id IN (SELECT id FROM roles WHERE permissions @> 'approval:approve');    │        │
+│  │ WHERE role_id IN (SELECT id FROM roles WHERE permissions @> 'builtin_approval:approve'); │  │
 │  └─────────────────────────────────────────────────────────────────────────────────────┘        │
 │                                                                                                  │
 │  事件: 请求已批准/拒绝                                                                            │

@@ -51,6 +51,7 @@
   "INVALID_CURRENT_PASSWORD": "The current password is incorrect.",
   "INVALID_REQUEST": "The request is invalid.",
   "INVALID_STATE_TRANSITION": "The current resource state does not allow this action.",
+  "VM_DELETE_INVALID_STATE": "This virtual machine is currently {{current_state}} and cannot be deleted. Allowed states: {{allowed_states}}.",
   "INVALID_BATCH_SIZE": "The batch size is invalid.",
   "INVALID_BATCH_OPERATION": "The batch operation is invalid.",
   "INVALID_BATCH_ITEMS": "The batch items are invalid.",
@@ -60,5 +61,7 @@
   "INVALID_VNC_TOKEN": "The VNC token is invalid or expired.",
   "VM_NOT_FOUND": "Virtual machine not found.",
   "VM_NOT_RUNNING": "The virtual machine is not running.",
+  "DUPLICATE_PENDING_REQUEST": "This resource already has a pending request (ticket {{existing_ticket_id}}). Review it in My Requests or Approvals before retrying.",
+  "BATCH_RATE_LIMITED": "Batch actions are rate-limited. Retry in {{retry_after_seconds}}s.",
   "VM_MODIFY_REQUEST_REVIEW_REQUIRED": "Review the current CPU and memory request values before approving lower limits."
 }

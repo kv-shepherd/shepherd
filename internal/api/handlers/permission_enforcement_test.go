@@ -203,6 +203,19 @@ func TestPermissionEnforcement_ListServicesOverview_RequiresServiceRead(t *testi
 	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
 }
 
+func TestPermissionEnforcement_GetService_RequiresServiceRead(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(t, http.MethodGet, "/systems/sys-1/services/svc-1", "", "user-a", []string{"system:read"})
+
+	srv.GetService(c, "sys-1", "svc-1")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
 func TestPermissionEnforcement_CreateService_RequiresServiceCreate(t *testing.T) {
 	t.Parallel()
 

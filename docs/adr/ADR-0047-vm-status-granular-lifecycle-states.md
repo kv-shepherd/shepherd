@@ -1,6 +1,6 @@
 ---
 # MADR 4.0 compatible metadata (YAML frontmatter)
-status: "proposed"
+status: "accepted"
 date: 2026-03-18
 deciders: ["@jindyzhao"]
 consulted: ["@jindyzhao"]
@@ -9,13 +9,11 @@ informed: ["@jindyzhao"]
 
 # ADR-0047: Granular VM Lifecycle States (STARTING / NOT_FOUND)
 
-> **Status**: 🔍 Public Review — 48-hour minimum comment window<br>
-> **Review Open**: 2026-03-18<br>
-> **Review Closes**: 2026-03-20 (earliest merge date)<br>
+> **Accepted**: 2026-03-20 (48-hour review period completed)<br>
 > **Discussion**: [Issue #389](https://github.com/kv-shepherd/shepherd/issues/389)<br>
 > **Amends**: `ADR-0038-adaptive-k8s-polling.md#§1-polling-frequency-tiers` *(adds two new states to tier classification)*
 >
-> 📝 **Design Note**: Implementation code (vm_status_sync.go, ent schema, migration) lands in a separate implementation PR **after** this ADR is accepted.
+> 📝 **Design Note**: The accepted decision is implemented in `vm_status_sync.go`, the VM status contract, and related frontend status rendering.
 
 ---
 
@@ -201,3 +199,4 @@ Add two new values to the VM `status` enum at domain, Ent schema, and database l
 | Date | Author | Change |
 |------|--------|--------|
 | 2026-03-18 | @jindyzhao | Initial draft — published for 48-hour public review |
+| 2026-03-20 | @jindyzhao | Marked accepted after the review window closed; implementation subsequently landed in VM status sync and API/UI contracts |

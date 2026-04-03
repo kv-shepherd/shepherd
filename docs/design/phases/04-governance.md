@@ -1014,7 +1014,7 @@ The notification system uses a decoupled `NotificationSender` interface:
 
 | Event | Notification Type | Recipients | Status |
 |-------|-------------------|------------|--------|
-| VM request submitted | `APPROVAL_PENDING` | Approvers (users with `approval:approve` permission) | ✅ Implemented |
+| VM request submitted | `APPROVAL_PENDING` | Approvers (users with `builtin_approval:approve` permission) | ✅ Implemented |
 | Request approved | `APPROVAL_COMPLETED` | Requester | ✅ Implemented |
 | Request rejected | `APPROVAL_REJECTED` | Requester | ✅ Implemented |
 | VM power state changed | `VM_STATUS_CHANGE` | VM owner | ✅ Implemented |

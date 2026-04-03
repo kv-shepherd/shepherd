@@ -359,7 +359,7 @@ Standardize first-run configuration and secret bootstrap behavior across deploym
 
 | Area | Before | After |
 |------|------|------|
-| Bootstrap admin | none | default admin seeded (`force_password_change=true`) |
+| Seeded default admin | none | default admin seeded (`force_password_change=true`) |
 | Secrets | unset | env-provided or generated/persisted |
 | Core roles | unset | baseline roles present (idempotent seed) |
 
@@ -423,54 +423,56 @@ Establish authentication, authorization, and initial security defaults required 
 │  │    ('vm:operate', 'vm', 'operate', 'VM ops (start/stop)'),                          │
 │  │    ('vm:delete', 'vm', 'delete', 'Delete VM'),                                     │
 │  │    ('vnc:access', 'vnc', 'access', 'VNC console'),                                 │
-│  │    ('approval:approve', 'approval', 'approve', 'Approve request'),                 │
-│  │    ('approval:view', 'approval', 'view', 'View pending approvals'),                │
-│  │    ('cluster:manage', 'cluster', 'manage', 'Manage clusters'),                     │
-│  │    ('template:manage', 'template', 'manage', 'Manage templates'),                  │
+│  │    ('builtin_approval:approve', 'builtin_approval', 'approve', 'Approve request'), │
+│  │    ('builtin_approval:view', 'builtin_approval', 'view', 'View pending approvals'),│
+│  │    ('cluster:read', 'cluster', 'read', 'View clusters'),                           │
+│  │    ('cluster:write', 'cluster', 'write', 'Create/update/delete clusters'),         │
+│  │    ('template:read', 'template', 'read', 'View templates'),                        │
+│  │    ('template:write', 'template', 'write', 'Create/update/delete templates'),      │
 │  │    ('rbac:manage', 'rbac', 'manage', 'Manage permissions'),                        │
 │  │    ('platform:admin', 'platform', 'admin', 'Super-admin permission (explicit)');   │
 │  │    -- ⚠️ ADR-0019 RBAC Compliance:                                                   │
 │  │    -- All roles use explicit permissions. Wildcard patterns (*:*) are PROHIBITED.   │
 │  │    -- platform:admin is an explicit super-admin permission (compile-time constant). │
-│  │    -- The bootstrap role uses platform:admin and MUST be disabled after init.       │
-│  │    -- Bootstrap-role deactivation SOP is listed in Markdown notes below.            │
+│  │    -- Environment scope is expressed in RoleBindings.allowed_environments.          │
+│  │    -- Pre-launch cleanup removed bootstrap-only and compatibility-era built-ins.    │
 │  │                                                                                    │
 │  │  -- 2. Built-in roles (ADR-0019 compliant)                                   │       │
 │  │  INSERT INTO roles (id, name, is_builtin, description) VALUES                      │
-│  │    ('role-bootstrap', 'Bootstrap', true, 'Initial setup only - DISABLE AFTER INIT'), │
 │  │    ('role-platform-admin', 'PlatformAdmin', true, 'Platform admin'),                │
-│  │    ('role-system-admin', 'SystemAdmin', true, 'System admin'),                      │
-│  │    ('role-approver', 'Approver', true, 'Approver'),                                 │
-│  │    ('role-operator', 'Operator', true, 'Operator'),                                 │
+│  │    ('role-approval-admin', 'ApprovalAdmin', true, 'Approval admin'),                │
+│  │    ('role-development-engineer', 'DevelopmentEngineer', true, 'Development engineer'),│
+│  │    ('role-test-engineer', 'TestEngineer', true, 'Test engineer'),                   │
+│  │    ('role-system-operator', 'SystemOperator', true, 'System operator'),             │
 │  │    ('role-viewer', 'Viewer', true, 'Read-only user');                               │
 │  │                                                                                    │
 │  │  -- 3. Role-permission bindings (ADR-0019: NO wildcards, explicit only)             │
 │  │  INSERT INTO role_permissions (role_id, permission_id) VALUES                      │
-│  │    -- Bootstrap role: platform:admin (explicit super-admin, DISABLE after init)    │
-│  │    ('role-bootstrap', 'platform:admin'),                                            │
 │  │    -- PlatformAdmin: platform:admin (explicit super-admin permission per ADR-0019) │
 │  │    ('role-platform-admin', 'platform:admin'),                                       │
-│  │    -- Approver: explicit permissions (no wildcards per ADR-0019)                    │
-│  │    ('role-approver', 'approval:approve'), ('role-approver', 'approval:view'),       │
-│  │    ('role-approver', 'vm:read'), ('role-approver', 'system:read'),                  │
-│  │    ('role-approver', 'service:read'),                                               │
-│  │    -- SystemAdmin, Operator, Viewer: explicit permissions                           │
-│  │    ('role-system-admin', 'system:read'), ('role-system-admin', 'system:write'),     │
-│  │    ('role-system-admin', 'system:delete'), ('role-system-admin', 'service:read'),   │
-│  │    ('role-system-admin', 'service:create'), ('role-system-admin', 'service:delete'),│
-│  │    ('role-system-admin', 'vm:read'), ('role-system-admin', 'vm:create'),            │
-│  │    ('role-system-admin', 'vm:operate'), ('role-system-admin', 'vm:delete'),         │
-│  │    ('role-system-admin', 'vnc:access'), ('role-system-admin', 'rbac:manage'),       │
-│  │    ('role-operator', 'system:read'), ('role-operator', 'service:read'),             │
-│  │    ('role-operator', 'vm:read'), ('role-operator', 'vm:create'),                    │
-│  │    ('role-operator', 'vm:operate'), ('role-operator', 'vnc:access'),                │
+│  │    -- ApprovalAdmin: review queue without platform administration                   │
+│  │    ('role-approval-admin', 'builtin_approval:approve'),                             │
+│  │    ('role-approval-admin', 'builtin_approval:view'),                                │
+│  │    ('role-approval-admin', 'ticket:view'), ('role-approval-admin', 'vm:read'),     │
+│  │    ('role-approval-admin', 'system:read'), ('role-approval-admin', 'service:read'),│
+│  │    -- Engineering/operator roles: same capability envelope, scoped by bindings      │
+│  │    ('role-development-engineer', 'system:read'), ('role-development-engineer', 'system:write'),│
+│  │    ('role-development-engineer', 'service:create'), ('role-development-engineer', 'service:read'),│
+│  │    ('role-development-engineer', 'vm:read'), ('role-development-engineer', 'vm:create'),│
+│  │    ('role-development-engineer', 'vm:operate'), ('role-development-engineer', 'vm:delete'),│
+│  │    ('role-development-engineer', 'vnc:access'),                                     │
+│  │    ('role-test-engineer', 'system:read'), ('role-test-engineer', 'system:write'),  │
+│  │    ('role-test-engineer', 'service:create'), ('role-test-engineer', 'service:read'),│
+│  │    ('role-test-engineer', 'vm:read'), ('role-test-engineer', 'vm:create'),         │
+│  │    ('role-test-engineer', 'vm:operate'), ('role-test-engineer', 'vm:delete'),      │
+│  │    ('role-test-engineer', 'vnc:access'),                                            │
+│  │    ('role-system-operator', 'system:read'), ('role-system-operator', 'system:write'),│
+│  │    ('role-system-operator', 'service:create'), ('role-system-operator', 'service:read'),│
+│  │    ('role-system-operator', 'vm:read'), ('role-system-operator', 'vm:create'),     │
+│  │    ('role-system-operator', 'vm:operate'), ('role-system-operator', 'vm:delete'),  │
+│  │    ('role-system-operator', 'vnc:access'),                                          │
 │  │    ('role-viewer', 'system:read'), ('role-viewer', 'service:read'),                 │
 │  │    ('role-viewer', 'vm:read');                                                      │
-│  │                                                                                    │
-│  │  -- ⚠️ ADR-0019 Security SOP:                                                       │
-│  │  -- After platform initialization, DISABLE the bootstrap role:                      │
-│  │  --   DELETE FROM role_bindings WHERE role_id = 'role-bootstrap';                  │
-│  │  -- Full execution steps are listed in Markdown notes below.                        │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -488,10 +490,11 @@ Establish authentication, authorization, and initial security defaults required 
 │  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
 │  │  │  Role list:                                                                       │   │   │
 │  │  │  ──────────────────────────────────────────────────────────────────────────    │   │   │
-│  │  │  [🔒] PlatformAdmin          Built-in    Platform admin - all access             │   │   │
-│  │  │  [🔒] SystemAdmin            Built-in    System admin                            │   │   │
-│  │  │  [🔒] Approver               Built-in    Approver                                │   │   │
-│  │  │  [🔒] Operator               Built-in    Operator                                │   │   │
+│  │  │  [🔒] PlatformAdmin          Built-in    Platform admin                          │   │   │
+│  │  │  [🔒] ApprovalAdmin          Built-in    Approval queue owner                    │   │   │
+│  │  │  [🔒] DevelopmentEngineer    Built-in    Development self-service                │   │   │
+│  │  │  [🔒] TestEngineer           Built-in    Test self-service                       │   │   │
+│  │  │  [🔒] SystemOperator         Built-in    Operations executor                     │   │   │
 │  │  │  [🔒] Viewer                 Built-in    Read-only user                          │   │   │
 │  │  │  [  ] DevLead                Custom      Dev lead (editable/deletable)           │   │   │
 │  │  │  [  ] QA-Manager             Custom      QA manager (editable/deletable)         │   │   │
@@ -510,13 +513,13 @@ Establish authentication, authorization, and initial security defaults required 
 │  │  │                                                                                  │   │   │
 │  │  │  Select permissions (global):                                                   │   │   │
 │  │  │  ┌─ System management ────────────────┐  ┌─ Approval management ─────────────┐    │   │   │
-│  │  │  │ ☑ system:read                     │  │ ☐ approval:approve                │    │   │   │
-│  │  │  │ ☑ system:write                    │  │ ☐ approval:view                   │    │   │   │
+│  │  │  │ ☑ system:read                     │  │ ☐ builtin_approval:approve        │    │   │   │
+│  │  │  │ ☑ system:write                    │  │ ☐ builtin_approval:view           │    │   │   │
 │  │  │  │ ☐ system:delete                   │  └──────────────────────────────────┘    │   │   │
 │  │  │  └──────────────────────────────────┘                                             │   │   │
 │  │  │  ┌─ Service management ─────────────┐  ┌─ Platform management ───────────────┐    │   │   │
-│  │  │  │ ☑ service:read                   │  │ ☐ cluster:manage                    │    │   │   │
-│  │  │  │ ☑ service:create                 │  │ ☐ template:manage                   │    │   │   │
+│  │  │  │ ☑ service:read                   │  │ ☐ cluster:write                     │    │   │   │
+│  │  │  │ ☑ service:create                 │  │ ☐ template:write                    │    │   │   │
 │  │  │  │ ☐ service:delete                 │  │ ☐ rbac:manage                       │    │   │   │
 │  │  │  └──────────────────────────────────┘  └──────────────────────────────────────┘    │   │   │
 │  │  │  ┌─ VM management ─────────────────┐                                               │   │   │
@@ -641,9 +644,9 @@ Establish authentication, authorization, and initial security defaults required 
 │  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
 │  │  │  External cohort      Shepherd role       Allowed envs                          │   │   │
 │  │  │  ──────────────────────────────────────────────────────────────────────────    │   │   │
-│  │  │  group:Platform-Admin [PlatformAdmin ▼]  ☑ test  ☑ prod                         │   │   │
-│  │  │  group:DevOps-Team    [SystemAdmin ▼]    ☑ test  ☑ prod                         │   │   │
-│  │  │  group:QA-Team        [Operator ▼]       ☑ test  ☐ prod                         │   │   │
+│  │  │  group:Platform-Admin [PlatformAdmin ▼]      ☑ test  ☑ prod                     │   │   │
+│  │  │  group:DevOps-Team    [SystemOperator ▼]     ☑ test  ☑ prod                     │   │   │
+│  │  │  group:QA-Team        [TestEngineer ▼]       ☑ test  ☐ prod                     │   │   │
 │  │  │  group:IT-Support     [Viewer ▼]         ☑ test  ☐ prod                         │   │   │
 │  │  │  department:HR        [Unmapped ▼]       -                                       │   │   │
 │  │  │                                                                                  │   │   │
@@ -667,9 +670,9 @@ Establish authentication, authorization, and initial security defaults required 
 │  │                                       role_id, scope_type, allowed_environments) VALUES │
 │  │    ('map-001', 'idp-001', 'group', 'Platform-Admin', 'role-platform-admin',       │
 │  │     'global', ARRAY['test', 'prod']),                                              │
-│  │    ('map-002', 'idp-001', 'group', 'DevOps-Team', 'role-system-admin',            │
+│  │    ('map-002', 'idp-001', 'group', 'DevOps-Team', 'role-system-operator',         │
 │  │     'global', ARRAY['test', 'prod']),                                              │
-│  │    ('map-003', 'idp-001', 'group', 'QA-Team', 'role-operator',                    │
+│  │    ('map-003', 'idp-001', 'group', 'QA-Team', 'role-test-engineer',               │
 │  │     'global', ARRAY['test']);                                                     │
 │  └──────────────────────────────────────────────────────────────────────────────────┘       │
 │                                                                                              │
@@ -717,10 +720,10 @@ Establish authentication, authorization, and initial security defaults required 
 │  │  WHERE user_id = 'user-001' AND source = 'external_cohort';                        │
 │  │                                                                                    │
 │  │  -- 3. Recreate RoleBindings based on explicit cohort mappings                      │
-│  │  -- (user cohort group:DevOps-Team → map to role-system-admin)                      │
+│  │  -- (user cohort group:DevOps-Team → map to role-system-operator)                  │
 │  │  INSERT INTO role_bindings (id, user_id, role_id, scope_type,                       │
 │  │                             allowed_environments, source) VALUES                  │
-│  │    ('rb-auto-001', 'user-001', 'role-system-admin', 'global',                       │
+│  │    ('rb-auto-001', 'user-001', 'role-system-operator', 'global',                    │
 │  │     ARRAY['test', 'prod'], 'external_cohort');                                      │
 │  │                                                                                    │
 │  │  COMMIT;                                                                           │
@@ -744,7 +747,7 @@ Establish authentication, authorization, and initial security defaults required 
 |----------|-------------|---------------------|
 | **Tables** | `role_bindings` | `resource_role_bindings` |
 | **Scope** | Platform-level operations | Access to specific resources |
-| **Role Types** | PlatformAdmin, SystemAdmin, Approver, Operator, Viewer, custom | Owner, Admin, Member, Viewer |
+| **Role Types** | PlatformAdmin, ApprovalAdmin, DevelopmentEngineer, TestEngineer, SystemOperator, Viewer, custom | Owner, Admin, Member, Viewer |
 | **Assignment** | Admin via external cohort mapping or manual | Resource owner adds members |
 | **Typical Case** | "User can approve VM requests" | "User can access this system" |
 | **Visibility Control** | None (global) | Yes (members only) |
@@ -777,7 +780,7 @@ User requests access to resource R (e.g., GET /api/v1/systems/{system_id})
 └────────────────────────────────────────────────────────────────────────────────┘
 
 Example 1: Zhang San (DevOps-Team) accesses own System
-1. Global permission: system:read ∈ SystemAdmin → proceed
+1. Global permission: system:read ∈ SystemOperator → proceed
 2. Resource permission: role='owner' → ✅ allow
 
 Example 2: Li Si (IT-Support) accesses Zhang San's System
@@ -798,10 +801,11 @@ Target: vm-001 (svc-redis → sys-shop)
 3. Result: inherit System member → ✅ can view VM
 ```
 
-#### Stage 2 Bootstrap Role Safety Notes
+#### Stage 2 Platform Admin Bootstrap Notes
 
-- Bootstrap role (`role-bootstrap`) is initialization-only and must be disabled after first deployment.
-- Operational procedure: [operations/bootstrap-role-sop.md](../../operations/bootstrap-role-sop.md)
+- There is no dedicated `role-bootstrap` in the pre-launch baseline.
+- Initial setup uses the seeded default admin account and then hands off to named `PlatformAdmin` bindings.
+- Operational procedure: [operations/platform-admin-sop.md](../../operations/platform-admin-sop.md)
 - Governance and audit baseline: [04-governance.md §7 Audit Logging](../phases/04-governance.md#7-audit-logging)
 
 #### State Transitions
@@ -814,7 +818,7 @@ Target: vm-001 (svc-redis → sys-shop)
 
 #### Failure & Edge Cases
 
-- Bootstrap role must be disabled after initial setup to avoid latent super-admin risk.
+- Seeded default admin access must be tightened after initial setup to avoid a lingering shared super-admin path.
 - External IdP mapping drift must not silently escalate privileges.
 - Resource visibility must remain deny-by-default when inheritance chain has no binding.
 
@@ -2111,7 +2115,7 @@ Define notification behavior visible to users/admins for request, approval, and 
 │  │        'User X submitted a request for VM in namespace Y',                           │        │
 │  │        '{"ticket_id": "TKT-001", "requester": "user-a"}'                             │        │
 │  │ FROM role_bindings                                                                   │        │
-│  │ WHERE role_id IN (SELECT id FROM roles WHERE permissions @> 'approval:approve');    │        │
+│  │ WHERE role_id IN (SELECT id FROM roles WHERE permissions @> 'builtin_approval:approve'); │    │
 │  └─────────────────────────────────────────────────────────────────────────────────────┘        │
 │                                                                                                  │
 │  Event: Request Approved/Rejected                                                               │
@@ -2698,7 +2702,7 @@ Define secure browser console access behavior for test and production environmen
 
 - VM not in `RUNNING` state must block access grant issuance.
 - Duplicate pending production request must be rejected idempotently.
-- Bootstrap credential replay after first successful connection must be denied and audited.
+- Initial console bootstrap credentials are one-time use and must be denied and audited after replay.
 
 ### Authority Links
 

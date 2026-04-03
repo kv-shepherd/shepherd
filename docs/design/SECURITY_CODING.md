@@ -164,8 +164,9 @@ role := &rbacv1.Role{
 }
 ```
 
-- No wildcard permissions (`*`) except bootstrap role
-- Bootstrap role must be disabled after initial setup
+- No wildcard permissions (`*`) in platform-managed RBAC
+- Initial setup uses the seeded default admin account and then hands off to
+  named `PlatformAdmin` bindings; there is no dedicated bootstrap role
 - RFC 1035 naming for all platform-managed resources
 
 ---

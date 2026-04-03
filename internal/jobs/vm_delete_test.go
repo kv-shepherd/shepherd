@@ -218,6 +218,7 @@ func TestVMDeleteExecutableStatus(t *testing.T) {
 		entvm.StatusFAILED,
 		entvm.StatusNOT_FOUND,
 		entvm.StatusUNKNOWN,
+		entvm.StatusDELETING,
 	}
 
 	for _, status := range allowed {
@@ -227,6 +228,102 @@ func TestVMDeleteExecutableStatus(t *testing.T) {
 			require.True(t, vmDeleteExecutableStatus(status))
 		})
 	}
+}
+
+func TestVMDeleteWorker_AllowsDeletingStatusAtExecutionTime(t *testing.T) {
+	t.Parallel()
+	if strings.TrimSpace(os.Getenv("TEST_DATABASE_URL")) == "" && strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
+		t.Skip("PostgreSQL test DSN is not configured")
+	}
+
+	client := testutil.OpenEntPostgres(t, "vm_delete_deleting_allowed")
+	ctx := t.Context()
+
+	system, err := client.System.Create().
+		SetID("sys-" + uuid.NewString()).
+		SetName("sys" + uuid.NewString()[:8]).
+		SetCreatedBy("seed").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc, err := client.Service.Create().
+		SetID("svc-" + uuid.NewString()).
+		SetName("svc" + uuid.NewString()[:8]).
+		SetSystem(system).
+		Save(ctx)
+	require.NoError(t, err)
+
+	vmID := "vm-" + uuid.NewString()
+	vmName := "vm-" + uuid.NewString()[:8]
+	_, err = client.VM.Create().
+		SetID(vmID).
+		SetName(vmName).
+		SetInstance("01").
+		SetNamespace("prod-ns").
+		SetClusterID("cluster-a").
+		SetStatus(entvm.StatusDELETING).
+		SetCreatedBy("seed").
+		SetServiceID(svc.ID).
+		Save(ctx)
+	require.NoError(t, err)
+
+	payloadBytes, err := domain.VMDeletePayload{
+		VMID:      vmID,
+		VMName:    vmName,
+		ClusterID: "cluster-a",
+		Namespace: "prod-ns",
+		Actor:     "seed",
+	}.ToJSON()
+	require.NoError(t, err)
+
+	eventID := "ev-" + uuid.NewString()
+	_, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMDeletionRequested)).
+		SetAggregateType("vm").
+		SetAggregateID(vmID).
+		SetPayload(payloadBytes).
+		SetStatus(domainevent.StatusPENDING).
+		SetCreatedBy("seed").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.Ticket.Create().
+		SetID("ticket-" + uuid.NewString()).
+		SetEventID(eventID).
+		SetRequester("seed").
+		SetStatus(entticket.StatusAPPROVED).
+		SetOperationType(entticket.OperationTypeDELETE).
+		SetReason("cleanup").
+		Save(ctx)
+	require.NoError(t, err)
+
+	mock := provider.NewMockProvider()
+	mock.Seed([]*domain.VM{{
+		Name:      vmName,
+		Namespace: "prod-ns",
+		Cluster:   "cluster-a",
+		Status:    domain.VMStatusStopped,
+	}})
+
+	worker := NewVMDeleteWorker(client, service.NewVMService(mock), nil)
+	err = worker.Work(context.Background(), &river.Job[VMDeleteArgs]{
+		Args: VMDeleteArgs{EventID: eventID},
+	})
+	require.NoError(t, err)
+
+	_, err = client.VM.Get(ctx, vmID)
+	require.True(t, ent.IsNotFound(err))
+
+	event, err := client.DomainEvent.Get(ctx, eventID)
+	require.NoError(t, err)
+	require.Equal(t, domainevent.StatusCOMPLETED, event.Status)
+
+	ticket, err := client.Ticket.Query().
+		Where(entticket.EventIDEQ(eventID)).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, entticket.StatusSUCCESS, ticket.Status)
 }
 
 func TestShouldSkipK8sDelete(t *testing.T) {

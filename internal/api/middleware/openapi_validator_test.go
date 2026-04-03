@@ -111,6 +111,25 @@ func TestOpenAPIValidatorAcceptsValidServiceUpdateRequest(t *testing.T) {
 	}
 }
 
+func TestOpenAPIValidatorAcceptsForbiddenServiceOverviewResponse(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/services", func(c *gin.Context) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    "FORBIDDEN",
+			"message": "forbidden",
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/services", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for declared forbidden service overview response, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestOpenAPIValidatorRejectsInvalidVMCreateRequest(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.POST("/api/v1/vms/request", func(c *gin.Context) {

@@ -18,6 +18,11 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
+	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
+	"kv-shepherd.io/shepherd/ent/role"
+	"kv-shepherd.io/shepherd/ent/rolebinding"
+	entuser "kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/infrastructure"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
@@ -82,14 +87,6 @@ type builtInRole struct {
 func builtInRoles() []builtInRole {
 	return []builtInRole{
 		{
-			ID: "role-bootstrap", Name: "Bootstrap", DisplayName: "Bootstrap Admin",
-			Description: "First-run bootstrap role, auto-revoked after setup",
-			Permissions: []string{
-				// Stage 2.A: bootstrap role keeps explicit super-admin permission only.
-				"platform:admin",
-			},
-		},
-		{
 			ID: "role-platform-admin", Name: "PlatformAdmin", DisplayName: "Platform Administrator",
 			Description: "Full platform management including cluster and security configuration",
 			Permissions: []string{
@@ -97,29 +94,60 @@ func builtInRoles() []builtInRole {
 			},
 		},
 		{
-			ID: "role-system-admin", Name: "SystemAdmin", DisplayName: "System Administrator",
-			Description: "Manages systems and services within assigned scope",
+			ID: "role-approval-admin", Name: "ApprovalAdmin", DisplayName: "Approval Administrator",
+			Description: "Reviews and approves built-in request workflows without broader platform administration",
 			Permissions: []string{
-				"system:read", "system:write", "system:delete",
-				"service:read", "service:create", "service:delete",
-				"vm:read", "vm:create", "vm:operate", "vm:delete",
-				"vnc:access", "rbac:manage",
+				"builtin_approval:approve",
+				"builtin_approval:view",
+				"service:read",
+				"system:read",
+				"ticket:view",
+				"vm:read",
 			},
 		},
 		{
-			ID: "role-approver", Name: "Approver", DisplayName: "Approver",
-			Description: "Reviews and approves/rejects VM creation requests",
+			ID: "role-development-engineer", Name: "DevelopmentEngineer", DisplayName: "Development Engineer",
+			Description: "Builds and validates application changes in approved environments without platform or approval administration",
 			Permissions: []string{
-				"builtin_approval:approve", "builtin_approval:view",
-				"vm:read", "service:read", "system:read",
+				"service:create",
+				"service:read",
+				"system:read",
+				"system:write",
+				"vm:create",
+				"vm:delete",
+				"vm:operate",
+				"vm:read",
+				"vnc:access",
 			},
 		},
 		{
-			ID: "role-operator", Name: "Operator", DisplayName: "Operator",
-			Description: "Day-to-day VM operations within assigned scope",
+			ID: "role-test-engineer", Name: "TestEngineer", DisplayName: "Test Engineer",
+			Description: "Exercises service and VM workflows in approved environments without platform or approval administration",
 			Permissions: []string{
-				"vm:operate", "vm:create", "vm:read", "vnc:access",
-				"system:read", "service:read",
+				"service:create",
+				"service:read",
+				"system:read",
+				"system:write",
+				"vm:create",
+				"vm:delete",
+				"vm:operate",
+				"vm:read",
+				"vnc:access",
+			},
+		},
+		{
+			ID: "role-system-operator", Name: "SystemOperator", DisplayName: "System Operator",
+			Description: "Operates systems and virtual machines in approved environments while still relying on approval workflows for gated production actions",
+			Permissions: []string{
+				"service:create",
+				"service:read",
+				"system:read",
+				"system:write",
+				"vm:create",
+				"vm:delete",
+				"vm:operate",
+				"vm:read",
+				"vnc:access",
 			},
 		},
 		{
@@ -132,30 +160,109 @@ func builtInRoles() []builtInRole {
 	}
 }
 
-// seedBuiltInRoles creates built-in roles with explicit permissions (no wildcards, ADR-0019).
-// Uses ON CONFLICT DO NOTHING pattern for idempotency.
+// seedBuiltInRoles reconciles built-in roles to the current catalog (ADR-0019).
+// Built-ins are treated as owned by the application and are updated in place.
 func seedBuiltInRoles(ctx context.Context, client *ent.Client) error {
-	roles := builtInRoles()
-	for _, r := range roles {
-		_, err := client.Role.Create().
-			SetID(r.ID).
-			SetName(r.Name).
-			SetDisplayName(r.DisplayName).
-			SetDescription(r.Description).
-			SetPermissions(r.Permissions).
-			SetBuiltIn(true).
-			Save(ctx)
-		if err != nil {
-			// Idempotent: if role already exists, skip (ON CONFLICT DO NOTHING equivalent)
-			if ent.IsConstraintError(err) {
-				logger.Info("Role already exists, skipping", zap.String("role", r.Name))
-				continue
-			}
-			return fmt.Errorf("create role %s: %w", r.Name, err)
-		}
-		logger.Info("Seeded built-in role", zap.String("role", r.Name))
+	desiredRoles := builtInRoles()
+	desiredByID := make(map[string]builtInRole, len(desiredRoles))
+	for _, entry := range desiredRoles {
+		desiredByID[entry.ID] = entry
 	}
 
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin role seed transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	existingRoles, err := tx.Role.Query().
+		Where(role.BuiltIn(true)).
+		All(ctx)
+	if err != nil {
+		return fmt.Errorf("query built-in roles: %w", err)
+	}
+
+	for _, entry := range desiredRoles {
+		existing, getErr := tx.Role.Get(ctx, entry.ID)
+		switch {
+		case getErr == nil:
+			if _, saveErr := existing.Update().
+				SetName(entry.Name).
+				SetDisplayName(entry.DisplayName).
+				SetDescription(entry.Description).
+				SetPermissions(entry.Permissions).
+				SetEnabled(true).
+				Save(ctx); saveErr != nil {
+				return fmt.Errorf("update role %s: %w", entry.Name, saveErr)
+			}
+			logger.Info("Reconciled built-in role", zap.String("role", entry.Name))
+		case ent.IsNotFound(getErr):
+			if _, createErr := tx.Role.Create().
+				SetID(entry.ID).
+				SetName(entry.Name).
+				SetDisplayName(entry.DisplayName).
+				SetDescription(entry.Description).
+				SetPermissions(entry.Permissions).
+				SetBuiltIn(true).
+				SetEnabled(true).
+				Save(ctx); createErr != nil {
+				return fmt.Errorf("create role %s: %w", entry.Name, createErr)
+			}
+			logger.Info("Seeded built-in role", zap.String("role", entry.Name))
+		default:
+			return fmt.Errorf("load role %s: %w", entry.Name, getErr)
+		}
+	}
+
+	for _, existing := range existingRoles {
+		if _, keep := desiredByID[existing.ID]; keep {
+			continue
+		}
+		if _, deleteErr := tx.ExternalCohortMapping.Delete().
+			Where(externalcohortmapping.RoleIDEQ(existing.ID)).
+			Exec(ctx); deleteErr != nil {
+			return fmt.Errorf("delete external cohort mappings for obsolete built-in role %s: %w", existing.ID, deleteErr)
+		}
+		if _, deleteErr := tx.ExternalCohortGrant.Delete().
+			Where(
+				externalcohortgrant.HasRoleBindingWith(
+					rolebinding.HasRoleWith(role.IDEQ(existing.ID)),
+				),
+			).
+			Exec(ctx); deleteErr != nil {
+			return fmt.Errorf("delete external cohort grants for obsolete built-in role %s: %w", existing.ID, deleteErr)
+		}
+		if _, deleteErr := tx.RoleBinding.Delete().
+			Where(rolebinding.HasRoleWith(role.IDEQ(existing.ID))).
+			Exec(ctx); deleteErr != nil {
+			return fmt.Errorf("delete bindings for obsolete built-in role %s: %w", existing.ID, deleteErr)
+		}
+		if deleteErr := tx.Role.DeleteOneID(existing.ID).Exec(ctx); deleteErr != nil {
+			return fmt.Errorf("delete obsolete built-in role %s: %w", existing.ID, deleteErr)
+		}
+		logger.Info("Removed obsolete built-in role", zap.String("role_id", existing.ID), zap.String("role", existing.Name))
+	}
+
+	liveRoleIDs, err := tx.Role.Query().Select(role.FieldID).Strings(ctx)
+	if err != nil {
+		return fmt.Errorf("query live role ids after reconciliation: %w", err)
+	}
+	if len(liveRoleIDs) == 0 {
+		return fmt.Errorf("role reconciliation produced an empty role catalog")
+	}
+	if removed, err := tx.ExternalCohortMapping.Delete().
+		Where(externalcohortmapping.RoleIDNotIn(liveRoleIDs...)).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("delete stale external cohort mappings with missing roles: %w", err)
+	} else if removed > 0 {
+		logger.Info("Removed stale external cohort mappings with missing roles", zap.Int("count", removed))
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit role seed transaction: %w", err)
+	}
 	return nil
 }
 
@@ -170,6 +277,7 @@ func seedDefaultAdmin(ctx context.Context, client *ent.Client) error {
 	}
 	hash := string(hashBytes)
 
+	created := false
 	user, err := client.User.Create().
 		SetID(adminID).
 		SetUsername("admin").
@@ -178,33 +286,51 @@ func seedDefaultAdmin(ctx context.Context, client *ent.Client) error {
 		SetPasswordHash(hash).
 		SetForcePasswordChange(true).
 		Save(ctx)
-	if err != nil {
-		if ent.IsConstraintError(err) {
-			logger.Info("Default admin already exists, skipping")
-			return nil
+	switch {
+	case err == nil:
+		created = true
+	case ent.IsConstraintError(err):
+		user, err = client.User.Query().
+			Where(entuser.IDEQ(adminID)).
+			Only(ctx)
+		if ent.IsNotFound(err) {
+			user, err = client.User.Query().
+				Where(entuser.UsernameEQ("admin")).
+				Only(ctx)
 		}
+		if err != nil {
+			return fmt.Errorf("load default admin after constraint: %w", err)
+		}
+	default:
 		return fmt.Errorf("create default admin: %w", err)
 	}
 
-	// Assign PlatformAdmin role to default admin
-	rbID, _ := uuid.NewV7()
-	_, err = client.RoleBinding.Create().
-		SetID(rbID.String()).
-		SetUserID(user.ID).
-		SetRoleID("role-platform-admin").
-		SetScopeType("global").
-		SetCreatedBy("system-seed").
-		Save(ctx)
+	bindingExists, err := client.RoleBinding.Query().
+		Where(
+			rolebinding.HasUserWith(entuser.IDEQ(user.ID)),
+			rolebinding.HasRoleWith(role.IDEQ("role-platform-admin")),
+			rolebinding.ScopeTypeEQ("global"),
+		).
+		Exist(ctx)
 	if err != nil {
-		if ent.IsConstraintError(err) {
-			logger.Info("Admin role binding already exists, skipping")
-			return nil
+		return fmt.Errorf("check admin role binding: %w", err)
+	}
+	if !bindingExists {
+		rbID, _ := uuid.NewV7()
+		if _, err := client.RoleBinding.Create().
+			SetID(rbID.String()).
+			SetUserID(user.ID).
+			SetRoleID("role-platform-admin").
+			SetScopeType("global").
+			SetCreatedBy("system-seed").
+			Save(ctx); err != nil {
+			return fmt.Errorf("create admin role binding: %w", err)
 		}
-		return fmt.Errorf("create admin role binding: %w", err)
 	}
 
-	logger.Info("Seeded default admin user",
+	logger.Info("Ensured default admin user",
 		zap.String("username", "admin"),
+		zap.Bool("created", created),
 		zap.Bool("force_password_change", true),
 	)
 

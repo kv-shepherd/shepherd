@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 
 import { useApiGet } from '@/hooks/useApiQuery';
-import { hasAnyPermission, hasPermission } from '@/lib/auth/permissions';
+import { hasPermission } from '@/lib/auth/permissions';
 import { api } from '@/lib/api/client';
 import { useAuthStore } from '@/stores/auth';
 
@@ -48,8 +48,8 @@ export function useSetupGuide(snapshot: SetupGuideSnapshot = {}): SetupGuideStat
     const canCreateService = hasPermission(user, 'service:create');
     const canCreateVM = hasPermission(user, 'vm:create');
     const canReadVM = hasPermission(user, 'vm:read');
-    const canManageNamespaces = hasAnyPermission(user, ['cluster:write', 'cluster:manage']);
-    const canManageTemplates = hasAnyPermission(user, ['template:write', 'template:manage']);
+    const canManageNamespaces = hasPermission(user, 'cluster:write');
+    const canManageTemplates = hasPermission(user, 'template:write');
     const canManageInstanceSizes = hasPermission(user, 'instance_size:write');
 
     const systemsQuery = useApiGet<SystemList>(

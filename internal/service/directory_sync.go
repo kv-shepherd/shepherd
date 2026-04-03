@@ -135,6 +135,7 @@ func (s *DirectorySyncService) ClassifyRecord(
 	}
 
 	var usernameUser *ent.User
+	var sameCanonicalUser *ent.User
 	if record.Username != "" {
 		existing, err := s.client.User.Query().
 			Where(user.UsernameEQ(record.Username)).
@@ -174,6 +175,26 @@ func (s *DirectorySyncService) ClassifyRecord(
 				})
 			}
 		}
+	}
+
+	sameCanonicalUser = sameCanonicalIdentityUser(sameExternal, usernameUser, emailUser)
+	if sameCanonicalUser != nil {
+		filtered := conflicts[:0]
+		for _, conflict := range conflicts {
+			if conflict.ExistingUserID == sameCanonicalUser.ID &&
+				(conflict.Code == directorycontract.DirectoryConflictUsernameConflict ||
+					conflict.Code == directorycontract.DirectoryConflictEmailConflict) {
+				continue
+			}
+			filtered = append(filtered, conflict)
+		}
+		conflicts = filtered
+		conflicts = append(conflicts, directorycontract.DirectoryConflict{
+			Code:           directorycontract.DirectoryConflictSameCanonicalIdentity,
+			Field:          "username,email",
+			ExistingUserID: sameCanonicalUser.ID,
+			Message:        "record safely matches an existing canonical user by username and email",
+		})
 	}
 
 	ambiguousUser := ambiguousDirectoryUserCandidate(sameExternal, usernameUser, emailUser)
@@ -442,7 +463,8 @@ func normalizeDirectoryAttributes(attributes map[string]interface{}) map[string]
 
 func directorySameExternalIdentityID(conflicts []directorycontract.DirectoryConflict) string {
 	for _, conflict := range conflicts {
-		if conflict.Code == directorycontract.DirectoryConflictSameExternalIdentity {
+		if conflict.Code == directorycontract.DirectoryConflictSameExternalIdentity ||
+			conflict.Code == directorycontract.DirectoryConflictSameCanonicalIdentity {
 			return conflict.ExistingUserID
 		}
 	}
@@ -456,10 +478,23 @@ func directoryPreviewMatch(conflicts []directorycontract.DirectoryConflict) dire
 		}
 	}
 	if existingUserID := directorySameExternalIdentityID(conflicts); existingUserID != "" {
+		matchedBy := directorycontract.DirectoryPreviewMatchByExternalID
+		for _, conflict := range conflicts {
+			switch conflict.Code {
+			case directorycontract.DirectoryConflictSameCanonicalIdentity:
+				matchedBy = directorycontract.DirectoryPreviewMatchByCanonicalIdentity
+			case directorycontract.DirectoryConflictSameExternalIdentity:
+				matchedBy = directorycontract.DirectoryPreviewMatchByExternalID
+			case directorycontract.DirectoryConflictUsernameConflict,
+				directorycontract.DirectoryConflictEmailConflict,
+				directorycontract.DirectoryConflictAmbiguousExisting:
+				// Blocked conflicts are handled before we attempt to derive a match anchor.
+			}
+		}
 		return directorycontract.DirectoryPreviewMatch{
 			Action:         directorycontract.DirectoryActionUpdate,
 			ExistingUserID: existingUserID,
-			MatchedBy:      directorycontract.DirectoryPreviewMatchByExternalID,
+			MatchedBy:      matchedBy,
 		}
 	}
 	return directorycontract.DirectoryPreviewMatch{
@@ -469,19 +504,27 @@ func directoryPreviewMatch(conflicts []directorycontract.DirectoryConflict) dire
 
 func hasBlockingDirectoryConflicts(conflicts []directorycontract.DirectoryConflict) bool {
 	for _, conflict := range conflicts {
-		if conflict.Code != directorycontract.DirectoryConflictSameExternalIdentity {
+		if conflict.Code != directorycontract.DirectoryConflictSameExternalIdentity &&
+			conflict.Code != directorycontract.DirectoryConflictSameCanonicalIdentity {
 			return true
 		}
 	}
 	return false
 }
 
-func ambiguousDirectoryUserCandidate(sameExternal, usernameUser, emailUser *ent.User) *ent.User {
+func sameCanonicalIdentityUser(sameExternal, usernameUser, emailUser *ent.User) *ent.User {
 	if sameExternal != nil {
 		return nil
 	}
 	if usernameUser != nil && emailUser != nil && usernameUser.ID == emailUser.ID {
 		return usernameUser
+	}
+	return nil
+}
+
+func ambiguousDirectoryUserCandidate(sameExternal, usernameUser, emailUser *ent.User) *ent.User {
+	if sameExternal != nil {
+		return nil
 	}
 	if usernameUser != nil && usernameUser.AuthProviderID == "" && emailUser == nil {
 		return usernameUser

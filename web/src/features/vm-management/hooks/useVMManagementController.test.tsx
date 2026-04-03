@@ -21,6 +21,7 @@ const {
   formState,
   useWatchMock,
   watchValues,
+  vmItems,
   messageSuccessMock,
   messageErrorMock,
   messageWarningMock,
@@ -35,6 +36,7 @@ const {
     service_id: "svc-1",
     batch_count: 1,
   };
+  const vmItems: Array<{ id: string; name: string; status: string }> = [];
 
   return {
     useApiGetMock: vi.fn(),
@@ -66,6 +68,7 @@ const {
       },
     ),
     watchValues,
+    vmItems,
     messageSuccessMock: vi.fn(),
     messageErrorMock: vi.fn(),
     messageWarningMock: vi.fn(),
@@ -141,6 +144,7 @@ describe("useVMManagementController", () => {
     watchValues.reason = "scale up";
     watchValues.service_id = "svc-1";
     watchValues.batch_count = 1;
+    vmItems.length = 0;
     formState.getFieldsValue.mockReturnValue({
       service_id: "svc-1",
       template_id: "tpl-1",
@@ -160,7 +164,7 @@ describe("useVMManagementController", () => {
         queryKey[1] === 1 &&
         queryKey[2] === 20
       ) {
-        return { data: { items: [] }, isLoading: false, refetch: vi.fn() };
+        return { data: { items: vmItems }, isLoading: false, refetch: vi.fn() };
       }
 
       if (queryKey[0] === "vms" && queryKey[1] === "filter-options") {
@@ -866,6 +870,28 @@ describe("useVMManagementController", () => {
     expect(messageWarningMock).toHaveBeenCalledWith("batch.rate_limited_wait");
 
     watchValues.batch_count = 1;
+  });
+
+  it("blocks batch delete early when selected VMs are still running", () => {
+    vmItems.splice(
+      0,
+      vmItems.length,
+      { id: "vm-1", name: "vm-one", status: "RUNNING" },
+      { id: "vm-2", name: "vm-two", status: "STOPPED" },
+    );
+
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => {
+      result.current.setSelectedVMIDs(["vm-1", "vm-2"]);
+    });
+
+    act(() => {
+      result.current.submitBatchDeleteSelected();
+    });
+
+    expect(vmBatchMutate).not.toHaveBeenCalled();
+    expect(messageWarningMock).toHaveBeenCalledWith("batch.delete_requires_stopped");
   });
 
   it("records affected child ticket ids for retry/cancel feedback", () => {

@@ -43,11 +43,7 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 	query := s.client.System.Query()
 	if !hasPlatformAdmin(c) {
 		systemIDs, err := s.visibleSystemIDs(ctx, actor)
-		if err != nil {
-			if isRequestContextCanceled(err) {
-				return
-			}
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		if respondInternalUnlessCanceled(c, err, "failed to resolve visible systems", zap.String("actor", actor)) {
 			return
 		}
 
@@ -69,12 +65,7 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 	}
 
 	filteredQuery, err := s.applySystemSearchFilters(ctx, query, params)
-	if err != nil {
-		if isRequestContextCanceled(err) {
-			return
-		}
-		logger.Error("failed to apply system search filters", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	if respondInternalUnlessCanceled(c, err, "failed to apply system search filters") {
 		return
 	}
 	query = filteredQuery
@@ -84,13 +75,7 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 	offset := (page - 1) * perPage
 
 	total, err := query.Clone().Count(ctx)
-	if err != nil {
-		if isRequestContextCanceled(err) {
-			logger.Debug("request canceled while counting systems", zap.Error(err))
-			return
-		}
-		logger.Error("failed to count systems", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	if respondInternalUnlessCanceled(c, err, "failed to count systems") {
 		return
 	}
 
@@ -99,13 +84,7 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 		Limit(perPage).
 		Order(ent.Desc(entsystem.FieldCreatedAt)).
 		All(ctx)
-	if err != nil {
-		if isRequestContextCanceled(err) {
-			logger.Debug("request canceled while listing systems", zap.Error(err), zap.Int("page", page))
-			return
-		}
-		logger.Error("failed to list systems", zap.Error(err), zap.Int("page", page))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	if respondInternalUnlessCanceled(c, err, "failed to list systems", zap.Int("page", page)) {
 		return
 	}
 
@@ -136,12 +115,7 @@ func (s *Server) GetSystemFilterOptions(c *gin.Context) {
 	if !hasPlatformAdmin(c) {
 		actor := middleware.GetUserID(ctx)
 		systemIDs, err := s.visibleSystemIDs(ctx, actor)
-		if err != nil {
-			if isRequestContextCanceled(err) {
-				return
-			}
-			logger.Error("failed to resolve visible systems for filter options", zap.Error(err), zap.String("actor", actor))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		if respondInternalUnlessCanceled(c, err, "failed to resolve visible systems for filter options", zap.String("actor", actor)) {
 			return
 		}
 		if len(systemIDs) == 0 {
@@ -154,12 +128,7 @@ func (s *Server) GetSystemFilterOptions(c *gin.Context) {
 	systems, err := query.
 		Order(ent.Asc(entsystem.FieldName)).
 		All(ctx)
-	if err != nil {
-		if isRequestContextCanceled(err) {
-			return
-		}
-		logger.Error("failed to list systems for filter options", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	if respondInternalUnlessCanceled(c, err, "failed to list systems for filter options") {
 		return
 	}
 	if len(systems) == 0 {
@@ -188,22 +157,12 @@ func (s *Server) GetSystemFilterOptions(c *gin.Context) {
 	}
 
 	serviceOptions, err := s.buildSystemServiceFilterOptions(ctx, systemIDs)
-	if err != nil {
-		if isRequestContextCanceled(err) {
-			return
-		}
-		logger.Error("failed to load system service filter options", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	if respondInternalUnlessCanceled(c, err, "failed to load system service filter options") {
 		return
 	}
 
 	memberOptions, err := s.buildSystemMemberFilterOptions(ctx, systemIDs)
-	if err != nil {
-		if isRequestContextCanceled(err) {
-			return
-		}
-		logger.Error("failed to load system member filter options", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	if respondInternalUnlessCanceled(c, err, "failed to load system member filter options") {
 		return
 	}
 

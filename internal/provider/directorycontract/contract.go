@@ -19,10 +19,11 @@ type ExternalCohort = runtimecontract.ExternalCohort
 type DirectoryConflictCode string
 
 const (
-	DirectoryConflictSameExternalIdentity DirectoryConflictCode = "same_external_identity"
-	DirectoryConflictUsernameConflict     DirectoryConflictCode = "username_conflict"
-	DirectoryConflictEmailConflict        DirectoryConflictCode = "email_conflict"
-	DirectoryConflictAmbiguousExisting    DirectoryConflictCode = "ambiguous_existing_user"
+	DirectoryConflictSameExternalIdentity  DirectoryConflictCode = "same_external_identity"
+	DirectoryConflictSameCanonicalIdentity DirectoryConflictCode = "same_canonical_identity"
+	DirectoryConflictUsernameConflict      DirectoryConflictCode = "username_conflict"
+	DirectoryConflictEmailConflict         DirectoryConflictCode = "email_conflict"
+	DirectoryConflictAmbiguousExisting     DirectoryConflictCode = "ambiguous_existing_user"
 )
 
 // DirectoryAction identifies the canonical create/update/blocked result semantics
@@ -44,6 +45,9 @@ type DirectoryPreviewMatchBy string
 const (
 	// DirectoryPreviewMatchByExternalID means the preview safely matched by provider/external_id.
 	DirectoryPreviewMatchByExternalID DirectoryPreviewMatchBy = "external_id"
+	// DirectoryPreviewMatchByCanonicalIdentity means the preview safely matched
+	// by a unique canonical username/email identity already present in Shepherd.
+	DirectoryPreviewMatchByCanonicalIdentity DirectoryPreviewMatchBy = "canonical_identity"
 )
 
 // DirectorySyncDescriptor describes provider-owned directory sync input.

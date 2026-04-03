@@ -30,6 +30,7 @@ import type {
   VMBatchSubmitRequest,
   VMBatchSubmitResponse,
   TicketResponse,
+  VM,
   VMCreateRequest,
   VMFilterOptions,
   VMPlacementHint,
@@ -74,6 +75,12 @@ const TERMINAL_BATCH_STATUSES = new Set([
   "PARTIAL_SUCCESS",
   "FAILED",
   "CANCELLED",
+]);
+const VM_DELETE_ALLOWED_STATUSES = new Set([
+  "STOPPED",
+  "FAILED",
+  "NOT_FOUND",
+  "UNKNOWN",
 ]);
 
 type BatchActionKind = "retry" | "cancel";
@@ -543,6 +550,11 @@ export function useVMManagementController({
     Math.ceil((batchRateLimitUntilMs - nowMs) / 1000),
   );
   const batchRateLimited = batchRetryAfterSeconds > 0;
+  const selectedVMRecords = useMemo<VM[]>(
+    () =>
+      (vmListQuery.data?.items ?? []).filter((vm) => selectedVMIDs.includes(vm.id)),
+    [selectedVMIDs, vmListQuery.data?.items],
+  );
 
   const setBatchRateLimitCooldown = (seconds: number) => {
     const normalized = normalizeRetryAfterSeconds(seconds);
@@ -695,7 +707,7 @@ export function useVMManagementController({
     VMBatchSubmitRequest,
     VMBatchSubmitResponse
   >((req) => api.POST("/vms/batch", { body: req }), {
-    invalidateKeys: [["vms"], ["tickets"], ["builtin-approval-tasks"]],
+    invalidateKeys: [["vms"], ["tickets"], ["my-tickets"], ["builtin-approval-tasks"]],
     onSuccess: (resp) => {
       trackBatchSubmission(resp);
       clearSavedDraft();
@@ -718,7 +730,7 @@ export function useVMManagementController({
     VMBatchSubmitRequest,
     VMBatchSubmitResponse
   >((req) => api.POST("/vms/batch", { body: req }), {
-    invalidateKeys: [["vms"], ["tickets"], ["builtin-approval-tasks"]],
+    invalidateKeys: [["vms"], ["tickets"], ["my-tickets"], ["builtin-approval-tasks"]],
     onSuccess: (resp) => {
       trackBatchSubmission(resp);
       messageApi.success(t("batch.submitted"));
@@ -854,7 +866,12 @@ export function useVMManagementController({
         },
       }),
     {
-      invalidateKeys: [["vms"], ["approvals"]],
+      invalidateKeys: [
+        ["vms"],
+        ["tickets"],
+        ["my-tickets"],
+        ["builtin-approval-tasks"],
+      ],
       onSuccess: () => {
         messageApi.success(t("delete_request_submitted"));
         setDeleteOpen(false);
@@ -1119,6 +1136,22 @@ export function useVMManagementController({
     }
     if (selectedVMIDs.length === 0) {
       messageApi.warning(t("batch.no_selection"));
+      return;
+    }
+    const invalidDeleteTargets = selectedVMRecords.filter(
+      (vm) => !VM_DELETE_ALLOWED_STATUSES.has(vm.status),
+    );
+    if (invalidDeleteTargets.length > 0) {
+      messageApi.warning(
+        t("batch.delete_requires_stopped", {
+          count: invalidDeleteTargets.length,
+          names: invalidDeleteTargets
+            .slice(0, 3)
+            .map((vm) => vm.name)
+            .join("、"),
+          allowed_states: Array.from(VM_DELETE_ALLOWED_STATUSES).join(", "),
+        }),
+      );
       return;
     }
     submitVMBatch.mutate({

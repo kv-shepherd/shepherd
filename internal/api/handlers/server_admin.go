@@ -63,7 +63,7 @@ func parseAPIServerURL(data []byte) (string, error) {
 // Filtering is done in-memory after DB query: Ent's JSON array column cannot use SQL CONTAINS
 // without a jsonb cast + GIN index, which is not yet provisioned (acceptable at current cluster count).
 func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParams) {
-	if !requireAnyGlobalPermission(c, "cluster:read", "cluster:manage") {
+	if !requireAnyGlobalPermission(c, "cluster:read", "cluster:write") {
 		return
 	}
 	ctx := c.Request.Context()
@@ -213,7 +213,7 @@ func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParam
 
 // CreateCluster handles POST /admin/clusters.
 func (s *Server) CreateCluster(c *gin.Context) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write")
 	if !ok {
 		return
 	}
@@ -327,7 +327,7 @@ func (s *Server) CreateCluster(c *gin.Context) {
 
 // UpdateCluster handles PATCH /admin/clusters/{cluster_id}.
 func (s *Server) UpdateCluster(c *gin.Context, clusterID string) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write")
 	if !ok {
 		return
 	}
@@ -455,7 +455,7 @@ func (s *Server) UpdateCluster(c *gin.Context, clusterID string) {
 
 // UpdateClusterEnvironment handles PUT /admin/clusters/{cluster_id}/environment.
 func (s *Server) UpdateClusterEnvironment(c *gin.Context, clusterID string) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write")
 	if !ok {
 		return
 	}
@@ -489,7 +489,7 @@ func (s *Server) UpdateClusterEnvironment(c *gin.Context, clusterID string) {
 
 // DeleteCluster handles DELETE /admin/clusters/{cluster_id}.
 func (s *Server) DeleteCluster(c *gin.Context, clusterID string) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write")
 	if !ok {
 		return
 	}
@@ -571,7 +571,7 @@ func (s *Server) DeleteCluster(c *gin.Context, clusterID string) {
 
 // GetClusterPolicy handles GET /admin/clusters/{cluster_id}/policy.
 func (s *Server) GetClusterPolicy(c *gin.Context, clusterID string) {
-	if !requireAnyGlobalPermission(c, "cluster:read", "cluster:manage") {
+	if !requireAnyGlobalPermission(c, "cluster:read", "cluster:write") {
 		return
 	}
 	ctx := c.Request.Context()
@@ -604,7 +604,7 @@ func (s *Server) GetClusterPolicy(c *gin.Context, clusterID string) {
 
 // UpsertClusterPolicy handles PUT /admin/clusters/{cluster_id}/policy.
 func (s *Server) UpsertClusterPolicy(c *gin.Context, clusterID string) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write")
 	if !ok {
 		return
 	}
@@ -655,7 +655,7 @@ func (s *Server) UpsertClusterPolicy(c *gin.Context, clusterID string) {
 
 // ListTemplates handles GET /templates.
 func (s *Server) ListTemplates(c *gin.Context, params generated.ListTemplatesParams) {
-	if !requireAnyGlobalPermission(c, "vm:create", "template:read", "template:manage") {
+	if !requireAnyGlobalPermission(c, "vm:create", "template:read", "template:write") {
 		return
 	}
 	ctx := c.Request.Context()

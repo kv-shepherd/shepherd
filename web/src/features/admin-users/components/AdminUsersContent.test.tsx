@@ -41,6 +41,9 @@ vi.mock('react-i18next', () => ({
                 'users.rate_limit.subtitle': 'Manage user-specific rate limits',
                 'users.rate_limit.add_exemption': 'Add Exemption',
                 'users.rate_limit.user': 'User',
+                'users.rate_limit.user_required': 'Select a user',
+                'users.rate_limit.user_placeholder': 'Search users by name, username, or email',
+                'users.rate_limit.no_user_results': 'No matching users found',
                 'users.rate_limit.user_id': 'User ID',
                 'users.rate_limit.exempted': 'Exempted',
                 'users.rate_limit.exempted_yes': 'Yes',
@@ -330,6 +333,22 @@ vi.mock('../hooks/useAdminUsersController', () => ({
             rateLimitStatus: { items: [], pagination: { total: 0, page: 1, per_page: 20 } },
             rateLimitLoading: false,
             refetchRateLimitStatus: vi.fn(),
+            rateLimitUserCandidates: {
+                items: [
+                    {
+                        id: 'user-1',
+                        username: 'alice',
+                        display_name: 'Alice',
+                        email: 'alice@example.com',
+                        enabled: true,
+                        created_at: '2026-03-17T00:00:00Z',
+                    },
+                ],
+                pagination: { total: 1, page: 1, per_page: 50 },
+            },
+            rateLimitUserCandidatesLoading: false,
+            rateLimitUserSearch: '',
+            setRateLimitUserSearch: vi.fn(),
             rateLimitMutationPending: false,
             applyRateLimitExemption: vi.fn(),
             updateRateLimitOverride: vi.fn(),
@@ -491,6 +510,17 @@ describe('AdminUsersContent', () => {
             expect(screen.queryAllByText('Department')).toHaveLength(0);
         });
         expect(screen.getAllByText('Section').length).toBeGreaterThan(0);
+    });
+
+    it('allows selecting a user when creating a rate-limit exemption', async () => {
+        const user = userEvent.setup();
+        render(<AdminUsersContent />);
+
+        await user.click(screen.getByTestId('rate-limit-exemption-create-button'));
+
+        expect(screen.getByTestId('rate-limit-exemption-create-modal')).toBeVisible();
+        expect(screen.getByLabelText('User')).toBeInTheDocument();
+        expect(screen.getByTestId('rate-limit-exemption-user-select')).toBeInTheDocument();
     });
 
     it('builds selected columns inside a custom merged column', () => {

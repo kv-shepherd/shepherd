@@ -95,12 +95,23 @@ func TestDirectorySyncServicePreviewMatchBlocked(t *testing.T) {
 	svc := NewDirectorySyncService(client)
 
 	if _, err := client.User.Create().
-		SetID("existing-blocked-user").
+		SetID("existing-blocked-user-username").
 		SetUsername("blocked-user").
-		SetDisplayName("Blocked User").
-		SetEmail("blocked@example.com").
+		SetDisplayName("Blocked Username User").
+		SetEmail("blocked-username@example.com").
 		SetAuthProviderID("other-provider").
-		SetExternalID("ext-other-1").
+		SetExternalID("ext-other-username").
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create existing user: %v", err)
+	}
+	if _, err := client.User.Create().
+		SetID("existing-blocked-user-email").
+		SetUsername("blocked-email-user").
+		SetDisplayName("Blocked Email User").
+		SetEmail("blocked@example.com").
+		SetAuthProviderID("another-provider").
+		SetExternalID("ext-other-email").
 		SetEnabled(true).
 		Save(t.Context()); err != nil {
 		t.Fatalf("create existing user: %v", err)
@@ -122,6 +133,50 @@ func TestDirectorySyncServicePreviewMatchBlocked(t *testing.T) {
 	}
 	if preview.Items[0].Match.Action != directorycontract.DirectoryActionBlocked {
 		t.Fatalf("match.action = %q, want %q", preview.Items[0].Match.Action, directorycontract.DirectoryActionBlocked)
+	}
+}
+
+func TestDirectorySyncServicePreviewMatchUpdateByCanonicalIdentity(t *testing.T) {
+	t.Parallel()
+
+	client := newDirectorySyncTestClient(t)
+	svc := NewDirectorySyncService(client)
+
+	existingUser, err := client.User.Create().
+		SetID("existing-canonical-user").
+		SetUsername("alice@example.com").
+		SetDisplayName("Alice Existing").
+		SetEmail("alice@example.com").
+		SetAuthProviderID("provider-login").
+		SetExternalID("alice@example.com").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create existing user: %v", err)
+	}
+
+	preview, err := svc.Preview(t.Context(), "provider-directory", []directorycontract.DirectoryUserRecord{
+		{
+			ExternalID:  "alice@example.com",
+			Username:    "alice@example.com",
+			DisplayName: "Alice Directory",
+			Email:       "alice@example.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if len(preview.Items) != 1 {
+		t.Fatalf("preview items len = %d, want 1", len(preview.Items))
+	}
+	if preview.Items[0].Match.Action != directorycontract.DirectoryActionUpdate {
+		t.Fatalf("match.action = %q, want %q", preview.Items[0].Match.Action, directorycontract.DirectoryActionUpdate)
+	}
+	if preview.Items[0].Match.ExistingUserID != existingUser.ID {
+		t.Fatalf("existing_user_id = %q, want %q", preview.Items[0].Match.ExistingUserID, existingUser.ID)
+	}
+	if preview.Items[0].Match.MatchedBy != directorycontract.DirectoryPreviewMatchByCanonicalIdentity {
+		t.Fatalf("matched_by = %q, want %q", preview.Items[0].Match.MatchedBy, directorycontract.DirectoryPreviewMatchByCanonicalIdentity)
 	}
 }
 
@@ -231,5 +286,63 @@ func TestDirectorySyncServiceApplyRecord_ReconcilesObservedCohortsAndBindings(t 
 	}
 	if _, ok := profile.Attributes["external_cohorts"]; !ok {
 		t.Fatal("profile external_cohorts missing")
+	}
+}
+
+func TestDirectorySyncServiceApplyRecord_ClaimsUniqueCanonicalIdentityForDirectoryOwner(t *testing.T) {
+	t.Parallel()
+
+	client := newDirectorySyncTestClient(t)
+	svc := NewDirectorySyncService(client)
+
+	existingUser, err := client.User.Create().
+		SetID("existing-directory-claim-user").
+		SetUsername("alice@example.com").
+		SetDisplayName("Alice Existing").
+		SetEmail("alice@example.com").
+		SetAuthProviderID("provider-login").
+		SetExternalID("alice@example.com").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create existing user: %v", err)
+	}
+
+	result, conflicts, err := svc.ApplyRecord(t.Context(), "provider-directory", directorycontract.DirectoryUserRecord{
+		ExternalID:  "alice@example.com",
+		Username:    "alice@example.com",
+		DisplayName: "Alice Directory",
+		Email:       "alice@example.com",
+		Attributes: map[string]interface{}{
+			"department": "Engineering",
+			"section":    "Platform",
+		},
+	}, DirectoryConflictResolutionSkip)
+	if err != nil {
+		t.Fatalf("ApplyRecord() error = %v", err)
+	}
+	if len(conflicts) != 1 || conflicts[0].Code != directorycontract.DirectoryConflictSameCanonicalIdentity {
+		t.Fatalf("conflicts = %#v, want one same_canonical_identity", conflicts)
+	}
+	if result.Action != directorycontract.DirectoryActionUpdate {
+		t.Fatalf("action = %q, want %q", result.Action, directorycontract.DirectoryActionUpdate)
+	}
+
+	updatedUser, err := client.User.Get(t.Context(), existingUser.ID)
+	if err != nil {
+		t.Fatalf("get updated user: %v", err)
+	}
+	if updatedUser.AuthProviderID != "provider-directory" {
+		t.Fatalf("auth_provider_id = %q, want provider-directory", updatedUser.AuthProviderID)
+	}
+
+	profile, err := client.UserDirectoryProfile.Query().
+		Where(userdirectoryprofile.UserIDEQ(existingUser.ID)).
+		Only(t.Context())
+	if err != nil {
+		t.Fatalf("query directory profile: %v", err)
+	}
+	if got := profile.Attributes["department"]; got != "Engineering" {
+		t.Fatalf("profile department = %#v, want %q", got, "Engineering")
 	}
 }

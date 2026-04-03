@@ -29,6 +29,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
+	"kv-shepherd.io/shepherd/internal/usecase"
 )
 
 const (
@@ -59,19 +60,6 @@ type batchValidationError struct {
 
 func (e *batchValidationError) Error() string {
 	return e.body.Code + ": " + e.body.Message
-}
-
-func vmDeleteAllowedStatus(status entvm.Status) bool {
-	switch status {
-	case entvm.StatusSTOPPED, entvm.StatusFAILED, entvm.StatusNOT_FOUND, entvm.StatusUNKNOWN:
-		return true
-	default:
-		return false
-	}
-}
-
-func vmDeleteInvalidStateMessage(status entvm.Status) string {
-	return fmt.Sprintf("cannot delete VM in %s state, must be STOPPED, FAILED, NOT_FOUND, or UNKNOWN", status)
 }
 
 // SubmitVMBatch handles POST /vms/batch.
@@ -171,7 +159,7 @@ func (s *Server) submitBatch(c *gin.Context) {
 		})
 		return
 	}
-	if extraLimit, limitErr := s.evaluateAdditionalBatchSubmissionLimits(ctx, actor, len(req.Items), limitPolicy); limitErr != nil {
+	if extraLimit, limitErr := s.evaluateAdditionalBatchSubmissionLimits(ctx, actor, len(req.Items), limitPolicy, parentEventType); limitErr != nil {
 		logger.Error("failed to evaluate additional batch submission limits", zap.Error(limitErr))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -442,7 +430,7 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 		})
 		return
 	}
-	if extraLimit, limitErr := s.evaluateAdditionalBatchSubmissionLimits(ctx, actor, len(req.Items), limitPolicy); limitErr != nil {
+	if extraLimit, limitErr := s.evaluateAdditionalBatchSubmissionLimits(ctx, actor, len(req.Items), limitPolicy, domain.EventBatchPowerRequested); limitErr != nil {
 		logger.Error("failed to evaluate power-batch additional limits", zap.Error(limitErr))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -1104,12 +1092,13 @@ func (s *Server) prepareBatchChildren(
 				}
 			}
 			vmObj = s.refreshVMLiveState(ctx, vmObj)
-			if !vmDeleteAllowedStatus(vmObj.Status) {
+			if !usecase.VMDeleteAllowedStatus(vmObj.Status) {
 				return nil, &batchValidationError{
 					status: http.StatusConflict,
 					body: generated.Error{
-						Code:    "INVALID_STATE_TRANSITION",
-						Message: vmDeleteInvalidStateMessage(vmObj.Status),
+						Code:    usecase.VMDeleteInvalidStateCode,
+						Message: usecase.VMDeleteInvalidStateMessage(vmObj.Status),
+						Params:  usecase.VMDeleteInvalidStateParams(vmObj.Status),
 					},
 				}
 			}
@@ -1447,6 +1436,7 @@ func (s *Server) evaluateAdditionalBatchSubmissionLimits(
 	actor string,
 	requestedChildCount int,
 	policy batchUserLimitPolicy,
+	cooldownEventType domain.EventType,
 ) (*batchSubmissionLimitViolation, error) {
 	recentSince := time.Now().UTC().Add(-time.Minute)
 	globalRecentSubmits, err := s.client.DomainEvent.Query().
@@ -1497,7 +1487,7 @@ func (s *Server) evaluateAdditionalBatchSubmissionLimits(
 	lastEvent, err := s.client.DomainEvent.Query().
 		Where(
 			domainevent.AggregateTypeEQ("batch"),
-			domainevent.EventTypeIn(batchParentEventTypes()...),
+			domainevent.EventTypeEQ(string(cooldownEventType)),
 			domainevent.CreatedByEQ(actor),
 		).
 		Order(ent.Desc(domainevent.FieldCreatedAt)).

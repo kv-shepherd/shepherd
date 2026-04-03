@@ -27,6 +27,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
+	"kv-shepherd.io/shepherd/internal/usecase"
 )
 
 func TestBatchHandler_SubmitVMBatch_Unauthorized(t *testing.T) {
@@ -111,7 +112,7 @@ func TestBatchHandler_SubmitVMBatch_DeleteRejectsRunningVM(t *testing.T) {
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusConflict, w.Body.String())
 	}
-	assertErrorCode(t, w.Body.Bytes(), "INVALID_STATE_TRANSITION")
+	assertErrorCode(t, w.Body.Bytes(), usecase.VMDeleteInvalidStateCode)
 }
 
 func TestBatchHandler_SubmitVMBatch_ModifyCreatesModifyChildTickets(t *testing.T) {
@@ -715,6 +716,38 @@ func TestBatchHandler_SubmitVMBatch_RateLimitedByCooldown(t *testing.T) {
 		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusTooManyRequests, w.Body.String())
 	}
 	assertErrorCode(t, w.Body.Bytes(), "BATCH_RATE_LIMITED")
+}
+
+func TestBatchHandler_SubmitVMBatch_DeleteNotRateLimitedByRecentPowerBatch(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newBatchBehaviorTestServer(t)
+	vmID := mustCreateBatchDeleteTargetVM(t, client)
+
+	_, err := client.DomainEvent.Create().
+		SetID("ev-power-cooldown-" + uuid.NewString()).
+		SetEventType(string(domain.EventBatchPowerRequested)).
+		SetAggregateType("batch").
+		SetAggregateID("batch-power-cooldown-" + uuid.NewString()).
+		SetPayload([]byte(`{"request_id":"old-power","operation":"STOP","items":[]}`)).
+		SetStatus(domainevent.StatusCOMPLETED).
+		SetCreatedBy("owner-1").
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("seed power cooldown domain event: %v", err)
+	}
+
+	body := mustJSON(t, generated.VMBatchSubmitRequest{
+		Operation: generated.VMBatchOperation("DELETE"),
+		Items: []generated.VMBatchChildItem{
+			{VmId: vmID},
+		},
+	})
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/batch", body, "owner-1", []string{"platform:admin"})
+	srv.SubmitVMBatch(c)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusAccepted, w.Body.String())
+	}
 }
 
 func TestBatchHandler_RetryVMBatch_RetriesFailedDeleteChild(t *testing.T) {

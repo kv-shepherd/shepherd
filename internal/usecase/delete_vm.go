@@ -41,6 +41,15 @@ type DeleteVMOutput struct {
 	Status   string `json:"status"`
 }
 
+const VMDeleteInvalidStateCode = "VM_DELETE_INVALID_STATE"
+
+var vmDeleteAllowedStates = []string{
+	string(entvm.StatusSTOPPED),
+	string(entvm.StatusFAILED),
+	string(entvm.StatusNOT_FOUND),
+	string(entvm.StatusUNKNOWN),
+}
+
 // DeleteVMUseCase orchestrates VM deletion through the approval flow.
 // ADR-0015 §5.D: VM deletion requires a ticket with operation_type=DELETE.
 // Flow: User confirms deletion → DomainEvent + Ticket created → Admin approves → River job executes K8s delete.
@@ -86,12 +95,11 @@ func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*D
 	// Step 3: State guard — STOPPED, FAILED, NOT_FOUND, or UNKNOWN VMs can be deleted.
 	// NOT_FOUND: K8s resource no longer exists — safe to clean up DB record.
 	// UNKNOWN: cluster unreachable — allow deletion request (K8s cleanup may fail but DB will be cleaned).
-	switch vm.Status {
-	case entvm.StatusSTOPPED, entvm.StatusFAILED, entvm.StatusNOT_FOUND, entvm.StatusUNKNOWN:
-		// allowed
-	default:
-		return nil, apperrors.Conflict("INVALID_STATE_TRANSITION",
-			fmt.Sprintf("cannot delete VM in %s state, must be STOPPED, FAILED, NOT_FOUND, or UNKNOWN", vm.Status))
+	if !VMDeleteAllowedStatus(vm.Status) {
+		return nil, apperrors.Conflict(
+			VMDeleteInvalidStateCode,
+			VMDeleteInvalidStateMessage(vm.Status),
+		).WithParams(VMDeleteInvalidStateParams(vm.Status))
 	}
 
 	// Step 4: Duplicate pending guard — same resource + same operation.
@@ -186,6 +194,34 @@ func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*D
 		EventID:  eventID,
 		Status:   "PENDING",
 	}, nil
+}
+
+func VMDeleteAllowedStatus(status entvm.Status) bool {
+	switch status {
+	case entvm.StatusSTOPPED, entvm.StatusFAILED, entvm.StatusNOT_FOUND, entvm.StatusUNKNOWN:
+		return true
+	default:
+		return false
+	}
+}
+
+func VMDeleteAllowedStatesLabel() string {
+	return strings.Join(vmDeleteAllowedStates, ", ")
+}
+
+func VMDeleteInvalidStateMessage(status entvm.Status) string {
+	return fmt.Sprintf(
+		"cannot delete VM in %s state, must be %s",
+		status,
+		VMDeleteAllowedStatesLabel(),
+	)
+}
+
+func VMDeleteInvalidStateParams(status entvm.Status) map[string]interface{} {
+	return map[string]interface{}{
+		"current_state":  string(status),
+		"allowed_states": VMDeleteAllowedStatesLabel(),
+	}
 }
 
 func (uc *DeleteVMUseCase) resolveNamespaceEnvironment(ctx context.Context, namespace string) (namespaceregistry.Environment, error) {

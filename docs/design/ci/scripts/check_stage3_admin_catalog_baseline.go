@@ -29,9 +29,9 @@ func main() {
 	checkOpenAPI(&violations)
 	checkFragments(&violations, adminCatalogHandlerPath, []string{
 		"func (s *Server) ListAdminTemplates(",
-		`requireActorWithAnyGlobalPermission(c, "template:read", "template:manage")`,
+		`requireActorWithAnyGlobalPermission(c, "template:read", "template:write")`,
 		"func (s *Server) CreateAdminTemplate(",
-		`requireActorWithAnyGlobalPermission(c, "template:write", "template:manage")`,
+		`requireActorWithAnyGlobalPermission(c, "template:write")`,
 		"func (s *Server) ListAdminInstanceSizes(",
 		`requireActorWithAnyGlobalPermission(c, "instance_size:read", "instance_size:write")`,
 		"func (s *Server) CreateAdminInstanceSize(",

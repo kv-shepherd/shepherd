@@ -12,6 +12,17 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 )
 
+var authProviderAccessPermissions = []string{
+	"auth_provider:read",
+	"auth_provider:configure",
+	"auth_provider:update",
+	"auth_provider:delete",
+	"auth_provider:sync",
+	"auth_provider:mapping_create",
+	"auth_provider:mapping_update",
+	"auth_provider:mapping_delete",
+}
+
 // requireGlobalPermission enforces explicit global RBAC permission checks.
 // Fail-closed policy:
 // - unauthenticated => 401
@@ -85,4 +96,8 @@ func requireActorWithAnyGlobalPermission(c *gin.Context, permissions ...string) 
 		return nil, "", false
 	}
 	return ctx, actor, true
+}
+
+func requireActorWithAnyAuthProviderPermission(c *gin.Context) (context.Context, string, bool) {
+	return requireActorWithAnyGlobalPermission(c, authProviderAccessPermissions...)
 }

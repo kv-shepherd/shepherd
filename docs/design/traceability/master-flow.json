@@ -35,7 +35,8 @@
       "adrs": [
         "docs/adr/ADR-0025-secret-bootstrap.md",
         "docs/adr/ADR-0032-master-flow-traceability-manifest.md",
-        "docs/adr/ADR-0034-master-flow-spec-driven-test-first.md"
+        "docs/adr/ADR-0034-master-flow-spec-driven-test-first.md",
+        "docs/adr/ADR-0053-prelaunch-rbac-baseline-cleanup.md"
       ]
     },
     {
@@ -53,7 +54,8 @@
         "docs/adr/ADR-0015-governance-model-v2.md#adr-0035-auth-provider-plugin-boundary-and-type-discovery-2026-02-15",
         "docs/adr/ADR-0019-governance-security-baseline-controls.md",
         "docs/adr/ADR-0026-idp-config-naming.md",
-        "docs/adr/ADR-0049-external-auth-runtime-jit-provisioning-and-external-cohort-rbac-mapping.md"
+        "docs/adr/ADR-0049-external-auth-runtime-jit-provisioning-and-external-cohort-rbac-mapping.md",
+        "docs/adr/ADR-0053-prelaunch-rbac-baseline-cleanup.md"
       ]
     },
     {
@@ -65,7 +67,8 @@
         "docs/design/checklist/phase-1-checklist.md"
       ],
       "adrs": [
-        "docs/adr/ADR-0019-governance-security-baseline-controls.md"
+        "docs/adr/ADR-0019-governance-security-baseline-controls.md",
+        "docs/adr/ADR-0053-prelaunch-rbac-baseline-cleanup.md"
       ]
     },
     {
@@ -77,6 +80,9 @@
       "checklists": [
         "docs/design/checklist/phase-1-checklist.md",
         "docs/design/checklist/phase-4-checklist.md"
+      ],
+      "adrs": [
+        "docs/adr/ADR-0053-prelaunch-rbac-baseline-cleanup.md"
       ]
     },
     {

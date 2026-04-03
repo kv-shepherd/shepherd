@@ -18,16 +18,14 @@ import (
 
 // ListNamespaces handles GET /admin/namespaces.
 func (s *Server) ListNamespaces(c *gin.Context, params generated.ListNamespacesParams) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "cluster:read", "cluster:write", "cluster:manage")
+	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "cluster:read", "cluster:write")
 	if !ok {
 		return
 	}
 
 	query := s.client.NamespaceRegistry.Query()
 	visibility, err := s.resolveNamespaceVisibility(c)
-	if err != nil {
-		logger.Error("failed to resolve namespace visibility", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	if respondInternalUnlessCanceled(c, err, "failed to resolve namespace visibility") {
 		return
 	}
 	if visibility.restricted {
@@ -74,9 +72,7 @@ func (s *Server) ListNamespaces(c *gin.Context, params generated.ListNamespacesP
 	offset := (page - 1) * perPage
 
 	total, err := query.Clone().Count(ctx)
-	if err != nil {
-		logger.Error("failed to count namespaces", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	if respondInternalUnlessCanceled(c, err, "failed to count namespaces") {
 		return
 	}
 
@@ -85,9 +81,7 @@ func (s *Server) ListNamespaces(c *gin.Context, params generated.ListNamespacesP
 		Limit(perPage).
 		Order(ent.Desc(namespaceregistry.FieldCreatedAt)).
 		All(ctx)
-	if err != nil {
-		logger.Error("failed to list namespaces", zap.Error(err), zap.Int("page", page))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	if respondInternalUnlessCanceled(c, err, "failed to list namespaces", zap.Int("page", page)) {
 		return
 	}
 
@@ -110,7 +104,7 @@ func (s *Server) ListNamespaces(c *gin.Context, params generated.ListNamespacesP
 
 // CreateNamespace handles POST /admin/namespaces.
 func (s *Server) CreateNamespace(c *gin.Context) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write")
 	if !ok {
 		return
 	}
@@ -154,7 +148,7 @@ func (s *Server) CreateNamespace(c *gin.Context) {
 
 // GetNamespace handles GET /admin/namespaces/{namespace_id}.
 func (s *Server) GetNamespace(c *gin.Context, namespaceID generated.NamespaceID) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "cluster:read", "cluster:write", "cluster:manage")
+	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "cluster:read", "cluster:write")
 	if !ok {
 		return
 	}
@@ -165,14 +159,11 @@ func (s *Server) GetNamespace(c *gin.Context, namespaceID generated.NamespaceID)
 			c.JSON(http.StatusNotFound, generated.Error{Code: "NAMESPACE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to get namespace", zap.Error(err), zap.String("namespace_id", namespaceID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		respondInternalUnlessCanceled(c, err, "failed to get namespace", zap.String("namespace_id", namespaceID))
 		return
 	}
 	visibility, err := s.resolveNamespaceVisibility(c)
-	if err != nil {
-		logger.Error("failed to resolve namespace visibility", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	if respondInternalUnlessCanceled(c, err, "failed to resolve namespace visibility") {
 		return
 	}
 	if visibility.restricted {
@@ -194,7 +185,7 @@ func (s *Server) GetNamespace(c *gin.Context, namespaceID generated.NamespaceID)
 
 // UpdateNamespace handles PUT /admin/namespaces/{namespace_id}.
 func (s *Server) UpdateNamespace(c *gin.Context, namespaceID generated.NamespaceID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write")
 	if !ok {
 		return
 	}
@@ -216,8 +207,7 @@ func (s *Server) UpdateNamespace(c *gin.Context, namespaceID generated.Namespace
 			c.JSON(http.StatusNotFound, generated.Error{Code: "NAMESPACE_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to update namespace", zap.Error(err), zap.String("namespace_id", namespaceID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		respondInternalUnlessCanceled(c, err, "failed to update namespace", zap.String("namespace_id", namespaceID))
 		return
 	}
 
@@ -231,7 +221,7 @@ func (s *Server) UpdateNamespace(c *gin.Context, namespaceID generated.Namespace
 // DeleteNamespace handles DELETE /admin/namespaces/{namespace_id}.
 // ADR-0015 §13 addendum: confirm_name query param required.
 func (s *Server) DeleteNamespace(c *gin.Context, namespaceID generated.NamespaceID, params generated.DeleteNamespaceParams) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write")
 	if !ok {
 		return
 	}

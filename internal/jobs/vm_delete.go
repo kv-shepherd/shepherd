@@ -70,7 +70,7 @@ func NewVMDeleteWorker(entClient *ent.Client, vmService *service.VMService, audi
 
 func vmDeleteExecutableStatus(status vm.Status) bool {
 	switch status {
-	case vm.StatusSTOPPED, vm.StatusFAILED, vm.StatusNOT_FOUND, vm.StatusUNKNOWN:
+	case vm.StatusSTOPPED, vm.StatusFAILED, vm.StatusNOT_FOUND, vm.StatusUNKNOWN, vm.StatusDELETING:
 		return true
 	default:
 		return false

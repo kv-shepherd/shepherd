@@ -12,6 +12,7 @@ paths = [
   '''(^|/)tmp/''',
   '''(^|/)web/node_modules/''',
   '''(^|/)web/\.next/''',
+  '''(^|/)web/\.next-prod/''',
   '''(^|/)web/\.next-e2e/''',
   '''(^|/)web/playwright-report/''',
   '''(^|/)web/test-results/''',

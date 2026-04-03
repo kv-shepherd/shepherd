@@ -345,7 +345,7 @@
   - [x] `PATCH /api/v1/notifications/{notification_id}/read` - Mark as read
   - [x] `POST /api/v1/notifications/mark-all-read` - Mark all as read
 - [x] **Notification Triggers** (`internal/notification/triggers.go`):
-  - [x] `APPROVAL_PENDING` → approvers (users with `approval:approve` permission)
+  - [x] `APPROVAL_PENDING` → approvers (users with `builtin_approval:approve` permission)
   - [x] `APPROVAL_COMPLETED`/`APPROVAL_REJECTED` → requester
   - [x] `VM_STATUS_CHANGE` → VM owner
 - [x] **Integration Points**:

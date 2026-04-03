@@ -1,9 +1,11 @@
 package usecase
 
 import (
+	"strings"
 	"testing"
 
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	entvm "kv-shepherd.io/shepherd/ent/vm"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 )
 
@@ -93,5 +95,41 @@ func TestValidateDeleteConfirmationByEnvironment_ProdRejectsMissingSignal(t *tes
 	}
 	if appErr.Code != "DELETE_CONFIRMATION_REQUIRED" {
 		t.Fatalf("error code mismatch: got %s want DELETE_CONFIRMATION_REQUIRED", appErr.Code)
+	}
+}
+
+func TestVMDeleteAllowedStatusAndErrorPayload(t *testing.T) {
+	t.Parallel()
+
+	allowed := []entvm.Status{
+		entvm.StatusSTOPPED,
+		entvm.StatusFAILED,
+		entvm.StatusNOT_FOUND,
+		entvm.StatusUNKNOWN,
+	}
+	for _, status := range allowed {
+		if !VMDeleteAllowedStatus(status) {
+			t.Fatalf("VMDeleteAllowedStatus(%q) = false, want true", status)
+		}
+	}
+
+	if VMDeleteAllowedStatus(entvm.StatusRUNNING) {
+		t.Fatal("VMDeleteAllowedStatus(RUNNING) = true, want false")
+	}
+
+	message := VMDeleteInvalidStateMessage(entvm.StatusRUNNING)
+	if !strings.Contains(message, string(entvm.StatusRUNNING)) {
+		t.Fatalf("VMDeleteInvalidStateMessage() = %q, want current status", message)
+	}
+	if !strings.Contains(message, VMDeleteAllowedStatesLabel()) {
+		t.Fatalf("VMDeleteInvalidStateMessage() = %q, want allowed states label", message)
+	}
+
+	params := VMDeleteInvalidStateParams(entvm.StatusRUNNING)
+	if got := params["current_state"]; got != string(entvm.StatusRUNNING) {
+		t.Fatalf("params[current_state] = %#v, want %q", got, entvm.StatusRUNNING)
+	}
+	if got := params["allowed_states"]; got != VMDeleteAllowedStatesLabel() {
+		t.Fatalf("params[allowed_states] = %#v, want %q", got, VMDeleteAllowedStatesLabel())
 	}
 }

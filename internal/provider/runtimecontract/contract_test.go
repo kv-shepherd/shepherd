@@ -1,6 +1,7 @@
 package runtimecontract
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 )
@@ -24,5 +25,28 @@ func TestNewAuthCredentialError(t *testing.T) {
 	}
 	if credentialErr.Code != "INVALID_CREDENTIALS" {
 		t.Fatalf("credentialErr.Code = %q, want INVALID_CREDENTIALS", credentialErr.Code)
+	}
+}
+
+func TestAuthResultDirectoryAuthorityJSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	payload, err := json.Marshal(AuthResult{
+		ExternalID:         "user-1",
+		Username:           "user@example.com",
+		DisplayName:        "User One",
+		Enabled:            true,
+		DirectoryAuthority: AuthDirectoryAuthorityLoginOnly,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var decoded AuthResult
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if decoded.DirectoryAuthority != AuthDirectoryAuthorityLoginOnly {
+		t.Fatalf("decoded.DirectoryAuthority = %q, want %q", decoded.DirectoryAuthority, AuthDirectoryAuthorityLoginOnly)
 	}
 }

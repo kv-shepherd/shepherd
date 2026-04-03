@@ -1018,6 +1018,63 @@ func TestListApprovals_PaginationReturnsTotalAndPages(t *testing.T) {
 	}
 }
 
+func TestListApprovals_ReturnsNewestTicketsFirst(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newApprovalTestServer(t, "approval_newest_first")
+
+	olderEventID := "ev-oldest-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, olderEventID, []byte(`{"seed":"older"}`))
+	olderCreatedAt := time.Now().Add(-2 * time.Hour).UTC()
+	olderTicketID := "ticket-oldest-" + uuid.NewString()
+	if _, err := client.Ticket.Create().
+		SetID(olderTicketID).
+		SetEventID(olderEventID).
+		SetOperationType(entticket.OperationTypeCREATE).
+		SetStatus(entticket.StatusPENDING).
+		SetRequester("user-oldest").
+		SetCreatedAt(olderCreatedAt).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create older ticket: %v", err)
+	}
+
+	newerEventID := "ev-newest-" + uuid.NewString()
+	mustCreateDomainEvent(t, client, newerEventID, []byte(`{"seed":"newer"}`))
+	newerCreatedAt := olderCreatedAt.Add(90 * time.Minute)
+	newerTicketID := "ticket-newest-" + uuid.NewString()
+	if _, err := client.Ticket.Create().
+		SetID(newerTicketID).
+		SetEventID(newerEventID).
+		SetOperationType(entticket.OperationTypeCREATE).
+		SetStatus(entticket.StatusPENDING).
+		SetRequester("user-newest").
+		SetCreatedAt(newerCreatedAt).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create newer ticket: %v", err)
+	}
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/tickets", "", "admin-1", []string{"ticket:view", "platform:admin"})
+	srv.ListTickets(c, generated.ListTicketsParams{})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.TicketList
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) < 2 {
+		t.Fatalf("items length = %d, want at least 2", len(resp.Items))
+	}
+	if resp.Items[0].Id != newerTicketID {
+		t.Fatalf("first ticket id = %q, want newest %q", resp.Items[0].Id, newerTicketID)
+	}
+	if resp.Items[1].Id != olderTicketID {
+		t.Fatalf("second ticket id = %q, want older %q", resp.Items[1].Id, olderTicketID)
+	}
+}
+
 func TestListApprovals_MineFiltersByRequesterWithoutApprovalViewPermission(t *testing.T) {
 	t.Parallel()
 

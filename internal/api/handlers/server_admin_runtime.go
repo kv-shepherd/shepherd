@@ -15,7 +15,7 @@ import (
 
 // GetAuthProviderRuntimeDescriptor handles GET /admin/auth-providers/{provider_id}/runtime.
 func (s *Server) GetAuthProviderRuntimeDescriptor(c *gin.Context, providerID generated.ProviderID) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
+	ctx, _, ok := requireActorWithAnyAuthProviderPermission(c)
 	if !ok {
 		return
 	}

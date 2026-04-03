@@ -411,25 +411,29 @@ Application performs these steps on startup (idempotent, `ON CONFLICT DO NOTHING
 
 ### Built-in Roles (master-flow Stage 2.A)
 
-> **ADR-0019**: Wildcard permissions (`*:*`, `*:read`) are **PROHIBITED** for all roles. Use explicit `platform:admin` permission for super-admin access.
+> **ADR-0019 / ADR-0053**: Wildcard permissions (`*:*`, `*:read`) and
+> compatibility aliases such as `cluster:manage` are **PROHIBITED**. Use
+> explicit canonical permissions and scope access through role bindings.
 
 | Role | Permissions | Notes |
 |------|-------------|-------|
-| **Bootstrap** | `platform:admin` | ⚠️ **MUST be disabled after first admin setup** (explicit super-admin, not wildcard) |
-| **PlatformAdmin** | `platform:admin` | Super admin - single explicit permission (compile-time constant per ADR-0019) |
-| **SystemAdmin** | `system:read`, `system:write`, `system:delete`, `service:read`, `service:create`, `service:delete`, `vm:read`, `vm:create`, `vm:operate`, `vm:delete`, `vnc:access`, `rbac:manage` | Can manage all resources but not platform config (explicit per ADR-0019) |
-| **Approver** | `approval:approve`, `approval:view`, `vm:read`, `service:read`, `system:read` | Can approve requests, read resources |
-| **Operator** | `vm:operate`, `vm:create`, `vm:read`, `vnc:access`, `service:read`, `system:read` | Can operate VMs, submit creation requests, access VNC |
+| **PlatformAdmin** | `platform:admin` | Super-admin, explicit single permission |
+| **ApprovalAdmin** | `builtin_approval:approve`, `builtin_approval:view`, `ticket:view`, `vm:read`, `service:read`, `system:read` | Owns approval queue, not platform administration |
+| **DevelopmentEngineer** | `system:read`, `system:write`, `service:create`, `service:read`, `vm:create`, `vm:read`, `vm:operate`, `vm:delete`, `vnc:access` | Usually bound to `test`; no platform or approval administration |
+| **TestEngineer** | `system:read`, `system:write`, `service:create`, `service:read`, `vm:create`, `vm:read`, `vm:operate`, `vm:delete`, `vnc:access` | Same capability envelope, different assignment policy |
+| **SystemOperator** | `system:read`, `system:write`, `service:create`, `service:read`, `vm:create`, `vm:read`, `vm:operate`, `vm:delete`, `vnc:access` | May additionally be bound to `prod`; approvals still gate governed production actions |
 | **Viewer** | `system:read`, `service:read`, `vm:read` | Read-only access (explicit, no `*:read`) |
 
-> **Note**: The `platform:admin` permission is an explicit, compile-time constant that grants full access (not a runtime wildcard pattern). The Bootstrap role MUST be disabled after initial setup.
+> **Note**: Environment scope is expressed through `allowed_environments`
+> bindings such as `test` and `prod`, not by cloning separate permission
+> variants.
 
 ### Required Seeds
 
 | Data | Purpose | Idempotent |
 |------|---------|------------|
 | Super admin | Initial admin account (`admin/admin`) | ✅ `ON CONFLICT DO NOTHING` |
-| Built-in roles | Bootstrap, PlatformAdmin, SystemAdmin, Approver, Operator, Viewer | ✅ `ON CONFLICT DO NOTHING` |
+| Built-in roles | PlatformAdmin, ApprovalAdmin, DevelopmentEngineer, TestEngineer, SystemOperator, Viewer | ✅ reconciled at seed time |
 | Default quota | Tenant quota template | ✅ `ON CONFLICT DO NOTHING` |
 
 ### Manual Migration (Development/CI)

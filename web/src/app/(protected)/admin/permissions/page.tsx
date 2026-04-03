@@ -5,7 +5,7 @@
  * RBAC permissions catalog. Admin only.
  * data-testid="admin-permissions-page" required by E2E contract.
  */
-import { Button as ActionButton, Table, Tag, Typography, Select, Space } from 'antd';
+import { Button as ActionButton, Select, Space, Table, Tag, Typography } from 'antd';
 import { KeyOutlined } from '@ant-design/icons';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -20,6 +20,9 @@ import {
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
+import { useApiGet } from '@/hooks/useApiQuery';
+import { api } from '@/lib/api/client';
+import type { Permission, PermissionList } from '@/features/admin-rbac/types';
 
 const { Text } = Typography;
 
@@ -28,18 +31,23 @@ const filterOptionByLabel = (input: string, option?: { label?: unknown }) => {
     return label.toLowerCase().includes(input.trim().toLowerCase());
 };
 
-const STATIC_PERMISSIONS = [
-    { key: 'vm:create', scope: 'vm', labelKey: 'rbac.permissions.catalog.vm_create.label', descriptionKey: 'rbac.permissions.catalog.vm_create.description' },
-    { key: 'vm:operate', scope: 'vm', labelKey: 'rbac.permissions.catalog.vm_operate.label', descriptionKey: 'rbac.permissions.catalog.vm_operate.description' },
-    { key: 'vm:delete', scope: 'vm', labelKey: 'rbac.permissions.catalog.vm_delete.label', descriptionKey: 'rbac.permissions.catalog.vm_delete.description' },
-    { key: 'system:read', scope: 'system', labelKey: 'rbac.permissions.catalog.system_read.label', descriptionKey: 'rbac.permissions.catalog.system_read.description' },
-    { key: 'system:write', scope: 'system', labelKey: 'rbac.permissions.catalog.system_write.label', descriptionKey: 'rbac.permissions.catalog.system_write.description' },
-    { key: 'system:delete', scope: 'system', labelKey: 'rbac.permissions.catalog.system_delete.label', descriptionKey: 'rbac.permissions.catalog.system_delete.description' },
-    { key: 'service:create', scope: 'service', labelKey: 'rbac.permissions.catalog.service_create.label', descriptionKey: 'rbac.permissions.catalog.service_create.description' },
-    { key: 'service:delete', scope: 'service', labelKey: 'rbac.permissions.catalog.service_delete.label', descriptionKey: 'rbac.permissions.catalog.service_delete.description' },
-    { key: 'rbac:manage', scope: 'rbac', labelKey: 'rbac.permissions.catalog.rbac_manage.label', descriptionKey: 'rbac.permissions.catalog.rbac_manage.description' },
-    { key: 'admin:all', scope: 'admin', labelKey: 'rbac.permissions.catalog.admin_all.label', descriptionKey: 'rbac.permissions.catalog.admin_all.description' },
-];
+function permissionCatalogTranslationKey(permissionKey: string) {
+    return permissionKey.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
+}
+
+function permissionScope(permissionKey: string) {
+    return permissionKey.split(':', 2)[0] ?? permissionKey;
+}
+
+function permissionCategory(scope: string) {
+    if (scope === 'vm' || scope === 'vnc') {
+        return 'vm';
+    }
+    if (scope === 'cluster' || scope === 'instance_size' || scope === 'service' || scope === 'system' || scope === 'template') {
+        return 'resource';
+    }
+    return 'governance';
+}
 
 export default function AdminPermissionsPage() {
     const { t } = useTranslation(['admin', 'common']);
@@ -48,72 +56,110 @@ export default function AdminPermissionsPage() {
     const [scopeDraft, setScopeDraft] = useState('');
     const [scopeFilter, setScopeFilter] = useState('');
     const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
-    const totalCount = STATIC_PERMISSIONS.length;
-    const vmCount = STATIC_PERMISSIONS.filter((permission) => permission.scope === 'vm').length;
-    const resourceCount = STATIC_PERMISSIONS.filter((permission) => permission.scope === 'system' || permission.scope === 'service').length;
-    const governanceCount = STATIC_PERMISSIONS.filter((permission) => permission.scope === 'rbac' || permission.scope === 'admin').length;
+
+    const permissionsQuery = useApiGet<PermissionList>(
+        ['admin-permissions-page'],
+        () => api.GET('/admin/permissions')
+    );
+
+    const permissions = useMemo(() => permissionsQuery.data?.items ?? [], [permissionsQuery.data?.items]);
+
     const scopeOptions = useMemo(
         () =>
-            Array.from(new Set(STATIC_PERMISSIONS.map((permission) => permission.scope)))
+            Array.from(new Set(permissions.map((permission) => permissionScope(permission.key))))
                 .sort((left, right) => left.localeCompare(right))
                 .map((scope) => ({
                     value: scope,
-                    label: t(`rbac.scope.${scope}`, { defaultValue: scope }),
+                    label: t(`rbac.scope.${scope}`, {
+                        defaultValue: scope.replace(/_/g, ' '),
+                    }),
                 })),
-        [t],
+        [permissions, t],
     );
+
     const filteredPermissions = useMemo(() => {
         const normalizedSearch = search.trim().toLowerCase();
-        return STATIC_PERMISSIONS.filter((permission) => {
-            if (scopeFilter !== '' && permission.scope !== scopeFilter) {
+        return permissions.filter((permission) => {
+            const scope = permissionScope(permission.key);
+            if (scopeFilter !== '' && scope !== scopeFilter) {
                 return false;
             }
             if (normalizedSearch === '') {
                 return true;
             }
-            const label = t(permission.labelKey).toLowerCase();
-            const description = t(permission.descriptionKey).toLowerCase();
+            const translatedLabel = t(`rbac.permissions.catalog.${permissionCatalogTranslationKey(permission.key)}.label`, {
+                defaultValue: permission.description?.trim() || permission.key,
+            }).toLowerCase();
+            const translatedDescription = t(`rbac.permissions.catalog.${permissionCatalogTranslationKey(permission.key)}.description`, {
+                defaultValue: permission.description?.trim() || '',
+            }).toLowerCase();
+            const translatedScope = t(`rbac.scope.${scope}`, {
+                defaultValue: scope.replace(/_/g, ' '),
+            }).toLowerCase();
+
             return [
                 permission.key,
-                permission.scope,
-                label,
-                description,
+                translatedLabel,
+                translatedDescription,
+                translatedScope,
             ].some((value) => value.toLowerCase().includes(normalizedSearch));
         });
-    }, [scopeFilter, search, t]);
+    }, [permissions, scopeFilter, search, t]);
+
+    const totalCount = permissions.length;
+    const vmCount = permissions.filter((permission) => permissionCategory(permissionScope(permission.key)) === 'vm').length;
+    const resourceCount = permissions.filter((permission) => permissionCategory(permissionScope(permission.key)) === 'resource').length;
+    const governanceCount = permissions.filter((permission) => permissionCategory(permissionScope(permission.key)) === 'governance').length;
 
     const columns = [
         {
             title: t('rbac.permissions.table.permission', { defaultValue: 'Permission' }),
-            dataIndex: 'labelKey',
+            dataIndex: 'key',
             key: 'key',
-            render: (_: string, record: typeof STATIC_PERMISSIONS[number]) => (
-                <div>
-                    <Text strong>{t(record.labelKey)}</Text>
+            render: (_: string, permission: Permission) => {
+                const catalogKey = permissionCatalogTranslationKey(permission.key);
+                const label = t(`rbac.permissions.catalog.${catalogKey}.label`, {
+                    defaultValue: permission.description?.trim() || permission.key,
+                });
+                return (
                     <div>
-                        <Text type="secondary" code>{record.key}</Text>
+                        <Text strong>{label}</Text>
+                        <div>
+                            <Text type="secondary" code>{permission.key}</Text>
+                        </div>
                     </div>
-                </div>
-            ),
+                );
+            },
         },
         {
             title: t('rbac.bindings.scope', { defaultValue: 'Scope' }),
-            dataIndex: 'scope',
             key: 'scope',
-            width: 140,
-            render: (scope: string) => (
-                <Tag color="blue">
-                    {t(`rbac.scope.${scope}`, { defaultValue: scope })}
-                </Tag>
-            ),
+            width: 160,
+            render: (_: unknown, permission: Permission) => {
+                const scope = permissionScope(permission.key);
+                return (
+                    <Tag color="blue">
+                        {t(`rbac.scope.${scope}`, {
+                            defaultValue: scope.replace(/_/g, ' '),
+                        })}
+                    </Tag>
+                );
+            },
         },
         {
             title: t('rbac.permissions.table.use_case', { defaultValue: 'Typical use' }),
-            dataIndex: 'descriptionKey',
+            dataIndex: 'description',
             key: 'description',
-            render: (_: string, record: typeof STATIC_PERMISSIONS[number]) => (
-                <Text type="secondary">{t(record.descriptionKey)}</Text>
-            ),
+            render: (_: string | undefined, permission: Permission) => {
+                const catalogKey = permissionCatalogTranslationKey(permission.key);
+                return (
+                    <Text type="secondary">
+                        {t(`rbac.permissions.catalog.${catalogKey}.description`, {
+                            defaultValue: permission.description?.trim() || '—',
+                        })}
+                    </Text>
+                );
+            },
         },
     ];
 
@@ -188,7 +234,7 @@ export default function AdminPermissionsPage() {
                             content: (
                                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                                     <Text type="secondary">
-                                        {t('rbac.permissions.advanced_search_help', { defaultValue: 'Select exact filters here. Options support keyword matching, but the applied filter remains an exact match.' })}
+                                        {t('rbac.permissions.advanced_search_help', { defaultValue: 'Select an exact permission scope here. Options support keyword matching, but the applied filter remains an exact match.' })}
                                     </Text>
                                     <Space wrap size={[12, 12]}>
                                         <Select
@@ -231,6 +277,7 @@ export default function AdminPermissionsPage() {
                     rowKey="key"
                     pagination={false}
                     size="middle"
+                    loading={permissionsQuery.isLoading}
                     locale={{
                         emptyText: (
                             <ActionEmptyState

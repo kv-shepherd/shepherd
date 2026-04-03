@@ -25,8 +25,8 @@ func main() {
 		{
 			path: "internal/api/handlers/server_namespace.go",
 			required: []string{
-				`requireActorWithAnyGlobalPermission(c, "cluster:read", "cluster:write", "cluster:manage")`,
-				`requireActorWithAnyGlobalPermission(c, "cluster:write", "cluster:manage")`,
+				`requireActorWithAnyGlobalPermission(c, "cluster:read", "cluster:write")`,
+				`requireActorWithAnyGlobalPermission(c, "cluster:write")`,
 			},
 			forbidden: []string{
 				`middleware.GetUserID(`,
@@ -35,7 +35,7 @@ func main() {
 		{
 			path: "internal/api/handlers/server_admin.go",
 			required: []string{
-				`requireAnyGlobalPermission(c, "vm:create", "template:read", "template:manage")`,
+				`requireAnyGlobalPermission(c, "vm:create", "template:read", "template:write")`,
 				`requireAnyGlobalPermission(c, "vm:create", "instance_size:read", "instance_size:write")`,
 			},
 		},

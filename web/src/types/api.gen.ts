@@ -3016,7 +3016,7 @@ export interface components {
         };
         DirectorySyncConflict: {
             /** @enum {string} */
-            code: "same_external_identity" | "username_conflict" | "email_conflict" | "ambiguous_existing_user";
+            code: "same_external_identity" | "same_canonical_identity" | "username_conflict" | "email_conflict" | "ambiguous_existing_user";
             field?: string;
             existing_user_id?: string;
             message?: string;
@@ -3047,7 +3047,7 @@ export interface components {
             action: "create" | "update" | "blocked";
             existing_user_id?: string;
             /** @enum {string} */
-            matched_by?: "external_id";
+            matched_by?: "external_id" | "canonical_identity";
         };
         DirectorySyncPreview: {
             total_count: number;
@@ -3889,6 +3889,7 @@ export interface operations {
                     "application/json": components["schemas"]["ServiceList"];
                 };
             };
+            403: components["responses"]["Forbidden"];
         };
     };
     listServices: {
@@ -3916,6 +3917,7 @@ export interface operations {
                     "application/json": components["schemas"]["ServiceList"];
                 };
             };
+            403: components["responses"]["Forbidden"];
         };
     };
     createService: {
@@ -3943,6 +3945,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
         };
     };
@@ -3967,6 +3970,7 @@ export interface operations {
                     "application/json": components["schemas"]["Service"];
                 };
             };
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -3992,6 +3996,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
@@ -4217,6 +4222,16 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            /** @description Batch request conflicts with current resource state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Rate limit exceeded */
             429: {
                 headers: {
@@ -4251,6 +4266,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
             /** @description Rate limit exceeded */
             429: {
                 headers: {

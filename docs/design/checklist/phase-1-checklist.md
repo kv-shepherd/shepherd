@@ -174,13 +174,13 @@
 - [x] `ent/schema/role_binding.go` - User-role assignments with scope
 - [x] `ent/schema/resource_role_binding.go` - Resource-level member management (owner/admin/member/viewer)
 - [x] Built-in roles seeded (per master-flow.md Stage 2.A) — *Phase 5: `cmd/seed/main.go`*:
-  - [x] **Bootstrap** - Initial setup only (`platform:admin`), ⚠️ MUST be disabled after initialization
   - [x] **PlatformAdmin** - Super admin (`platform:admin`, explicit permission per ADR-0019)
-  - [x] **SystemAdmin** - Resource management (explicit permissions)
-  - [x] **Approver** - Can approve requests (`approval:approve`, `approval:view`)
-  - [x] **Operator** - Power operations (`vm:operate`, `vm:read`)
+  - [x] **ApprovalAdmin** - Approval queue owner (`builtin_approval:approve`, `builtin_approval:view`)
+  - [x] **DevelopmentEngineer** - Test-environment self-service system/service/VM workflows
+  - [x] **TestEngineer** - Same capability envelope as development, scoped by assignment
+  - [x] **SystemOperator** - May be bound to prod, but still relies on approval flows for governed operations
   - [x] **Viewer** - Read-only access (explicit: `system:read`, `service:read`, `vm:read`)
-- [ ] Environment-based permission control (`allowed_environments` field)
+- [x] Environment-based permission control (`allowed_environments` field)
 
 ---
 

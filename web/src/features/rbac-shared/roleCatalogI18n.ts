@@ -1,11 +1,11 @@
 import type { TFunction } from 'i18next';
 
 const BUILT_IN_ROLE_CATALOG_KEYS: Record<string, string> = {
-    Bootstrap: 'bootstrap',
     PlatformAdmin: 'platform_admin',
-    SystemAdmin: 'system_admin',
-    Approver: 'approver',
-    Operator: 'operator',
+    ApprovalAdmin: 'approval_admin',
+    DevelopmentEngineer: 'development_engineer',
+    TestEngineer: 'test_engineer',
+    SystemOperator: 'system_operator',
     Viewer: 'viewer',
 };
 

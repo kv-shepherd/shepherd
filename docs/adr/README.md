@@ -56,12 +56,13 @@
 | [ADR-0044](./ADR-0044-frontend-built-in-preset-catalog-boundary.md) | Frontend Built-In Preset Catalog Boundary | **Accepted** | - |
 | [ADR-0045](./ADR-0045-cluster-resolved-root-volume-provisioning.md) | Cluster-Resolved Root Volume Provisioning Intent | **Accepted** | - |
 | [ADR-0046](./ADR-0046-schema-mask-field-visibility-tiers.md) | Schema Mask Field Visibility Tiers | **Accepted** | - |
-| [ADR-0047](./ADR-0047-vm-status-granular-lifecycle-states.md) | Granular VM Lifecycle States (STARTING / NOT_FOUND) | **Proposed** | - |
+| [ADR-0047](./ADR-0047-vm-status-granular-lifecycle-states.md) | Granular VM Lifecycle States (STARTING / NOT_FOUND) | **Accepted** | Adds STARTING / NOT_FOUND as first-class VM states across polling, delete safety, and UI contracts |
 | [ADR-0048](./ADR-0048-directory-sync-capability.md) | Directory Sync Capability for Auth Providers | **Accepted** | Result-first contract: provider-owned workflow, core-owned canonical user/cohort import semantics |
 | [ADR-0049](./ADR-0049-external-auth-runtime-jit-provisioning-and-external-cohort-rbac-mapping.md) | External Auth Runtime, JIT User Provisioning, and External Cohort-to-RBAC Mapping | **Accepted** | Unified external-auth standard: JIT user center, provider-owned workflow, platform-owned RBAC |
 | [ADR-0050](./ADR-0050-upstream-identity-assertion-runtime-provider.md) | Upstream Identity Assertion Runtime Provider for Legacy Systems | **Accepted** | Generic legacy token/userinfo or trusted-gateway runtime provider without core special-casing |
 | [ADR-0051](./ADR-0051-scheduled-directory-enrichment.md) | Scheduled Directory Enrichment for Existing Users | **Accepted** | Optional scheduled enrichment of existing users via explicit join key, without abandoning JIT user-center construction |
 | [ADR-0052](./ADR-0052-existing-vm-mutation-strategy.md) | Existing VM Mutation Strategy — KubeVirt Client First, Exact Patch + Dry-Run | **Accepted** | Narrows SSA to full desired-state submission and moves existing-VM mutation to KubeVirt-native patch/update semantics |
+| [ADR-0053](./ADR-0053-prelaunch-rbac-baseline-cleanup.md) | Pre-Launch RBAC Baseline Cleanup and Environment-Scoped Built-In Roles | **Accepted** | Removes compatibility-era RBAC aliases, drops bootstrap-only built-ins, and keeps environment scope in role bindings |
 
 > ℹ️ **ADR-0037 Sync Notes**:
 >
@@ -85,6 +86,14 @@
 > |---------|--------|--------|
 > | §4 VMCreateRequest.ClusterID | ❌ **Incorrect** | See [ADR-0017](./ADR-0017-vm-request-flow-clarification.md) for correct definition |
 > | §5 Template.required_features/required_hardware | ❌ **Moved** | See [ADR-0018](./ADR-0018-instance-size-abstraction.md) - capabilities now in InstanceSize |
+> | §22 Permission Model / built-in roles | ❌ **Amended** | See [ADR-0053](./ADR-0053-prelaunch-rbac-baseline-cleanup.md) for the pre-launch canonical permission catalog and built-in role set |
+> | All other sections | ✅ **Valid** | Must read and follow |
+
+> ⚠️ **³ ADR-0019 Amendment Notice**:
+>
+> | Section | Status | Action |
+> |---------|--------|--------|
+> | Built-in Roles Definition (Correction to ADR-0015 §22) | ❌ **Amended** | See [ADR-0053](./ADR-0053-prelaunch-rbac-baseline-cleanup.md) for the current built-in role catalog and removal of compatibility-era aliases |
 > | All other sections | ✅ **Valid** | Must read and follow |
 
 ---
@@ -132,12 +141,13 @@ For newcomers, we recommend reading ADRs in this order:
 18. **ADR-0044** (Frontend Built-In Preset Catalog Boundary, **Proposed**) → Clarifies V1 built-in preset catalogs vs V2 backend marketplace boundary
 19. **ADR-0045** (Cluster-Resolved Root Volume Provisioning, **Accepted**) → Clarifies where storage `auto` intent may exist and when approval must resolve explicit root-volume provisioning values
 20. **ADR-0046** (Schema Mask Field Visibility Tiers, **Accepted**) → Formalizes `professional_fields` as a UI-only expert-tier in SchemaMask
-21. **ADR-0047** (Granular VM Lifecycle States, **Proposed** 🔍 48-hr review window) → Adds `STARTING` and `NOT_FOUND` as first-class VM status values with polling/delete integration
+21. **ADR-0047** (Granular VM Lifecycle States, **Accepted**) → Adds `STARTING` and `NOT_FOUND` as first-class VM status values with polling/delete integration
 22. **ADR-0048** (Directory Sync Capability, **Accepted**) → Adds provider-owned sync request schema with core-owned canonical user/cohort import semantics
 23. **ADR-0049** (External Auth Runtime, **Accepted**) → Defines unified external-auth runtime, JIT user-center provisioning, and external cohort to platform RBAC mapping
 24. **ADR-0050** (Upstream Identity Assertion Runtime Provider, **Accepted**) → Generalizes legacy token/userinfo or trusted-gateway identity handoff as a provider type instead of a core special case
 25. **ADR-0051** (Scheduled Directory Enrichment, **Accepted**) → Adds enrich-existing-only scheduled profile/cohort sync while keeping JIT user-center construction as the default
 26. **ADR-0052** (Existing VM Mutation Strategy, **Accepted**) → Narrows SSA to create/provisioning and moves existing-VM modify flows to exact KubeVirt-native patch/update + dry-run
+27. **ADR-0053** (Pre-Launch RBAC Baseline Cleanup, **Accepted**) → Removes compatibility-era RBAC aliases, defines the pre-launch built-in role set, and keeps environment scope in role bindings
 
 ### Historical Context
 - **ADR-0002** → Why we moved from Git storage to DB (Superseded by ADR-0007)

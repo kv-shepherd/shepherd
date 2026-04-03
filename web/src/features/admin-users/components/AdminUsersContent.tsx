@@ -79,6 +79,11 @@ interface UserSearchValueOption {
     label: string;
 }
 
+interface UserSelectOption {
+    value: string;
+    label: string;
+}
+
 interface AdvancedUserSearchCondition {
     field: string;
     value: string;
@@ -400,6 +405,7 @@ export function AdminUsersContent() {
     const [exemptionOpen, setExemptionOpen] = useState(false);
     const [overrideOpen, setOverrideOpen] = useState(false);
     const [exemptionForm] = Form.useForm<{
+        user_id: string;
         reason?: string;
         expires_at?: Dayjs | null;
     }>();
@@ -427,6 +433,45 @@ export function AdminUsersContent() {
     );
     const selectedSystem = users.systems.find((system) => system.id === users.selectedSystemId);
     const selectedRateLimitRecord = rateLimitItems.find((item) => item.user_id === selectedRateLimitUserID);
+    const rateLimitUserOptions = useMemo<UserSelectOption[]>(
+        () => {
+            const seen = new Set<string>();
+            return [
+                ...rateLimitItems.map((item) => ({
+                    id: item.user_id,
+                    username: item.username,
+                    display_name: item.display_name,
+                    email: item.email,
+                })),
+                ...(users.rateLimitUserCandidates?.items ?? []),
+                ...userItems,
+            ]
+                .filter((user) => {
+                    if (!user.id || seen.has(user.id)) {
+                        return false;
+                    }
+                    seen.add(user.id);
+                    return true;
+                })
+                .map((user) => ({
+                    value: user.id,
+                    label: user.display_name?.trim()
+                        ? `${user.display_name} (${user.username})`
+                        : user.email?.trim()
+                            ? `${user.username} · ${user.email}`
+                            : user.username || user.id,
+                }));
+        },
+        [rateLimitItems, userItems, users.rateLimitUserCandidates?.items]
+    );
+    const selectedRateLimitUserLabel = useMemo(
+        () =>
+            rateLimitUserOptions.find((option) => option.value === selectedRateLimitUserID)?.label
+            || selectedRateLimitRecord?.display_name?.trim()
+            || selectedRateLimitRecord?.username
+            || selectedRateLimitUserID,
+        [rateLimitUserOptions, selectedRateLimitRecord, selectedRateLimitUserID]
+    );
     const roleDisplayByName = useMemo(
         () => new Map(roleCatalog.map((role) => [role.name, localizeRoleLabel(t, role)])),
         [roleCatalog, t]
@@ -1124,6 +1169,8 @@ export function AdminUsersContent() {
                         onClick={() => {
                             setSelectedRateLimitUserID(record.user_id);
                             exemptionForm.resetFields();
+                            exemptionForm.setFieldsValue({ user_id: record.user_id });
+                            users.setRateLimitUserSearch('');
                             setExemptionOpen(true);
                         }}
                     >
@@ -1861,6 +1908,8 @@ export function AdminUsersContent() {
                             icon={<PlusOutlined />}
                             data-testid="rate-limit-exemption-create-button"
                             onClick={() => {
+                                setSelectedRateLimitUserID('');
+                                users.setRateLimitUserSearch('');
                                 exemptionForm.resetFields();
                                 setExemptionOpen(true);
                             }}
@@ -1950,17 +1999,19 @@ export function AdminUsersContent() {
                     onCancel={() => {
                         setExemptionOpen(false);
                         setSelectedRateLimitUserID('');
+                        users.setRateLimitUserSearch('');
                         exemptionForm.resetFields();
                     }}
                     onOk={() => {
                         void exemptionForm.validateFields().then((values) => {
                             users.applyRateLimitExemption({
-                                user_id: selectedRateLimitUserID,
+                                user_id: values.user_id,
                                 reason: values.reason || '',
                                 expires_at: values.expires_at ? values.expires_at.toISOString() : null,
                             });
                             setExemptionOpen(false);
                             setSelectedRateLimitUserID('');
+                            users.setRateLimitUserSearch('');
                             exemptionForm.resetFields();
                         });
                     }}
@@ -1970,14 +2021,27 @@ export function AdminUsersContent() {
                     data-testid="rate-limit-exemption-create-modal"
                 >
                     <Form form={exemptionForm} layout="vertical" preserve={false}>
-                        <Form.Item label={t('users.rate_limit.user')}>
-                            <Input
-                                value={
-                                    selectedRateLimitRecord?.display_name?.trim()
-                                    || selectedRateLimitRecord?.username
-                                    || selectedRateLimitUserID
+                        <Form.Item
+                            name="user_id"
+                            label={t('users.rate_limit.user')}
+                            rules={[{ required: true, message: t('users.rate_limit.user_required', { defaultValue: 'Select a user' }) }]}
+                        >
+                            <Select
+                                showSearch
+                                filterOption={false}
+                                data-testid="rate-limit-exemption-user-select"
+                                placeholder={t('users.rate_limit.user_placeholder', { defaultValue: 'Search a user by name, username, or email' })}
+                                loading={users.rateLimitUserCandidatesLoading}
+                                searchValue={users.rateLimitUserSearch}
+                                onSearch={users.setRateLimitUserSearch}
+                                onChange={(value) => setSelectedRateLimitUserID(value)}
+                                options={rateLimitUserOptions}
+                                optionLabelProp="label"
+                                notFoundContent={
+                                    users.rateLimitUserCandidatesLoading
+                                        ? t('common:message.loading')
+                                        : t('users.rate_limit.no_user_results', { defaultValue: 'No matching users found' })
                                 }
-                                readOnly
                             />
                         </Form.Item>
                         <Form.Item name="reason" label={t('users.rate_limit.reason')}>
@@ -2020,11 +2084,7 @@ export function AdminUsersContent() {
                     <Form form={overrideForm} layout="vertical" preserve={false}>
                         <Form.Item label={t('users.rate_limit.user')}>
                             <Input
-                                value={
-                                    selectedRateLimitRecord?.display_name?.trim()
-                                    || selectedRateLimitRecord?.username
-                                    || selectedRateLimitUserID
-                                }
+                                value={selectedRateLimitUserLabel}
                                 readOnly
                             />
                         </Form.Item>

@@ -30,7 +30,8 @@ func NewTriggers(sender Sender, client *ent.Client) *Triggers {
 }
 
 // OnTicketSubmitted fires when a VM request is submitted and needs approval.
-// Notifies all users who have the "builtin_approval:approve" permission.
+// Notifies all users who can review the built-in approval queue, including
+// explicit approval admins and platform super-admins.
 //
 // master-flow.md Stage 5.F / Event: VM Request Submitted:
 //
@@ -149,7 +150,8 @@ func (t *Triggers) OnVMStatusChanged(ctx context.Context, vmID, vmName, ownerID,
 	}
 }
 
-// findApproverUserIDs queries all user IDs that have the "builtin_approval:approve" permission.
+// findApproverUserIDs queries all user IDs that can review the built-in
+// approval queue.
 // Ent JSON array fields don't generate DB-level Contains predicates, so we
 // query all roles with their bindings+users and filter in Go.
 //
@@ -171,8 +173,10 @@ func (t *Triggers) findApproverUserIDs(ctx context.Context) ([]string, error) {
 	var userIDs []string
 
 	for _, r := range roles {
-		// Filter: role must contain "builtin_approval:approve" permission.
-		if !slices.Contains(r.Permissions, "builtin_approval:approve") {
+		// Filter: role must either explicitly own approval review or inherit it
+		// through the platform super-admin permission.
+		if !slices.Contains(r.Permissions, "builtin_approval:approve") &&
+			!slices.Contains(r.Permissions, "platform:admin") {
 			continue
 		}
 		for _, b := range r.Edges.RoleBindings {

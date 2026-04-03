@@ -51,6 +51,7 @@
   "INVALID_CURRENT_PASSWORD": "当前密码不正确。",
   "INVALID_REQUEST": "请求参数无效。",
   "INVALID_STATE_TRANSITION": "当前资源状态不允许执行此操作。",
+  "VM_DELETE_INVALID_STATE": "虚拟机当前状态为 {{current_state}}，暂不允许删除。允许状态：{{allowed_states}}。",
   "INVALID_BATCH_SIZE": "批量数量无效。",
   "INVALID_BATCH_OPERATION": "批量操作类型无效。",
   "INVALID_BATCH_ITEMS": "批量条目无效。",
@@ -60,5 +61,7 @@
   "INVALID_VNC_TOKEN": "VNC 令牌无效或已过期。",
   "VM_NOT_FOUND": "未找到虚拟机。",
   "VM_NOT_RUNNING": "虚拟机当前未运行。",
+  "DUPLICATE_PENDING_REQUEST": "该资源已经有一个待处理请求，工单号为 {{existing_ticket_id}}。请先到我的申请或审批任务中处理它。",
+  "BATCH_RATE_LIMITED": "批量操作触发限流，请在 {{retry_after_seconds}} 秒后重试。",
   "VM_MODIFY_REQUEST_REVIEW_REQUIRED": "批准更低的 limit 前，请先复核当前 CPU 和内存 request 值。"
 }

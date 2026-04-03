@@ -12,6 +12,13 @@ type ExternalCohort struct {
 // AuthProfileAttributes stores display-only external profile metadata.
 type AuthProfileAttributes map[string]interface{}
 
+type AuthDirectoryAuthorityMode string
+
+const (
+	AuthDirectoryAuthorityAuthoritative AuthDirectoryAuthorityMode = "authoritative"
+	AuthDirectoryAuthorityLoginOnly     AuthDirectoryAuthorityMode = "login_only"
+)
+
 type AuthInteractionType string
 
 const (
@@ -21,13 +28,14 @@ const (
 
 // AuthResult is the canonical runtime auth result consumed by core.
 type AuthResult struct {
-	ExternalID        string                `json:"external_id"`
-	Username          string                `json:"username"`
-	DisplayName       string                `json:"display_name"`
-	Email             string                `json:"email,omitempty"`
-	Enabled           bool                  `json:"enabled"`
-	Cohorts           []ExternalCohort      `json:"cohorts,omitempty"`
-	ProfileAttributes AuthProfileAttributes `json:"profile_attributes,omitempty"`
+	ExternalID         string                     `json:"external_id"`
+	Username           string                     `json:"username"`
+	DisplayName        string                     `json:"display_name"`
+	Email              string                     `json:"email,omitempty"`
+	Enabled            bool                       `json:"enabled"`
+	Cohorts            []ExternalCohort           `json:"cohorts,omitempty"`
+	ProfileAttributes  AuthProfileAttributes      `json:"profile_attributes,omitempty"`
+	DirectoryAuthority AuthDirectoryAuthorityMode `json:"directory_authority,omitempty"`
 }
 
 // AuthStartRequest carries core-owned login parameters into the provider.

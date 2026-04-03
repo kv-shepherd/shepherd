@@ -43,6 +43,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
     const [selectedSystemId, setSelectedSystemId] = useState<string>();
     const [addOpen, setAddOpen] = useState(false);
     const [memberCandidateSearch, setMemberCandidateSearch] = useState('');
+    const [rateLimitUserSearch, setRateLimitUserSearch] = useState('');
     const [createUserOpen, setCreateUserOpen] = useState(false);
     const [editUserOpen, setEditUserOpen] = useState(false);
     const [deletingUserId, setDeletingUserId] = useState<string>('');
@@ -59,6 +60,7 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
     const [roleBindingCreateForm] = Form.useForm<GlobalRoleBindingCreateRequest>();
     const deferredSearch = useDeferredValue(search.trim());
     const deferredMemberCandidateSearch = useDeferredValue(memberCandidateSearch.trim());
+    const deferredRateLimitUserSearch = useDeferredValue(rateLimitUserSearch.trim());
     const { scopeTargetOptionsByType, scopeTargetLoadingByType } = useScopeTargetCatalog(roleBindingCreateOpen);
 
     const usersQuery = useApiGet<UserList>(
@@ -103,6 +105,20 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
     const rateLimitStatusQuery = useApiGet<RateLimitStatusList>(
         ['admin-rate-limit-status'],
         () => api.GET('/admin/rate-limits/status')
+    );
+
+    const rateLimitUserCandidatesQuery = useApiGet<UserList>(
+        ['rate-limit-user-candidates', deferredRateLimitUserSearch],
+        () => api.GET('/admin/users', {
+            params: {
+                query: {
+                    page: 1,
+                    per_page: 50,
+                    ...(deferredRateLimitUserSearch ? { search: deferredRateLimitUserSearch } : {}),
+                },
+            },
+        }),
+        { enabled: true }
     );
 
     const roleBindingsQuery = useApiGet<GlobalRoleBindingList>(
@@ -434,6 +450,10 @@ export function useAdminUsersController({ t }: UseAdminUsersControllerArgs) {
         rateLimitStatus: rateLimitStatusQuery.data,
         rateLimitLoading: rateLimitStatusQuery.isLoading,
         refetchRateLimitStatus: rateLimitStatusQuery.refetch,
+        rateLimitUserCandidates: rateLimitUserCandidatesQuery.data,
+        rateLimitUserCandidatesLoading: rateLimitUserCandidatesQuery.isLoading || rateLimitUserCandidatesQuery.isFetching,
+        rateLimitUserSearch,
+        setRateLimitUserSearch,
         applyRateLimitExemption,
         removeRateLimitExemption,
         updateRateLimitOverride,

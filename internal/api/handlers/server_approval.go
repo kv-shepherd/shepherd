@@ -177,7 +177,7 @@ func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options t
 	tickets, err := query.
 		Offset(offset).
 		Limit(perPage).
-		Order(ent.Asc(entticket.FieldCreatedAt)).
+		Order(ent.Desc(entticket.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
 		if isRequestContextCanceled(err) {

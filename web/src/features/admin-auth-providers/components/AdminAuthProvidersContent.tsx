@@ -391,6 +391,10 @@ function directoryConflictCodeLabel(
       return t("authProviders.directory.conflict_code.same_external_identity", {
         defaultValue: "Same external identity",
       });
+    case "same_canonical_identity":
+      return t("authProviders.directory.conflict_code.same_canonical_identity", {
+        defaultValue: "Same canonical identity",
+      });
     case "username_conflict":
       return t("authProviders.directory.conflict_code.username_conflict", {
         defaultValue: "Username conflict",

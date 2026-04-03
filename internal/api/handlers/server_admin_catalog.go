@@ -162,14 +162,12 @@ var permissionCatalog = map[string]string{
 	"audit:read":                   "Read audit logs",
 	"auth_provider:configure":      "Create authentication providers",
 	"auth_provider:delete":         "Delete authentication providers",
-	"auth_provider:manage":         "Manage authentication providers (compat)",
 	"auth_provider:mapping_create": "Create external cohort mappings",
 	"auth_provider:mapping_delete": "Delete external cohort mappings",
 	"auth_provider:mapping_update": "Update external cohort mappings",
 	"auth_provider:read":           "Read authentication provider configuration",
 	"auth_provider:sync":           "Sync external cohorts for authentication providers",
 	"auth_provider:update":         "Update authentication providers",
-	"cluster:manage":               "Manage clusters (compat)",
 	"cluster:read":                 "Read clusters",
 	"cluster:write":                "Create, update, or delete clusters",
 	"instance_size:read":           "Read instance size catalog",
@@ -185,7 +183,6 @@ var permissionCatalog = map[string]string{
 	"system:read":                  "Read system information",
 	"system:write":                 "Update system information",
 	"ticket:view":                  "View platform work-order tickets",
-	"template:manage":              "Manage templates (compat)",
 	"template:read":                "Read template catalog",
 	"template:write":               "Create/update/delete templates",
 	"user:manage":                  "Manage local JWT users",
@@ -193,12 +190,80 @@ var permissionCatalog = map[string]string{
 	"vm:delete":                    "Submit VM deletion requests",
 	"vm:operate":                   "Operate VM power actions",
 	"vm:read":                      "Read VM information",
-	"vnc:access":                   "Request VNC console access",
+	"vnc:access":                   "Request interactive VM console access, including VNC and serial",
+}
+
+func (s *Server) deleteCatalogResourceWithActiveCreateGuard(
+	c *gin.Context,
+	actor string,
+	resourceID string,
+	resourceType string,
+	logFieldName string,
+	notFoundCode string,
+	activeConflictCode string,
+	activeConflictMessage string,
+	auditAction string,
+	loadFn func(context.Context) error,
+	countActiveFn func(context.Context) (int, error),
+	deleteFn func(context.Context) error,
+) {
+	ctx := c.Request.Context()
+
+	if err := loadFn(ctx); err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: notFoundCode})
+			return
+		}
+		logger.Error(
+			fmt.Sprintf("failed to load admin %s for delete", resourceType),
+			zap.Error(err),
+			zap.String(logFieldName, resourceID),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	activeCreateCount, err := countActiveFn(ctx)
+	if err != nil {
+		logger.Error(
+			fmt.Sprintf("failed to check %s active requests", resourceType),
+			zap.Error(err),
+			zap.String(logFieldName, resourceID),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if activeCreateCount > 0 {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    activeConflictCode,
+			Message: activeConflictMessage,
+			Params: map[string]interface{}{
+				"active_request_count": activeCreateCount,
+			},
+		})
+		return
+	}
+
+	if err := deleteFn(ctx); err != nil {
+		logger.Error(
+			fmt.Sprintf("failed to delete admin %s", resourceType),
+			zap.Error(err),
+			zap.String(logFieldName, resourceID),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if s.audit != nil {
+		_ = s.audit.LogAction(ctx, auditAction, resourceType, resourceID, actor, nil)
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 // ListAdminTemplates handles GET /admin/templates.
 func (s *Server) ListAdminTemplates(c *gin.Context, params generated.ListAdminTemplatesParams) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "template:read", "template:manage")
+	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "template:read", "template:write")
 	if !ok {
 		return
 	}
@@ -287,7 +352,7 @@ func (s *Server) ListAdminTemplates(c *gin.Context, params generated.ListAdminTe
 
 // CreateAdminTemplate handles POST /admin/templates.
 func (s *Server) CreateAdminTemplate(c *gin.Context) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "template:write", "template:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "template:write")
 	if !ok {
 		return
 	}
@@ -399,7 +464,7 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 
 // UpdateAdminTemplate handles PATCH /admin/templates/{template_id}.
 func (s *Server) UpdateAdminTemplate(c *gin.Context, templateID generated.TemplateID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "template:write", "template:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "template:write")
 	if !ok {
 		return
 	}
@@ -546,50 +611,31 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateID generated.Templa
 
 // DeleteAdminTemplate handles DELETE /admin/templates/{template_id}.
 func (s *Server) DeleteAdminTemplate(c *gin.Context, templateID generated.TemplateID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "template:write", "template:manage")
+	_, actor, ok := requireActorWithAnyGlobalPermission(c, "template:write")
 	if !ok {
 		return
 	}
-
-	tpl, err := s.client.Template.Get(ctx, templateID)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "TEMPLATE_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to get admin template for delete", zap.Error(err), zap.String("template_id", templateID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	activeCreateCount, err := s.countActiveCreateTicketsForTemplate(ctx, tpl.ID)
-	if err != nil {
-		logger.Error("failed to check template active requests", zap.Error(err), zap.String("template_id", tpl.ID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if activeCreateCount > 0 {
-		c.JSON(http.StatusConflict, generated.Error{
-			Code:    "TEMPLATE_HAS_ACTIVE_REQUESTS",
-			Message: "template is referenced by active VM create requests",
-			Params: map[string]interface{}{
-				"active_request_count": activeCreateCount,
-			},
-		})
-		return
-	}
-
-	if err := s.client.Template.DeleteOneID(templateID).Exec(ctx); err != nil {
-		logger.Error("failed to delete admin template", zap.Error(err), zap.String("template_id", templateID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "template.delete", "template", templateID, actor, nil)
-	}
-
-	c.Status(http.StatusNoContent)
+	s.deleteCatalogResourceWithActiveCreateGuard(
+		c,
+		actor,
+		templateID,
+		"template",
+		"template_id",
+		"TEMPLATE_NOT_FOUND",
+		"TEMPLATE_HAS_ACTIVE_REQUESTS",
+		"template is referenced by active VM create requests",
+		"template.delete",
+		func(ctx context.Context) error {
+			_, err := s.client.Template.Get(ctx, templateID)
+			return err
+		},
+		func(ctx context.Context) (int, error) {
+			return s.countActiveCreateTicketsForTemplate(ctx, templateID)
+		},
+		func(ctx context.Context) error {
+			return s.client.Template.DeleteOneID(templateID).Exec(ctx)
+		},
+	)
 }
 
 // ListAdminInstanceSizes handles GET /admin/instance-sizes.
@@ -910,50 +956,31 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeID generate
 
 // DeleteAdminInstanceSize handles DELETE /admin/instance-sizes/{instance_size_id}.
 func (s *Server) DeleteAdminInstanceSize(c *gin.Context, instanceSizeID generated.InstanceSizeID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "instance_size:write")
+	_, actor, ok := requireActorWithAnyGlobalPermission(c, "instance_size:write")
 	if !ok {
 		return
 	}
-
-	sz, err := s.client.InstanceSize.Get(ctx, instanceSizeID)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "INSTANCE_SIZE_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to get admin instance size for delete", zap.Error(err), zap.String("instance_size_id", instanceSizeID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	activeCreateCount, err := s.countActiveCreateTicketsForInstanceSize(ctx, sz.ID)
-	if err != nil {
-		logger.Error("failed to check instance size active requests", zap.Error(err), zap.String("instance_size_id", sz.ID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if activeCreateCount > 0 {
-		c.JSON(http.StatusConflict, generated.Error{
-			Code:    "INSTANCE_SIZE_HAS_ACTIVE_REQUESTS",
-			Message: "instance size is referenced by active VM create requests",
-			Params: map[string]interface{}{
-				"active_request_count": activeCreateCount,
-			},
-		})
-		return
-	}
-
-	if err := s.client.InstanceSize.DeleteOneID(instanceSizeID).Exec(ctx); err != nil {
-		logger.Error("failed to delete admin instance size", zap.Error(err), zap.String("instance_size_id", instanceSizeID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "instance_size.delete", "instance_size", instanceSizeID, actor, nil)
-	}
-
-	c.Status(http.StatusNoContent)
+	s.deleteCatalogResourceWithActiveCreateGuard(
+		c,
+		actor,
+		instanceSizeID,
+		"instance_size",
+		"instance_size_id",
+		"INSTANCE_SIZE_NOT_FOUND",
+		"INSTANCE_SIZE_HAS_ACTIVE_REQUESTS",
+		"instance size is referenced by active VM create requests",
+		"instance_size.delete",
+		func(ctx context.Context) error {
+			_, err := s.client.InstanceSize.Get(ctx, instanceSizeID)
+			return err
+		},
+		func(ctx context.Context) (int, error) {
+			return s.countActiveCreateTicketsForInstanceSize(ctx, instanceSizeID)
+		},
+		func(ctx context.Context) error {
+			return s.client.InstanceSize.DeleteOneID(instanceSizeID).Exec(ctx)
+		},
+	)
 }
 
 // ListRoles handles GET /admin/roles.
@@ -1162,46 +1189,27 @@ func (s *Server) DeleteRole(c *gin.Context, roleID generated.RoleID) {
 
 // ListPermissions handles GET /admin/permissions.
 func (s *Server) ListPermissions(c *gin.Context) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "rbac:read", "rbac:manage")
+	_, _, ok := requireActorWithAnyGlobalPermission(c, "rbac:read", "rbac:manage")
 	if !ok {
 		return
 	}
 
-	catalog := make(map[string]string, len(permissionCatalog))
-	for k, v := range permissionCatalog {
-		catalog[k] = v
-	}
-
-	roles, err := s.client.Role.Query().All(ctx)
-	if err != nil {
-		logger.Error("failed to query roles for permission catalog", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	for _, r := range roles {
-		for _, p := range r.Permissions {
-			if _, exists := catalog[p]; !exists {
-				catalog[p] = ""
-			}
-		}
-	}
-
-	keys := make([]string, 0, len(catalog))
-	for k := range catalog {
+	keys := make([]string, 0, len(permissionCatalog))
+	for k := range permissionCatalog {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
 	items := make([]generated.Permission, 0, len(keys))
 	for _, key := range keys {
-		items = append(items, generated.Permission{Key: key, Description: catalog[key]})
+		items = append(items, generated.Permission{Key: key, Description: permissionCatalog[key]})
 	}
 	c.JSON(http.StatusOK, generated.PermissionList{Items: items})
 }
 
 // ListAuthProviderTypes handles GET /admin/auth-provider-types.
 func (s *Server) ListAuthProviderTypes(c *gin.Context) {
-	_, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
+	_, _, ok := requireActorWithAnyAuthProviderPermission(c)
 	if !ok {
 		return
 	}
@@ -1223,13 +1231,12 @@ func (s *Server) ListAuthProviderTypes(c *gin.Context) {
 
 // ListAuthProviders handles GET /admin/auth-providers.
 func (s *Server) ListAuthProviders(c *gin.Context) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
+	ctx, _, ok := requireActorWithAnyAuthProviderPermission(c)
 	if !ok {
 		return
 	}
 	revealSensitive := hasGlobalPermission(c, "auth_provider:update") ||
-		hasGlobalPermission(c, "auth_provider:configure") ||
-		hasGlobalPermission(c, "auth_provider:manage")
+		hasGlobalPermission(c, "auth_provider:configure")
 
 	providers, err := s.client.AuthProvider.Query().
 		Order(ent.Asc(authprovider.FieldSortOrder), ent.Asc(authprovider.FieldName)).
@@ -1256,7 +1263,7 @@ func (s *Server) ListAuthProviders(c *gin.Context) {
 
 // CreateAuthProvider handles POST /admin/auth-providers.
 func (s *Server) CreateAuthProvider(c *gin.Context) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:configure", "auth_provider:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:configure")
 	if !ok {
 		return
 	}
@@ -1335,7 +1342,7 @@ func (s *Server) CreateAuthProvider(c *gin.Context) {
 
 // UpdateAuthProvider handles PATCH /admin/auth-providers/{provider_id}.
 func (s *Server) UpdateAuthProvider(c *gin.Context, providerID generated.ProviderID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:update", "auth_provider:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:update")
 	if !ok {
 		return
 	}
@@ -1421,7 +1428,7 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerID generated.Provide
 
 // DeleteAuthProvider handles DELETE /admin/auth-providers/{provider_id}.
 func (s *Server) DeleteAuthProvider(c *gin.Context, providerID generated.ProviderID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:delete", "auth_provider:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:delete")
 	if !ok {
 		return
 	}
@@ -1456,7 +1463,7 @@ func (s *Server) DeleteAuthProvider(c *gin.Context, providerID generated.Provide
 
 // TestAuthProviderConnection handles POST /admin/auth-providers/{provider_id}/test-connection.
 func (s *Server) TestAuthProviderConnection(c *gin.Context, providerID generated.ProviderID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:configure", "auth_provider:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:configure")
 	if !ok {
 		return
 	}
@@ -1498,7 +1505,7 @@ func (s *Server) TestAuthProviderConnection(c *gin.Context, providerID generated
 
 // GetAuthProviderSample handles GET /admin/auth-providers/{provider_id}/sample.
 func (s *Server) GetAuthProviderSample(c *gin.Context, providerID generated.ProviderID) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
+	ctx, _, ok := requireActorWithAnyAuthProviderPermission(c)
 	if !ok {
 		return
 	}
@@ -1557,7 +1564,7 @@ func (s *Server) GetAuthProviderSample(c *gin.Context, providerID generated.Prov
 
 // ListAuthProviderCohorts handles GET /admin/auth-providers/{provider_id}/cohorts.
 func (s *Server) ListAuthProviderCohorts(c *gin.Context, providerID generated.ProviderID) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
+	ctx, _, ok := requireActorWithAnyAuthProviderPermission(c)
 	if !ok {
 		return
 	}
@@ -1588,7 +1595,7 @@ func (s *Server) ListAuthProviderCohorts(c *gin.Context, providerID generated.Pr
 
 // SyncAuthProviderCohorts handles POST /admin/auth-providers/{provider_id}/cohorts/sync.
 func (s *Server) SyncAuthProviderCohorts(c *gin.Context, providerID generated.ProviderID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:sync", "auth_provider:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:sync")
 	if !ok {
 		return
 	}
@@ -1688,7 +1695,7 @@ func (s *Server) SyncAuthProviderCohorts(c *gin.Context, providerID generated.Pr
 
 // ListAuthProviderCohortMappings handles GET /admin/auth-providers/{provider_id}/cohort-mappings.
 func (s *Server) ListAuthProviderCohortMappings(c *gin.Context, providerID generated.ProviderID) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:read", "auth_provider:manage")
+	ctx, _, ok := requireActorWithAnyAuthProviderPermission(c)
 	if !ok {
 		return
 	}
@@ -1735,7 +1742,7 @@ func (s *Server) ListAuthProviderCohortMappings(c *gin.Context, providerID gener
 
 // CreateAuthProviderCohortMapping handles POST /admin/auth-providers/{provider_id}/cohort-mappings.
 func (s *Server) CreateAuthProviderCohortMapping(c *gin.Context, providerID generated.ProviderID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_create", "auth_provider:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_create")
 	if !ok {
 		return
 	}
@@ -1823,7 +1830,7 @@ func (s *Server) CreateAuthProviderCohortMapping(c *gin.Context, providerID gene
 
 // UpdateAuthProviderCohortMapping handles PATCH /admin/auth-providers/{provider_id}/cohort-mappings/{mapping_id}.
 func (s *Server) UpdateAuthProviderCohortMapping(c *gin.Context, providerID generated.ProviderID, mappingID generated.MappingID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_update", "auth_provider:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_update")
 	if !ok {
 		return
 	}
@@ -1903,7 +1910,7 @@ func (s *Server) UpdateAuthProviderCohortMapping(c *gin.Context, providerID gene
 
 // DeleteAuthProviderCohortMapping handles DELETE /admin/auth-providers/{provider_id}/cohort-mappings/{mapping_id}.
 func (s *Server) DeleteAuthProviderCohortMapping(c *gin.Context, providerID generated.ProviderID, mappingID generated.MappingID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_delete", "auth_provider:manage")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_delete")
 	if !ok {
 		return
 	}
@@ -2551,6 +2558,9 @@ func normalizePermissionKeys(raw []string) ([]string, error) {
 		}
 		if !permissionKeyPattern.MatchString(key) {
 			return nil, fmt.Errorf("invalid permission key format: %s", key)
+		}
+		if _, supported := permissionCatalog[key]; !supported {
+			return nil, fmt.Errorf("unsupported permission key: %s", key)
 		}
 		if _, exists := seen[key]; exists {
 			continue
