@@ -2186,6 +2186,10 @@ export interface components {
             cluster_id?: string;
             cluster_name?: string;
             cluster_environment?: string;
+            requester_display_name?: string;
+            requester_username?: string;
+            approver_display_name?: string;
+            approver_username?: string;
             vm_id?: string;
             vm_name?: string;
             /** @description VM status captured when the approval request was created. */
@@ -2219,6 +2223,14 @@ export interface components {
             cluster_id?: string;
             cluster_name?: string;
             cluster_environment?: string;
+            /** @description Preferred human-readable requester label, typically display name or username. */
+            requester_display_name?: string;
+            /** @description Requester username when available. */
+            requester_username?: string;
+            /** @description Preferred human-readable approver label, typically display name or username. */
+            approver_display_name?: string;
+            /** @description Approver username when available. */
+            approver_username?: string;
             vm_id?: string;
             vm_name?: string;
             /** @description VM status captured when the approval request was created. */
@@ -3245,13 +3257,25 @@ export interface components {
             resource_type: string;
             resource_id: string;
             actor: string;
+            actor_summary?: components["schemas"]["AuditActorSummary"];
             approval_decision?: string;
+            resource_summary?: components["schemas"]["AuditResourceSummary"];
+            ticket_summary?: components["schemas"]["TicketSummary"];
             placement_summary?: components["schemas"]["AuditPlacementSummary"];
             details?: {
                 [key: string]: unknown;
             };
             /** Format: date-time */
             created_at: string;
+        };
+        AuditActorSummary: {
+            display_name: string;
+            secondary?: string;
+        };
+        AuditResourceSummary: {
+            display_name: string;
+            secondary?: string;
+            tertiary?: string;
         };
         AuditPlacementSummary: {
             selected_cluster_name?: string;
@@ -6860,6 +6884,8 @@ export interface operations {
                 /** @description Fuzzy search across action, actor, resource type, and resource ID */
                 search?: string;
                 action?: string;
+                /** @description Curated activity category preset for common audit views */
+                category?: "requests" | "approvals" | "resource_changes" | "system_tasks";
                 actor?: string;
                 resource_type?: string;
                 resource_id?: string;

@@ -1,5 +1,8 @@
+export type AuditLogCategory = '' | 'requests' | 'approvals' | 'resource_changes' | 'system_tasks';
+
 export type AuditLogFilters = {
     search: string;
+    category: AuditLogCategory;
     action: string;
     approval_decision: string;
     actor: string;
@@ -14,6 +17,7 @@ export function buildAuditLogQuery(page: number, pageSize: number, filters: Audi
         page,
         per_page: pageSize,
         ...(filters.search ? { search: filters.search } : {}),
+        ...(filters.category ? { category: filters.category } : {}),
         ...(filters.action ? { action: filters.action } : {}),
         ...(filters.approval_decision ? { approval_decision: filters.approval_decision } : {}),
         ...(filters.actor ? { actor: filters.actor } : {}),

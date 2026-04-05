@@ -1233,7 +1233,7 @@ export function AdminAuthProvidersContent() {
             size="small"
             onClick={() => providers.openDirectorySyncJobDetail(record)}
           >
-            {t("common:button.details", {
+            {t("common:button.detail", {
               defaultValue: "Details",
             })}
           </Button>

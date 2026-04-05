@@ -100,8 +100,8 @@ export function SystemMembersModal({
                 <Popconfirm
                     title={t('message.confirm_remove_member')}
                     onConfirm={() => members.removeMember(record.user_id)}
-                    okText={t('button.confirm')}
-                    cancelText={t('button.cancel')}
+                    okText={t('common:button.confirm')}
+                    cancelText={t('common:button.cancel')}
                 >
                     <Button
                         type="link"
@@ -111,7 +111,7 @@ export function SystemMembersModal({
                         data-testid={`member-action-remove-${record.user_id}`}
                         loading={members.removeMemberPending}
                     >
-                        {t('button.delete')}
+                        {t('common:button.delete')}
                     </Button>
                 </Popconfirm>
             ),
@@ -120,7 +120,7 @@ export function SystemMembersModal({
 
     return open ? (
         <Modal
-            title={`${t('button.manage_members')}: ${systemName || ''}`}
+            title={`${t('common:button.manage_members')}: ${systemName || ''}`}
             open={true}
             onCancel={onCancel}
             footer={null}
@@ -134,7 +134,7 @@ export function SystemMembersModal({
                     data-testid="member-add-button"
                     onClick={members.openAddMemberModal}
                 >
-                    {t('button.add_member')}
+                    {t('common:button.add_member')}
                 </Button>
             </div>
 
@@ -162,7 +162,7 @@ export function SystemMembersModal({
 
             {members.addMemberOpen ? (
                 <Modal
-                    title={t('button.add_member')}
+                    title={t('common:button.add_member')}
                     open={true}
                     onOk={() => {
                         void members.submitAddMember();

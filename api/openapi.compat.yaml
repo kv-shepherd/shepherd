@@ -2848,6 +2848,12 @@ paths:
           in: query
           schema:
             type: string
+        - name: category
+          in: query
+          description: Curated activity category preset for common audit views
+          schema:
+            type: string
+            enum: [requests, approvals, resource_changes, system_tasks]
         - name: actor
           in: query
           schema:
@@ -4058,6 +4064,14 @@ components:
           type: string
         cluster_environment:
           type: string
+        requester_display_name:
+          type: string
+        requester_username:
+          type: string
+        approver_display_name:
+          type: string
+        approver_username:
+          type: string
         vm_id:
           type: string
         vm_name:
@@ -4116,6 +4130,18 @@ components:
           type: string
         cluster_environment:
           type: string
+        requester_display_name:
+          type: string
+          description: Preferred human-readable requester label, typically display name or username.
+        requester_username:
+          type: string
+          description: Requester username when available.
+        approver_display_name:
+          type: string
+          description: Preferred human-readable approver label, typically display name or username.
+        approver_username:
+          type: string
+          description: Approver username when available.
         vm_id:
           type: string
         vm_name:
@@ -6174,8 +6200,20 @@ components:
           type: string
         actor:
           type: string
+        actor_summary:
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: '#/components/schemas/AuditActorSummary'
         approval_decision:
           type: string
+        resource_summary:
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: '#/components/schemas/AuditResourceSummary'
+        ticket_summary:
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: '#/components/schemas/TicketSummary'
         placement_summary:
           x-go-type-skip-optional-pointer: false
           allOf:
@@ -6186,6 +6224,24 @@ components:
         created_at:
           type: string
           format: date-time
+    AuditActorSummary:
+      type: object
+      required: [display_name]
+      properties:
+        display_name:
+          type: string
+        secondary:
+          type: string
+    AuditResourceSummary:
+      type: object
+      required: [display_name]
+      properties:
+        display_name:
+          type: string
+        secondary:
+          type: string
+        tertiary:
+          type: string
     AuditPlacementSummary:
       type: object
       properties:

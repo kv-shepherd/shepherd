@@ -251,7 +251,7 @@ export function SystemsManagementContent() {
                             setDismissedQueryDetailSystemId(null);
                         }}
                     >
-                        {t('button.detail', 'Details')}
+                        {t('common:button.detail', { defaultValue: 'Details' })}
                     </Button>
                     <PermissionGuard permission="rbac:manage">
                         <Button
@@ -261,7 +261,7 @@ export function SystemsManagementContent() {
                             icon={<TeamOutlined />}
                             onClick={() => systems.openMembersModal(record)}
                         >
-                            {t('button.manage_members')}
+                            {t('common:button.manage_members')}
                         </Button>
                     </PermissionGuard>
                     <PermissionGuard permission="system:write">
@@ -273,7 +273,7 @@ export function SystemsManagementContent() {
                             loading={systems.updatePending && systems.editingSystem?.id === record.id}
                             onClick={() => systems.openEditModal(record)}
                         >
-                            {t('button.edit')}
+                            {t('common:button.edit')}
                         </Button>
                     </PermissionGuard>
                     <PermissionGuard permission="system:delete">
@@ -286,7 +286,7 @@ export function SystemsManagementContent() {
                             loading={systems.deletePending && systems.deletingSystem?.id === record.id}
                             onClick={() => systems.openDeleteModal(record)}
                         >
-                            {t('button.delete')}
+                            {t('common:button.delete')}
                         </Button>
                     </PermissionGuard>
                 </Space>
@@ -345,7 +345,7 @@ export function SystemsManagementContent() {
                 actions={(
                     <Space>
                         <Button icon={<ReloadOutlined />} onClick={() => systems.refetch()}>
-                            {t('button.refresh')}
+                            {t('common:button.refresh')}
                         </Button>
                         <PermissionGuard permission="system:write">
                             <Button
@@ -354,7 +354,7 @@ export function SystemsManagementContent() {
                                 data-testid="system-create-button"
                                 onClick={systems.openCreateModal}
                             >
-                                {t('button.create')}
+                                {t('common:button.create')}
                             </Button>
                         </PermissionGuard>
                     </Space>
@@ -439,7 +439,7 @@ export function SystemsManagementContent() {
                                                 data-testid="systems-advanced-search-submit"
                                                 onClick={() => applySearch()}
                                             >
-                                                {t('button.search')}
+                                                {t('common:button.search')}
                                             </Button>
                                         </Space>
                                     </Space>
@@ -447,7 +447,7 @@ export function SystemsManagementContent() {
                             }}
                             hasActiveFilters={systems.hasActiveFilters}
                             onClear={clearSearch}
-                            clearLabel={t('button.clear_filters', { defaultValue: 'Clear filters' })}
+                            clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
                         />
                     </div>
                     <Table<System>
@@ -633,7 +633,7 @@ export function SystemsManagementContent() {
                     danger: true,
                     disabled: systems.deleteConfirmName !== systems.deletingSystem?.name,
                 }}
-                okText={t('button.delete')}
+                okText={t('common:button.delete')}
                 data-testid="system-delete-modal"
             >
                 <Paragraph>
@@ -678,7 +678,7 @@ export function SystemsManagementContent() {
                         {t('systems.open_services', 'Open Services')}
                     </Button>,
                     <Button key="close" onClick={closeDetailModal}>
-                        {t('button.close', 'Close')}
+                        {t('common:button.close', { defaultValue: 'Close' })}
                     </Button>
                 ]}
                 width="min(1120px, calc(100vw - 16px))"
@@ -761,7 +761,7 @@ export function SystemsManagementContent() {
                                                     router.push(`/services?system_id=${service.system_id}&detail_service_id=${service.id}`);
                                                 }}
                                             >
-                                                {t('button.detail', 'Details')}
+                                                {t('common:button.detail', { defaultValue: 'Details' })}
                                             </Button>
                                             <Button
                                                 type="link"
@@ -771,7 +771,7 @@ export function SystemsManagementContent() {
                                                     router.push(`/vms?request=create&system_id=${service.system_id}&service_id=${service.id}`);
                                                 }}
                                             >
-                                                {t('button.request_vm')}
+                                                {t('common:button.request_vm')}
                                             </Button>
                                         </Space>
                                     ),

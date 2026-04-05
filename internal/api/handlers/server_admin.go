@@ -27,6 +27,53 @@ import (
 	"kv-shepherd.io/shepherd/internal/service"
 )
 
+var auditRequestActions = []string{
+	"vm.request",
+	"vm.delete_requested",
+	"vm.modify_requested",
+	"vm.start_requested",
+	"vm.stop_requested",
+	"vm.restart_requested",
+	"vm.batch.submit",
+	"vm.batch.power.submit",
+	"vnc.request_submitted",
+}
+
+var auditResourceChangeActions = []string{
+	"vm.create",
+	"vm.update",
+	"vm.delete",
+	"system.create",
+	"system.update",
+	"system.delete",
+	"service.create",
+	"service.update",
+	"service.delete",
+	"cluster.create",
+	"cluster.update",
+	"cluster.update_environment",
+	"cluster.delete",
+	"namespace.create",
+	"namespace.update",
+	"namespace.delete",
+	"template.create",
+	"template.update",
+	"template.delete",
+	"instance_size.create",
+	"instance_size.update",
+	"instance_size.delete",
+	"role.create",
+	"role.update",
+	"role.delete",
+	"system_member.update_role",
+	"auth_provider.create",
+	"auth_provider.update",
+	"auth_provider.delete",
+	"auth_provider.mapping.create",
+	"auth_provider.mapping.update",
+	"auth_provider.mapping.delete",
+}
+
 // kubeConfig is a minimal struct for parsing kubeconfig YAML.
 // Only the fields we need (clusters[].cluster.server) are defined.
 type kubeConfig struct {
@@ -795,6 +842,11 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 	if params.ResourceId != "" {
 		query = query.Where(auditlog.ResourceIDEQ(params.ResourceId))
 	}
+	if category := strings.TrimSpace(string(params.Category)); category != "" {
+		if categoryPredicate := auditCategoryPredicate(category); categoryPredicate != nil {
+			query = query.Where(categoryPredicate)
+		}
+	}
 	if decision := strings.TrimSpace(params.ApprovalDecision); decision != "" {
 		query = query.Where(
 			auditlog.ResourceTypeEQ("ticket"),
@@ -849,14 +901,30 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 		return
 	}
 
+	actorSummaries, resourceSummaries, ticketSummaries := s.buildAuditPresentation(ctx, logs)
 	items := make([]generated.AuditLog, 0, len(logs))
 	for _, l := range logs {
+		var actorSummary *generated.AuditActorSummary
+		if summary, ok := actorSummaries[strings.TrimSpace(l.Actor)]; ok {
+			summaryCopy := summary
+			actorSummary = &summaryCopy
+		}
+
+		var resourceSummary *generated.AuditResourceSummary
+		if summary, ok := resourceSummaries[newAuditResourceKey(l.ResourceType, l.ResourceID)]; ok {
+			summaryCopy := summary
+			resourceSummary = &summaryCopy
+		}
+
 		items = append(items, generated.AuditLog{
 			Id:               l.ID,
 			Action:           l.Action,
 			Actor:            l.Actor,
+			ActorSummary:     actorSummary,
 			ResourceType:     l.ResourceType,
 			ResourceId:       l.ResourceID,
+			ResourceSummary:  resourceSummary,
+			TicketSummary:    ticketSummaries[strings.TrimSpace(l.ResourceID)],
 			ApprovalDecision: auditStringField(l.Details, "decision"),
 			PlacementSummary: toAuditPlacementSummary(l.Details),
 			Details:          l.Details,
@@ -874,6 +942,21 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 			TotalPages: totalPages,
 		},
 	})
+}
+
+func auditCategoryPredicate(category string) predicate.AuditLog {
+	switch strings.ToLower(strings.TrimSpace(category)) {
+	case "requests":
+		return auditlog.ActionIn(auditRequestActions...)
+	case "approvals":
+		return auditlog.ActionHasPrefix("approval.")
+	case "resource_changes":
+		return auditlog.ActionIn(auditResourceChangeActions...)
+	case "system_tasks":
+		return auditlog.ActorHasPrefix("system:")
+	default:
+		return nil
+	}
 }
 
 func toAuditPlacementSummary(details map[string]interface{}) *generated.AuditPlacementSummary {

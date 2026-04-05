@@ -204,7 +204,7 @@ export function ServicesManagementContent() {
                                 setDismissedQueryDetailServiceId(null);
                             }}
                     >
-                        {t('button.detail', 'Details')}
+                        {t('common:button.detail', { defaultValue: 'Details' })}
                     </Button>
                     <PermissionGuard permission="service:create">
                         <Button
@@ -215,7 +215,7 @@ export function ServicesManagementContent() {
                             loading={services.updatePending && services.editingService?.id === record.id}
                             onClick={() => services.openEditModal(record)}
                         >
-                            {t('button.edit')}
+                            {t('common:button.edit')}
                         </Button>
                     </PermissionGuard>
                     <PermissionGuard permission="vm:create">
@@ -240,8 +240,8 @@ export function ServicesManagementContent() {
                         <Popconfirm
                             title={t('message.confirm_delete')}
                             onConfirm={() => services.submitDelete(record.system_id, record.id)}
-                            okText={t('button.confirm')}
-                            cancelText={t('button.cancel')}
+                            okText={t('common:button.confirm')}
+                            cancelText={t('common:button.cancel')}
                         >
                             <Button
                                 type="link"
@@ -251,7 +251,7 @@ export function ServicesManagementContent() {
                                 icon={<DeleteOutlined />}
                                 loading={services.deletePending}
                             >
-                                {t('button.delete')}
+                                {t('common:button.delete')}
                             </Button>
                         </Popconfirm>
                     </PermissionGuard>
@@ -286,7 +286,7 @@ export function ServicesManagementContent() {
                 actions={(
                     <Space>
                     <Button icon={<ReloadOutlined />} onClick={() => services.refetch()}>
-                        {t('button.refresh')}
+                        {t('common:button.refresh')}
                     </Button>
                     <PermissionGuard permission="service:create">
                         <Button
@@ -297,7 +297,7 @@ export function ServicesManagementContent() {
                                 services.openCreateModal();
                             }}
                         >
-                            {t('button.create')}
+                            {t('common:button.create')}
                         </Button>
                     </PermissionGuard>
                     </Space>
@@ -362,7 +362,7 @@ export function ServicesManagementContent() {
                                             data-testid="services-advanced-search-submit"
                                             onClick={() => applySearch()}
                                         >
-                                            {t('button.search')}
+                                            {t('common:button.search')}
                                         </Button>
                                         </Space>
                                     </Space>
@@ -370,7 +370,7 @@ export function ServicesManagementContent() {
                             }}
                             hasActiveFilters={services.hasActiveFilters}
                             onClear={clearSearch}
-                            clearLabel={t('button.clear_filters', 'Clear filters')}
+                            clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
                         />
                     </div>
                     <Table<Service>
@@ -575,7 +575,7 @@ export function ServicesManagementContent() {
                         {t('services.open_my_requests')}
                     </Button>,
                     <Button key="close" onClick={closeDetailModal}>
-                        {t('button.close', 'Close')}
+                        {t('common:button.close', { defaultValue: 'Close' })}
                     </Button>
                 ]}
                 width="min(1120px, calc(100vw - 16px))"

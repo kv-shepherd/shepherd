@@ -1,12 +1,17 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
-        t: (key: string, options?: { defaultValue?: string; total?: number }) => {
+        t: (key: string, options?: { defaultValue?: string; total?: number; count?: number }) => {
             const labels: Record<string, string> = {
                 'audit.title': 'Audit Logs',
                 'audit.subtitle': 'Review platform activity',
+                'audit.feed': 'Activity Feed',
+                'audit.context_title': 'Context',
+                'audit.view_details': 'Details',
+                'audit.drawer_title': 'Audit Event Details',
                 'common:button.refresh': 'Refresh',
                 'audit.filter.resource_type': 'Resource Type',
                 'audit.filter.action': 'Action',
@@ -17,18 +22,19 @@ vi.mock('react-i18next', () => ({
                 'audit.filter.resource_id': 'Resource ID',
                 'audit.search_placeholder': 'Search action, actor, resource type, or resource ID',
                 'audit.search_help': 'Quick search matches action, actor, resource type, and resource ID.',
+                'audit.preset.label': 'Quick views',
+                'audit.preset.all': 'All activity',
+                'audit.preset.requests': 'Requests',
+                'audit.preset.approvals': 'Approvals',
+                'audit.preset.resource_changes': 'Resource changes',
+                'audit.preset.system_tasks': 'System tasks',
+                'audit.context.batch_items': `${options?.count ?? 0} items`,
                 'audit.advanced_search_title': 'Advanced search',
                 'audit.advanced_search_help': 'Use advanced search for approval decisions, placement diagnostics, and exact resource context.',
                 'common:button.search': 'Search',
                 'common:button.clear': 'Clear',
                 'common:search.advanced': 'Advanced search',
                 'common:search.hide_advanced': 'Hide advanced search',
-                'audit.action': 'Action',
-                'audit.decision': 'Decision',
-                'audit.actor': 'Actor',
-                'audit.resource_type': 'Resource Type',
-                'audit.resource_id': 'Resource ID',
-                'audit.placement': 'Placement',
                 'common:table.created_at': 'Created',
                 'common:table.total': `Total ${options?.total ?? 0}`,
                 'audit.action_code.create': 'Create',
@@ -46,11 +52,31 @@ vi.mock('@/hooks/useApiQuery', () => ({
             items: [
                 {
                     id: 'audit-1',
-                    action: 'create',
+                    action: 'vm.create_requested',
                     actor: 'alice',
+                    actor_summary: {
+                        display_name: 'Alice Chen',
+                        secondary: 'alice · alice@example.com',
+                    },
                     resource_type: 'vm',
                     resource_id: 'vm-1',
+                    resource_summary: {
+                        display_name: 'vm-frontend-1',
+                        secondary: 'Platform / Checkout',
+                        tertiary: 'team-test · kubevirt-test02',
+                    },
                     approval_decision: 'approved',
+                    ticket_summary: {
+                        system_name: 'Platform',
+                        service_name: 'Checkout',
+                        namespace: 'team-test',
+                        cluster_name: 'kubevirt-test02',
+                        template_name: 'Ubuntu 22.04',
+                        instance_size_name: 'M4 Large',
+                        target_cpu_cores: 4,
+                        target_memory_gi: 8,
+                        target_disk_gb: 80,
+                    },
                     placement_summary: {
                         eligible: true,
                         selected_cluster_name: 'Cluster A',
@@ -59,6 +85,28 @@ vi.mock('@/hooks/useApiQuery', () => ({
                     details: {
                         debug_id: 'raw-details',
                     },
+                },
+                {
+                    id: 'audit-2',
+                    action: 'approval.batch_approved',
+                    actor: 'admin-1',
+                    actor_summary: {
+                        display_name: 'Default Administrator',
+                        secondary: 'admin',
+                    },
+                    resource_type: 'ticket',
+                    resource_id: '019d4d16-f738-7266-a8a7-99148343435f',
+                    approval_decision: 'batch_approved',
+                    ticket_summary: {
+                        batch_count: 2,
+                        requester_display_name: 'Default Administrator',
+                        requester_username: 'admin',
+                        approver_display_name: 'Default Administrator',
+                        approver_username: 'admin',
+                        namespace: 'gtest1',
+                    },
+                    created_at: '2026-04-02T04:41:00Z',
+                    details: {},
                 },
             ],
             pagination: { total: 1, page: 1, per_page: 20 },
@@ -83,8 +131,24 @@ describe('AdminAuditContent', () => {
         expect(screen.getByText('Audit Logs')).toBeVisible();
         expect(screen.getAllByText('Refresh')[0]).toBeVisible();
         expect(screen.getByPlaceholderText('Search action, actor, resource type, or resource ID')).toBeVisible();
+        expect(screen.getByText('Quick views')).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Requests' })).toBeVisible();
         expect(screen.getByText('Advanced search')).toBeVisible();
-        expect(screen.getByText('alice')).toBeVisible();
-        expect(screen.getByText('Eligible')).toBeVisible();
+        expect(screen.getByText('vm-frontend-1')).toBeVisible();
+        expect(screen.getByText((content) => content.includes('Alice Chen'))).toBeVisible();
+        expect(screen.getAllByText('2 items').length).toBeGreaterThan(0);
+        expect(screen.queryByText('019d4d16-f738-7266-a8a7-99148343435f')).not.toBeInTheDocument();
+        expect(screen.getByText('Cluster A')).toBeVisible();
+    });
+
+    it('opens a detail drawer with readable sections', async () => {
+        const user = userEvent.setup();
+        render(<AdminAuditContent />);
+
+        await user.click(screen.getAllByRole('button', { name: /details/i })[0]);
+
+        expect(screen.getByText('Audit Event Details')).toBeVisible();
+        expect(screen.getByText('Platform')).toBeVisible();
+        expect(screen.getByText('Ubuntu 22.04')).toBeVisible();
     });
 });

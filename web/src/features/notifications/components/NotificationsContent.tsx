@@ -180,7 +180,7 @@ export function NotificationsContent() {
                         icon={<ReloadOutlined />}
                         onClick={() => notifications.refetch()}
                     >
-                        {t('button.refresh')}
+                        {t('common:button.refresh')}
                     </Button>
                     <Button
                         type="primary"
@@ -290,7 +290,7 @@ export function NotificationsContent() {
                                         data-testid="notifications-advanced-search-submit"
                                         onClick={() => applyFilters()}
                                     >
-                                        {t('button.search')}
+                                        {t('common:button.search')}
                                     </Button>
                                     </Space>
                                 </Space>
@@ -305,7 +305,7 @@ export function NotificationsContent() {
                             setFiltersOpen(false);
                             notifications.setPage(1);
                         }}
-                        clearLabel={t('button.clear_filters', 'Clear filters')}
+                        clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
                     />
                 </div>
                 {filteredItems.length === 0 && !notifications.isLoading ? (

@@ -243,8 +243,8 @@ func TestListApprovals_CREATE_TicketPayloadPopulated(t *testing.T) {
 	svc := mustCreateService(t, client, "22222222-2222-2222-2222-222222222222", "checkout", sys.ID, "frontend")
 	templateID := "33333333-3333-3333-3333-" + uuid.NewString()[24:]
 	instanceSizeID := "44444444-4444-4444-4444-" + uuid.NewString()[24:]
-	mustCreateApprovalTemplate(t, client, templateID, "ubuntu-golden", "Ubuntu 22.04")
-	mustCreateApprovalInstanceSize(t, client, instanceSizeID, "m4.large", "M4 Large", 80, true)
+	mustCreateApprovalTemplate(t, client, templateID)
+	mustCreateApprovalInstanceSize(t, client, instanceSizeID)
 
 	// Seed DomainEvent with a CREATE-style payload (service_id, namespace, reason fields).
 	eventID := "ev-" + uuid.NewString()
@@ -361,8 +361,8 @@ func TestListApprovals_CREATE_BatchParentRequestPrefillPopulated(t *testing.T) {
 	svc := mustCreateService(t, client, "66666666-6666-6666-6666-666666666666", "checkout", sys.ID, "frontend")
 	templateID := "77777777-7777-7777-7777-" + uuid.NewString()[24:]
 	instanceSizeID := "88888888-8888-8888-8888-" + uuid.NewString()[24:]
-	mustCreateApprovalTemplate(t, client, templateID, "ubuntu-golden", "Ubuntu 22.04")
-	mustCreateApprovalInstanceSize(t, client, instanceSizeID, "m4.large", "M4 Large", 80, true)
+	mustCreateApprovalTemplate(t, client, templateID)
+	mustCreateApprovalInstanceSize(t, client, instanceSizeID)
 
 	eventID := "ev-batch-" + uuid.NewString()
 	createPayload := map[string]interface{}{
@@ -471,8 +471,8 @@ func TestListApprovals_DELETE_TicketPayloadAndVMTargetEnriched(t *testing.T) {
 	clusterID := "eeeeeeee-eeee-eeee-eeee-" + uuid.NewString()[24:]
 	createEventID := "ev-create-" + uuid.NewString()
 	createTicketID := "ticket-create-" + uuid.NewString()
-	mustCreateApprovalTemplate(t, client, templateID, "ubuntu-golden", "Ubuntu 22.04")
-	mustCreateApprovalInstanceSize(t, client, instanceSizeID, "m4.large", "M4 Large", 80, true)
+	mustCreateApprovalTemplate(t, client, templateID)
+	mustCreateApprovalInstanceSize(t, client, instanceSizeID)
 	mustCreateDomainEvent(t, client, createEventID, mustApprovalJSON(t, map[string]interface{}{
 		"service_id":       svc.ID,
 		"namespace":        "team-prod",
@@ -1181,13 +1181,13 @@ func mustCreateTicket(
 func mustCreateApprovalTemplate(
 	t *testing.T,
 	client *ent.Client,
-	id, name, displayName string,
+	id string,
 ) {
 	t.Helper()
 	_, err := client.Template.Create().
 		SetID(id).
-		SetName(name).
-		SetDisplayName(displayName).
+		SetName("ubuntu-golden").
+		SetDisplayName("Ubuntu 22.04").
 		SetCreatedBy("test-seed").
 		Save(t.Context())
 	if err != nil {
@@ -1198,24 +1198,18 @@ func mustCreateApprovalTemplate(
 func mustCreateApprovalInstanceSize(
 	t *testing.T,
 	client *ent.Client,
-	id, name, displayName string,
-	diskGB int,
-	dedicatedCPU bool,
+	id string,
 ) {
 	t.Helper()
 	create := client.InstanceSize.Create().
 		SetID(id).
-		SetName(name).
-		SetDisplayName(displayName).
+		SetName("m4.large").
+		SetDisplayName("M4 Large").
 		SetCPUCores(4).
 		SetMemoryGi(8).
+		SetDiskGB(80).
+		SetDedicatedCPU(true).
 		SetCreatedBy("test-seed")
-	if diskGB > 0 {
-		create = create.SetDiskGB(diskGB)
-	}
-	if dedicatedCPU {
-		create = create.SetDedicatedCPU(true)
-	}
 	if _, err := create.Save(t.Context()); err != nil {
 		t.Fatalf("create instance size %s: %v", id, err)
 	}
