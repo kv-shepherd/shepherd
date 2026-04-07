@@ -892,6 +892,175 @@ func TestListAuditLogs_BackfillsBatchTicketItemsFromChildTickets(t *testing.T) {
 	}
 }
 
+func TestListAuditLogs_BackfillsBatchCreateSummaryFromChildPayloadIDs(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	requester := mustCreateUser(t, client, "requester-batch-create", "alexchen")
+	if _, err := client.User.UpdateOneID(requester.ID).
+		SetDisplayName("Alex Chen").
+		SetEmail("alexchen@example.com").
+		SetEnabled(true).
+		Save(ctx); err != nil {
+		t.Fatalf("update requester: %v", err)
+	}
+	approver := mustCreateUser(t, client, "approver-batch-create", "admin")
+	if _, err := client.User.UpdateOneID(approver.ID).
+		SetDisplayName("Default Administrator").
+		SetEmail("admin@example.com").
+		SetEnabled(true).
+		Save(ctx); err != nil {
+		t.Fatalf("update approver: %v", err)
+	}
+
+	system, err := client.System.Create().
+		SetID("system-billing").
+		SetName("billing").
+		SetCreatedBy(requester.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create system: %v", err)
+	}
+	service, err := client.Service.Create().
+		SetID("service-api").
+		SetName("api").
+		SetSystem(system).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+
+	mustCreateApprovalTemplate(t, client, "template-batch-create")
+	mustCreateApprovalInstanceSize(t, client, "size-batch-create")
+
+	parentEventID := "event-parent-" + uuid.NewString()
+	parentTicketID := "ticket-parent-" + uuid.NewString()
+	mustCreateDomainEventWithAggregate(
+		t,
+		client,
+		parentEventID,
+		"ticket",
+		parentTicketID,
+		mustApprovalJSON(t, map[string]interface{}{
+			"items": []map[string]interface{}{
+				{},
+				{},
+			},
+			"batch_item_count": 2,
+		}),
+	)
+	mustCreateTicket(t, client, parentTicketID, parentEventID, entticket.OperationTypeCREATE, requester.ID)
+	if _, err := client.Ticket.UpdateOneID(parentTicketID).
+		SetApprover(approver.ID).
+		SetPlacementEvaluation(map[string]interface{}{
+			"selected_cluster_name":        "KubeVirt Test 02",
+			"selected_cluster_environment": "test",
+		}).
+		Save(ctx); err != nil {
+		t.Fatalf("update parent ticket: %v", err)
+	}
+
+	for idx := range 2 {
+		childEventID := fmt.Sprintf("event-child-create-%d-%s", idx+1, uuid.NewString())
+		mustCreateDomainEventWithAggregate(
+			t,
+			client,
+			childEventID,
+			"vm",
+			fmt.Sprintf("vm-create-%d", idx+1),
+			mustApprovalJSON(t, map[string]interface{}{
+				"service_id":       service.ID,
+				"template_id":      "template-batch-create",
+				"instance_size_id": "size-batch-create",
+				"namespace":        "team-test",
+				"owner_id":         requester.ID,
+			}),
+		)
+		if _, err := client.Ticket.Create().
+			SetID(fmt.Sprintf("ticket-child-create-%d-%s", idx+1, uuid.NewString())).
+			SetEventID(childEventID).
+			SetOperationType(entticket.OperationTypeCREATE).
+			SetStatus(entticket.StatusSUCCESS).
+			SetRequester(requester.ID).
+			SetApprover(approver.ID).
+			SetParentTicketID(parentTicketID).
+			Save(ctx); err != nil {
+			t.Fatalf("create child ticket: %v", err)
+		}
+	}
+
+	if _, err := client.AuditLog.Create().
+		SetID("audit-" + uuid.NewString()).
+		SetAction("approval.batch_approved").
+		SetResourceType("ticket").
+		SetResourceID(parentTicketID).
+		SetActor(approver.ID).
+		SetDetails(map[string]interface{}{"decision": "batch_approved"}).
+		Save(ctx); err != nil {
+		t.Fatalf("create audit log: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/audit-logs",
+		"",
+		"admin-1",
+		[]string{"audit:read", "platform:admin"},
+	)
+	srv.ListAuditLogs(c, generated.ListAuditLogsParams{})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.AuditLogList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("items len = %d, want 1", got)
+	}
+
+	item := resp.Items[0]
+	if item.TicketSummary == nil {
+		t.Fatal("ticket_summary = nil, want non-nil")
+	}
+	if item.TicketSummary.SystemName != "billing" {
+		t.Fatalf("ticket_summary.system_name = %q, want billing", item.TicketSummary.SystemName)
+	}
+	if item.TicketSummary.ServiceName != "api" {
+		t.Fatalf("ticket_summary.service_name = %q, want api", item.TicketSummary.ServiceName)
+	}
+	if item.TicketSummary.OwnerDisplayName != "Alex Chen" {
+		t.Fatalf("ticket_summary.owner_display_name = %q, want Alex Chen", item.TicketSummary.OwnerDisplayName)
+	}
+	if item.TicketSummary.TemplateName != "Ubuntu 22.04" {
+		t.Fatalf("ticket_summary.template_name = %q, want Ubuntu 22.04", item.TicketSummary.TemplateName)
+	}
+	if item.TicketSummary.InstanceSizeName != "M4 Large" {
+		t.Fatalf("ticket_summary.instance_size_name = %q, want M4 Large", item.TicketSummary.InstanceSizeName)
+	}
+	if item.TicketSummary.Namespace != "team-test" {
+		t.Fatalf("ticket_summary.namespace = %q, want team-test", item.TicketSummary.Namespace)
+	}
+	if item.TicketSummary.ClusterName != "KubeVirt Test 02" {
+		t.Fatalf("ticket_summary.cluster_name = %q, want KubeVirt Test 02", item.TicketSummary.ClusterName)
+	}
+	if item.TicketSummary.ClusterEnvironment != "test" {
+		t.Fatalf("ticket_summary.cluster_environment = %q, want test", item.TicketSummary.ClusterEnvironment)
+	}
+	if len(item.TicketSummary.Items) != 2 {
+		t.Fatalf("ticket_summary.items len = %d, want 2", len(item.TicketSummary.Items))
+	}
+	if item.TicketSummary.Items[0].SystemName != "billing" || item.TicketSummary.Items[0].ServiceName != "api" {
+		t.Fatalf("ticket_summary.items[0] scope = %q / %q, want billing / api", item.TicketSummary.Items[0].SystemName, item.TicketSummary.Items[0].ServiceName)
+	}
+	if item.TicketSummary.Items[0].TemplateName != "Ubuntu 22.04" || item.TicketSummary.Items[0].InstanceSizeName != "M4 Large" {
+		t.Fatalf("ticket_summary.items[0] catalog = %q / %q, want Ubuntu 22.04 / M4 Large", item.TicketSummary.Items[0].TemplateName, item.TicketSummary.Items[0].InstanceSizeName)
+	}
+}
+
 func TestListAuditLogs_InfersHistoricalBatchVMContextFromSparseEvents(t *testing.T) {
 	t.Parallel()
 

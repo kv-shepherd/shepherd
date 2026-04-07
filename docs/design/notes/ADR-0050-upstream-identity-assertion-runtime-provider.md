@@ -3,6 +3,10 @@
 > **Status**: Accepted (ADR-0050 accepted on 2026-03-23)
 > **Related ADR**: [ADR-0050](../../adr/ADR-0050-upstream-identity-assertion-runtime-provider.md)
 
+> **Implementation status note (2026-04-07)**:
+> public runtime contracts exist, but the generic public-host upstream-assertion
+> provider implementation is still deferred.
+
 ## Purpose
 
 This note captures implementation-facing details for a runtime auth provider

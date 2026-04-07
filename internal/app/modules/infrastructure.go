@@ -37,11 +37,6 @@ type Infrastructure struct {
 
 // NewInfrastructure initializes DB/pools and shared services.
 func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure, error) {
-	encryptionKey, err := cfg.Security.DecodeEncryptionKey()
-	if err != nil {
-		return nil, fmt.Errorf("decode encryption key: %w", err)
-	}
-
 	db, err := infrastructure.NewDatabaseClients(ctx, cfg.Database)
 	if err != nil {
 		return nil, fmt.Errorf("init database: %w", err)
@@ -53,6 +48,23 @@ func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure
 			db.Close()
 			return nil, fmt.Errorf("auto-migrate: %w", migrateErr)
 		}
+	}
+
+	resolvedSecurity, err := infrastructure.ResolveBootstrapSecuritySecrets(ctx, db.Pool, cfg.Security)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("resolve bootstrap security secrets: %w", err)
+	}
+	cfg.Security = resolvedSecurity
+	if validateErr := cfg.ValidateResolvedSecuritySecrets(); validateErr != nil {
+		db.Close()
+		return nil, fmt.Errorf("validate resolved security secrets: %w", validateErr)
+	}
+
+	encryptionKey, err := cfg.Security.DecodeEncryptionKey()
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("decode encryption key: %w", err)
 	}
 
 	pools, err := worker.NewPools(ctx, worker.PoolConfig{

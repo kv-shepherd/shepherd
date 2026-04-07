@@ -1,13 +1,16 @@
 # Design Note: Realtime Notification Acceleration (LISTEN/NOTIFY + SSE Hint)
 
-> Status: Proposed  
+> Status: Accepted ADR / implementation pending  
 > Related ADR: [ADR-0033](../../adr/ADR-0033-realtime-notification-acceleration.md)  
 > Owner: @jindyzhao  
 > Date: 2026-02-12
 
 ## Summary
 
-This note captures implementation impacts for the proposed ADR-0033 decision: add a non-authoritative realtime push acceleration path (PostgreSQL LISTEN/NOTIFY + SSE) while keeping existing polling as the canonical consistency mechanism.
+This note captures implementation impacts for the accepted ADR-0033 decision:
+add a non-authoritative realtime push acceleration path (PostgreSQL
+LISTEN/NOTIFY + SSE) while keeping existing polling as the canonical
+consistency mechanism.
 
 ## Scope
 

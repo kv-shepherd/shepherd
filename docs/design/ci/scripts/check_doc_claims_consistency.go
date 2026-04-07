@@ -11,18 +11,23 @@ import (
 )
 
 const (
-	phase4Checklist  = "docs/design/checklist/phase-4-checklist.md"
-	phase5Checklist  = "docs/design/checklist/phase-5-checklist.md"
-	phase5DesignDoc  = "docs/design/phases/05-auth-api-frontend.md"
-	phase4Governance = "docs/design/phases/04-governance.md"
-	openAPIFile      = "api/openapi.yaml"
-	approvalHandler  = "internal/api/handlers/server_approval.go"
-	rbacMiddleware   = "internal/api/middleware/rbac.go"
-	vmHandler        = "internal/api/handlers/server_vm.go"
-	namespaceHandler = "internal/api/handlers/server_namespace.go"
-	envVisibility    = "internal/api/handlers/environment_visibility.go"
-	memberHandler    = "internal/api/handlers/member.go"
-	usersPage        = "web/src/app/(protected)/admin/users/page.tsx"
+	phase4Checklist         = "docs/design/checklist/phase-4-checklist.md"
+	phase5Checklist         = "docs/design/checklist/phase-5-checklist.md"
+	phase5DesignDoc         = "docs/design/phases/05-auth-api-frontend.md"
+	phase4Governance        = "docs/design/phases/04-governance.md"
+	adr0025                 = "docs/adr/ADR-0025-secret-bootstrap.md"
+	adr0033                 = "docs/adr/ADR-0033-realtime-notification-acceleration.md"
+	adr0050                 = "docs/adr/ADR-0050-upstream-identity-assertion-runtime-provider.md"
+	openAPIFile             = "api/openapi.yaml"
+	approvalHandler         = "internal/api/handlers/server_approval.go"
+	rbacMiddleware          = "internal/api/middleware/rbac.go"
+	vmHandler               = "internal/api/handlers/server_vm.go"
+	namespaceHandler        = "internal/api/handlers/server_namespace.go"
+	envVisibility           = "internal/api/handlers/environment_visibility.go"
+	memberHandler           = "internal/api/handlers/member.go"
+	usersPage               = "web/src/app/(protected)/admin/users/page.tsx"
+	secretBootstrapResolver = "internal/infrastructure/security_bootstrap.go"
+	modulesInfrastructure   = "internal/app/modules/infrastructure.go"
 )
 
 var pathRe = regexp.MustCompile(`^\s{2}(/[^:]+):\s*$`)
@@ -47,6 +52,18 @@ func main() {
 			},
 			"docs/design/checklist/phase-2-checklist.md": {
 				"Interface definitions (`ApprovalProvider` in `internal/provider/auth.go`)",
+			},
+			adr0033: {
+				"Architecture review confirms recipient-scoped fan-out routing model is implemented (no global broadcast for user-scoped events).",
+				"Code review confirms DB-trigger-based emission exists for notification acceleration path and is covered by migration/test artifacts.",
+				"Integration tests cover:",
+				"Load tests validate that listener path does not affect write-path SLO.",
+			},
+			adr0050: {
+				"Runtime auth handlers resolve legacy upstream assertion providers via registry only.",
+				"Tests prove Shepherd rejects plain username-only handoff.",
+				"Tests prove a verified upstream assertion can normalize into canonical `AuthResult` and create/update users through JIT provisioning.",
+				"Authorization tests prove upstream claims do not bypass Shepherd RBAC.",
 			},
 		},
 	)...)
@@ -165,6 +182,16 @@ func main() {
 		}
 	}
 
+	hasBootstrapSecretsEvidence, err := hasBootstrapSecretPersistenceEvidence()
+	if err != nil {
+		fmt.Printf("FAIL: inspect bootstrap secret persistence evidence: %v\n", err)
+		os.Exit(1)
+	}
+	if !hasBootstrapSecretsEvidence {
+		violations = append(violations,
+			fmt.Sprintf("%s: accepted ADR still claims persisted bootstrap secrets, but runtime DB-backed bootstrap evidence is missing", adr0025))
+	}
+
 	if len(violations) > 0 {
 		fmt.Println("FAIL: doc claims consistency check failed")
 		for _, v := range violations {
@@ -215,7 +242,7 @@ func findForbiddenDocClaims(targets map[string][]string) []string {
 		for _, marker := range forbidden {
 			if strings.Contains(content, marker) {
 				violations = append(violations,
-					fmt.Sprintf("%s: stale provider-boundary claim still present: %s", path, marker))
+					fmt.Sprintf("%s: forbidden stale claim still present: %s", path, marker))
 			}
 		}
 	}
@@ -331,4 +358,21 @@ func hasAllowedEnvironmentFilteringEvidence() (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func hasBootstrapSecretPersistenceEvidence() (bool, error) {
+	resolverBytes, err := os.ReadFile(secretBootstrapResolver)
+	if err != nil {
+		return false, err
+	}
+	modulesBytes, err := os.ReadFile(modulesInfrastructure)
+	if err != nil {
+		return false, err
+	}
+
+	resolverText := string(resolverBytes)
+	modulesText := string(modulesBytes)
+	return strings.Contains(resolverText, "ResolveBootstrapSecuritySecrets(") &&
+		strings.Contains(resolverText, "system_secrets") &&
+		strings.Contains(modulesText, "ValidateResolvedSecuritySecrets("), nil
 }

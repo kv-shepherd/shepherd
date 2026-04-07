@@ -1,5 +1,5 @@
 import { Form } from 'antd';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -202,11 +202,12 @@ describe('AdminRbacContent', () => {
     });
 
     it('filters the role and permission tables with the shared quick search', async () => {
-        const user = userEvent.setup();
         render(<AdminRbacContent />);
 
-        await user.type(screen.getByTestId('rbac-quick-search'), 'viewer');
-        await user.click(screen.getAllByRole('button', { name: /search/i })[0]);
+        fireEvent.change(screen.getByTestId('rbac-quick-search'), {
+            target: { value: 'viewer' },
+        });
+        await userEvent.setup().click(screen.getAllByRole('button', { name: /search/i })[0]);
 
         expect(screen.getAllByText('Viewer').length).toBeGreaterThan(0);
         expect(screen.queryByText('Platform Admin')).not.toBeInTheDocument();

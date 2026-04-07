@@ -672,33 +672,123 @@ func (s *Server) loadApprovalBatchChildFallbackItems(
 		}
 	}
 
+	childTemplateIDSet := make(map[string]struct{})
+	childInstanceSizeIDSet := make(map[string]struct{})
+	childServiceIDSet := make(map[string]struct{})
+	childActorIDSet := make(map[string]struct{})
+	decodedPayloadByEventID := make(map[string]map[string]interface{}, len(eventPayloadByID))
+	for _, child := range children {
+		if child == nil {
+			continue
+		}
+		if requesterID := strings.TrimSpace(child.Requester); requesterID != "" {
+			childActorIDSet[requesterID] = struct{}{}
+		}
+		if approverID := strings.TrimSpace(child.Approver); approverID != "" {
+			childActorIDSet[approverID] = struct{}{}
+		}
+		raw := eventPayloadByID[child.EventID]
+		if len(raw) == 0 {
+			continue
+		}
+		var payload map[string]interface{}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			logger.Warn("failed to decode child ticket payload for batch audit summary fallback",
+				zap.String("ticket_id", child.ID),
+				zap.String("event_id", child.EventID),
+				zap.Error(err),
+			)
+			continue
+		}
+		decodedPayloadByEventID[child.EventID] = payload
+		collectCatalogIDsFromPayload(payload, childTemplateIDSet, childInstanceSizeIDSet)
+		collectServiceIDsFromPayload(payload, childServiceIDSet)
+		collectApprovalActorIDsFromPayload(payload, childActorIDSet)
+	}
+
+	resolvedTemplateByID := make(map[string]*ent.Template, len(templateByID))
+	for key, value := range templateByID {
+		resolvedTemplateByID[key] = value
+	}
+	resolvedInstanceSizeByID := make(map[string]*ent.InstanceSize, len(instanceSizeByID))
+	for key, value := range instanceSizeByID {
+		resolvedInstanceSizeByID[key] = value
+	}
+	missingTemplateIDs := make(map[string]struct{})
+	for templateID := range childTemplateIDSet {
+		if _, ok := resolvedTemplateByID[templateID]; !ok {
+			missingTemplateIDs[templateID] = struct{}{}
+		}
+	}
+	missingInstanceSizeIDs := make(map[string]struct{})
+	for instanceSizeID := range childInstanceSizeIDSet {
+		if _, ok := resolvedInstanceSizeByID[instanceSizeID]; !ok {
+			missingInstanceSizeIDs[instanceSizeID] = struct{}{}
+		}
+	}
+	if len(missingTemplateIDs) > 0 || len(missingInstanceSizeIDs) > 0 {
+		extraTemplateByID, extraInstanceSizeByID := s.loadApprovalCatalogLookups(
+			ctx,
+			sortedStringSet(missingTemplateIDs),
+			sortedStringSet(missingInstanceSizeIDs),
+		)
+		for key, value := range extraTemplateByID {
+			resolvedTemplateByID[key] = value
+		}
+		for key, value := range extraInstanceSizeByID {
+			resolvedInstanceSizeByID[key] = value
+		}
+	}
+
+	resolvedServiceByID := make(map[string]approvalServiceLookup, len(serviceByID))
+	for key, value := range serviceByID {
+		resolvedServiceByID[key] = value
+	}
+	missingServiceIDs := make(map[string]struct{})
+	for serviceID := range childServiceIDSet {
+		if _, ok := resolvedServiceByID[serviceID]; !ok {
+			missingServiceIDs[serviceID] = struct{}{}
+		}
+	}
+	if len(missingServiceIDs) > 0 {
+		for key, value := range s.loadApprovalServiceLookups(ctx, sortedStringSet(missingServiceIDs)) {
+			resolvedServiceByID[key] = value
+		}
+	}
+
+	resolvedActorByID := make(map[string]approvalActorLookup, len(actorByID))
+	for key, value := range actorByID {
+		resolvedActorByID[key] = value
+	}
+	missingActorIDs := make(map[string]struct{})
+	for actorID := range childActorIDSet {
+		if _, ok := resolvedActorByID[actorID]; !ok {
+			missingActorIDs[actorID] = struct{}{}
+		}
+	}
+	if len(missingActorIDs) > 0 {
+		for key, value := range s.loadApprovalActorLookupsByIDs(ctx, sortedStringSet(missingActorIDs)) {
+			resolvedActorByID[key] = value
+		}
+	}
+
 	byParentID := make(map[string][]generated.TicketItemSummary)
 	for _, child := range children {
 		if child == nil || strings.TrimSpace(child.ParentTicketID) == "" {
 			continue
 		}
-		var payload map[string]interface{}
-		if raw := eventPayloadByID[child.EventID]; len(raw) > 0 {
-			if err := json.Unmarshal(raw, &payload); err != nil {
-				logger.Warn("failed to decode child ticket payload for batch audit summary fallback",
-					zap.String("ticket_id", child.ID),
-					zap.String("event_id", child.EventID),
-					zap.Error(err),
-				)
-				continue
-			}
-		}
+		payload := decodedPayloadByEventID[child.EventID]
 		if payload == nil {
 			payload = map[string]interface{}{}
 		}
 		summary := buildTicketSummary(
 			child,
 			payload,
-			templateByID,
-			instanceSizeByID,
-			serviceByID,
+			resolvedTemplateByID,
+			resolvedInstanceSizeByID,
+			resolvedServiceByID,
 			vmByID,
-			actorByID,
+			resolvedActorByID,
 			nil,
 		)
 		if summary == nil {

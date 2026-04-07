@@ -115,40 +115,16 @@ vi.mock('@/hooks/useApiQuery', () => ({
                         owner_display_name: 'Default Administrator',
                         owner_username: 'admin',
                         namespace: 'gtest1',
+                        cluster_name: 'kubevirt-test02',
+                        cluster_environment: 'test',
                         template_name: 'Ubuntu 22.04',
                         instance_size_name: 'M4 Large',
                         target_cpu_cores: 4,
                         target_memory_gi: 8,
                         target_disk_gb: 80,
                         items: [
-                            {
-                                system_name: 'shop',
-                                service_name: 'redis',
-                                owner_display_name: 'Default Administrator',
-                                owner_username: 'admin',
-                                namespace: 'gtest1',
-                                cluster_name: 'kubevirt-test02',
-                                cluster_environment: 'test',
-                                template_name: 'Ubuntu 22.04',
-                                instance_size_name: 'M4 Large',
-                                target_cpu_cores: 4,
-                                target_memory_gi: 8,
-                                target_disk_gb: 80,
-                            },
-                            {
-                                system_name: 'shop',
-                                service_name: 'redis',
-                                owner_display_name: 'Default Administrator',
-                                owner_username: 'admin',
-                                namespace: 'gtest1',
-                                cluster_name: 'kubevirt-test02',
-                                cluster_environment: 'test',
-                                template_name: 'Ubuntu 22.04',
-                                instance_size_name: 'M4 Large',
-                                target_cpu_cores: 4,
-                                target_memory_gi: 8,
-                                target_disk_gb: 80,
-                            },
+                            {},
+                            {},
                         ],
                     },
                     created_at: '2026-04-02T04:41:00Z',
@@ -205,10 +181,11 @@ describe('AdminAuditContent', () => {
 
         await user.click(screen.getAllByRole('button', { name: /details/i })[1]);
 
-        expect(screen.getByText('Pending VM #1')).toBeVisible();
+        expect(screen.getByText('shop · redis · Pending VM #1')).toBeVisible();
         expect(screen.getAllByText('shop · redis').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Default Administrator · admin').length).toBeGreaterThan(0);
         expect(screen.getAllByText('gtest1 · kubevirt-test02 · test').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Ubuntu 22.04 · M4 Large · 4 vCPU · 8 Gi · 80 Gi').length).toBeGreaterThan(0);
         expect(screen.queryByText('019d4d16-f738-7266-a8a7-99148343435f')).not.toBeInTheDocument();
     });
 });

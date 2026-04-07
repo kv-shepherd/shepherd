@@ -559,6 +559,17 @@ func (s *Server) loadApprovalActorLookups(
 		userIDs = append(userIDs, userID)
 	}
 
+	return s.loadApprovalActorLookupsByIDs(ctx, userIDs)
+}
+
+func (s *Server) loadApprovalActorLookupsByIDs(
+	ctx context.Context,
+	userIDs []string,
+) map[string]approvalActorLookup {
+	if len(userIDs) == 0 {
+		return map[string]approvalActorLookup{}
+	}
+
 	users, err := s.client.User.Query().
 		Where(entuser.IDIn(userIDs...)).
 		All(ctx)
@@ -799,6 +810,31 @@ func collectServiceIDsFromPayload(
 		if serviceID := trimPayloadString(itemMap["service_id"]); serviceID != "" {
 			serviceIDs[serviceID] = struct{}{}
 		}
+	}
+}
+
+func collectApprovalActorIDsFromPayload(
+	payload map[string]interface{},
+	actorIDs map[string]struct{},
+) {
+	if len(payload) == 0 {
+		return
+	}
+	for _, key := range []string{"owner_id", "requester_id", "created_by", "actor"} {
+		if actorID := trimPayloadString(payload[key]); actorID != "" {
+			actorIDs[actorID] = struct{}{}
+		}
+	}
+	items, ok := payload["items"].([]interface{})
+	if !ok {
+		return
+	}
+	for _, item := range items {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		collectApprovalActorIDsFromPayload(itemMap, actorIDs)
 	}
 }
 

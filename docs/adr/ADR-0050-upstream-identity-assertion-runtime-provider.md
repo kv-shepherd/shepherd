@@ -210,13 +210,17 @@ implementation.
 * 🟡 Neutral, because some environments may still prefer a gateway or future IdP migration instead of this provider type.
 * ❌ Bad, because this does not magically solve environments where no trusted upstream assertion exists at all.
 
-### Confirmation
+### Completion Evidence (Implementation Deferred)
 
-* Runtime auth handlers resolve legacy upstream assertion providers via registry only.
-* No one-off legacy-system names appear in core runtime auth branches.
-* Tests prove Shepherd rejects plain username-only handoff.
-* Tests prove a verified upstream assertion can normalize into canonical `AuthResult` and create/update users through JIT provisioning.
-* Authorization tests prove upstream claims do not bypass Shepherd RBAC.
+The public runtime contract is accepted, but the generic public-host provider
+implementation is deferred. This ADR should only be considered implemented
+when all of the following evidence exists:
+
+* Runtime auth handlers must resolve legacy upstream assertion providers via registry only.
+* No one-off legacy-system names must appear in core runtime auth branches.
+* Tests must prove Shepherd rejects plain username-only handoff.
+* Tests must prove a verified upstream assertion can normalize into canonical `AuthResult` and create/update users through JIT provisioning.
+* Authorization tests must prove upstream claims do not bypass Shepherd RBAC.
 
 ---
 
@@ -271,6 +275,12 @@ Revisit this ADR if:
 * the project later standardizes a first-class shared-gateway mode across all deployments
 * a future accepted ADR defines a stronger common abstraction over token-userinfo and trusted-header modes
 
+Current public-repository status:
+
+* runtime auth contracts and plugin seams exist
+* a generic public upstream-assertion runtime provider does not yet exist
+* private or enterprise-specific implementations outside this repository do not count as completion evidence for the public host
+
 ---
 
 ## Changelog
@@ -279,3 +289,4 @@ Revisit this ADR if:
 |------|--------|--------|
 | 2026-03-21 | @jindyzhao | Initial draft |
 | 2026-03-23 | @jindyzhao | Marked accepted after the 48-hour review window closed |
+| 2026-04-07 | @jindyzhao | Corrected confirmation wording to distinguish accepted design from deferred implementation |

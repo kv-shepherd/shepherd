@@ -9,17 +9,14 @@
 package config
 
 import (
-	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/viper"
-	"go.uber.org/zap"
 )
 
 // Config is the root configuration structure.
@@ -118,7 +115,8 @@ type RiverConfig struct {
 }
 
 // SecurityConfig contains security-related settings.
-// ADR-0025: Auto-generate secrets on first boot if missing.
+// ADR-0025: explicit values may come from config/env; unresolved values are
+// completed later by runtime bootstrap using env > DB > generated persistence.
 type SecurityConfig struct {
 	EncryptionKey       string         `mapstructure:"encryption_key"`
 	SessionSecret       string         `mapstructure:"session_secret"` //nolint:gosec // Configuration schema intentionally models a secret field.
@@ -141,11 +139,6 @@ type WorkerConfig struct {
 	GeneralPoolSize int `mapstructure:"general_pool_size"`
 	K8sPoolSize     int `mapstructure:"k8s_pool_size"`
 }
-
-var (
-	bootstrapLoggerOnce sync.Once
-	bootstrapLogger     *zap.Logger
-)
 
 // Load reads configuration from file and environment variables.
 // ADR-0018: Standard environment variables without prefix (DATABASE_URL, SERVER_PORT, etc.).
@@ -182,11 +175,6 @@ func Load() (*Config, error) {
 	applyExplicitEnvOverrides(v, &cfg)
 	cfg.Server.AllowedOrigins = mergeAllowedOrigins(cfg.Server.AllowedOrigins, cfg.Server.PublicBaseURL)
 
-	// ADR-0025: Auto-generate secrets on first boot if missing.
-	if err := cfg.ensureSecrets(); err != nil {
-		return nil, fmt.Errorf("ensure secrets: %w", err)
-	}
-
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
@@ -196,10 +184,7 @@ func Load() (*Config, error) {
 
 // Validate checks for critical configuration errors.
 func (c *Config) Validate() error {
-	if c.Security.SessionSecret == "" {
-		return fmt.Errorf("security.session_secret must not be empty")
-	}
-	if len(c.Security.SessionSecret) < 32 {
+	if secret := strings.TrimSpace(c.Security.SessionSecret); secret != "" && len(secret) < 32 {
 		return fmt.Errorf("security.session_secret must be at least 32 characters")
 	}
 	if baseURL := strings.TrimSpace(c.Server.PublicBaseURL); baseURL != "" {
@@ -217,10 +202,24 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("server.public_base_url must not include query or fragment")
 		}
 	}
-	if _, err := c.Security.DecodeEncryptionKey(); err != nil {
-		return err
+	if key := strings.TrimSpace(c.Security.EncryptionKey); key != "" {
+		if _, err := c.Security.DecodeEncryptionKey(); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// ValidateResolvedSecuritySecrets validates the runtime-required security
+// values after bootstrap secret resolution has completed.
+func (c *Config) ValidateResolvedSecuritySecrets() error {
+	if strings.TrimSpace(c.Security.SessionSecret) == "" {
+		return fmt.Errorf("security.session_secret must not be empty")
+	}
+	if strings.TrimSpace(c.Security.EncryptionKey) == "" {
+		return fmt.Errorf("security.encryption_key must not be empty")
+	}
+	return c.Validate()
 }
 
 // DecodeEncryptionKey decodes the configured AES-256-GCM key.
@@ -238,58 +237,6 @@ func (c SecurityConfig) DecodeEncryptionKey() ([]byte, error) {
 		return nil, fmt.Errorf("security.encryption_key must decode to 32 bytes, got %d", len(raw))
 	}
 	return raw, nil
-}
-
-// ensureSecrets auto-generates missing secrets per ADR-0025.
-func (c *Config) ensureSecrets() error {
-	if c.Security.SessionSecret == "" {
-		secret, err := generateSecureRandomHex(32)
-		if err != nil {
-			return fmt.Errorf("auto-generate session secret: %w", err)
-		}
-		c.Security.SessionSecret = secret
-		logBootstrapWarn(
-			"auto-generated session_secret (ADR-0025); set SECURITY_SESSION_SECRET env var for persistence",
-			zap.Int("length", len(secret)),
-		)
-	}
-	if c.Security.EncryptionKey == "" {
-		key, err := generateSecureRandomHex(32)
-		if err != nil {
-			return fmt.Errorf("auto-generate encryption key: %w", err)
-		}
-		c.Security.EncryptionKey = key
-		logBootstrapWarn(
-			"auto-generated encryption_key (ADR-0025); set SECURITY_ENCRYPTION_KEY env var for persistence",
-			zap.Int("length", len(key)),
-		)
-	}
-	return nil
-}
-
-func logBootstrapWarn(msg string, fields ...zap.Field) {
-	bootstrapLoggerOnce.Do(func() {
-		cfg := zap.NewProductionConfig()
-		cfg.Level = zap.NewAtomicLevelAt(zap.WarnLevel)
-
-		l, err := cfg.Build()
-		if err != nil {
-			bootstrapLogger = zap.NewNop()
-			return
-		}
-		bootstrapLogger = l
-	})
-
-	bootstrapLogger.Warn(msg, fields...)
-}
-
-// generateSecureRandomHex produces a hex-encoded string of n random bytes.
-func generateSecureRandomHex(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("crypto/rand: %w", err)
-	}
-	return hex.EncodeToString(b), nil
 }
 
 func setDefaults(v *viper.Viper) {

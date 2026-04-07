@@ -119,18 +119,22 @@ The proposal is feasible only as a **non-authoritative acceleration layer** over
 * 🟡 Neutral, because implementation still needs operational handling (listener lifecycle/reconnect/monitoring).
 * ❌ Bad, because push is not exactly-once and not replayable by itself (mitigated by canonical polling fallback).
 
-### Confirmation
+### Completion Evidence (Implementation Pending)
 
-* Architecture review confirms `master-flow` poll truth is preserved.
-* Architecture review confirms recipient-scoped fan-out routing model is implemented (no global broadcast for user-scoped events).
-* Code review/CI confirms no UseCase-level manual push calls.
-* Code review confirms DB-trigger-based emission exists for notification acceleration path and is covered by migration/test artifacts.
-* Integration tests cover:
+The architectural decision is accepted, but the realtime acceleration path is
+not yet implemented in the public host repository. This ADR should only be
+considered implemented when all of the following evidence exists:
+
+* Architecture review must confirm `master-flow` poll truth is preserved.
+* Architecture review must confirm recipient-scoped fan-out routing is implemented (no global broadcast for user-scoped events).
+* Code review/CI must confirm no UseCase-level manual push calls.
+* Code review must confirm DB-trigger-based emission exists for the notification acceleration path and is covered by migration/test artifacts.
+* Integration tests must cover:
   - push received -> client refetch -> UI update
   - push dropped/disconnected -> polling catches up
   - listener reconnect behavior
   - cross-user isolation (user A must not receive user B hint events)
-* Load tests validate that listener path does not affect write-path SLO.
+* Load tests must validate that listener path does not affect write-path SLO.
 
 ---
 
@@ -201,3 +205,4 @@ These details should be captured in phase docs after ADR acceptance.
 |------|--------|--------|
 | 2026-02-12 | @jindyzhao | Initial draft |
 | 2026-02-12 | @jindyzhao | Added routing/fan-out rules, DB-trigger emission requirement, payload governance, and ADR-0031 execution constraints |
+| 2026-04-07 | @jindyzhao | Corrected confirmation wording to distinguish accepted design from not-yet-landed implementation |

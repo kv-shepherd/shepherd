@@ -558,22 +558,32 @@ function buildTicketBatchItemCards(summary: TicketSummary, t: AuditTranslation):
     lines: Array<{ label: string; value: string }>;
 }> {
     return (summary.items ?? []).map((item, index) => {
-        const scope = joinAuditParts(item.system_name, item.service_name);
-        const target = joinAuditParts(item.namespace, item.cluster_name, item.cluster_environment);
-        const owner = ticketItemOwnerLabel(item);
-        const requested = joinAuditParts(
-            item.template_name,
-            item.instance_size_name,
-            summarizeTargetResources(item),
-            item.power_action,
+        const pendingLabel = t('audit.batch_item.pending_vm', {
+            defaultValue: 'Pending VM #{{count}}',
+            count: index + 1,
+        });
+        const scope = joinAuditParts(
+            item.system_name || summary.system_name,
+            item.service_name || summary.service_name,
         );
+        const target = joinAuditParts(
+            item.namespace || summary.namespace,
+            item.cluster_name || summary.cluster_name,
+            item.cluster_environment || summary.cluster_environment,
+        );
+        const owner = ticketItemOwnerLabel(item) || ticketOwnerLabel(summary);
+        const requested = joinAuditParts(
+            item.template_name || summary.template_name,
+            item.instance_size_name || summary.instance_size_name,
+            summarizeTargetResources(item) || summarizeTargetResources(summary),
+            item.power_action || summary.power_action,
+        );
+        const title = item.vm_name || joinAuditParts(scope, pendingLabel) || pendingLabel;
+        const subtitle = item.vm_name ? scope : joinAuditParts(target, requested);
         return {
             key: item.vm_id || item.vm_name || `${index}`,
-            title: item.vm_name || t('audit.batch_item.pending_vm', {
-                defaultValue: 'Pending VM #{{count}}',
-                count: index + 1,
-            }),
-            subtitle: item.vm_name ? scope : joinAuditParts(scope, requested),
+            title,
+            subtitle,
             lines: [
                 { label: 'audit.context.scope', value: scope },
                 { label: 'audit.context.owner', value: owner },

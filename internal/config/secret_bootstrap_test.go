@@ -1,78 +1,63 @@
 package config
 
-import (
-	"testing"
-)
+import "testing"
 
-func TestEnsureSecrets_GeneratesMissingValues(t *testing.T) {
+func TestConfigValidate_AllowsMissingRuntimeSecretsBeforeBootstrap(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{}
-	if err := cfg.ensureSecrets(); err != nil {
-		t.Fatalf("ensureSecrets() error = %v", err)
-	}
-
-	if cfg.Security.SessionSecret == "" {
-		t.Fatal("session secret should be auto-generated")
-	}
-	if cfg.Security.EncryptionKey == "" {
-		t.Fatal("encryption key should be auto-generated")
-	}
-	// 32 random bytes hex-encoded -> 64 chars.
-	if len(cfg.Security.SessionSecret) != 64 {
-		t.Fatalf("session secret length = %d, want 64", len(cfg.Security.SessionSecret))
-	}
-	if len(cfg.Security.EncryptionKey) != 64 {
-		t.Fatalf("encryption key length = %d, want 64", len(cfg.Security.EncryptionKey))
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil before bootstrap secret resolution", err)
 	}
 }
 
-func TestEnsureSecrets_PreservesProvidedValues(t *testing.T) {
+func TestConfigValidateResolvedSecuritySecrets_RejectsMissingValues(t *testing.T) {
 	t.Parallel()
 
-	cfg := &Config{
-		Security: SecurityConfig{
-			SessionSecret: "abcdefghijklmnopqrstuvwxyzABCDEF123456", // 38 chars
-			EncryptionKey: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		},
-	}
-
-	if err := cfg.ensureSecrets(); err != nil {
-		t.Fatalf("ensureSecrets() error = %v", err)
-	}
-
-	if got := cfg.Security.SessionSecret; got != "abcdefghijklmnopqrstuvwxyzABCDEF123456" {
-		t.Fatalf("session secret changed unexpectedly: %q", got)
-	}
-	if got := cfg.Security.EncryptionKey; got != "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
-		t.Fatalf("encryption key changed unexpectedly: %q", got)
+	cfg := &Config{}
+	if err := cfg.ValidateResolvedSecuritySecrets(); err == nil {
+		t.Fatal("ValidateResolvedSecuritySecrets() expected error for missing secrets, got nil")
 	}
 }
 
-func TestConfigValidate_RejectsShortSessionSecret(t *testing.T) {
+func TestConfigValidateResolvedSecuritySecrets_RejectsShortSessionSecret(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{
 		Security: SecurityConfig{
 			SessionSecret: "short-secret",
-			EncryptionKey: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			EncryptionKey: "3031323334353637383961626364656630313233343536373839616263646566",
 		},
 	}
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("Validate() expected error for short session secret, got nil")
+	if err := cfg.ValidateResolvedSecuritySecrets(); err == nil {
+		t.Fatal("ValidateResolvedSecuritySecrets() expected error for short session secret, got nil")
 	}
 }
 
-func TestConfigValidate_RejectsInvalidEncryptionKey(t *testing.T) {
+func TestConfigValidateResolvedSecuritySecrets_RejectsInvalidEncryptionKey(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{
 		Security: SecurityConfig{
-			SessionSecret: "abcdefghijklmnopqrstuvwxyzABCDEF123456",
+			SessionSecret: "session-secret-1234567890123456789012",
 			EncryptionKey: "not-hex",
 		},
 	}
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("Validate() expected error for invalid encryption key, got nil")
+	if err := cfg.ValidateResolvedSecuritySecrets(); err == nil {
+		t.Fatal("ValidateResolvedSecuritySecrets() expected error for invalid encryption key, got nil")
+	}
+}
+
+func TestConfigValidateResolvedSecuritySecrets_AcceptsResolvedValues(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Security: SecurityConfig{
+			SessionSecret: "session-secret-1234567890123456789012",
+			EncryptionKey: "3031323334353637383961626364656630313233343536373839616263646566",
+		},
+	}
+	if err := cfg.ValidateResolvedSecuritySecrets(); err != nil {
+		t.Fatalf("ValidateResolvedSecuritySecrets() error = %v", err)
 	}
 }
