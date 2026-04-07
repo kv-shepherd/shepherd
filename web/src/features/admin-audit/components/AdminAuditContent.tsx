@@ -377,7 +377,7 @@ function buildAuditFeedMeta(record: AuditLog, t: AuditTranslation): string[] {
     if (record.resource_type === 'ticket') {
         return listAuditParts(
             buildTicketScope(record.ticket_summary),
-            buildTicketTarget(record.ticket_summary, t),
+            buildTicketTarget(record.ticket_summary),
             ticketBatchLabel(record.ticket_summary, t),
             ticketRequesterLabel(record.ticket_summary),
             ticketApproverLabel(record.ticket_summary),
@@ -448,6 +448,14 @@ function ticketApproverLabel(summary?: TicketSummary): string {
     return joinAuditParts(summary?.approver_display_name, summary?.approver_username);
 }
 
+function ticketOwnerLabel(summary?: TicketSummary): string {
+    return joinAuditParts(summary?.owner_display_name, summary?.owner_username);
+}
+
+function ticketItemOwnerLabel(item?: TicketItemSummary): string {
+    return joinAuditParts(item?.owner_display_name, item?.owner_username);
+}
+
 function ticketBatchLabel(summary: TicketSummary | undefined, t: AuditTranslation): string {
     const count = summary?.batch_count ?? 0;
     if (count <= 1) {
@@ -494,7 +502,7 @@ function buildTicketScope(summary: TicketSummary | undefined): string {
     );
 }
 
-function buildTicketTarget(summary: TicketSummary | undefined, t: AuditTranslation): string {
+function buildTicketTarget(summary: TicketSummary | undefined): string {
     if (!summary) {
         return '';
     }
@@ -504,11 +512,13 @@ function buildTicketTarget(summary: TicketSummary | undefined, t: AuditTranslati
     const environments = uniqueTicketItemValues(summary, (item) => item.cluster_environment ?? '');
     if ((summary.batch_count ?? 0) > 1) {
         return joinAuditParts(
-            ticketBatchLabel(summary, t),
             summarizeOverflow(vmNames),
             summarizeOverflow(namespaces),
             summarizeOverflow(clusterNames, 1),
             summarizeOverflow(environments, 1),
+            !namespaces.length ? summary.namespace : '',
+            !clusterNames.length ? summary.cluster_name : '',
+            !environments.length ? summary.cluster_environment : '',
         );
     }
     return joinAuditParts(
@@ -541,25 +551,37 @@ function buildTicketRequestedChange(summary: TicketSummary | undefined): string 
     return summarizeOverflow(itemChanges);
 }
 
-function buildTicketBatchItemCards(summary: TicketSummary): Array<{
+function buildTicketBatchItemCards(summary: TicketSummary, t: AuditTranslation): Array<{
     key: string;
     title: string;
-    scope: string;
-    target: string;
-    requested: string;
+    subtitle: string;
+    lines: Array<{ label: string; value: string }>;
 }> {
-    return (summary.items ?? []).map((item, index) => ({
-        key: item.vm_id || item.vm_name || `${index}`,
-        title: item.vm_name || item.namespace || `${index + 1}`,
-        scope: joinAuditParts(item.system_name, item.service_name),
-        target: joinAuditParts(item.namespace, item.cluster_name, item.cluster_environment),
-        requested: joinAuditParts(
+    return (summary.items ?? []).map((item, index) => {
+        const scope = joinAuditParts(item.system_name, item.service_name);
+        const target = joinAuditParts(item.namespace, item.cluster_name, item.cluster_environment);
+        const owner = ticketItemOwnerLabel(item);
+        const requested = joinAuditParts(
             item.template_name,
             item.instance_size_name,
             summarizeTargetResources(item),
             item.power_action,
-        ),
-    }));
+        );
+        return {
+            key: item.vm_id || item.vm_name || `${index}`,
+            title: item.vm_name || t('audit.batch_item.pending_vm', {
+                defaultValue: 'Pending VM #{{count}}',
+                count: index + 1,
+            }),
+            subtitle: item.vm_name ? scope : joinAuditParts(scope, requested),
+            lines: [
+                { label: 'audit.context.scope', value: scope },
+                { label: 'audit.context.owner', value: owner },
+                { label: 'audit.context.target', value: target },
+                { label: 'audit.context.requested_change', value: requested },
+            ].filter((line) => line.value),
+        };
+    });
 }
 
 function buildContextRows(record: AuditLog, t: AuditTranslation): Array<{ key: string; label: string; value: string }> {
@@ -615,6 +637,14 @@ function buildContextRows(record: AuditLog, t: AuditTranslation): Array<{ key: s
                 value: approver,
             });
         }
+        const owner = ticketOwnerLabel(summary);
+        if (owner) {
+            rows.push({
+                key: 'owner',
+                label: t('audit.context.owner', { defaultValue: 'Owner' }),
+                value: owner,
+            });
+        }
         const scope = buildTicketScope(summary);
         if (scope) {
             rows.push({
@@ -624,7 +654,7 @@ function buildContextRows(record: AuditLog, t: AuditTranslation): Array<{ key: s
             });
         }
 
-        const target = buildTicketTarget(summary, t);
+        const target = buildTicketTarget(summary);
         if (target) {
             rows.push({
                 key: 'target',
@@ -828,6 +858,11 @@ function buildAuditOverviewItems(record: AuditLog, t: AuditTranslation): Descrip
                 label: t('audit.detail_label.approver', { defaultValue: 'Approver' }),
                 children: ticketApproverLabel(record.ticket_summary) || '—',
             },
+            {
+                key: 'owner',
+                label: t('audit.context.owner', { defaultValue: 'Owner' }),
+                children: ticketOwnerLabel(record.ticket_summary) || '—',
+            },
             timeItem,
             auditIdItem,
             {
@@ -915,6 +950,7 @@ function buildAuditTicketItems(summary: TicketSummary, t: AuditTranslation): Des
     push('namespace', summary.namespace);
     push('cluster_name', summary.cluster_name || summary.cluster_id);
     push('cluster_environment', summary.cluster_environment);
+    push('owner_display_name', ticketOwnerLabel(summary));
     push('vm_name', summary.vm_name || summary.vm_id);
     push('template_name', summary.template_name || summary.template_id);
     push('instance_size_name', summary.instance_size_name || summary.instance_size_id);
@@ -1286,7 +1322,7 @@ export function AdminAuditContent() {
         ? (buildAuditTicketItems(selectedLog.ticket_summary, t) ?? [])
         : [];
     const batchItemCards = selectedLog?.ticket_summary
-        ? buildTicketBatchItemCards(selectedLog.ticket_summary)
+        ? buildTicketBatchItemCards(selectedLog.ticket_summary, t)
         : [];
     const placementItems: NonNullable<DescriptionsProps['items']> = selectedLog?.placement_summary
         ? (buildAuditPlacementItems(selectedLog.placement_summary, t) ?? [])
@@ -1614,21 +1650,21 @@ export function AdminAuditContent() {
                                             <Text strong className="audit-batch-item-card__title">
                                                 {item.title}
                                             </Text>
-                                            {item.scope ? (
+                                            {item.subtitle ? (
                                                 <Text type="secondary" className="audit-batch-item-card__meta">
-                                                    {item.scope}
+                                                    {item.subtitle}
                                                 </Text>
                                             ) : null}
-                                            {item.target ? (
-                                                <Text className="audit-batch-item-card__line">
-                                                    {item.target}
-                                                </Text>
-                                            ) : null}
-                                            {item.requested ? (
-                                                <Text className="audit-batch-item-card__line">
-                                                    {item.requested}
-                                                </Text>
-                                            ) : null}
+                                            {item.lines.map((line) => (
+                                                <div key={line.label} className="audit-batch-item-card__line">
+                                                    <Text type="secondary" className="audit-batch-item-card__line-label">
+                                                        {t(line.label, { defaultValue: line.label })}
+                                                    </Text>
+                                                    <Text className="audit-batch-item-card__line-value">
+                                                        {line.value}
+                                                    </Text>
+                                                </div>
+                                            ))}
                                         </div>
                                     ))}
                                 </div>

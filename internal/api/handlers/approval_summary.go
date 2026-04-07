@@ -19,16 +19,18 @@ import (
 )
 
 type approvalServiceLookup struct {
-	ServiceID   string
-	ServiceName string
-	SystemID    string
-	SystemName  string
+	ServiceID     string
+	ServiceName   string
+	SystemID      string
+	SystemName    string
+	SystemOwnerID string
 }
 
 type approvalVMContext struct {
 	VMID               string
 	VMName             string
 	LatestVMStatus     string
+	OwnerID            string
 	Namespace          string
 	ClusterID          string
 	ClusterName        string
@@ -126,15 +128,49 @@ func (s *Server) loadApprovalServiceLookups(
 		if svc.Edges.System != nil {
 			lookup.SystemID = svc.Edges.System.ID
 			lookup.SystemName = svc.Edges.System.Name
+			lookup.SystemOwnerID = strings.TrimSpace(svc.Edges.System.CreatedBy)
 		}
 		byServiceID[svc.ID] = lookup
 	}
 	return byServiceID
 }
 
+func (s *Server) loadApprovalAllServiceLookups(
+	ctx context.Context,
+) map[string]approvalServiceLookup {
+	byServiceID := make(map[string]approvalServiceLookup)
+
+	services, err := s.client.Service.Query().
+		WithSystem().
+		All(ctx)
+	if err != nil {
+		logger.Warn("failed to fetch full service catalog for approval summary fallback", zap.Error(err))
+		return byServiceID
+	}
+
+	for _, svc := range services {
+		if svc == nil {
+			continue
+		}
+		lookup := approvalServiceLookup{
+			ServiceID:   svc.ID,
+			ServiceName: svc.Name,
+		}
+		if svc.Edges.System != nil {
+			lookup.SystemID = svc.Edges.System.ID
+			lookup.SystemName = svc.Edges.System.Name
+			lookup.SystemOwnerID = strings.TrimSpace(svc.Edges.System.CreatedBy)
+		}
+		byServiceID[svc.ID] = lookup
+	}
+
+	return byServiceID
+}
+
 func (s *Server) loadApprovalVMContexts(
 	ctx context.Context,
 	vmIDs []string,
+	serviceByID map[string]approvalServiceLookup,
 ) (byVMID map[string]approvalVMContext, extraTemplateIDs, extraInstanceSizeIDs []string) {
 	byVMID = make(map[string]approvalVMContext, len(vmIDs))
 	if len(vmIDs) == 0 {
@@ -164,6 +200,7 @@ func (s *Server) loadApprovalVMContexts(
 			VMID:           vmRow.ID,
 			VMName:         vmRow.Name,
 			LatestVMStatus: string(vmRow.Status),
+			OwnerID:        strings.TrimSpace(vmRow.CreatedBy),
 			Namespace:      vmRow.Namespace,
 			ClusterID:      vmRow.ClusterID,
 			ServiceID:      vmServiceID(vmRow),
@@ -182,6 +219,23 @@ func (s *Server) loadApprovalVMContexts(
 		}
 		if vmRow.TicketID != "" {
 			createTicketIDToVMID[vmRow.TicketID] = vmRow.ID
+		}
+	}
+
+	historyTemplateIDs, historyInstanceSizeIDs := s.loadApprovalHistoricalVMContexts(
+		ctx,
+		vmIDs,
+		byVMID,
+		serviceByID,
+	)
+	extraTemplateIDs = append(extraTemplateIDs, historyTemplateIDs...)
+	extraInstanceSizeIDs = append(extraInstanceSizeIDs, historyInstanceSizeIDs...)
+
+	clusterIDSet = make(map[string]struct{})
+	for vmID := range byVMID {
+		entry := byVMID[vmID]
+		if strings.TrimSpace(entry.ClusterID) != "" {
+			clusterIDSet[entry.ClusterID] = struct{}{}
 		}
 	}
 
@@ -208,12 +262,265 @@ func (s *Server) loadApprovalVMContexts(
 		}
 	}
 
-	extraTemplateIDs, extraInstanceSizeIDs = s.loadApprovalVMCreationShape(
+	createTemplateIDs, createInstanceSizeIDs := s.loadApprovalVMCreationShape(
 		ctx,
 		createTicketIDToVMID,
 		byVMID,
 	)
+	extraTemplateIDs = append(extraTemplateIDs, createTemplateIDs...)
+	extraInstanceSizeIDs = append(extraInstanceSizeIDs, createInstanceSizeIDs...)
 	return byVMID, extraTemplateIDs, extraInstanceSizeIDs
+}
+
+func (s *Server) loadApprovalHistoricalVMContexts(
+	ctx context.Context,
+	vmIDs []string,
+	byVMID map[string]approvalVMContext,
+	serviceByID map[string]approvalServiceLookup,
+) (templateIDs, instanceSizeIDs []string) {
+	missingVMIDs := make([]string, 0, len(vmIDs))
+	for _, vmID := range vmIDs {
+		if strings.TrimSpace(vmID) == "" {
+			continue
+		}
+		entry := byVMID[vmID]
+		if approvalVMContextHasReadableScope(entry) {
+			continue
+		}
+		missingVMIDs = append(missingVMIDs, vmID)
+	}
+	if len(missingVMIDs) == 0 {
+		return nil, nil
+	}
+
+	events, err := s.client.DomainEvent.Query().
+		Where(
+			domainevent.AggregateTypeEQ("vm"),
+			domainevent.AggregateIDIn(missingVMIDs...),
+		).
+		Order(ent.Asc(domainevent.FieldAggregateID), ent.Desc(domainevent.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		logger.Warn("failed to fetch historical VM events for approval summary fallback", zap.Error(err))
+		return nil, nil
+	}
+	if len(events) == 0 {
+		return nil, nil
+	}
+
+	templateIDSet := make(map[string]struct{})
+	instanceSizeIDSet := make(map[string]struct{})
+	inferenceCatalog := serviceByID
+
+	for _, event := range events {
+		if event == nil || strings.TrimSpace(event.AggregateID) == "" || len(event.Payload) == 0 {
+			continue
+		}
+
+		var payload map[string]interface{}
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			logger.Warn("failed to decode historical VM event for approval summary fallback",
+				zap.String("event_id", event.ID),
+				zap.String("aggregate_id", event.AggregateID),
+				zap.Error(err),
+			)
+			continue
+		}
+
+		entry := byVMID[event.AggregateID]
+		templateID, instanceSizeID := mergeApprovalVMContextFromPayload(&entry, payload)
+		if templateID != "" {
+			templateIDSet[templateID] = struct{}{}
+		}
+		if instanceSizeID != "" {
+			instanceSizeIDSet[instanceSizeID] = struct{}{}
+		}
+
+		if !approvalVMContextHasReadableScope(entry) && strings.TrimSpace(entry.VMName) != "" {
+			lookup, ok := inferApprovalScopeFromVMName(entry.Namespace, entry.VMName, inferenceCatalog)
+			if !ok {
+				inferenceCatalog = s.loadApprovalAllServiceLookups(ctx)
+				lookup, ok = inferApprovalScopeFromVMName(entry.Namespace, entry.VMName, inferenceCatalog)
+			}
+			if ok {
+				mergeApprovalServiceLookupIntoVMContext(&entry, lookup)
+			}
+		}
+
+		byVMID[event.AggregateID] = entry
+	}
+
+	return sortedStringSet(templateIDSet), sortedStringSet(instanceSizeIDSet)
+}
+
+func approvalVMContextHasReadableScope(entry approvalVMContext) bool {
+	return strings.TrimSpace(entry.SystemName) != "" &&
+		strings.TrimSpace(entry.ServiceName) != "" &&
+		strings.TrimSpace(entry.OwnerID) != ""
+}
+
+func mergeApprovalVMContextFromPayload(
+	entry *approvalVMContext,
+	payload map[string]interface{},
+) (templateID, instanceSizeID string) {
+	if entry == nil {
+		return "", ""
+	}
+
+	if entry.VMID == "" {
+		entry.VMID = trimPayloadString(payload["vm_id"])
+	}
+	if entry.VMName == "" {
+		entry.VMName = trimPayloadString(payload["vm_name"])
+	}
+	if entry.LatestVMStatus == "" {
+		entry.LatestVMStatus = firstNonEmptyString(
+			trimPayloadString(payload["latest_vm_status"]),
+			trimPayloadString(payload["vm_status"]),
+			trimPayloadString(payload["request_vm_status"]),
+		)
+	}
+	if entry.OwnerID == "" {
+		entry.OwnerID = firstNonEmptyString(
+			trimPayloadString(payload["owner_id"]),
+			trimPayloadString(payload["requester_id"]),
+			trimPayloadString(payload["created_by"]),
+			trimPayloadString(payload["actor"]),
+		)
+	}
+	if entry.Namespace == "" {
+		entry.Namespace = trimPayloadString(payload["namespace"])
+	}
+	if entry.ClusterID == "" {
+		entry.ClusterID = trimPayloadString(payload["cluster_id"])
+	}
+	if entry.ClusterName == "" {
+		entry.ClusterName = trimPayloadString(payload["cluster_name"])
+	}
+	if entry.ClusterEnvironment == "" {
+		entry.ClusterEnvironment = trimPayloadString(payload["cluster_environment"])
+	}
+	if entry.ServiceID == "" {
+		entry.ServiceID = trimPayloadString(payload["service_id"])
+	}
+	if entry.ServiceName == "" {
+		entry.ServiceName = trimPayloadString(payload["service_name"])
+	}
+	if entry.SystemID == "" {
+		entry.SystemID = trimPayloadString(payload["system_id"])
+	}
+	if entry.SystemName == "" {
+		entry.SystemName = trimPayloadString(payload["system_name"])
+	}
+	if entry.TemplateID == "" {
+		entry.TemplateID = trimPayloadString(payload["template_id"])
+	}
+	if entry.InstanceSizeID == "" {
+		entry.InstanceSizeID = trimPayloadString(payload["instance_size_id"])
+	}
+	if entry.CurrentCPUCores == 0 {
+		entry.CurrentCPUCores = firstPositiveFloat(
+			payloadNumberFloat(payload["current_cpu_cores"]),
+			payloadNumberFloat(payload["target_cpu_cores"]),
+		)
+	}
+	if entry.CurrentMemoryGi == 0 {
+		entry.CurrentMemoryGi = firstPositiveFloat(
+			payloadNumberFloat(payload["current_memory_gi"]),
+			payloadNumberFloat(payload["target_memory_gi"]),
+		)
+	}
+	if entry.CurrentDiskGB == 0 {
+		entry.CurrentDiskGB = firstPositiveInt(
+			trimPayloadPositiveInt(payload["current_disk_gb"]),
+			trimPayloadPositiveInt(payload["target_disk_gb"]),
+		)
+	}
+
+	return entry.TemplateID, entry.InstanceSizeID
+}
+
+func inferApprovalScopeFromVMName(
+	namespace string,
+	vmName string,
+	serviceByID map[string]approvalServiceLookup,
+) (approvalServiceLookup, bool) {
+	trimmedNamespace := strings.TrimSpace(namespace)
+	trimmedVMName := strings.TrimSpace(vmName)
+	if trimmedVMName == "" || len(serviceByID) == 0 {
+		return approvalServiceLookup{}, false
+	}
+
+	var (
+		bestMatch approvalServiceLookup
+		bestLen   int
+	)
+	for _, lookup := range serviceByID {
+		systemName := strings.TrimSpace(lookup.SystemName)
+		serviceName := strings.TrimSpace(lookup.ServiceName)
+		if systemName == "" || serviceName == "" {
+			continue
+		}
+
+		prefix := systemName + "-" + serviceName
+		if trimmedNamespace != "" {
+			prefix = trimmedNamespace + "-" + prefix
+		}
+		if trimmedVMName != prefix && !strings.HasPrefix(trimmedVMName, prefix+"-") {
+			continue
+		}
+		if len(prefix) <= bestLen {
+			continue
+		}
+		bestMatch = lookup
+		bestLen = len(prefix)
+	}
+	if bestLen == 0 {
+		return approvalServiceLookup{}, false
+	}
+	return bestMatch, true
+}
+
+func mergeApprovalServiceLookupIntoVMContext(
+	entry *approvalVMContext,
+	lookup approvalServiceLookup,
+) {
+	if entry == nil {
+		return
+	}
+	if entry.ServiceID == "" {
+		entry.ServiceID = lookup.ServiceID
+	}
+	if entry.ServiceName == "" {
+		entry.ServiceName = lookup.ServiceName
+	}
+	if entry.SystemID == "" {
+		entry.SystemID = lookup.SystemID
+	}
+	if entry.SystemName == "" {
+		entry.SystemName = lookup.SystemName
+	}
+	if entry.OwnerID == "" {
+		entry.OwnerID = lookup.SystemOwnerID
+	}
+}
+
+func firstPositiveFloat(values ...float64) float64 {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstPositiveInt(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func byVMIDByCluster(
@@ -308,6 +615,103 @@ func (s *Server) loadApprovalVMCreationShape(
 	return sortedStringSet(templateIDSet), sortedStringSet(instanceSizeIDSet)
 }
 
+func (s *Server) loadApprovalBatchChildFallbackItems(
+	ctx context.Context,
+	tickets []*ent.Ticket,
+	templateByID map[string]*ent.Template,
+	instanceSizeByID map[string]*ent.InstanceSize,
+	serviceByID map[string]approvalServiceLookup,
+	vmByID map[string]approvalVMContext,
+	actorByID map[string]approvalActorLookup,
+) map[string][]generated.TicketItemSummary {
+	parentIDSet := make(map[string]struct{})
+	for _, ticket := range tickets {
+		if ticket == nil || strings.TrimSpace(ticket.ID) == "" {
+			continue
+		}
+		parentIDSet[ticket.ID] = struct{}{}
+	}
+	if len(parentIDSet) == 0 {
+		return map[string][]generated.TicketItemSummary{}
+	}
+
+	parentIDs := sortedStringSet(parentIDSet)
+	children, err := s.client.Ticket.Query().
+		Where(entticket.ParentTicketIDIn(parentIDs...)).
+		Order(ent.Asc(entticket.FieldParentTicketID), ent.Asc(entticket.FieldCreatedAt)).
+		All(ctx)
+	if err != nil {
+		logger.Warn("failed to fetch child tickets for batch audit summary fallback", zap.Error(err))
+		return map[string][]generated.TicketItemSummary{}
+	}
+	if len(children) == 0 {
+		return map[string][]generated.TicketItemSummary{}
+	}
+
+	eventIDs := make([]string, 0, len(children))
+	for _, child := range children {
+		if child == nil || strings.TrimSpace(child.EventID) == "" {
+			continue
+		}
+		eventIDs = append(eventIDs, child.EventID)
+	}
+	eventPayloadByID := make(map[string][]byte, len(eventIDs))
+	if len(eventIDs) > 0 {
+		events, eventErr := s.client.DomainEvent.Query().
+			Where(domainevent.IDIn(eventIDs...)).
+			All(ctx)
+		if eventErr != nil {
+			logger.Warn("failed to fetch child ticket events for batch audit summary fallback", zap.Error(eventErr))
+			return map[string][]generated.TicketItemSummary{}
+		}
+		for _, event := range events {
+			if event == nil {
+				continue
+			}
+			eventPayloadByID[event.ID] = event.Payload
+		}
+	}
+
+	byParentID := make(map[string][]generated.TicketItemSummary)
+	for _, child := range children {
+		if child == nil || strings.TrimSpace(child.ParentTicketID) == "" {
+			continue
+		}
+		var payload map[string]interface{}
+		if raw := eventPayloadByID[child.EventID]; len(raw) > 0 {
+			if err := json.Unmarshal(raw, &payload); err != nil {
+				logger.Warn("failed to decode child ticket payload for batch audit summary fallback",
+					zap.String("ticket_id", child.ID),
+					zap.String("event_id", child.EventID),
+					zap.Error(err),
+				)
+				continue
+			}
+		}
+		if payload == nil {
+			payload = map[string]interface{}{}
+		}
+		summary := buildTicketSummary(
+			child,
+			payload,
+			templateByID,
+			instanceSizeByID,
+			serviceByID,
+			vmByID,
+			actorByID,
+			nil,
+		)
+		if summary == nil {
+			continue
+		}
+		byParentID[child.ParentTicketID] = append(
+			byParentID[child.ParentTicketID],
+			ticketSummaryToItemSummary(summary),
+		)
+	}
+	return byParentID
+}
+
 func buildTicketSummary(
 	ticket *ent.Ticket,
 	payload map[string]interface{},
@@ -315,6 +719,8 @@ func buildTicketSummary(
 	instanceSizeByID map[string]*ent.InstanceSize,
 	serviceByID map[string]approvalServiceLookup,
 	vmByID map[string]approvalVMContext,
+	actorByID map[string]approvalActorLookup,
+	batchFallbackItems []generated.TicketItemSummary,
 ) *generated.TicketSummary {
 	if ticket == nil {
 		return nil
@@ -322,10 +728,18 @@ func buildTicketSummary(
 
 	var summary generated.TicketSummary
 	summary.Irreversible = ticket.OperationType == entticket.OperationTypeDELETE
+	requesterDisplayName, requesterUsername := approvalActorIdentity(ticket.Requester, actorByID)
 
 	switch ticket.OperationType {
 	case entticket.OperationTypeCREATE:
-		items := buildApprovalCreateItemSummaries(payload, templateByID, instanceSizeByID, serviceByID)
+		items := buildApprovalCreateItemSummaries(
+			payload,
+			templateByID,
+			instanceSizeByID,
+			serviceByID,
+			requesterDisplayName,
+			requesterUsername,
+		)
 		if len(items) > 0 {
 			applyApprovalSummaryCommonValues(&summary, items)
 			summary.BatchCount = len(items)
@@ -338,6 +752,8 @@ func buildTicketSummary(
 				templateByID,
 				instanceSizeByID,
 				serviceByID,
+				requesterDisplayName,
+				requesterUsername,
 			))
 			summary.BatchCount = max(1, trimPayloadPositiveInt(payload["batch_item_count"]))
 		}
@@ -351,7 +767,13 @@ func buildTicketSummary(
 			summary.ClusterEnvironment = trimPayloadString(ticket.PlacementEvaluation["selected_cluster_environment"])
 		}
 	case entticket.OperationTypeDELETE, entticket.OperationTypeMODIFY, entticket.OperationTypePOWER:
-		items := buildApprovalVMTargetItemSummaries(payload, templateByID, instanceSizeByID, vmByID)
+		items := buildApprovalVMTargetItemSummaries(
+			payload,
+			templateByID,
+			instanceSizeByID,
+			vmByID,
+			actorByID,
+		)
 		if len(items) > 0 {
 			applyApprovalSummaryCommonValues(&summary, items)
 			summary.BatchCount = len(items)
@@ -364,6 +786,7 @@ func buildTicketSummary(
 				templateByID,
 				instanceSizeByID,
 				vmByID,
+				actorByID,
 			))
 			summary.BatchCount = 1
 		}
@@ -373,11 +796,14 @@ func buildTicketSummary(
 			templateByID,
 			instanceSizeByID,
 			vmByID,
+			actorByID,
 		))
 		summary.BatchCount = 1
 	default:
 		return nil
 	}
+
+	mergeBatchFallbackItems(&summary, batchFallbackItems)
 
 	if !approvalSummaryHasContent(summary) {
 		return nil
@@ -390,6 +816,8 @@ func buildApprovalCreateItemSummaries(
 	templateByID map[string]*ent.Template,
 	instanceSizeByID map[string]*ent.InstanceSize,
 	serviceByID map[string]approvalServiceLookup,
+	ownerDisplayName string,
+	ownerUsername string,
 ) []generated.TicketItemSummary {
 	items, ok := payload["items"].([]interface{})
 	if !ok || len(items) == 0 {
@@ -402,7 +830,14 @@ func buildApprovalCreateItemSummaries(
 		if !ok {
 			continue
 		}
-		out = append(out, buildApprovalCreateItemSummary(item, templateByID, instanceSizeByID, serviceByID))
+		out = append(out, buildApprovalCreateItemSummary(
+			item,
+			templateByID,
+			instanceSizeByID,
+			serviceByID,
+			ownerDisplayName,
+			ownerUsername,
+		))
 	}
 	return out
 }
@@ -412,26 +847,42 @@ func buildApprovalCreateItemSummary(
 	templateByID map[string]*ent.Template,
 	instanceSizeByID map[string]*ent.InstanceSize,
 	serviceByID map[string]approvalServiceLookup,
+	ownerDisplayName string,
+	ownerUsername string,
 ) generated.TicketItemSummary {
 	summary := generated.TicketItemSummary{
-		Namespace:      trimPayloadString(payload["namespace"]),
-		TemplateId:     trimPayloadString(payload["template_id"]),
-		InstanceSizeId: trimPayloadString(payload["instance_size_id"]),
-		ServiceId:      trimPayloadString(payload["service_id"]),
+		SystemId:         trimPayloadString(payload["system_id"]),
+		SystemName:       trimPayloadString(payload["system_name"]),
+		Namespace:        trimPayloadString(payload["namespace"]),
+		TemplateId:       trimPayloadString(payload["template_id"]),
+		TemplateName:     trimPayloadString(payload["template_name"]),
+		InstanceSizeId:   trimPayloadString(payload["instance_size_id"]),
+		InstanceSizeName: trimPayloadString(payload["instance_size_name"]),
+		ServiceId:        trimPayloadString(payload["service_id"]),
+		ServiceName:      trimPayloadString(payload["service_name"]),
+		OwnerDisplayName: firstNonEmptyString(trimPayloadString(payload["owner_display_name"]), strings.TrimSpace(ownerDisplayName)),
+		OwnerUsername:    firstNonEmptyString(trimPayloadString(payload["owner_username"]), strings.TrimSpace(ownerUsername)),
+		TargetCpuCores:   payloadNumberFloat(payload["target_cpu_cores"]),
+		TargetMemoryGi:   payloadNumberFloat(payload["target_memory_gi"]),
+		TargetDiskGb:     trimPayloadPositiveInt(payload["target_disk_gb"]),
 	}
 	if lookup, ok := serviceByID[summary.ServiceId]; ok {
-		summary.ServiceName = lookup.ServiceName
-		summary.SystemId = lookup.SystemID
-		summary.SystemName = lookup.SystemName
+		summary.ServiceName = firstNonEmptyString(lookup.ServiceName, summary.ServiceName)
+		summary.SystemId = firstNonEmptyString(lookup.SystemID, summary.SystemId)
+		summary.SystemName = firstNonEmptyString(lookup.SystemName, summary.SystemName)
 	}
 	if tpl, ok := templateByID[summary.TemplateId]; ok && tpl != nil {
-		summary.TemplateName = firstNonEmptyString(tpl.DisplayName, tpl.Name, tpl.ID)
+		summary.TemplateName = firstNonEmptyString(firstNonEmptyString(tpl.DisplayName, tpl.Name, tpl.ID), summary.TemplateName)
 	}
 	if size, ok := instanceSizeByID[summary.InstanceSizeId]; ok && size != nil {
-		summary.InstanceSizeName = firstNonEmptyString(size.DisplayName, size.Name, size.ID)
-		summary.TargetCpuCores = size.CPUCores
-		summary.TargetMemoryGi = size.MemoryGi
-		if size.DiskGB != 0 {
+		summary.InstanceSizeName = firstNonEmptyString(firstNonEmptyString(size.DisplayName, size.Name, size.ID), summary.InstanceSizeName)
+		if summary.TargetCpuCores == 0 {
+			summary.TargetCpuCores = size.CPUCores
+		}
+		if summary.TargetMemoryGi == 0 {
+			summary.TargetMemoryGi = size.MemoryGi
+		}
+		if summary.TargetDiskGb == 0 && size.DiskGB != 0 {
 			summary.TargetDiskGb = size.DiskGB
 		}
 	}
@@ -443,6 +894,7 @@ func buildApprovalVMTargetItemSummaries(
 	templateByID map[string]*ent.Template,
 	instanceSizeByID map[string]*ent.InstanceSize,
 	vmByID map[string]approvalVMContext,
+	actorByID map[string]approvalActorLookup,
 ) []generated.TicketItemSummary {
 	items, ok := payload["items"].([]interface{})
 	if !ok || len(items) == 0 {
@@ -455,7 +907,13 @@ func buildApprovalVMTargetItemSummaries(
 		if !ok {
 			continue
 		}
-		out = append(out, buildApprovalVMTargetItemSummary(item, templateByID, instanceSizeByID, vmByID))
+		out = append(out, buildApprovalVMTargetItemSummary(
+			item,
+			templateByID,
+			instanceSizeByID,
+			vmByID,
+			actorByID,
+		))
 	}
 	return out
 }
@@ -465,33 +923,49 @@ func buildApprovalVMTargetItemSummary(
 	templateByID map[string]*ent.Template,
 	instanceSizeByID map[string]*ent.InstanceSize,
 	vmByID map[string]approvalVMContext,
+	actorByID map[string]approvalActorLookup,
 ) generated.TicketItemSummary {
 	vmID := trimPayloadString(payload["vm_id"])
 	vmCtx := vmByID[vmID]
+	payloadOwnerDisplayName := trimPayloadString(payload["owner_display_name"])
+	payloadOwnerUsername := trimPayloadString(payload["owner_username"])
+	ownerDisplayName, ownerUsername := approvalActorIdentity(
+		firstNonEmptyString(strings.TrimSpace(vmCtx.OwnerID), trimPayloadString(payload["owner_id"])),
+		actorByID,
+	)
+	ownerDisplayName = firstNonEmptyString(payloadOwnerDisplayName, ownerDisplayName)
+	ownerUsername = firstNonEmptyString(payloadOwnerUsername, ownerUsername)
 
 	summary := generated.TicketItemSummary{
 		VmId:               firstNonEmptyString(vmCtx.VMID, vmID),
 		VmName:             firstNonEmptyString(vmCtx.VMName, trimPayloadString(payload["vm_name"])),
 		RequestVmStatus:    firstNonEmptyString(trimPayloadString(payload["request_vm_status"]), trimPayloadString(payload["vm_status"])),
 		LatestVmStatus:     firstNonEmptyString(vmCtx.LatestVMStatus, trimPayloadString(payload["latest_vm_status"])),
-		SystemId:           vmCtx.SystemID,
-		SystemName:         vmCtx.SystemName,
-		ServiceId:          vmCtx.ServiceID,
-		ServiceName:        vmCtx.ServiceName,
+		SystemId:           firstNonEmptyString(vmCtx.SystemID, trimPayloadString(payload["system_id"])),
+		SystemName:         firstNonEmptyString(vmCtx.SystemName, trimPayloadString(payload["system_name"])),
+		ServiceId:          firstNonEmptyString(vmCtx.ServiceID, trimPayloadString(payload["service_id"])),
+		ServiceName:        firstNonEmptyString(vmCtx.ServiceName, trimPayloadString(payload["service_name"])),
 		Namespace:          firstNonEmptyString(vmCtx.Namespace, trimPayloadString(payload["namespace"])),
 		ClusterId:          firstNonEmptyString(vmCtx.ClusterID, trimPayloadString(payload["cluster_id"])),
 		ClusterName:        firstNonEmptyString(vmCtx.ClusterName, trimPayloadString(payload["cluster_name"])),
 		ClusterEnvironment: firstNonEmptyString(vmCtx.ClusterEnvironment, trimPayloadString(payload["cluster_environment"])),
-		TemplateId:         vmCtx.TemplateID,
-		InstanceSizeId:     vmCtx.InstanceSizeID,
+		TemplateId:         firstNonEmptyString(vmCtx.TemplateID, trimPayloadString(payload["template_id"])),
+		TemplateName:       trimPayloadString(payload["template_name"]),
+		InstanceSizeId:     firstNonEmptyString(vmCtx.InstanceSizeID, trimPayloadString(payload["instance_size_id"])),
+		InstanceSizeName:   trimPayloadString(payload["instance_size_name"]),
 		PowerAction:        trimPayloadString(payload["operation"]),
+		OwnerDisplayName:   ownerDisplayName,
+		OwnerUsername:      ownerUsername,
+		CurrentCpuCores:    vmCtx.CurrentCPUCores,
+		CurrentMemoryGi:    vmCtx.CurrentMemoryGi,
+		CurrentDiskGb:      vmCtx.CurrentDiskGB,
 	}
 	summary.VmStatus = summary.LatestVmStatus
 	if tpl, ok := templateByID[summary.TemplateId]; ok && tpl != nil {
-		summary.TemplateName = firstNonEmptyString(tpl.DisplayName, tpl.Name, tpl.ID)
+		summary.TemplateName = firstNonEmptyString(firstNonEmptyString(tpl.DisplayName, tpl.Name, tpl.ID), summary.TemplateName)
 	}
 	if size, ok := instanceSizeByID[summary.InstanceSizeId]; ok && size != nil {
-		summary.InstanceSizeName = firstNonEmptyString(size.DisplayName, size.Name, size.ID)
+		summary.InstanceSizeName = firstNonEmptyString(firstNonEmptyString(size.DisplayName, size.Name, size.ID), summary.InstanceSizeName)
 		if summary.CurrentCpuCores == 0 {
 			summary.CurrentCpuCores = size.CPUCores
 		}
@@ -542,6 +1016,8 @@ func applyApprovalSummaryCommonValues(
 	summary.ClusterEnvironment = commonApprovalItemString(items, func(item generated.TicketItemSummary) string { return item.ClusterEnvironment })
 	summary.VmId = commonApprovalItemString(items, func(item generated.TicketItemSummary) string { return item.VmId })
 	summary.VmName = commonApprovalItemString(items, func(item generated.TicketItemSummary) string { return item.VmName })
+	summary.OwnerDisplayName = commonApprovalItemString(items, func(item generated.TicketItemSummary) string { return item.OwnerDisplayName })
+	summary.OwnerUsername = commonApprovalItemString(items, func(item generated.TicketItemSummary) string { return item.OwnerUsername })
 	summary.RequestVmStatus = commonApprovalItemString(items, func(item generated.TicketItemSummary) string { return item.RequestVmStatus })
 	summary.LatestVmStatus = commonApprovalItemString(items, func(item generated.TicketItemSummary) string { return item.LatestVmStatus })
 	summary.VmStatus = summary.LatestVmStatus
@@ -575,6 +1051,8 @@ func applyApprovalSummaryItem(
 	summary.ClusterEnvironment = item.ClusterEnvironment
 	summary.VmId = item.VmId
 	summary.VmName = item.VmName
+	summary.OwnerDisplayName = item.OwnerDisplayName
+	summary.OwnerUsername = item.OwnerUsername
 	summary.RequestVmStatus = item.RequestVmStatus
 	summary.LatestVmStatus = item.LatestVmStatus
 	summary.VmStatus = item.LatestVmStatus
@@ -589,6 +1067,262 @@ func applyApprovalSummaryItem(
 	summary.TargetMemoryGi = item.TargetMemoryGi
 	summary.TargetDiskGb = item.TargetDiskGb
 	summary.PowerAction = item.PowerAction
+}
+
+func mergeBatchFallbackItems(
+	summary *generated.TicketSummary,
+	fallbackItems []generated.TicketItemSummary,
+) {
+	if summary == nil || len(fallbackItems) == 0 {
+		return
+	}
+
+	if len(summary.Items) == 0 {
+		summary.Items = fallbackItems
+	} else {
+		merged := make([]generated.TicketItemSummary, 0, max(len(summary.Items), len(fallbackItems)))
+		limit := max(len(summary.Items), len(fallbackItems))
+		for idx := 0; idx < limit; idx++ {
+			var existing generated.TicketItemSummary
+			var fallback generated.TicketItemSummary
+			if idx < len(summary.Items) {
+				existing = summary.Items[idx]
+			}
+			if idx < len(fallbackItems) {
+				fallback = fallbackItems[idx]
+			}
+			merged = append(merged, mergeApprovalItemSummary(existing, fallback))
+		}
+		summary.Items = merged
+	}
+
+	summary.BatchCount = max(summary.BatchCount, len(summary.Items))
+	var mergedCommon generated.TicketSummary
+	applyApprovalSummaryCommonValues(&mergedCommon, summary.Items)
+	mergeApprovalSummary(summary, mergedCommon)
+}
+
+func mergeApprovalItemSummary(
+	current generated.TicketItemSummary,
+	fallback generated.TicketItemSummary,
+) generated.TicketItemSummary {
+	if current.VmId == "" {
+		current.VmId = fallback.VmId
+	}
+	if current.VmName == "" {
+		current.VmName = fallback.VmName
+	}
+	if current.SystemId == "" {
+		current.SystemId = fallback.SystemId
+	}
+	if current.SystemName == "" {
+		current.SystemName = fallback.SystemName
+	}
+	if current.ServiceId == "" {
+		current.ServiceId = fallback.ServiceId
+	}
+	if current.ServiceName == "" {
+		current.ServiceName = fallback.ServiceName
+	}
+	if current.Namespace == "" {
+		current.Namespace = fallback.Namespace
+	}
+	if current.ClusterId == "" {
+		current.ClusterId = fallback.ClusterId
+	}
+	if current.ClusterName == "" {
+		current.ClusterName = fallback.ClusterName
+	}
+	if current.ClusterEnvironment == "" {
+		current.ClusterEnvironment = fallback.ClusterEnvironment
+	}
+	if current.OwnerDisplayName == "" {
+		current.OwnerDisplayName = fallback.OwnerDisplayName
+	}
+	if current.OwnerUsername == "" {
+		current.OwnerUsername = fallback.OwnerUsername
+	}
+	if current.TemplateId == "" {
+		current.TemplateId = fallback.TemplateId
+	}
+	if current.TemplateName == "" {
+		current.TemplateName = fallback.TemplateName
+	}
+	if current.InstanceSizeId == "" {
+		current.InstanceSizeId = fallback.InstanceSizeId
+	}
+	if current.InstanceSizeName == "" {
+		current.InstanceSizeName = fallback.InstanceSizeName
+	}
+	if current.RequestVmStatus == "" {
+		current.RequestVmStatus = fallback.RequestVmStatus
+	}
+	if current.LatestVmStatus == "" {
+		current.LatestVmStatus = fallback.LatestVmStatus
+	}
+	if current.PowerAction == "" {
+		current.PowerAction = fallback.PowerAction
+	}
+	if current.CurrentCpuCores == 0 {
+		current.CurrentCpuCores = fallback.CurrentCpuCores
+	}
+	if current.CurrentMemoryGi == 0 {
+		current.CurrentMemoryGi = fallback.CurrentMemoryGi
+	}
+	if current.CurrentDiskGb == 0 {
+		current.CurrentDiskGb = fallback.CurrentDiskGb
+	}
+	if current.TargetCpuCores == 0 {
+		current.TargetCpuCores = fallback.TargetCpuCores
+	}
+	if current.TargetMemoryGi == 0 {
+		current.TargetMemoryGi = fallback.TargetMemoryGi
+	}
+	if current.TargetDiskGb == 0 {
+		current.TargetDiskGb = fallback.TargetDiskGb
+	}
+	return current
+}
+
+func mergeApprovalSummary(
+	current *generated.TicketSummary,
+	fallback generated.TicketSummary,
+) {
+	if current == nil {
+		return
+	}
+	if current.SystemId == "" {
+		current.SystemId = fallback.SystemId
+	}
+	if current.SystemName == "" {
+		current.SystemName = fallback.SystemName
+	}
+	if current.ServiceId == "" {
+		current.ServiceId = fallback.ServiceId
+	}
+	if current.ServiceName == "" {
+		current.ServiceName = fallback.ServiceName
+	}
+	if current.Namespace == "" {
+		current.Namespace = fallback.Namespace
+	}
+	if current.ClusterId == "" {
+		current.ClusterId = fallback.ClusterId
+	}
+	if current.ClusterName == "" {
+		current.ClusterName = fallback.ClusterName
+	}
+	if current.ClusterEnvironment == "" {
+		current.ClusterEnvironment = fallback.ClusterEnvironment
+	}
+	if current.VmId == "" {
+		current.VmId = fallback.VmId
+	}
+	if current.VmName == "" {
+		current.VmName = fallback.VmName
+	}
+	if current.OwnerDisplayName == "" {
+		current.OwnerDisplayName = fallback.OwnerDisplayName
+	}
+	if current.OwnerUsername == "" {
+		current.OwnerUsername = fallback.OwnerUsername
+	}
+	if current.RequestVmStatus == "" {
+		current.RequestVmStatus = fallback.RequestVmStatus
+	}
+	if current.LatestVmStatus == "" {
+		current.LatestVmStatus = fallback.LatestVmStatus
+		current.VmStatus = fallback.LatestVmStatus
+	}
+	if current.TemplateId == "" {
+		current.TemplateId = fallback.TemplateId
+	}
+	if current.TemplateName == "" {
+		current.TemplateName = fallback.TemplateName
+	}
+	if current.InstanceSizeId == "" {
+		current.InstanceSizeId = fallback.InstanceSizeId
+	}
+	if current.InstanceSizeName == "" {
+		current.InstanceSizeName = fallback.InstanceSizeName
+	}
+	if current.PowerAction == "" {
+		current.PowerAction = fallback.PowerAction
+	}
+	if current.CurrentCpuCores == 0 {
+		current.CurrentCpuCores = fallback.CurrentCpuCores
+	}
+	if current.CurrentMemoryGi == 0 {
+		current.CurrentMemoryGi = fallback.CurrentMemoryGi
+	}
+	if current.CurrentDiskGb == 0 {
+		current.CurrentDiskGb = fallback.CurrentDiskGb
+	}
+	if current.TargetCpuCores == 0 {
+		current.TargetCpuCores = fallback.TargetCpuCores
+	}
+	if current.TargetMemoryGi == 0 {
+		current.TargetMemoryGi = fallback.TargetMemoryGi
+	}
+	if current.TargetDiskGb == 0 {
+		current.TargetDiskGb = fallback.TargetDiskGb
+	}
+}
+
+func ticketSummaryToItemSummary(summary *generated.TicketSummary) generated.TicketItemSummary {
+	if summary == nil {
+		return generated.TicketItemSummary{}
+	}
+	return generated.TicketItemSummary{
+		VmId:               summary.VmId,
+		VmName:             summary.VmName,
+		SystemId:           summary.SystemId,
+		SystemName:         summary.SystemName,
+		ServiceId:          summary.ServiceId,
+		ServiceName:        summary.ServiceName,
+		Namespace:          summary.Namespace,
+		ClusterId:          summary.ClusterId,
+		ClusterName:        summary.ClusterName,
+		ClusterEnvironment: summary.ClusterEnvironment,
+		OwnerDisplayName:   summary.OwnerDisplayName,
+		OwnerUsername:      summary.OwnerUsername,
+		TemplateId:         summary.TemplateId,
+		TemplateName:       summary.TemplateName,
+		InstanceSizeId:     summary.InstanceSizeId,
+		InstanceSizeName:   summary.InstanceSizeName,
+		RequestVmStatus:    summary.RequestVmStatus,
+		LatestVmStatus:     summary.LatestVmStatus,
+		CurrentCpuCores:    summary.CurrentCpuCores,
+		CurrentMemoryGi:    summary.CurrentMemoryGi,
+		CurrentDiskGb:      summary.CurrentDiskGb,
+		TargetCpuCores:     summary.TargetCpuCores,
+		TargetMemoryGi:     summary.TargetMemoryGi,
+		TargetDiskGb:       summary.TargetDiskGb,
+		PowerAction:        summary.PowerAction,
+	}
+}
+
+func approvalActorIdentity(
+	actorID string,
+	actorByID map[string]approvalActorLookup,
+) (displayName, username string) {
+	trimmedID := strings.TrimSpace(actorID)
+	if trimmedID == "" {
+		return "", ""
+	}
+	if actor, ok := actorByID[trimmedID]; ok {
+		displayName = firstNonEmptyString(
+			strings.TrimSpace(actor.DisplayName),
+			strings.TrimSpace(actor.Username),
+			trimmedID,
+		)
+		username = firstNonEmptyString(
+			strings.TrimSpace(actor.Username),
+			trimmedID,
+		)
+		return displayName, username
+	}
+	return trimmedID, trimmedID
 }
 
 func commonApprovalItemString(

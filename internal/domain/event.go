@@ -90,12 +90,23 @@ type DomainEvent struct {
 // VMCreationPayload is the payload for VM creation events.
 // ADR-0015 §3: No SystemID field. ADR-0017: No ClusterID in user request.
 type VMCreationPayload struct {
-	RequesterID    string `json:"requester_id"` // User who submitted the request (maps to VM.created_by)
-	ServiceID      string `json:"service_id"`
-	TemplateID     string `json:"template_id"`
-	InstanceSizeID string `json:"instance_size_id"`
-	Namespace      string `json:"namespace"`
-	Reason         string `json:"reason"`
+	RequesterID      string  `json:"requester_id"` // User who submitted the request (maps to VM.created_by)
+	OwnerID          string  `json:"owner_id,omitempty"`
+	ServiceID        string  `json:"service_id"`
+	ServiceName      string  `json:"service_name,omitempty"`
+	SystemID         string  `json:"system_id,omitempty"`
+	SystemName       string  `json:"system_name,omitempty"`
+	TemplateID       string  `json:"template_id"`
+	TemplateName     string  `json:"template_name,omitempty"`
+	InstanceSizeID   string  `json:"instance_size_id"`
+	InstanceSizeName string  `json:"instance_size_name,omitempty"`
+	Namespace        string  `json:"namespace"`
+	Reason           string  `json:"reason"`
+	OwnerDisplayName string  `json:"owner_display_name,omitempty"`
+	OwnerUsername    string  `json:"owner_username,omitempty"`
+	TargetCPUCores   float64 `json:"target_cpu_cores,omitempty"`
+	TargetMemoryGi   float64 `json:"target_memory_gi,omitempty"`
+	TargetDiskGB     int     `json:"target_disk_gb,omitempty"`
 }
 
 // ToJSON converts payload to JSON bytes.
@@ -115,12 +126,28 @@ type ModifiedSpec struct {
 
 // VMDeletePayload is the payload for VM deletion events.
 type VMDeletePayload struct {
-	VMID            string `json:"vm_id"`
-	VMName          string `json:"vm_name"`
-	ClusterID       string `json:"cluster_id"`
-	Namespace       string `json:"namespace"`
-	RequestVMStatus string `json:"request_vm_status,omitempty"`
-	Actor           string `json:"actor"`
+	VMID               string  `json:"vm_id"`
+	VMName             string  `json:"vm_name"`
+	ClusterID          string  `json:"cluster_id"`
+	ClusterName        string  `json:"cluster_name,omitempty"`
+	ClusterEnvironment string  `json:"cluster_environment,omitempty"`
+	Namespace          string  `json:"namespace"`
+	SystemID           string  `json:"system_id,omitempty"`
+	SystemName         string  `json:"system_name,omitempty"`
+	ServiceID          string  `json:"service_id,omitempty"`
+	ServiceName        string  `json:"service_name,omitempty"`
+	OwnerID            string  `json:"owner_id,omitempty"`
+	OwnerDisplayName   string  `json:"owner_display_name,omitempty"`
+	OwnerUsername      string  `json:"owner_username,omitempty"`
+	TemplateID         string  `json:"template_id,omitempty"`
+	TemplateName       string  `json:"template_name,omitempty"`
+	InstanceSizeID     string  `json:"instance_size_id,omitempty"`
+	InstanceSizeName   string  `json:"instance_size_name,omitempty"`
+	RequestVMStatus    string  `json:"request_vm_status,omitempty"`
+	CurrentCPUCores    float64 `json:"current_cpu_cores,omitempty"`
+	CurrentMemoryGi    float64 `json:"current_memory_gi,omitempty"`
+	CurrentDiskGB      int     `json:"current_disk_gb,omitempty"`
+	Actor              string  `json:"actor"`
 }
 
 // ToJSON converts payload to JSON bytes.
@@ -130,13 +157,29 @@ func (p VMDeletePayload) ToJSON() ([]byte, error) {
 
 // VMPowerPayload is the payload for VM power operation events.
 type VMPowerPayload struct {
-	VMID            string `json:"vm_id"`
-	VMName          string `json:"vm_name"`
-	ClusterID       string `json:"cluster_id"`
-	Namespace       string `json:"namespace"`
-	RequestVMStatus string `json:"request_vm_status,omitempty"`
-	Operation       string `json:"operation"` // start, stop, restart
-	Actor           string `json:"actor"`
+	VMID               string  `json:"vm_id"`
+	VMName             string  `json:"vm_name"`
+	ClusterID          string  `json:"cluster_id"`
+	ClusterName        string  `json:"cluster_name,omitempty"`
+	ClusterEnvironment string  `json:"cluster_environment,omitempty"`
+	Namespace          string  `json:"namespace"`
+	SystemID           string  `json:"system_id,omitempty"`
+	SystemName         string  `json:"system_name,omitempty"`
+	ServiceID          string  `json:"service_id,omitempty"`
+	ServiceName        string  `json:"service_name,omitempty"`
+	OwnerID            string  `json:"owner_id,omitempty"`
+	OwnerDisplayName   string  `json:"owner_display_name,omitempty"`
+	OwnerUsername      string  `json:"owner_username,omitempty"`
+	TemplateID         string  `json:"template_id,omitempty"`
+	TemplateName       string  `json:"template_name,omitempty"`
+	InstanceSizeID     string  `json:"instance_size_id,omitempty"`
+	InstanceSizeName   string  `json:"instance_size_name,omitempty"`
+	RequestVMStatus    string  `json:"request_vm_status,omitempty"`
+	CurrentCPUCores    float64 `json:"current_cpu_cores,omitempty"`
+	CurrentMemoryGi    float64 `json:"current_memory_gi,omitempty"`
+	CurrentDiskGB      int     `json:"current_disk_gb,omitempty"`
+	Operation          string  `json:"operation"` // start, stop, restart
+	Actor              string  `json:"actor"`
 }
 
 // ToJSON converts payload to JSON bytes.
@@ -155,12 +198,25 @@ func (p VMPowerPayload) ToJSON() ([]byte, error) {
 //   - cpu/memory/disk fields are optional individually, but at least one target
 //     value must be provided by the caller
 type VMModifyPayload struct {
-	VMID            string `json:"vm_id"`
-	VMName          string `json:"vm_name"`
-	ClusterID       string `json:"cluster_id"`
-	Namespace       string `json:"namespace"`
-	RequestVMStatus string `json:"request_vm_status,omitempty"`
-	Actor           string `json:"actor"`
+	VMID               string `json:"vm_id"`
+	VMName             string `json:"vm_name"`
+	ClusterID          string `json:"cluster_id"`
+	ClusterName        string `json:"cluster_name,omitempty"`
+	ClusterEnvironment string `json:"cluster_environment,omitempty"`
+	Namespace          string `json:"namespace"`
+	SystemID           string `json:"system_id,omitempty"`
+	SystemName         string `json:"system_name,omitempty"`
+	ServiceID          string `json:"service_id,omitempty"`
+	ServiceName        string `json:"service_name,omitempty"`
+	OwnerID            string `json:"owner_id,omitempty"`
+	OwnerDisplayName   string `json:"owner_display_name,omitempty"`
+	OwnerUsername      string `json:"owner_username,omitempty"`
+	TemplateID         string `json:"template_id,omitempty"`
+	TemplateName       string `json:"template_name,omitempty"`
+	InstanceSizeID     string `json:"instance_size_id,omitempty"`
+	InstanceSizeName   string `json:"instance_size_name,omitempty"`
+	RequestVMStatus    string `json:"request_vm_status,omitempty"`
+	Actor              string `json:"actor"`
 
 	CurrentCPUCores        float64 `json:"current_cpu_cores"`
 	CurrentMemoryGi        float64 `json:"current_memory_gi"`
@@ -182,20 +238,32 @@ func (p VMModifyPayload) ToJSON() ([]byte, error) {
 
 // BatchVMItemPayload represents one child item in a batch request.
 type BatchVMItemPayload struct {
-	VMID            string   `json:"vm_id,omitempty"`
-	ServiceID       string   `json:"service_id,omitempty"`
-	TemplateID      string   `json:"template_id,omitempty"`
-	InstanceSizeID  string   `json:"instance_size_id,omitempty"`
-	Namespace       string   `json:"namespace,omitempty"`
-	Reason          string   `json:"reason,omitempty"`
-	RequestVMStatus string   `json:"request_vm_status,omitempty"`
-	CurrentCPUCores float64  `json:"current_cpu_cores,omitempty"`
-	CurrentMemoryGi float64  `json:"current_memory_gi,omitempty"`
-	CurrentDiskGB   int      `json:"current_disk_gb,omitempty"`
-	Operation       string   `json:"operation,omitempty"`
-	TargetCPUCores  *float64 `json:"target_cpu_cores,omitempty"`
-	TargetMemoryGi  *float64 `json:"target_memory_gi,omitempty"`
-	TargetDiskGB    *int     `json:"target_disk_gb,omitempty"`
+	VMID               string   `json:"vm_id,omitempty"`
+	VMName             string   `json:"vm_name,omitempty"`
+	SystemID           string   `json:"system_id,omitempty"`
+	SystemName         string   `json:"system_name,omitempty"`
+	ServiceID          string   `json:"service_id,omitempty"`
+	ServiceName        string   `json:"service_name,omitempty"`
+	TemplateID         string   `json:"template_id,omitempty"`
+	TemplateName       string   `json:"template_name,omitempty"`
+	InstanceSizeID     string   `json:"instance_size_id,omitempty"`
+	InstanceSizeName   string   `json:"instance_size_name,omitempty"`
+	Namespace          string   `json:"namespace,omitempty"`
+	ClusterID          string   `json:"cluster_id,omitempty"`
+	ClusterName        string   `json:"cluster_name,omitempty"`
+	ClusterEnvironment string   `json:"cluster_environment,omitempty"`
+	OwnerID            string   `json:"owner_id,omitempty"`
+	OwnerDisplayName   string   `json:"owner_display_name,omitempty"`
+	OwnerUsername      string   `json:"owner_username,omitempty"`
+	Reason             string   `json:"reason,omitempty"`
+	RequestVMStatus    string   `json:"request_vm_status,omitempty"`
+	CurrentCPUCores    float64  `json:"current_cpu_cores,omitempty"`
+	CurrentMemoryGi    float64  `json:"current_memory_gi,omitempty"`
+	CurrentDiskGB      int      `json:"current_disk_gb,omitempty"`
+	Operation          string   `json:"operation,omitempty"`
+	TargetCPUCores     *float64 `json:"target_cpu_cores,omitempty"`
+	TargetMemoryGi     *float64 `json:"target_memory_gi,omitempty"`
+	TargetDiskGB       *int     `json:"target_disk_gb,omitempty"`
 }
 
 // BatchVMRequestPayload is the parent payload for batch submit requests.

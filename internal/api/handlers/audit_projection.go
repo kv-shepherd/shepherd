@@ -546,9 +546,14 @@ func (s *Server) buildAuditTicketSummariesFromTicketsWithEvents(
 	}
 
 	templateIDs, instanceSizeIDs := collectApprovalCatalogLookupIDs(eventPayloadMap)
+	serviceByID := s.loadApprovalServiceLookups(
+		ctx,
+		collectApprovalPrefillServiceIDs(eventPayloadMap),
+	)
 	vmByID, vmTemplateIDs, vmInstanceSizeIDs := s.loadApprovalVMContexts(
 		ctx,
 		collectApprovalSummaryVMIDs(eventPayloadMap),
+		serviceByID,
 	)
 	templateIDs = append(templateIDs, vmTemplateIDs...)
 	instanceSizeIDs = append(instanceSizeIDs, vmInstanceSizeIDs...)
@@ -557,11 +562,16 @@ func (s *Server) buildAuditTicketSummariesFromTicketsWithEvents(
 		sortedStringSet(sliceToStringSet(templateIDs)),
 		sortedStringSet(sliceToStringSet(instanceSizeIDs)),
 	)
-	serviceByID := s.loadApprovalServiceLookups(
-		ctx,
-		collectApprovalPrefillServiceIDs(eventPayloadMap),
-	)
 	actorLookupByID := s.loadApprovalActorLookups(ctx, tickets)
+	batchFallbackItemsByParentID := s.loadApprovalBatchChildFallbackItems(
+		ctx,
+		tickets,
+		templateByID,
+		instanceSizeByID,
+		serviceByID,
+		vmByID,
+		actorLookupByID,
+	)
 
 	for _, ticket := range tickets {
 		if ticket == nil {
@@ -587,6 +597,8 @@ func (s *Server) buildAuditTicketSummariesFromTicketsWithEvents(
 			instanceSizeByID,
 			serviceByID,
 			vmByID,
+			actorLookupByID,
+			batchFallbackItemsByParentID[ticket.ID],
 		)
 		if summary != nil {
 			if requesterID := strings.TrimSpace(ticket.Requester); requesterID != "" {

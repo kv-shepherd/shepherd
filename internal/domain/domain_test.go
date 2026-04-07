@@ -60,11 +60,28 @@ func TestBatchVMRequestPayload_ToJSON(t *testing.T) {
 
 func TestPowerAndDeletePayload_ToJSON(t *testing.T) {
 	deletePayload := VMDeletePayload{
-		VMID:      "vm-1",
-		VMName:    "vm-one",
-		ClusterID: "cluster-a",
-		Namespace: "dev",
-		Actor:     "user-3",
+		VMID:               "vm-1",
+		VMName:             "vm-one",
+		ClusterID:          "cluster-a",
+		ClusterName:        "cluster-a",
+		ClusterEnvironment: "test",
+		Namespace:          "dev",
+		SystemID:           "system-1",
+		SystemName:         "Payments",
+		ServiceID:          "service-1",
+		ServiceName:        "billing-worker",
+		OwnerID:            "user-3",
+		OwnerDisplayName:   "Alex Chen",
+		OwnerUsername:      "alexchen",
+		TemplateID:         "template-1",
+		TemplateName:       "OpenEuler 22.03",
+		InstanceSizeID:     "size-1",
+		InstanceSizeName:   "M4 Large",
+		RequestVMStatus:    "STOPPED",
+		CurrentCPUCores:    4,
+		CurrentMemoryGi:    8,
+		CurrentDiskGB:      60,
+		Actor:              "user-3",
 	}
 	data, err := deletePayload.ToJSON()
 	require.NoError(t, err)
@@ -85,6 +102,55 @@ func TestPowerAndDeletePayload_ToJSON(t *testing.T) {
 	var gotPower VMPowerPayload
 	require.NoError(t, json.Unmarshal(data, &gotPower))
 	require.Equal(t, powerPayload, gotPower)
+}
+
+func TestBatchVMRequestPayload_ToJSON_WithReadableContext(t *testing.T) {
+	ts := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
+	targetCPU := 8.0
+	targetMemory := 16.0
+	targetDisk := 120
+	payload := BatchVMRequestPayload{
+		Operation:   "modify",
+		RequestID:   "req-456",
+		Reason:      "capacity planning",
+		SubmittedBy: "user-2",
+		SubmittedAt: ts,
+		Items: []BatchVMItemPayload{
+			{
+				VMName:             "billing-api-01",
+				SystemID:           "system-1",
+				SystemName:         "Payments",
+				ServiceID:          "service-1",
+				ServiceName:        "billing-api",
+				Namespace:          "gtest1",
+				ClusterID:          "cluster-1",
+				ClusterName:        "kubevirt-test02",
+				ClusterEnvironment: "test",
+				OwnerID:            "user-9",
+				OwnerDisplayName:   "Alex Chen",
+				OwnerUsername:      "alexchen",
+				TemplateID:         "template-1",
+				TemplateName:       "OpenEuler 22.03",
+				InstanceSizeID:     "size-1",
+				InstanceSizeName:   "M4 Large",
+				RequestVMStatus:    "RUNNING",
+				CurrentCPUCores:    4,
+				CurrentMemoryGi:    8,
+				CurrentDiskGB:      60,
+				Operation:          "modify",
+				TargetCPUCores:     &targetCPU,
+				TargetMemoryGi:     &targetMemory,
+				TargetDiskGB:       &targetDisk,
+			},
+		},
+	}
+
+	data, err := payload.ToJSON()
+	require.NoError(t, err)
+
+	var decoded BatchVMRequestPayload
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Equal(t, payload, decoded)
 }
 
 func TestVMJSON_OmitsResourceVersion(t *testing.T) {

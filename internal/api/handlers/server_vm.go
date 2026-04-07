@@ -1408,6 +1408,8 @@ func (s *Server) createVMPowerApprovalRequest(
 	operation string,
 	eventType domain.EventType,
 ) (ticketID, eventID string, err error) {
+	snapshotLoader := newBatchSnapshotLoader(s)
+	snapshot := snapshotLoader.buildVMContextSnapshot(ctx, vm)
 	tx, err := s.client.Tx(ctx)
 	if err != nil {
 		return "", "", err
@@ -1424,13 +1426,29 @@ func (s *Server) createVMPowerApprovalRequest(
 	}
 
 	payloadBytes, err := json.Marshal(domain.VMPowerPayload{
-		VMID:            vm.ID,
-		VMName:          vm.Name,
-		ClusterID:       vm.ClusterID,
-		Namespace:       vm.Namespace,
-		RequestVMStatus: string(vm.Status),
-		Operation:       operation,
-		Actor:           actor,
+		VMID:               vm.ID,
+		VMName:             vm.Name,
+		ClusterID:          vm.ClusterID,
+		ClusterName:        snapshot.ClusterName,
+		ClusterEnvironment: snapshot.ClusterEnvironment,
+		Namespace:          vm.Namespace,
+		SystemID:           snapshot.SystemID,
+		SystemName:         snapshot.SystemName,
+		ServiceID:          snapshot.ServiceID,
+		ServiceName:        snapshot.ServiceName,
+		OwnerID:            snapshot.OwnerID,
+		OwnerDisplayName:   snapshot.OwnerDisplayName,
+		OwnerUsername:      snapshot.OwnerUsername,
+		TemplateID:         snapshot.TemplateID,
+		TemplateName:       snapshot.TemplateName,
+		InstanceSizeID:     snapshot.InstanceSizeID,
+		InstanceSizeName:   snapshot.InstanceSizeName,
+		RequestVMStatus:    string(vm.Status),
+		CurrentCPUCores:    snapshot.CurrentCPUCores,
+		CurrentMemoryGi:    snapshot.CurrentMemoryGi,
+		CurrentDiskGB:      snapshot.CurrentDiskGB,
+		Operation:          operation,
+		Actor:              actor,
 	})
 	if err != nil {
 		return "", "", err
@@ -1483,15 +1501,33 @@ func powerOperationToPolicyOperation(operation string) approvalpolicy.Operation 
 func (s *Server) enqueueVMPowerOp(c *gin.Context, vm *ent.VM, operation string, eventType domain.EventType) {
 	ctx := c.Request.Context()
 	actor := middleware.GetUserID(ctx)
+	snapshotLoader := newBatchSnapshotLoader(s)
+	snapshot := snapshotLoader.buildVMContextSnapshot(ctx, vm)
 
 	payload := domain.VMPowerPayload{
-		VMID:            vm.ID,
-		VMName:          vm.Name,
-		ClusterID:       vm.ClusterID,
-		Namespace:       vm.Namespace,
-		RequestVMStatus: string(vm.Status),
-		Operation:       operation,
-		Actor:           actor,
+		VMID:               vm.ID,
+		VMName:             vm.Name,
+		ClusterID:          vm.ClusterID,
+		ClusterName:        snapshot.ClusterName,
+		ClusterEnvironment: snapshot.ClusterEnvironment,
+		Namespace:          vm.Namespace,
+		SystemID:           snapshot.SystemID,
+		SystemName:         snapshot.SystemName,
+		ServiceID:          snapshot.ServiceID,
+		ServiceName:        snapshot.ServiceName,
+		OwnerID:            snapshot.OwnerID,
+		OwnerDisplayName:   snapshot.OwnerDisplayName,
+		OwnerUsername:      snapshot.OwnerUsername,
+		TemplateID:         snapshot.TemplateID,
+		TemplateName:       snapshot.TemplateName,
+		InstanceSizeID:     snapshot.InstanceSizeID,
+		InstanceSizeName:   snapshot.InstanceSizeName,
+		RequestVMStatus:    string(vm.Status),
+		CurrentCPUCores:    snapshot.CurrentCPUCores,
+		CurrentMemoryGi:    snapshot.CurrentMemoryGi,
+		CurrentDiskGB:      snapshot.CurrentDiskGB,
+		Operation:          operation,
+		Actor:              actor,
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {

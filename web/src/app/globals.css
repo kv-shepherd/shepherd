@@ -1434,6 +1434,22 @@ a {
   word-break: break-word;
 }
 
+.audit-batch-item-card__line {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.audit-batch-item-card__line-label {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.audit-batch-item-card__line-value {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .audit-raw-json {
   margin: 0;
   max-height: 320px;

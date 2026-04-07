@@ -4213,6 +4213,12 @@ components:
           type: string
         approver_username:
           type: string
+        owner_display_name:
+          type: string
+          description: Preferred human-readable owner label for the target VM or requested VM.
+        owner_username:
+          type: string
+          description: Owner username when available.
         vm_id:
           type: string
         vm_name:
@@ -4284,6 +4290,12 @@ components:
         approver_username:
           type: string
           description: Approver username when available.
+        owner_display_name:
+          type: string
+          description: Preferred human-readable owner label for the target VM or requested VM.
+        owner_username:
+          type: string
+          description: Owner username when available.
         vm_id:
           type: string
         vm_name:

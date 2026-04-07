@@ -1,14 +1,18 @@
 package handlers
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
 	"github.com/google/uuid"
 
+	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	entdirectorysyncjob "kv-shepherd.io/shepherd/ent/directorysyncjob"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/internal/api/generated"
+	"kv-shepherd.io/shepherd/internal/domain"
 )
 
 func TestListAuditLogs_FiltersByApprovalDecisionAndPlacementReason(t *testing.T) {
@@ -519,6 +523,558 @@ func TestListAuditLogs_EnrichesReadableActorResourceAndTicketSummary(t *testing.
 	}
 	if ticketAudit.ResourceSummary.Tertiary != "Ubuntu 22.04 · M4 Large · 4 vCPU · 8 Gi · 80 Gi" {
 		t.Fatalf("ticket resource_summary.tertiary = %q, want summary string", ticketAudit.ResourceSummary.Tertiary)
+	}
+}
+
+func TestListAuditLogs_EnrichesBatchTicketItemsWithReadableScopeOwnerAndConfig(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	requester, err := client.User.Create().
+		SetID("user-requester").
+		SetUsername("alexchen").
+		SetDisplayName("Alex Chen").
+		SetEmail("alexchen@example.com").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create requester: %v", err)
+	}
+
+	approver, err := client.User.Create().
+		SetID("user-approver").
+		SetUsername("admin").
+		SetDisplayName("Default Administrator").
+		SetEmail("admin@example.com").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create approver: %v", err)
+	}
+
+	system, err := client.System.Create().
+		SetID("system-shop").
+		SetName("shop").
+		SetDescription("Retail system").
+		SetCreatedBy(requester.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create system: %v", err)
+	}
+
+	service, err := client.Service.Create().
+		SetID("service-redis").
+		SetName("redis").
+		SetDescription("Redis cache").
+		SetSystem(system).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+
+	mustCreateApprovalTemplate(t, client, "template-openeuler")
+	mustCreateApprovalInstanceSize(t, client, "size-vnc")
+
+	eventID := "event-" + uuid.NewString()
+	ticketID := "ticket-" + uuid.NewString()
+	mustCreateDomainEventWithAggregate(
+		t,
+		client,
+		eventID,
+		"ticket",
+		ticketID,
+		mustApprovalJSON(t, map[string]interface{}{
+			"items": []map[string]interface{}{
+				{
+					"service_id":       service.ID,
+					"template_id":      "template-openeuler",
+					"instance_size_id": "size-vnc",
+					"namespace":        "gtest1",
+				},
+				{
+					"service_id":       service.ID,
+					"template_id":      "template-openeuler",
+					"instance_size_id": "size-vnc",
+					"namespace":        "gtest1",
+				},
+			},
+			"batch_item_count": 2,
+		}),
+	)
+	mustCreateTicket(t, client, ticketID, eventID, entticket.OperationTypeCREATE, requester.ID)
+	if _, updateErr := client.Ticket.UpdateOneID(ticketID).SetApprover(approver.ID).Save(ctx); updateErr != nil {
+		t.Fatalf("set approver: %v", updateErr)
+	}
+
+	_, err = client.AuditLog.Create().
+		SetID("audit-" + uuid.NewString()).
+		SetAction("approval.batch_approved").
+		SetResourceType("ticket").
+		SetResourceID(ticketID).
+		SetActor(approver.ID).
+		SetDetails(map[string]interface{}{
+			"decision": "batch_approved",
+		}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create audit log: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/audit-logs",
+		"",
+		"admin-1",
+		[]string{"audit:read", "platform:admin"},
+	)
+	srv.ListAuditLogs(c, generated.ListAuditLogsParams{})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.AuditLogList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if len(resp.Items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(resp.Items))
+	}
+	ticketAudit := resp.Items[0]
+	if ticketAudit.TicketSummary == nil {
+		t.Fatal("ticket_summary = nil, want non-nil")
+	}
+	if ticketAudit.TicketSummary.SystemName != "shop" {
+		t.Fatalf("ticket_summary.system_name = %q, want shop", ticketAudit.TicketSummary.SystemName)
+	}
+	if ticketAudit.TicketSummary.ServiceName != "redis" {
+		t.Fatalf("ticket_summary.service_name = %q, want redis", ticketAudit.TicketSummary.ServiceName)
+	}
+	if ticketAudit.TicketSummary.OwnerDisplayName != "Alex Chen" {
+		t.Fatalf("ticket_summary.owner_display_name = %q, want Alex Chen", ticketAudit.TicketSummary.OwnerDisplayName)
+	}
+	if ticketAudit.TicketSummary.OwnerUsername != "alexchen" {
+		t.Fatalf("ticket_summary.owner_username = %q, want alexchen", ticketAudit.TicketSummary.OwnerUsername)
+	}
+	if ticketAudit.TicketSummary.BatchCount != 2 {
+		t.Fatalf("ticket_summary.batch_count = %d, want 2", ticketAudit.TicketSummary.BatchCount)
+	}
+	if len(ticketAudit.TicketSummary.Items) != 2 {
+		t.Fatalf("ticket_summary.items len = %d, want 2", len(ticketAudit.TicketSummary.Items))
+	}
+	firstItem := ticketAudit.TicketSummary.Items[0]
+	if firstItem.SystemName != "shop" {
+		t.Fatalf("item.system_name = %q, want shop", firstItem.SystemName)
+	}
+	if firstItem.ServiceName != "redis" {
+		t.Fatalf("item.service_name = %q, want redis", firstItem.ServiceName)
+	}
+	if firstItem.Namespace != "gtest1" {
+		t.Fatalf("item.namespace = %q, want gtest1", firstItem.Namespace)
+	}
+	if firstItem.TemplateName != "Ubuntu 22.04" {
+		t.Fatalf("item.template_name = %q, want Ubuntu 22.04", firstItem.TemplateName)
+	}
+	if firstItem.InstanceSizeName != "M4 Large" {
+		t.Fatalf("item.instance_size_name = %q, want M4 Large", firstItem.InstanceSizeName)
+	}
+	if firstItem.TargetCpuCores != 4 || firstItem.TargetMemoryGi != 8 || firstItem.TargetDiskGb != 80 {
+		t.Fatalf("item resources = cpu=%v memory=%v disk=%d, want 4/8/80", firstItem.TargetCpuCores, firstItem.TargetMemoryGi, firstItem.TargetDiskGb)
+	}
+	if firstItem.OwnerDisplayName != "Alex Chen" {
+		t.Fatalf("item.owner_display_name = %q, want Alex Chen", firstItem.OwnerDisplayName)
+	}
+}
+
+func TestListAuditLogs_BackfillsBatchTicketItemsFromChildTickets(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	requester := mustCreateUser(t, client, "requester-batch", "alexchen")
+	if _, err := client.User.UpdateOneID(requester.ID).
+		SetDisplayName("Alex Chen").
+		SetEmail("alexchen@example.com").
+		SetEnabled(true).
+		Save(ctx); err != nil {
+		t.Fatalf("update requester: %v", err)
+	}
+	approver := mustCreateUser(t, client, "approver-batch", "admin")
+	if _, err := client.User.UpdateOneID(approver.ID).
+		SetDisplayName("Default Administrator").
+		SetEmail("admin@localhost").
+		SetEnabled(true).
+		Save(ctx); err != nil {
+		t.Fatalf("update approver: %v", err)
+	}
+
+	system, err := client.System.Create().
+		SetID("system-shop").
+		SetName("shop").
+		SetCreatedBy(requester.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create system: %v", err)
+	}
+
+	service, err := client.Service.Create().
+		SetID("service-redis").
+		SetName("redis").
+		SetDescription("Redis cache").
+		SetSystem(system).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+
+	parentEventID := "event-parent-" + uuid.NewString()
+	parentTicketID := "ticket-parent-" + uuid.NewString()
+	mustCreateDomainEventWithAggregate(
+		t,
+		client,
+		parentEventID,
+		"ticket",
+		parentTicketID,
+		mustApprovalJSON(t, map[string]interface{}{
+			"items": []map[string]interface{}{
+				{
+					"vm_id":             "vm-a",
+					"request_vm_status": "STOPPED",
+				},
+				{
+					"vm_id":             "vm-b",
+					"request_vm_status": "STOPPED",
+				},
+			},
+			"batch_item_count": 2,
+		}),
+	)
+	mustCreateTicket(t, client, parentTicketID, parentEventID, entticket.OperationTypeDELETE, requester.ID)
+	if _, updateErr := client.Ticket.UpdateOneID(parentTicketID).SetApprover(approver.ID).Save(ctx); updateErr != nil {
+		t.Fatalf("set approver: %v", updateErr)
+	}
+
+	childPayloads := []domain.VMDeletePayload{
+		{
+			VMID:               "vm-a",
+			VMName:             "redis-01",
+			ClusterID:          "cluster-1",
+			ClusterName:        "kubevirt-test02",
+			ClusterEnvironment: "test",
+			Namespace:          "gtest1",
+			SystemID:           system.ID,
+			SystemName:         system.Name,
+			ServiceID:          service.ID,
+			ServiceName:        service.Name,
+			OwnerID:            requester.ID,
+			OwnerDisplayName:   "Alex Chen",
+			OwnerUsername:      "alexchen",
+			TemplateID:         "template-openeuler",
+			TemplateName:       "OpenEuler 22.03",
+			InstanceSizeID:     "size-vnc",
+			InstanceSizeName:   "M4 Large",
+			RequestVMStatus:    "STOPPED",
+			CurrentCPUCores:    4,
+			CurrentMemoryGi:    8,
+			CurrentDiskGB:      60,
+		},
+		{
+			VMID:               "vm-b",
+			VMName:             "redis-02",
+			ClusterID:          "cluster-1",
+			ClusterName:        "kubevirt-test02",
+			ClusterEnvironment: "test",
+			Namespace:          "gtest1",
+			SystemID:           system.ID,
+			SystemName:         system.Name,
+			ServiceID:          service.ID,
+			ServiceName:        service.Name,
+			OwnerID:            requester.ID,
+			OwnerDisplayName:   "Alex Chen",
+			OwnerUsername:      "alexchen",
+			TemplateID:         "template-openeuler",
+			TemplateName:       "OpenEuler 22.03",
+			InstanceSizeID:     "size-vnc",
+			InstanceSizeName:   "M4 Large",
+			RequestVMStatus:    "STOPPED",
+			CurrentCPUCores:    4,
+			CurrentMemoryGi:    8,
+			CurrentDiskGB:      60,
+		},
+	}
+	for idx, childPayload := range childPayloads {
+		childEventID := fmt.Sprintf("event-child-%d-%s", idx+1, uuid.NewString())
+		rawPayload, marshalErr := json.Marshal(childPayload)
+		if marshalErr != nil {
+			t.Fatalf("marshal child payload: %v", marshalErr)
+		}
+		mustCreateDomainEventWithAggregate(
+			t,
+			client,
+			childEventID,
+			"vm",
+			childPayload.VMID,
+			rawPayload,
+		)
+		if _, createErr := client.Ticket.Create().
+			SetID(fmt.Sprintf("ticket-child-%d-%s", idx+1, uuid.NewString())).
+			SetEventID(childEventID).
+			SetOperationType(entticket.OperationTypeDELETE).
+			SetStatus(entticket.StatusSUCCESS).
+			SetRequester(requester.ID).
+			SetApprover(approver.ID).
+			SetParentTicketID(parentTicketID).
+			Save(ctx); createErr != nil {
+			t.Fatalf("create child ticket: %v", createErr)
+		}
+	}
+
+	_, err = client.AuditLog.Create().
+		SetID("audit-" + uuid.NewString()).
+		SetAction("approval.batch_approved").
+		SetResourceType("ticket").
+		SetResourceID(parentTicketID).
+		SetActor(approver.ID).
+		SetDetails(map[string]interface{}{
+			"decision": "batch_approved",
+		}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create audit log: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/audit-logs",
+		"",
+		"admin-1",
+		[]string{"audit:read", "platform:admin"},
+	)
+	srv.ListAuditLogs(c, generated.ListAuditLogsParams{})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.AuditLogList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("items len = %d, want 1", got)
+	}
+
+	item := resp.Items[0]
+	if item.TicketSummary == nil {
+		t.Fatal("ticket_summary = nil, want non-nil")
+	}
+	if item.TicketSummary.SystemName != "shop" {
+		t.Fatalf("ticket_summary.system_name = %q, want shop", item.TicketSummary.SystemName)
+	}
+	if item.TicketSummary.ServiceName != "redis" {
+		t.Fatalf("ticket_summary.service_name = %q, want redis", item.TicketSummary.ServiceName)
+	}
+	if item.TicketSummary.OwnerDisplayName != "Alex Chen" {
+		t.Fatalf("ticket_summary.owner_display_name = %q, want Alex Chen", item.TicketSummary.OwnerDisplayName)
+	}
+	if len(item.TicketSummary.Items) != 2 {
+		t.Fatalf("ticket_summary.items len = %d, want 2", len(item.TicketSummary.Items))
+	}
+	if item.TicketSummary.Items[0].VmName != "redis-01" || item.TicketSummary.Items[1].VmName != "redis-02" {
+		t.Fatalf("ticket_summary item vm names = %#v, want redis-01/redis-02", item.TicketSummary.Items)
+	}
+	if item.TicketSummary.Items[0].TemplateName != "OpenEuler 22.03" {
+		t.Fatalf("ticket_summary.items[0].template_name = %q, want OpenEuler 22.03", item.TicketSummary.Items[0].TemplateName)
+	}
+	if item.TicketSummary.Items[0].CurrentCpuCores != 4 || item.TicketSummary.Items[0].CurrentMemoryGi != 8 || item.TicketSummary.Items[0].CurrentDiskGb != 60 {
+		t.Fatalf("ticket_summary.items[0] resources = cpu=%v memory=%v disk=%d, want 4/8/60", item.TicketSummary.Items[0].CurrentCpuCores, item.TicketSummary.Items[0].CurrentMemoryGi, item.TicketSummary.Items[0].CurrentDiskGb)
+	}
+}
+
+func TestListAuditLogs_InfersHistoricalBatchVMContextFromSparseEvents(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	requester := mustCreateUser(t, client, "requester-history", "alexchen")
+	if _, err := client.User.UpdateOneID(requester.ID).
+		SetDisplayName("Alex Chen").
+		SetEmail("alexchen@example.com").
+		SetEnabled(true).
+		Save(ctx); err != nil {
+		t.Fatalf("update requester: %v", err)
+	}
+	approver := mustCreateUser(t, client, "approver-history", "admin")
+	if _, err := client.User.UpdateOneID(approver.ID).
+		SetDisplayName("Default Administrator").
+		SetEmail("admin@example.com").
+		SetEnabled(true).
+		Save(ctx); err != nil {
+		t.Fatalf("update approver: %v", err)
+	}
+
+	system, err := client.System.Create().
+		SetID("system-shop").
+		SetName("shop").
+		SetCreatedBy(requester.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create system: %v", err)
+	}
+	if _, err := client.Service.Create().
+		SetID("service-redis-api").
+		SetName("redis-api").
+		SetDescription("Redis API").
+		SetSystem(system).
+		Save(ctx); err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+	mustCreateClusterWithLabels(t, client, "cluster-test-1", "kubevirt-test02", "KubeVirt Test 02", entcluster.EnvironmentTest)
+
+	parentEventID := "event-parent-history-" + uuid.NewString()
+	parentTicketID := "ticket-parent-history-" + uuid.NewString()
+	mustCreateDomainEventWithAggregate(
+		t,
+		client,
+		parentEventID,
+		"ticket",
+		parentTicketID,
+		mustApprovalJSON(t, map[string]interface{}{
+			"items": []map[string]interface{}{
+				{
+					"vm_id":             "vm-hist-1",
+					"request_vm_status": "STOPPED",
+				},
+				{
+					"vm_id":             "vm-hist-2",
+					"request_vm_status": "STOPPED",
+				},
+			},
+			"batch_item_count": 2,
+		}),
+	)
+	mustCreateTicket(t, client, parentTicketID, parentEventID, entticket.OperationTypeDELETE, requester.ID)
+	if _, err := client.Ticket.UpdateOneID(parentTicketID).SetApprover(approver.ID).Save(ctx); err != nil {
+		t.Fatalf("set approver: %v", err)
+	}
+
+	historicalPayloads := []struct {
+		vmID   string
+		vmName string
+	}{
+		{vmID: "vm-hist-1", vmName: "gtest1-shop-redis-api-01"},
+		{vmID: "vm-hist-2", vmName: "gtest1-shop-redis-api-02"},
+	}
+	for idx, item := range historicalPayloads {
+		modifyEventID := fmt.Sprintf("event-modify-history-%d-%s", idx+1, uuid.NewString())
+		mustCreateDomainEventWithAggregate(
+			t,
+			client,
+			modifyEventID,
+			"vm",
+			item.vmID,
+			mustApprovalJSON(t, map[string]interface{}{
+				"vm_id":             item.vmID,
+				"vm_name":           item.vmName,
+				"cluster_id":        "cluster-test-1",
+				"namespace":         "gtest1",
+				"request_vm_status": "RUNNING",
+				"current_cpu_cores": 4,
+				"current_memory_gi": 8,
+				"current_disk_gb":   60,
+				"operation":         "stop",
+				"actor":             "user-default-admin",
+			}),
+		)
+
+		childEventID := fmt.Sprintf("event-child-history-%d-%s", idx+1, uuid.NewString())
+		mustCreateDomainEventWithAggregate(
+			t,
+			client,
+			childEventID,
+			"vm",
+			item.vmID,
+			mustApprovalJSON(t, map[string]interface{}{
+				"vm_id":             item.vmID,
+				"vm_name":           item.vmName,
+				"cluster_id":        "cluster-test-1",
+				"namespace":         "gtest1",
+				"request_vm_status": "STOPPED",
+			}),
+		)
+		if _, err := client.Ticket.Create().
+			SetID(fmt.Sprintf("ticket-child-history-%d-%s", idx+1, uuid.NewString())).
+			SetEventID(childEventID).
+			SetOperationType(entticket.OperationTypeDELETE).
+			SetStatus(entticket.StatusSUCCESS).
+			SetRequester(requester.ID).
+			SetApprover(approver.ID).
+			SetParentTicketID(parentTicketID).
+			Save(ctx); err != nil {
+			t.Fatalf("create child ticket: %v", err)
+		}
+	}
+
+	if _, err := client.AuditLog.Create().
+		SetID("audit-" + uuid.NewString()).
+		SetAction("approval.batch_approved").
+		SetResourceType("ticket").
+		SetResourceID(parentTicketID).
+		SetActor(approver.ID).
+		SetDetails(map[string]interface{}{"decision": "batch_approved"}).
+		Save(ctx); err != nil {
+		t.Fatalf("create audit log: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/audit-logs",
+		"",
+		"admin-1",
+		[]string{"audit:read", "platform:admin"},
+	)
+	srv.ListAuditLogs(c, generated.ListAuditLogsParams{})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.AuditLogList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("items len = %d, want 1", got)
+	}
+
+	item := resp.Items[0]
+	if item.TicketSummary == nil {
+		t.Fatal("ticket_summary = nil, want non-nil")
+	}
+	if item.TicketSummary.SystemName != "shop" {
+		t.Fatalf("ticket_summary.system_name = %q, want shop", item.TicketSummary.SystemName)
+	}
+	if item.TicketSummary.ServiceName != "redis-api" {
+		t.Fatalf("ticket_summary.service_name = %q, want redis-api", item.TicketSummary.ServiceName)
+	}
+	if item.TicketSummary.OwnerDisplayName != "Alex Chen" {
+		t.Fatalf("ticket_summary.owner_display_name = %q, want Alex Chen", item.TicketSummary.OwnerDisplayName)
+	}
+	if item.TicketSummary.ClusterName != "KubeVirt Test 02" {
+		t.Fatalf("ticket_summary.cluster_name = %q, want KubeVirt Test 02", item.TicketSummary.ClusterName)
+	}
+	if item.TicketSummary.ClusterEnvironment != "test" {
+		t.Fatalf("ticket_summary.cluster_environment = %q, want test", item.TicketSummary.ClusterEnvironment)
+	}
+	if len(item.TicketSummary.Items) != 2 {
+		t.Fatalf("ticket_summary.items len = %d, want 2", len(item.TicketSummary.Items))
+	}
+	if item.TicketSummary.Items[0].VmName != "gtest1-shop-redis-api-01" {
+		t.Fatalf("ticket_summary.items[0].vm_name = %q, want gtest1-shop-redis-api-01", item.TicketSummary.Items[0].VmName)
+	}
+	if item.TicketSummary.Items[0].CurrentCpuCores != 4 || item.TicketSummary.Items[0].CurrentMemoryGi != 8 || item.TicketSummary.Items[0].CurrentDiskGb != 60 {
+		t.Fatalf("ticket_summary.items[0] resources = cpu=%v memory=%v disk=%d, want 4/8/60", item.TicketSummary.Items[0].CurrentCpuCores, item.TicketSummary.Items[0].CurrentMemoryGi, item.TicketSummary.Items[0].CurrentDiskGb)
 	}
 }
 

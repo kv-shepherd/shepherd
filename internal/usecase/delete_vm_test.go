@@ -6,6 +6,7 @@ import (
 
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
+	"kv-shepherd.io/shepherd/internal/domain"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 )
 
@@ -131,5 +132,55 @@ func TestVMDeleteAllowedStatusAndErrorPayload(t *testing.T) {
 	}
 	if got := params["allowed_states"]; got != VMDeleteAllowedStatesLabel() {
 		t.Fatalf("params[allowed_states] = %#v, want %q", got, VMDeleteAllowedStatesLabel())
+	}
+}
+
+func TestApplyDeleteCreationSnapshot(t *testing.T) {
+	t.Parallel()
+
+	payload := domain.VMDeletePayload{
+		ServiceName:      "payments-api",
+		SystemID:         "",
+		SystemName:       "",
+		OwnerID:          "",
+		OwnerDisplayName: "",
+		OwnerUsername:    "",
+	}
+	createPayload := domain.VMCreationPayload{
+		SystemID:         "system-1",
+		SystemName:       "Payments",
+		ServiceID:        "service-1",
+		ServiceName:      "billing-worker",
+		OwnerID:          "user-1",
+		OwnerDisplayName: "Alex Chen",
+		OwnerUsername:    "alexchen",
+		TemplateID:       "template-openeuler",
+		TemplateName:     "OpenEuler 22.03",
+		InstanceSizeID:   "size-m4",
+		InstanceSizeName: "M4 Large",
+		TargetCPUCores:   4,
+		TargetMemoryGi:   8,
+		TargetDiskGB:     60,
+	}
+
+	applyDeleteCreationSnapshot(&payload, createPayload)
+
+	if payload.TemplateID != "template-openeuler" || payload.TemplateName != "OpenEuler 22.03" {
+		t.Fatalf("template snapshot not applied: %#v", payload)
+	}
+	if payload.InstanceSizeID != "size-m4" || payload.InstanceSizeName != "M4 Large" {
+		t.Fatalf("instance size snapshot not applied: %#v", payload)
+	}
+	if payload.CurrentCPUCores != 4 || payload.CurrentMemoryGi != 8 || payload.CurrentDiskGB != 60 {
+		t.Fatalf("resource snapshot not applied: %#v", payload)
+	}
+	if payload.SystemID != "system-1" || payload.SystemName != "Payments" {
+		t.Fatalf("system snapshot not applied: %#v", payload)
+	}
+	if payload.ServiceName != "payments-api" {
+		t.Fatalf("existing service name should win, got %#v", payload.ServiceName)
+	}
+	if payload.OwnerDisplayName != "Alex Chen" || payload.OwnerUsername != "alexchen" {
+		t.Fatalf("owner snapshot not applied: %#v", payload)
 	}
 }

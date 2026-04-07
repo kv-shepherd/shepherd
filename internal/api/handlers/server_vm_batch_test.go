@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -351,15 +352,108 @@ func TestBuildBatchPayloadItems(t *testing.T) {
 	t.Run("delete operation keeps vm id and clears create fields", func(t *testing.T) {
 		t.Parallel()
 
-		got := buildBatchPayloadItems(string(generated.VMBatchOperation("DELETE")), items)
+		childPayload, err := json.Marshal(domain.VMDeletePayload{
+			VMID:               "vm-1",
+			VMName:             "vm-one",
+			SystemID:           "system-1",
+			SystemName:         "shop",
+			ServiceID:          "service-1",
+			ServiceName:        "redis",
+			Namespace:          "prod",
+			ClusterID:          "cluster-1",
+			ClusterName:        "Cluster One",
+			ClusterEnvironment: "test",
+			OwnerID:            "user-1",
+			OwnerDisplayName:   "Alice",
+			OwnerUsername:      "alice",
+			TemplateID:         "template-1",
+			TemplateName:       "OpenEuler 22.03",
+			InstanceSizeID:     "size-1",
+			InstanceSizeName:   "M4 Large",
+			RequestVMStatus:    "STOPPED",
+			CurrentCPUCores:    4,
+			CurrentMemoryGi:    8,
+			CurrentDiskGB:      60,
+		})
+		if err != nil {
+			t.Fatalf("marshal child payload: %v", err)
+		}
+
+		got := buildBatchPayloadItems(
+			string(generated.VMBatchOperation("DELETE")),
+			items,
+			preparedBatchChild{payload: childPayload},
+		)
 		if len(got) != 1 {
 			t.Fatalf("len(payload) = %d, want 1", len(got))
 		}
 		if got[0].VMID != "vm-1" {
 			t.Fatalf("payload VMID = %q, want %q", got[0].VMID, "vm-1")
 		}
-		if got[0].ServiceID != "" || got[0].TemplateID != "" || got[0].InstanceSizeID != "" || got[0].Namespace != "" {
-			t.Fatalf("delete payload must clear create fields, got %+v", got[0])
+		if got[0].ServiceName != "redis" || got[0].SystemName != "shop" {
+			t.Fatalf("delete payload missing scope snapshot: %+v", got[0])
+		}
+		if got[0].TemplateName != "OpenEuler 22.03" || got[0].InstanceSizeName != "M4 Large" {
+			t.Fatalf("delete payload missing config snapshot: %+v", got[0])
+		}
+		if got[0].OwnerDisplayName != "Alice" || got[0].OwnerUsername != "alice" {
+			t.Fatalf("delete payload missing owner snapshot: %+v", got[0])
+		}
+		if got[0].Namespace != "prod" || got[0].ClusterName != "Cluster One" || got[0].ClusterEnvironment != "test" {
+			t.Fatalf("delete payload missing target snapshot: %+v", got[0])
+		}
+		if got[0].CurrentCPUCores != 4 || got[0].CurrentMemoryGi != 8 || got[0].CurrentDiskGB != 60 {
+			t.Fatalf("delete payload missing resource snapshot: %+v", got[0])
+		}
+	})
+
+	t.Run("create operation keeps vm id cleared but preserves readable create snapshot", func(t *testing.T) {
+		t.Parallel()
+
+		childPayload, err := json.Marshal(domain.VMCreationPayload{
+			RequesterID:      "user-1",
+			OwnerID:          "user-1",
+			OwnerDisplayName: "Alice",
+			OwnerUsername:    "alice",
+			ServiceID:        "service-1",
+			ServiceName:      "redis",
+			SystemID:         "system-1",
+			SystemName:       "shop",
+			TemplateID:       "template-1",
+			TemplateName:     "OpenEuler 22.03",
+			InstanceSizeID:   "size-1",
+			InstanceSizeName: "M4 Large",
+			Namespace:        "prod",
+			TargetCPUCores:   4,
+			TargetMemoryGi:   8,
+			TargetDiskGB:     60,
+		})
+		if err != nil {
+			t.Fatalf("marshal child payload: %v", err)
+		}
+
+		got := buildBatchPayloadItems(
+			string(generated.VMBatchOperation("CREATE")),
+			items,
+			preparedBatchChild{payload: childPayload},
+		)
+		if len(got) != 1 {
+			t.Fatalf("len(payload) = %d, want 1", len(got))
+		}
+		if got[0].VMID != "" {
+			t.Fatalf("payload VMID = %q, want empty for create", got[0].VMID)
+		}
+		if got[0].SystemName != "shop" || got[0].ServiceName != "redis" {
+			t.Fatalf("create payload missing scope snapshot: %+v", got[0])
+		}
+		if got[0].TemplateName != "OpenEuler 22.03" || got[0].InstanceSizeName != "M4 Large" {
+			t.Fatalf("create payload missing config snapshot: %+v", got[0])
+		}
+		if got[0].OwnerDisplayName != "Alice" || got[0].OwnerUsername != "alice" {
+			t.Fatalf("create payload missing owner snapshot: %+v", got[0])
+		}
+		if got[0].TargetCPUCores == nil || *got[0].TargetCPUCores != 4 || got[0].TargetMemoryGi == nil || *got[0].TargetMemoryGi != 8 || got[0].TargetDiskGB == nil || *got[0].TargetDiskGB != 60 {
+			t.Fatalf("create payload missing requested resources: %+v", got[0])
 		}
 	})
 }

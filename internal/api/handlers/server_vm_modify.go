@@ -272,6 +272,8 @@ func (s *Server) buildVMModifyPayload(
 	actor string,
 	req generated.VMModifyRequest,
 ) (domain.VMModifyPayload, error) {
+	snapshotLoader := newBatchSnapshotLoader(s)
+	snapshot := snapshotLoader.buildVMContextSnapshot(ctx, vmRow)
 	resp, liveVM, clusterRow, err := s.resolveVMModifyContext(ctx, vmRow)
 	if err != nil {
 		var unavailableErr *vmModifyContextUnavailableError
@@ -321,7 +323,20 @@ func (s *Server) buildVMModifyPayload(
 		VMID:                   vmRow.ID,
 		VMName:                 vmRow.Name,
 		ClusterID:              clusterRow.ID,
+		ClusterName:            firstNonEmptyString(clusterRow.DisplayName, clusterRow.Name, clusterRow.ID),
+		ClusterEnvironment:     string(clusterRow.Environment),
 		Namespace:              vmRow.Namespace,
+		SystemID:               snapshot.SystemID,
+		SystemName:             snapshot.SystemName,
+		ServiceID:              snapshot.ServiceID,
+		ServiceName:            snapshot.ServiceName,
+		OwnerID:                snapshot.OwnerID,
+		OwnerDisplayName:       snapshot.OwnerDisplayName,
+		OwnerUsername:          snapshot.OwnerUsername,
+		TemplateID:             snapshot.TemplateID,
+		TemplateName:           snapshot.TemplateName,
+		InstanceSizeID:         snapshot.InstanceSizeID,
+		InstanceSizeName:       snapshot.InstanceSizeName,
 		RequestVMStatus:        string(liveVM.Status),
 		Actor:                  actor,
 		CurrentCPUCores:        liveVM.Spec.CPU,

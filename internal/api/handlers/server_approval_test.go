@@ -207,6 +207,13 @@ func TestBuildApprovalVMTargetItemSummary_SeparatesRequestAndLatestVMStatus(t *t
 				VMID:           "vm-1",
 				VMName:         "vm-live",
 				LatestVMStatus: "NOT_FOUND",
+				OwnerID:        "owner-1",
+			},
+		},
+		map[string]approvalActorLookup{
+			"owner-1": {
+				DisplayName: "Alice Ops",
+				Username:    "alice.ops",
 			},
 		},
 	)
@@ -219,6 +226,12 @@ func TestBuildApprovalVMTargetItemSummary_SeparatesRequestAndLatestVMStatus(t *t
 	}
 	if got.VmStatus != "NOT_FOUND" {
 		t.Fatalf("VmStatus(alias) = %q, want NOT_FOUND", got.VmStatus)
+	}
+	if got.OwnerDisplayName != "Alice Ops" {
+		t.Fatalf("OwnerDisplayName = %q, want Alice Ops", got.OwnerDisplayName)
+	}
+	if got.OwnerUsername != "alice.ops" {
+		t.Fatalf("OwnerUsername = %q, want alice.ops", got.OwnerUsername)
 	}
 }
 

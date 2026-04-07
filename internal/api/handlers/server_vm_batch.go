@@ -21,6 +21,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/ratelimitexemption"
 	"kv-shepherd.io/shepherd/ent/ratelimituseroverride"
+	entservice "kv-shepherd.io/shepherd/ent/service"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
@@ -51,6 +52,279 @@ type preparedBatchChild struct {
 	operationType    entticket.OperationType
 	reason           string
 	requiresApproval bool
+}
+
+type batchVMContextSnapshot struct {
+	SystemID           string
+	SystemName         string
+	ServiceID          string
+	ServiceName        string
+	ClusterName        string
+	ClusterEnvironment string
+	OwnerID            string
+	OwnerDisplayName   string
+	OwnerUsername      string
+	TemplateID         string
+	TemplateName       string
+	InstanceSizeID     string
+	InstanceSizeName   string
+	CurrentCPUCores    float64
+	CurrentMemoryGi    float64
+	CurrentDiskGB      int
+}
+
+type batchSnapshotLoader struct {
+	server                    *Server
+	actorByID                 map[string]approvalActorLookup
+	clusterNamesByID          map[string]string
+	clusterEnvironmentsByID   map[string]string
+	creationPayloadByTicketID map[string]domain.VMCreationPayload
+	serviceByID               map[string]approvalServiceLookup
+	templateByID              map[string]*ent.Template
+	instanceSizeByID          map[string]*ent.InstanceSize
+}
+
+func newBatchSnapshotLoader(server *Server) *batchSnapshotLoader {
+	return &batchSnapshotLoader{
+		server:                    server,
+		actorByID:                 make(map[string]approvalActorLookup),
+		clusterNamesByID:          make(map[string]string),
+		clusterEnvironmentsByID:   make(map[string]string),
+		creationPayloadByTicketID: make(map[string]domain.VMCreationPayload),
+		serviceByID:               make(map[string]approvalServiceLookup),
+		templateByID:              make(map[string]*ent.Template),
+		instanceSizeByID:          make(map[string]*ent.InstanceSize),
+	}
+}
+
+func (l *batchSnapshotLoader) actorIdentity(ctx context.Context, actorID string) (displayName, username string) {
+	trimmedID := strings.TrimSpace(actorID)
+	if trimmedID == "" || l == nil || l.server == nil {
+		return "", ""
+	}
+	if actor, ok := l.actorByID[trimmedID]; ok {
+		return approvalActorIdentity(trimmedID, map[string]approvalActorLookup{trimmedID: actor})
+	}
+	user, err := l.server.client.User.Get(ctx, trimmedID)
+	if err != nil {
+		l.actorByID[trimmedID] = approvalActorLookup{}
+		return trimmedID, trimmedID
+	}
+	l.actorByID[trimmedID] = approvalActorLookup{
+		DisplayName: strings.TrimSpace(user.DisplayName),
+		Username:    strings.TrimSpace(user.Username),
+	}
+	return approvalActorIdentity(trimmedID, l.actorByID)
+}
+
+func (l *batchSnapshotLoader) clusterPresentation(ctx context.Context, clusterID string) (clusterName, clusterEnvironment string) {
+	trimmedID := strings.TrimSpace(clusterID)
+	if trimmedID == "" || l == nil || l.server == nil {
+		return "", ""
+	}
+	if name, ok := l.clusterNamesByID[trimmedID]; ok {
+		return name, l.clusterEnvironmentsByID[trimmedID]
+	}
+	cluster, err := l.server.client.Cluster.Get(ctx, trimmedID)
+	if err != nil {
+		l.clusterNamesByID[trimmedID] = ""
+		l.clusterEnvironmentsByID[trimmedID] = ""
+		return "", ""
+	}
+	name := firstNonEmptyString(cluster.DisplayName, cluster.Name, cluster.ID)
+	environment := string(cluster.Environment)
+	l.clusterNamesByID[trimmedID] = name
+	l.clusterEnvironmentsByID[trimmedID] = environment
+	return name, environment
+}
+
+func (l *batchSnapshotLoader) serviceLookup(ctx context.Context, serviceID string) approvalServiceLookup {
+	trimmedID := strings.TrimSpace(serviceID)
+	if trimmedID == "" || l == nil || l.server == nil {
+		return approvalServiceLookup{}
+	}
+	if lookup, ok := l.serviceByID[trimmedID]; ok {
+		return lookup
+	}
+	service, err := l.server.client.Service.Query().
+		Where(entservice.IDEQ(trimmedID)).
+		WithSystem().
+		Only(ctx)
+	if err != nil {
+		l.serviceByID[trimmedID] = approvalServiceLookup{}
+		return approvalServiceLookup{}
+	}
+	lookup := approvalServiceLookup{
+		ServiceID:   service.ID,
+		ServiceName: service.Name,
+	}
+	if service.Edges.System != nil {
+		lookup.SystemID = service.Edges.System.ID
+		lookup.SystemName = service.Edges.System.Name
+	}
+	l.serviceByID[trimmedID] = lookup
+	return lookup
+}
+
+func (l *batchSnapshotLoader) template(ctx context.Context, templateID string) *ent.Template {
+	trimmedID := strings.TrimSpace(templateID)
+	if trimmedID == "" || l == nil || l.server == nil {
+		return nil
+	}
+	if tpl, ok := l.templateByID[trimmedID]; ok {
+		return tpl
+	}
+	tpl, err := l.server.client.Template.Get(ctx, trimmedID)
+	if err != nil {
+		l.templateByID[trimmedID] = nil
+		return nil
+	}
+	l.templateByID[trimmedID] = tpl
+	return tpl
+}
+
+func (l *batchSnapshotLoader) instanceSize(ctx context.Context, instanceSizeID string) *ent.InstanceSize {
+	trimmedID := strings.TrimSpace(instanceSizeID)
+	if trimmedID == "" || l == nil || l.server == nil {
+		return nil
+	}
+	if size, ok := l.instanceSizeByID[trimmedID]; ok {
+		return size
+	}
+	size, err := l.server.client.InstanceSize.Get(ctx, trimmedID)
+	if err != nil {
+		l.instanceSizeByID[trimmedID] = nil
+		return nil
+	}
+	l.instanceSizeByID[trimmedID] = size
+	return size
+}
+
+func (l *batchSnapshotLoader) creationPayload(ctx context.Context, ticketID string) domain.VMCreationPayload {
+	trimmedID := strings.TrimSpace(ticketID)
+	if trimmedID == "" || l == nil || l.server == nil {
+		return domain.VMCreationPayload{}
+	}
+	if payload, ok := l.creationPayloadByTicketID[trimmedID]; ok {
+		return payload
+	}
+	ticket, err := l.server.client.Ticket.Get(ctx, trimmedID)
+	if err != nil || strings.TrimSpace(ticket.EventID) == "" {
+		l.creationPayloadByTicketID[trimmedID] = domain.VMCreationPayload{}
+		return domain.VMCreationPayload{}
+	}
+	event, err := l.server.client.DomainEvent.Get(ctx, ticket.EventID)
+	if err != nil {
+		l.creationPayloadByTicketID[trimmedID] = domain.VMCreationPayload{}
+		return domain.VMCreationPayload{}
+	}
+	var payload domain.VMCreationPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		l.creationPayloadByTicketID[trimmedID] = domain.VMCreationPayload{}
+		return domain.VMCreationPayload{}
+	}
+	l.creationPayloadByTicketID[trimmedID] = payload
+	return payload
+}
+
+func (l *batchSnapshotLoader) enrichCreatePayload(ctx context.Context, payload *domain.VMCreationPayload) {
+	if payload == nil {
+		return
+	}
+	payload.OwnerID = firstNonEmptyString(strings.TrimSpace(payload.OwnerID), strings.TrimSpace(payload.RequesterID))
+	payload.OwnerDisplayName, payload.OwnerUsername = l.actorIdentity(ctx, payload.OwnerID)
+
+	serviceLookup := l.serviceLookup(ctx, payload.ServiceID)
+	payload.ServiceName = firstNonEmptyString(strings.TrimSpace(payload.ServiceName), strings.TrimSpace(serviceLookup.ServiceName))
+	payload.SystemID = firstNonEmptyString(strings.TrimSpace(payload.SystemID), strings.TrimSpace(serviceLookup.SystemID))
+	payload.SystemName = firstNonEmptyString(strings.TrimSpace(payload.SystemName), strings.TrimSpace(serviceLookup.SystemName))
+
+	if tpl := l.template(ctx, payload.TemplateID); tpl != nil {
+		payload.TemplateName = firstNonEmptyString(strings.TrimSpace(payload.TemplateName), firstNonEmptyString(tpl.DisplayName, tpl.Name, tpl.ID))
+	}
+	if size := l.instanceSize(ctx, payload.InstanceSizeID); size != nil {
+		payload.InstanceSizeName = firstNonEmptyString(strings.TrimSpace(payload.InstanceSizeName), firstNonEmptyString(size.DisplayName, size.Name, size.ID))
+		if payload.TargetCPUCores <= 0 {
+			payload.TargetCPUCores = size.CPUCores
+		}
+		if payload.TargetMemoryGi <= 0 {
+			payload.TargetMemoryGi = size.MemoryGi
+		}
+		if payload.TargetDiskGB <= 0 {
+			payload.TargetDiskGB = size.DiskGB
+		}
+	}
+}
+
+func (l *batchSnapshotLoader) buildVMContextSnapshot(
+	ctx context.Context,
+	vmRow *ent.VM,
+) batchVMContextSnapshot {
+	if vmRow == nil {
+		return batchVMContextSnapshot{}
+	}
+
+	snapshot := batchVMContextSnapshot{
+		OwnerID: strings.TrimSpace(vmRow.CreatedBy),
+	}
+	snapshot.OwnerDisplayName, snapshot.OwnerUsername = l.actorIdentity(ctx, snapshot.OwnerID)
+
+	if service := vmRow.Edges.Service; service != nil {
+		snapshot.ServiceID = service.ID
+		snapshot.ServiceName = service.Name
+		if service.Edges.System != nil {
+			snapshot.SystemID = service.Edges.System.ID
+			snapshot.SystemName = service.Edges.System.Name
+		}
+	}
+
+	snapshot.ClusterName, snapshot.ClusterEnvironment = l.clusterPresentation(ctx, vmRow.ClusterID)
+
+	createPayload := l.creationPayload(ctx, vmRow.TicketID)
+	snapshot.TemplateID = strings.TrimSpace(createPayload.TemplateID)
+	snapshot.InstanceSizeID = strings.TrimSpace(createPayload.InstanceSizeID)
+	snapshot.TemplateName = strings.TrimSpace(createPayload.TemplateName)
+	snapshot.InstanceSizeName = strings.TrimSpace(createPayload.InstanceSizeName)
+	snapshot.CurrentCPUCores = createPayload.TargetCPUCores
+	snapshot.CurrentMemoryGi = createPayload.TargetMemoryGi
+	snapshot.CurrentDiskGB = createPayload.TargetDiskGB
+
+	if snapshot.ServiceID == "" {
+		snapshot.ServiceID = strings.TrimSpace(createPayload.ServiceID)
+	}
+	if snapshot.ServiceName == "" {
+		snapshot.ServiceName = strings.TrimSpace(createPayload.ServiceName)
+	}
+	if snapshot.SystemID == "" {
+		snapshot.SystemID = strings.TrimSpace(createPayload.SystemID)
+	}
+	if snapshot.SystemName == "" {
+		snapshot.SystemName = strings.TrimSpace(createPayload.SystemName)
+	}
+	if snapshot.OwnerDisplayName == "" && strings.TrimSpace(createPayload.OwnerDisplayName) != "" {
+		snapshot.OwnerDisplayName = strings.TrimSpace(createPayload.OwnerDisplayName)
+	}
+	if snapshot.OwnerUsername == "" && strings.TrimSpace(createPayload.OwnerUsername) != "" {
+		snapshot.OwnerUsername = strings.TrimSpace(createPayload.OwnerUsername)
+	}
+
+	if tpl := l.template(ctx, snapshot.TemplateID); tpl != nil {
+		snapshot.TemplateName = firstNonEmptyString(snapshot.TemplateName, firstNonEmptyString(tpl.DisplayName, tpl.Name, tpl.ID))
+	}
+	if size := l.instanceSize(ctx, snapshot.InstanceSizeID); size != nil {
+		snapshot.InstanceSizeName = firstNonEmptyString(snapshot.InstanceSizeName, firstNonEmptyString(size.DisplayName, size.Name, size.ID))
+		if snapshot.CurrentCPUCores <= 0 {
+			snapshot.CurrentCPUCores = size.CPUCores
+		}
+		if snapshot.CurrentMemoryGi <= 0 {
+			snapshot.CurrentMemoryGi = size.MemoryGi
+		}
+		if snapshot.CurrentDiskGB <= 0 {
+			snapshot.CurrentDiskGB = size.DiskGB
+		}
+	}
+
+	return snapshot
 }
 
 type batchValidationError struct {
@@ -995,6 +1269,7 @@ func (s *Server) prepareBatchChildren(
 	req generated.VMBatchSubmitRequest,
 	visibility namespaceVisibility,
 ) ([]preparedBatchChild, error) {
+	snapshotLoader := newBatchSnapshotLoader(s)
 	children := make([]preparedBatchChild, 0, len(req.Items))
 
 	for idx, item := range req.Items {
@@ -1042,6 +1317,7 @@ func (s *Server) prepareBatchChildren(
 				Namespace:      namespace,
 				Reason:         itemReason,
 			}
+			snapshotLoader.enrichCreatePayload(ctx, &payload)
 			payloadBytes, err := payload.ToJSON()
 			if err != nil {
 				return nil, err
@@ -1065,7 +1341,12 @@ func (s *Server) prepareBatchChildren(
 					},
 				}
 			}
-			vmObj, err := s.client.VM.Get(ctx, vmID)
+			vmObj, err := s.client.VM.Query().
+				Where(entvm.IDEQ(vmID)).
+				WithService(func(query *ent.ServiceQuery) {
+					query.WithSystem()
+				}).
+				Only(ctx)
 			if err != nil {
 				if ent.IsNotFound(err) {
 					return nil, &batchValidationError{
@@ -1091,6 +1372,7 @@ func (s *Server) prepareBatchChildren(
 					},
 				}
 			}
+			snapshot := snapshotLoader.buildVMContextSnapshot(ctx, vmObj)
 			vmObj = s.refreshVMLiveState(ctx, vmObj)
 			if !usecase.VMDeleteAllowedStatus(vmObj.Status) {
 				return nil, &batchValidationError{
@@ -1103,12 +1385,28 @@ func (s *Server) prepareBatchChildren(
 				}
 			}
 			payload := domain.VMDeletePayload{
-				VMID:            vmObj.ID,
-				VMName:          vmObj.Name,
-				ClusterID:       vmObj.ClusterID,
-				Namespace:       vmObj.Namespace,
-				RequestVMStatus: string(vmObj.Status),
-				Actor:           actor,
+				VMID:               vmObj.ID,
+				VMName:             vmObj.Name,
+				ClusterID:          vmObj.ClusterID,
+				ClusterName:        snapshot.ClusterName,
+				ClusterEnvironment: snapshot.ClusterEnvironment,
+				Namespace:          vmObj.Namespace,
+				SystemID:           snapshot.SystemID,
+				SystemName:         snapshot.SystemName,
+				ServiceID:          snapshot.ServiceID,
+				ServiceName:        snapshot.ServiceName,
+				OwnerID:            snapshot.OwnerID,
+				OwnerDisplayName:   snapshot.OwnerDisplayName,
+				OwnerUsername:      snapshot.OwnerUsername,
+				TemplateID:         snapshot.TemplateID,
+				TemplateName:       snapshot.TemplateName,
+				InstanceSizeID:     snapshot.InstanceSizeID,
+				InstanceSizeName:   snapshot.InstanceSizeName,
+				RequestVMStatus:    string(vmObj.Status),
+				CurrentCPUCores:    snapshot.CurrentCPUCores,
+				CurrentMemoryGi:    snapshot.CurrentMemoryGi,
+				CurrentDiskGB:      snapshot.CurrentDiskGB,
+				Actor:              actor,
 			}
 			payloadBytes, err := payload.ToJSON()
 			if err != nil {
@@ -1133,7 +1431,12 @@ func (s *Server) prepareBatchChildren(
 					},
 				}
 			}
-			vmObj, err := s.client.VM.Get(ctx, vmID)
+			vmObj, err := s.client.VM.Query().
+				Where(entvm.IDEQ(vmID)).
+				WithService(func(query *ent.ServiceQuery) {
+					query.WithSystem()
+				}).
+				Only(ctx)
 			if err != nil {
 				if ent.IsNotFound(err) {
 					return nil, &batchValidationError{
@@ -1160,6 +1463,7 @@ func (s *Server) prepareBatchChildren(
 				}
 			}
 
+			snapshot := snapshotLoader.buildVMContextSnapshot(ctx, vmObj)
 			payload, err := s.buildVMModifyPayload(ctx, vmObj, actor, generated.VMModifyRequest{
 				Reason:         itemReason,
 				TargetCpuCores: item.TargetCpuCores,
@@ -1175,6 +1479,19 @@ func (s *Server) prepareBatchChildren(
 					},
 				}
 			}
+			payload.SystemID = snapshot.SystemID
+			payload.SystemName = snapshot.SystemName
+			payload.ServiceID = snapshot.ServiceID
+			payload.ServiceName = snapshot.ServiceName
+			payload.OwnerID = snapshot.OwnerID
+			payload.OwnerDisplayName = snapshot.OwnerDisplayName
+			payload.OwnerUsername = snapshot.OwnerUsername
+			payload.ClusterName = firstNonEmptyString(payload.ClusterName, snapshot.ClusterName)
+			payload.ClusterEnvironment = firstNonEmptyString(payload.ClusterEnvironment, snapshot.ClusterEnvironment)
+			payload.TemplateID = firstNonEmptyString(payload.TemplateID, snapshot.TemplateID)
+			payload.TemplateName = firstNonEmptyString(payload.TemplateName, snapshot.TemplateName)
+			payload.InstanceSizeID = firstNonEmptyString(payload.InstanceSizeID, snapshot.InstanceSizeID)
+			payload.InstanceSizeName = firstNonEmptyString(payload.InstanceSizeName, snapshot.InstanceSizeName)
 			payloadBytes, err := payload.ToJSON()
 			if err != nil {
 				return nil, err
@@ -1226,6 +1543,7 @@ func (s *Server) prepareBatchPowerChildren(
 	req generated.VMBatchPowerRequest,
 	visibility namespaceVisibility,
 ) ([]preparedBatchChild, error) {
+	snapshotLoader := newBatchSnapshotLoader(s)
 	children := make([]preparedBatchChild, 0, len(req.Items))
 	for idx, item := range req.Items {
 		vmID := strings.TrimSpace(item.VmId)
@@ -1238,7 +1556,12 @@ func (s *Server) prepareBatchPowerChildren(
 				},
 			}
 		}
-		vmObj, err := s.client.VM.Get(ctx, vmID)
+		vmObj, err := s.client.VM.Query().
+			Where(entvm.IDEQ(vmID)).
+			WithService(func(query *ent.ServiceQuery) {
+				query.WithSystem()
+			}).
+			Only(ctx)
 		if err != nil {
 			if ent.IsNotFound(err) {
 				return nil, &batchValidationError{
@@ -1264,6 +1587,7 @@ func (s *Server) prepareBatchPowerChildren(
 				},
 			}
 		}
+		snapshot := snapshotLoader.buildVMContextSnapshot(ctx, vmObj)
 		vmObj = s.refreshVMLiveState(ctx, vmObj)
 
 		itemReason := strings.TrimSpace(item.Reason)
@@ -1288,13 +1612,29 @@ func (s *Server) prepareBatchPowerChildren(
 		}
 
 		payload := domain.VMPowerPayload{
-			VMID:            vmObj.ID,
-			VMName:          vmObj.Name,
-			ClusterID:       vmObj.ClusterID,
-			Namespace:       vmObj.Namespace,
-			RequestVMStatus: string(vmObj.Status),
-			Operation:       strings.ToLower(jobOperation),
-			Actor:           actor,
+			VMID:               vmObj.ID,
+			VMName:             vmObj.Name,
+			ClusterID:          vmObj.ClusterID,
+			ClusterName:        snapshot.ClusterName,
+			ClusterEnvironment: snapshot.ClusterEnvironment,
+			Namespace:          vmObj.Namespace,
+			SystemID:           snapshot.SystemID,
+			SystemName:         snapshot.SystemName,
+			ServiceID:          snapshot.ServiceID,
+			ServiceName:        snapshot.ServiceName,
+			OwnerID:            snapshot.OwnerID,
+			OwnerDisplayName:   snapshot.OwnerDisplayName,
+			OwnerUsername:      snapshot.OwnerUsername,
+			TemplateID:         snapshot.TemplateID,
+			TemplateName:       snapshot.TemplateName,
+			InstanceSizeID:     snapshot.InstanceSizeID,
+			InstanceSizeName:   snapshot.InstanceSizeName,
+			RequestVMStatus:    string(vmObj.Status),
+			CurrentCPUCores:    snapshot.CurrentCPUCores,
+			CurrentMemoryGi:    snapshot.CurrentMemoryGi,
+			CurrentDiskGB:      snapshot.CurrentDiskGB,
+			Operation:          strings.ToLower(jobOperation),
+			Actor:              actor,
 		}
 		payloadBytes, err := payload.ToJSON()
 		if err != nil {
@@ -1835,18 +2175,79 @@ func buildBatchPayloadItems(op string, items []generated.VMBatchChildItem, child
 		}
 		if idx < len(children) {
 			switch strings.TrimSpace(strings.ToUpper(op)) {
+			case string(generated.VMBatchOperation("CREATE")):
+				var childPayload domain.VMCreationPayload
+				if err := json.Unmarshal(children[idx].payload, &childPayload); err == nil {
+					payloadItem.SystemID = strings.TrimSpace(childPayload.SystemID)
+					payloadItem.SystemName = strings.TrimSpace(childPayload.SystemName)
+					payloadItem.ServiceID = strings.TrimSpace(childPayload.ServiceID)
+					payloadItem.ServiceName = strings.TrimSpace(childPayload.ServiceName)
+					payloadItem.TemplateID = strings.TrimSpace(childPayload.TemplateID)
+					payloadItem.TemplateName = strings.TrimSpace(childPayload.TemplateName)
+					payloadItem.InstanceSizeID = strings.TrimSpace(childPayload.InstanceSizeID)
+					payloadItem.InstanceSizeName = strings.TrimSpace(childPayload.InstanceSizeName)
+					payloadItem.Namespace = strings.TrimSpace(childPayload.Namespace)
+					payloadItem.OwnerID = firstNonEmptyString(strings.TrimSpace(childPayload.OwnerID), strings.TrimSpace(childPayload.RequesterID))
+					payloadItem.OwnerDisplayName = strings.TrimSpace(childPayload.OwnerDisplayName)
+					payloadItem.OwnerUsername = strings.TrimSpace(childPayload.OwnerUsername)
+					if payloadItem.TargetCPUCores == nil && childPayload.TargetCPUCores > 0 {
+						target := childPayload.TargetCPUCores
+						payloadItem.TargetCPUCores = &target
+					}
+					if payloadItem.TargetMemoryGi == nil && childPayload.TargetMemoryGi > 0 {
+						target := childPayload.TargetMemoryGi
+						payloadItem.TargetMemoryGi = &target
+					}
+					if payloadItem.TargetDiskGB == nil && childPayload.TargetDiskGB > 0 {
+						target := childPayload.TargetDiskGB
+						payloadItem.TargetDiskGB = &target
+					}
+				}
 			case string(generated.VMBatchOperation("DELETE")):
 				var childPayload domain.VMDeletePayload
 				if err := json.Unmarshal(children[idx].payload, &childPayload); err == nil {
 					payloadItem.VMID = strings.TrimSpace(childPayload.VMID)
+					payloadItem.VMName = strings.TrimSpace(childPayload.VMName)
+					payloadItem.SystemID = strings.TrimSpace(childPayload.SystemID)
+					payloadItem.SystemName = strings.TrimSpace(childPayload.SystemName)
+					payloadItem.ServiceID = strings.TrimSpace(childPayload.ServiceID)
+					payloadItem.ServiceName = strings.TrimSpace(childPayload.ServiceName)
+					payloadItem.TemplateID = strings.TrimSpace(childPayload.TemplateID)
+					payloadItem.TemplateName = strings.TrimSpace(childPayload.TemplateName)
+					payloadItem.InstanceSizeID = strings.TrimSpace(childPayload.InstanceSizeID)
+					payloadItem.InstanceSizeName = strings.TrimSpace(childPayload.InstanceSizeName)
 					payloadItem.Namespace = strings.TrimSpace(childPayload.Namespace)
+					payloadItem.ClusterID = strings.TrimSpace(childPayload.ClusterID)
+					payloadItem.ClusterName = strings.TrimSpace(childPayload.ClusterName)
+					payloadItem.ClusterEnvironment = strings.TrimSpace(childPayload.ClusterEnvironment)
+					payloadItem.OwnerID = strings.TrimSpace(childPayload.OwnerID)
+					payloadItem.OwnerDisplayName = strings.TrimSpace(childPayload.OwnerDisplayName)
+					payloadItem.OwnerUsername = strings.TrimSpace(childPayload.OwnerUsername)
 					payloadItem.RequestVMStatus = strings.TrimSpace(childPayload.RequestVMStatus)
+					payloadItem.CurrentCPUCores = childPayload.CurrentCPUCores
+					payloadItem.CurrentMemoryGi = childPayload.CurrentMemoryGi
+					payloadItem.CurrentDiskGB = childPayload.CurrentDiskGB
 				}
 			case string(generated.VMBatchOperation("MODIFY")):
 				var childPayload domain.VMModifyPayload
 				if err := json.Unmarshal(children[idx].payload, &childPayload); err == nil {
 					payloadItem.VMID = strings.TrimSpace(childPayload.VMID)
+					payloadItem.VMName = strings.TrimSpace(childPayload.VMName)
+					payloadItem.SystemID = strings.TrimSpace(childPayload.SystemID)
+					payloadItem.SystemName = strings.TrimSpace(childPayload.SystemName)
+					payloadItem.ServiceID = strings.TrimSpace(childPayload.ServiceID)
+					payloadItem.ServiceName = strings.TrimSpace(childPayload.ServiceName)
+					payloadItem.TemplateID = strings.TrimSpace(childPayload.TemplateID)
+					payloadItem.TemplateName = strings.TrimSpace(childPayload.TemplateName)
+					payloadItem.InstanceSizeID = strings.TrimSpace(childPayload.InstanceSizeID)
+					payloadItem.InstanceSizeName = strings.TrimSpace(childPayload.InstanceSizeName)
 					payloadItem.Namespace = strings.TrimSpace(childPayload.Namespace)
+					payloadItem.ClusterID = strings.TrimSpace(childPayload.ClusterID)
+					payloadItem.ClusterName = strings.TrimSpace(childPayload.ClusterName)
+					payloadItem.ClusterEnvironment = strings.TrimSpace(childPayload.ClusterEnvironment)
+					payloadItem.OwnerID = strings.TrimSpace(childPayload.OwnerID)
+					payloadItem.OwnerDisplayName = strings.TrimSpace(childPayload.OwnerDisplayName)
+					payloadItem.OwnerUsername = strings.TrimSpace(childPayload.OwnerUsername)
 					payloadItem.RequestVMStatus = strings.TrimSpace(childPayload.RequestVMStatus)
 					payloadItem.CurrentCPUCores = childPayload.CurrentCPUCores
 					payloadItem.CurrentMemoryGi = childPayload.CurrentMemoryGi
@@ -1857,13 +2258,7 @@ func buildBatchPayloadItems(op string, items []generated.VMBatchChildItem, child
 				}
 			}
 		}
-		switch op {
-		case string(generated.VMBatchOperation("DELETE")), string(generated.VMBatchOperation("MODIFY")):
-			payloadItem.ServiceID = ""
-			payloadItem.TemplateID = ""
-			payloadItem.InstanceSizeID = ""
-			payloadItem.Namespace = ""
-		default:
+		if op == string(generated.VMBatchOperation("CREATE")) {
 			payloadItem.VMID = ""
 		}
 		out = append(out, payloadItem)
@@ -1882,8 +2277,26 @@ func buildBatchPowerPayloadItems(items []generated.VMBatchPowerItem, children ..
 			var childPayload domain.VMPowerPayload
 			if err := json.Unmarshal(children[idx].payload, &childPayload); err == nil {
 				payloadItem.VMID = strings.TrimSpace(childPayload.VMID)
+				payloadItem.VMName = strings.TrimSpace(childPayload.VMName)
+				payloadItem.SystemID = strings.TrimSpace(childPayload.SystemID)
+				payloadItem.SystemName = strings.TrimSpace(childPayload.SystemName)
+				payloadItem.ServiceID = strings.TrimSpace(childPayload.ServiceID)
+				payloadItem.ServiceName = strings.TrimSpace(childPayload.ServiceName)
+				payloadItem.TemplateID = strings.TrimSpace(childPayload.TemplateID)
+				payloadItem.TemplateName = strings.TrimSpace(childPayload.TemplateName)
+				payloadItem.InstanceSizeID = strings.TrimSpace(childPayload.InstanceSizeID)
+				payloadItem.InstanceSizeName = strings.TrimSpace(childPayload.InstanceSizeName)
 				payloadItem.Namespace = strings.TrimSpace(childPayload.Namespace)
+				payloadItem.ClusterID = strings.TrimSpace(childPayload.ClusterID)
+				payloadItem.ClusterName = strings.TrimSpace(childPayload.ClusterName)
+				payloadItem.ClusterEnvironment = strings.TrimSpace(childPayload.ClusterEnvironment)
+				payloadItem.OwnerID = strings.TrimSpace(childPayload.OwnerID)
+				payloadItem.OwnerDisplayName = strings.TrimSpace(childPayload.OwnerDisplayName)
+				payloadItem.OwnerUsername = strings.TrimSpace(childPayload.OwnerUsername)
 				payloadItem.RequestVMStatus = strings.TrimSpace(childPayload.RequestVMStatus)
+				payloadItem.CurrentCPUCores = childPayload.CurrentCPUCores
+				payloadItem.CurrentMemoryGi = childPayload.CurrentMemoryGi
+				payloadItem.CurrentDiskGB = childPayload.CurrentDiskGB
 				payloadItem.Operation = strings.TrimSpace(childPayload.Operation)
 			}
 		}

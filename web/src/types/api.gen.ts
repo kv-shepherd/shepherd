@@ -2190,6 +2190,10 @@ export interface components {
             requester_username?: string;
             approver_display_name?: string;
             approver_username?: string;
+            /** @description Preferred human-readable owner label for the target VM or requested VM. */
+            owner_display_name?: string;
+            /** @description Owner username when available. */
+            owner_username?: string;
             vm_id?: string;
             vm_name?: string;
             /** @description VM status captured when the approval request was created. */
@@ -2231,6 +2235,10 @@ export interface components {
             approver_display_name?: string;
             /** @description Approver username when available. */
             approver_username?: string;
+            /** @description Preferred human-readable owner label for the target VM or requested VM. */
+            owner_display_name?: string;
+            /** @description Owner username when available. */
+            owner_username?: string;
             vm_id?: string;
             vm_name?: string;
             /** @description VM status captured when the approval request was created. */

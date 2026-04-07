@@ -239,9 +239,14 @@ func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options t
 	}
 
 	templateIDs, instanceSizeIDs := collectApprovalCatalogLookupIDs(eventPayloadMap)
+	serviceByID := s.loadApprovalServiceLookups(
+		ctx,
+		collectApprovalPrefillServiceIDs(eventPayloadMap),
+	)
 	vmByID, vmTemplateIDs, vmInstanceSizeIDs := s.loadApprovalVMContexts(
 		ctx,
 		collectApprovalSummaryVMIDs(eventPayloadMap),
+		serviceByID,
 	)
 	templateIDs = append(templateIDs, vmTemplateIDs...)
 	instanceSizeIDs = append(instanceSizeIDs, vmInstanceSizeIDs...)
@@ -249,10 +254,6 @@ func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options t
 		ctx,
 		sortedStringSet(sliceToStringSet(templateIDs)),
 		sortedStringSet(sliceToStringSet(instanceSizeIDs)),
-	)
-	serviceByID := s.loadApprovalServiceLookups(
-		ctx,
-		collectApprovalPrefillServiceIDs(eventPayloadMap),
 	)
 	systemIDByServiceID := buildApprovalSystemIDByServiceID(serviceByID)
 	batchProjectionByID := s.loadApprovalBatchProjections(ctx, tickets, eventByID)
@@ -275,6 +276,15 @@ func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options t
 	}
 
 	actorByID := s.loadApprovalActorLookups(ctx, tickets)
+	batchFallbackItemsByParentID := s.loadApprovalBatchChildFallbackItems(
+		ctx,
+		tickets,
+		templateByID,
+		instanceSizeByID,
+		serviceByID,
+		vmByID,
+		actorByID,
+	)
 
 	items := make([]generated.Ticket, 0, len(tickets))
 	for _, t := range tickets {
@@ -304,6 +314,8 @@ func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options t
 				instanceSizeByID,
 				serviceByID,
 				vmByID,
+				actorByID,
+				batchFallbackItemsByParentID[t.ID],
 			),
 			buildApprovalRequestPrefill(payloadMap, systemIDByServiceID),
 			actorByID[t.Requester],

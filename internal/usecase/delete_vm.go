@@ -15,8 +15,10 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
+	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	entservice "kv-shepherd.io/shepherd/ent/service"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
@@ -119,13 +121,86 @@ func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*D
 	}
 
 	// Step 5: Build domain event payload.
+	serviceID := ""
+	serviceName := ""
+	systemID := ""
+	systemName := ""
+	if svc, svcErr := uc.entClient.Service.Query().
+		Where(entservice.HasVmsWith(entvm.IDEQ(vm.ID))).
+		WithSystem().
+		Only(ctx); svcErr == nil && svc != nil {
+		serviceID = svc.ID
+		serviceName = svc.Name
+		if svc.Edges.System != nil {
+			systemID = svc.Edges.System.ID
+			systemName = svc.Edges.System.Name
+		}
+	}
+
+	clusterName := ""
+	clusterEnvironment := ""
+	if strings.TrimSpace(vm.ClusterID) != "" {
+		if cluster, clusterErr := uc.entClient.Cluster.Query().
+			Where(entcluster.IDEQ(vm.ClusterID)).
+			Only(ctx); clusterErr == nil && cluster != nil {
+			clusterName = strings.TrimSpace(cluster.DisplayName)
+			if clusterName == "" {
+				clusterName = strings.TrimSpace(cluster.Name)
+			}
+			if clusterName == "" {
+				clusterName = cluster.ID
+			}
+			clusterEnvironment = string(cluster.Environment)
+		}
+	}
+
+	ownerDisplayName := ""
+	ownerUsername := ""
+	if strings.TrimSpace(vm.CreatedBy) != "" {
+		if owner, ownerErr := uc.entClient.User.Get(ctx, vm.CreatedBy); ownerErr == nil && owner != nil {
+			ownerDisplayName = strings.TrimSpace(owner.DisplayName)
+			if ownerDisplayName == "" {
+				ownerDisplayName = strings.TrimSpace(owner.Username)
+			}
+			if ownerDisplayName == "" {
+				ownerDisplayName = vm.CreatedBy
+			}
+			ownerUsername = strings.TrimSpace(owner.Username)
+			if ownerUsername == "" {
+				ownerUsername = vm.CreatedBy
+			}
+		} else {
+			ownerDisplayName = vm.CreatedBy
+			ownerUsername = vm.CreatedBy
+		}
+	}
+
 	payload := domain.VMDeletePayload{
-		VMID:            input.VMID,
-		VMName:          vm.Name,
-		ClusterID:       vm.ClusterID,
-		Namespace:       vm.Namespace,
-		RequestVMStatus: string(vm.Status),
-		Actor:           input.RequestedBy,
+		VMID:               input.VMID,
+		VMName:             vm.Name,
+		ClusterID:          vm.ClusterID,
+		ClusterName:        clusterName,
+		ClusterEnvironment: clusterEnvironment,
+		Namespace:          vm.Namespace,
+		SystemID:           systemID,
+		SystemName:         systemName,
+		ServiceID:          serviceID,
+		ServiceName:        serviceName,
+		OwnerID:            vm.CreatedBy,
+		OwnerDisplayName:   ownerDisplayName,
+		OwnerUsername:      ownerUsername,
+		RequestVMStatus:    string(vm.Status),
+		Actor:              input.RequestedBy,
+	}
+	if strings.TrimSpace(vm.TicketID) != "" {
+		if ticket, ticketErr := uc.entClient.Ticket.Get(ctx, vm.TicketID); ticketErr == nil && strings.TrimSpace(ticket.EventID) != "" {
+			if event, eventErr := uc.entClient.DomainEvent.Get(ctx, ticket.EventID); eventErr == nil {
+				var createPayload domain.VMCreationPayload
+				if payloadErr := json.Unmarshal(event.Payload, &createPayload); payloadErr == nil {
+					applyDeleteCreationSnapshot(&payload, createPayload)
+				}
+			}
+		}
 	}
 	payloadBytes, err := payload.ToJSON()
 	if err != nil {
@@ -221,6 +296,37 @@ func VMDeleteInvalidStateParams(status entvm.Status) map[string]interface{} {
 	return map[string]interface{}{
 		"current_state":  string(status),
 		"allowed_states": VMDeleteAllowedStatesLabel(),
+	}
+}
+
+func applyDeleteCreationSnapshot(payload *domain.VMDeletePayload, createPayload domain.VMCreationPayload) {
+	if payload == nil {
+		return
+	}
+	payload.TemplateID = strings.TrimSpace(createPayload.TemplateID)
+	payload.TemplateName = strings.TrimSpace(createPayload.TemplateName)
+	payload.InstanceSizeID = strings.TrimSpace(createPayload.InstanceSizeID)
+	payload.InstanceSizeName = strings.TrimSpace(createPayload.InstanceSizeName)
+	payload.CurrentCPUCores = createPayload.TargetCPUCores
+	payload.CurrentMemoryGi = createPayload.TargetMemoryGi
+	payload.CurrentDiskGB = createPayload.TargetDiskGB
+	if payload.ServiceName == "" {
+		payload.ServiceName = strings.TrimSpace(createPayload.ServiceName)
+	}
+	if payload.SystemID == "" {
+		payload.SystemID = strings.TrimSpace(createPayload.SystemID)
+	}
+	if payload.SystemName == "" {
+		payload.SystemName = strings.TrimSpace(createPayload.SystemName)
+	}
+	if payload.OwnerID == "" {
+		payload.OwnerID = strings.TrimSpace(createPayload.OwnerID)
+	}
+	if payload.OwnerDisplayName == "" {
+		payload.OwnerDisplayName = strings.TrimSpace(createPayload.OwnerDisplayName)
+	}
+	if payload.OwnerUsername == "" {
+		payload.OwnerUsername = strings.TrimSpace(createPayload.OwnerUsername)
 	}
 }
 

@@ -1078,7 +1078,9 @@ func (s *Server) loadServiceContextRecentRequests(
 
 	templateIDs, instanceSizeIDs := collectApprovalCatalogLookupIDs(eventPayloadMap)
 	vmIDs := collectApprovalSummaryVMIDs(eventPayloadMap)
-	vmByID, extraTemplateIDs, extraInstanceSizeIDs := s.loadApprovalVMContexts(ctx, vmIDs)
+	serviceIDs := collectApprovalPrefillServiceIDs(eventPayloadMap)
+	serviceByID := s.loadApprovalServiceLookups(ctx, serviceIDs)
+	vmByID, extraTemplateIDs, extraInstanceSizeIDs := s.loadApprovalVMContexts(ctx, vmIDs, serviceByID)
 	templateIDSet := sliceToStringSet(templateIDs)
 	for _, templateID := range extraTemplateIDs {
 		templateIDSet[templateID] = struct{}{}
@@ -1092,8 +1094,6 @@ func (s *Server) loadServiceContextRecentRequests(
 		sortedStringSet(templateIDSet),
 		sortedStringSet(instanceSizeIDSet),
 	)
-	serviceIDs := collectApprovalPrefillServiceIDs(eventPayloadMap)
-	serviceByID := s.loadApprovalServiceLookups(ctx, serviceIDs)
 	systemIDByServiceID := s.loadApprovalPrefillSystemByServiceID(ctx, eventPayloadMap)
 	batchProjectionByID := s.loadApprovalBatchProjections(ctx, tickets, eventByID)
 
@@ -1113,6 +1113,16 @@ func (s *Server) loadServiceContextRecentRequests(
 	}
 
 	items := make([]generated.Ticket, 0, len(tickets))
+	actorByID := s.loadApprovalActorLookups(ctx, tickets)
+	batchFallbackItemsByParentID := s.loadApprovalBatchChildFallbackItems(
+		ctx,
+		tickets,
+		templateByID,
+		instanceSizeByID,
+		serviceByID,
+		vmByID,
+		actorByID,
+	)
 	for _, ticket := range tickets {
 		var payloadMap map[string]interface{}
 		if raw := eventPayloadMap[ticket.EventID]; len(raw) > 0 {
@@ -1135,10 +1145,12 @@ func (s *Server) loadServiceContextRecentRequests(
 				instanceSizeByID,
 				serviceByID,
 				vmByID,
+				actorByID,
+				batchFallbackItemsByParentID[ticket.ID],
 			),
 			buildApprovalRequestPrefill(payloadMap, systemIDByServiceID),
-			approvalActorLookup{},
-			approvalActorLookup{},
+			actorByID[ticket.Requester],
+			actorByID[ticket.Approver],
 		))
 	}
 

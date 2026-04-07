@@ -29,6 +29,13 @@ vi.mock('react-i18next', () => ({
                 'audit.preset.resource_changes': 'Resource changes',
                 'audit.preset.system_tasks': 'System tasks',
                 'audit.context.batch_items': `${options?.count ?? 0} items`,
+                'audit.context.scope': 'Scope',
+                'audit.context.requester': 'Requester',
+                'audit.context.approver': 'Approver',
+                'audit.context.owner': 'Owner',
+                'audit.context.target': 'Target',
+                'audit.context.requested_change': 'Requested change',
+                'audit.batch_item.pending_vm': `Pending VM #${options?.count ?? 0}`,
                 'audit.advanced_search_title': 'Advanced search',
                 'audit.advanced_search_help': 'Use advanced search for approval decisions, placement diagnostics, and exact resource context.',
                 'common:button.search': 'Search',
@@ -98,12 +105,51 @@ vi.mock('@/hooks/useApiQuery', () => ({
                     resource_id: '019d4d16-f738-7266-a8a7-99148343435f',
                     approval_decision: 'batch_approved',
                     ticket_summary: {
+                        system_name: 'shop',
+                        service_name: 'redis',
                         batch_count: 2,
                         requester_display_name: 'Default Administrator',
                         requester_username: 'admin',
                         approver_display_name: 'Default Administrator',
                         approver_username: 'admin',
+                        owner_display_name: 'Default Administrator',
+                        owner_username: 'admin',
                         namespace: 'gtest1',
+                        template_name: 'Ubuntu 22.04',
+                        instance_size_name: 'M4 Large',
+                        target_cpu_cores: 4,
+                        target_memory_gi: 8,
+                        target_disk_gb: 80,
+                        items: [
+                            {
+                                system_name: 'shop',
+                                service_name: 'redis',
+                                owner_display_name: 'Default Administrator',
+                                owner_username: 'admin',
+                                namespace: 'gtest1',
+                                cluster_name: 'kubevirt-test02',
+                                cluster_environment: 'test',
+                                template_name: 'Ubuntu 22.04',
+                                instance_size_name: 'M4 Large',
+                                target_cpu_cores: 4,
+                                target_memory_gi: 8,
+                                target_disk_gb: 80,
+                            },
+                            {
+                                system_name: 'shop',
+                                service_name: 'redis',
+                                owner_display_name: 'Default Administrator',
+                                owner_username: 'admin',
+                                namespace: 'gtest1',
+                                cluster_name: 'kubevirt-test02',
+                                cluster_environment: 'test',
+                                template_name: 'Ubuntu 22.04',
+                                instance_size_name: 'M4 Large',
+                                target_cpu_cores: 4,
+                                target_memory_gi: 8,
+                                target_disk_gb: 80,
+                            },
+                        ],
                     },
                     created_at: '2026-04-02T04:41:00Z',
                     details: {},
@@ -138,6 +184,7 @@ describe('AdminAuditContent', () => {
         expect(screen.getByText((content) => content.includes('Alice Chen'))).toBeVisible();
         expect(screen.getAllByText('2 items').length).toBeGreaterThan(0);
         expect(screen.queryByText('019d4d16-f738-7266-a8a7-99148343435f')).not.toBeInTheDocument();
+        expect(screen.getAllByText('shop · redis').length).toBeGreaterThan(0);
         expect(screen.getByText('Cluster A')).toBeVisible();
     });
 
@@ -150,5 +197,18 @@ describe('AdminAuditContent', () => {
         expect(screen.getByText('Audit Event Details')).toBeVisible();
         expect(screen.getByText('Platform')).toBeVisible();
         expect(screen.getByText('Ubuntu 22.04')).toBeVisible();
+    });
+
+    it('shows readable batch item details with scope owner and configuration', async () => {
+        const user = userEvent.setup();
+        render(<AdminAuditContent />);
+
+        await user.click(screen.getAllByRole('button', { name: /details/i })[1]);
+
+        expect(screen.getByText('Pending VM #1')).toBeVisible();
+        expect(screen.getAllByText('shop · redis').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Default Administrator · admin').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('gtest1 · kubevirt-test02 · test').length).toBeGreaterThan(0);
+        expect(screen.queryByText('019d4d16-f738-7266-a8a7-99148343435f')).not.toBeInTheDocument();
     });
 });
