@@ -99,6 +99,7 @@
     "field.system": "System",
     "field.service": "Service",
     "field.scope": "Scope",
+    "field.placement": "Runtime location",
     "field.operating_system": "Operating System",
     "field.remote_access": "Remote Access",
     "field.resources": "Resources",

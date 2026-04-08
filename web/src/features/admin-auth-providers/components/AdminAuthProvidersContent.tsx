@@ -1534,8 +1534,9 @@ export function AdminAuthProvidersContent() {
         />
       </div>
 
-      <PageSurface>
+      <PageSurface className="auth-providers-page__workspace-surface">
         <Card
+          className="auth-providers-page__runtime-card"
           size="small"
           title={t("authProviders.externalAuthSettings.title", {
             defaultValue: "External login public address",
@@ -1668,7 +1669,7 @@ export function AdminAuthProvidersContent() {
           </Space>
         </Card>
 
-        <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
+        <Space className="auth-providers-page__toolbar" style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <Text>{t("authProviders.config_help")}</Text>
           <Space>
             <Button
@@ -1687,7 +1688,7 @@ export function AdminAuthProvidersContent() {
             </Button>
           </Space>
         </Space>
-        <div style={{ marginTop: 16 }}>
+        <div className="auth-providers-page__search-stack" style={{ marginTop: 16 }}>
           <PageSearchToolbar
             searchValue={quickSearch}
             searchDraftValue={quickSearchDraft}

@@ -1128,7 +1128,7 @@ export function AdminUsersContent() {
     );
 
     return (
-        <div data-testid="admin-users-page">
+        <div data-testid="admin-users-page" className="admin-users-page">
             {users.messageContextHolder}
             <PageHeader
                 title={t('users.title')}
@@ -1170,7 +1170,7 @@ export function AdminUsersContent() {
                 />
             </div>
 
-            <PageSurface style={{ marginBottom: 16 }}>
+            <PageSurface className="admin-users-page__banner-surface" style={{ marginBottom: 16 }}>
                 <Alert
                     showIcon
                     type="info"
@@ -1192,9 +1192,9 @@ export function AdminUsersContent() {
                 />
             </PageSurface>
 
-            <PageSurface style={{ marginBottom: 16 }}>
-                <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-                    <Space direction="vertical" size={0}>
+            <PageSurface className="admin-users-page__table-surface" style={{ marginBottom: 16 }}>
+                <Space className="admin-users-page__toolbar" style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+                    <Space direction="vertical" size={0} className="admin-users-page__section-heading">
                         <Text strong>{t('users.directory.title')}</Text>
                         <Text type="secondary">{t('users.directory.subtitle')}</Text>
                     </Space>
@@ -1207,7 +1207,7 @@ export function AdminUsersContent() {
                         </Button>
                     </Space>
                 </Space>
-                <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 16 }}>
+                <Space direction="vertical" size={4} className="admin-users-page__search-stack" style={{ width: '100%', marginTop: 16 }}>
                     <PageSearchToolbar
                         searchValue={quickSearch}
                         searchDraftValue={quickSearchDraft}
@@ -1683,6 +1683,7 @@ export function AdminUsersContent() {
                             type="info"
                             message={t('users.directory.manage_access_help_title')}
                             description={t('users.directory.manage_access_help_description')}
+                            className="admin-users-page__access-alert"
                         />
                         <div className="summary-card-grid">
                             <SummaryMetricCard

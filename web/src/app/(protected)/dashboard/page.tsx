@@ -20,11 +20,11 @@ import {
 import { useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import {
-    HealthOverviewGlyph,
-    RequestsOverviewGlyph,
-    SystemsOverviewGlyph,
-    VirtualMachinesOverviewGlyph,
-} from '@/components/illustrations/DashboardIllustrations';
+    SystemsIcon,
+    VMsIcon,
+    RequestsIcon,
+    DashboardIcon,
+} from '@/components/layouts/MenuIcons';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { SetupGuideCard } from '@/features/setup-guide/components/SetupGuideCard';
 import type { SetupResumeAction } from '@/features/setup-guide/flow';
@@ -119,24 +119,24 @@ export default function DashboardPage() {
         {
             title: t('nav.systems'),
             value: systems?.pagination?.total ?? 0,
-            icon: <SystemsOverviewGlyph className="dashboard-stat__icon-art" />,
-            color: '#E6F4FF',
-            iconColor: '#1D5BFF',
+            icon: <SystemsIcon className="dashboard-stat__icon-art" />,
+            color: 'linear-gradient(180deg, rgba(94, 106, 210, 0.16) 0%, rgba(94, 106, 210, 0.08) 100%)',
+            iconColor: '#5E6AD2',
         },
         {
             title: t('nav.vms'),
             value: vms?.pagination?.total ?? 0,
-            icon: <VirtualMachinesOverviewGlyph className="dashboard-stat__icon-art" />,
-            color: '#F6ECFF',
-            iconColor: '#6D4DE3',
+            icon: <VMsIcon className="dashboard-stat__icon-art" />,
+            color: 'linear-gradient(180deg, rgba(17, 183, 138, 0.16) 0%, rgba(17, 183, 138, 0.08) 100%)',
+            iconColor: '#109A73',
         },
         {
             title: t('nav.my_requests'),
             value: pendingTickets?.pagination?.total ?? 0,
-            icon: <RequestsOverviewGlyph className="dashboard-stat__icon-art" />,
-            color: '#FFF1E8',
-            iconColor: '#D66A1F',
-            suffix: t('approval:status.PENDING'),
+            icon: <RequestsIcon className="dashboard-stat__icon-art" />,
+            color: 'linear-gradient(180deg, rgba(214, 106, 31, 0.16) 0%, rgba(214, 106, 31, 0.08) 100%)',
+            iconColor: '#C45B17',
+            suffix: <span style={{ whiteSpace: 'nowrap', marginLeft: 8, fontSize: 13, fontWeight: 500, color: 'rgba(15, 23, 42, 0.55)' }}>{t('approval:status.PENDING')}</span>,
         },
     ], [t, systems, vms, pendingTickets]);
 
@@ -149,40 +149,55 @@ export default function DashboardPage() {
     }
 
     return (
-        <div>
+        <div className="dashboard-page">
             <PageHeader
                 title={t('nav.dashboard')}
                 subtitle={t('dashboard.subtitle')}
             />
 
             {/* Health Status Banner */}
-            <PageSurface style={{ marginBottom: 24 }} styles={{ body: { padding: '16px 24px' } }}>
+            <PageSurface className="dashboard-page__health-surface" style={{ marginBottom: 24 }} styles={{ body: { padding: '16px 24px' } }}>
                 <div className="dashboard-health">
                     <div className="dashboard-health__meta">
                         <Badge
                             status={healthStatus.status === 'ok' ? 'success' : healthStatus.status === 'degraded' ? 'warning' : 'error'}
+                            style={{ transform: 'scale(1.5)', marginRight: 6 }}
                         />
                         <div>
-                            <Text strong>Platform Health</Text>
-                            <br />
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                Status: {String(healthStatus.status || 'unknown').toUpperCase()}
-                                {health?.version && ` · v${health.version}`}
-                                {typeof liveness?.status === 'string' && ` · Live: ${liveness.status.toUpperCase()}`}
+                            <Text strong style={{ fontSize: 20, letterSpacing: '-0.3px', color: 'rgba(15, 23, 42, 0.9)' }}>
+                                Platform Health
                             </Text>
+                            <div className="workbench-resource-facts" style={{ marginTop: 10 }}>
+                                <span className="workbench-resource-fact" style={{ color: healthStatus.color }}>
+                                    <span style={{ marginRight: 6, opacity: 0.8 }}>Status:</span>
+                                    {String(healthStatus.status || 'unknown').toUpperCase()}
+                                </span>
+                                {health?.version && (
+                                    <span className="workbench-resource-fact">
+                                        <span style={{ marginRight: 6, opacity: 0.6 }}>Version:</span>
+                                        v{health.version}
+                                    </span>
+                                )}
+                                {typeof liveness?.status === 'string' && (
+                                    <span className="workbench-resource-fact">
+                                        <span style={{ marginRight: 6, opacity: 0.6 }}>Live:</span>
+                                        {liveness.status.toUpperCase()}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
                     <div className="dashboard-health__visual" style={{ color: healthStatus.color }}>
-                        <HealthOverviewGlyph className="dashboard-health__visual-art" />
+                        <DashboardIcon className="dashboard-health__visual-art" style={{ width: 64, height: 64, opacity: 0.9 }} />
                     </div>
                 </div>
             </PageSurface>
 
             {/* Quick Stats */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+            <Row className="dashboard-page__stats-row" gutter={[16, 16]} style={{ marginBottom: 24 }}>
                 {stats.map((stat) => (
                     <Col xs={24} sm={8} key={stat.title}>
-                        <PageSurface styles={{ body: { padding: '20px 24px' } }}>
+                        <PageSurface className="dashboard-page__stat-surface" styles={{ body: { padding: '20px 24px' } }}>
                             <div className="dashboard-stat">
                                 <div
                                     className="dashboard-stat__icon"
@@ -195,9 +210,10 @@ export default function DashboardPage() {
                                 </div>
                                 <Statistic
                                     className="dashboard-stat__metric"
-                                    title={stat.title}
+                                    title={<span style={{ whiteSpace: 'nowrap', fontSize: 14, fontWeight: 500, color: 'rgba(15, 23, 42, 0.6)' }}>{stat.title}</span>}
                                     value={stat.value}
                                     suffix={stat.suffix}
+                                    valueStyle={{ fontSize: 28, fontWeight: 700, color: 'rgba(15, 23, 42, 0.9)' }}
                                 />
                             </div>
                         </PageSurface>
@@ -208,6 +224,7 @@ export default function DashboardPage() {
             {/* Pending Approvals Alert */}
             {(pendingTickets?.pagination?.total ?? 0) > 0 && (
                 <Alert
+                    className="dashboard-page__pending-alert"
                     type="warning"
                     showIcon
                     message={`${pendingTickets?.pagination?.total} pending request(s) are still in progress`}
@@ -215,14 +232,16 @@ export default function DashboardPage() {
                 />
             )}
 
-            <SetupGuideCard
-                variant="dashboard"
-                focusAction={setupAction}
-                snapshot={{
-                    systemsTotal: systems?.pagination?.total ?? 0,
-                    vmsTotal: vms?.pagination?.total ?? 0,
-                }}
-            />
+            <div className="dashboard-page__setup-shell">
+                <SetupGuideCard
+                    variant="dashboard"
+                    focusAction={setupAction}
+                    snapshot={{
+                        systemsTotal: systems?.pagination?.total ?? 0,
+                        vmsTotal: vms?.pagination?.total ?? 0,
+                    }}
+                />
+            </div>
         </div>
     );
 }

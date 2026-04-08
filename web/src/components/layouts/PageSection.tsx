@@ -20,10 +20,14 @@ export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
     return (
         <div className="page-header">
             <div className="page-header__meta">
-                <Title level={4} style={{ margin: 0 }}>
+                <Title level={3} className="page-header__title" style={{ margin: 0 }}>
                     {title}
                 </Title>
-                {subtitle ? <Text type="secondary">{subtitle}</Text> : null}
+                {subtitle ? (
+                    <Text type="secondary" className="page-header__subtitle">
+                        {subtitle}
+                    </Text>
+                ) : null}
             </div>
             {actions ? <div className="page-header__actions">{actions}</div> : null}
         </div>

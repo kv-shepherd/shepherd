@@ -99,6 +99,7 @@
     "field.system": "系统",
     "field.service": "服务",
     "field.scope": "所属范围",
+    "field.placement": "运行位置",
     "field.operating_system": "操作系统",
     "field.remote_access": "远程访问",
     "field.resources": "资源配置",

@@ -10,12 +10,12 @@ import {
     Select,
     Space,
     Table,
+    Tooltip,
     Typography,
     Upload,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
-    AppstoreOutlined,
     EditOutlined,
     DeleteOutlined,
     ExclamationCircleOutlined,
@@ -62,6 +62,16 @@ const filterOptionByLabel = (input: string, option?: { label?: unknown }) => {
     return label.toLowerCase().includes(input.trim().toLowerCase());
 };
 
+const SystemEntityIcon = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" width="1.3em" height="1.3em">
+        <rect x="3" y="4" width="18" height="16" rx="2" ry="2" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+        <line x1="3" y1="16" x2="21" y2="16" />
+        <line x1="7" y1="7" x2="7.01" y2="7" strokeWidth="2.5" />
+        <line x1="11" y1="7" x2="11.01" y2="7" strokeWidth="2.5" />
+    </svg>
+);
+
 interface SystemServicesCellProps {
     systemId: string;
     onOpenService: (service: Service) => void;
@@ -93,23 +103,34 @@ function SystemServicesCell({ systemId, onOpenService }: SystemServicesCellProps
     const remaining = items.length - previewItems.length;
 
     return (
-        <Space direction="vertical" size={0}>
+        <Space size={[6, 6]} wrap>
             {previewItems.map((service) => (
-                <Button
+                <div
                     key={service.id}
-                    type="link"
-                    size="small"
+                    className="system-service-chip hover-scale transition-all"
                     data-testid={`system-service-link-${service.id}`}
-                    style={{ paddingInline: 0, justifyContent: 'flex-start' }}
+                    style={{
+                        padding: '2px 8px',
+                        background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 12,
+                        fontSize: 12,
+                        color: '#475569',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6
+                    }}
                     onClick={() => onOpenService(service)}
                 >
-                    {service.name}
-                </Button>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+                    <span style={{ fontWeight: 500 }}>{service.name}</span>
+                </div>
             ))}
             {remaining > 0 ? (
-                <Text type="secondary" style={{ fontSize: 12 }}>
+                <div style={{ fontSize: 12, color: '#64748b', padding: '2px 4px', fontWeight: 500 }}>
                     +{remaining} more
-                </Text>
+                </div>
             ) : null}
         </Space>
     );
@@ -158,6 +179,13 @@ export function SystemsManagementContent() {
         return systems.data?.items?.find((system) => system.id === detailSystemIdFromQuery) ?? detailSystem;
     }, [detailSystem, detailSystemIdFromQuery, dismissedQueryDetailSystemId, systems.data?.items]);
 
+    const activeDetailDisplayName = activeDetailSystem?.created_by_display_name?.trim();
+    const activeDetailUsername = activeDetailSystem?.created_by_username?.trim();
+    const activeDetailCreatorLabel =
+        activeDetailDisplayName && activeDetailUsername && activeDetailDisplayName !== activeDetailUsername
+            ? `${activeDetailDisplayName} · ${activeDetailUsername}`
+            : activeDetailDisplayName || activeDetailUsername || activeDetailSystem?.created_by?.trim() || '—';
+
     const detailModalOpen = detailOpen || Boolean(activeDetailSystem);
 
     const closeDetailModal = () => {
@@ -192,10 +220,26 @@ export function SystemsManagementContent() {
             title: t('table.name'),
             dataIndex: 'name',
             key: 'name',
-            render: (name: string) => (
-                <Space>
-                    <AppstoreOutlined style={{ color: '#1677ff' }} />
-                    <Text strong>{name}</Text>
+            render: (name: string, record) => (
+                <Space size={12}>
+                    <div style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 10,
+                        background: 'linear-gradient(135deg, rgba(94, 106, 210, 0.12) 0%, rgba(94, 106, 210, 0.04) 100%)',
+                        color: '#5E6AD2',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.6), 0 1px 2px rgba(0, 0, 0, 0.02)',
+                        border: '1px solid rgba(94, 106, 210, 0.1)',
+                    }}>
+                        <SystemEntityIcon />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <Text strong style={{ fontSize: 14, color: '#1e293b' }}>{name}</Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>ID: {record.id.slice(0, 8)}</Text>
+                    </div>
                 </Space>
             ),
         },
@@ -208,9 +252,23 @@ export function SystemsManagementContent() {
         },
         {
             title: t('table.created_by'),
-            dataIndex: 'created_by',
             key: 'created_by',
-            width: 140,
+            width: 200,
+            render: (_, record) => {
+                const displayName = record.created_by_display_name?.trim();
+                const username = record.created_by_username?.trim();
+                const fallback = record.created_by?.trim() || '—';
+                return (
+                    <Space direction="vertical" size={0} className="workbench-table-stack">
+                        <Text strong>{displayName || username || fallback}</Text>
+                        {displayName && username && displayName !== username ? (
+                            <Text type="secondary" className="workbench-table-note">
+                                {username}
+                            </Text>
+                        ) : displayName || username ? null : null}
+                    </Space>
+                );
+            },
         },
         {
             title: t('table.created_at'),
@@ -218,7 +276,9 @@ export function SystemsManagementContent() {
             key: 'created_at',
             width: 160,
             render: (date: string) => (
-                <Text type="secondary"><LocalDateTimeText value={date} /></Text>
+                <Space direction="vertical" size={2}>
+                    <Text style={{ color: '#334155' }}><LocalDateTimeText value={date} /></Text>
+                </Space>
             ),
         },
         {
@@ -239,55 +299,55 @@ export function SystemsManagementContent() {
             key: 'actions',
             width: 200,
             render: (_, record) => (
-                <Space>
-                    <Button
-                        type="link"
-                        size="small"
-                        data-testid={`system-action-detail-${record.id}`}
-                        icon={<EyeOutlined />}
-                        onClick={() => {
-                            setDetailSystem(record);
-                            setDetailOpen(true);
-                            setDismissedQueryDetailSystemId(null);
-                        }}
-                    >
-                        {t('common:button.detail', { defaultValue: 'Details' })}
-                    </Button>
-                    <PermissionGuard permission="rbac:manage">
+                <Space size={4}>
+                    <Tooltip title={t('common:button.detail', { defaultValue: 'Details' })}>
                         <Button
-                            type="link"
+                            type="text"
                             size="small"
-                            data-testid={`system-action-members-${record.id}`}
-                            icon={<TeamOutlined />}
-                            onClick={() => systems.openMembersModal(record)}
-                        >
-                            {t('common:button.manage_members')}
-                        </Button>
+                            data-testid={`system-action-detail-${record.id}`}
+                            icon={<EyeOutlined />}
+                            onClick={() => {
+                                setDetailSystem(record);
+                                setDetailOpen(true);
+                                setDismissedQueryDetailSystemId(null);
+                            }}
+                        />
+                    </Tooltip>
+                    <PermissionGuard permission="rbac:manage">
+                        <Tooltip title={t('common:button.manage_members')}>
+                            <Button
+                                type="text"
+                                size="small"
+                                data-testid={`system-action-members-${record.id}`}
+                                icon={<TeamOutlined />}
+                                onClick={() => systems.openMembersModal(record)}
+                            />
+                        </Tooltip>
                     </PermissionGuard>
                     <PermissionGuard permission="system:write">
-                        <Button
-                            type="link"
-                            size="small"
-                            data-testid={`system-action-edit-${record.id}`}
-                            icon={<EditOutlined />}
-                            loading={systems.updatePending && systems.editingSystem?.id === record.id}
-                            onClick={() => systems.openEditModal(record)}
-                        >
-                            {t('common:button.edit')}
-                        </Button>
+                        <Tooltip title={t('common:button.edit')}>
+                            <Button
+                                type="text"
+                                size="small"
+                                data-testid={`system-action-edit-${record.id}`}
+                                icon={<EditOutlined />}
+                                loading={systems.updatePending && systems.editingSystem?.id === record.id}
+                                onClick={() => systems.openEditModal(record)}
+                            />
+                        </Tooltip>
                     </PermissionGuard>
                     <PermissionGuard permission="system:delete">
-                        <Button
-                            type="link"
-                            size="small"
-                            data-testid={`system-action-delete-${record.id}`}
-                            danger
-                            icon={<DeleteOutlined />}
-                            loading={systems.deletePending && systems.deletingSystem?.id === record.id}
-                            onClick={() => systems.openDeleteModal(record)}
-                        >
-                            {t('common:button.delete')}
-                        </Button>
+                        <Tooltip title={t('common:button.delete')}>
+                            <Button
+                                type="text"
+                                size="small"
+                                data-testid={`system-action-delete-${record.id}`}
+                                danger
+                                icon={<DeleteOutlined />}
+                                loading={systems.deletePending && systems.deletingSystem?.id === record.id}
+                                onClick={() => systems.openDeleteModal(record)}
+                            />
+                        </Tooltip>
                     </PermissionGuard>
                 </Space>
             ),
@@ -337,7 +397,7 @@ export function SystemsManagementContent() {
     };
 
     return (
-        <div>
+        <div className="systems-page">
             {systems.messageContextHolder}
             <PageHeader
                 title={t('nav.systems')}
@@ -364,7 +424,7 @@ export function SystemsManagementContent() {
             {systemItems.length === 0 && !systems.isLoading && !systems.hasActiveFilters ? (
                 <SetupGuideCard variant="systems" />
             ) : (
-                <PageSurface flush={true}>
+                <PageSurface className="systems-page__table-surface" flush={true}>
                     <div style={{ padding: 16, paddingBottom: 0 }}>
                         <PageSearchToolbar
                             searchValue={systems.filters.search}
@@ -693,7 +753,7 @@ export function SystemsManagementContent() {
                             <Text strong>{activeDetailSystem?.name}</Text>
                         </Descriptions.Item>
                         <Descriptions.Item label={t('table.created_by')}>
-                            {activeDetailSystem?.created_by || '—'}
+                            {activeDetailCreatorLabel}
                         </Descriptions.Item>
                         <Descriptions.Item label={t('table.created_at')}>
                             {activeDetailSystem?.created_at ? <LocalDateTimeText value={activeDetailSystem.created_at} /> : '—'}

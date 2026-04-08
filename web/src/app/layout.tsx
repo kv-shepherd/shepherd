@@ -35,7 +35,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
       <body>
-        <NextTopLoader showSpinner={false} color="#1677ff" />
+        <NextTopLoader showSpinner={false} color="#7170ff" />
         <AntdRegistry>
           <Providers>{children}</Providers>
         </AntdRegistry>

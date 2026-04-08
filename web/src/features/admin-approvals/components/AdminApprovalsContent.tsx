@@ -905,7 +905,7 @@ export function AdminApprovalsContent() {
   );
 
   return (
-    <div data-testid="admin-approvals-page">
+    <div data-testid="admin-approvals-page" className="admin-approvals-page">
       {approvals.messageContextHolder}
       <PageHeader
         title={t("common:nav.approval_tasks")}
@@ -913,6 +913,7 @@ export function AdminApprovalsContent() {
       />
       {renderQueueOverviewStrip()}
       <PageSurface
+        className="admin-approvals-page__queue-surface"
         style={{ marginBottom: 16 }}
         title={t("triage.title")}
         extra={(
@@ -1064,7 +1065,7 @@ export function AdminApprovalsContent() {
         </Space>
       </PageSurface>
 
-      <PageSurface flush={true}>
+      <PageSurface className="admin-approvals-page__table-surface" flush={true}>
         {/* ADR-0015 §11: Priority tier highlighting styles */}
         <style>{`
                     .approval-row-urgent td { background-color: rgba(255, 77, 79, 0.06) !important; }
@@ -1139,6 +1140,7 @@ export function AdminApprovalsContent() {
 
       {approvals.approveModal ? (
       <WorkbenchDetailModal
+        wrapClassName="admin-approvals-page__detail-modal"
         title={
           approvals.approveModal?.operation_type === "DELETE"
             ? t("approve_modal.delete_title")

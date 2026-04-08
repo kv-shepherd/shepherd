@@ -23,6 +23,9 @@ vi.mock('react-i18next', () => ({
             const labels: Record<string, string> = {
                 my_approvals_title: 'My Requests',
                 my_approvals_subtitle: 'Track active requests, history, and upcoming recovery tools',
+                'workbench.summary.batch_title': 'Batch Tracking',
+                'workbench.summary.batch_inactive': 'No active batch',
+                'workbench.summary.batch_description': 'Track the latest parent-child execution without returning to the VM page.',
                 'workbench.tab.drafts': 'Drafts',
                 'workbench.tab.in_progress': 'In Progress',
                 'workbench.tab.history': 'History',
@@ -103,6 +106,12 @@ vi.mock('react-i18next', () => ({
                 'vm:batch.clear': 'Clear',
                 'vm:batch.status': 'Status',
                 'vm:batch.operation': 'Operation',
+                'vm:batch.operation.CREATE': 'Create',
+                'vm:batch.operation.MODIFY': 'Modify',
+                'vm:batch.operation.DELETE': 'Delete',
+                'vm:batch.operation.START': 'Start',
+                'vm:batch.operation.STOP': 'Stop',
+                'vm:batch.operation.RESTART': 'Restart',
                 'vm:batch.child_count': 'Child Count',
                 'vm:batch.success_count': 'Success',
                 'vm:batch.failed_count': 'Failed',
@@ -130,6 +139,7 @@ vi.mock('react-i18next', () => ({
                 'summary.power_action': 'Requested Action',
                 'summary.item': 'Request',
                 'summary.scope': 'Scope',
+                request_batch_count: '{{count}} VM requests',
             };
             if (key === 'summary.shape_cpu' && typeof options?.count === 'number') {
                 return `${options.count} vCPU`;
@@ -139,6 +149,9 @@ vi.mock('react-i18next', () => ({
             }
             if (key === 'summary.shape_disk' && typeof options?.count === 'number') {
                 return `${options.count} Gi disk`;
+            }
+            if (key === 'request_batch_count' && typeof options?.count === 'number') {
+                return `${options.count} VM requests`;
             }
             if (key === 'summary.item_fallback' && typeof options?.index === 'number') {
                 return `Request #${options.index}`;
@@ -662,7 +675,8 @@ describe('MyRequestsWorkbench', () => {
         render(<MyRequestsWorkbench />);
 
         expect(screen.getByText('Current Batch Job')).toBeVisible();
-        expect(screen.getAllByText('batch-1').length).toBeGreaterThan(0);
+        expect(screen.getByText('Create · 2 VM requests')).toBeVisible();
+        expect(screen.getAllByText('vm-a').length).toBeGreaterThan(0);
         expect(screen.getByRole('button', { name: 'Retry Failed' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'Cancel Pending' })).toBeVisible();
     });

@@ -206,7 +206,7 @@ export default function VMsPageContent() {
     });
 
     return (
-        <div>
+        <div className="vm-workspace-page">
             {vm.messageContextHolder}
             <PageHeader
                 title={t('title')}
@@ -245,7 +245,7 @@ export default function VMsPageContent() {
             {!setupGuide.vmRequestReady ? <SetupGuideCard variant="vm" /> : null}
 
             {hasScopedWorkspace && (
-                <PageSurface className="vm-page-surface">
+                <PageSurface className="vm-page-surface vm-page-surface--context">
                     <Space direction="vertical" size={8} className="vm-page-block">
                         <Space className="vm-page-header-row" wrap>
                             <Space direction="vertical" size={2}>
@@ -310,7 +310,7 @@ export default function VMsPageContent() {
                 </PageSurface>
             )}
 
-            <PageSurface className="vm-page-surface vm-page-surface--tight">
+            <PageSurface className="vm-page-surface vm-page-surface--tight vm-page-surface--batch">
                 <Space className="vm-page-header-row" wrap>
                     <Space direction="vertical" size={2}>
                         <Text strong>{t('batch.title')}</Text>
@@ -408,7 +408,7 @@ export default function VMsPageContent() {
                 )}
             </PageSurface>
 
-            <PageSurface className="vm-page-surface vm-page-surface--tight">
+            <PageSurface className="vm-page-surface vm-page-surface--tight vm-page-surface--search">
                 <div className="vm-page-search-shell">
                     <PageSearchToolbar
                         searchValue={vm.filters.search}
@@ -562,7 +562,7 @@ export default function VMsPageContent() {
                 onSelectionChange={vm.setSelectedVMIDs}
             />
             {vm.activeBatchID && (
-                <PageSurface className="vm-page-surface">
+                <PageSurface className="vm-page-surface vm-page-surface--status">
                     <div
                         data-testid="batch-status-live"
                         aria-live="polite"

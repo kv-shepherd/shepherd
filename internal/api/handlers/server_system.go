@@ -88,9 +88,14 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 		return
 	}
 
+	creatorLabels, err := s.resolveSystemCreatorLabels(ctx, systems)
+	if respondInternalUnlessCanceled(c, err, "failed to resolve system creator labels") {
+		return
+	}
+
 	items := make([]generated.System, 0, len(systems))
 	for _, sys := range systems {
-		items = append(items, systemToAPI(sys))
+		items = append(items, systemToAPI(sys, creatorLabels[sys.CreatedBy]))
 	}
 
 	totalPages := (total + perPage - 1) / perPage
@@ -137,6 +142,11 @@ func (s *Server) GetSystemFilterOptions(c *gin.Context) {
 	}
 
 	systemIDs := make([]string, 0, len(systems))
+	creatorLabels, err := s.resolveSystemCreatorLabels(ctx, systems)
+	if respondInternalUnlessCanceled(c, err, "failed to resolve creator labels for system filter options") {
+		return
+	}
+
 	creatorOptions := make([]generated.FilterOption, 0)
 	seenCreators := make(map[string]struct{})
 	for _, system := range systems {
@@ -152,7 +162,7 @@ func (s *Server) GetSystemFilterOptions(c *gin.Context) {
 		seenCreators[creator] = struct{}{}
 		creatorOptions = append(creatorOptions, generated.FilterOption{
 			Value: creator,
-			Label: creator,
+			Label: buildSystemCreatorLabel(creator, creatorLabels[creator]),
 		})
 	}
 
@@ -256,7 +266,7 @@ func (s *Server) CreateSystem(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusCreated, systemToAPI(sys))
+	c.JSON(http.StatusCreated, systemToAPI(sys, systemCreatorIdentity{}))
 }
 
 // GetSystem handles GET /systems/{system_id}.
@@ -280,7 +290,7 @@ func (s *Server) GetSystem(c *gin.Context, systemID generated.SystemID) {
 		return
 	}
 
-	c.JSON(http.StatusOK, systemToAPI(sys))
+	c.JSON(http.StatusOK, systemToAPI(sys, systemCreatorIdentity{}))
 }
 
 // UpdateSystem handles PATCH /systems/{system_id}.
@@ -332,7 +342,7 @@ func (s *Server) UpdateSystem(c *gin.Context, systemID generated.SystemID) {
 		})
 	}
 
-	c.JSON(http.StatusOK, systemToAPI(updated))
+	c.JSON(http.StatusOK, systemToAPI(updated, systemCreatorIdentity{}))
 }
 
 // DeleteSystem handles DELETE /systems/{system_id}.
@@ -1192,14 +1202,21 @@ func ticketIDs(tickets []*ent.Ticket) []string {
 	return out
 }
 
-func systemToAPI(sys *ent.System) generated.System {
+type systemCreatorIdentity struct {
+	DisplayName string
+	Username    string
+}
+
+func systemToAPI(sys *ent.System, creator systemCreatorIdentity) generated.System {
 	return generated.System{
-		Id:          sys.ID,
-		Name:        sys.Name,
-		Description: sys.Description,
-		CreatedAt:   sys.CreatedAt,
-		CreatedBy:   sys.CreatedBy,
-		UpdatedAt:   sys.UpdatedAt,
+		Id:                   sys.ID,
+		Name:                 sys.Name,
+		Description:          sys.Description,
+		CreatedAt:            sys.CreatedAt,
+		CreatedBy:            sys.CreatedBy,
+		CreatedByDisplayName: strings.TrimSpace(creator.DisplayName),
+		CreatedByUsername:    strings.TrimSpace(creator.Username),
+		UpdatedAt:            sys.UpdatedAt,
 	}
 }
 
@@ -1246,9 +1263,28 @@ func (s *Server) applySystemSearchFilters(
 	memberID := strings.TrimSpace(params.MemberId)
 
 	if createdByExact != "" {
-		query = query.Where(entsystem.CreatedByEQ(createdByExact))
+		creatorIDs, err := s.matchingCreatorIDs(ctx, createdByExact, true)
+		if err != nil {
+			return nil, err
+		}
+		if len(creatorIDs) > 0 {
+			query = query.Where(entsystem.CreatedByIn(creatorIDs...))
+		} else {
+			query = query.Where(entsystem.CreatedByEQ(createdByExact))
+		}
 	} else if createdBy != "" {
-		query = query.Where(entsystem.CreatedByContainsFold(createdBy))
+		creatorIDs, err := s.matchingCreatorIDs(ctx, createdBy, false)
+		if err != nil {
+			return nil, err
+		}
+		if len(creatorIDs) > 0 {
+			query = query.Where(entsystem.Or(
+				entsystem.CreatedByContainsFold(createdBy),
+				entsystem.CreatedByIn(creatorIDs...),
+			))
+		} else {
+			query = query.Where(entsystem.CreatedByContainsFold(createdBy))
+		}
 	}
 
 	if serviceID != "" {
@@ -1309,7 +1345,128 @@ func (s *Server) applySystemSearchFilters(
 		predicates = append(predicates, entsystem.IDIn(memberSystemIDs...))
 	}
 
+	creatorIDs, err := s.matchingCreatorIDs(ctx, search, false)
+	if err != nil {
+		return nil, err
+	}
+	if len(creatorIDs) > 0 {
+		predicates = append(predicates, entsystem.CreatedByIn(creatorIDs...))
+	}
+
 	return query.Where(entsystem.Or(predicates...)), nil
+}
+
+func (s *Server) resolveSystemCreatorLabels(
+	ctx context.Context,
+	systems []*ent.System,
+) (map[string]systemCreatorIdentity, error) {
+	creatorValues := make([]string, 0, len(systems))
+	seen := make(map[string]struct{}, len(systems))
+	for _, system := range systems {
+		creator := strings.TrimSpace(system.CreatedBy)
+		if creator == "" {
+			continue
+		}
+		if _, ok := seen[creator]; ok {
+			continue
+		}
+		seen[creator] = struct{}{}
+		creatorValues = append(creatorValues, creator)
+	}
+	if len(creatorValues) == 0 {
+		return map[string]systemCreatorIdentity{}, nil
+	}
+
+	users, err := s.client.User.Query().
+		Where(entuser.Or(
+			entuser.IDIn(creatorValues...),
+			entuser.UsernameIn(creatorValues...),
+		)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	labels := make(map[string]systemCreatorIdentity, len(creatorValues))
+	for _, user := range users {
+		identity := systemCreatorIdentity{
+			DisplayName: strings.TrimSpace(user.DisplayName),
+			Username:    strings.TrimSpace(user.Username),
+		}
+		if id := strings.TrimSpace(user.ID); id != "" {
+			labels[id] = identity
+		}
+		if username := strings.TrimSpace(user.Username); username != "" {
+			if _, exists := labels[username]; !exists {
+				labels[username] = identity
+			}
+		}
+	}
+	return labels, nil
+}
+
+func buildSystemCreatorLabel(raw string, identity systemCreatorIdentity) string {
+	labelParts := make([]string, 0, 2)
+	if displayName := strings.TrimSpace(identity.DisplayName); displayName != "" {
+		labelParts = append(labelParts, displayName)
+	}
+	if username := strings.TrimSpace(identity.Username); username != "" && !containsString(labelParts, username) {
+		labelParts = append(labelParts, username)
+	}
+	if len(labelParts) == 0 {
+		return raw
+	}
+	return strings.Join(labelParts, " · ")
+}
+
+func (s *Server) matchingCreatorIDs(ctx context.Context, search string, exact bool) ([]string, error) {
+	search = strings.TrimSpace(search)
+	if search == "" {
+		return nil, nil
+	}
+
+	userQuery := s.client.User.Query()
+	if exact {
+		userQuery = userQuery.Where(entuser.Or(
+			entuser.IDEQ(search),
+			entuser.UsernameEQ(search),
+			entuser.EmailEQ(search),
+			entuser.DisplayNameEQ(search),
+		))
+	} else {
+		userQuery = userQuery.Where(entuser.Or(
+			entuser.IDContainsFold(search),
+			entuser.UsernameContainsFold(search),
+			entuser.EmailContainsFold(search),
+			entuser.DisplayNameContainsFold(search),
+		))
+	}
+
+	users, err := userQuery.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, nil
+	}
+
+	matches := make([]string, 0, len(users)*2)
+	seen := make(map[string]struct{}, len(users)*2)
+	for _, user := range users {
+		if id := strings.TrimSpace(user.ID); id != "" {
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				matches = append(matches, id)
+			}
+		}
+		if username := strings.TrimSpace(user.Username); username != "" {
+			if _, ok := seen[username]; !ok {
+				seen[username] = struct{}{}
+				matches = append(matches, username)
+			}
+		}
+	}
+	return matches, nil
 }
 
 func (s *Server) matchingSystemIDsByMemberSearch(ctx context.Context, term string) ([]string, error) {

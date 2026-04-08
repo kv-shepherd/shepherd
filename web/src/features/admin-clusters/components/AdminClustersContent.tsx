@@ -393,7 +393,7 @@ export function AdminClustersContent() {
   ];
 
   return (
-    <div data-testid="admin-clusters-page">
+    <div data-testid="admin-clusters-page" className="admin-clusters-page">
       {clusters.messageContextHolder}
       <PageHeader
         title={t("clusters.title")}
@@ -454,7 +454,7 @@ export function AdminClustersContent() {
         />
       </div>
 
-      <PageSurface flush={true}>
+      <PageSurface className="admin-clusters-page__workspace-surface" flush={true}>
         <PageSearchToolbar
           searchValue={quickSearch}
           searchDraftValue={quickSearchDraft}

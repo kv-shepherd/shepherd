@@ -1795,6 +1795,8 @@ export interface components {
             name: string;
             description?: string;
             created_by: string;
+            created_by_display_name?: string;
+            created_by_username?: string;
             tenant_id?: string;
             /** Format: date-time */
             created_at: string;

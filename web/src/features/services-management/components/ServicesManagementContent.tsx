@@ -278,7 +278,7 @@ export function ServicesManagementContent() {
     };
 
     return (
-        <div>
+        <div className="services-page">
             {services.messageContextHolder}
             <PageHeader
                 title={t('nav.services')}
@@ -307,7 +307,7 @@ export function ServicesManagementContent() {
             {serviceItems.length === 0 && !services.isLoading && !services.hasActiveFilters && services.activeSystemId === ALL_SYSTEMS_FILTER ? (
                 <SetupGuideCard variant="services" />
             ) : (
-                <PageSurface flush={true}>
+                <PageSurface className="services-page__table-surface" flush={true}>
                     <div style={{ padding: 16, paddingBottom: 0 }}>
                         <PageSearchToolbar
                             searchValue={services.filters.search}

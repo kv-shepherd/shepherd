@@ -142,6 +142,7 @@ export default function AppLayout({
 
     return (
         <ProLayout
+            className="app-shell-layout"
             style={{ minHeight: '100vh' }}
             title="Shepherd"
             logo={<Image src="/logo-icon.svg" alt="Shepherd" width={32} height={32} style={{ width: 'auto', height: 32 }} />}
@@ -153,13 +154,13 @@ export default function AppLayout({
             splitMenus={false}
             token={{
                 sider: {
-                    colorMenuBackground: '#0f1c2f',
-                    colorTextMenu: '#dbe7ffcc',
-                    colorTextMenuSelected: '#fff',
-                    colorBgMenuItemSelected: '#155eef2b',
+                    colorMenuBackground: '#0f1219',
+                    colorTextMenu: 'rgba(229, 232, 240, 0.82)',
+                    colorTextMenuSelected: '#ffffff',
+                    colorBgMenuItemSelected: 'rgba(113, 112, 255, 0.22)',
                 },
                 header: {
-                    colorBgHeader: 'rgba(255, 255, 255, 0.78)',
+                    colorBgHeader: 'rgba(247, 248, 252, 0.72)',
                     heightLayoutHeader: 56,
                 },
             }}
@@ -176,6 +177,7 @@ export default function AppLayout({
                 </div>,
                 <AutoComplete
                     key="nav-search"
+                    className="app-shell-nav-search"
                     style={{ width: 280 }}
                     value={menuSearch}
                     options={menuSearchOptions}
@@ -201,6 +203,7 @@ export default function AppLayout({
                     <Button
                         type="text"
                         icon={<ThunderboltOutlined />}
+                        className="app-shell-action-button"
                         data-testid="quick-actions-trigger"
                     >
                         {t('quick_actions.label')}
@@ -236,7 +239,7 @@ export default function AppLayout({
                             borderRadius: '50%',
                             transition: 'background-color 0.3s',
                         }}
-                        className="action-icon"
+                        className="action-icon app-shell-icon-action"
                     >
                         <GlobalOutlined style={{ fontSize: 18 }} />
                     </div>

@@ -52,6 +52,7 @@ import {
     formatApprovalRecordID,
 } from '@/features/approval-shared/summary';
 import type {
+    BatchStatusResponse,
     Ticket,
     HistoryStatusFilter,
     RequestTicketOperationType,
@@ -71,7 +72,7 @@ interface RequestContextItem {
 
 interface CompactField {
     label: string;
-    value?: string;
+    value?: ReactNode;
 }
 
 interface RequestRowOutcome {
@@ -113,10 +114,32 @@ function renderCompactFieldGrid(fields: CompactField[]) {
                     <Text type="secondary" className="workbench-compact-grid__label">
                         {field.label}
                     </Text>
-                    <Text strong className="workbench-compact-grid__value">
-                        {field.value}
-                    </Text>
+                    <div className="workbench-compact-grid__value">
+                        {typeof field.value === 'string' ? <Text strong>{field.value}</Text> : field.value}
+                    </div>
                 </div>
+            ))}
+        </div>
+    );
+}
+
+function renderResourceShapeFacts(shape: string | undefined) {
+    if (!shape || shape.trim() === '') {
+        return undefined;
+    }
+    const parts = shape
+        .split('·')
+        .map((part) => part.trim())
+        .filter((part) => part !== '');
+    if (parts.length === 0) {
+        return shape;
+    }
+    return (
+        <div className="workbench-resource-facts">
+            {parts.map((part) => (
+                <span key={part} className="workbench-resource-fact">
+                    {part}
+                </span>
             ))}
         </div>
     );
@@ -199,7 +222,7 @@ function requestFields(record: Ticket, t: TFunction): CompactField[] {
                 },
                 {
                     label: t('summary.target_resources'),
-                    value: requestedShape,
+                    value: renderResourceShapeFacts(requestedShape),
                 },
             ];
         case 'MODIFY':
@@ -210,7 +233,7 @@ function requestFields(record: Ticket, t: TFunction): CompactField[] {
                 },
                 {
                     label: t('summary.target_resources'),
-                    value: changeSummary,
+                    value: renderResourceShapeFacts(changeSummary),
                 },
             ];
         case 'POWER':
@@ -259,6 +282,31 @@ function requestOutcome(record: Ticket, t: TFunction): RequestRowOutcome | null 
 
 function batchChildSummaryTitle(resourceName: string | undefined): string {
     return resourceName && resourceName.trim() !== '' ? resourceName : EMPTY_VALUE;
+}
+
+function summarizeBatchTracking(batchStatus: BatchStatusResponse | undefined, t: TFunction) {
+    if (!batchStatus) {
+        return {
+            headline: undefined as string | undefined,
+            preview: undefined as string | undefined,
+        };
+    }
+
+    const operation = batchStatus.operation
+        ? t(`vm:batch.operation.${batchStatus.operation}`, { defaultValue: batchStatus.operation })
+        : t('workbench.summary.batch_title');
+    const count = batchStatus.child_count ?? 0;
+    const headline = `${operation} · ${t('request_batch_count', { count })}`;
+    const namedChildren = (batchStatus.children ?? [])
+        .map((child) => child.resource_name?.trim())
+        .filter((value): value is string => Boolean(value));
+    const preview = namedChildren.length === 0
+        ? undefined
+        : namedChildren.length === 1
+            ? namedChildren[0]
+            : `${namedChildren.slice(0, 2).join(' · ')}${namedChildren.length > 2 ? ` +${namedChildren.length - 2}` : ''}`;
+
+    return { headline, preview };
 }
 
 function requestLifecycleAlert(ticket: Ticket, t: (key: string) => string) {
@@ -508,6 +556,7 @@ export function MyRequestsWorkbench() {
             : requests.batchStatus?.status === 'FAILED'
                 ? 'red'
                 : 'blue';
+    const batchTrackingSummary = summarizeBatchTracking(requests.batchStatus, t);
     const formatBatchStatus = (status?: string) => {
         if (!status) {
             return EMPTY_VALUE;
@@ -957,11 +1006,11 @@ export function MyRequestsWorkbench() {
                     <BatchFlowGlyph className="workbench-overview-card__art" />
                 </div>
                 <div className="workbench-overview-card__value">
-                    {requests.activeBatchID || t('workbench.summary.batch_inactive')}
+                    {batchTrackingSummary.headline || t('workbench.summary.batch_inactive')}
                 </div>
                 <div className="workbench-overview-card__meta">
                     <Space wrap size={8}>
-                        <span>{t('workbench.summary.batch_description')}</span>
+                        <span>{batchTrackingSummary.preview || t('workbench.summary.batch_description')}</span>
                         {requests.batchStatus?.status ? (
                             <Tag color={batchStatusColor}>{formatBatchStatus(requests.batchStatus.status)}</Tag>
                         ) : null}
@@ -1209,7 +1258,7 @@ export function MyRequestsWorkbench() {
     ];
 
     return (
-        <div data-testid="approvals-page">
+        <div data-testid="approvals-page" className="request-workbench-page">
             {requests.messageContextHolder}
             <PageHeader
                 title={t('my_approvals_title')}
@@ -1227,8 +1276,9 @@ export function MyRequestsWorkbench() {
 
             {renderSummaryCards()}
 
-            <PageSurface>
+            <PageSurface className="request-workbench-page__tabs-surface">
                 <Tabs
+                    className="request-workbench-page__tabs"
                     activeKey={requests.view}
                     onChange={(key) => requests.changeView(key as RequestWorkbenchView)}
                     items={tabItems}
@@ -1252,6 +1302,7 @@ export function MyRequestsWorkbench() {
                     onClose={closeRequestDetails}
                     width="min(1040px, calc(100vw - 16px))"
                     styles={{ body: { paddingRight: 8 } }}
+                    className="request-workbench-page__drawer"
                     footer={(
                         <Space wrap>
                             <Button onClick={closeRequestDetails}>
@@ -1453,13 +1504,13 @@ export function MyRequestsWorkbench() {
                                                                 <Text type="secondary" className="workbench-batch-cell__label">
                                                                     {t('summary.current_resources')}
                                                                 </Text>
-                                                                <Text>{record.currentShape || EMPTY_VALUE}</Text>
+                                                                <div>{renderResourceShapeFacts(record.currentShape) || <Text>{EMPTY_VALUE}</Text>}</div>
                                                             </div>
                                                             <div className="workbench-batch-cell__row">
                                                                 <Text type="secondary" className="workbench-batch-cell__label">
                                                                     {t('summary.target_resources')}
                                                                 </Text>
-                                                                <Text>{record.targetShape || EMPTY_VALUE}</Text>
+                                                                <div>{renderResourceShapeFacts(record.targetShape) || <Text>{EMPTY_VALUE}</Text>}</div>
                                                             </div>
                                                             <div className="workbench-batch-cell__row">
                                                                 <Text type="secondary" className="workbench-batch-cell__label">

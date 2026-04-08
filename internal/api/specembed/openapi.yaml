@@ -3382,6 +3382,10 @@ components:
           type: string
         created_by:
           type: string
+        created_by_display_name:
+          type: string
+        created_by_username:
+          type: string
         tenant_id:
           type: string
         created_at:

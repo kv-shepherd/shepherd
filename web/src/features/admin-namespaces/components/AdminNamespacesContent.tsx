@@ -194,7 +194,7 @@ export function AdminNamespacesContent() {
     };
 
     return (
-        <div data-testid="admin-namespaces-page">
+        <div data-testid="admin-namespaces-page" className="admin-namespaces-page">
             {namespaces.messageContextHolder}
             <PageHeader
                 title={t('namespaces.title')}
@@ -251,7 +251,7 @@ export function AdminNamespacesContent() {
                 />
             </div>
 
-            <PageSurface flush={true}>
+            <PageSurface className="admin-namespaces-page__workspace-surface" flush={true}>
                 <PageSearchToolbar
                     searchValue={namespaces.search}
                     searchDraftValue={quickSearchDraft}

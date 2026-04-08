@@ -2,23 +2,24 @@
 
 import React from 'react';
 import {
-    AppstoreOutlined,
-    AuditOutlined,
-    BellOutlined,
-    CloudServerOutlined,
-    ClusterOutlined,
-    ControlOutlined,
-    DashboardOutlined,
-    DesktopOutlined,
-    FileTextOutlined,
-    GlobalOutlined,
-    HddOutlined,
-    KeyOutlined,
-    ProfileOutlined,
-    SafetyCertificateOutlined,
-    SettingOutlined,
-    TeamOutlined,
-} from '@ant-design/icons';
+    DashboardIcon,
+    NotificationsIcon,
+    SystemsIcon,
+    ServicesIcon,
+    VMsIcon,
+    RequestsIcon,
+    AdminIcon,
+    ApprovalTasksIcon,
+    ClustersIcon,
+    NamespacesIcon,
+    TemplatesIcon,
+    InstanceSizesIcon,
+    UsersIcon,
+    RbacIcon,
+    RateLimitsIcon,
+    AuthProvidersIcon,
+    AuditIcon,
+} from './MenuIcons';
 import type { ProLayoutProps } from '@ant-design/pro-components';
 
 type TranslateFn = (key: string) => string;
@@ -48,33 +49,33 @@ export const getMenuRoutes = (
         {
             path: '/dashboard',
             name: t('nav.dashboard'),
-            icon: <DashboardOutlined />,
+            icon: <DashboardIcon />,
         },
         {
             path: '/notifications',
             name: t('nav.notifications'),
-            icon: <BellOutlined />,
+            icon: <NotificationsIcon />,
             hideInMenu: true,
         },
         {
             path: '/systems',
             name: t('nav.systems'),
-            icon: <CloudServerOutlined />,
+            icon: <SystemsIcon />,
         },
         {
             path: '/services',
             name: t('nav.services'),
-            icon: <AppstoreOutlined />,
+            icon: <ServicesIcon />,
         },
         {
             path: '/vms',
             name: t('nav.vms'),
-            icon: <DesktopOutlined />,
+            icon: <VMsIcon />,
         },
         {
             path: '/tickets',
             name: t('nav.my_requests'),
-            icon: <AuditOutlined />,
+            icon: <RequestsIcon />,
         },
     ];
 
@@ -83,57 +84,57 @@ export const getMenuRoutes = (
             key: 'admin',
             path: '/admin',
             name: t('nav.admin'),
-            icon: <SettingOutlined />,
+            icon: <AdminIcon />,
             routes: [
                 {
                     path: '/admin/approval-tasks',
                     name: t('nav.approval_tasks'),
-                    icon: <AuditOutlined />,
+                    icon: <ApprovalTasksIcon />,
                 },
                 {
                     path: '/admin/clusters',
                     name: t('nav.clusters'),
-                    icon: <ClusterOutlined />,
+                    icon: <ClustersIcon />,
                 },
                 {
                     path: '/admin/namespaces',
                     name: t('nav.namespaces'),
-                    icon: <GlobalOutlined />,
+                    icon: <NamespacesIcon />,
                 },
                 {
                     path: '/admin/templates',
                     name: t('nav.templates'),
-                    icon: <ProfileOutlined />,
+                    icon: <TemplatesIcon />,
                 },
                 {
                     path: '/admin/instance-sizes',
                     name: t('nav.instance_sizes'),
-                    icon: <HddOutlined />,
+                    icon: <InstanceSizesIcon />,
                 },
                 {
                     path: '/admin/users',
                     name: t('nav.users'),
-                    icon: <TeamOutlined />,
+                    icon: <UsersIcon />,
                 },
                 {
                     path: '/admin/rbac',
                     name: t('nav.rbac'),
-                    icon: <SafetyCertificateOutlined />,
+                    icon: <RbacIcon />,
                 },
                 {
                     path: '/admin/rate-limits',
                     name: t('nav.rate_limits'),
-                    icon: <ControlOutlined />,
+                    icon: <RateLimitsIcon />,
                 },
                 {
                     path: '/admin/auth-providers',
                     name: t('nav.auth_providers'),
-                    icon: <KeyOutlined />,
+                    icon: <AuthProvidersIcon />,
                 },
                 {
                     path: '/admin/audit',
                     name: t('nav.audit'),
-                    icon: <FileTextOutlined />,
+                    icon: <AuditIcon />,
                 },
             ],
         });

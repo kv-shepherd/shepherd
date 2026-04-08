@@ -24,6 +24,7 @@ import (
 func TestSystemHandler_ListSystems_RespectsResourceBindings(t *testing.T) {
 	srv, client := newSystemBehaviorTestServer(t)
 
+	mustCreateUserForSystemSearch(t, client, "owner-1", "owner-1@example.com", "Owner One")
 	sysVisible := mustCreateSystem(t, client, "sys-visible", "shop", "owner-1")
 	_ = mustCreateSystem(t, client, "sys-hidden", "finance", "owner-2")
 	mustCreateSystemBinding(t, client, "user-a", sysVisible.ID, "viewer")
@@ -45,12 +46,19 @@ func TestSystemHandler_ListSystems_RespectsResourceBindings(t *testing.T) {
 	if resp.Items[0].Id != sysVisible.ID {
 		t.Fatalf("visible system id = %s, want %s", resp.Items[0].Id, sysVisible.ID)
 	}
+	if resp.Items[0].CreatedByDisplayName != "Owner One" {
+		t.Fatalf("created_by_display_name = %#v, want Owner One", resp.Items[0].CreatedByDisplayName)
+	}
+	if resp.Items[0].CreatedByUsername != "owner-1@example.com" {
+		t.Fatalf("created_by_username = %#v, want owner-1@example.com", resp.Items[0].CreatedByUsername)
+	}
 }
 
 func TestSystemHandler_ListSystems_SupportsSearchAcrossSystemCreatorServiceAndMember(t *testing.T) {
 	srv, client := newSystemBehaviorTestServer(t)
 
-	sysMatch := mustCreateSystem(t, client, "sys-platform", "platform core", "alice.ops")
+	mustCreateUserForSystemSearch(t, client, "user-alice", "alice.ops", "Alice Ops")
+	sysMatch := mustCreateSystem(t, client, "sys-platform", "platform core", "user-alice")
 	sysOther := mustCreateSystem(t, client, "sys-finance", "finance ops", "charlie.ops")
 	mustCreateService(t, client, "svc-billing", "billing-api", sysMatch.ID, "Handles partner billing")
 	mustCreateService(t, client, "svc-ledger", "ledger-api", sysOther.ID, "Handles accounting")
@@ -131,9 +139,9 @@ func TestSystemHandler_ListSystems_SupportsSearchAcrossSystemCreatorServiceAndMe
 	t.Run("exact filters narrow by creator service id and member id", func(t *testing.T) {
 		assertListSystems(
 			t,
-			"?created_by_exact=alice.ops&service_id=svc-billing&member_id=user-bob",
+			"?created_by_exact=user-alice&service_id=svc-billing&member_id=user-bob",
 			generated.ListSystemsParams{
-				CreatedByExact: "alice.ops",
+				CreatedByExact: "user-alice",
 				ServiceId:      "svc-billing",
 				MemberId:       "user-bob",
 			},
@@ -149,7 +157,7 @@ func TestSystemHandler_GetSystemFilterOptions_ReturnsReadableVisibleOptions(t *t
 	sysHidden := mustCreateSystem(t, client, "sys-hidden", "finance", "charlie.ops")
 	_ = mustCreateService(t, client, "svc-visible", "billing-api", sysVisible.ID, "Handles partner billing")
 	_ = mustCreateService(t, client, "svc-hidden", "ledger-api", sysHidden.ID, "Handles accounting")
-	mustCreateUserForSystemSearch(t, client, "user-a", "alice.ops@example.com", "Alice Ops")
+	mustCreateUserForSystemSearch(t, client, "user-a", "alice.ops", "Alice Ops")
 	mustCreateUserForSystemSearch(t, client, "user-bob", "bob.builder@example.com", "Bob Builder")
 	mustCreateUserForSystemSearch(t, client, "user-dana", "dana.lee@example.com", "Dana Lee")
 	mustCreateSystemBinding(t, client, "user-a", sysVisible.ID, "viewer")
@@ -169,8 +177,11 @@ func TestSystemHandler_GetSystemFilterOptions_ReturnsReadableVisibleOptions(t *t
 	if len(resp.Creators) != 1 {
 		t.Fatalf("creators len = %d, want 1", len(resp.Creators))
 	}
-	if got := resp.Creators[0].Label; got != "alice.ops" {
-		t.Fatalf("creator label = %q, want %q", got, "alice.ops")
+	if got := resp.Creators[0].Label; got != "Alice Ops · alice.ops" {
+		t.Fatalf("creator label = %q, want %q", got, "Alice Ops · alice.ops")
+	}
+	if got := resp.Creators[0].Value; got != "alice.ops" {
+		t.Fatalf("creator value = %q, want %q", got, "alice.ops")
 	}
 
 	if len(resp.Services) != 1 {
@@ -193,7 +204,7 @@ func TestSystemHandler_GetSystemFilterOptions_ReturnsReadableVisibleOptions(t *t
 	if _, ok := memberLabels["Bob Builder · bob.builder@example.com"]; !ok {
 		t.Fatalf("member labels = %#v, want Bob Builder option", memberLabels)
 	}
-	if _, ok := memberLabels["Alice Ops · alice.ops@example.com"]; !ok {
+	if _, ok := memberLabels["Alice Ops · alice.ops"]; !ok {
 		t.Fatalf("member labels = %#v, want Alice Ops option", memberLabels)
 	}
 }

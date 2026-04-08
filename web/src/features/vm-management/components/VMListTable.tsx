@@ -21,17 +21,54 @@ import {
     PlayCircleOutlined,
     RedoOutlined,
     SettingOutlined,
+    TagsOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { MenuProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { TFunction } from 'i18next';
+import type { ReactNode } from 'react';
 
 import type { VM, VMList } from '../types';
 import { formatMemory, VM_STATUS_MAP } from '../types';
 import { PageSurface } from '@/components/layouts/PageSection';
 import { hasAnyConsoleCapability } from '@/features/vm-management/console';
 import { formatVMOperatingSystem } from '@/features/vm-management/osInfo';
+
+const CpuResourceIcon = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="1em" height="1em">
+        <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
+        <rect x="9" y="9" width="6" height="6" />
+        <line x1="9" y1="1" x2="9" y2="4" />
+        <line x1="15" y1="1" x2="15" y2="4" />
+        <line x1="9" y1="20" x2="9" y2="23" />
+        <line x1="15" y1="20" x2="15" y2="23" />
+        <line x1="20" y1="9" x2="23" y2="9" />
+        <line x1="20" y1="14" x2="23" y2="14" />
+        <line x1="1" y1="9" x2="4" y2="9" />
+        <line x1="1" y1="14" x2="4" y2="14" />
+    </svg>
+);
+
+const MemoryResourceIcon = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="1em" height="1em">
+        <line x1="4" y1="8" x2="20" y2="8" />
+        <line x1="4" y1="16" x2="20" y2="16" />
+        <line x1="8" y1="8" x2="8" y2="16" />
+        <line x1="12" y1="8" x2="12" y2="16" />
+        <line x1="16" y1="8" x2="16" y2="16" />
+        <path d="M4 4h16v16H4z" />
+    </svg>
+);
+
+const DiskResourceIcon = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="1em" height="1em">
+        <line x1="22" y1="12" x2="2" y2="12" />
+        <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+        <line x1="6" y1="16" x2="6.01" y2="16" />
+        <line x1="10" y1="16" x2="14" y2="16" />
+    </svg>
+);
 
 const { Text: TypographyText, Link: TypographyLink } = Typography;
 
@@ -48,6 +85,29 @@ const formatDisk = (diskGb: number | undefined): string => {
     }
     return `${diskGb} Gi`;
 };
+
+function renderTooltipFact(
+    title: string,
+    icon: ReactNode,
+    value: string | undefined,
+    className = 'vm-list-inline-fact',
+) {
+    if (!value || value.trim() === '') {
+        return null;
+    }
+    return (
+        <Tooltip title={title} trigger={['hover', 'focus']} destroyOnHidden={true}>
+            <span className={className}>
+                <span className={`${className}__icon`} aria-hidden="true">
+                    {icon}
+                </span>
+                <span className={`${className}__value selectable-inline-text`}>
+                    {value}
+                </span>
+            </span>
+        </Tooltip>
+    );
+}
 
 interface VMListTableProps {
     t: TFunction;
@@ -170,7 +230,7 @@ export function VMListTable({
         {
             title: t('field.scope'),
             key: 'scope',
-            width: 240,
+            width: 220,
             render: (_, record) => {
                 const inCurrentServiceContext =
                     Boolean(contextSystemId)
@@ -216,66 +276,83 @@ export function VMListTable({
                                 )}
                             </div>
                         </div>
-                        {inCurrentServiceContext ? <Tag color="green">{t('context.row_badge')}</Tag> : null}
+                        <div className="vm-list-scope-facts">
+                            {record.environment ? (
+                                renderTooltipFact(
+                                    t('field.environment'),
+                                    <TagsOutlined />,
+                                    record.environment,
+                                )
+                            ) : null}
+                            {inCurrentServiceContext ? <Tag color="green">{t('context.row_badge')}</Tag> : null}
+                        </div>
                     </Space>
                 );
             },
+        },
+        {
+            title: t('field.placement', { defaultValue: 'Runtime location' }),
+            key: 'placement',
+            width: 220,
+            render: (_, record) => (
+                <Space direction="vertical" size={4} className="workbench-table-stack">
+                    <div className="vm-list-labeled-lines">
+                        <div className="vm-list-labeled-line">
+                            <TypographyText type="secondary" className="vm-list-labeled-line__label">
+                                {t('field.namespace')}
+                            </TypographyText>
+                            <TypographyText className="vm-list-labeled-line__value selectable-inline-text">
+                                {record.namespace || '—'}
+                            </TypographyText>
+                        </div>
+                        <div className="vm-list-labeled-line">
+                            <TypographyText type="secondary" className="vm-list-labeled-line__label">
+                                {t('field.cluster')}
+                            </TypographyText>
+                            <TypographyText className="vm-list-labeled-line__value selectable-inline-text">
+                                {record.cluster_name || '—'}
+                            </TypographyText>
+                        </div>
+                    </div>
+                </Space>
+            ),
         },
         {
             title: t('field.resources'),
             key: 'resources',
             width: 280,
             render: (_, record) => {
-                const resourceSummary = [
-                    formatCPU(record.cpu_cores),
-                    formatMemory(record.memory_gi ?? 0),
-                    formatDisk(record.disk_gb),
-                ]
-                    .filter((value) => value && value !== '—')
-                    .join(' · ');
-                const placementSummary = [record.namespace, record.cluster_name, record.environment]
-                    .filter(Boolean)
-                    .join(' · ');
+                const cpuValue = formatCPU(record.cpu_cores);
+                const memoryValue = formatMemory(record.memory_gi ?? 0);
+                const diskValue = formatDisk(record.disk_gb);
 
                 return (
                     <Space direction="vertical" size={4} className="workbench-table-stack">
-                        <TypographyText className="workbench-table-description selectable-inline-text">
-                            {resourceSummary || '—'}
-                        </TypographyText>
-                        {placementSummary ? (
-                            <div className="vm-list-inline-facts">
-                                {record.namespace ? (
-                                    <span className="vm-list-inline-fact">
-                                        <TypographyText type="secondary" className="vm-list-inline-fact__label">
-                                            {t('field.namespace')}
-                                        </TypographyText>
-                                        <TypographyText className="vm-list-inline-fact__value selectable-inline-text">
-                                            {record.namespace}
-                                        </TypographyText>
-                                    </span>
-                                ) : null}
-                                {record.cluster_name ? (
-                                    <span className="vm-list-inline-fact">
-                                        <TypographyText type="secondary" className="vm-list-inline-fact__label">
-                                            {t('field.cluster')}
-                                        </TypographyText>
-                                        <TypographyText className="vm-list-inline-fact__value selectable-inline-text">
-                                            {record.cluster_name}
-                                        </TypographyText>
-                                    </span>
-                                ) : null}
-                                {record.environment ? (
-                                    <span className="vm-list-inline-fact">
-                                        <TypographyText type="secondary" className="vm-list-inline-fact__label">
-                                            {t('field.environment')}
-                                        </TypographyText>
-                                        <TypographyText className="vm-list-inline-fact__value selectable-inline-text">
-                                            {record.environment}
-                                        </TypographyText>
-                                    </span>
-                                ) : null}
-                            </div>
-                        ) : null}
+                        <div className="vm-list-resource-chips">
+                            {renderTooltipFact(
+                                t('field.cpu', { defaultValue: 'CPU' }),
+                                <CpuResourceIcon />,
+                                cpuValue !== '—' ? cpuValue : undefined,
+                                'vm-list-resource-chip',
+                            )}
+                            {renderTooltipFact(
+                                t('field.memory', { defaultValue: 'Memory' }),
+                                <MemoryResourceIcon />,
+                                memoryValue !== '0 Mi' && memoryValue !== '—' ? memoryValue : undefined,
+                                'vm-list-resource-chip',
+                            )}
+                            {renderTooltipFact(
+                                t('field.disk', { defaultValue: 'Disk' }),
+                                <DiskResourceIcon />,
+                                diskValue !== '—' ? diskValue : undefined,
+                                'vm-list-resource-chip',
+                            )}
+                            {!record.cpu_cores && !record.memory_gi && !record.disk_gb ? (
+                                <TypographyText className="workbench-table-description selectable-inline-text">
+                                    —
+                                </TypographyText>
+                            ) : null}
+                        </div>
                     </Space>
                 );
             },
@@ -411,7 +488,7 @@ export function VMListTable({
     ];
 
     return (
-        <PageSurface flush={true}>
+        <PageSurface className="vm-page-surface vm-page-surface--table" flush={true}>
             <Table<VM>
                 columns={columns}
                 dataSource={vmData?.items ?? []}
@@ -430,7 +507,7 @@ export function VMListTable({
                     onChange: onPageChange,
                 }}
                 size="middle"
-                scroll={{ x: 'max-content' }}
+                scroll={{ x: 1400 }}
             />
         </PageSurface>
     );

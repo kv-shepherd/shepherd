@@ -299,21 +299,25 @@ describe('SystemsManagementContent', () => {
                             id: 'sys-1',
                             name: 'shop',
                             description: 'Retail platform',
-                            created_by: 'alice',
+                            created_by: 'user-alice',
+                            created_by_display_name: 'Alice Ops',
+                            created_by_username: 'alice.ops',
                             created_at: '2026-03-24T00:00:00Z',
                         },
                         {
                             id: 'sys-2',
                             name: 'finance',
                             description: 'Finance workspace',
-                            created_by: 'bob',
+                            created_by: 'user-bob',
+                            created_by_display_name: 'Bob Finance',
+                            created_by_username: 'bob.finance',
                             created_at: '2026-03-25T00:00:00Z',
                         },
                     ],
                     pagination: { total: 2 },
                 },
                 systemFilterOptions: {
-                    creators: [{ value: 'alice', label: 'alice' }],
+                    creators: [{ value: 'user-alice', label: 'Alice Ops · alice.ops' }],
                     services: [{ value: 'svc-1', label: 'shop / billing' }],
                     members: [{ value: 'user-bob', label: 'Bob Builder · bob.builder@example.com' }],
                 },
@@ -465,14 +469,14 @@ describe('SystemsManagementContent', () => {
 
         await user.click(screen.getByTestId('systems-search-filters-toggle'));
 
-        await user.selectOptions(screen.getByTestId('systems-filter-created-by'), 'alice');
+        await user.selectOptions(screen.getByTestId('systems-filter-created-by'), 'user-alice');
         await user.selectOptions(screen.getByTestId('systems-filter-service'), 'svc-1');
         await user.selectOptions(screen.getByTestId('systems-filter-member'), 'user-bob');
         await user.click(screen.getByTestId('systems-advanced-search-submit'));
 
         expect(applyFiltersMock).toHaveBeenCalledWith({
             search: '',
-            createdBy: 'alice',
+            createdBy: 'user-alice',
             serviceId: 'svc-1',
             memberId: 'user-bob',
         });

@@ -157,7 +157,7 @@ export function NotificationsContent() {
     };
 
     return (
-        <div>
+        <div className="notifications-page">
             {notifications.messageContextHolder}
             <PageHeader
                 title={t('notification.title')}
@@ -228,8 +228,8 @@ export function NotificationsContent() {
                 />
             </div>
 
-            <PageSurface flush={true}>
-                <div style={{ padding: 16, paddingBottom: 0 }}>
+            <PageSurface className="notifications-page__workspace-surface" flush={true}>
+                <div className="notifications-page__search-stack" style={{ padding: 16, paddingBottom: 0 }}>
                     <PageSearchToolbar
                         searchValue={quickSearch}
                         searchDraftValue={quickSearchDraft}

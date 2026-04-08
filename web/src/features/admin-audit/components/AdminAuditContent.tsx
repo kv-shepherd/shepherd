@@ -1385,7 +1385,7 @@ export function AdminAuditContent() {
                 />
             </div>
 
-            <PageSurface style={{ marginBottom: 16 }}>
+            <PageSurface className="audit-page__toolbar-surface" style={{ marginBottom: 16 }}>
                 <Flex vertical gap={12} style={{ padding: '16px 16px 0' }}>
                     <Flex wrap gap={8} align="center" className="audit-preset-bar copy-friendly-actions">
                         <Text type="secondary" className="audit-preset-bar__label">
@@ -1573,7 +1573,7 @@ export function AdminAuditContent() {
                 />
             </PageSurface>
 
-            <PageSurface flush={true}>
+            <PageSurface className="audit-page__table-surface" flush={true}>
                 <Table<AuditLog>
                     columns={columns}
                     dataSource={data?.items ?? []}
@@ -1610,6 +1610,7 @@ export function AdminAuditContent() {
                 onClose={() => setSelectedLog(null)}
                 title={t('audit.drawer_title', { defaultValue: 'Audit event details' })}
                 destroyOnClose
+                className="audit-page__drawer"
             >
                 {selectedLog ? (
                     <Space direction="vertical" size={16} style={{ width: '100%' }}>

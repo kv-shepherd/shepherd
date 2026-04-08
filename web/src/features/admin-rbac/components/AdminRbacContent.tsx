@@ -471,13 +471,13 @@ export function AdminRbacContent() {
     }, [searchParams, selectUser, selectedUserId]);
 
     return (
-        <div data-testid="admin-rbac-page">
+        <div data-testid="admin-rbac-page" className="admin-rbac-page">
             {rbac.messageContextHolder}
             <PageHeader
                 title={t('rbac.title')}
                 subtitle={t('rbac.subtitle')}
             />
-            <PageSurface style={{ marginBottom: 16 }}>
+            <PageSurface className="admin-rbac-page__filters-surface" style={{ marginBottom: 16 }}>
                 <Alert
                     showIcon
                     type="info"
@@ -575,7 +575,7 @@ export function AdminRbacContent() {
                 />
             </PageSurface>
 
-            <div className="summary-card-grid">
+            <div className="summary-card-grid admin-rbac-page__summary-grid">
                 <SummaryMetricCard
                     title={t('rbac.summary.roles_title')}
                     value={filteredRoles.length}
@@ -612,7 +612,7 @@ export function AdminRbacContent() {
                 />
             </div>
 
-            <PageSurface style={{ marginBottom: 16 }}>
+            <PageSurface className="admin-rbac-page__roles-surface" style={{ marginBottom: 16 }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
                     <Space direction="vertical" size={0}>
                         <Text strong>{t('rbac.roles.title')}</Text>
@@ -664,7 +664,7 @@ export function AdminRbacContent() {
                 />
             </PageSurface>
 
-            <PageSurface style={{ marginBottom: 16 }}>
+            <PageSurface className="admin-rbac-page__bindings-surface" style={{ marginBottom: 16 }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
                     <Space direction="vertical" size={0}>
                         <Text strong>{t('rbac.bindings.title')}</Text>
@@ -692,7 +692,7 @@ export function AdminRbacContent() {
                     description={t('rbac.bindings.help_description')}
                 />
 
-                <Space align="center" style={{ marginTop: 16, marginBottom: 16 }}>
+                <Space align="center" className="admin-rbac-page__binding-toolbar" style={{ marginTop: 16, marginBottom: 16 }}>
                     <SafetyCertificateOutlined />
                     <Text>{t('rbac.bindings.select_user')}</Text>
                     <Select
@@ -729,7 +729,7 @@ export function AdminRbacContent() {
                 </Space>
 
                 {rbac.selectedUserId ? (
-                    <div style={{ marginBottom: 16 }}>
+                    <div className="admin-rbac-page__binding-selection" style={{ marginBottom: 16 }}>
                         <Text strong>{rbac.selectedUserDisplayLabel}</Text>
                         <br />
                         <Text type="secondary">{t('rbac.bindings.selected_user_hint')}</Text>
@@ -773,7 +773,7 @@ export function AdminRbacContent() {
                 />
             </PageSurface>
 
-            <PageSurface>
+            <PageSurface className="admin-rbac-page__permissions-surface">
                 <Space direction="vertical" size={0} style={{ marginBottom: 16 }}>
                     <Text strong>{t('rbac.permissions.title')}</Text>
                     <Text type="secondary">{t('rbac.permissions.subtitle')}</Text>

@@ -2,17 +2,11 @@ package modules
 
 import (
 	"context"
-	"fmt"
-	"net/url"
-	"os"
-	"strings"
 	"testing"
-
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
 func TestNewInfrastructure_ResolvesBootstrapSecuritySecrets(t *testing.T) {
@@ -20,31 +14,11 @@ func TestNewInfrastructure_ResolvesBootstrapSecuritySecrets(t *testing.T) {
 		t.Fatalf("logger.Init() error = %v", err)
 	}
 
-	dsn := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL"))
-	if dsn == "" {
-		dsn = strings.TrimSpace(os.Getenv("DATABASE_URL"))
-	}
-	if dsn == "" {
-		t.Fatal("PostgreSQL test DSN is required: set TEST_DATABASE_URL or DATABASE_URL")
-	}
-
-	adminPool, err := pgxpool.New(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("open postgres admin pool: %v", err)
-	}
-	defer adminPool.Close()
-
-	schema := "t_modules_bootstrap_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if _, execErr := adminPool.Exec(context.Background(), fmt.Sprintf(`CREATE SCHEMA %q`, schema)); execErr != nil {
-		t.Fatalf("create schema %q: %v", schema, execErr)
-	}
-	defer func() {
-		_, _ = adminPool.Exec(context.Background(), fmt.Sprintf(`DROP SCHEMA IF EXISTS %q CASCADE`, schema))
-	}()
+	pool := testutil.OpenPGXPool(t, "modules_bootstrap")
 
 	cfg := &config.Config{
 		Database: config.DatabaseConfig{
-			URL:         dsnWithSearchPath(t, dsn, schema),
+			URL:         pool.Config().ConnString(),
 			MaxConns:    4,
 			MinConns:    1,
 			AutoMigrate: true,
@@ -73,17 +47,4 @@ func TestNewInfrastructure_ResolvesBootstrapSecuritySecrets(t *testing.T) {
 	if got := len(infra.EncryptionKey); got != 32 {
 		t.Fatalf("decoded infrastructure encryption key length = %d, want 32", got)
 	}
-}
-
-func dsnWithSearchPath(t *testing.T, dsn, schema string) string {
-	t.Helper()
-
-	u, err := url.Parse(dsn)
-	if err != nil {
-		t.Fatalf("parse DSN: %v", err)
-	}
-	q := u.Query()
-	q.Set("search_path", schema)
-	u.RawQuery = q.Encode()
-	return u.String()
 }
