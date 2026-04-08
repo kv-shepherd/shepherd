@@ -12,6 +12,7 @@
   "AUTH_PROVIDER_CONFIG_INVALID": "This authentication provider configuration is invalid. Recreate or update it before trying again.",
   "TOKEN_EXPIRED": "Your session has expired. Please login again.",
   "FORBIDDEN": "You do not have permission to perform this action",
+  "OPENAPI_RESPONSE_INVALID": "The server returned data that does not match the platform contract. Please retry or contact an administrator.",
   "NOT_FOUND": "The requested resource was not found",
   "INTERNAL_ERROR": "An internal error occurred. Please try again later.",
   "DELETE_CONFIRMATION_REQUIRED": "Please complete the delete confirmation first.",

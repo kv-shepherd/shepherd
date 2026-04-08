@@ -31,7 +31,7 @@ import {
     UpOutlined,
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type Key } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
@@ -56,21 +56,37 @@ import {
     isPrivilegedRole,
     isPrivilegedRoleBinding,
 } from '@/features/rbac-shared/privilegedAccess';
+import { UserDirectorySelectionPanel } from '@/features/rbac-shared/UserDirectorySelectionPanel';
 import { useUserRoleBindingsManager } from '@/features/rbac-shared/useUserRoleBindingsManager';
+import {
+    buildDefaultUserTableColumnKeys,
+    buildOrderedUserTableDisplayColumns,
+    buildUserTableColumnOptions,
+    normalizeUserTableMergedColumns,
+    normalizeUserTablePreferenceColumns,
+    stringifyUserProfileAttributeValue,
+    type NormalizedUserTableMergedColumn,
+    type UserTableColumnOption,
+    type UserTablePreferenceValue,
+    USER_DIRECTORY_DISPLAY_PREFERENCE_KEY,
+} from '@/features/rbac-shared/userDirectoryDisplayConfig';
 import { useAdminUsersController } from '../hooks/useAdminUsersController';
 import {
     type User,
-    type UserProfileField,
 } from '../types';
 import { ENVIRONMENT_VALUES, RBAC_SCOPE_VALUES, type GlobalRoleBinding } from '@/features/admin-rbac/types';
 
 const { Text } = Typography;
 const EMPTY_VALUE = '—';
-const USER_DIRECTORY_COLUMNS_PREFERENCE_KEY = 'admin.users.columns.v4';
-const DEFAULT_VISIBLE_DIRECTORY_PROFILE_COLUMN_COUNT = 2;
 const USER_TABLE_FIXED_IDENTITY_COLUMN_KEY = 'identity';
 const USER_TABLE_FIXED_ACTIONS_COLUMN_KEY = 'actions';
-const USER_TABLE_CORE_COLUMN_KEYS = ['email', 'roles', 'created_at'] as const;
+
+export {
+    buildOrderedUserTableDisplayColumns,
+    buildUserTableColumnOptions,
+    normalizeUserTableMergedColumns,
+    normalizeUserTablePreferenceColumns,
+} from '@/features/rbac-shared/userDirectoryDisplayConfig';
 
 interface UserSearchFieldOption {
     value: string;
@@ -87,35 +103,9 @@ interface AdvancedUserSearchCondition {
     value: string;
 }
 
-interface UserTableMergedColumnPreference {
-    label?: string;
-    column_keys?: string[];
-    show_labels?: boolean;
-}
-
-interface UserTablePreferenceValue {
-    columns?: string[];
-    merged_columns?: UserTableMergedColumnPreference[];
-    merged_column_keys?: string[];
-    merged_column_label?: string;
-}
-
-interface UserTableColumnOption {
-    key: string;
-    label: string;
-    kind: 'core' | 'profile';
-    profileKey?: string;
-}
-
 interface UserTableMergedColumnDraft {
     id: string;
     label: string;
-    columnKeys: string[];
-    showLabels: boolean;
-}
-
-interface NormalizedUserTableMergedColumn {
-    label?: string;
     columnKeys: string[];
     showLabels: boolean;
 }
@@ -188,26 +178,6 @@ function dedupeUserSearchValueOptions(options: UserSearchValueOption[]) {
     return normalized.sort((left, right) => left.label.localeCompare(right.label));
 }
 
-function stringifyUserProfileAttributeValue(value: unknown) {
-    if (typeof value === 'string') {
-        return value || EMPTY_VALUE;
-    }
-    if (typeof value === 'number' || typeof value === 'boolean') {
-        return String(value);
-    }
-    return EMPTY_VALUE;
-}
-
-function localizeUserProfileFieldLabel(
-    t: (key: string, options?: { defaultValue?: string }) => string,
-    fieldKey: string,
-    fallback: string,
-) {
-    return t(`users.profile_fields.${fieldKey}`, {
-        defaultValue: fallback,
-    });
-}
-
 function formatAdminUsersLocalDateTime(value?: string | null) {
     if (!value || value.trim() === '') {
         return null;
@@ -232,102 +202,6 @@ function formatAdminUsersLocalDateTime(value?: string | null) {
     return `${pick('year')}-${pick('month')}-${pick('day')} ${pick('hour')}:${pick('minute')}`;
 }
 
-export function buildUserTableColumnOptions(
-    t: (key: string, options?: { defaultValue?: string }) => string,
-    fields: UserProfileField[],
-): UserTableColumnOption[] {
-    return [
-        {
-            key: 'email',
-            label: t('users.table.email', { defaultValue: 'Email' }),
-            kind: 'core',
-        },
-        {
-            key: 'roles',
-            label: t('users.table.roles', { defaultValue: 'Roles' }),
-            kind: 'core',
-        },
-        {
-            key: 'status',
-            label: t('common:table.status', { defaultValue: 'Status' }),
-            kind: 'core',
-        },
-        {
-            key: 'created_at',
-            label: t('common:table.created_at', { defaultValue: 'Created' }),
-            kind: 'core',
-        },
-        ...fields.map((field) => ({
-            key: `profile:${field.key}`,
-            label: localizeUserProfileFieldLabel(t, field.key, field.label),
-            kind: 'profile' as const,
-            profileKey: field.key,
-        })),
-    ];
-}
-
-function buildDefaultUserTableColumnKeys(fields: UserProfileField[]) {
-    return [
-        ...fields
-            .slice(0, DEFAULT_VISIBLE_DIRECTORY_PROFILE_COLUMN_COUNT)
-            .map((field) => `profile:${field.key}`),
-        ...USER_TABLE_CORE_COLUMN_KEYS,
-    ];
-}
-
-export function normalizeUserTablePreferenceColumns(
-    storedColumns: string[] | undefined,
-    availableOptions: UserTableColumnOption[],
-    defaultColumns: string[],
-) {
-    const availableKeySet = new Set(availableOptions.map((option) => option.key));
-    const normalized = (storedColumns ?? []).filter((key) => availableKeySet.has(key));
-    if (normalized.length === 0) {
-        return defaultColumns;
-    }
-    return normalized;
-}
-
-export function normalizeUserTableMergedColumns(
-    storedGroups: UserTableMergedColumnPreference[] | undefined,
-    selectedColumns: string[],
-    availableOptions: UserTableColumnOption[],
-    legacyKeys?: string[],
-    legacyLabel?: string,
-): NormalizedUserTableMergedColumn[] {
-    const selectedKeySet = new Set(selectedColumns);
-    const availableColumnKeySet = new Set(availableOptions.map((option) => option.key));
-    const sourceGroups =
-        storedGroups && storedGroups.length > 0
-            ? storedGroups
-            : legacyKeys && legacyKeys.length > 0
-                ? [{ column_keys: legacyKeys, label: legacyLabel }]
-                : [];
-    const claimedColumnKeys = new Set<string>();
-    const normalizedGroups: NormalizedUserTableMergedColumn[] = [];
-
-    for (const group of sourceGroups) {
-        const normalizedKeys: string[] = [];
-        for (const key of group.column_keys ?? []) {
-            if (!selectedKeySet.has(key) || !availableColumnKeySet.has(key) || claimedColumnKeys.has(key)) {
-                continue;
-            }
-            claimedColumnKeys.add(key);
-            normalizedKeys.push(key);
-        }
-        if (normalizedKeys.length === 0) {
-            continue;
-        }
-        normalizedGroups.push({
-            label: group.label?.trim() || undefined,
-            columnKeys: normalizedKeys,
-            showLabels: group.show_labels !== false,
-        });
-    }
-
-    return normalizedGroups;
-}
-
 function buildMergedColumnDrafts(groups: NormalizedUserTableMergedColumn[]): UserTableMergedColumnDraft[] {
     return groups.map((group) => ({
         id: createMergedColumnDraftId(),
@@ -341,58 +215,15 @@ function estimateUsersTableScrollWidth(visibleConfigurableColumnCount: number) {
     return 320 + visibleConfigurableColumnCount * 200 + 220;
 }
 
-export function buildOrderedUserTableDisplayColumns(
-    visibleUserTableColumns: UserTableColumnOption[],
-    selectedMergedColumns: NormalizedUserTableMergedColumn[],
-) {
-    const optionByKey = new Map(visibleUserTableColumns.map((option) => [option.key, option] as const));
-    const mergedGroupIndexByKey = new Map<string, number>();
-    selectedMergedColumns.forEach((group, index) => {
-        group.columnKeys.forEach((key) => {
-            mergedGroupIndexByKey.set(key, index);
-        });
-    });
-    const insertedGroupIndexes = new Set<number>();
-    const items: Array<
-        | { kind: 'single'; column: UserTableColumnOption }
-        | { kind: 'merged'; index: number; label?: string; columns: UserTableColumnOption[]; showLabels: boolean }
-    > = [];
-
-    for (const column of visibleUserTableColumns) {
-        const mergedGroupIndex = mergedGroupIndexByKey.get(column.key);
-        if (mergedGroupIndex === undefined) {
-            items.push({ kind: 'single', column });
-            continue;
-        }
-        if (insertedGroupIndexes.has(mergedGroupIndex)) {
-            continue;
-        }
-        const group = selectedMergedColumns[mergedGroupIndex];
-        const groupColumns = group.columnKeys
-            .map((key) => optionByKey.get(key))
-            .filter((option): option is UserTableColumnOption => Boolean(option));
-        if (groupColumns.length === 0) {
-            continue;
-        }
-        items.push({
-            kind: 'merged',
-            index: mergedGroupIndex,
-            label: group.label,
-            columns: groupColumns,
-            showLabels: group.showLabels,
-        });
-        insertedGroupIndexes.add(mergedGroupIndex);
-    }
-
-    return items;
-}
-
 export function AdminUsersContent() {
     const { t } = useTranslation(['admin', 'common']);
     const router = useRouter();
     const users = useAdminUsersController({ t });
     const { setPage, setSearch } = users;
     const [selectedAccessUser, setSelectedAccessUser] = useState<Pick<User, 'id' | 'username' | 'display_name'> | null>(null);
+    const [selectedDirectoryUserIds, setSelectedDirectoryUserIds] = useState<string[]>([]);
+    const [selectedDirectoryUserRecords, setSelectedDirectoryUserRecords] = useState<Record<string, User>>({});
+    const [selectedRoleBindingIds, setSelectedRoleBindingIds] = useState<string[]>([]);
     const [quickSearch, setQuickSearch] = useState('');
     const [quickSearchDraft, setQuickSearchDraft] = useState('');
     const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false);
@@ -444,7 +275,7 @@ export function AdminUsersContent() {
         () => buildDefaultUserTableColumnKeys(userProfileFields),
         [userProfileFields]
     );
-    const userTablePreference = useUserPreference<UserTablePreferenceValue>(USER_DIRECTORY_COLUMNS_PREFERENCE_KEY);
+    const userTablePreference = useUserPreference<UserTablePreferenceValue>(USER_DIRECTORY_DISPLAY_PREFERENCE_KEY);
     const selectedUserTableColumnKeys = useMemo(
         () =>
             normalizeUserTablePreferenceColumns(
@@ -595,6 +426,7 @@ export function AdminUsersContent() {
         form: accessBindings.bindingForm,
         preserve: true,
     });
+    const selectedBindingUserIds = accessBindings.effectiveSelectedBindingUserIds;
     const selectedBindingRole = useMemo(
         () => roleCatalog.find((role) => role.id === selectedBindingRoleID),
         [roleCatalog, selectedBindingRoleID]
@@ -606,6 +438,49 @@ export function AdminUsersContent() {
     const elevatedBindings = useMemo(
         () => accessBindings.roleBindings.filter((binding) => isPrivilegedRoleBinding(binding, roleCatalogById)),
         [accessBindings.roleBindings, roleCatalogById]
+    );
+    const directoryUserRowSelection = useMemo(
+        () => ({
+            selectedRowKeys: selectedDirectoryUserIds,
+            preserveSelectedRowKeys: true,
+            onChange: (selectedRowKeys: Key[], selectedRows: User[]) => {
+                const nextIds = selectedRowKeys.map((value) => String(value));
+                setSelectedDirectoryUserIds(nextIds);
+                setSelectedDirectoryUserRecords((current) => {
+                    const nextRecords: Record<string, User> = {};
+                    for (const userId of nextIds) {
+                        if (current[userId]) {
+                            nextRecords[userId] = current[userId];
+                        }
+                    }
+                    for (const row of selectedRows) {
+                        nextRecords[row.id] = row;
+                    }
+                    return nextRecords;
+                });
+            },
+        }),
+        [selectedDirectoryUserIds],
+    );
+    const selectedDirectoryUsers = useMemo(
+        () =>
+            selectedDirectoryUserIds
+                .map((userId) => selectedDirectoryUserRecords[userId])
+                .filter((user): user is User => Boolean(user)),
+        [selectedDirectoryUserIds, selectedDirectoryUserRecords],
+    );
+    const visibleSelectedRoleBindingIds = useMemo(() => {
+        const validIds = new Set(accessBindings.roleBindings.map((binding) => binding.id));
+        return selectedRoleBindingIds.filter((bindingId) => validIds.has(bindingId));
+    }, [accessBindings.roleBindings, selectedRoleBindingIds]);
+    const accessBindingRowSelection = useMemo(
+        () => ({
+            selectedRowKeys: visibleSelectedRoleBindingIds,
+            onChange: (selectedRowKeys: Key[]) => {
+                setSelectedRoleBindingIds(selectedRowKeys.map((value) => String(value)));
+            },
+        }),
+        [visibleSelectedRoleBindingIds],
     );
 
     const toggleAdvancedSearch = () => {
@@ -797,6 +672,7 @@ export function AdminUsersContent() {
     };
 
     const openAccessBindingsDrawer = (user: Pick<User, 'id' | 'username' | 'display_name'>) => {
+        setSelectedRoleBindingIds([]);
         setSelectedAccessUser({
             id: user.id,
             username: user.username,
@@ -804,9 +680,39 @@ export function AdminUsersContent() {
         });
     };
 
+    const openBatchAccessModal = () => {
+        setSelectedAccessUser(null);
+        setSelectedRoleBindingIds([]);
+        accessBindings.openAddBindingModal(selectedDirectoryUsers, combinedUserSearch);
+    };
+
+    const openSelectedUserAccessModal = () => {
+        const presetUsers = selectedAccessUser
+            ? [
+                {
+                    id: selectedAccessUser.id,
+                    username: selectedAccessUser.username,
+                    display_name: selectedAccessUser.display_name,
+                } as User,
+            ]
+            : undefined;
+        accessBindings.openAddBindingModal(presetUsers);
+    };
+
     const closeAccessBindingsDrawer = () => {
+        setSelectedRoleBindingIds([]);
         setSelectedAccessUser(null);
         accessBindings.closeAddBindingModal();
+    };
+
+    const handleDeleteSelectedBindings = async () => {
+        const { failedIds } = await accessBindings.deleteRoleBindings(visibleSelectedRoleBindingIds);
+        setSelectedRoleBindingIds(failedIds);
+    };
+
+    const handleResetSelectedUserAccess = async () => {
+        const { failedUserIds } = await accessBindings.resetRoleBindingsForUsers(selectedDirectoryUserIds);
+        setSelectedDirectoryUserIds(failedUserIds);
     };
 
     const renderBindingScope = (binding: GlobalRoleBinding) => {
@@ -931,7 +837,6 @@ export function AdminUsersContent() {
         () => buildOrderedUserTableDisplayColumns(visibleUserTableColumns, selectedMergedColumns),
         [selectedMergedColumns, visibleUserTableColumns]
     );
-
     const usersTableScrollX = useMemo(
         () => estimateUsersTableScrollWidth(orderedUserTableDisplayColumns.length),
         [orderedUserTableDisplayColumns.length]
@@ -1198,10 +1103,56 @@ export function AdminUsersContent() {
                         <Text strong>{t('users.directory.title')}</Text>
                         <Text type="secondary">{t('users.directory.subtitle')}</Text>
                     </Space>
-                    <Space>
+                    <Space wrap>
+                        <Text type="secondary">
+                            {t('users.directory.selected_users', {
+                                defaultValue: 'Selected {{count}} users',
+                                count: selectedDirectoryUserIds.length,
+                            })}
+                        </Text>
+                        <Button
+                            onClick={() => setSelectedDirectoryUserIds([])}
+                            disabled={selectedDirectoryUserIds.length === 0}
+                        >
+                            {t('users.directory.batch_manage_access_clear_selection', {
+                                defaultValue: 'Clear selection',
+                            })}
+                        </Button>
                         <Button icon={<ReloadOutlined />} onClick={() => users.refetchUsers()}>
                             {t('common:button.refresh')}
                         </Button>
+                        <Button
+                            icon={<SafetyCertificateOutlined />}
+                            onClick={openBatchAccessModal}
+                            data-testid="user-batch-access-button"
+                            disabled={selectedDirectoryUserIds.length === 0}
+                        >
+                            {t('users.directory.batch_manage_access', {
+                                defaultValue: 'Batch access',
+                            })}
+                        </Button>
+                        <Popconfirm
+                            title={t('users.directory.batch_reset_access_confirm', {
+                                defaultValue: 'Reset explicit access for {{count}} selected users?',
+                                count: selectedDirectoryUserIds.length,
+                            })}
+                            onConfirm={() => handleResetSelectedUserAccess()}
+                            okText={t('common:button.confirm')}
+                            cancelText={t('common:button.cancel')}
+                            disabled={selectedDirectoryUserIds.length === 0}
+                        >
+                            <Button
+                                danger
+                                icon={<DeleteOutlined />}
+                                data-testid="user-batch-reset-access-button"
+                                disabled={selectedDirectoryUserIds.length === 0}
+                                loading={accessBindings.deleteBindingPending}
+                            >
+                                {t('users.directory.batch_reset_access', {
+                                    defaultValue: 'Reset access',
+                                })}
+                            </Button>
+                        </Popconfirm>
                         <Button type="primary" icon={<PlusOutlined />} data-testid="user-create-button" onClick={users.openCreateUserModal}>
                             {t('users.directory.add')}
                         </Button>
@@ -1223,7 +1174,7 @@ export function AdminUsersContent() {
                                 data-testid="users-directory-open-columns-drawer"
                             >
                                 {t('users.directory.visible_columns_placeholder', {
-                                    defaultValue: 'Displayed columns',
+                                    defaultValue: 'Directory display config',
                                 })}
                             </Button>
                         )}
@@ -1363,6 +1314,7 @@ export function AdminUsersContent() {
                     style={{ marginTop: 16 }}
                     size="small"
                     rowKey="id"
+                    rowSelection={directoryUserRowSelection}
                     columns={usersColumns}
                     dataSource={users.users?.items ?? []}
                     loading={users.usersLoading}
@@ -1400,7 +1352,7 @@ export function AdminUsersContent() {
 
             {columnsDrawerOpen ? (
                 <Drawer
-                    title={t('users.directory.columns_drawer_title', { defaultValue: 'Customize displayed columns' })}
+                    title={t('users.directory.columns_drawer_title', { defaultValue: 'Customize directory display' })}
                     open={columnsDrawerOpen}
                     width={520}
                     onClose={() => setColumnsDrawerOpen(false)}
@@ -1414,7 +1366,7 @@ export function AdminUsersContent() {
                                 data-testid="users-directory-columns-reset-defaults"
                                 disabled={userTablePreference.resetPending}
                             >
-                                {t('users.directory.reset_columns', { defaultValue: 'Reset columns' })}
+                                {t('users.directory.reset_columns', { defaultValue: 'Reset config' })}
                             </Button>
                             <Space>
                                 <Button onClick={() => setColumnsDrawerOpen(false)}>
@@ -1639,7 +1591,7 @@ export function AdminUsersContent() {
                             onClick={resetDraftColumns}
                             data-testid="users-directory-columns-restore-defaults"
                         >
-                            {t('users.directory.columns_restore_defaults', { defaultValue: 'Restore recommended defaults' })}
+                            {t('users.directory.columns_restore_defaults', { defaultValue: 'Restore recommended display config' })}
                         </Button>
                     </Space>
                 </Drawer>
@@ -1669,7 +1621,7 @@ export function AdminUsersContent() {
                                     type="primary"
                                     icon={<PlusOutlined />}
                                     data-testid="user-binding-create-button"
-                                    onClick={accessBindings.openAddBindingModal}
+                                    onClick={() => accessBindings.openAddBindingModal()}
                                 >
                                     {t('rbac.bindings.add')}
                                 </Button>
@@ -1703,15 +1655,48 @@ export function AdminUsersContent() {
                                 surfaceColor="#F5EDFF"
                             />
                         </div>
-                        <Space direction="vertical" size={0}>
-                            <Text strong>{t('users.directory.manage_access_bindings_title')}</Text>
-                            <Text type="secondary">{t('users.directory.manage_access_bindings_subtitle')}</Text>
+                        <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start" wrap>
+                            <Space direction="vertical" size={0}>
+                                <Text strong>{t('users.directory.manage_access_bindings_title')}</Text>
+                                <Text type="secondary">{t('users.directory.manage_access_bindings_subtitle')}</Text>
+                            </Space>
+                            <Space size={12} wrap>
+                                <Text type="secondary">
+                                    {t('users.directory.manage_access_bindings_selected', {
+                                        defaultValue: 'Selected {{count}} bindings',
+                                        count: visibleSelectedRoleBindingIds.length,
+                                    })}
+                                </Text>
+                                <Popconfirm
+                                    title={t('users.directory.batch_delete_bindings_confirm', {
+                                        defaultValue: 'Remove {{count}} selected bindings?',
+                                        count: visibleSelectedRoleBindingIds.length,
+                                    })}
+                                    onConfirm={() => handleDeleteSelectedBindings()}
+                                    okText={t('common:button.delete')}
+                                    cancelText={t('common:button.cancel')}
+                                    disabled={visibleSelectedRoleBindingIds.length === 0}
+                                >
+                                    <Button
+                                        danger
+                                        icon={<DeleteOutlined />}
+                                        disabled={visibleSelectedRoleBindingIds.length === 0}
+                                        loading={accessBindings.deleteBindingPending}
+                                        data-testid="user-binding-batch-delete-button"
+                                    >
+                                        {t('users.directory.batch_delete_bindings', {
+                                            defaultValue: 'Remove selected',
+                                        })}
+                                    </Button>
+                                </Popconfirm>
+                            </Space>
                         </Space>
                         <Table<GlobalRoleBinding>
                             rowKey="id"
                             columns={bindingColumns}
                             dataSource={accessBindings.roleBindings}
                             loading={accessBindings.roleBindingsLoading}
+                            rowSelection={accessBindingRowSelection}
                             locale={{
                                 emptyText: (
                                     <div style={{ padding: 32 }}>
@@ -1721,7 +1706,7 @@ export function AdminUsersContent() {
                                             description={t('users.directory.manage_access_empty_description')}
                                             visual={<AccessControlGlyph className="action-empty-state__art" />}
                                             actions={(
-                                                <Button type="primary" size="small" icon={<PlusOutlined />} onClick={accessBindings.openAddBindingModal}>
+                                                <Button type="primary" size="small" icon={<PlusOutlined />} onClick={openSelectedUserAccessModal}>
                                                     {t('rbac.bindings.add')}
                                                 </Button>
                                             )}
@@ -1738,9 +1723,12 @@ export function AdminUsersContent() {
             {accessBindings.addBindingOpen ? (
                 <Modal
                     title={t('users.directory.add_binding_title', {
-                        user: selectedAccessUser?.display_name?.trim() || selectedAccessUser?.username || selectedAccessUser?.id || '',
+                        user: selectedAccessUser?.display_name?.trim() || selectedAccessUser?.username || selectedAccessUser?.id || t('users.directory.batch_manage_access', {
+                            defaultValue: 'Batch access',
+                        }),
                     })}
                     open={accessBindings.addBindingOpen}
+                    width={960}
                     onOk={() => {
                         void accessBindings.submitAddBinding();
                     }}
@@ -1751,11 +1739,65 @@ export function AdminUsersContent() {
                     data-testid="user-binding-add-modal"
                 >
                     <Form form={accessBindings.bindingForm} layout="vertical" preserve={false}>
-                        <Form.Item label={t('rbac.bindings.select_user')}>
-                            <Input
-                                value={selectedAccessUser?.display_name?.trim() || selectedAccessUser?.username || selectedAccessUser?.id || ''}
-                                readOnly={true}
-                            />
+                        <Form.Item
+                            label={t('rbac.bindings.select_users', {
+                                defaultValue: 'Users',
+                            })}
+                            extra={t('users.directory.batch_manage_access_help', {
+                                defaultValue: 'Search by name, email, department, section, or job title, then select multiple users at once.',
+                            })}
+                        >
+                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                <UserDirectorySelectionPanel<User>
+                                    t={t}
+                                    translateDirectoryLabel={t}
+                                    users={accessBindings.bindingUserCandidates}
+                                    profileFields={accessBindings.bindingUserCandidateProfileFields}
+                                    loading={accessBindings.bindingUserCandidatesLoading}
+                                    selectedUserIds={selectedBindingUserIds}
+                                    onSelectedUserIdsChange={accessBindings.setSelectedBindingUsers}
+                                    selectedPreviewUsers={accessBindings.selectedBindingUsers}
+                                    selectedPreviewTitle={t('users.directory.batch_manage_access_selection_title', {
+                                        defaultValue: 'Users selected for this batch change',
+                                    })}
+                                    selectedPreviewDescription={t('users.directory.batch_manage_access_add_more_hint', {
+                                        defaultValue: 'Search below only if you need to add more users beyond the current selection.',
+                                    })}
+                                    searchDraft={accessBindings.bindingUserSearchDraft}
+                                    appliedSearch={accessBindings.bindingUserSearch}
+                                    onSearchDraftChange={accessBindings.setBindingUserSearchDraft}
+                                    onSearch={accessBindings.applyBindingUserSearch}
+                                    onClearSearch={accessBindings.clearBindingUserSearch}
+                                    onClearSelection={accessBindings.clearSelectedBindingUsers}
+                                    searchPlaceholder={t('users.directory.select_users_placeholder', {
+                                        defaultValue: 'Search and filter users to select in bulk',
+                                    })}
+                                    searchHelp={t('users.directory.batch_manage_access_help', {
+                                        defaultValue: 'Search by name, email, department, section, or job title, then select multiple users at once.',
+                                    })}
+                                    selectedCountLabel={t('users.directory.batch_manage_access_selected', {
+                                        defaultValue: 'Selected {{count}} users',
+                                        count: selectedBindingUserIds.length,
+                                    })}
+                                    clearSelectionLabel={t('users.directory.batch_manage_access_clear_selection', {
+                                        defaultValue: 'Clear selection',
+                                    })}
+                                    noMatchingTitle={t('users.directory.no_matching_users', {
+                                        defaultValue: 'No matching users',
+                                    })}
+                                    noDataTitle={t('users.directory.no_matching_users', {
+                                        defaultValue: 'No matching users',
+                                    })}
+                                    testId="user-binding-user-table"
+                                    pagination={{
+                                        current: accessBindings.bindingUserPage,
+                                        pageSize: accessBindings.bindingUserPerPage,
+                                        total: accessBindings.bindingUserCandidatesPagination?.total ?? accessBindings.bindingUserCandidates.length,
+                                        onChange: accessBindings.setBindingUserPagination,
+                                        showSizeChanger: (accessBindings.bindingUserCandidatesPagination?.total ?? 0) > 50,
+                                    }}
+                                />
+                            </Space>
                         </Form.Item>
                         <Form.Item name="role_id" label={t('rbac.bindings.role')} rules={[{ required: true }]}>
                             <Select

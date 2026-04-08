@@ -3237,6 +3237,9 @@ export interface components {
             username: string;
             email?: string;
             display_name?: string;
+            profile_attributes?: {
+                [key: string]: unknown;
+            };
             /** @enum {string} */
             role: "owner" | "admin" | "member" | "viewer";
             /** Format: date-time */
@@ -3244,6 +3247,7 @@ export interface components {
         };
         SystemMemberList: {
             items?: components["schemas"]["SystemMember"][];
+            profile_fields?: components["schemas"]["UserProfileField"][];
             pagination?: components["schemas"]["Pagination"];
         };
         SystemMemberCreateRequest: {

@@ -425,6 +425,18 @@ func TestListSystemMemberCandidates_ExcludesExistingMembersAndSupportsSearch(t *
 			t.Fatalf("create user %s: %v", user.id, err)
 		}
 	}
+	if _, err := client.UserDirectoryProfile.Create().
+		SetID("profile-user-bob").
+		SetUserID("user-bob").
+		SetAttributes(map[string]interface{}{
+			"department": "Finance",
+			"section":    "Ledger",
+			"position":   "Engineer",
+		}).
+		SetLastSyncedAt(time.Now().UTC()).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create bob directory profile: %v", err)
+	}
 	mustCreateSystemBinding(t, client, "user-existing", systemID, "viewer")
 
 	listCtx, listW := newAuthedGinContext(
@@ -470,6 +482,27 @@ func TestListSystemMemberCandidates_ExcludesExistingMembersAndSupportsSearch(t *
 	mustDecodeJSON(t, searchW.Body.Bytes(), &candidates)
 	if len(candidates.Items) != 1 || candidates.Items[0].Username != "carol" {
 		t.Fatalf("search candidates = %+v, want only carol", candidates.Items)
+	}
+
+	profileSearchCtx, profileSearchW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/systems/"+systemID+"/member-candidates?page=1&per_page=20&search=finance",
+		"",
+		"owner-1",
+		[]string{"rbac:manage"},
+	)
+	srv.ListSystemMemberCandidates(profileSearchCtx, systemID, generated.ListSystemMemberCandidatesParams{
+		Page:    1,
+		PerPage: 20,
+		Search:  "finance",
+	})
+	if profileSearchW.Code != http.StatusOK {
+		t.Fatalf("profile search member candidates status = %d, want %d, body=%s", profileSearchW.Code, http.StatusOK, profileSearchW.Body.String())
+	}
+	mustDecodeJSON(t, profileSearchW.Body.Bytes(), &candidates)
+	if len(candidates.Items) != 1 || candidates.Items[0].Username != "bob" {
+		t.Fatalf("profile search candidates = %+v, want only bob", candidates.Items)
 	}
 }
 

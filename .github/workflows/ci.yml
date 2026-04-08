@@ -23,7 +23,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version: "1.25.8"
+          go-version: "1.25.9"
 
       - name: Run gitleaks
         run: make secrets-scan
@@ -39,7 +39,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version: "1.25.8"
+          go-version: "1.25.9"
 
       - name: Run govulncheck
         run: make govulncheck
@@ -55,7 +55,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version: "1.25.8"
+          go-version: "1.25.9"
 
       - name: Install golangci-lint
         run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1
@@ -74,7 +74,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version: "1.25.8"
+          go-version: "1.25.9"
 
       - name: Build
         run: make ci-go-build
@@ -104,7 +104,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version: "1.25.8"
+          go-version: "1.25.9"
 
       - name: Test
         env:
@@ -145,7 +145,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version: "1.25.8"
+          go-version: "1.25.9"
 
       # Static governance checks (master-flow alignment, docs, RBAC gates, etc.)
       # are executed in `ci-checks` to avoid duplicate execution here.
@@ -198,7 +198,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version: "1.25.8"
+          go-version: "1.25.9"
 
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep

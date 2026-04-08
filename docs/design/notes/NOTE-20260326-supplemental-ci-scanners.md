@@ -51,7 +51,7 @@ No new ADR is required. These scanners extend existing CI/tooling governance and
 
 Reasoning:
 
-- `govulncheck` is high-signal and is now viable as a blocking gate because the repository baseline has been upgraded to patched Go `1.25.8`
+- `govulncheck` is high-signal and is now viable as a blocking gate because the repository baseline has been upgraded to patched Go `1.25.9`
 - blocking it before the patch-level upgrade would have redlined every PR without a code-level remediation path
 
 ### `knip`

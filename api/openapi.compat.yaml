@@ -6150,6 +6150,9 @@ components:
           type: string
         display_name:
           type: string
+        profile_attributes:
+          type: object
+          additionalProperties: true
         role:
           type: string
           enum: [owner, admin, member, viewer]
@@ -6163,6 +6166,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SystemMember'
+        profile_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserProfileField'
         pagination:
           $ref: '#/components/schemas/Pagination'
     SystemMemberCreateRequest:

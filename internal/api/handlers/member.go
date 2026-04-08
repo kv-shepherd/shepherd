@@ -74,6 +74,16 @@ func (s *Server) ListSystemMemberCandidates(
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
 	search := strings.TrimSpace(params.Search)
+	profileFieldCatalog, err := listUserProfileFieldCatalog(ctx, s.client)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while loading user profile field catalog for system member candidates", zap.Error(err), zap.String("system_id", systemID))
+			return
+		}
+		logger.Error("failed to load user profile field catalog for system member candidates", zap.Error(err), zap.String("system_id", systemID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 
 	memberBindings, err := s.client.ResourceRoleBinding.Query().
 		Where(
@@ -105,9 +115,9 @@ func (s *Server) ListSystemMemberCandidates(
 	if len(existingMemberUserIDs) > 0 {
 		query = query.Where(entuser.Not(entuser.IDIn(existingMemberUserIDs...)))
 	}
-	query = applyUserSearch(query, search, nil)
+	query = applyUserSearch(query, search, profileFieldCatalog.SearchableFields)
 
-	userList, err := listUsersPage(ctx, query, page, perPage, nil)
+	userList, err := listUsersPage(ctx, query, page, perPage, profileFieldCatalog.SearchableFields)
 	if err != nil {
 		if isRequestContextCanceled(err) {
 			logger.Debug("request canceled while querying system member candidates", zap.Error(err), zap.String("system_id", systemID))
@@ -123,6 +133,7 @@ func (s *Server) ListSystemMemberCandidates(
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	userList.ProfileFields = profileFieldCatalog.Descriptors
 
 	c.JSON(http.StatusOK, userList)
 }
@@ -134,6 +145,17 @@ func (s *Server) ListSystemMembers(c *gin.Context, systemID generated.SystemID) 
 		return
 	}
 	if _, ok := s.requireSystemRole(c, systemID, "view"); !ok {
+		return
+	}
+
+	profileFieldCatalog, err := listUserProfileFieldCatalog(ctx, s.client)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while loading user profile field catalog for system members", zap.Error(err), zap.String("system_id", systemID))
+			return
+		}
+		logger.Error("failed to load user profile field catalog for system members", zap.Error(err), zap.String("system_id", systemID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
@@ -166,7 +188,10 @@ func (s *Server) ListSystemMembers(c *gin.Context, systemID generated.SystemID) 
 
 	userByID := make(map[string]*ent.User, len(userIDs))
 	if len(userIDs) > 0 {
-		users, err := s.client.User.Query().Where(entuser.IDIn(userIDs...)).All(ctx)
+		users, err := s.client.User.Query().
+			Where(entuser.IDIn(userIDs...)).
+			WithDirectoryProfile().
+			All(ctx)
 		if err != nil {
 			if isRequestContextCanceled(err) {
 				logger.Debug("request canceled while querying users for members", zap.Error(err), zap.String("system_id", systemID))
@@ -183,10 +208,13 @@ func (s *Server) ListSystemMembers(c *gin.Context, systemID generated.SystemID) 
 
 	items := make([]generated.SystemMember, 0, len(bindings))
 	for _, b := range bindings {
-		items = append(items, toSystemMember(b, userByID[b.UserID]))
+		items = append(items, toSystemMember(b, userByID[b.UserID], profileFieldCatalog.SearchableFields))
 	}
 
-	c.JSON(http.StatusOK, generated.SystemMemberList{Items: items})
+	c.JSON(http.StatusOK, generated.SystemMemberList{
+		Items:         items,
+		ProfileFields: profileFieldCatalog.Descriptors,
+	})
 }
 
 // AddSystemMember handles POST /systems/{system_id}/members.
@@ -252,7 +280,7 @@ func (s *Server) AddSystemMember(c *gin.Context, systemID generated.SystemID) {
 		})
 	}
 
-	c.JSON(http.StatusCreated, toSystemMember(member, userEnt))
+	c.JSON(http.StatusCreated, toSystemMember(member, userEnt, nil))
 }
 
 // UpdateSystemMemberRole handles PATCH /systems/{system_id}/members/{user_id}.
@@ -326,7 +354,7 @@ func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemID generated.Syste
 		})
 	}
 
-	c.JSON(http.StatusOK, toSystemMember(updated, userEnt))
+	c.JSON(http.StatusOK, toSystemMember(updated, userEnt, nil))
 }
 
 // DeleteSystemMember handles DELETE /systems/{system_id}/members/{user_id}.
@@ -861,12 +889,13 @@ func stringifyUserDirectoryAttribute(raw interface{}) string {
 	}
 }
 
-func toSystemMember(binding *ent.ResourceRoleBinding, user *ent.User) generated.SystemMember {
+func toSystemMember(binding *ent.ResourceRoleBinding, user *ent.User, profileFields []string) generated.SystemMember {
 	member := generated.SystemMember{
-		UserId:    binding.UserID,
-		Username:  binding.UserID,
-		Role:      generated.SystemMemberRole(binding.Role.String()),
-		CreatedAt: binding.CreatedAt,
+		UserId:            binding.UserID,
+		Username:          binding.UserID,
+		Role:              generated.SystemMemberRole(binding.Role.String()),
+		CreatedAt:         binding.CreatedAt,
+		ProfileAttributes: map[string]interface{}{},
 	}
 	if user == nil {
 		return member
@@ -874,5 +903,14 @@ func toSystemMember(binding *ent.ResourceRoleBinding, user *ent.User) generated.
 	member.Username = user.Username
 	member.Email = user.Email
 	member.DisplayName = user.DisplayName
+	if profile := user.Edges.DirectoryProfile; profile != nil {
+		for _, field := range profileFields {
+			value := stringifyUserDirectoryAttribute(profile.Attributes[field])
+			if value == "" {
+				continue
+			}
+			member.ProfileAttributes[field] = value
+		}
+	}
 	return member
 }

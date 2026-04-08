@@ -679,7 +679,7 @@ export function AdminRbacContent() {
                         }}>
                             {t('common:button.refresh')}
                         </Button>
-                        <Button type="primary" icon={<PlusOutlined />} data-testid="rbac-binding-create-button" onClick={rbac.openAddBindingModal}>
+                        <Button type="primary" icon={<PlusOutlined />} data-testid="rbac-binding-create-button" onClick={() => rbac.openAddBindingModal()}>
                             {t('rbac.bindings.add')}
                         </Button>
                     </Space>
@@ -751,7 +751,7 @@ export function AdminRbacContent() {
                                         description={t('rbac.bindings.empty_description', { user: rbac.selectedUserDisplayLabel || EMPTY_VALUE })}
                                         visual={<AccessControlGlyph className="action-empty-state__art" />}
                                         actions={(
-                                            <Button type="primary" size="small" icon={<PlusOutlined />} onClick={rbac.openAddBindingModal}>
+                                            <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => rbac.openAddBindingModal()}>
                                                 {t('rbac.bindings.add')}
                                             </Button>
                                         )}

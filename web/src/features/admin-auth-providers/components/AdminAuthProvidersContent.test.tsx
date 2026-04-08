@@ -15,6 +15,10 @@ vi.mock("react-i18next", () => ({
         "common:button.refresh": "Refresh",
         "common:button.details": "Details",
         "authProviders.add": "Add Provider",
+        "authProviders.alpha_badge": "Alpha",
+        "authProviders.alpha_title": "Alpha integrations",
+        "authProviders.alpha_description":
+          "Authentication provider integrations are currently in alpha.",
         "authProviders.table.provider": "Provider",
         "authProviders.table.provider_id": "Provider ID",
         "authProviders.table.integration": "Integration",
@@ -439,6 +443,8 @@ describe("AdminAuthProvidersContent", () => {
     expect(screen.getByTestId("auth-provider-create-button")).toBeVisible();
     expect(screen.getByText("GitHub OAuth")).toBeVisible();
     expect(screen.getByText("Provider ID: provider-1")).toBeVisible();
+    expect(screen.getByText("Alpha integrations")).toBeVisible();
+    expect(screen.getAllByText("Alpha").length).toBeGreaterThan(0);
     expect(
       screen.getByTestId("auth-provider-action-test-provider-1"),
     ).toBeVisible();

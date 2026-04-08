@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
+import type { PropsWithChildren } from 'react';
 import type { TFunction } from 'i18next';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,11 +9,12 @@ const {
   useApiMutationMock,
   useApiActionMock,
   formState,
-  addMemberMutate,
   removeMemberMutate,
   updateRoleMutate,
   messageSuccessMock,
   messageErrorMock,
+  messageWarningMock,
+  apiPostMock,
 } = vi.hoisted(() => ({
   useApiGetMock: vi.fn(),
   useApiMutationMock: vi.fn(),
@@ -20,11 +23,12 @@ const {
     validateFields: vi.fn(),
     resetFields: vi.fn(),
   },
-  addMemberMutate: vi.fn(),
   removeMemberMutate: vi.fn(),
   updateRoleMutate: vi.fn(),
   messageSuccessMock: vi.fn(),
   messageErrorMock: vi.fn(),
+  messageWarningMock: vi.fn(),
+  apiPostMock: vi.fn(),
 }));
 
 vi.mock('antd', () => ({
@@ -33,6 +37,7 @@ vi.mock('antd', () => ({
       message: {
         success: messageSuccessMock,
         error: messageErrorMock,
+        warning: messageWarningMock,
       },
     }),
   },
@@ -47,16 +52,40 @@ vi.mock('@/hooks/useApiQuery', () => ({
   useApiAction: (...args: unknown[]) => useApiActionMock(...args),
 }));
 
+vi.mock('@/lib/api/client', () => ({
+  api: {
+    POST: (...args: unknown[]) => apiPostMock(...args),
+  },
+}));
+
 import { useSystemMembersController } from './useSystemMembersController';
 
 describe('useSystemMembersController', () => {
   const t = ((key: string) => key) as unknown as TFunction;
+  const createWrapper = () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    function QueryClientWrapper({ children }: PropsWithChildren) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    QueryClientWrapper.displayName = 'QueryClientWrapper';
+    return QueryClientWrapper;
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
     formState.validateFields.mockResolvedValue({
       user_id: 'user-1',
       role: 'member',
+    });
+    apiPostMock.mockResolvedValue({
+      data: {},
+      error: undefined,
+      response: new Response(null, { status: 200 }),
     });
     useApiGetMock.mockReturnValue({
       data: {
@@ -65,32 +94,43 @@ describe('useSystemMembersController', () => {
       isLoading: false,
       refetch: vi.fn(),
     });
-    let mutationCall = 0;
-    useApiMutationMock.mockImplementation(() => {
-      mutationCall += 1;
-      return mutationCall % 2 === 1
-        ? { mutate: addMemberMutate, isPending: false }
-        : { mutate: updateRoleMutate, isPending: false };
-    });
+    useApiMutationMock.mockReturnValue({ mutate: updateRoleMutate, isPending: false });
     useApiActionMock.mockReturnValue({ mutate: removeMemberMutate, isPending: false });
   });
 
   it('submits add-member payload and closes modal state', async () => {
-    const { result } = renderHook(() => useSystemMembersController({ t, systemId: 'sys-1' }));
+    const { result } = renderHook(() => useSystemMembersController({ t, systemId: 'sys-1' }), {
+      wrapper: createWrapper(),
+    });
 
     act(() => {
       result.current.openAddMemberModal();
+      result.current.setSelectedCandidateUsers([
+        'user-1',
+      ], [
+        {
+          id: 'user-1',
+          username: 'user1',
+          enabled: true,
+          created_at: new Date().toISOString(),
+        },
+      ]);
     });
     expect(result.current.addMemberOpen).toBe(true);
 
     await act(async () => {
       await result.current.submitAddMember();
     });
-    expect(addMemberMutate).toHaveBeenCalledWith({ user_id: 'user-1', role: 'member' });
+    expect(apiPostMock).toHaveBeenCalledWith('/systems/{system_id}/members', {
+      params: { path: { system_id: 'sys-1' } },
+      body: { user_id: 'user-1', role: 'member' },
+    });
   });
 
   it('dispatches remove/update role operations with user identity', () => {
-    const { result } = renderHook(() => useSystemMembersController({ t, systemId: 'sys-1' }));
+    const { result } = renderHook(() => useSystemMembersController({ t, systemId: 'sys-1' }), {
+      wrapper: createWrapper(),
+    });
 
     act(() => {
       result.current.removeMember('user-2');

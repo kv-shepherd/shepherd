@@ -1,6 +1,6 @@
 module kv-shepherd.io/shepherd
 
-go 1.25.8
+go 1.25.9
 
 require (
 	entgo.io/ent v0.14.6

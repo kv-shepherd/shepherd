@@ -811,6 +811,92 @@ func TestOpenAPIValidatorAllowsDynamicUserProfileAttributesInStrictMode(t *testi
 	}
 }
 
+func TestOpenAPIValidatorAllowsDynamicSystemMemberCandidateProfileAttributesInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/systems/:system_id/member-candidates", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"id":         "user-1",
+					"username":   "alice@example.com",
+					"enabled":    true,
+					"created_at": "2026-03-31T00:00:00Z",
+					"profile_attributes": gin.H{
+						"department":       "Engineering",
+						"section":          "Platform",
+						"external_cohorts": []any{gin.H{"kind": "department", "key": "2953"}},
+					},
+				},
+			},
+			"profile_fields": []gin.H{
+				{
+					"key":        "department",
+					"label":      "Department",
+					"searchable": true,
+				},
+			},
+			"pagination": gin.H{
+				"page":        1,
+				"per_page":    20,
+				"total":       1,
+				"total_pages": 1,
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/systems/system-1/member-candidates", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dynamic system member candidate profile_attributes, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsDynamicSystemMemberProfileAttributesInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/systems/:system_id/members", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"user_id":    "user-1",
+					"username":   "alice@example.com",
+					"created_at": "2026-03-31T00:00:00Z",
+					"role":       "member",
+					"profile_attributes": gin.H{
+						"department":       "Engineering",
+						"section":          "Platform",
+						"external_cohorts": []any{gin.H{"kind": "department", "key": "2953"}},
+					},
+				},
+			},
+			"profile_fields": []gin.H{
+				{
+					"key":        "department",
+					"label":      "Department",
+					"searchable": true,
+				},
+			},
+			"pagination": gin.H{
+				"page":        1,
+				"per_page":    20,
+				"total":       1,
+				"total_pages": 1,
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/systems/system-1/members", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dynamic system member profile_attributes, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestOpenAPIValidatorAllowsDynamicUserPreferenceValueInStrictMode(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.PUT("/api/v1/auth/preferences/:key", func(c *gin.Context) {

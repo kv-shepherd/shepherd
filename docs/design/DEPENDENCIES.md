@@ -20,12 +20,12 @@
 
 | Item | Version | Notes |
 |------|---------|-------|
-| **Go** | `1.25.8` | Current repository baseline and minimum patched toolchain for blocking `govulncheck` |
+| **Go** | `1.25.9` | Current repository baseline and minimum patched toolchain for blocking `govulncheck` |
 
 > **Go Version Strategy (ADR-0028)**: 
 > - **Minimum**: Go 1.24 (required for `omitzero` tag support, ADR-0028)
 > - **CI Enforced**: Go 1.25+ (ADR-0028 §Confirmation)
-> - **Current Baseline**: Go 1.25.8
+> - **Current Baseline**: Go 1.25.9
 > - **Security Gate**: `govulncheck` is blocking at this baseline
 > - Dependencies: Gin v1.11.0 requires Go 1.23+, KubeVirt client-go requires Go 1.24+
 > - Code is backward compatible with Go 1.24, but CI blocks builds below Go 1.25

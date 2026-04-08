@@ -178,6 +178,18 @@ function authProviderTypeDescription(
   });
 }
 
+function renderAuthProviderAlphaTag(
+  t: (key: string, opts?: Record<string, unknown>) => string,
+) {
+  return (
+    <Tag color="gold" style={{ marginInlineEnd: 0 }}>
+      {t("authProviders.alpha_badge", {
+        defaultValue: "Alpha",
+      })}
+    </Tag>
+  );
+}
+
 function authProviderRuntimeModeLabel(
   authType: string | undefined,
   modeKey: string | undefined,
@@ -1254,6 +1266,7 @@ export function AdminAuthProvidersContent() {
               {providers.providerTypeLabelByKey[record.auth_type] ??
                 record.auth_type}
             </Tag>
+            {renderAuthProviderAlphaTag(t)}
             <Tag color={record.enabled ? "green" : "default"}>
               {record.enabled
                 ? t("users.status.enabled")
@@ -1278,9 +1291,12 @@ export function AdminAuthProvidersContent() {
       width: 200,
       render: (authType: string) => (
         <Space direction="vertical" size={0}>
-          <Text strong>
-            {providers.providerTypeLabelByKey[authType] ?? authType}
-          </Text>
+          <Space size={6} wrap>
+            <Text strong>
+              {providers.providerTypeLabelByKey[authType] ?? authType}
+            </Text>
+            {renderAuthProviderAlphaTag(t)}
+          </Space>
           <Text type="secondary" style={{ fontSize: 12 }}>
             {authType}
           </Text>
@@ -1831,6 +1847,18 @@ export function AdminAuthProvidersContent() {
           description={t("authProviders.page_help_description", {
             defaultValue:
               "Set the platform-wide external login address first, then create and test the provider, let one real user log in, and finally use discovered cohorts to grant access.",
+          })}
+        />
+        <Alert
+          showIcon={true}
+          type="warning"
+          style={{ marginTop: 16 }}
+          message={t("authProviders.alpha_title", {
+            defaultValue: "Alpha integrations",
+          })}
+          description={t("authProviders.alpha_description", {
+            defaultValue:
+              "Authentication provider integrations are currently in alpha. They are not yet fully validated and may not work reliably in every environment.",
           })}
         />
 
@@ -3330,15 +3358,18 @@ function CreateProviderWizard({
                           )}
                         </span>
                         <div>
-                          <Text strong={true}>
-                            {authProviderTypeLabel(
-                              selectedAuthType,
-                              selectedProviderType?.display_name ||
-                                selectedAuthType ||
-                                "",
-                              t,
-                            )}
-                          </Text>
+                          <Space size={6} wrap>
+                            <Text strong={true}>
+                              {authProviderTypeLabel(
+                                selectedAuthType,
+                                selectedProviderType?.display_name ||
+                                  selectedAuthType ||
+                                  "",
+                                t,
+                              )}
+                            </Text>
+                            {renderAuthProviderAlphaTag(t)}
+                          </Space>
                           <br />
                           <Text type="secondary" style={{ fontSize: 12 }}>
                             {authProviderTypeDescription(
@@ -3346,6 +3377,13 @@ function CreateProviderWizard({
                               selectedProviderType?.description,
                               t,
                             )}
+                          </Text>
+                          <br />
+                          <Text type="warning" style={{ fontSize: 12 }}>
+                            {t("authProviders.alpha_description", {
+                              defaultValue:
+                                "Authentication provider integrations are currently in alpha. They are not yet fully validated and may not work reliably in every environment.",
+                            })}
                           </Text>
                         </div>
                       </Space>

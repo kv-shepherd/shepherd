@@ -19,6 +19,8 @@ const openAddBindingModalMock = vi.fn();
 const closeAddBindingModalMock = vi.fn();
 const submitAddBindingMock = vi.fn();
 const deleteRoleBindingMock = vi.fn();
+const deleteRoleBindingsMock = vi.fn();
+const resetRoleBindingsForUsersMock = vi.fn();
 
 let userPreferenceState:
     | {
@@ -54,6 +56,7 @@ vi.mock('react-i18next', () => ({
                 'users.directory.manage_access_help_description': 'Grant both runtime and elevated roles from this drawer. Elevated platform-facing roles are highlighted with stronger colors so administrators can spot them quickly before saving.',
                 'users.directory.manage_access_bindings_title': 'Current bindings',
                 'users.directory.manage_access_bindings_subtitle': 'Review the exact roles this user currently holds. Blue tags indicate runtime access, while purple tags indicate elevated platform-facing access.',
+                'users.directory.manage_access_bindings_selected': `Selected ${options?.count ?? ''} bindings`,
                 'users.directory.manage_access_empty': 'No explicit bindings for this user',
                 'users.directory.manage_access_empty_description': 'Add the first role binding here and keep the scope and environments as narrow as practical.',
                 'users.directory.manage_access_footer': 'Use role, scope, and allowed environments together to keep access narrow. Elevated platform-facing roles stay highlighted here, while Access & Roles remains available for cross-user audit.',
@@ -63,6 +66,13 @@ vi.mock('react-i18next', () => ({
                 'users.directory.manage_access_summary.standard_description': 'System, service, and virtual-machine access currently assigned on this user.',
                 'users.directory.manage_access_summary.privileged_title': 'Elevated bindings',
                 'users.directory.manage_access_summary.privileged_description': 'Platform administration or approval-sensitive access highlighted for extra review.',
+                'users.directory.batch_manage_access': 'Batch access',
+                'users.directory.batch_manage_access_help': 'Search by name, email, department, section, or job title, then select multiple users at once.',
+                'users.directory.selected_users': `Selected ${options?.count ?? ''} users`,
+                'users.directory.batch_delete_bindings': 'Remove selected',
+                'users.directory.batch_reset_access': 'Reset access',
+                'users.directory.select_users_placeholder': 'Search and select one or more users',
+                'users.directory.no_matching_users': 'No matching users',
                 'users.directory.boundary_title': 'User Management is the primary workspace for accounts and access',
                 'users.directory.boundary_description': 'Grant or revoke explicit bindings directly here. Systems still owns system membership, Rate Limits still owns throttling overrides, and Access & Roles remains available for role catalog and elevated-access audit views.',
                 'users.directory.open_rbac': 'Open Access & Roles',
@@ -79,8 +89,8 @@ vi.mock('react-i18next', () => ({
                 'users.directory.advanced_search_value': 'Search value',
                 'users.directory.add_search_condition': 'Add Condition',
                 'users.directory.remove_search_condition': 'Remove search condition',
-                'users.directory.visible_columns_placeholder': 'Displayed columns',
-                'users.directory.columns_drawer_title': 'Customize displayed columns',
+                'users.directory.visible_columns_placeholder': 'Directory display config',
+                'users.directory.columns_drawer_title': 'Customize directory display',
                 'users.directory.columns_drawer_message': 'Account and Actions stay fixed.',
                 'users.directory.columns_visible_title': 'Visible columns',
                 'users.directory.columns_empty': 'No extra columns selected.',
@@ -96,8 +106,8 @@ vi.mock('react-i18next', () => ({
                 'users.directory.columns_merge_show_labels_title': 'Show field labels inside the column',
                 'users.directory.columns_merge_show_labels_help': 'Turn this off for a cleaner stacked value view.',
                 'users.directory.merged_column_default_label': 'Combined details',
-                'users.directory.columns_restore_defaults': 'Restore recommended defaults',
-                'users.directory.reset_columns': 'Reset columns',
+                'users.directory.columns_restore_defaults': 'Restore recommended display config',
+                'users.directory.reset_columns': 'Reset config',
                 'users.directory.move_column_up': 'Move column up',
                 'users.directory.move_column_down': 'Move column down',
                 'users.directory.hide_column': 'Hide column',
@@ -131,6 +141,7 @@ vi.mock('react-i18next', () => ({
                 'common:table.total': `Total ${options?.total ?? ''} items`,
                 'common:table.actions': 'Actions',
                 'common:button.search': 'Search',
+                'common:button.clear': 'Clear',
                 'common:button.save': 'Save',
                 'common:button.cancel': 'Cancel',
                 'common:button.close': 'Close',
@@ -149,6 +160,7 @@ vi.mock('react-i18next', () => ({
                 'rbac.bindings.add': 'Add Binding',
                 'rbac.bindings.role': 'Role',
                 'rbac.bindings.scope': 'Scope',
+                'rbac.bindings.select_users': 'Users',
                 'rbac.bindings.scope_type': 'Scope type',
                 'rbac.bindings.scope_id': 'Scope ID',
                 'rbac.bindings.scope_id_help': 'Choose a known target',
@@ -459,8 +471,46 @@ vi.mock('@/features/rbac-shared/useUserRoleBindingsManager', () => ({
             closeAddBindingModal: closeAddBindingModalMock,
             submitAddBinding: submitAddBindingMock,
             deleteRoleBinding: deleteRoleBindingMock,
+            deleteRoleBindings: deleteRoleBindingsMock,
+            resetRoleBindingsForUsers: resetRoleBindingsForUsersMock,
             createBindingPending: false,
             deleteBindingPending: false,
+            bindingUserCandidates: [
+                {
+                    id: 'user-1',
+                    username: 'alice',
+                    display_name: 'Alice',
+                    email: 'alice@example.com',
+                    profile_attributes: {
+                        department: 'Engineering',
+                        section: 'Platform',
+                    },
+                },
+            ],
+            bindingUserCandidateProfileFields: [
+                { key: 'department', label: 'Department', searchable: true },
+                { key: 'section', label: 'Section', searchable: true },
+            ],
+            bindingUserCandidatesPagination: {
+                page: 1,
+                per_page: 20,
+                total: 1,
+                total_pages: 1,
+            },
+            bindingUserCandidatesLoading: false,
+            bindingUserSearch: '',
+            bindingUserSearchDraft: '',
+            bindingUserPage: 1,
+            bindingUserPerPage: 20,
+            selectedBindingUserIds: [],
+            selectedBindingUsers: [],
+            effectiveSelectedBindingUserIds: [],
+            setSelectedBindingUsers: vi.fn(),
+            clearSelectedBindingUsers: vi.fn(),
+            setBindingUserSearchDraft: vi.fn(),
+            applyBindingUserSearch: vi.fn(),
+            clearBindingUserSearch: vi.fn(),
+            setBindingUserPagination: vi.fn(),
             scopeTargetOptionsByType: {},
             scopeTargetLoadingByType: {},
         };
@@ -548,6 +598,7 @@ describe('AdminUsersContent', () => {
         expect(screen.getByRole('button', { name: 'Open Access & Roles' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'Open Systems' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'Open Rate Limits' })).toBeVisible();
+        expect(screen.getByTestId('user-batch-access-button')).toBeVisible();
         expect(screen.getByTestId('user-create-button')).toBeVisible();
         expect(screen.getByTestId('users-directory-search')).toBeVisible();
         expect(screen.getByTestId('users-directory-open-columns-drawer')).toBeVisible();
@@ -595,7 +646,7 @@ describe('AdminUsersContent', () => {
         expect(screen.getAllByText('Section').length).toBeGreaterThan(0);
 
         await user.click(screen.getByTestId('users-directory-open-columns-drawer'));
-        expect(screen.getByText('Customize displayed columns')).toBeVisible();
+        expect(screen.getByText('Customize directory display')).toBeVisible();
 
         await user.click(screen.getAllByLabelText('Hide column')[0]);
         await user.click(screen.getByTestId('users-directory-columns-save'));
@@ -627,6 +678,7 @@ describe('AdminUsersContent', () => {
         expect(screen.getAllByText('Platform Admin').length).toBeGreaterThan(0);
         expect(screen.getByText('Payments')).toBeVisible();
         expect(screen.queryByText('1 high-privilege')).not.toBeInTheDocument();
+        expect(screen.getByTestId('user-binding-batch-delete-button')).toBeVisible();
     });
 
     it('builds selected columns inside a custom merged column', () => {

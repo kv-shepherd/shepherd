@@ -261,8 +261,13 @@ func responseStrictIgnorePaths(request *http.Request, basePath string) []string 
 			"$.body.**.request_snapshot.**",
 		)
 	}
-	if path == "/admin/users" {
+	if path == "/admin/users" ||
+		(strings.HasPrefix(path, "/systems/") &&
+			(strings.HasSuffix(path, "/member-candidates") || strings.HasSuffix(path, "/members"))) {
 		// User.profile_attributes is a contractually free-form directory profile map.
+		// The system member candidate and member endpoints reuse the same
+		// directory-backed profile bag semantics, so they need the same
+		// strict-mode exemption as /admin/users.
 		ignorePaths = append(ignorePaths, "$.body.**.profile_attributes.**")
 	}
 	if strings.HasPrefix(path, "/auth/preferences/") {

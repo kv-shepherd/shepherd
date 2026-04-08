@@ -1,6 +1,6 @@
 module example.com/authproviderplugin-external-smoke
 
-go 1.25.8
+go 1.25.9
 
 require kv-shepherd.io/shepherd v0.0.0
 

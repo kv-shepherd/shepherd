@@ -7,7 +7,6 @@ export type SystemCreateRequest = components['schemas']['SystemCreateRequest'];
 export type SystemUpdateRequest = components['schemas']['SystemUpdateRequest'];
 export type SystemMember = components['schemas']['SystemMember'];
 export type SystemMemberList = components['schemas']['SystemMemberList'];
-export type SystemMemberCreateRequest = components['schemas']['SystemMemberCreateRequest'];
 export type SystemMemberRoleUpdateRequest = components['schemas']['SystemMemberRoleUpdateRequest'];
 export type UserList = components['schemas']['UserList'];
 

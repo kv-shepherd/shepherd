@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
+import type { PropsWithChildren } from 'react';
 import type { TFunction } from 'i18next';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,6 +13,7 @@ const {
   messageErrorMock,
   messageWarningMock,
   apiGetMock,
+  apiPostMock,
   roleCreateFormState,
   roleEditFormState,
   bindingFormState,
@@ -23,6 +26,7 @@ const {
   messageErrorMock: vi.fn(),
   messageWarningMock: vi.fn(),
   apiGetMock: vi.fn(),
+  apiPostMock: vi.fn(),
   roleCreateFormState: {
     validateFields: vi.fn(),
     resetFields: vi.fn(),
@@ -64,6 +68,7 @@ vi.mock('@/hooks/useApiQuery', () => ({
 vi.mock('@/lib/api/client', () => ({
   api: {
     GET: (...args: unknown[]) => apiGetMock(...args),
+    POST: (...args: unknown[]) => apiPostMock(...args),
   },
 }));
 
@@ -71,6 +76,19 @@ import { useAdminRbacController } from './useAdminRbacController';
 
 describe('useAdminRbacController', () => {
   const t = ((key: string) => key) as unknown as TFunction;
+  const createWrapper = () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    function QueryClientWrapper({ children }: PropsWithChildren) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    QueryClientWrapper.displayName = 'QueryClientWrapper';
+    return QueryClientWrapper;
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -128,16 +146,18 @@ describe('useAdminRbacController', () => {
         refetch: vi.fn(),
       };
     });
+    apiPostMock.mockResolvedValue({
+      data: {},
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
   });
 
   it('submits role creation and user role binding payloads', async () => {
     const createRoleMutate = vi.fn();
-    const createBindingMutate = vi.fn();
-
     const mutationResults = [
       { mutate: createRoleMutate, isPending: false },
       { mutate: vi.fn(), isPending: false },
-      { mutate: createBindingMutate, isPending: false },
     ];
     let mutationCall = 0;
     useApiMutationMock.mockImplementation(() => {
@@ -157,7 +177,7 @@ describe('useAdminRbacController', () => {
       return result;
     });
 
-    const { result } = renderHook(() => useAdminRbacController({ t }));
+    const { result } = renderHook(() => useAdminRbacController({ t }), { wrapper: createWrapper() });
 
     await act(async () => {
       result.current.openCreateRoleModal();
@@ -170,19 +190,28 @@ describe('useAdminRbacController', () => {
     });
 
     act(() => {
-      result.current.selectUser('u-1', 'user1');
+      result.current.openAddBindingModal([
+        {
+          id: 'u-1',
+          username: 'user1',
+          enabled: true,
+          created_at: new Date().toISOString(),
+        },
+      ]);
     });
 
     await act(async () => {
-      result.current.openAddBindingModal();
       await result.current.submitAddBinding();
     });
 
-    expect(createBindingMutate).toHaveBeenCalledWith({
-      role_id: 'role-1',
-      scope_type: 'global',
-      scope_id: undefined,
-      allowed_environments: ['test'],
+    expect(apiPostMock).toHaveBeenCalledWith('/admin/users/{user_id}/role-bindings', {
+      params: { path: { user_id: 'u-1' } },
+      body: {
+        role_id: 'role-1',
+        scope_type: 'global',
+        scope_id: undefined,
+        allowed_environments: ['test'],
+      },
     });
   });
 
@@ -195,7 +224,7 @@ describe('useAdminRbacController', () => {
       .mockReturnValueOnce({ mutate: vi.fn(), isPending: false })
       .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
 
-    const { result } = renderHook(() => useAdminRbacController({ t }));
+    const { result } = renderHook(() => useAdminRbacController({ t }), { wrapper: createWrapper() });
 
     act(() => {
       result.current.openEditRoleModal({
@@ -227,7 +256,7 @@ describe('useAdminRbacController', () => {
       response: new Response(),
     });
 
-    const { result } = renderHook(() => useAdminRbacController({ t }));
+    const { result } = renderHook(() => useAdminRbacController({ t }), { wrapper: createWrapper() });
 
     act(() => {
       result.current.setUserSearch('alice');
