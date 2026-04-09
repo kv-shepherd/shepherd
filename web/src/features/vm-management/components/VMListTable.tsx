@@ -186,21 +186,22 @@ export function VMListTable({
                                     {' '}
                                 </TypographyText>
                             </span>
+                            {record.hostname && record.hostname !== name ? (
+                                <span className="vm-list-inline-chip vm-list-inline-chip--identity selectable-inline-text">
+                                    <span className="vm-list-inline-chip__label">{t('field.hostname')}</span>
+                                    <span className="vm-list-inline-chip__value">{record.hostname}</span>
+                                </span>
+                            ) : null}
                             {record.ip_address ? (
                                 <TypographyText
                                     copyable={{ text: record.ip_address }}
-                                    className="vm-list-inline-chip selectable-inline-text"
+                                    className="vm-list-inline-chip vm-list-inline-chip--network selectable-inline-text"
                                 >
                                     <span className="vm-list-inline-chip__label">{t('field.ip_address')}</span>
                                     <span className="vm-list-inline-chip__value">{record.ip_address}</span>
                                 </TypographyText>
                             ) : null}
                         </Space>
-                        {record.hostname && record.hostname !== name ? (
-                            <TypographyText type="secondary" className="workbench-table-note selectable-inline-text">
-                                {t('field.hostname')}: {record.hostname}
-                            </TypographyText>
-                        ) : null}
                         {osLabel ? (
                             <TypographyText type="secondary" className="workbench-table-note selectable-inline-text">
                                 {osLabel}

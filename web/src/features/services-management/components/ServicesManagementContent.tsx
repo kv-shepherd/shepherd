@@ -3,7 +3,6 @@
 import {
     Button,
     Card,
-    Descriptions,
     Form,
     Input,
     Modal,
@@ -48,7 +47,14 @@ import { approvalSummaryMeta, approvalSummaryTitle, formatApprovalRecordID } fro
 import { ALL_SYSTEMS_FILTER, useServicesManagementController } from '../hooks/useServicesManagementController';
 import type { Ticket, Service, ServiceWorkspaceContext, VM } from '../types';
 
-const { Text } = Typography;
+const { Paragraph, Text } = Typography;
+
+function formatNextInstanceIndex(value: number | undefined): string {
+    if (!Number.isFinite(value) || value === undefined || value < 0) {
+        return '0';
+    }
+    return String(value);
+}
 
 export function ServicesManagementContent() {
     const { t } = useTranslation(['common', 'vm', 'approval']);
@@ -130,6 +136,8 @@ export function ServicesManagementContent() {
 
     const serviceRelatedVMs = serviceContextQuery.data?.visible_vms ?? [];
     const serviceRelatedRequests = serviceContextQuery.data?.recent_requests ?? [];
+    const detailServiceSummary = serviceContextQuery.data?.summary;
+    const latestRelatedRequest = serviceRelatedRequests[0] ?? null;
 
     const columns: ColumnsType<Service> = [
         {
@@ -176,7 +184,7 @@ export function ServicesManagementContent() {
             dataIndex: 'next_instance_index',
             key: 'next_instance_index',
             width: 180,
-            render: (idx: number) => <Tag color="blue">#{idx ?? 0}</Tag>,
+            render: (idx: number) => <Tag color="blue">{formatNextInstanceIndex(idx)}</Tag>,
         },
         {
             title: t('table.created_at'),
@@ -407,6 +415,7 @@ export function ServicesManagementContent() {
             <Modal
                 title={t('services.modal.create_title')}
                 open={services.createOpen}
+                forceRender={true}
                 onOk={() => {
                     void services.submitCreate();
                 }}
@@ -489,6 +498,7 @@ export function ServicesManagementContent() {
             <Modal
                 title={t('services.modal.edit_title')}
                 open={services.editOpen}
+                forceRender={true}
                 onOk={() => {
                     void services.submitEdit();
                 }}
@@ -578,42 +588,119 @@ export function ServicesManagementContent() {
                         {t('common:button.close', { defaultValue: 'Close' })}
                     </Button>
                 ]}
-                width="min(1120px, calc(100vw - 16px))"
-                contentMinWidth={1080}
+                width="min(1040px, calc(100vw - 24px))"
+                contentMinWidth="100%"
+                bodyPaddingRight={0}
             >
                 <Space direction="vertical" size={16} className="workbench-detail-modal__stack">
-                    <Card size="small" title={t('services.context_title')}>
-                        <Descriptions
-                            size="small"
-                            column={{ xs: 1, sm: 1, md: 1, lg: 2, xl: 2, xxl: 2 }}
-                        >
-                            <Descriptions.Item label={t('services.context_system')}>
-                                {activeDetailService?.system_id && detailSystemName !== '—' ? (
-                                    <Button
-                                        type="link"
-                                        size="small"
-                                        style={{ paddingInline: 0, justifyContent: 'flex-start' }}
-                                        onClick={() => router.push(`/systems?detail_system_id=${activeDetailService.system_id}`)}
-                                    >
-                                        {detailSystemName}
-                                    </Button>
+                    <Card size="small" className="workbench-detail-hero">
+                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                            <Space size={[8, 8]} wrap>
+                                <Tag color="blue">{t('nav.services')}</Tag>
+                                <Tag>{detailSystemName}</Tag>
+                                <Tag>{t('services.detail_visible_vms_badge', {
+                                    count: detailServiceSummary?.visible_vm_count ?? serviceRelatedVMs.length,
+                                    defaultValue: '{{count}} visible VMs',
+                                })}</Tag>
+                                <Tag>{t('services.detail_recent_requests_badge', {
+                                    count: detailServiceSummary?.recent_request_count ?? serviceRelatedRequests.length,
+                                    defaultValue: '{{count}} recent requests',
+                                })}</Tag>
+                            </Space>
+                            <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                                {serviceContextQuery.data?.service.description?.trim()
+                                    || detailService?.description?.trim()
+                                    || t('services.detail_empty_summary', { defaultValue: 'No service summary has been documented yet.' })}
+                            </Paragraph>
+                            <div className="workbench-detail-hero__grid">
+                                <div className="workbench-compact-grid__item">
+                                    <Text className="workbench-compact-grid__label">{t('services.context_system')}</Text>
+                                    <Text strong className="workbench-compact-grid__value">{detailSystemName}</Text>
+                                </div>
+                                <div className="workbench-compact-grid__item">
+                                    <Text className="workbench-compact-grid__label">{t('services.context_next_index')}</Text>
+                                    <Text strong className="workbench-compact-grid__value">
+                                        {formatNextInstanceIndex(serviceContextQuery.data?.service.next_instance_index ?? detailService?.next_instance_index)}
+                                    </Text>
+                                </div>
+                                <div className="workbench-compact-grid__item">
+                                    <Text className="workbench-compact-grid__label">{t('table.created_at')}</Text>
+                                    <Text className="workbench-compact-grid__value">
+                                        <LocalDateTimeText value={serviceContextQuery.data?.service.created_at ?? detailService?.created_at} />
+                                    </Text>
+                                </div>
+                                <div className="workbench-compact-grid__item">
+                                    <Text className="workbench-compact-grid__label">{t('services.context_summary')}</Text>
+                                    <Text className="workbench-compact-grid__value">
+                                        {t('services.context_summary_value', {
+                                            vmCount: detailServiceSummary?.visible_vm_count ?? serviceRelatedVMs.length,
+                                            requestCount: detailServiceSummary?.recent_request_count ?? serviceRelatedRequests.length,
+                                        })}
+                                    </Text>
+                                </div>
+                            </div>
+                        </Space>
+                    </Card>
+
+                    <Card
+                        size="small"
+                        title={t('services.context_title')}
+                        className="workbench-detail-section-card workbench-detail-section-card--primary workbench-detail-section-card--wide"
+                    >
+                        <div className="workbench-context-grid">
+                            <div className="workbench-context-card">
+                                <Text className="workbench-context-card__label">{t('services.context_system')}</Text>
+                                <div className="workbench-context-card__value">
+                                    {activeDetailService?.system_id && detailSystemName !== '—' ? (
+                                        <Button
+                                            type="link"
+                                            size="small"
+                                            style={{ paddingInline: 0, justifyContent: 'flex-start' }}
+                                            onClick={() => router.push(`/systems?detail_system_id=${activeDetailService.system_id}`)}
+                                        >
+                                            {detailSystemName}
+                                        </Button>
+                                    ) : (
+                                        <Text strong>{detailSystemName}</Text>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="workbench-context-card">
+                                <Text className="workbench-context-card__label">{t('services.context_next_index')}</Text>
+                                <div className="workbench-context-card__value">
+                                    <Text strong>
+                                        {formatNextInstanceIndex(serviceContextQuery.data?.service.next_instance_index ?? detailService?.next_instance_index)}
+                                    </Text>
+                                </div>
+                            </div>
+                            <div className="workbench-context-card">
+                                <Text className="workbench-context-card__label">{t('services.detail_visible_vms_label', { defaultValue: 'Visible VMs' })}</Text>
+                                <div className="workbench-context-card__value">
+                                    <Text strong>{detailServiceSummary?.visible_vm_count ?? serviceRelatedVMs.length}</Text>
+                                </div>
+                            </div>
+                            <div className="workbench-context-card">
+                                <Text className="workbench-context-card__label">{t('services.detail_recent_requests_label', { defaultValue: 'Recent Requests' })}</Text>
+                                <div className="workbench-context-card__value">
+                                    <Text strong>{detailServiceSummary?.recent_request_count ?? serviceRelatedRequests.length}</Text>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="workbench-context-card workbench-context-card--wide">
+                            <Text className="workbench-context-card__label">{t('services.detail_latest_request', { defaultValue: 'Latest Request' })}</Text>
+                            <div className="workbench-context-card__value">
+                                {latestRelatedRequest ? (
+                                    <Space direction="vertical" size={2}>
+                                        <Text strong>{approvalSummaryTitle(latestRelatedRequest, t)}</Text>
+                                        <Text type="secondary">
+                                            {approvalSummaryMeta(latestRelatedRequest, t).join(' · ') || formatApprovalRecordID(latestRelatedRequest.id)}
+                                        </Text>
+                                    </Space>
                                 ) : (
-                                    detailSystemName
+                                    <Text type="secondary">{t('services.related_requests_empty')}</Text>
                                 )}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={t('services.context_next_index')}>
-                                <Tag color="blue">{serviceContextQuery.data?.service.next_instance_index ?? detailService?.next_instance_index ?? 0}</Tag>
-                            </Descriptions.Item>
-                            <Descriptions.Item label={t('table.created_at')}>
-                                <LocalDateTimeText value={serviceContextQuery.data?.service.created_at ?? detailService?.created_at} />
-                            </Descriptions.Item>
-                            <Descriptions.Item label={t('services.context_summary')}>
-                                {t('services.context_summary_value', {
-                                    vmCount: serviceContextQuery.data?.summary.visible_vm_count ?? 0,
-                                    requestCount: serviceContextQuery.data?.summary.recent_request_count ?? 0,
-                                })}
-                            </Descriptions.Item>
-                        </Descriptions>
+                            </div>
+                        </div>
                     </Card>
 
                     <Card size="small" title={t('table.description')}>
@@ -637,19 +724,22 @@ export function ServicesManagementContent() {
                         size="small"
                         title={t('services.related_vms_title')}
                         extra={(
-                            <Button
-                                size="small"
-                                onClick={() => {
-                                    if (!activeDetailService) {
-                                        return;
-                                    }
-                                    router.push(
-                                        `/vms?system_id=${activeDetailService.system_id}&service_id=${activeDetailService.id}`,
-                                    );
-                                }}
-                            >
-                                {t('services.open_vm_workspace')}
-                            </Button>
+                            <Space>
+                                <Tag>{t('table.total', { total: detailServiceSummary?.visible_vm_count ?? serviceRelatedVMs.length })}</Tag>
+                                <Button
+                                    size="small"
+                                    onClick={() => {
+                                        if (!activeDetailService) {
+                                            return;
+                                        }
+                                        router.push(
+                                            `/vms?system_id=${activeDetailService.system_id}&service_id=${activeDetailService.id}`,
+                                        );
+                                    }}
+                                >
+                                    {t('services.open_vm_workspace')}
+                                </Button>
+                            </Space>
                         )}
                     >
                         <div className="workbench-detail-modal__table-scroll">

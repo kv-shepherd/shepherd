@@ -3,22 +3,17 @@ package sqlc
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"net/url"
 	"os"
-	"regexp"
-	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+
+	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
 const sqlcSchemaPath = "schema.sql"
-
-var nonIdentChars = regexp.MustCompile(`[^a-z0-9_]+`)
 
 func TestQueries_AllocateServiceInstance(t *testing.T) {
 	ctx := context.Background()
@@ -312,39 +307,12 @@ func TestQueries_WithTx(t *testing.T) {
 func newSQLCTestQueries(t *testing.T, prefix string) (*Queries, *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
-	dsn := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL"))
-	if dsn == "" {
-		dsn = strings.TrimSpace(os.Getenv("DATABASE_URL"))
-	}
-	if dsn == "" {
-		t.Fatalf("PostgreSQL test DSN is required: set TEST_DATABASE_URL or DATABASE_URL")
-	}
-
-	adminPool, err := pgxpool.New(ctx, dsn)
-	require.NoError(t, err)
-	require.NoError(t, adminPool.Ping(ctx))
-
-	schema := newSchemaName(prefix)
-	_, err = adminPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %q", schema))
-	require.NoError(t, err)
-
-	schemaDSN, err := dsnWithSearchPath(dsn, schema)
-	require.NoError(t, err)
-
-	testPool, err := pgxpool.New(ctx, schemaDSN)
-	require.NoError(t, err)
-	require.NoError(t, testPool.Ping(ctx))
+	testPool := testutil.OpenPGXPool(t, prefix)
 
 	schemaSQL, err := os.ReadFile(sqlcSchemaPath)
 	require.NoError(t, err)
 	_, err = testPool.Exec(ctx, string(schemaSQL))
 	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		_, _ = adminPool.Exec(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %q CASCADE", schema))
-		adminPool.Close()
-	})
-	t.Cleanup(testPool.Close)
 
 	return New(testPool), testPool
 }
@@ -420,43 +388,6 @@ func seedVM(ctx context.Context, t *testing.T, pool *pgxpool.Pool, vmID, service
 		serviceID,
 	)
 	require.NoError(t, err)
-}
-
-func dsnWithSearchPath(dsn, schema string) (string, error) {
-	if strings.Contains(dsn, "://") {
-		u, err := url.Parse(dsn)
-		if err != nil {
-			return "", err
-		}
-		q := u.Query()
-		q.Set("search_path", schema)
-		u.RawQuery = q.Encode()
-		return u.String(), nil
-	}
-
-	if strings.Contains(dsn, "search_path=") {
-		re := regexp.MustCompile(`search_path=\S+`)
-		return re.ReplaceAllString(dsn, "search_path="+schema), nil
-	}
-	return dsn + " search_path=" + schema, nil
-}
-
-func newSchemaName(prefix string) string {
-	base := strings.ToLower(prefix)
-	base = strings.ReplaceAll(base, "-", "_")
-	base = nonIdentChars.ReplaceAllString(base, "_")
-	base = strings.Trim(base, "_")
-	if base == "" {
-		base = "sqlc"
-	}
-
-	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")
-	const maxPostgresIdentLen = 63
-	maxBaseLen := maxPostgresIdentLen - len("t__") - len(suffix)
-	if len(base) > maxBaseLen {
-		base = base[:maxBaseLen]
-	}
-	return fmt.Sprintf("t_%s_%s", base, suffix)
 }
 
 func assertJSONEqual(t *testing.T, want, got []byte) {

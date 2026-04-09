@@ -478,8 +478,8 @@ describe('ServicesManagementContent', () => {
         expect(modalQueries.getByText('Service Context')).toBeInTheDocument();
         expect(modalQueries.getByText('Visible Virtual Machines')).toBeInTheDocument();
         expect(modalQueries.getByText('My Recent Requests')).toBeInTheDocument();
-        expect(modalQueries.getByText('vm-a')).toBeInTheDocument();
-        expect(modalQueries.getByText('Create')).toBeInTheDocument();
+        expect(modalQueries.getAllByText('vm-a').length).toBeGreaterThan(0);
+        expect(modalQueries.getAllByText('Create').length).toBeGreaterThan(0);
         expect(modalQueries.getByText('Ticket ID: ticket-1')).toBeInTheDocument();
         expect(
             modalQueries.getByRole('button', { name: 'Request VM' }),
@@ -512,7 +512,7 @@ describe('ServicesManagementContent', () => {
 
         const modalQueries = within(detailModal!);
         expect(modalQueries.getByText('Service A')).toBeInTheDocument();
-        expect(modalQueries.getByText('System A')).toBeInTheDocument();
-        expect(modalQueries.getByText('vm-a')).toBeInTheDocument();
+        expect(modalQueries.getAllByText('System A').length).toBeGreaterThan(0);
+        expect(modalQueries.getAllByText('vm-a').length).toBeGreaterThan(0);
     });
 });

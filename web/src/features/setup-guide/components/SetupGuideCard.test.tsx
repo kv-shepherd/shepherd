@@ -50,6 +50,10 @@ vi.mock('react-i18next', () => ({
                 'common:setup.resume.eyebrow': 'Recommended next step',
                 'common:setup.resume.hint': 'Use the primary action to continue onboarding. The checklist below will stay in sync as each step is completed.',
                 'common:setup.resume.title': 'Continue setup',
+                'common:setup.quick_actions_title': 'Quick launchers',
+                'common:setup.quick_actions_description': 'Initial setup is complete. Keep these entry points nearby for repeat setup and day-one operator workflows.',
+                'common:setup.quick_actions_ready': 'The first-use path is ready. Jump straight into the next workflow.',
+                'common:setup.quick_actions_hint': 'Use these shortcuts to start a new system, service, resource, or VM workflow without reopening the full checklist.',
                 'common:setup.resume.create-namespace': 'Service created. Next, prepare the first namespace from the dashboard guide.',
                 'common:setup.resume.create-instance-size': 'Template created. Next, prepare the first instance size from the dashboard guide.',
             };
@@ -84,6 +88,7 @@ describe('SetupGuideCard', () => {
             canManageNamespaces: true,
             canManageTemplates: true,
             canManageInstanceSizes: true,
+            isPlatformAdmin: true,
             systemReady: true,
             serviceReady: true,
             prerequisitesReady: false,
@@ -120,6 +125,7 @@ describe('SetupGuideCard', () => {
             canManageNamespaces: true,
             canManageTemplates: true,
             canManageInstanceSizes: true,
+            isPlatformAdmin: true,
             systemReady: false,
             serviceReady: false,
             prerequisitesReady: false,
@@ -151,6 +157,7 @@ describe('SetupGuideCard', () => {
             canManageNamespaces: true,
             canManageTemplates: true,
             canManageInstanceSizes: true,
+            isPlatformAdmin: true,
             systemReady: true,
             serviceReady: true,
             prerequisitesReady: false,
@@ -167,5 +174,74 @@ describe('SetupGuideCard', () => {
 
         fireEvent.click(screen.getAllByRole('button', { name: 'Create instance size' })[0]);
         expect(pushMock).toHaveBeenCalledWith('/admin/instance-sizes?intent=create-instance-size');
+    });
+
+    it('keeps the dashboard guide as quick launchers after initial setup is complete', () => {
+        useSetupGuideMock.mockReturnValue({
+            systemsTotal: 2,
+            servicesTotal: 4,
+            vmsTotal: 3,
+            namespacesTotal: 2,
+            templatesTotal: 2,
+            instanceSizesTotal: 2,
+            canCreateSystem: true,
+            canCreateService: true,
+            canCreateVM: true,
+            canManageNamespaces: true,
+            canManageTemplates: true,
+            canManageInstanceSizes: true,
+            isPlatformAdmin: true,
+            systemReady: true,
+            serviceReady: true,
+            prerequisitesReady: true,
+            vmRequestReady: true,
+            hasRequestedFirstVM: true,
+            isLoading: false,
+        });
+
+        render(<SetupGuideCard variant="dashboard" />);
+
+        expect(screen.getByText('Quick launchers')).toBeVisible();
+        expect(screen.getByText('The first-use path is ready. Jump straight into the next workflow.')).toBeVisible();
+        expect(screen.queryByText('Prepare VM request resources')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Create system' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Create service' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Create namespace' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Create template' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Create instance size' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Open VM request' })).toBeVisible();
+    });
+
+    it('limits quick launchers for non-platform-admin users after setup completes', () => {
+        useSetupGuideMock.mockReturnValue({
+            systemsTotal: 2,
+            servicesTotal: 4,
+            vmsTotal: 3,
+            namespacesTotal: 2,
+            templatesTotal: 2,
+            instanceSizesTotal: 2,
+            canCreateSystem: true,
+            canCreateService: true,
+            canCreateVM: true,
+            canManageNamespaces: true,
+            canManageTemplates: true,
+            canManageInstanceSizes: true,
+            isPlatformAdmin: false,
+            systemReady: true,
+            serviceReady: true,
+            prerequisitesReady: true,
+            vmRequestReady: true,
+            hasRequestedFirstVM: true,
+            isLoading: false,
+        });
+
+        render(<SetupGuideCard variant="dashboard" />);
+
+        expect(screen.getByRole('button', { name: 'Create system' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Create service' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Open VM request' })).toBeVisible();
+        expect(screen.queryByRole('button', { name: 'Create namespace' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Create template' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Create instance size' })).not.toBeInTheDocument();
     });
 });

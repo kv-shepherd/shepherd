@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 
 import { useApiGet } from '@/hooks/useApiQuery';
-import { hasPermission } from '@/lib/auth/permissions';
+import { hasPermission, PLATFORM_ADMIN_PERMISSION } from '@/lib/auth/permissions';
 import { api } from '@/lib/api/client';
 import { useAuthStore } from '@/stores/auth';
 
@@ -33,6 +33,7 @@ export interface SetupGuideState {
     canManageNamespaces: boolean;
     canManageTemplates: boolean;
     canManageInstanceSizes: boolean;
+    isPlatformAdmin: boolean;
     systemReady: boolean;
     serviceReady: boolean;
     prerequisitesReady: boolean;
@@ -51,6 +52,7 @@ export function useSetupGuide(snapshot: SetupGuideSnapshot = {}): SetupGuideStat
     const canManageNamespaces = hasPermission(user, 'cluster:write');
     const canManageTemplates = hasPermission(user, 'template:write');
     const canManageInstanceSizes = hasPermission(user, 'instance_size:write');
+    const isPlatformAdmin = hasPermission(user, PLATFORM_ADMIN_PERMISSION);
 
     const systemsQuery = useApiGet<SystemList>(
         ['setup-guide', 'systems-count'],
@@ -106,6 +108,7 @@ export function useSetupGuide(snapshot: SetupGuideSnapshot = {}): SetupGuideStat
             canManageNamespaces,
             canManageTemplates,
             canManageInstanceSizes,
+            isPlatformAdmin,
             systemReady,
             serviceReady,
             prerequisitesReady,
@@ -124,6 +127,7 @@ export function useSetupGuide(snapshot: SetupGuideSnapshot = {}): SetupGuideStat
         canCreateVM,
         canManageNamespaces,
         canManageTemplates,
+        isPlatformAdmin,
         instanceSizesTotal,
         namespacesTotal,
         requestContextQuery.isLoading,

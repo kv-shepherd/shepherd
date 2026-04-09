@@ -128,6 +128,67 @@ export function SetupGuideCard({
             ? [{ key: 'open-vm-request', href: '/vms?request=create', label: t('common:setup.action.open_vm_request') }]
             : []
     ), [setup.canCreateVM, setup.vmRequestReady, t]);
+    const isDashboardChecklistActive =
+        !setup.systemReady ||
+        !setup.serviceReady ||
+        !setup.prerequisitesReady ||
+        (setup.canCreateVM && !setup.hasRequestedFirstVM);
+    const quickActions = useMemo<SetupAction[]>(() => {
+        if (variant !== 'dashboard') {
+            return [];
+        }
+        const actions: SetupAction[] = [
+            {
+                key: setup.canCreateSystem ? 'create-system' : 'open-systems',
+                href: setup.canCreateSystem ? '/systems?intent=create-system' : '/systems',
+                label: setup.canCreateSystem ? t('common:setup.action.create_system') : t('common:setup.action.open_systems'),
+            },
+            {
+                key: setup.canCreateService ? 'create-service' : 'open-services',
+                href: setup.canCreateService ? '/services?intent=create-service' : '/services',
+                label: setup.canCreateService ? t('common:setup.action.create_service') : t('common:setup.action.open_services'),
+            },
+        ];
+        if (setup.isPlatformAdmin && setup.canManageNamespaces) {
+            actions.push({
+                key: 'create-namespace',
+                href: '/admin/namespaces?intent=create-namespace',
+                label: t('common:setup.action.create_namespace'),
+            });
+        }
+        if (setup.isPlatformAdmin && setup.canManageTemplates) {
+            actions.push({
+                key: 'create-template',
+                href: '/admin/templates?intent=create-template',
+                label: t('common:setup.action.create_template'),
+            });
+        }
+        if (setup.isPlatformAdmin && setup.canManageInstanceSizes) {
+            actions.push({
+                key: 'create-instance-size',
+                href: '/admin/instance-sizes?intent=create-instance-size',
+                label: t('common:setup.action.create_instance_size'),
+            });
+        }
+        if (setup.canCreateVM) {
+            actions.push({
+                key: 'open-vm-request',
+                href: '/vms?request=create',
+                label: t('common:setup.action.open_vm_request'),
+            });
+        }
+        return actions;
+    }, [
+        setup.canCreateService,
+        setup.canCreateSystem,
+        setup.canCreateVM,
+        setup.canManageInstanceSizes,
+        setup.canManageNamespaces,
+        setup.canManageTemplates,
+        setup.isPlatformAdmin,
+        t,
+        variant,
+    ]);
     const recommendedActionKey = focusAction ?? (
         !setup.systemReady
             ? 'create-system'
@@ -302,7 +363,7 @@ export function SetupGuideCard({
     const currentStepIndex = Math.max(0, steps.findIndex((step) => step.status === 'process'));
     const shouldRender =
         variant === 'dashboard'
-            ? !setup.systemReady || !setup.serviceReady || !setup.prerequisitesReady || (setup.canCreateVM && !setup.hasRequestedFirstVM)
+            ? isDashboardChecklistActive || quickActions.length > 0
             : variant === 'systems'
                 ? !setup.systemReady
                 : variant === 'services'
@@ -313,8 +374,12 @@ export function SetupGuideCard({
         return null;
     }
 
+    const dashboardQuickActionsMode = variant === 'dashboard' && !isDashboardChecklistActive;
+
     const title =
-        variant === 'dashboard'
+        dashboardQuickActionsMode
+            ? t('common:setup.quick_actions_title')
+            : variant === 'dashboard'
             ? t('common:setup.card.title')
             : variant === 'systems'
                 ? t('common:setup.systems.title')
@@ -325,7 +390,9 @@ export function SetupGuideCard({
                     : t('common:setup.vm.title');
 
     const description =
-        variant === 'dashboard'
+        dashboardQuickActionsMode
+            ? t('common:setup.quick_actions_description')
+            : variant === 'dashboard'
             ? t('common:setup.card.description')
             : variant === 'systems'
                 ? t('common:setup.systems.description')
@@ -391,12 +458,32 @@ export function SetupGuideCard({
         />
     );
 
+    const quickActionsBlock = (
+        <div className="setup-guide-quick">
+            <div className="setup-guide-quick__header">
+                <Text strong>{t('common:setup.quick_actions_ready')}</Text>
+                <Text type="secondary">{t('common:setup.quick_actions_hint')}</Text>
+            </div>
+            <div className="setup-guide-quick__actions">
+                {quickActions.map((action) => (
+                    <Button
+                        key={action.key}
+                        className="app-shell-action-button"
+                        onClick={() => router.push(action.href)}
+                    >
+                        {action.label}
+                    </Button>
+                ))}
+            </div>
+        </div>
+    );
+
     const content = (
         <PageSurface style={{ marginBottom: 24 }}>
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
                 {variant !== 'dashboard' ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={false} /> : null}
                 {setupHeader}
-                {stepsBlock}
+                {dashboardQuickActionsMode ? quickActionsBlock : stepsBlock}
             </Space>
         </PageSurface>
     );
@@ -409,7 +496,7 @@ export function SetupGuideCard({
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
             {variant !== 'dashboard' ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={false} /> : null}
             {setupHeader}
-            {stepsBlock}
+            {dashboardQuickActionsMode ? quickActionsBlock : stepsBlock}
         </Space>
     );
 }
