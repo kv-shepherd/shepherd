@@ -9,6 +9,7 @@ import {
   Descriptions,
   Form,
   Input,
+  List,
   Popover,
   Popconfirm,
   Select,
@@ -19,7 +20,6 @@ import {
   Tag,
   Typography,
 } from "antd";
-import type { ColumnsType } from "antd/es/table";
 import type { TFunction } from "i18next";
 import {
   AuditOutlined,
@@ -45,7 +45,6 @@ import { useSetupGuide } from "@/features/setup-guide/hooks/useSetupGuide";
 import { translateApiError } from "@/lib/api/errorMessage";
 import {
   approvalPrimaryAlert,
-  approvalApproverSummary,
   formatApprovalResourceShape,
   approvalSummaryTitle,
   approvalRequesterSummary,
@@ -66,7 +65,6 @@ import { LocalDateTimeText } from "@/components/ui/LocalDateTimeText";
 import {
   getPriorityTier,
   OPERATION_FILTER_OPTIONS,
-  OP_TYPE_CONFIG,
   STATUS_BADGES,
   STATUS_COLORS,
   STATUS_FILTER_OPTIONS,
@@ -81,6 +79,7 @@ type RootVolumeResolution = NonNullable<
   NonNullable<Cluster["compatibility"]>["root_volume_resolution"]
 >;
 type RootVolumeModeOption = NonNullable<RootVolumeResolution["mode_options"]>[number];
+type ApprovalBatchDisplayRow = ReturnType<typeof buildApprovalBatchDisplayItems>[number];
 
 interface SearchSelectOption {
   label: string;
@@ -582,253 +581,7 @@ export function AdminApprovalsContent() {
     typeof modifyTargetMemoryLimitGi === "number" &&
     modifyCurrentMemoryRequestGi > modifyTargetMemoryLimitGi;
 
-  const columns: ColumnsType<ApprovalTask> = [
-    {
-      title: t("request_summary"),
-      key: "request_summary",
-      width: 340,
-      render: (_, record) => {
-        const operationLabel = record.operation_type
-          ? t(`op_type.${record.operation_type}`)
-          : undefined;
-        const requestReason = record.reason?.trim();
-        const failureReason =
-          record.provisioning?.failure_message?.trim() ||
-          record.reject_reason?.trim() ||
-          undefined;
-        const showRequestReason =
-          Boolean(requestReason) && requestReason !== approvalSummaryTitle(record, t);
-        return (
-          <Space direction="vertical" size={4} className="workbench-table-stack">
-            <Space size={8} className="workbench-table-heading">
-              <AuditOutlined style={{ color: "#d4380d" }} />
-              <Text strong className="workbench-table-title">
-                {approvalSummaryTitle(record, t)}
-              </Text>
-              {operationLabel ? <Tag color="purple">{operationLabel}</Tag> : null}
-            </Space>
-            {showRequestReason ? (
-              <div className="workbench-inline-meta">
-                <Text type="secondary" className="workbench-inline-meta__label">
-                  {t("reason")}
-                </Text>
-                <Text className="workbench-inline-meta__value">{requestReason}</Text>
-              </div>
-            ) : null}
-            <Text copyable={{ text: record.id }} type="secondary" className="workbench-ticket-meta">
-              {t("ticket_id")}: {formatApprovalRecordID(record.id)}
-            </Text>
-            {record.status === "FAILED" &&
-            failureReason &&
-            failureReason !== requestReason ? (
-              <Text type="danger" className="workbench-table-note">
-                {failureReason}
-              </Text>
-            ) : null}
-          </Space>
-        );
-      },
-    },
-    {
-      title: t("table.target_context"),
-      key: "target_context",
-      width: 460,
-      render: (_, record) => {
-        const placement = record.placement_evaluation;
-        const summary = record.summary;
-        const itemCount = summary?.batch_count ||
-          batchPayloadItems(record.ticket_payload as PayloadRecord | undefined).length;
-        const provisioning = record.provisioning;
-        const opType = record.operation_type;
-        const config = OP_TYPE_CONFIG[opType ?? "CREATE"] ?? OP_TYPE_CONFIG.CREATE;
-        const Icon = config.icon;
-        const contextFields = approvalContextFields(record, t);
-        const requestSummaryFields = approvalRequestFields(record, t);
-        return (
-          <Space direction="vertical" size={4} className="workbench-table-stack">
-            <Space wrap size={[6, 6]} className="workbench-table-tag-row">
-              <Tag color={config.color} icon={<Icon />}>
-                {t(`op_type.${opType ?? "CREATE"}`)}
-              </Tag>
-              {itemCount > 0 ? (
-                <Tag color="gold">
-                  {t("batch.child_count", {
-                    defaultValue: "{{count}} items",
-                    count: itemCount,
-                  })}
-                </Tag>
-                ) : null}
-            </Space>
-            <div className="workbench-table-section-grid">
-              {renderSectionCard(t("workbench.table.scope_label"), contextFields)}
-              {renderSectionCard(t("workbench.table.request_label"), requestSummaryFields)}
-            </div>
-            {placement?.advisory_code ? (
-              <Tag color="warning">
-                {approvalPlacementAdvisoryLabel(
-                  placement.advisory_code,
-                  (key, defaultValue) => t(key, { defaultValue }),
-                )}
-              </Tag>
-            ) : null}
-            {record.operation_type === "CREATE" && provisioning ? (
-              <Space
-                direction="vertical"
-                size={2}
-                data-testid={`approval-provisioning-summary-${record.id}`}
-              >
-                <Space wrap size={[6, 6]}>
-                  <Tag color={getProvisioningPhaseTagColor(provisioning.phase)}>
-                    {provisioning.phase || "—"}
-                  </Tag>
-                  {provisioning.clone_type === "copy" ? (
-                    <Tag color={getCloneTypeTagColor(provisioning.clone_type)}>
-                      {t(
-                        "approve_modal.provisioning.clone_type_copy",
-                        "Host-assisted copy",
-                      )}
-                    </Tag>
-                  ) : null}
-                </Space>
-                {provisioning.failure_message ? (
-                  <Text type="danger" className="workbench-table-note">
-                    {provisioning.failure_message}
-                  </Text>
-                ) : provisioning.progress ? (
-                  <Text type="secondary" className="workbench-table-note">
-                    {provisioning.progress}
-                  </Text>
-                ) : null}
-              </Space>
-            ) : null}
-          </Space>
-        );
-      },
-    },
-    {
-      title: t("table.queue_state"),
-      key: "queue_state",
-      width: 220,
-      render: (_, record) => {
-        const requester = approvalRequesterSummary(record);
-        const approver = approvalApproverSummary(record);
-        return (
-          <Space direction="vertical" size={4} className="workbench-table-stack">
-            <Badge
-              status={STATUS_BADGES[record.status] ?? "default"}
-              text={
-                <Tag color={STATUS_COLORS[record.status]}>{t(`status.${record.status}`)}</Tag>
-              }
-            />
-            <div className="workbench-table-section workbench-table-section--compact">
-              <Text type="secondary" className="workbench-table-section__label">
-                {t("workbench.table.queue_label")}
-              </Text>
-              <div className="workbench-actor-line">
-                <Text type="secondary" className="workbench-table-note">
-                  {t("requester")}
-                </Text>
-                <Text>{requester?.primary || "—"}</Text>
-                {requester?.secondary ? (
-                  <Text type="secondary" className="workbench-table-note">
-                    {requester.secondary}
-                  </Text>
-                ) : null}
-              </div>
-              <div className="workbench-actor-line">
-                <Text type="secondary" className="workbench-table-note">
-                  {t("approver")}
-                </Text>
-                <Text>{approver?.primary || "—"}</Text>
-                {approver?.secondary ? (
-                  <Text type="secondary" className="workbench-table-note">
-                    {approver.secondary}
-                  </Text>
-                ) : null}
-              </div>
-            </div>
-            <div className="workbench-table-meta-stack">
-              <Text type="secondary" className="workbench-table-note">
-                {t("common:table.created_at")}: <LocalDateTimeText value={record.created_at} />
-              </Text>
-            </div>
-          </Space>
-        );
-      },
-    },
-    {
-      title: t("common:table.actions"),
-      key: "actions",
-      width: 180,
-      render: (_, record) => {
-        if (record.status !== "PENDING") {
-          return <Text type="secondary">—</Text>;
-        }
-        const moreContent = (
-          <div className="workbench-row-menu">
-            <Button
-              type="text"
-              danger
-              block
-              data-testid={`approval-action-reject-${record.id}`}
-              onClick={() => {
-                setOpenActionMenuId(null);
-                approvals.openRejectModal(record);
-              }}
-            >
-              {t("common:button.reject")}
-            </Button>
-            <Popconfirm
-              title={t("cancel_confirm")}
-              onConfirm={() => {
-                setOpenActionMenuId(null);
-                approvals.submitCancel(record.id);
-              }}
-              okText={t("common:button.confirm")}
-              cancelText={t("common:button.cancel")}
-            >
-              <Button
-                type="text"
-                danger
-                block
-                data-testid={`approval-action-cancel-${record.id}`}
-                loading={approvals.cancelPending}
-              >
-                {t("cancel")}
-              </Button>
-            </Popconfirm>
-          </div>
-        );
-        return (
-          <Space size={8} wrap className="workbench-row-actions">
-            <Button
-              type="primary"
-              size="small"
-              icon={<AuditOutlined />}
-              data-testid={`approval-action-approve-${record.id}`}
-              onClick={() => approvals.openApproveModal(record)}
-            >
-              {t("action.review")}
-            </Button>
-            <Popover
-              trigger="click"
-              placement="bottomRight"
-              open={openActionMenuId === record.id}
-              onOpenChange={(open) => setOpenActionMenuId(open ? record.id : null)}
-              content={moreContent}
-            >
-              <Button
-                size="small"
-                data-testid={`approval-action-more-${record.id}`}
-                aria-label={`${t("common:table.actions")} ${record.id}`}
-                icon={<MoreOutlined />}
-              />
-            </Popover>
-          </Space>
-        );
-      },
-    },
-  ];
+  // Removed legacy columns definition to use custom List rendering
 
   const renderQueueOverviewStrip = () => (
     <div className="workbench-overview-strip">
@@ -1066,11 +819,6 @@ export function AdminApprovalsContent() {
       </PageSurface>
 
       <PageSurface className="admin-approvals-page__table-surface" flush={true}>
-        {/* ADR-0015 §11: Priority tier highlighting styles */}
-        <style>{`
-                    .approval-row-urgent td { background-color: rgba(255, 77, 79, 0.06) !important; }
-                    .approval-row-warning td { background-color: rgba(250, 173, 20, 0.06) !important; }
-                `}</style>
         {shouldShowSetupEmpty ? (
           !setupGuide.vmRequestReady ? (
             <div style={{ padding: 24 }}>
@@ -1104,25 +852,10 @@ export function AdminApprovalsContent() {
             />
           </div>
         ) : (
-          <Table<ApprovalTask>
-            columns={columns}
+          <List<ApprovalTask>
             dataSource={approvals.data?.items ?? []}
             rowKey="id"
             loading={approvals.isLoading}
-            scroll={{ x: 1080 }}
-            rowClassName={(record) => {
-              if (record.status !== "PENDING") {
-                return "";
-              }
-              const tier = getPriorityTier(record.created_at);
-              if (tier === "urgent") {
-                return "approval-row-urgent";
-              }
-              if (tier === "warning") {
-                return "approval-row-warning";
-              }
-              return "";
-            }}
             pagination={{
               current: approvals.page,
               pageSize: approvals.pageSize,
@@ -1133,7 +866,118 @@ export function AdminApprovalsContent() {
                 approvals.setPageSize(pageSize);
               },
             }}
-            size="middle"
+            renderItem={(record) => {
+              const operationLabel = record.operation_type ? t(`op_type.${record.operation_type}`) : undefined;
+              const requestReason = record.reason?.trim();
+              const failureReason = record.provisioning?.failure_message?.trim() || record.reject_reason?.trim() || undefined;
+              const showRequestReason = Boolean(requestReason) && requestReason !== approvalSummaryTitle(record, t);
+              const placement = record.placement_evaluation;
+              const summary = record.summary;
+              const itemCount = summary?.batch_count || batchPayloadItems(record.ticket_payload as PayloadRecord | undefined).length;
+              const provisioning = record.provisioning;
+              const contextFields = approvalContextFields(record, t);
+              const requestSummaryFields = approvalRequestFields(record, t);
+              const requester = approvalRequesterSummary(record);
+              const tier = getPriorityTier(record.created_at);
+
+              let highlightClass = "";
+              if (record.status === "PENDING") {
+                if (tier === "urgent") highlightClass = "approval-row-urgent";
+                else if (tier === "warning") highlightClass = "approval-row-warning";
+              }
+
+              const renderActions = () => {
+                if (record.status !== "PENDING") return null;
+                const moreContent = (
+                  <div className="workbench-row-menu">
+                    <Button type="text" danger block data-testid={`approval-action-reject-${record.id}`} onClick={() => { setOpenActionMenuId(null); approvals.openRejectModal(record); }}>
+                      {t("common:button.reject")}
+                    </Button>
+                    <Popconfirm title={t("cancel_confirm")} onConfirm={() => { setOpenActionMenuId(null); approvals.submitCancel(record.id); }} okText={t("common:button.confirm")} cancelText={t("common:button.cancel")}>
+                      <Button type="text" danger block data-testid={`approval-action-cancel-${record.id}`} loading={approvals.cancelPending}>
+                        {t("cancel")}
+                      </Button>
+                    </Popconfirm>
+                  </div>
+                );
+                return (
+                  <Space size={8} wrap className="workbench-row-actions">
+                    <Button type="primary" size="small" icon={<AuditOutlined />} data-testid={`approval-action-approve-${record.id}`} onClick={() => approvals.openApproveModal(record)}>
+                      {t("action.review")}
+                    </Button>
+                    <Popover trigger="click" placement="bottomRight" open={openActionMenuId === record.id} onOpenChange={(open) => setOpenActionMenuId(open ? record.id : null)} content={moreContent}>
+                      <Button size="small" data-testid={`approval-action-more-${record.id}`} aria-label={`${t("common:table.actions")} ${record.id}`} icon={<MoreOutlined />} />
+                    </Popover>
+                  </Space>
+                );
+              };
+
+              return (
+                <List.Item className={`app-feed-card ${highlightClass}`} style={{ padding: "16px", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between" }}>
+                  <div className="app-feed-card-main" style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, paddingRight: 24 }}>
+                    <Space size={8} className="workbench-table-heading">
+                      <AuditOutlined style={{ color: "#d4380d" }} />
+                      <Text strong className="workbench-table-title" style={{ fontSize: 15 }}>
+                        {approvalSummaryTitle(record, t)}
+                      </Text>
+                      {operationLabel && <Tag color="purple">{operationLabel}</Tag>}
+                      <Badge
+                        status={STATUS_BADGES[record.status] ?? "default"}
+                        text={<Text type="secondary" style={{ fontSize: 13, marginLeft: 4 }}>{t(`status.${record.status}`)}</Text>}
+                      />
+                    </Space>
+                    <div className="workbench-table-section-grid" style={{ marginTop: 8 }}>
+                      {renderSectionCard(t("workbench.table.scope_label"), contextFields)}
+                      {renderSectionCard(t("workbench.table.request_label"), requestSummaryFields)}
+                    </div>
+                    {itemCount > 0 && (
+                        <Tag color="gold" style={{ width: "fit-content", marginTop: 4 }}>
+                          {t("batch.child_count", { defaultValue: "{{count}} items", count: itemCount })}
+                        </Tag>
+                    )}
+                    {placement?.advisory_code && (
+                      <Tag color="warning" style={{ width: "fit-content", marginTop: 4 }}>
+                        {approvalPlacementAdvisoryLabel(placement.advisory_code, (key, defaultValue) => t(key, { defaultValue }))}
+                      </Tag>
+                    )}
+                    {record.operation_type === "CREATE" && provisioning && (
+                      <Space wrap size={[6, 6]} style={{ marginTop: 4 }}>
+                        <Tag color={getProvisioningPhaseTagColor(provisioning.phase)}>{provisioning.phase || "—"}</Tag>
+                        {provisioning.clone_type === "copy" && <Tag color={getCloneTypeTagColor(provisioning.clone_type)}>{t("approve_modal.provisioning.clone_type_copy", "Host-assisted copy")}</Tag>}
+                      </Space>
+                    )}
+                    {showRequestReason && (
+                      <div className="workbench-inline-meta" style={{ marginTop: 4 }}>
+                        <Text type="secondary" className="workbench-inline-meta__label">{t("reason")}</Text>
+                        <Text className="workbench-inline-meta__value">{requestReason}</Text>
+                      </div>
+                    )}
+                    {record.status === "FAILED" && failureReason && failureReason !== requestReason && (
+                      <Text type="danger" className="workbench-table-note" style={{ marginTop: 4 }}>{failureReason}</Text>
+                    )}
+                    {record.operation_type === "CREATE" && provisioning?.failure_message && (
+                        <Text type="danger" className="workbench-table-note" style={{ marginTop: 4 }}>{provisioning.failure_message}</Text>
+                    )}
+                  </div>
+
+                  <div className="app-feed-card-aside" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", minWidth: 200, gap: 12 }}>
+                    {renderActions()}
+                    <div className="workbench-actor-line" style={{ textAlign: "right" }}>
+                      <Text type="secondary" className="workbench-table-note">{t("requester")}:</Text>
+                      <Text>{requester?.primary || "—"}</Text>
+                    </div>
+                    <div className="workbench-table-meta-stack" style={{ textAlign: "right", marginTop: "auto" }}>
+                      <Text copyable={{ text: record.id }} type="secondary" className="workbench-ticket-meta" style={{ display: "block", fontSize: 12 }}>
+                        ID: {formatApprovalRecordID(record.id)}
+                      </Text>
+                      <Text type="secondary" className="workbench-table-note" style={{ display: "block", fontSize: 12 }}>
+                        <LocalDateTimeText value={record.created_at} />
+                      </Text>
+                    </div>
+                  </div>
+                </List.Item>
+              );
+            }}
           />
         )}
       </PageSurface>
@@ -1283,7 +1127,7 @@ export function AdminApprovalsContent() {
                       title: t("summary.scope"),
                       key: "scope",
                       width: 280,
-                      render: (_, record) => (
+                      render: (_: unknown, record: ApprovalBatchDisplayRow) => (
                         <Space direction="vertical" size={4} className="workbench-batch-cell">
                           <div className="workbench-batch-cell__row">
                             <Text type="secondary" className="workbench-batch-cell__label">
@@ -1323,7 +1167,7 @@ export function AdminApprovalsContent() {
                       title: t("summary.target_resources"),
                       key: "target_resources",
                       width: 280,
-                      render: (_, record) => (
+                      render: (_: unknown, record: ApprovalBatchDisplayRow) => (
                         <Space direction="vertical" size={4} className="workbench-batch-cell">
                           <div className="workbench-batch-cell__row">
                             <Text type="secondary" className="workbench-batch-cell__label">
@@ -1727,7 +1571,7 @@ export function AdminApprovalsContent() {
                                       <div style={{ marginTop: 4 }}>
                                         <Text
                                           type="warning"
-                                          style={{ fontSize: 12 }}
+                                          style={{ fontSize: 13 }}
                                         >
                                           {
                                             cluster.compatibility
@@ -1746,7 +1590,7 @@ export function AdminApprovalsContent() {
                                               ? "warning"
                                               : "secondary"
                                           }
-                                          style={{ fontSize: 12 }}
+                                          style={{ fontSize: 13 }}
                                         >
                                           {cluster.compatibility.reason_message}
                                         </Text>

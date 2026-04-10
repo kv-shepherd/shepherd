@@ -147,7 +147,7 @@ export function SchemaConfigForm({
       <Form.Item name={`${namePrefix}_text`} label={t("authProviders.config")}>
         <Input.TextArea
           rows={8}
-          style={{ fontFamily: "monospace", fontSize: 13 }}
+          style={{ fontFamily: "monospace", fontSize: 14 }}
           placeholder="{}"
         />
       </Form.Item>
@@ -277,7 +277,7 @@ export function SchemaConfigForm({
         >
           <Input.TextArea
             rows={4}
-            style={{ fontFamily: "monospace", fontSize: 13 }}
+            style={{ fontFamily: "monospace", fontSize: 14 }}
             placeholder={placeholder || "{}"}
           />
         </Form.Item>

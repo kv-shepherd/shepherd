@@ -235,7 +235,7 @@ export default function NotificationBell() {
                                             </Text>
                                             <Tag
                                                 color={config.color}
-                                                style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}
+                                                style={{ fontSize: 12, lineHeight: '16px', padding: '0 4px' }}
                                             >
                                                 {t(config.label, { defaultValue: config.label })}
                                             </Tag>
@@ -246,11 +246,11 @@ export default function NotificationBell() {
                                             <Paragraph
                                                 type="secondary"
                                                 ellipsis={{ rows: 1 }}
-                                                style={{ marginBottom: 2, fontSize: 12 }}
+                                                style={{ marginBottom: 2, fontSize: 13 }}
                                             >
                                                 {item.message}
                                             </Paragraph>
-                                            <Text type="secondary" style={{ fontSize: 11 }}>
+                                            <Text type="secondary" style={{ fontSize: 13 }}>
                                                 {formatRelativeTime(item.created_at, t)}
                                             </Text>
                                         </div>
@@ -310,13 +310,10 @@ export default function NotificationBell() {
                 <Badge count={unreadCount} size="small" offset={[-2, 4]}>
                     <Button
                         type="text"
+                        className="app-shell-icon-action app-shell-notification-trigger"
                         data-testid="notification-bell-trigger"
                         aria-label={t('notification.title', 'Notifications')}
                         icon={<BellOutlined />}
-                        style={{
-                            fontSize: 18,
-                            color: '#595959',
-                        }}
                     />
                 </Badge>
             </Tooltip>

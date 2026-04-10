@@ -428,7 +428,7 @@ export default function VMsPageContent() {
                             content: (
                                 <Space direction="vertical" size={10} className="vm-page-search-advanced">
                                     <Text type="secondary" className="vm-page-supporting-text">
-                                        {t('advanced_search_help', 'Select exact filters here. Options support keyword matching, but the applied filter remains an exact match.')}
+                                        {t('common:search.exact_match_help')}
                                     </Text>
                                     <Space wrap className="vm-page-filter-grid">
                                         <Select

@@ -446,7 +446,7 @@ export function approvalRequesterSummary(ticket: TicketRecord): ApprovalActorSum
     );
 }
 
-export function approvalApproverSummary(ticket: TicketRecord): ApprovalActorSummary | undefined {
+function approvalApproverSummary(ticket: TicketRecord): ApprovalActorSummary | undefined {
     return buildApprovalActorSummary(
         ticket.approver,
         ticket.approver_display_name,

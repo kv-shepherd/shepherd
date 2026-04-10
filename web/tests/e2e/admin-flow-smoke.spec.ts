@@ -461,8 +461,6 @@ test.describe('admin-flow mock smoke interactions', () => {
 
     test('Stage 5.B – Approvals page renders pending ticket with approve/reject buttons', async ({ page }) => {
         await page.goto('/admin/approval-tasks');
-        // Wait for the table to load with mock data
-        await expect(page.locator('tr').filter({ hasText: 'alice' }).first()).toBeVisible({ timeout: 10000 });
         await expect(page.getByTestId('approval-action-approve-ticket-pending-1')).toBeVisible();
         await expect(page.getByTestId('approval-action-more-ticket-pending-1')).toBeVisible();
         await page.getByTestId('approval-action-more-ticket-pending-1').click();

@@ -21,6 +21,7 @@ import {
     DeleteOutlined,
     ExclamationCircleOutlined,
     EyeOutlined,
+    InfoCircleOutlined,
     PlusOutlined,
     ReloadOutlined,
     TeamOutlined,
@@ -35,6 +36,7 @@ import { useTranslation } from 'react-i18next';
 
 import { PermissionGuard } from '@/components/auth/PermissionGuard';
 import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
+
 import { SystemsOverviewGlyph } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
@@ -93,15 +95,7 @@ function buildDescriptionPreview(input: string, maxBytes: number): string {
     return truncateUtf8(normalized, maxBytes);
 }
 
-const SystemEntityIcon = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" width="1.3em" height="1.3em">
-        <rect x="3" y="4" width="18" height="16" rx="2" ry="2" />
-        <line x1="3" y1="10" x2="21" y2="10" />
-        <line x1="3" y1="16" x2="21" y2="16" />
-        <line x1="7" y1="7" x2="7.01" y2="7" strokeWidth="2.5" />
-        <line x1="11" y1="7" x2="11.01" y2="7" strokeWidth="2.5" />
-    </svg>
-);
+import { SystemsIcon } from '@/components/layouts/MenuIcons';
 
 interface SystemServicesCellProps {
     systemId: string;
@@ -148,7 +142,7 @@ function SystemServicesCell({ systemId, onOpenService }: SystemServicesCellProps
                         background: '#f8fafc',
                         border: '1px solid #e2e8f0',
                         borderRadius: 12,
-                        fontSize: 12,
+                        fontSize: 13,
                         color: '#475569',
                         cursor: 'pointer',
                         display: 'flex',
@@ -162,7 +156,7 @@ function SystemServicesCell({ systemId, onOpenService }: SystemServicesCellProps
                 </div>
             ))}
             {remaining > 0 ? (
-                <div style={{ fontSize: 12, color: '#64748b', padding: '2px 4px', fontWeight: 500 }}>
+                <div style={{ fontSize: 13, color: '#64748b', padding: '2px 4px', fontWeight: 500 }}>
                     +{remaining} more
                 </div>
             ) : null}
@@ -296,27 +290,38 @@ export function SystemsManagementContent() {
             title: t('table.name'),
             dataIndex: 'name',
             key: 'name',
-            render: (name: string, record) => (
-                <Space size={12}>
+            render: (name: string) => (
+                <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '4px 14px 4px 6px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 12,
+                    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)'
+                }}>
                     <div style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 10,
-                        background: 'linear-gradient(135deg, rgba(94, 106, 210, 0.12) 0%, rgba(94, 106, 210, 0.04) 100%)',
-                        color: '#5E6AD2',
+                        width: 26,
+                        height: 26,
+                        background: '#eff6ff',
+                        color: '#3b82f6',
+                        borderRadius: 8,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.6), 0 1px 2px rgba(0, 0, 0, 0.02)',
-                        border: '1px solid rgba(94, 106, 210, 0.1)',
+                        fontSize: 16
                     }}>
-                        <SystemEntityIcon />
+                        <SystemsIcon />
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <Text strong style={{ fontSize: 14, color: '#1e293b' }}>{name}</Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>ID: {record.id.slice(0, 8)}</Text>
-                    </div>
-                </Space>
+                    <Text strong style={{
+                        fontSize: 14,
+                        color: '#0f172a',
+                        letterSpacing: '-0.01em',
+                    }}>
+                        {name}
+                    </Text>
+                </div>
             ),
         },
         {
@@ -324,25 +329,31 @@ export function SystemsManagementContent() {
             dataIndex: 'description',
             key: 'description',
             width: 220,
-            render: (desc: string) => {
+            render: (desc: string, record: System) => {
                 const normalizedDescription = desc?.trim();
                 if (!normalizedDescription) {
                     return <Text type="secondary">—</Text>;
                 }
                 const preview = buildDescriptionPreview(normalizedDescription, 36);
                 return (
-                    <Tooltip
-                        title={t('systems.description_preview_tooltip', {
-                            defaultValue: 'Open details to read the full description',
-                        })}
-                    >
-                        <Text
-                            type="secondary"
-                            className="workbench-table-description workbench-table-description--preview"
-                        >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Text type="secondary" className="workbench-table-description workbench-table-description--preview">
                             {preview}
                         </Text>
-                    </Tooltip>
+                        <Tooltip title={t('common:description.preview_tooltip')}>
+                            <Button
+                                type="text"
+                                size="small"
+                                style={{ width: 24, height: 24, minWidth: 24, padding: 0 }}
+                                icon={<InfoCircleOutlined style={{ color: '#94a3b8' }} />}
+                                onClick={() => {
+                                    setDetailSystem(record);
+                                    setDetailOpen(true);
+                                    setDismissedQueryDetailSystemId(null);
+                                }}
+                            />
+                        </Tooltip>
+                    </div>
                 );
             },
         },
@@ -438,6 +449,7 @@ export function SystemsManagementContent() {
             })),
         [systems.systemFilterOptions?.creators],
     );
+
     const serviceOptions = useMemo(
         () =>
             (systems.systemFilterOptions?.services ?? []).map((option) => ({
@@ -500,121 +512,161 @@ export function SystemsManagementContent() {
             {systemItems.length === 0 && !systems.isLoading && !systems.hasActiveFilters ? (
                 <SetupGuideCard variant="systems" />
             ) : (
-                <PageSurface className="systems-page__table-surface" flush={true}>
-                    <div style={{ padding: 16, paddingBottom: 0 }}>
-                        <PageSearchToolbar
-                            searchValue={systems.filters.search}
-                            searchDraftValue={quickSearchDraft}
-                            onSearchDraftChange={setQuickSearchDraft}
-                            onSearchChange={(value) => {
-                                setQuickSearchDraft(value);
-                                systems.applyFilters({
-                                    search: value,
-                                    createdBy: systems.filters.createdBy,
-                                    serviceId: systems.filters.serviceId,
-                                    memberId: systems.filters.memberId,
-                                });
-                            }}
-                            searchPlaceholder={t('systems.search_placeholder', 'Search systems, services, or members')}
-                            searchTestId="systems-quick-search"
-                            searchHelp={t('systems.search_help', 'Press Enter or click Search. Quick search matches system names, descriptions, creators, related services, members, and pasted IDs.')}
-                            advancedSearch={{
-                                open: filtersOpen,
-                                onToggle: () => setFiltersOpen((open) => !open),
-                                openLabel: t('search.advanced', { defaultValue: 'Advanced search' }),
-                                closeLabel: t('search.hide_advanced', { defaultValue: 'Hide advanced search' }),
-                                title: t('search.advanced', { defaultValue: 'Advanced search' }),
-                                toggleTestId: 'systems-search-filters-toggle',
-                                content: (
-                                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                                        <Text type="secondary">
-                                            {t('systems.search.advanced_help', 'Select exact filters here. Options support keyword matching, but the applied filter remains an exact match.')}
-                                        </Text>
-                                        <Space wrap size={[12, 12]} align="end">
-                                            <Select
-                                                allowClear
-                                                showSearch
-                                                filterOption={filterOptionByLabel}
-                                                optionFilterProp="label"
-                                                style={{ width: 220 }}
-                                                data-testid="systems-filter-created-by"
-                                                placeholder={t('systems.search.created_by', 'Created by')}
-                                                value={createdByDraft || undefined}
-                                                options={creatorOptions}
-                                                loading={systems.systemFilterOptionsLoading}
-                                                onChange={(value) => setCreatedByDraft(value ?? '')}
-                                            />
-                                            <Select
-                                                allowClear
-                                                showSearch
-                                                filterOption={filterOptionByLabel}
-                                                optionFilterProp="label"
-                                                style={{ width: 260 }}
-                                                data-testid="systems-filter-service"
-                                                placeholder={t('systems.search.service', 'Related service')}
-                                                value={serviceIdDraft || undefined}
-                                                options={serviceOptions}
-                                                loading={systems.systemFilterOptionsLoading}
-                                                onChange={(value) => setServiceIdDraft(value ?? '')}
-                                            />
-                                            <Select
-                                                allowClear
-                                                showSearch
-                                                filterOption={filterOptionByLabel}
-                                                optionFilterProp="label"
-                                                style={{ width: 280 }}
-                                                data-testid="systems-filter-member"
-                                                placeholder={t('systems.search.member', 'Member')}
-                                                value={memberIdDraft || undefined}
-                                                options={memberOptions}
-                                                loading={systems.systemFilterOptionsLoading}
-                                                onChange={(value) => setMemberIdDraft(value ?? '')}
-                                            />
-                                            <Button
-                                                type="primary"
-                                                data-testid="systems-advanced-search-submit"
-                                                onClick={() => applySearch()}
-                                            >
-                                                {t('common:button.search')}
-                                            </Button>
+                    <PageSurface className="systems-page__table-surface" flush={true}>
+                        <div style={{ padding: '24px 24px 0', borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(3, 1fr)',
+                                gap: 24,
+                                marginBottom: 24,
+                            }}>
+                                <div style={{
+                                    display: 'flex', flexDirection: 'column', gap: 8,
+                                    padding: '20px 24px',
+                                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.6) 100%)',
+                                    borderRadius: 16,
+                                    border: '1px solid rgba(15, 23, 42, 0.05)',
+                                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 1)'
+                                }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>{t('nav.systems')}</span>
+                                    <span style={{ fontSize: 32, fontWeight: 700, color: '#0f172a', lineHeight: 1 }}>{systems.data?.pagination?.total ?? systemItems.length}</span>
+                                </div>
+                                <div style={{
+                                    display: 'flex', flexDirection: 'column', gap: 8,
+                                    padding: '20px 24px',
+                                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.6) 100%)',
+                                    borderRadius: 16,
+                                    border: '1px solid rgba(15, 23, 42, 0.05)',
+                                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 1)'
+                                }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>{t('systems.summary.related_services_title', 'Services')}</span>
+                                    <span style={{ fontSize: 32, fontWeight: 700, color: '#334155', lineHeight: 1 }}>{serviceOptions.length}</span>
+                                </div>
+                                <div style={{
+                                    display: 'flex', flexDirection: 'column', gap: 8,
+                                    padding: '20px 24px',
+                                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.6) 100%)',
+                                    borderRadius: 16,
+                                    border: '1px solid rgba(15, 23, 42, 0.05)',
+                                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 1)'
+                                }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>{t('systems.summary.members_title', 'Members')}</span>
+                                    <span style={{ fontSize: 32, fontWeight: 700, color: '#334155', lineHeight: 1 }}>{memberOptions.length}</span>
+                                </div>
+                            </div>
+                            <PageSearchToolbar
+                                searchValue={systems.filters.search}
+                                searchDraftValue={quickSearchDraft}
+                                onSearchDraftChange={setQuickSearchDraft}
+                                onSearchChange={(value) => {
+                                    setQuickSearchDraft(value);
+                                    systems.applyFilters({
+                                        search: value,
+                                        createdBy: systems.filters.createdBy,
+                                        serviceId: systems.filters.serviceId,
+                                        memberId: systems.filters.memberId,
+                                    });
+                                }}
+                                searchPlaceholder={t('systems.search_placeholder', 'Search systems, services, or members')}
+                                searchTestId="systems-quick-search"
+                                searchHelp={t('systems.search_help', 'Press Enter or click Search. Quick search matches system names, descriptions, creators, related services, members, and pasted IDs.')}
+                                advancedSearch={{
+                                    open: filtersOpen,
+                                    onToggle: () => setFiltersOpen((open) => !open),
+                                    openLabel: t('search.advanced', { defaultValue: 'Advanced search' }),
+                                    closeLabel: t('search.hide_advanced', { defaultValue: 'Hide advanced search' }),
+                                    title: t('search.advanced', { defaultValue: 'Advanced search' }),
+                                    toggleTestId: 'systems-search-filters-toggle',
+                                    content: (
+                                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                            <Text type="secondary">
+                                                {t('common:search.exact_match_help')}
+                                            </Text>
+                                            <Space wrap size={[12, 12]} align="end">
+                                                <Select
+                                                    allowClear
+                                                    showSearch
+                                                    filterOption={filterOptionByLabel}
+                                                    optionFilterProp="label"
+                                                    style={{ width: 220 }}
+                                                    data-testid="systems-filter-created-by"
+                                                    placeholder={t('systems.search.created_by', 'Created by')}
+                                                    value={createdByDraft || undefined}
+                                                    options={creatorOptions}
+                                                    loading={systems.systemFilterOptionsLoading}
+                                                    onChange={(value) => setCreatedByDraft(value ?? '')}
+                                                />
+                                                <Select
+                                                    allowClear
+                                                    showSearch
+                                                    filterOption={filterOptionByLabel}
+                                                    optionFilterProp="label"
+                                                    style={{ width: 260 }}
+                                                    data-testid="systems-filter-service"
+                                                    placeholder={t('systems.search.service', 'Related service')}
+                                                    value={serviceIdDraft || undefined}
+                                                    options={serviceOptions}
+                                                    loading={systems.systemFilterOptionsLoading}
+                                                    onChange={(value) => setServiceIdDraft(value ?? '')}
+                                                />
+                                                <Select
+                                                    allowClear
+                                                    showSearch
+                                                    filterOption={filterOptionByLabel}
+                                                    optionFilterProp="label"
+                                                    style={{ width: 280 }}
+                                                    data-testid="systems-filter-member"
+                                                    placeholder={t('systems.search.member', 'Member')}
+                                                    value={memberIdDraft || undefined}
+                                                    options={memberOptions}
+                                                    loading={systems.systemFilterOptionsLoading}
+                                                    onChange={(value) => setMemberIdDraft(value ?? '')}
+                                                />
+                                                <Button
+                                                    type="primary"
+                                                    data-testid="systems-advanced-search-submit"
+                                                    onClick={() => applySearch()}
+                                                >
+                                                    {t('common:button.search')}
+                                                </Button>
+                                            </Space>
                                         </Space>
-                                    </Space>
+                                    ),
+                                }}
+                                hasActiveFilters={systems.hasActiveFilters}
+                                onClear={clearSearch}
+                                clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
+                            />
+                        </div>
+                        <Table<System>
+                            columns={columns}
+                            dataSource={systemItems}
+                            rowKey="id"
+                            loading={systems.isLoading}
+                            scroll={{ x: 'max-content' }}
+                            pagination={{
+                                current: systems.page,
+                                pageSize: systems.pageSize,
+                                total: systems.data?.pagination?.total ?? 0,
+                                showTotal: (total) => t('table.total', { total }),
+                                onChange: (page, pageSize) => {
+                                    systems.setPage(page);
+                                    systems.setPageSize(pageSize);
+                                },
+                            }}
+                            size="middle"
+                            locale={{
+                                emptyText: (
+                                    <ActionEmptyState
+                                        compact={true}
+                                        title={t('systems.empty_filtered_title', 'No systems match the current search')}
+                                        description={t('systems.empty_filtered_description', 'Try a broader search or clear the current query.')}
+                                        visual={<SystemsOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                                    />
                                 ),
                             }}
-                            hasActiveFilters={systems.hasActiveFilters}
-                            onClear={clearSearch}
-                            clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
                         />
-                    </div>
-                    <Table<System>
-                        columns={columns}
-                        dataSource={systemItems}
-                        rowKey="id"
-                        loading={systems.isLoading}
-                        scroll={{ x: 'max-content' }}
-                        pagination={{
-                            current: systems.page,
-                            pageSize: systems.pageSize,
-                            total: systems.data?.pagination?.total ?? 0,
-                            showTotal: (total) => t('table.total', { total }),
-                            onChange: (page, pageSize) => {
-                                systems.setPage(page);
-                                systems.setPageSize(pageSize);
-                            },
-                        }}
-                        size="middle"
-                        locale={{
-                            emptyText: (
-                                <ActionEmptyState
-                                    compact={true}
-                                    title={t('systems.empty_filtered_title', 'No systems match the current search')}
-                                    description={t('systems.empty_filtered_description', 'Try a broader search or clear the current query.')}
-                                    visual={<SystemsOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
-                                />
-                            ),
-                        }}
-                    />
-                </PageSurface>
+                    </PageSurface>
             )}
 
             <Modal

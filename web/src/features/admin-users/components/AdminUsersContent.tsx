@@ -721,7 +721,7 @@ export function AdminUsersContent() {
         return (
             <Space direction="vertical" size={0}>
                 <Tag>{scopeLabel}</Tag>
-                <Text type="secondary" style={{ fontSize: 12 }}>{scopeDisplay}</Text>
+                <Text type="secondary" style={{ fontSize: 13 }}>{scopeDisplay}</Text>
             </Space>
         );
     };
@@ -740,7 +740,7 @@ export function AdminUsersContent() {
                             {localizedRoleLabel}
                         </Tag>
                         {localizedRoleLabel !== (roleName || record.role_id) ? (
-                            <Text type="secondary" style={{ fontSize: 12 }}>{roleName || record.role_id}</Text>
+                            <Text type="secondary" style={{ fontSize: 13 }}>{roleName || record.role_id}</Text>
                         ) : null}
                     </Space>
                 );
@@ -1187,7 +1187,7 @@ export function AdminUsersContent() {
                             content: (
                                 <Space direction="vertical" size={8} style={{ width: '100%' }}>
                                     <Text strong>{t('users.directory.advanced_search_title')}</Text>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                    <Text type="secondary" style={{ fontSize: 13 }}>
                                         {t('users.directory.advanced_search_help')}
                                     </Text>
                                     {advancedSearchDraftConditions.map((condition, index) => {
@@ -1471,7 +1471,7 @@ export function AdminUsersContent() {
                         </Space>
                         <Space direction="vertical" size={8} style={{ width: '100%' }}>
                             <Text strong>{t('users.directory.columns_merge_title', { defaultValue: 'Combined columns' })}</Text>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
+                            <Text type="secondary" style={{ fontSize: 13 }}>
                                 {t('users.directory.columns_merge_help', {
                                     defaultValue: 'Create one or more combined columns from the currently visible columns.',
                                 })}
@@ -1562,7 +1562,7 @@ export function AdminUsersContent() {
                                                             defaultValue: 'Show field labels inside the column',
                                                         })}
                                                     </Text>
-                                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                                    <Text type="secondary" style={{ fontSize: 13 }}>
                                                         {t('users.directory.columns_merge_show_labels_help', {
                                                             defaultValue: 'Turn this off for a cleaner stacked value view.',
                                                         })}

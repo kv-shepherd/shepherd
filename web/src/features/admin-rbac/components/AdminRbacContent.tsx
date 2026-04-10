@@ -217,7 +217,7 @@ export function AdminRbacContent() {
         return (
             <Space direction="vertical" size={0}>
                 <Text strong>{primary}</Text>
-                {showSecondary ? <Text type="secondary" style={{ fontSize: 12 }}>{role.name}</Text> : null}
+                {showSecondary ? <Text type="secondary" style={{ fontSize: 13 }}>{role.name}</Text> : null}
             </Space>
         );
     };
@@ -228,7 +228,7 @@ export function AdminRbacContent() {
         return (
             <Space direction="vertical" size={0}>
                 <Tag>{scopeLabel}</Tag>
-                <Text type="secondary" style={{ fontSize: 12 }}>{scopeDisplay}</Text>
+                <Text type="secondary" style={{ fontSize: 13 }}>{scopeDisplay}</Text>
             </Space>
         );
     };
@@ -251,7 +251,7 @@ export function AdminRbacContent() {
                     <Space direction="vertical" size={2}>
                         <Text>{metadata?.description || EMPTY_VALUE}</Text>
                         {assignment ? (
-                            <Text type="secondary" style={{ fontSize: 12 }}>
+                            <Text type="secondary" style={{ fontSize: 13 }}>
                                 {assignment}
                             </Text>
                         ) : null}
@@ -342,7 +342,7 @@ export function AdminRbacContent() {
                             {localizedRoleLabel}
                         </Tag>
                         {localizedRoleLabel !== (roleName || record.role_id) ? (
-                            <Text type="secondary" style={{ fontSize: 12 }}>{roleName || record.role_id}</Text>
+                            <Text type="secondary" style={{ fontSize: 13 }}>{roleName || record.role_id}</Text>
                         ) : null}
                     </Space>
                 );
@@ -408,7 +408,7 @@ export function AdminRbacContent() {
             render: (key: string, permission: Permission) => (
                 <Space direction="vertical" size={0}>
                     <Text strong>{permissionCatalogMetadata.get(permission.key)?.label || permission.description || key}</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{key}</Text>
+                    <Text type="secondary" style={{ fontSize: 13 }}>{key}</Text>
                 </Space>
             ),
         },

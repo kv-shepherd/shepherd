@@ -1,5 +1,7 @@
 "use client";
 
+import { useDisplayTimeZone } from "@/components/providers/DisplayTimeZoneProvider";
+
 interface LocalDateTimeTextProps {
   value?: string | null;
   emptyFallback?: string;
@@ -9,7 +11,8 @@ export function LocalDateTimeText({
   value,
   emptyFallback = "—",
 }: LocalDateTimeTextProps) {
-  const formatted = formatLocalDateTime(value);
+  const { displayTimeZone } = useDisplayTimeZone();
+  const formatted = formatLocalDateTime(value, displayTimeZone);
 
   return (
     <span suppressHydrationWarning title={value ?? undefined}>
@@ -18,7 +21,10 @@ export function LocalDateTimeText({
   );
 }
 
-function formatLocalDateTime(value?: string | null): string | null {
+function formatLocalDateTime(
+  value?: string | null,
+  timeZone?: string | null,
+): string | null {
   if (!value || value.trim() === "") {
     return null;
   }
@@ -35,6 +41,7 @@ function formatLocalDateTime(value?: string | null): string | null {
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
+    ...(timeZone ? { timeZone } : {}),
   });
   const parts = formatter.formatToParts(parsed);
   const pick = (type: Intl.DateTimeFormatPartTypes) =>

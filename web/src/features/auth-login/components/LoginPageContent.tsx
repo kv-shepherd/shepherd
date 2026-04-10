@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { Alert, Button, Card, Divider, Form, Input, Modal, Select, Space, Switch, Typography } from 'antd';
+import { Alert, Button, Card, Divider, Form, Input, Modal, Select, Switch, Tag, Typography, ConfigProvider } from 'antd';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -244,157 +244,158 @@ export default function LoginPageContent() {
     const externalProviders: LoginAuthProvider[] = providersQuery.data?.items ?? [];
 
     return (
-        <div
-            data-testid="login-page"
-            style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '100vh',
-                background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)',
-                padding: 24,
-            }}
-        >
-            <Card
-                style={{
-                    width: 420,
-                    borderRadius: 16,
-                    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-                    border: 'none',
-                }}
-            >
-                <Space
-                    direction="vertical"
-                    size="large"
-                    style={{ width: '100%', textAlign: 'center', marginBottom: 32 }}
-                >
-                    <Image
-                        src="/logo-wide.svg"
-                        alt="Shepherd"
-                        width={180}
-                        height={52}
-                        style={{ width: 'auto', height: 52, maxWidth: '100%' }}
-                    />
-                    <div>
-                        <Title level={3} style={{ marginBottom: 4 }}>
-                            {t('app.name')}
-                        </Title>
-                        <Text type="secondary">
+        <ConfigProvider theme={{ 
+            token: { 
+                colorPrimary: '#1677ff', // Trustworthy blue
+                colorBgContainer: '#ffffff',
+                colorBgElevated: '#ffffff',
+                colorBorder: '#e2e8f0', // zinc-200
+                borderRadius: 12,
+                fontFamily: 'var(--font-ui-sans)'
+            }
+        }}>
+            <div data-testid="login-page" className="auth-shell">
+                <div className="auth-shell__stage">
+                    <div className="auth-shell__intro">
+                        <Tag className="auth-shell__eyebrow" color="blue">
                             {t('app.subtitle')}
-                        </Text>
+                        </Tag>
+                        <Image
+                            src="/logo-wide.svg"
+                            alt="Shepherd"
+                            width={180}
+                            height={52}
+                            className="auth-shell__logo"
+                        />
+                        <div className="auth-shell__intro-copy">
+                            <Title level={1} className="auth-shell__title">
+                                {t('app.name')}
+                            </Title>
+                            <Text className="auth-shell__intro-subtitle">
+                                {t('app.description')}
+                            </Text>
+                        </div>
                     </div>
-                </Space>
 
-                {error && (
-                    <Alert
-                        message={error}
-                        type="error"
-                        showIcon
-                        closable
-                        onClose={() => setError(null)}
-                        style={{ marginBottom: 24 }}
-                    />
-                )}
+                    <Card className="auth-shell__card">
+                        <div className="auth-shell__card-header">
+                            <Title level={3} className="auth-shell__card-title">
+                                {t('auth.login')}
+                            </Title>
+                            <Text className="auth-shell__card-subtitle">
+                                {t('auth.welcome_back')}
+                            </Text>
+                        </div>
 
-                <Form<LoginFormValues>
-                    name="login"
-                    onFinish={handleSubmit}
-                    autoComplete="off"
-                    size="large"
-                    layout="vertical"
-                >
-                    <Form.Item
-                        name="username"
-                        rules={[
-                            { required: true, message: t('validation.username_required') },
-                            { min: 2, message: t('validation.username_min') },
-                        ]}
-                    >
-                        <Input
-                            prefix={<UserOutlined />}
-                            placeholder={t('auth.username')}
-                            autoFocus
-                        />
-                    </Form.Item>
+                        {error && (
+                            <Alert
+                                message={error}
+                                type="error"
+                                showIcon
+                                closable
+                                onClose={() => setError(null)}
+                                className="auth-shell__error"
+                            />
+                        )}
 
-                    <Form.Item
-                        name="password"
-                        rules={[
-                            { required: true, message: t('validation.password_required') },
-                        ]}
-                    >
-                        <Input.Password
-                            prefix={<LockOutlined />}
-                            placeholder={t('auth.password')}
-                        />
-                    </Form.Item>
-
-                    <Form.Item style={{ marginBottom: 0 }}>
-                        <Button
-                            type="primary"
-                            htmlType="submit"
-                            loading={loading}
-                            block
-                            style={{
-                                height: 44,
-                                borderRadius: 8,
-                                fontWeight: 600,
-                            }}
+                        <Form<LoginFormValues>
+                            name="login"
+                            onFinish={handleSubmit}
+                            autoComplete="off"
+                            size="large"
+                            layout="vertical"
                         >
-                            {t('auth.login')}
-                        </Button>
-                    </Form.Item>
-                </Form>
+                            <Form.Item
+                                name="username"
+                                rules={[
+                                    { required: true, message: t('validation.username_required') },
+                                    { min: 2, message: t('validation.username_min') },
+                                ]}
+                            >
+                                <Input
+                                    prefix={<UserOutlined />}
+                                    placeholder={t('auth.username')}
+                                    autoFocus
+                                />
+                            </Form.Item>
 
-                {externalProviders.length > 0 && (
-                    <>
-                        <Divider plain style={{ margin: '24px 0' }}>
-                            {t('auth.or_continue_with')}
-                        </Divider>
-                        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                            {externalProviders.map((provider) => {
-                                const modes = resolveLoginModes(provider);
-                                return modes.map((mode) => {
-                                    const buttonKey = `${provider.id}:${mode.key}`;
-                                    const label = modes.length > 1
-                                        ? `${provider.display_name} · ${mode.display_name}`
-                                        : provider.display_name;
-                                    return (
-                                        <Button
-                                            key={buttonKey}
-                                            block
-                                            size="large"
-                                            onClick={() => handleProviderLoginMode(provider, mode)}
-                                            loading={externalLoadingKey === buttonKey}
-                                        >
-                                            {label}
-                                        </Button>
-                                    );
-                                });
-                            })}
-                            {providersQuery.isLoading && (
-                                <Text type="secondary">{t('message.loading')}</Text>
-                            )}
-                        </Space>
-                    </>
-                )}
-            </Card>
-            <Modal
-                open={Boolean(credentialModal)}
-                title={credentialModal ? `${credentialModal.provider.display_name} · ${credentialModal.mode.display_name}` : t('auth.login')}
-                onCancel={() => {
-                    if (!credentialSubmitting) {
-                        setCredentialModal(null);
-                    }
-                }}
-                onOk={handleCredentialSubmit}
-                confirmLoading={credentialSubmitting}
-                destroyOnHidden={false}
-            >
-                <Form form={credentialForm} layout="vertical">
-                    {credentialModal ? renderCredentialFields(credentialModal.mode) : null}
-                </Form>
-            </Modal>
-        </div>
+                            <Form.Item
+                                name="password"
+                                rules={[
+                                    { required: true, message: t('validation.password_required') },
+                                ]}
+                            >
+                                <Input.Password
+                                    prefix={<LockOutlined />}
+                                    placeholder={t('auth.password')}
+                                />
+                            </Form.Item>
+
+                            <Form.Item style={{ marginBottom: 0 }}>
+                                <Button
+                                    type="primary"
+                                    htmlType="submit"
+                                    loading={loading}
+                                    block
+                                    className="auth-shell__submit"
+                                >
+                                    {t('auth.login')}
+                                </Button>
+                            </Form.Item>
+                        </Form>
+
+                        {externalProviders.length > 0 && (
+                            <>
+                                <Divider plain className="auth-shell__divider">
+                                    {t('auth.or_continue_with')}
+                                </Divider>
+                                <div className="auth-shell__provider-list">
+                                    {externalProviders.map((provider) => {
+                                        const modes = resolveLoginModes(provider);
+                                        return modes.map((mode) => {
+                                            const buttonKey = `${provider.id}:${mode.key}`;
+                                            const label = modes.length > 1
+                                                ? `${provider.display_name} · ${mode.display_name}`
+                                                : provider.display_name;
+                                            return (
+                                                <Button
+                                                    key={buttonKey}
+                                                    block
+                                                    size="large"
+                                                    className="auth-shell__provider-button"
+                                                    onClick={() => handleProviderLoginMode(provider, mode)}
+                                                    loading={externalLoadingKey === buttonKey}
+                                                >
+                                                    {label}
+                                                </Button>
+                                            );
+                                        });
+                                    })}
+                                    {providersQuery.isLoading && (
+                                        <Text type="secondary">{t('message.loading')}</Text>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </Card>
+                </div>
+                <Modal
+                    open={Boolean(credentialModal)}
+                    title={credentialModal ? `${credentialModal.provider.display_name} · ${credentialModal.mode.display_name}` : t('auth.login')}
+                    onCancel={() => {
+                        if (!credentialSubmitting) {
+                            setCredentialModal(null);
+                        }
+                    }}
+                    onOk={handleCredentialSubmit}
+                    confirmLoading={credentialSubmitting}
+                    destroyOnHidden={false}
+                >
+                    <Form form={credentialForm} layout="vertical">
+                        {credentialModal ? renderCredentialFields(credentialModal.mode) : null}
+                    </Form>
+                </Modal>
+            </div>
+        </ConfigProvider>
     );
 }

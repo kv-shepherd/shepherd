@@ -96,8 +96,8 @@ function renderUserIdentity(
     return (
         <Space direction="vertical" size={0}>
             <Text strong>{primary}</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>{secondary}</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>{secondary}</Text>
+            <Text type="secondary" style={{ fontSize: 13 }}>
                 {email?.trim() || t('users.directory.no_email', { defaultValue: 'No contact email' })}
             </Text>
         </Space>
@@ -449,7 +449,7 @@ export default function AdminRateLimitsPageContent() {
                             : t('rate_limits.table.exempted_no', { defaultValue: 'Standard policy' })}
                     </Tag>
                     {record.exempted && record.exemption_expires_at ? (
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 13 }}>
                             {t('rate_limits.table.exemption_expires_at', { defaultValue: 'Expires' })}: <LocalDateTimeText value={record.exemption_expires_at} />
                         </Text>
                     ) : null}
@@ -656,7 +656,7 @@ export default function AdminRateLimitsPageContent() {
                             content: (
                                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                                     <Text type="secondary">
-                                        {t('rate_limits.advanced_search_help', { defaultValue: 'Select exact filters here. Options support keyword matching, but the applied filter remains an exact match.' })}
+                                        {t('common:search.exact_match_help')}
                                     </Text>
                                     <Space wrap size={[12, 12]}>
                                         <Select

@@ -11,12 +11,13 @@ import {
     Space,
     Table,
     Tag,
+    Tooltip,
     Typography,
     Upload,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import React, { useMemo, useState } from 'react';
-import { CloudOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, UploadOutlined, FileTextOutlined, DesktopOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, UploadOutlined, FileTextOutlined, DesktopOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
@@ -31,6 +32,7 @@ import {
     VirtualMachinesOverviewGlyph,
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { ServicesIcon } from '@/components/layouts/MenuIcons';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 import { PageSearchToolbar, filterOptionByLabel } from '@/components/ui/PageSearchToolbar';
 import { WorkbenchDetailModal } from '@/components/workbench/WorkbenchDetailModal';
@@ -145,10 +147,37 @@ export function ServicesManagementContent() {
             dataIndex: 'name',
             key: 'name',
             render: (name: string) => (
-                <Space>
-                    <CloudOutlined style={{ color: '#531dab' }} />
-                    <Text strong>{name}</Text>
-                </Space>
+                <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '4px 14px 4px 6px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 12,
+                    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)'
+                }}>
+                    <div style={{
+                        width: 26,
+                        height: 26,
+                        background: '#eff6ff',
+                        color: '#6366f1',
+                        borderRadius: 8,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 16
+                    }}>
+                        <ServicesIcon />
+                    </div>
+                    <Text strong style={{
+                        fontSize: 14,
+                        color: '#0f172a',
+                        letterSpacing: '-0.01em',
+                    }}>
+                        {name}
+                    </Text>
+                </div>
             ),
         },
         {
@@ -176,16 +205,37 @@ export function ServicesManagementContent() {
             title: t('table.description'),
             dataIndex: 'description',
             key: 'description',
-            ellipsis: true,
-            render: (desc: string) => <Text type="secondary">{desc || '—'}</Text>,
+            width: 220,
+            render: (desc: string, record: Service) => {
+                const normalizedDescription = desc?.trim();
+                const previewText = normalizedDescription
+                    ? (normalizedDescription.length > 36 ? `${normalizedDescription.slice(0, 36)}...` : normalizedDescription)
+                    : '—';
+                return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Text type="secondary" className="workbench-table-description workbench-table-description--preview">
+                            {previewText}
+                        </Text>
+                        {normalizedDescription && (
+                            <Tooltip title={t('common:description.preview_tooltip')}>
+                                <Button
+                                    type="text"
+                                    size="small"
+                                    style={{ width: 24, height: 24, minWidth: 24, padding: 0 }}
+                                    icon={<InfoCircleOutlined style={{ color: '#94a3b8' }} />}
+                                    onClick={() => {
+                                        setDetailService(record);
+                                        setDetailOpen(true);
+                                        setDismissedQueryDetailServiceId(null);
+                                    }}
+                                />
+                            </Tooltip>
+                        )}
+                    </div>
+                );
+            },
         },
-        {
-            title: t('services.next_instance_index'),
-            dataIndex: 'next_instance_index',
-            key: 'next_instance_index',
-            width: 180,
-            render: (idx: number) => <Tag color="blue">{formatNextInstanceIndex(idx)}</Tag>,
-        },
+
         {
             title: t('table.created_at'),
             dataIndex: 'created_at',
@@ -271,6 +321,10 @@ export function ServicesManagementContent() {
         () => services.servicesData?.items ?? [],
         [services.servicesData?.items],
     );
+    const serviceSystemCount = services.activeSystemId === ALL_SYSTEMS_FILTER
+        ? (services.systemsData?.items?.length ?? 0)
+        : (services.activeSystemId ? 1 : 0);
+
     const applySearch = (searchValue = quickSearchDraft) => {
         services.applyFilters({
             search: searchValue,
@@ -315,101 +369,143 @@ export function ServicesManagementContent() {
             {serviceItems.length === 0 && !services.isLoading && !services.hasActiveFilters && services.activeSystemId === ALL_SYSTEMS_FILTER ? (
                 <SetupGuideCard variant="services" />
             ) : (
-                <PageSurface className="services-page__table-surface" flush={true}>
-                    <div style={{ padding: 16, paddingBottom: 0 }}>
-                        <PageSearchToolbar
-                            searchValue={services.filters.search}
-                            searchDraftValue={quickSearchDraft}
-                            onSearchDraftChange={setQuickSearchDraft}
-                            onSearchChange={(value) => {
-                                setQuickSearchDraft(value);
-                                services.applyFilters({
-                                    search: value,
-                                    systemId: services.filters.systemId,
-                                });
-                            }}
-                            searchPlaceholder={t('services.search_placeholder', 'Search services by name, system, description, or instance index')}
-                            searchTestId="services-quick-search"
-                            searchHelp={t('services.search_help', 'Press Enter or click Search. Quick search matches service names, descriptions, system names, and instance indexes.')}
-                            advancedSearch={{
-                                open: filtersOpen,
-                                onToggle: () => setFiltersOpen((current) => !current),
-                                openLabel: t('search.advanced', 'Advanced search'),
-                                closeLabel: t('search.hide_advanced', 'Hide advanced search'),
-                                title: t('search.advanced', 'Advanced search'),
-                                content: (
-                                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                                        <Text type="secondary">
-                                            {t('services.advanced_search_help', 'Select exact service filters here. Options support keyword matching, but the applied filter remains an exact value.')}
-                                        </Text>
-                                        <Space wrap size={[12, 12]} align="end">
-                                        <Select
-                                            data-testid="services-system-selector"
-                                            style={{ minWidth: 240 }}
-                                            placeholder={t('services.select_system')}
-                                            showSearch
-                                            filterOption={filterOptionByLabel}
-                                            optionFilterProp="label"
-                                            value={systemFilterDraft || undefined}
-                                            onChange={(value) => {
-                                                setSystemFilterDraft((value as string | undefined) ?? ALL_SYSTEMS_FILTER);
-                                            }}
-                                            options={[
-                                                {
-                                                    label: t('services.all_systems'),
-                                                    value: ALL_SYSTEMS_FILTER,
-                                                },
-                                                ...(services.systemsData?.items?.map((system) => ({
-                                                    label: system.name,
-                                                    value: system.id,
-                                                })) ?? []),
-                                            ]}
-                                        />
-                                        <Button
-                                            type="primary"
-                                            data-testid="services-advanced-search-submit"
-                                            onClick={() => applySearch()}
-                                        >
-                                            {t('common:button.search')}
-                                        </Button>
+                <>
+                    <PageSurface className="services-page__table-surface" flush={true}>
+                        <div style={{ padding: '24px 24px 0', borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(3, 1fr)',
+                                gap: 24,
+                                marginBottom: 24,
+                            }}>
+                                <div style={{
+                                    display: 'flex', flexDirection: 'column', gap: 8,
+                                    padding: '20px 24px',
+                                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.6) 100%)',
+                                    borderRadius: 16,
+                                    border: '1px solid rgba(15, 23, 42, 0.05)',
+                                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 1)'
+                                }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>{t('nav.services')}</span>
+                                    <span style={{ fontSize: 32, fontWeight: 700, color: '#0f172a', lineHeight: 1 }}>{services.servicesData?.pagination?.total ?? serviceItems.length}</span>
+                                </div>
+                                <div style={{
+                                    display: 'flex', flexDirection: 'column', gap: 8,
+                                    padding: '20px 24px',
+                                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.6) 100%)',
+                                    borderRadius: 16,
+                                    border: '1px solid rgba(15, 23, 42, 0.05)',
+                                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 1)'
+                                }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>{t('services.summary.systems_title')}</span>
+                                    <span style={{ fontSize: 32, fontWeight: 700, color: '#334155', lineHeight: 1 }}>{serviceSystemCount}</span>
+                                </div>
+                                <div style={{
+                                    display: 'flex', flexDirection: 'column', gap: 8,
+                                    padding: '20px 24px',
+                                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.6) 100%)',
+                                    borderRadius: 16,
+                                    border: '1px solid rgba(15, 23, 42, 0.05)',
+                                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 1)'
+                                }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>{t('services.summary.visible_title')}</span>
+                                    <span style={{ fontSize: 32, fontWeight: 700, color: '#334155', lineHeight: 1 }}>{serviceItems.length}</span>
+                                </div>
+                            </div>
+                            <PageSearchToolbar
+                                searchValue={services.filters.search}
+                                searchDraftValue={quickSearchDraft}
+                                onSearchDraftChange={setQuickSearchDraft}
+                                onSearchChange={(value) => {
+                                    setQuickSearchDraft(value);
+                                    services.applyFilters({
+                                        search: value,
+                                        systemId: services.filters.systemId,
+                                    });
+                                }}
+                                searchPlaceholder={t('services.search_placeholder', 'Search services by name, system, description, or instance index')}
+                                searchTestId="services-quick-search"
+                                searchHelp={t('services.search_help', 'Press Enter or click Search. Quick search matches service names, descriptions, system names, and instance indexes.')}
+                                advancedSearch={{
+                                    open: filtersOpen,
+                                    onToggle: () => setFiltersOpen((current) => !current),
+                                    openLabel: t('search.advanced', 'Advanced search'),
+                                    closeLabel: t('search.hide_advanced', 'Hide advanced search'),
+                                    title: t('search.advanced', 'Advanced search'),
+                                    content: (
+                                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                            <Text type="secondary">
+                                                {t('services.advanced_search_help', 'Select exact service filters here. Options support keyword matching, but the applied filter remains an exact value.')}
+                                            </Text>
+                                            <Space wrap size={[12, 12]} align="end">
+                                            <Select
+                                                data-testid="services-system-selector"
+                                                style={{ minWidth: 240 }}
+                                                placeholder={t('services.select_system')}
+                                                showSearch
+                                                filterOption={filterOptionByLabel}
+                                                optionFilterProp="label"
+                                                value={systemFilterDraft || undefined}
+                                                onChange={(value) => {
+                                                    setSystemFilterDraft((value as string | undefined) ?? ALL_SYSTEMS_FILTER);
+                                                }}
+                                                options={[
+                                                    {
+                                                        label: t('services.all_systems'),
+                                                        value: ALL_SYSTEMS_FILTER,
+                                                    },
+                                                    ...(services.systemsData?.items?.map((system) => ({
+                                                        label: system.name,
+                                                        value: system.id,
+                                                    })) ?? []),
+                                                ]}
+                                            />
+                                            <Button
+                                                type="primary"
+                                                data-testid="services-advanced-search-submit"
+                                                onClick={() => applySearch()}
+                                            >
+                                                {t('common:button.search')}
+                                            </Button>
+                                            </Space>
                                         </Space>
-                                    </Space>
+                                    ),
+                                }}
+                                hasActiveFilters={services.hasActiveFilters}
+                                onClear={clearSearch}
+                                clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
+                            />
+                        </div>
+                        <Table<Service>
+                            columns={columns}
+                            dataSource={serviceItems}
+                            rowKey="id"
+                            loading={services.isLoading}
+                            scroll={{ x: 'max-content' }}
+                            pagination={{
+                                current: services.page,
+                                pageSize: services.pageSize,
+                                total: services.servicesData?.pagination?.total ?? 0,
+                                showTotal: (total) => t('table.total', { total }),
+                                onChange: (page, pageSize) => {
+                                    services.setPage(page);
+                                    services.setPageSize(pageSize);
+                                },
+                            }}
+                            size="middle"
+                            locale={{
+                                emptyText: (
+                                    <ActionEmptyState
+                                        compact={true}
+                                        title={t('services.empty_filtered_title', 'No services match the current search')}
+                                        description={t('services.empty_filtered_description', 'Try a broader search or clear the current filters.')}
+                                        visual={<ServiceWorkspaceGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                                    />
                                 ),
                             }}
-                            hasActiveFilters={services.hasActiveFilters}
-                            onClear={clearSearch}
-                            clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
                         />
-                    </div>
-                    <Table<Service>
-                        columns={columns}
-                        dataSource={serviceItems}
-                        rowKey="id"
-                        loading={services.isLoading}
-                        scroll={{ x: 'max-content' }}
-                        pagination={{
-                            current: services.page,
-                            pageSize: services.pageSize,
-                            total: services.servicesData?.pagination?.total ?? 0,
-                            showTotal: (total) => t('table.total', { total }),
-                            onChange: (page, pageSize) => {
-                                services.setPage(page);
-                                services.setPageSize(pageSize);
-                            },
-                        }}
-                        size="middle"
-                        locale={{
-                            emptyText: (
-                                <ActionEmptyState
-                                    compact={true}
-                                    title={t('services.empty_filtered_title', 'No services match the current search')}
-                                    description={t('services.empty_filtered_description', 'Try a broader search or clear the current filters.')}
-                                    visual={<ServiceWorkspaceGlyph className="action-empty-state__art action-empty-state__art--compact" />}
-                                />
-                            ),
-                        }}
-                    />
-                </PageSurface>
+                    </PageSurface>
+                </>
             )}
 
             <Modal
@@ -836,11 +932,11 @@ export function ServicesManagementContent() {
                                                         <Text strong>{approvalSummaryTitle(record, t)}</Text>
                                                     </Space>
                                                     {summaryMeta.length > 0 && (
-                                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                                        <Text type="secondary" style={{ fontSize: 13 }}>
                                                             {summaryMeta.join(' · ')}
                                                         </Text>
                                                     )}
-                                                    <Text copyable={{ text: record.id }} type="secondary" style={{ fontSize: 12 }}>
+                                                    <Text copyable={{ text: record.id }} type="secondary" style={{ fontSize: 13 }}>
                                                         {t('ticket_id', { ns: 'approval' })}: {formatApprovalRecordID(record.id)}
                                                     </Text>
                                                 </Space>

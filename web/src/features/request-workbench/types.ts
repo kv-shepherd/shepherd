@@ -54,3 +54,13 @@ export const STATUS_COLORS: Record<ApprovalStatus, string> = {
     SUCCESS: 'green',
     FAILED: 'red',
 };
+
+export const STATUS_BADGES: Record<string, 'processing' | 'success' | 'error' | 'default'> = {
+    PENDING: 'processing',
+    APPROVED: 'success',
+    REJECTED: 'error',
+    CANCELLED: 'default',
+    EXECUTING: 'processing',
+    SUCCESS: 'success',
+    FAILED: 'error',
+};

@@ -124,7 +124,7 @@ export function AdminClustersContent() {
               {displayName ?? record.name}
             </Text>
             <br />
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>
               {record.name}
             </Text>
           </div>
@@ -312,7 +312,7 @@ export function AdminClustersContent() {
                 ))}
               </Space>
             ) : (
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text type="secondary" style={{ fontSize: 13 }}>
                 {mode === "OPEN"
                   ? t(
                       "clusters.policy_mode.open_hint",

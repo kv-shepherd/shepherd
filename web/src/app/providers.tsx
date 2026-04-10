@@ -35,6 +35,13 @@ export default function Providers({
         const lang = (i18n.resolvedLanguage ?? i18n.language ?? 'en').toLowerCase();
         return lang.startsWith('zh') ? 'zh-CN' : 'en';
     }, [i18n.language, i18n.resolvedLanguage]);
+    React.useEffect(() => {
+        if (typeof document === 'undefined') {
+            return;
+        }
+
+        document.documentElement.lang = normalizedLanguage;
+    }, [normalizedLanguage]);
     const [queryClient] = useState(
         () =>
             new QueryClient({
@@ -56,26 +63,31 @@ export default function Providers({
                 theme={{
                     algorithm: theme.defaultAlgorithm,
                     token: {
-                        colorPrimary: '#5e6ad2',
-                        colorInfo: '#5e6ad2',
-                        colorLink: '#5e6ad2',
-                        colorSuccess: '#27a644',
+                        colorPrimary: '#2563eb',
+                        colorInfo: '#2563eb',
+                        colorLink: '#1d4ed8',
+                        colorSuccess: '#1f9d61',
                         colorWarning: '#d97706',
-                        colorError: '#d14343',
-                        colorBgLayout: '#f3f5fb',
+                        colorError: '#dc2626',
+                        colorBgLayout: '#edf4fb',
                         colorBgContainer: '#ffffff',
-                        colorText: '#171b26',
-                        colorTextSecondary: '#676f83',
-                        colorTextTertiary: '#878ea0',
-                        colorFillSecondary: 'rgba(94, 106, 210, 0.08)',
-                        colorFillTertiary: 'rgba(94, 106, 210, 0.12)',
-                        colorBorder: '#d7ddec',
-                        colorBorderSecondary: '#e7ebf5',
-                        borderRadius: 14,
-                        borderRadiusLG: 20,
-                        borderRadiusSM: 10,
-                        fontFamily: 'var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif',
-                        boxShadowSecondary: '0 22px 56px rgba(16, 24, 40, 0.1), 0 6px 18px rgba(16, 24, 40, 0.05)',
+                        colorText: '#0f172a',
+                        colorTextSecondary: '#5b677d',
+                        colorTextTertiary: '#7d879b',
+                        colorFillSecondary: 'rgba(37, 99, 235, 0.08)',
+                        colorFillTertiary: 'rgba(14, 165, 233, 0.12)',
+                        colorBorder: '#d6e1ee',
+                        colorBorderSecondary: '#e8eef6',
+                        borderRadius: 18,
+                        borderRadiusLG: 24,
+                        borderRadiusSM: 12,
+                        fontSize: 15,
+                        fontSizeSM: 13,
+                        fontSizeLG: 17,
+                        lineHeight: 1.6,
+                        fontFamily: 'var(--font-ui-sans)',
+                        fontFamilyCode: 'var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                        boxShadowSecondary: '0 24px 70px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.04)',
                     },
                 }}
             >

@@ -185,10 +185,10 @@ export default function VMBatchListPage() {
                         <Text strong>{batchOperationLabel(record.operation, t)}</Text>
                         <Tag color="purple">{t('batch.request_count', { count: record.child_count })}</Tag>
                     </Space>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: 13 }}>
                         {t('batch.success_count')}: {record.success_count} · {t('batch.failed_count')}: {record.failed_count} · {t('batch.pending_count')}: {record.pending_count}
                     </Text>
-                    <Text copyable={{ text: record.id }} type="secondary" style={{ fontSize: 12 }}>
+                    <Text copyable={{ text: record.id }} type="secondary" style={{ fontSize: 13 }}>
                         {t('batch.id')}: {formatRecordID(record.id)}
                     </Text>
                 </Space>
@@ -312,7 +312,7 @@ export default function VMBatchListPage() {
                             content: (
                                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                                     <Text type="secondary">
-                                        {t('batch.advanced_search_help', { defaultValue: 'Select exact filters here. Options support keyword matching, but the applied filter remains an exact match.' })}
+                                        {t('common:search.exact_match_help')}
                                     </Text>
                                     <Space wrap size={[12, 12]}>
                                         <Select

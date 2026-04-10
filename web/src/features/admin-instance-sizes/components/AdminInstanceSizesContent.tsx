@@ -484,7 +484,7 @@ function InstanceSizeFormFields({
                                 >
                                     <UnitInputNumber min={0.5} step={0.5} precision={1} unit={t('instanceSizes.cores')} />
                                 </Form.Item>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                <Text type="secondary" style={{ fontSize: 13 }}>
                                     {t('instanceSizes.overcommit_ratio_hint')}
                                 </Text>
                             </Space>
@@ -681,7 +681,7 @@ function InstanceSizeFormFields({
                                     value={resolvedPreview}
                                     autoSize={{ minRows: 10, maxRows: 24 }}
                                     data-testid="instance-size-resolved-preview"
-                                    style={{ fontFamily: 'monospace', fontSize: 12 }}
+                                    style={{ fontFamily: 'monospace', fontSize: 14 }}
                                 />
                             </Space>
                         </Card>
@@ -956,7 +956,7 @@ export function AdminInstanceSizesContent() {
                             })()}
                         </Text>
                         <br />
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 13 }}>
                             {sizes.searchedColumn === 'name' ? highlightText(name, sizes.searchText) : name}
                         </Text>
                     </div>
@@ -978,7 +978,7 @@ export function AdminInstanceSizesContent() {
                             memory: formatMemory(record.memory_gi),
                         })}
                     </Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: 13 }}>
                         {record.disk_gb
                             ? t('instanceSizes.resources_disk_summary', {
                                 defaultValue: `Default root disk ${record.disk_gb} GB`,
@@ -987,7 +987,7 @@ export function AdminInstanceSizesContent() {
                             : t('instanceSizes.resources_disk_unset', 'Root disk size follows the selected template.')}
                     </Text>
                     {(hasCPUOvercommit(record) || hasMemoryOvercommit(record)) ? (
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 13 }}>
                             {[
                                 hasCPUOvercommit(record)
                                     ? t('instanceSizes.request_compact', {
@@ -1022,7 +1022,7 @@ export function AdminInstanceSizesContent() {
                                 {record.enabled !== false ? t('common:status.active') : t('common:status.disabled')}
                             </Tag>
                         </Space>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 13 }}>
                             {publication.description}
                         </Text>
                     </Space>

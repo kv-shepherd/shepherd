@@ -8,6 +8,7 @@
  */
 import AuthGuard from './AuthGuard';
 import AppLayout from './AppLayout';
+import { DisplayTimeZoneProvider } from '@/components/providers/DisplayTimeZoneProvider';
 
 export default function ProtectedLayout({
     children,
@@ -16,7 +17,9 @@ export default function ProtectedLayout({
 }) {
     return (
         <AuthGuard>
-            <AppLayout>{children}</AppLayout>
+            <DisplayTimeZoneProvider>
+                <AppLayout>{children}</AppLayout>
+            </DisplayTimeZoneProvider>
         </AuthGuard>
     );
 }

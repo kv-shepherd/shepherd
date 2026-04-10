@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { AntdRegistry } from '@ant-design/nextjs-registry';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Geist, IBM_Plex_Mono } from 'next/font/google';
 import NextTopLoader from 'nextjs-toploader';
 import './globals.css';
 import Providers from './providers';
@@ -11,9 +11,10 @@ const geistSans = Geist({
   display: 'swap',
 });
 
-const geistMono = Geist_Mono({
+const plexMono = IBM_Plex_Mono({
   subsets: ['latin'],
-  variable: '--font-geist-mono',
+  variable: '--font-ibm-plex-mono',
+  weight: ['400', '500', '600'],
   display: 'swap',
 });
 
@@ -32,10 +33,10 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable}`}
+      className={`${geistSans.variable} ${plexMono.variable}`}
     >
       <body>
-        <NextTopLoader showSpinner={false} color="#7170ff" />
+        <NextTopLoader showSpinner={false} color="#2563eb" />
         <AntdRegistry>
           <Providers>{children}</Providers>
         </AntdRegistry>

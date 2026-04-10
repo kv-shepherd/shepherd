@@ -1,12 +1,4 @@
 import dayjs from 'dayjs';
-import type { ElementType } from 'react';
-import {
-    DeleteOutlined,
-    DesktopOutlined,
-    PlusCircleOutlined,
-    PoweroffOutlined,
-    SettingOutlined,
-} from '@ant-design/icons';
 
 import type { components } from '@/types/api.gen';
 
@@ -36,14 +28,6 @@ export const STATUS_BADGES: Record<string, 'processing' | 'success' | 'error' | 
     EXECUTING: 'processing',
     SUCCESS: 'success',
     FAILED: 'error',
-};
-
-export const OP_TYPE_CONFIG: Record<string, { color: string; icon: ElementType }> = {
-    CREATE: { color: 'blue', icon: PlusCircleOutlined },
-    MODIFY: { color: 'gold', icon: SettingOutlined },
-    DELETE: { color: 'red', icon: DeleteOutlined },
-    POWER: { color: 'orange', icon: PoweroffOutlined },
-    VNC_ACCESS: { color: 'geekblue', icon: DesktopOutlined },
 };
 
 /** ADR-0015 §11: visual priority by pending duration. */

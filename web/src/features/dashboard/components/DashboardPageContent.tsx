@@ -15,6 +15,7 @@ import {
     VMsIcon,
     RequestsIcon,
 } from '@/components/layouts/MenuIcons';
+import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { SetupGuideCard } from '@/features/setup-guide/components/SetupGuideCard';
 import type { SetupResumeAction } from '@/features/setup-guide/flow';
@@ -35,13 +36,14 @@ type ApiFetchResult<T> = { data?: T; error?: ApiErrorResponse; response: Respons
 
 type DashboardPreviewItem = {
     key: string;
-    title: string;
-    meta?: string;
-    aside?: string;
+    title: ReactNode;
+    meta?: ReactNode;
+    aside?: ReactNode;
+
     titleTone?: 'default' | 'accent';
     facts?: Array<{
         key: string;
-        value: string;
+        value: ReactNode;
         label?: string;
         tone?: 'default' | 'accent' | 'network' | 'identity';
     }>;
@@ -69,10 +71,7 @@ const SETUP_RESUME_ACTIONS: SetupResumeAction[] = [
     'open-vm-request',
 ];
 
-function joinDefined(parts: Array<string | undefined | null>, separator = ' · '): string | undefined {
-    const values = parts.filter((part): part is string => typeof part === 'string' && part.trim() !== '');
-    return values.length > 0 ? values.join(separator) : undefined;
-}
+
 
 function truncateUtf8(value: string, maxBytes: number): string {
     const encoder = new TextEncoder();
@@ -167,34 +166,71 @@ function DashboardOverviewCard({
     workspaceHint?: string;
     renderOverflowLabel?: (count: number) => string;
 }) {
+    const { t } = useTranslation();
     const visibleItems = items.slice(0, DASHBOARD_CARD_PREVIEW_LIMIT);
     const overflowCount = Math.max(items.length - visibleItems.length, 0);
 
     return (
         <PageSurface className="dashboard-overview-card" styles={{ body: { padding: 0 } }}>
             <div className="dashboard-overview-card__shell">
-                <div className="dashboard-overview-card__header">
-                    <div className="dashboard-overview-card__header-main">
-                        <div className="dashboard-overview-card__icon">
+                <div className="dashboard-overview-card__header" style={{
+                    padding: '24px',
+                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.4) 100%)',
+                    borderBottom: '1px solid rgba(15, 23, 42, 0.04)',
+                }}>
+                    <div className="dashboard-overview-card__header-main" style={{ alignItems: 'center' }}>
+                        <div className="dashboard-overview-card__icon" style={{
+                            background: '#ffffff',
+                            boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.02)',
+                            borderRadius: 12,
+                            padding: 10,
+                            border: '1px solid rgba(15, 23, 42, 0.03)'
+                        }}>
                             {icon}
                         </div>
                         <div className="dashboard-overview-card__copy">
-                            <div className="dashboard-overview-card__eyebrow">
-                                <Text strong>{title}</Text>
-                                {badgeText ? <span className="dashboard-overview-card__badge">{badgeText}</span> : null}
+                            <div className="dashboard-overview-card__eyebrow" style={{ marginBottom: 4 }}>
+                                <Text strong style={{ fontSize: 16, color: '#0f172a', letterSpacing: '-0.01em' }}>{title}</Text>
+                                {badgeText ? <span className="dashboard-overview-card__badge" style={{ marginLeft: 8 }}>{badgeText}</span> : null}
                             </div>
-                            <Text type="secondary" className="dashboard-overview-card__description">
+                            <Text type="secondary" className="dashboard-overview-card__description" style={{ fontSize: 13, color: '#64748b' }}>
                                 {description}
                             </Text>
                         </div>
                     </div>
-                    <div className="dashboard-overview-card__metric">
-                        <Text className="dashboard-overview-card__metric-label">
-                            {title}
+                    <div className="dashboard-overview-card__metric" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Text className="dashboard-overview-card__metric-label" style={{
+                            display: 'inline-block',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: '#64748b',
+                            letterSpacing: '0.04em',
+                            textTransform: 'uppercase',
+                        }}>
+                            {t('dashboard.overview.total_metric', { defaultValue: 'TOTAL' })}
                         </Text>
-                        <Text strong className="dashboard-overview-card__metric-value">
-                            {total}
-                        </Text>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            minWidth: 44,
+                            height: 44,
+                            background: '#ffffff',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: 12,
+                            boxShadow: '0 2px 4px rgba(15, 23, 42, 0.02), inset 0 1px 0 rgba(255, 255, 255, 1)',
+                            padding: '0 12px'
+                        }}>
+                            <Text strong className="dashboard-overview-card__metric-value" style={{
+                                fontSize: 22,
+                                color: '#0f172a',
+                                lineHeight: 1,
+                                letterSpacing: '-0.02em',
+                                fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                            }}>
+                                {total}
+                            </Text>
+                        </div>
                     </div>
                 </div>
 
@@ -402,7 +438,7 @@ export function DashboardPageContent() {
                 preview.names.forEach((name, index) => {
                     facts.push({
                         key: `${system.id}-service-${index}`,
-                        value: name,
+                        value: <Text code style={{ fontSize: '13px', backgroundColor: '#f1f5f9' }}>{name}</Text>,
                         tone: 'default',
                     });
                 });
@@ -425,21 +461,17 @@ export function DashboardPageContent() {
         (services?.items ?? []).map((service) => ({
             key: service.id,
             title: service.name,
+            titleTone: 'accent',
             meta: dashboardDescriptionPreview(service.description) ?? service.system_name,
             facts: [
                 ...(service.system_name ? [{
                     key: `${service.id}-system`,
                     label: t('vm:field.system'),
-                    value: service.system_name,
+                    value: <Text strong style={{ fontSize: '13px', color: '#334155' }}>{service.system_name}</Text>,
                     tone: 'default' as const,
                 }] : []),
-                ...(typeof service.next_instance_index === 'number' ? [{
-                    key: `${service.id}-next-vm`,
-                    label: t('dashboard.overview.next_vm_number_label'),
-                    value: String(service.next_instance_index),
-                    tone: 'accent' as const,
-                }] : []),
             ],
+            aside: <LocalDateTimeText value={service.created_at} />,
         }))
     ), [services, t]);
 
@@ -448,12 +480,25 @@ export function DashboardPageContent() {
             key: vm.id,
             title: vm.name,
             titleTone: 'accent',
-            meta: joinDefined([
-                vm.hostname && vm.hostname !== vm.name ? vm.hostname : undefined,
-                vm.os_name,
-                vm.ip_address,
-            ]),
-            aside: t(`vm:status.${vm.status}`),
+            meta: (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
+                    {vm.hostname && vm.hostname !== vm.name ? (
+                        <Text code style={{ fontSize: '13px', color: '#475569', backgroundColor: '#f1f5f9', border: 'none' }}>{vm.hostname}</Text>
+                    ) : null}
+                    {vm.os_name ? <Text type="secondary" style={{ fontSize: '13px' }}>{vm.os_name}</Text> : null}
+                    {vm.ip_address ? <Text style={{ fontFamily: 'monospace', fontSize: '13px', color: '#64748b' }}>{vm.ip_address}</Text> : null}
+                </div>
+            ),
+            aside: vm.status === 'RUNNING' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{
+                        width: 6, height: 6, borderRadius: '50%',
+                        backgroundColor: '#10b981',
+                        boxShadow: '0 0 0 2px rgba(16, 185, 129, 0.2)'
+                    }} className="app-pulse-dot" />
+                    <span>{t(`vm:status.${vm.status}`)}</span>
+                </div>
+            ) : t(`vm:status.${vm.status}`),
             tone: vm.status === 'RUNNING' ? 'positive' : vm.status === 'FAILED' ? 'critical' : 'default',
         }))
     ), [t, vms]);
@@ -461,7 +506,7 @@ export function DashboardPageContent() {
     const myRequestPreviewItems = useMemo<DashboardPreviewItem[]>(() => (
         (myRequests?.items ?? []).map((ticket) => ({
             key: ticket.id,
-            title: approvalSummaryTitle(ticket, t),
+            title: <Text strong style={{ color: '#1e293b' }}>{approvalSummaryTitle(ticket, t)}</Text>,
             meta: approvalSummaryMeta(ticket, t).slice(0, 2).join(' · '),
             aside: t(`approval:status.${ticket.status}`),
             tone: statusTone(ticket.status),
@@ -479,31 +524,77 @@ export function DashboardPageContent() {
     }
 
     return (
-        <div className="dashboard-page">
+        <div className="dashboard-page" style={{ position: 'relative', zIndex: 0 }}>
+            {/* Global Galactic Background */}
+            <div style={{ position: 'fixed', inset: 0, zIndex: -1, pointerEvents: 'none', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: '-10%', right: '-10%', width: '50vw', height: '50vw', background: 'radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, rgba(99, 102, 241, 0) 60%)', borderRadius: '50%', filter: 'blur(3xl)', transform: 'translate3d(0,0,0)' }} />
+                <div style={{ position: 'absolute', bottom: '-10%', left: '-10%', width: '60vw', height: '60vw', background: 'radial-gradient(circle, rgba(14, 165, 233, 0.05) 0%, rgba(14, 165, 233, 0) 60%)', borderRadius: '50%', filter: 'blur(3xl)', transform: 'translate3d(0,0,0)' }} />
+                <div style={{ position: 'absolute', top: '30%', left: '50%', width: '100vw', height: '100vw', maxWidth: 1400, maxHeight: 1400, border: '1px solid rgba(99, 102, 241, 0.08)', borderRadius: '50%' }} className="app-orbit-spin-slow">
+                    <div style={{ position: 'absolute', top: 0, left: '50%', width: 12, height: 12, background: '#818cf8', borderRadius: '50%', boxShadow: '0 0 16px rgba(129,140,248,0.8)', transform: 'translate(-50%, -50%)' }} />
+                </div>
+                <div style={{ position: 'absolute', top: '40%', left: '30%', width: '70vw', height: '70vw', maxWidth: 1000, maxHeight: 1000, border: '1px solid rgba(56, 189, 248, 0.1)', borderRadius: '50%' }} className="app-orbit-spin">
+                    <div style={{ position: 'absolute', bottom: 0, left: '50%', width: 8, height: 8, background: '#38bdf8', borderRadius: '50%', boxShadow: '0 0 12px rgba(56,189,248,0.8)', transform: 'translate(-50%, 50%)' }} />
+                </div>
+            </div>
             <PageHeader
                 title={t('nav.dashboard')}
                 subtitle={t('dashboard.subtitle')}
-                actions={(
-                    <div className="dashboard-status-strip">
-                        {renderStatusChip(
-                            t('dashboard.status.ready'),
-                            String(healthStatus.status || 'unknown').toUpperCase(),
-                            healthStatus.badge,
-                            healthStatus.color,
-                        )}
-                        {renderStatusChip(
-                            t('dashboard.status.live'),
-                            String(liveness?.status || 'unknown').toUpperCase(),
-                            typeof liveness?.status === 'string' && liveness.status.toLowerCase() === 'ok' ? 'success' : 'default',
-                        )}
-                        {health?.version ? renderStatusChip(
-                            t('dashboard.status.version'),
-                            `v${health.version}`,
-                            'default',
-                        ) : null}
-                    </div>
-                )}
             />
+            <PageSurface className="dashboard-command-deck" styles={{ body: { padding: 0 } }}>
+                <div className="dashboard-command-deck__shell" style={{ position: 'relative', overflow: 'hidden' }}>
+                    <div className="dashboard-command-deck__main" style={{ position: 'relative', zIndex: 1 }}>
+                        <div className="dashboard-command-deck__copy">
+                            <Text className="dashboard-command-deck__eyebrow">{t('app.subtitle')}</Text>
+                            <Text className="dashboard-command-deck__title">{t('app.name')}</Text>
+                            <Text className="dashboard-command-deck__subtitle">{t('app.description')}</Text>
+                        </div>
+                        <div className="dashboard-command-deck__actions">
+                            <Button
+                                type="primary"
+                                className="app-shell-action-button app-shell-action-button--primary"
+                                onClick={() => router.push('/vms?request=create')}
+                            >
+                                {t('quick_actions.new_vm_request')}
+                            </Button>
+                            <Button
+                                className="app-shell-action-button"
+                                onClick={() => router.push('/tickets')}
+                            >
+                                {t('dashboard.action.open_requests')}
+                            </Button>
+                            <Button
+                                className="app-shell-action-button"
+                                onClick={() => router.push('/services')}
+                            >
+                                {t('dashboard.action.open_services')}
+                            </Button>
+                        </div>
+                    </div>
+                    <div className="dashboard-command-deck__aside" style={{ position: 'relative', zIndex: 1 }}>
+                        <div className="dashboard-command-deck__aside-section">
+                            <Text className="dashboard-command-deck__aside-eyebrow">{t('dashboard.status.ready')}</Text>
+                            <div className="dashboard-status-strip">
+                                {renderStatusChip(
+                                    t('dashboard.status.ready'),
+                                    String(healthStatus.status || 'unknown').toUpperCase(),
+                                    healthStatus.badge,
+                                    healthStatus.color,
+                                )}
+                                {renderStatusChip(
+                                    t('dashboard.status.live'),
+                                    String(liveness?.status || 'unknown').toUpperCase(),
+                                    typeof liveness?.status === 'string' && liveness.status.toLowerCase() === 'ok' ? 'success' : 'default',
+                                )}
+                                {health?.version ? renderStatusChip(
+                                    t('dashboard.status.version'),
+                                    `v${health.version}`,
+                                    'default',
+                                ) : null}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </PageSurface>
 
             <div className="dashboard-page__overview-grid">
                 <DashboardOverviewCard

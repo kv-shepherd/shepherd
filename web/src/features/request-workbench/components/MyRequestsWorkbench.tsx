@@ -17,12 +17,12 @@ import {
     Select,
     Segmented,
     Space,
-    Table,
     Tabs,
     Tag,
+    List,
+    Table,
     Typography,
 } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
@@ -54,11 +54,11 @@ import {
 import type {
     BatchStatusResponse,
     Ticket,
-    HistoryStatusFilter,
     RequestTicketOperationType,
     RequestWorkbenchView,
+    HistoryStatusFilter,
 } from '../types';
-import { STATUS_COLORS } from '../types';
+import { STATUS_COLORS, STATUS_BADGES } from '../types';
 
 const { Text } = Typography;
 const EMPTY_VALUE = approvalEmptyValue();
@@ -80,6 +80,9 @@ interface RequestRowOutcome {
     title: string;
     detail?: string;
 }
+
+type BatchChildRow = NonNullable<BatchStatusResponse['children']>[number];
+type RequestBatchDisplayRow = ReturnType<typeof buildApprovalBatchDisplayItems>[number];
 
 const HISTORY_STATUS_OPTIONS: Array<{ value: HistoryStatusFilter; labelKey: string }> = [
     { value: 'SUCCESS', labelKey: 'status.SUCCESS' },
@@ -574,204 +577,9 @@ export function MyRequestsWorkbench() {
         return label === labelKey ? operation : label;
     };
 
-    const columns: ColumnsType<Ticket> = [
-        {
-            title: t('request_summary'),
-            key: 'request_summary',
-            width: 540,
-            render: (_, record) => {
-                const requestReason = record.reason?.trim();
-                const showRequestReason = Boolean(requestReason) && requestReason !== approvalSummaryTitle(record, t);
-                const scopeFields = requestScopeFields(record, t);
-                const requestedFields = requestFields(record, t);
-                return (
-                    <Space direction="vertical" size={4} className="workbench-table-stack">
-                        <Space size={8} className="workbench-table-heading">
-                            <AuditOutlined style={{ color: '#d4380d' }} />
-                            <Text strong className="workbench-table-title">
-                                {approvalSummaryTitle(record, t)}
-                            </Text>
-                        </Space>
-                        <div className="workbench-table-section-grid">
-                            {renderSectionCard(t('workbench.table.scope_label'), scopeFields)}
-                            {renderSectionCard(t('workbench.table.request_label'), requestedFields)}
-                        </div>
-                        {showRequestReason ? (
-                            <div className="workbench-inline-meta">
-                                <Text type="secondary" className="workbench-inline-meta__label">
-                                    {t('reason')}
-                                </Text>
-                                <Text className="workbench-inline-meta__value">
-                                    {requestReason}
-                                </Text>
-                            </div>
-                        ) : null}
-                        <Text copyable={{ text: record.id }} type="secondary" className="workbench-ticket-meta">
-                            {t('ticket_id')}: {formatApprovalRecordID(record.id)}
-                        </Text>
-                    </Space>
-                );
-            },
-        },
-        {
-            title: t('table.progress'),
-            key: 'progress',
-            width: 260,
-            render: (_, record) => {
-                const outcome = requestOutcome(record, t);
-                return (
-                <Space direction="vertical" size={4} className="workbench-table-stack">
-                    <Space wrap size={[6, 6]} className="workbench-table-tag-row">
-                        <Badge
-                            status={
-                                record.status === 'PENDING'
-                                    ? 'processing'
-                                    : record.status === 'APPROVED'
-                                        ? 'success'
-                                        : 'error'
-                            }
-                            text={<Tag color={STATUS_COLORS[record.status]}>{t(`status.${record.status}`)}</Tag>}
-                        />
-                        <Tag color="purple">
-                            {record.operation_type ? t(`op_type.${record.operation_type}`) : EMPTY_VALUE}
-                        </Tag>
-                    </Space>
-                    {outcome ? (
-                        <div className={`workbench-outcome workbench-outcome--${outcome.tone}`}>
-                            <Text strong>{outcome.title}</Text>
-                            {outcome.detail ? (
-                                <Text className="workbench-table-note">{outcome.detail}</Text>
-                            ) : null}
-                        </div>
-                    ) : null}
-                    <div className="workbench-table-meta-stack">
-                        <Text type="secondary" className="workbench-table-note">
-                            {t('common:table.created_at')}: <LocalDateTimeText value={record.created_at} />
-                        </Text>
-                        {record.updated_at && record.updated_at !== record.created_at ? (
-                            <Text type="secondary" className="workbench-table-note">
-                                {t('workbench.details.updated_at')}: <LocalDateTimeText value={record.updated_at} />
-                            </Text>
-                        ) : null}
-                    </div>
-                </Space>
-            )},
-        },
-        {
-            title: t('common:table.actions'),
-            key: 'actions',
-            width: 220,
-            render: (_, record) => {
-                const showReuseAction = (
-                    requests.view === 'history' &&
-                    record.operation_type === 'CREATE' &&
-                    record.request_prefill
-                );
-
-                if (record.status === 'PENDING') {
-                    const moreContent = (
-                        <div className="workbench-row-menu">
-                            <Button
-                                type="text"
-                                danger
-                                block
-                                data-testid={`approval-action-cancel-${record.id}`}
-                                loading={requests.cancelMutation.isPending}
-                                onClick={() => {
-                                    closeActionMenu();
-                                    requests.cancelMutation.mutate(record.id);
-                                }}
-                            >
-                                {t('cancel')}
-                            </Button>
-                        </div>
-                    );
-                    return (
-                        <Space wrap size="small" className="workbench-row-actions">
-                            <Button
-                                size="small"
-                                data-testid={`approval-action-details-${record.id}`}
-                                onClick={() => openRequestDetails(record)}
-                            >
-                                {t('workbench.actions.details')}
-                            </Button>
-                            <Popover
-                                trigger="click"
-                                placement="bottomRight"
-                                open={openActionMenuId === record.id}
-                                onOpenChange={(open) => setOpenActionMenuId(open ? record.id : null)}
-                                content={moreContent}
-                            >
-                                <Button
-                                    size="small"
-                                    data-testid={`approval-action-more-${record.id}`}
-                                    aria-label={`${t('common:table.actions')} ${record.id}`}
-                                    icon={<MoreOutlined />}
-                                />
-                            </Popover>
-                        </Space>
-                    );
-                }
-
-                if (showReuseAction) {
-                    const moreContent = (
-                        <div className="workbench-row-menu">
-                            <Button
-                                type="text"
-                                block
-                                data-testid={`approval-action-reuse-${record.id}`}
-                                onClick={() => {
-                                    closeActionMenu();
-                                    reuseRequest(record);
-                                }}
-                            >
-                                {t('workbench.history.reuse')}
-                            </Button>
-                        </div>
-                    );
-                    return (
-                        <Space wrap size="small" className="workbench-row-actions">
-                            <Button
-                                size="small"
-                                data-testid={`approval-action-details-${record.id}`}
-                                onClick={() => openRequestDetails(record)}
-                            >
-                                {t('workbench.actions.details')}
-                            </Button>
-                            <Popover
-                                trigger="click"
-                                placement="bottomRight"
-                                open={openActionMenuId === record.id}
-                                onOpenChange={(open) => setOpenActionMenuId(open ? record.id : null)}
-                                content={moreContent}
-                            >
-                                <Button
-                                    size="small"
-                                    data-testid={`approval-action-more-${record.id}`}
-                                    aria-label={`${t('common:table.actions')} ${record.id}`}
-                                    icon={<MoreOutlined />}
-                                />
-                            </Popover>
-                        </Space>
-                    );
-                }
-
-                return (
-                    <Button
-                        size="small"
-                        data-testid={`approval-action-details-${record.id}`}
-                        onClick={() => openRequestDetails(record)}
-                    >
-                        {t('workbench.actions.details')}
-                    </Button>
-                );
-            },
-        },
-    ];
-
     const renderRequestTable = () => (
-        <Table<Ticket>
-            columns={columns}
+        <List<Ticket>
+            className="workbench-feed-list"
             dataSource={requests.data?.items ?? []}
             rowKey="id"
             loading={requests.isLoading}
@@ -785,8 +593,172 @@ export function MyRequestsWorkbench() {
                     requests.setPageSize(pageSize);
                 },
             }}
-            size="middle"
-            scroll={{ x: 960 }}
+            renderItem={(record) => {
+                const requestReason = record.reason?.trim();
+                const showRequestReason = Boolean(requestReason) && requestReason !== approvalSummaryTitle(record, t);
+                const scopeFields = requestScopeFields(record, t);
+                const requestedFields = requestFields(record, t);
+                const outcome = requestOutcome(record, t);
+                const showReuseAction = (
+                    requests.view === 'history' &&
+                    record.operation_type === 'CREATE' &&
+                    record.request_prefill
+                );
+
+                const renderActions = () => {
+                    if (record.status === 'PENDING') {
+                        const moreContent = (
+                            <div className="workbench-row-menu">
+                                <Button
+                                    type="text"
+                                    danger
+                                    block
+                                    data-testid={`approval-action-cancel-${record.id}`}
+                                    loading={requests.cancelMutation.isPending}
+                                    onClick={() => {
+                                        closeActionMenu();
+                                        requests.cancelMutation.mutate(record.id);
+                                    }}
+                                >
+                                    {t('cancel')}
+                                </Button>
+                            </div>
+                        );
+                        return (
+                            <Space wrap size="small" className="workbench-row-actions">
+                                <Button
+                                    size="small"
+                                    data-testid={`approval-action-details-${record.id}`}
+                                    onClick={() => openRequestDetails(record)}
+                                >
+                                    {t('workbench.actions.details')}
+                                </Button>
+                                <Popover
+                                    trigger="click"
+                                    placement="bottomRight"
+                                    open={openActionMenuId === record.id}
+                                    onOpenChange={(open) => setOpenActionMenuId(open ? record.id : null)}
+                                    content={moreContent}
+                                >
+                                    <Button
+                                        size="small"
+                                        data-testid={`approval-action-more-${record.id}`}
+                                        aria-label={`${t('common:table.actions')} ${record.id}`}
+                                        icon={<MoreOutlined />}
+                                    />
+                                </Popover>
+                            </Space>
+                        );
+                    }
+                    if (showReuseAction) {
+                        const moreContent = (
+                            <div className="workbench-row-menu">
+                                <Button
+                                    type="text"
+                                    block
+                                    data-testid={`approval-action-reuse-${record.id}`}
+                                    onClick={() => {
+                                        closeActionMenu();
+                                        reuseRequest(record);
+                                    }}
+                                >
+                                    {t('workbench.history.reuse')}
+                                </Button>
+                            </div>
+                        );
+                        return (
+                            <Space wrap size="small" className="workbench-row-actions">
+                                <Button
+                                    size="small"
+                                    data-testid={`approval-action-details-${record.id}`}
+                                    onClick={() => openRequestDetails(record)}
+                                >
+                                    {t('workbench.actions.details')}
+                                </Button>
+                                <Popover
+                                    trigger="click"
+                                    placement="bottomRight"
+                                    open={openActionMenuId === record.id}
+                                    onOpenChange={(open) => setOpenActionMenuId(open ? record.id : null)}
+                                    content={moreContent}
+                                >
+                                    <Button
+                                        size="small"
+                                        data-testid={`approval-action-more-${record.id}`}
+                                        aria-label={`${t('common:table.actions')} ${record.id}`}
+                                        icon={<MoreOutlined />}
+                                    />
+                                </Popover>
+                            </Space>
+                        );
+                    }
+                    return (
+                        <Button
+                            size="small"
+                            data-testid={`approval-action-details-${record.id}`}
+                            onClick={() => openRequestDetails(record)}
+                        >
+                            {t('workbench.actions.details')}
+                        </Button>
+                    );
+                };
+
+                return (
+                    <List.Item className="app-feed-card" style={{ padding: '16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
+                        <div className="app-feed-card-main" style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, paddingRight: 24 }}>
+                            <Space size={8} className="workbench-table-heading">
+                                <AuditOutlined style={{ color: '#d4380d' }} />
+                                <Text strong className="workbench-table-title" style={{ fontSize: 15 }}>
+                                    {approvalSummaryTitle(record, t)}
+                                </Text>
+                                <Tag color="purple">
+                                    {record.operation_type ? t(`op_type.${record.operation_type}`) : EMPTY_VALUE}
+                                </Tag>
+                                <Badge
+                                    status={STATUS_BADGES[record.status] ?? 'default'}
+                                    text={<Text type="secondary" style={{ fontSize: 13, marginLeft: 4 }}>{t(`status.${record.status}`)}</Text>}
+                                />
+                            </Space>
+                            <div className="workbench-table-section-grid" style={{ marginTop: 8 }}>
+                                {renderSectionCard(t('workbench.table.scope_label'), scopeFields)}
+                                {renderSectionCard(t('workbench.table.request_label'), requestedFields)}
+                            </div>
+                            {showRequestReason && (
+                                <div className="workbench-inline-meta" style={{ marginTop: 4 }}>
+                                    <Text type="secondary" className="workbench-inline-meta__label">
+                                        {t('reason')}
+                                    </Text>
+                                    <Text className="workbench-inline-meta__value">
+                                        {requestReason}
+                                    </Text>
+                                </div>
+                            )}
+                        </div>
+                        <div className="app-feed-card-aside" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: 200, gap: 12 }}>
+                            {renderActions()}
+                            {outcome && (
+                                <div className={`workbench-outcome workbench-outcome--${outcome.tone}`} style={{ textAlign: 'right' }}>
+                                    <Text strong style={{ display: 'block' }}>{outcome.title}</Text>
+                                    {outcome.detail && <Text className="workbench-table-note">{outcome.detail}</Text>}
+                                </div>
+                            )}
+                            <div className="workbench-table-meta-stack" style={{ textAlign: 'right', marginTop: 'auto' }}>
+                                <Text copyable={{ text: record.id }} type="secondary" className="workbench-ticket-meta" style={{ display: 'block', fontSize: 12 }}>
+                                    ID: {formatApprovalRecordID(record.id)}
+                                </Text>
+                                <Text type="secondary" className="workbench-table-note" style={{ display: 'block', fontSize: 12 }}>
+                                    <LocalDateTimeText value={record.created_at} />
+                                </Text>
+                                {record.updated_at && record.updated_at !== record.created_at && (
+                                    <Text type="secondary" className="workbench-table-note" style={{ display: 'block', fontSize: 12 }}>
+                                        {t('workbench.details.updated_at')}: <LocalDateTimeText value={record.updated_at} />
+                                    </Text>
+                                )}
+                            </div>
+                        </div>
+                    </List.Item>
+                );
+            }}
         />
     );
 
@@ -1172,13 +1144,13 @@ export function MyRequestsWorkbench() {
                         dataSource={requests.batchStatus?.children ?? []}
                         pagination={false}
                         columns={[
-                            {
-                                title: t('vm:batch.child.resource'),
-                                key: 'resource_summary',
-                                render: (_, record) => (
+                                {
+                                    title: t('vm:batch.child.resource'),
+                                    key: 'resource_summary',
+                                    render: (_: unknown, record: BatchChildRow) => (
                                     <Space direction="vertical" size={0}>
                                         <Text strong>{batchChildSummaryTitle(record.resource_name)}</Text>
-                                        <Text copyable={{ text: record.ticket_id }} type="secondary" style={{ fontSize: 12 }}>
+                                        <Text copyable={{ text: record.ticket_id }} type="secondary" style={{ fontSize: 13 }}>
                                             {t('vm:batch.child.ticket')}: {formatApprovalRecordID(record.ticket_id)}
                                         </Text>
                                     </Space>
@@ -1456,9 +1428,8 @@ export function MyRequestsWorkbench() {
                                                 },
                                                 {
                                                     title: t('summary.scope'),
-                                                    key: 'scope',
                                                     width: 280,
-                                                    render: (_, record) => (
+                                                    render: (_: unknown, record: RequestBatchDisplayRow) => (
                                                         <Space direction="vertical" size={4} className="workbench-batch-cell">
                                                             <div className="workbench-batch-cell__row">
                                                                 <Text type="secondary" className="workbench-batch-cell__label">
@@ -1498,7 +1469,7 @@ export function MyRequestsWorkbench() {
                                                     title: t('summary.target_resources'),
                                                     key: 'target_resources',
                                                     width: 280,
-                                                    render: (_, record) => (
+                                                    render: (_: unknown, record: RequestBatchDisplayRow) => (
                                                         <Space direction="vertical" size={4} className="workbench-batch-cell">
                                                             <div className="workbench-batch-cell__row">
                                                                 <Text type="secondary" className="workbench-batch-cell__label">

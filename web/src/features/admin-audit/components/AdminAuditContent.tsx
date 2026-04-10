@@ -1550,7 +1550,7 @@ export function AdminAuditContent() {
                                     />
                                 </Flex>
                                 <Flex justify="space-between" align="center" gap={12} wrap>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                    <Text type="secondary" style={{ fontSize: 13 }}>
                                         {t('audit.advanced_search_help', {
                                             defaultValue: 'Use advanced search for approval decisions, placement diagnostics, and exact resource context.',
                                         })}

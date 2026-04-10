@@ -1,44 +1,67 @@
 "use client";
 
-import { useState } from "react";
+import React from "react";
 
-import { Typography } from "antd";
+import { Select } from "antd";
 import { useTranslation } from "react-i18next";
+import { useDisplayTimeZone } from "@/components/providers/DisplayTimeZoneProvider";
+import {
+  formatTimeZoneOptionLabel,
+  formatTimeZoneShortLabel,
+  getSupportedTimeZones,
+} from "@/lib/timeZone";
 
-const { Text } = Typography;
+const FOLLOW_BROWSER_VALUE = "__browser__";
+const TIME_ZONE_OPTIONS = getSupportedTimeZones();
 
 export default function LocalTimezoneBadge() {
   const { t } = useTranslation("common");
-  const [timeZone] = useState(() =>
-    formatUtcOffsetLabel(new Date().getTimezoneOffset()),
+  const { browserTimeZone, preferenceTimeZone, isSaving, setTimeZone } =
+    useDisplayTimeZone();
+  const options = React.useMemo(
+    () => [
+      {
+        value: FOLLOW_BROWSER_VALUE,
+        label: t("status.local_timezone_follow_browser", {
+          timeZone: browserTimeZone
+            ? formatTimeZoneOptionLabel(browserTimeZone)
+            : t("status.local_timezone_auto"),
+        }),
+        shortLabel: browserTimeZone
+          ? formatTimeZoneShortLabel(browserTimeZone)
+          : t("status.local_timezone_auto"),
+      },
+      ...TIME_ZONE_OPTIONS.map((timeZone) => ({
+        value: timeZone,
+        label: formatTimeZoneOptionLabel(timeZone),
+        shortLabel: formatTimeZoneShortLabel(timeZone),
+      })),
+    ],
+    [browserTimeZone, t],
   );
-
-  if (!timeZone) {
-    return null;
-  }
 
   return (
-    <Text
-      type="secondary"
-      style={{ fontSize: 12, lineHeight: 1, whiteSpace: "nowrap" }}
-      suppressHydrationWarning
-      title={timeZone}
-    >
-      {t("status.local_timezone", { timeZone })}
-    </Text>
+    <Select
+      aria-label={t("status.display_timezone")}
+      className="app-shell-timezone-select"
+      loading={isSaving}
+      optionFilterProp="label"
+      optionLabelProp="shortLabel"
+      options={options}
+      popupMatchSelectWidth={340}
+      showSearch
+      title={t("status.display_timezone")}
+      value={preferenceTimeZone ?? FOLLOW_BROWSER_VALUE}
+      onChange={(value) => {
+        void setTimeZone(
+          value === FOLLOW_BROWSER_VALUE ? null : String(value),
+        );
+      }}
+      filterOption={(input, option) =>
+        String(option?.label ?? "")
+          .toLowerCase()
+          .includes(input.toLowerCase())
+      }
+    />
   );
-}
-
-function formatUtcOffsetLabel(offsetMinutesWestOfUtc: number): string {
-  const totalMinutes = -offsetMinutesWestOfUtc;
-  const sign = totalMinutes >= 0 ? "+" : "-";
-  const absoluteMinutes = Math.abs(totalMinutes);
-  const hours = Math.floor(absoluteMinutes / 60);
-  const minutes = absoluteMinutes % 60;
-
-  if (minutes === 0) {
-    return `UTC${sign}${hours}`;
-  }
-
-  return `UTC${sign}${hours}:${String(minutes).padStart(2, "0")}`;
 }

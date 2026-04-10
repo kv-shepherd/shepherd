@@ -95,7 +95,7 @@ export function AdminNamespacesContent() {
                         {record.description && (
                             <>
                                 <br />
-                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                <Text type="secondary" style={{ fontSize: 13 }}>
                                     {record.description}
                                 </Text>
                             </>
@@ -133,7 +133,7 @@ export function AdminNamespacesContent() {
             render: (actor: string) => (
                 <Space direction="vertical" size={0}>
                     <Text strong>{actor || '—'}</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: 13 }}>
                         {t('namespaces.created_by_hint', 'Registry author')}
                     </Text>
                 </Space>

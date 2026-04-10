@@ -679,7 +679,7 @@ export function AdminAuthProvidersContent() {
         children: (
           <Space size={6} wrap={true}>
             <Tag color="orange">{item.count}</Tag>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>
               {item.code}
             </Text>
           </Space>
@@ -946,7 +946,7 @@ export function AdminAuthProvidersContent() {
             mode.description,
             t,
           ) ? (
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>
               {authProviderRuntimeModeDescription(
                 providers.mappingProvider?.auth_type,
                 mode.key,
@@ -1003,7 +1003,7 @@ export function AdminAuthProvidersContent() {
       render: (_, cohort) => (
         <Space direction="vertical" size={0}>
           <Text strong>{cohort.display_name || cohort.cohort_key}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 13 }}>
             {cohort.cohort_kind}:{cohort.cohort_key}
           </Text>
         </Space>
@@ -1043,7 +1043,7 @@ export function AdminAuthProvidersContent() {
             <Tag color={directoryPreviewOutcomeColor(outcome)}>
               {directoryPreviewOutcomeLabel(outcome, t)}
             </Tag>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>
               {directoryPreviewActionLabel(item.match.action, t)}
             </Text>
           </Space>
@@ -1058,15 +1058,15 @@ export function AdminAuthProvidersContent() {
       render: (_, item) => (
         <Space direction="vertical" size={0}>
           <Text strong>{item.record.display_name}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 13 }}>
             {item.record.username}
             {item.record.email ? ` · ${item.record.email}` : ""}
           </Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 13 }}>
             external_id: {item.record.external_id}
           </Text>
           {item.match.action === "update" && item.match.existing_user_id ? (
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>
               {t("authProviders.directory.matched_existing_user", {
                 defaultValue: "Matched existing user: {{id}} via {{matchedBy}}",
                 id: item.match.existing_user_id,
@@ -1273,7 +1273,7 @@ export function AdminAuthProvidersContent() {
                 : t("users.status.disabled")}
             </Tag>
           </Space>
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 13 }}>
             {t("authProviders.table.provider_id", {
               defaultValue: "Provider ID",
             })}
@@ -1297,7 +1297,7 @@ export function AdminAuthProvidersContent() {
             </Text>
             {renderAuthProviderAlphaTag(t)}
           </Space>
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 13 }}>
             {authType}
           </Text>
         </Space>
@@ -1387,7 +1387,7 @@ export function AdminAuthProvidersContent() {
       render: (_, record) => (
         <Space direction="vertical" size={0}>
           <Text strong>{record.cohort_display_name || record.cohort_key}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 13 }}>
             {record.cohort_kind}:{record.cohort_key}
           </Text>
         </Space>
@@ -1403,7 +1403,7 @@ export function AdminAuthProvidersContent() {
               roleLabelById[record.role_id] ||
               record.role_id}
           </Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 13 }}>
             {record.scope_type && record.scope_type !== "global"
               ? t("authProviders.mapping.scope_summary_named", {
                   defaultValue: "{{scope}}: {{target}}",
@@ -2307,7 +2307,7 @@ export function AdminAuthProvidersContent() {
                                         {directoryConflictCodeLabel(group.code, t)}
                                       </Text>
                                       <Tag color="orange">{group.items.length}</Tag>
-                                      <Text type="secondary" style={{ fontSize: 12 }}>
+                                      <Text type="secondary" style={{ fontSize: 13 }}>
                                         {group.code}
                                       </Text>
                                     </Space>
@@ -2896,7 +2896,7 @@ export function AdminAuthProvidersContent() {
                       margin: 0,
                       whiteSpace: "pre-wrap",
                       wordBreak: "break-word",
-                      fontSize: 12,
+                      fontSize: 13,
                     }}
                   >
                     {formatJsonObject(
@@ -3371,7 +3371,7 @@ function CreateProviderWizard({
                             {renderAuthProviderAlphaTag(t)}
                           </Space>
                           <br />
-                          <Text type="secondary" style={{ fontSize: 12 }}>
+                          <Text type="secondary" style={{ fontSize: 13 }}>
                             {authProviderTypeDescription(
                               selectedAuthType,
                               selectedProviderType?.description,
@@ -3379,7 +3379,7 @@ function CreateProviderWizard({
                             )}
                           </Text>
                           <br />
-                          <Text type="warning" style={{ fontSize: 12 }}>
+                          <Text type="warning" style={{ fontSize: 13 }}>
                             {t("authProviders.alpha_description", {
                               defaultValue:
                                 "Authentication provider integrations are currently in alpha. They are not yet fully validated and may not work reliably in every environment.",

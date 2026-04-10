@@ -144,7 +144,7 @@ export default function VMBatchDetailPage() {
             render: (_: unknown, record: NonNullable<BatchJobStatus['children']>[number]) => (
                 <Space direction="vertical" size={0}>
                     <Text strong>{batchChildSummaryTitle(record.resource_name)}</Text>
-                    <Text copyable={{ text: record.ticket_id }} type="secondary" style={{ fontSize: 12 }}>
+                    <Text copyable={{ text: record.ticket_id }} type="secondary" style={{ fontSize: 13 }}>
                         {t('batch.child.ticket')}: {formatRecordID(record.ticket_id)}
                     </Text>
                 </Space>

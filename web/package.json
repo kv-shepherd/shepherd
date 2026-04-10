@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint . --max-warnings 0",
     "knip": "knip --max-show-issues 200",
-    "typecheck": "rm -f tsconfig.tsbuildinfo && next typegen && tsc --noEmit",
+    "typecheck": "rm -f tsconfig.tsbuildinfo && node scripts/run-next-typecheck.mjs",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",

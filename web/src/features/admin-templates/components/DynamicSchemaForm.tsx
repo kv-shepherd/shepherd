@@ -1292,7 +1292,7 @@ export const DynamicSchemaForm = React.forwardRef<
           autoSize={{ minRows: 8, maxRows: 18 }}
           disabled={disabled}
           data-testid="dynamic-form-raw-json"
-          style={{ fontFamily: "monospace", fontSize: 12 }}
+          style={{ fontFamily: "monospace", fontSize: 14 }}
           placeholder={t(
             "dynamic_form.raw_json_placeholder",
             '{\n  "spec": {\n    "template": {\n      "spec": {}\n    }\n  }\n}',

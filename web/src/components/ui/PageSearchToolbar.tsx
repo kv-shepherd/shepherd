@@ -58,8 +58,10 @@ export function PageSearchToolbar({
     searchDraftValue !== undefined && onSearchDraftChange !== undefined;
 
   return (
-    <Flex vertical gap={10} style={{ width: "100%" }}>
+    <div className="page-search-toolbar">
+      <Flex vertical gap={10} style={{ width: "100%" }}>
       <Flex
+        className="page-search-toolbar__main"
         align="flex-start"
         justify="space-between"
         gap={12}
@@ -67,14 +69,17 @@ export function PageSearchToolbar({
         style={{ width: "100%" }}
       >
         <Flex
+          className="page-search-toolbar__search"
           vertical
           gap={8}
           style={{ flex: "1 1 420px", minWidth: 280, maxWidth: 760 }}
         >
           <Input.Search
+            className="page-search-toolbar__search-input"
             key={isDraftControlled ? undefined : searchValue}
             enterButton
             allowClear
+            size="large"
             {...(isDraftControlled
               ? {
                   value: searchDraftValue,
@@ -93,15 +98,25 @@ export function PageSearchToolbar({
             data-testid={searchTestId}
           />
           {searchHelp ? (
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <Typography.Text
+              type="secondary"
+              className="page-search-toolbar__help"
+            >
               {searchHelp}
             </Typography.Text>
           ) : null}
         </Flex>
-        <Flex align="center" gap={8} wrap justify="flex-end">
+        <Flex
+          className="page-search-toolbar__controls"
+          align="center"
+          gap={8}
+          wrap
+          justify="flex-end"
+        >
           {secondaryActions}
           {advancedSearch ? (
             <Button
+              className="app-shell-action-button"
               onClick={advancedSearch.onToggle}
               data-testid={advancedSearch.toggleTestId}
             >
@@ -112,6 +127,7 @@ export function PageSearchToolbar({
           ) : null}
           {hasActiveFilters && onClear ? (
             <Button
+              className="app-shell-action-button"
               onClick={() => {
                 if (isDraftControlled) {
                   onSearchDraftChange("");
@@ -128,20 +144,18 @@ export function PageSearchToolbar({
       </Flex>
       {advancedSearch?.open ? (
         <Card
+          className="page-search-toolbar__advanced"
           size="small"
-          style={{
-            background: "#fafafa",
-            borderColor: "#f0f0f0",
-          }}
         >
           <Flex vertical gap={12}>
-            <Typography.Text strong>
+            <Typography.Text strong className="page-search-toolbar__advanced-title">
               {advancedSearch.title ?? advancedSearch.openLabel}
             </Typography.Text>
             {advancedSearch.content}
           </Flex>
         </Card>
       ) : null}
-    </Flex>
+      </Flex>
+    </div>
   );
 }

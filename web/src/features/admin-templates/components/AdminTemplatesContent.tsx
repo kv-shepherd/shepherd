@@ -489,7 +489,7 @@ export function AdminTemplatesContent() {
                                 : (record.display_name ?? name)}
                         </Text>
                         <br />
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 13 }}>
                             {templates.searchedColumn === 'name' ? highlightText(name, templates.searchText) : name}
                         </Text>
                     </div>
@@ -513,7 +513,7 @@ export function AdminTemplatesContent() {
                             </Tag>
                             {record.os_version ? <Tag>{record.os_version}</Tag> : null}
                         </Space>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 13 }}>
                             {record.os_version
                                 ? t(
                                     'templates.os_profile_summary',
@@ -546,7 +546,7 @@ export function AdminTemplatesContent() {
                                 {record.enabled !== false ? t('common:status.active') : t('common:status.disabled')}
                             </Tag>
                         </Space>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 13 }}>
                             {flow.description}
                         </Text>
                     </Space>

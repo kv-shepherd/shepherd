@@ -166,11 +166,11 @@ export function UserDirectorySelectionPanel<TUser extends DirectorySelectableUse
                     return (
                         <Space direction="vertical" size={2}>
                             <Text strong>{primary}</Text>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
+                            <Text type="secondary" style={{ fontSize: 13 }}>
                                 {secondary}
                             </Text>
                             {facts.map((fact) => (
-                                <Text key={fact.label} type="secondary" style={{ fontSize: 12 }}>
+                                <Text key={fact.label} type="secondary" style={{ fontSize: 13 }}>
                                     {fact.label}: {fact.value}
                                 </Text>
                             ))}
