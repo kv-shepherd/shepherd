@@ -129,7 +129,7 @@ For newcomers, we recommend reading ADRs in this order:
 8. **ADR-0014** (Capability Detection) → Multi-cluster compatibility
 
 ### Governance Layer
-9. **ADR-0015** (Governance Model V2) → Platform RBAC, approval workflows
+9. **ADR-0015** (Governance Model V2) → Global/platform RBAC, resource membership inheritance, approval workflows
 10. **ADR-0017** (VM Request Flow) → Clarifies user vs admin responsibilities
 11. **ADR-0018** (Instance Size Abstraction) → Schema-driven VM sizing
 12. **ADR-0021** (API Contract-First) → Contract-first API lifecycle

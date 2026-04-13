@@ -19,6 +19,7 @@
  *   vm-action-request-similar-{id}
  */
 import {
+  Alert,
   Badge,
   Button,
   Descriptions,
@@ -51,6 +52,7 @@ import { useApiGet } from "@/lib/api/useApiGet";
 import { useApiMutation } from "@/lib/api/useApiMutation";
 import { api } from "@/lib/api/client";
 import { translateApiError } from "@/lib/api/errorMessage";
+import { isCodespacesDemoHost } from "@/lib/auth/demoEnvironment";
 import { useMessage } from "@/lib/hooks/useMessage";
 import {
   hasAnyConsoleCapability,
@@ -98,6 +100,8 @@ export default function VMDetailPage() {
   const searchParams = useSearchParams();
   const vmId = params.id;
   const { messageApi, messageContextHolder } = useMessage();
+  const isCodespacesDemo =
+    typeof window !== "undefined" && isCodespacesDemoHost(window.location.hostname);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [consolePending, setConsolePending] = useState(false);
@@ -552,6 +556,15 @@ export default function VMDetailPage() {
           </Button>
         }
       />
+      {isCodespacesDemo ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t("demo.notice_title")}
+          description={t("demo.notice_description")}
+        />
+      ) : null}
 
       <PageSurface loading={isLoading}>
         <Descriptions bordered column={2} items={detailItems} />

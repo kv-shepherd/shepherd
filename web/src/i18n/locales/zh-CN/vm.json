@@ -1,6 +1,8 @@
 {
     "title": "虚拟机",
     "subtitle": "管理虚拟机生命周期",
+    "demo.notice_title": "当前 Codespaces 演示环境默认未连接真实 K8s 或 KubeVirt 集群",
+    "demo.notice_description": "虚拟机创建、启停、调整配置、删除和控制台访问依赖已连接的 K8s 或 KubeVirt 集群。在接入真实集群前，这些操作可能因集群不可用或健康检查未通过而失败。",
     "create_request": "申请虚拟机",
     "request_submitted": "虚拟机申请已提交，可在我的申请中继续跟踪。",
     "draft.missing": "当前没有可恢复的虚拟机申请草稿",

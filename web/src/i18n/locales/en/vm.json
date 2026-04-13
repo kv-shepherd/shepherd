@@ -1,6 +1,8 @@
 {
     "title": "Virtual Machines",
     "subtitle": "Manage virtual machine lifecycle",
+    "demo.notice_title": "Codespaces demo does not include a live K8s or KubeVirt cluster by default",
+    "demo.notice_description": "VM create, power, modify, delete, and console actions depend on a connected K8s or KubeVirt cluster. Until a real cluster is configured, these actions may fail with the platform's normal unavailable or cluster health errors.",
     "create_request": "Request VM",
     "request_submitted": "VM request submitted. Track it in My Requests.",
     "draft.missing": "No saved VM request draft is available",

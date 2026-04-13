@@ -57,6 +57,8 @@ config.yaml
 *.key
 /kubeconfig
 /kubeconfig.*
+deploy/prod/.env.prod
+deploy/prod/tls/
 
 # Docker
 .docker/

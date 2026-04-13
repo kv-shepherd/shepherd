@@ -63,6 +63,28 @@ not launched yet, and the existing role-binding model already provides the
 right place to express test/prod scope without carrying transitional RBAC
 aliases into GA.
 
+### Scope Boundary
+
+This ADR only defines the **platform/global RBAC baseline**:
+
+* canonical global permission keys
+* built-in platform-facing roles
+* environment-scoped `RoleBinding.allowed_environments`
+
+It does **not** replace the separate **resource membership / inheritance**
+model already defined elsewhere:
+
+* System membership remains the resource-facing access model
+* Service and VM visibility/operations continue to inherit from System
+* that inherited resource access complements, but does not substitute for,
+  the global RBAC layer
+
+In other words, the public product has two related but distinct access layers:
+
+1. **Global/platform RBAC** — what platform capabilities a user may hold
+2. **Resource membership inheritance** — which System/Service/VM resources the
+   user may actually see or operate within those capabilities
+
 ### Normative Decisions
 
 #### 1. Compatibility permissions are not part of the supported permission catalog

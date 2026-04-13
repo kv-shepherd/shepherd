@@ -1,0 +1,218 @@
+# KubeVirt Shepherd — Artifact Build Pipeline
+# Triggered by tag push (v*) from release-please. Produces:
+#   - Go binaries (linux/amd64, linux/arm64) → attached to GitHub Release
+#   - Docker images → ghcr.io with cosign keyless signatures
+#
+# Flow: release-please creates tag → this workflow builds artifacts
+#
+# ADR-0029: Pin actions to commit SHA, use specific runner version
+name: Release Artifacts
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write      # Attach assets to existing GitHub Release
+  packages: write      # ghcr.io push
+  id-token: write      # Cosign OIDC keyless signing
+  attestations: write  # GitHub Attestations
+
+env:
+  REGISTRY: ghcr.io
+  SERVER_IMAGE: ghcr.io/kv-shepherd/shepherd-server
+  WEB_IMAGE: ghcr.io/kv-shepherd/shepherd-web
+
+jobs:
+  # ── Preflight: extract version metadata ──
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
+    steps:
+      - name: Extract version metadata
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "${TAG}" == *-* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "::notice ::Tag=${TAG} Version=${VERSION}"
+
+  # ── Go Binaries (matrix: amd64, arm64) ──
+  build-go:
+    name: Build Go (${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [preflight]
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: "1.25.9"
+
+      - name: Build binaries
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "0"
+        run: |
+          VERSION="${{ needs.preflight.outputs.version }}"
+          COMMIT="${GITHUB_SHA::8}"
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          mkdir -p dist
+          go build -ldflags="${LDFLAGS}" -o dist/shepherd   ./cmd/server
+          go build -ldflags="${LDFLAGS}" -o dist/seed       ./cmd/seed
+
+          tar czf "shepherd-v${VERSION}-linux-${{ matrix.arch }}.tar.gz" \
+            -C dist shepherd seed
+          sha256sum "shepherd-v${VERSION}-linux-${{ matrix.arch }}.tar.gz" \
+            > "shepherd-v${VERSION}-linux-${{ matrix.arch }}.tar.gz.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: go-linux-${{ matrix.arch }}
+          path: |
+            shepherd-*.tar.gz
+            shepherd-*.tar.gz.sha256
+          retention-days: 5
+
+  # ── Docker Images (multi-platform, matrix: server + web) ──
+  build-docker:
+    name: Build Docker (${{ matrix.image }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: [preflight]
+    strategy:
+      matrix:
+        include:
+          - image: server
+            dockerfile: Dockerfile
+            context: "."
+            image_name: ghcr.io/kv-shepherd/shepherd-server
+          - image: web
+            dockerfile: deploy/prod/web.Dockerfile
+            context: web
+            image_name: ghcr.io/kv-shepherd/shepherd-web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        with:
+          images: ${{ matrix.image_name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ needs.preflight.outputs.is_prerelease == 'false' }}
+
+      - name: Build & Push
+        id: build
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+
+      - name: Sign images with Cosign
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          while IFS= read -r tag; do
+            echo "Signing ${tag}@${DIGEST}"
+            cosign sign --yes "${tag}@${DIGEST}"
+          done <<< "${TAGS}"
+
+  # ── Attach assets to GitHub Release (created by release-please) ──
+  upload-assets:
+    name: Upload Release Assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: [preflight, build-go, build-docker]
+    steps:
+      - name: Download Go artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          pattern: go-*
+
+      - name: Consolidate checksums
+        run: |
+          cd artifacts
+          cat go-*/shepherd-*.sha256 > checksums-sha256.txt
+          echo "=== Release checksums ==="
+          cat checksums-sha256.txt
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # Upload Go binaries and checksums to the release created by release-please
+          gh release upload "${TAG}" \
+            artifacts/go-*/shepherd-*.tar.gz \
+            artifacts/checksums-sha256.txt \
+            --clobber \
+            --repo "${{ github.repository }}"
+
+          # Append Docker pull instructions to the release body
+          DOCKER_BODY="
+          ---
+          ## Container Images
+
+          \`\`\`bash
+          # Pull
+          docker pull ${{ env.SERVER_IMAGE }}:${{ needs.preflight.outputs.version }}
+          docker pull ${{ env.WEB_IMAGE }}:${{ needs.preflight.outputs.version }}
+
+          # Verify signature
+          cosign verify ${{ env.SERVER_IMAGE }}:${{ needs.preflight.outputs.version }} \\
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \\
+            --certificate-identity-regexp='github\\.com/kv-shepherd/shepherd'
+          \`\`\`
+          "
+          EXISTING_BODY=$(gh release view "${TAG}" --json body -q '.body' --repo "${{ github.repository }}")
+          if ! echo "${EXISTING_BODY}" | grep -q "Container Images"; then
+            gh release edit "${TAG}" \
+              --notes "${EXISTING_BODY}${DOCKER_BODY}" \
+              --repo "${{ github.repository }}"
+          fi

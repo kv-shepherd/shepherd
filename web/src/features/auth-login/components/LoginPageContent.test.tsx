@@ -21,7 +21,10 @@ vi.mock('react-i18next', () => ({
                 'auth.username': 'Username',
                 'auth.password': 'Password',
                 'auth.login': 'Sign in',
+                'auth.welcome_back': 'Welcome back',
                 'auth.or_continue_with': 'Or continue with',
+                'auth.dev_login_hint_title': 'Local demo sign-in',
+                'auth.dev_login_hint_description': 'Use admin / admin for local development and Codespaces demos. First sign-in will require a password change.',
                 'validation.username_required': 'Username is required',
                 'validation.username_min': 'Username is too short',
                 'validation.password_required': 'Password is required',
@@ -58,5 +61,12 @@ describe('LoginPageContent', () => {
         expect(screen.getByPlaceholderText('Username')).toBeInTheDocument();
         expect(screen.getByPlaceholderText('Password')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    });
+
+    it('shows the local demo hint on localhost', async () => {
+        render(<LoginPageContent />);
+
+        expect(await screen.findByText('Local demo sign-in')).toBeVisible();
+        expect(screen.getByText('Use admin / admin for local development and Codespaces demos. First sign-in will require a password change.')).toBeVisible();
     });
 });

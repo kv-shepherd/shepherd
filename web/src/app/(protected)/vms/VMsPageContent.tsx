@@ -36,6 +36,7 @@ import { VMRequestWizard } from '@/features/vm-management/components/VMRequestWi
 import { useVMManagementController } from '@/features/vm-management/hooks/useVMManagementController';
 import { useScopedVMRequestLauncher } from '@/features/vm-management/hooks/useScopedVMRequestLauncher';
 import { useApiGet } from '@/hooks/useApiQuery';
+import { isCodespacesDemoHost } from '@/lib/auth/demoEnvironment';
 import { api } from '@/lib/api/client';
 
 const { Paragraph, Text } = Typography;
@@ -48,6 +49,8 @@ const filterOptionByLabel = (input: string, option?: { label?: unknown }) => {
 export default function VMsPageContent() {
     const { t } = useTranslation(['vm', 'common']);
     const searchParams = useSearchParams();
+    const isCodespacesDemo = typeof window !== 'undefined'
+        && isCodespacesDemoHost(window.location.hostname);
     const vm = useVMManagementController({ t });
     const lastBatchActionFeedback = vm.lastBatchActionFeedback
         ? `${vm.lastBatchActionFeedback.action} submitted for ${vm.lastBatchActionFeedback.affectedCount} item(s)`
@@ -249,6 +252,14 @@ export default function VMsPageContent() {
                 )}
             />
             <div className="vm-page-stack">
+            {isCodespacesDemo ? (
+                <Alert
+                    type="warning"
+                    showIcon
+                    message={t('demo.notice_title')}
+                    description={t('demo.notice_description')}
+                />
+            ) : null}
 
             {vm.savedDraft && !vm.wizardOpen && (
                 <div>

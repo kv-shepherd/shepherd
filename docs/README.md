@@ -12,7 +12,7 @@ docs/
 ├── adr/                      # Architecture Decision Records
 │   ├── README.md             # ADR index with status table
 │   ├── GLOSSARY.md           # Technical terminology
-│   └── ADR-0001 ~ ADR-0030   # Individual ADRs (superseded ones remain here)
+│   └── ADR-0001 ~ ADR-0053   # Individual ADRs (superseded ones remain here)
 │
 ├── rfc/                      # Request for Comments (Future Features)
 │   ├── README.md             # RFC index with priorities

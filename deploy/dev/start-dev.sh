@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/deploy/dev/docker-compose.yml"
 HOST_USER_ID="${USER_ID:-$(id -u)}"
 HOST_GROUP_ID="${GROUP_ID:-$(id -g)}"
-DEV_ADMIN_PASSWORD="${DEV_ADMIN_PASSWORD:-admin123}"
+DEV_ADMIN_PASSWORD="${DEV_ADMIN_PASSWORD:-admin}"
 NODE_MODULES_DIR="${ROOT_DIR}/web/node_modules"
 LOCK_HASH_FILE="${NODE_MODULES_DIR}/.package-lock.hash"
 SERVICES_TO_DELETE=("db" "server" "web" "nginx")
@@ -40,7 +40,8 @@ DEV_FRONTEND_DIAGNOSTIC_DIR="${DEV_FRONTEND_DIAGNOSTIC_DIR:-${ROOT_DIR}/tmp/node
 DEV_FRONTEND_NODE_OPTIONS="${DEV_FRONTEND_NODE_OPTIONS:-}"
 FRONTEND_PID_FILE="${ROOT_DIR}/tmp/dev-web.pid"
 FRONTEND_LOG_FILE="${ROOT_DIR}/tmp/dev-web.log"
-KEEP_DB=0
+CLEAN_ALL=0
+SKIP_SEED=0
 # Default to webpack for stability; Turbopack can consume excessive memory in some dev scenarios.
 DEV_FRONTEND_BUILDER="${DEV_FRONTEND_BUILDER:-webpack}"
 
@@ -49,8 +50,11 @@ usage() {
 Usage: ./start-dev.sh [options]
 
 Options:
-  --keep-db          Preserve the existing dev PostgreSQL container/data and only
-                     recreate app services.
+  --clean-all        Reset the development stack from a clean database and remove
+                     the existing dev PostgreSQL container/data.
+  --skip-seed        Do not run baseline/e2e seed or rotate the bootstrap admin
+                     password. Useful for resume flows that should keep existing
+                     demo data untouched.
   --e2e-seed         Run extended local fixtures (`cmd/e2e-seed`) after the
                      baseline development seed (`cmd/seed`).
   --frontend-docker  Run the frontend inside Docker instead of the default host
@@ -510,8 +514,12 @@ require_cmd openssl
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --keep-db)
-            KEEP_DB=1
+        --clean-all)
+            CLEAN_ALL=1
+            shift
+            ;;
+        --skip-seed)
+            SKIP_SEED=1
             shift
             ;;
         --e2e-seed)
@@ -604,20 +612,20 @@ fi
 
 echo "Checking development environment status..."
 stop_host_frontend
-if [[ "${KEEP_DB}" == "1" ]]; then
+if [[ "${CLEAN_ALL}" == "1" ]]; then
+    echo "Resetting development environment (clean all services and DB data)..."
+    for svc in "${SERVICES_TO_DELETE[@]}"; do
+        echo "  Removing service: $svc"
+        "${COMPOSE_CMD[@]}" rm -s -f -v "$svc" || true
+    done
+    "${COMPOSE_CMD[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+else
     echo "Resetting development environment (preserve DB container/data)..."
     for svc in server web nginx; do
         echo "  Removing service: $svc"
         "${COMPOSE_CMD[@]}" rm -s -f -v "$svc" || true
     done
     echo "  Preserving service: db"
-else
-    echo "Resetting development environment (clear DB data every run)..."
-    for svc in "${SERVICES_TO_DELETE[@]}"; do
-        echo "  Removing service: $svc"
-        "${COMPOSE_CMD[@]}" rm -s -f -v "$svc" || true
-    done
-    "${COMPOSE_CMD[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
 fi
 echo "Cleanup complete."
 
@@ -694,22 +702,26 @@ if [[ "${backend_ready}" != "true" ]]; then
     exit 1
 fi
 
-echo "Seeding development data..."
-"${COMPOSE_CMD[@]}" exec -T server /usr/local/bin/seed >/dev/null
-rotate_default_admin_password "${DEV_ADMIN_PASSWORD}"
-if [[ "${DEV_INCLUDE_E2E_SEED}" == "1" ]]; then
-    E2E_SEED_ENV=()
-    DEV_KUBECONFIG_FILE="${ROOT_DIR}/k8s-admin.yaml"
-    if [[ -f "${DEV_KUBECONFIG_FILE}" ]]; then
-        echo " importing live dev cluster from ${DEV_KUBECONFIG_FILE}"
-        E2E_SEED_ENV=(-e "E2E_KUBECONFIG_B64=$(base64_file "${DEV_KUBECONFIG_FILE}")")
-    else
-        echo " no local k8s-admin.yaml found; e2e seed will register an unreachable stub cluster"
-    fi
-    "${COMPOSE_CMD[@]}" exec -T "${E2E_SEED_ENV[@]}" server /usr/local/bin/e2e-seed >/dev/null
-    echo " seed complete (baseline + extended fixtures)"
+if [[ "${SKIP_SEED}" == "1" ]]; then
+    echo "Skipping development seed/bootstrap rotation (--skip-seed)."
 else
-    echo " seed complete (baseline only)"
+    echo "Seeding development data..."
+    "${COMPOSE_CMD[@]}" exec -T server /usr/local/bin/seed >/dev/null
+    rotate_default_admin_password "${DEV_ADMIN_PASSWORD}"
+    if [[ "${DEV_INCLUDE_E2E_SEED}" == "1" ]]; then
+        E2E_SEED_ENV=()
+        DEV_KUBECONFIG_FILE="${ROOT_DIR}/k8s-admin.yaml"
+        if [[ -f "${DEV_KUBECONFIG_FILE}" ]]; then
+            echo " importing live dev cluster from ${DEV_KUBECONFIG_FILE}"
+            E2E_SEED_ENV=(-e "E2E_KUBECONFIG_B64=$(base64_file "${DEV_KUBECONFIG_FILE}")")
+        else
+            echo " no local k8s-admin.yaml found; e2e seed will register an unreachable stub cluster"
+        fi
+        "${COMPOSE_CMD[@]}" exec -T "${E2E_SEED_ENV[@]}" server /usr/local/bin/e2e-seed >/dev/null
+        echo " seed complete (baseline + extended fixtures)"
+    else
+        echo " seed complete (baseline only)"
+    fi
 fi
 
 if [[ "${DEV_FRONTEND_MODE}" == "host" ]]; then
@@ -744,13 +756,17 @@ if [[ "${DEV_FRONTEND_MODE}" == "host" ]]; then
     echo "  - Frontend direct:     http://localhost:${DEV_FRONTEND_PORT}"
     echo "  - Frontend log:        ${FRONTEND_LOG_FILE}"
 fi
-if [[ "${KEEP_DB}" == "1" ]]; then
-    echo "  - DB reset mode:       preserved (--keep-db)"
+if [[ "${CLEAN_ALL}" == "1" ]]; then
+    echo "  - DB reset mode:       rebuilt (--clean-all)"
 else
-    echo "  - DB reset mode:       rebuilt (default)"
+    echo "  - DB reset mode:       preserved (default)"
 fi
-echo "  - Seeded users:        admin/${DEV_ADMIN_PASSWORD} (rotated from bootstrap admin/admin)"
-if [[ "${DEV_INCLUDE_E2E_SEED}" == "1" ]]; then
+if [[ "${SKIP_SEED}" == "1" ]]; then
+    echo "  - Seed/bootstrap:      skipped (--skip-seed)"
+else
+    echo "  - Seeded users:        admin/${DEV_ADMIN_PASSWORD} (rotated from bootstrap admin/admin)"
+    if [[ "${DEV_INCLUDE_E2E_SEED}" == "1" ]]; then
 echo "                         e2e-admin/e2e-admin-123"
+    fi
 fi
 echo "  - Note:                accept the local TLS certificate once in the browser for noVNC"

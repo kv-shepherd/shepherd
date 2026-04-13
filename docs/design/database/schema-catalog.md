@@ -19,7 +19,7 @@
 |------|------|------|
 | Primary resources | `systems`, `services`, `vms`, `templates`, `instance_sizes`, `clusters`, `namespace_registry` | Runtime-owned entities |
 | Governance and approvals | `approval_tickets`, `batch_approval_tickets`, `approval_policies` | Approval workflow and batch orchestration (`approval_tickets.parent_ticket_id` models child linkage) |
-| Platform RBAC | `users`, `roles`, `permissions`, `role_permissions`, `role_bindings`, `resource_role_bindings` | Platform-level access control |
+| Access Control | `users`, `roles`, `permissions`, `role_permissions`, `role_bindings`, `resource_role_bindings` | Global/platform RBAC plus resource membership inheritance |
 | Event and async | `domain_events`, River tables (`river_job`, `river_*`) | Claim-check and async execution |
 | Audit and notifications | `audit_logs`, `notifications` | Compliance and user feedback |
 | Auth provider integration | `auth_providers`, `external_cohorts`, `external_cohort_mappings`, `external_cohort_grants`, `user_directory_profiles`, `directory_sync_jobs` | External auth runtime, optional directory sync, and cohort-to-RBAC projection |

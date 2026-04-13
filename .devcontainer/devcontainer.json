@@ -1,0 +1,67 @@
+// KubeVirt Shepherd — GitHub Codespaces / Dev Container Configuration
+// See: https://containers.dev/implementors/json_reference/
+{
+  "name": "Shepherd Demo",
+  "image": "mcr.microsoft.com/devcontainers/go:1.25-bookworm",
+
+  // Additional tools
+  "features": {
+    // Node.js 22 for the Next.js frontend
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    },
+    // Docker-in-Docker for running PostgreSQL and service containers
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "dockerDashComposeVersion": "v2"
+    }
+  },
+
+  // Ports: UI ingress and optional direct API diagnostics.
+  "forwardPorts": [3000, 8080],
+  "portsAttributes": {
+    "3000": {
+      "label": "Shepherd UI",
+      "onAutoForward": "openBrowser"
+    },
+    "8080": {
+      "label": "API Server (direct)",
+      "onAutoForward": "ignore"
+    }
+  },
+
+  // First bootstrap: build and start the full demo stack once per Codespace.
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  // Wait for the initial bootstrap to finish before reporting the container ready.
+  "waitFor": "postCreateCommand",
+
+  // Resume services on later container starts without reseeding demo data.
+  "postStartCommand": "bash .devcontainer/post-start.sh",
+
+  // VS Code / Codespaces extensions
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-vscode.makefile-tools",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "go.lintTool": "golangci-lint",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "[go]": {
+          "editor.defaultFormatter": "golang.go"
+        }
+      }
+    },
+    "codespaces": {
+      "openFiles": ["README.md"]
+    }
+  },
+
+  // Run as non-root (vscode user)
+  "remoteUser": "vscode"
+}

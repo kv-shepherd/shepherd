@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '@/hooks/useAuth';
 import { useApiGet } from '@/hooks/useApiQuery';
+import { isLocalOrCodespacesDemoHost } from '@/lib/auth/demoEnvironment';
 import { api } from '@/lib/api/client';
 import type { components } from '@/types/api.gen';
 
@@ -101,6 +102,9 @@ export default function LoginPageContent() {
     useEffect(() => {
         setMounted(true);
     }, []);
+
+    const showDevLoginHint = typeof window !== 'undefined'
+        && isLocalOrCodespacesDemoHost(window.location.hostname);
 
     const handleSubmit = async (values: LoginFormValues) => {
         setLoading(true);
@@ -295,6 +299,16 @@ export default function LoginPageContent() {
                                 closable
                                 onClose={() => setError(null)}
                                 className="auth-shell__error"
+                            />
+                        )}
+
+                        {showDevLoginHint && (
+                            <Alert
+                                type="info"
+                                showIcon
+                                className="auth-shell__error"
+                                message={t('auth.dev_login_hint_title')}
+                                description={t('auth.dev_login_hint_description')}
                             />
                         )}
 

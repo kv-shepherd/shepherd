@@ -304,13 +304,13 @@ export default function AppLayout({
             footerRender={() => (
                 <div style={{ textAlign: 'center', padding: '24px 0 24px', color: '#8c98a4', fontSize: 13 }}>
                     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
-                        <span style={{ fontFamily: 'monospace', fontWeight: 600, padding: '4px 10px', background: 'rgba(15, 23, 42, 0.03)', borderRadius: '6px', border: '1px solid rgba(15, 23, 42, 0.05)', color: '#64748b' }}>Shepherd v0.1.0</span>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 600, padding: '4px 10px', background: 'rgba(15, 23, 42, 0.03)', borderRadius: '6px', border: '1px solid rgba(15, 23, 42, 0.05)', color: '#64748b' }}>Shepherd alpha</span>
                         <a href="https://github.com/kv-shepherd" target="_blank" rel="noopener noreferrer" style={{ color: '#64748b', fontSize: 18, display: 'flex', alignItems: 'center', opacity: 0.8 }} title="GitHub">
                             <GithubOutlined />
                         </a>
                     </div>
                     <div style={{ letterSpacing: '0.01em' }}>
-                        Copyright &copy; 2026 KV-Shepherd. All Rights Reserved.
+                        Copyright &copy; 2026 The KubeVirt Shepherd Authors.
                     </div>
                 </div>
             )}

@@ -39,38 +39,44 @@ KubeVirt Shepherd follows [Semantic Versioning 2.0.0](https://semver.org/):
 - [ ] All CI checks pass on `main` branch
 - [ ] Unit test coverage ≥ 60%
 - [ ] No critical security vulnerabilities (Dependabot/Snyk)
-- [ ] CHANGELOG.md updated with new version section
+- [ ] CHANGELOG.md auto-updated by release-please (review in Release PR)
 - [ ] Documentation updated for new features
 - [ ] ADR/RFC status updated if applicable
 
 ### Release Process
 
-1. **Create Release Branch** (for minor/major releases)
-   ```bash
-   git checkout main
-   git pull origin main
-   git checkout -b release/vX.Y.Z
+The release process is fully automated via [release-please](https://github.com/googleapis/release-please).
+
+> For alpha/beta/rc releases, confirm the `release-please` prerelease settings
+> and manifest baseline match the intended prerelease tag before merging the
+> release PR.
+
+1. **Write Conventional Commits** on the `main` branch
+   ```
+   feat: add multi-cluster VM migration
+   fix: correct RBAC permission check for viewers
+   feat!: redesign approval workflow API (BREAKING CHANGE)
+   docs: update production deployment guide
    ```
 
-2. **Update Version**
-   - Update version in code (if applicable)
-   - Update CHANGELOG.md
+2. **Release PR is auto-created** by release-please
+   - Updates `CHANGELOG.md` with categorized changes
+   - Bumps version in `.release-please-manifest.json`
+   - PR title: `chore(main): release 0.1.0-alpha.1` (prerelease example)
 
-3. **Create Tag**
-   ```bash
-   git tag -a vX.Y.Z -m "Release vX.Y.Z"
-   git push origin vX.Y.Z
-   ```
+3. **Merge the Release PR** → release-please creates:
+   - Git tag (for example `v0.1.0-alpha.1` or `v0.1.0`)
+   - GitHub Release with auto-generated changelog
 
-4. **GitHub Actions Automation**
-   - Triggered by tag push
-   - Builds container images
-   - Runs full test suite
-   - Creates GitHub Release with changelog
+4. **Tag push triggers artifact build** (`.github/workflows/release.yml`):
+   - Go binaries (linux/amd64, linux/arm64) → GitHub Release assets
+   - Docker images → `ghcr.io/kv-shepherd/shepherd-server`, `shepherd-web`
+   - Cosign keyless signatures for all container images
+   - SHA-256 checksums
 
 5. **Post-Release**
-   - Merge release branch back to `main` (if applicable)
    - Announce release (GitHub Discussions)
+   - Verify container image signatures: `cosign verify ghcr.io/kv-shepherd/shepherd-server:v0.1.0-alpha.1`
 
 ---
 
@@ -88,9 +94,11 @@ For critical security or bug fixes:
 
 | Artifact | Location | Description |
 |----------|----------|-------------|
-| Container Image | `ghcr.io/kv-shepherd/shepherd:vX.Y.Z` | Multi-arch image |
-| SBOM | GitHub Release assets | Software Bill of Materials |
-| Checksums | GitHub Release assets | SHA256 checksums |
+| Go Binaries | GitHub Release assets | `shepherd` + `seed` for linux/amd64, linux/arm64 |
+| Server Image | `ghcr.io/kv-shepherd/shepherd-server:vX.Y.Z` | Go backend (distroless, multi-arch) |
+| Web Image | `ghcr.io/kv-shepherd/shepherd-web:vX.Y.Z` | Next.js frontend (node:22-alpine, multi-arch) |
+| Cosign Signatures | Stored in ghcr.io | Keyless OIDC signatures for all container images |
+| Checksums | GitHub Release assets | SHA-256 checksums for Go binaries |
 
 ---
 

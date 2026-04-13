@@ -2,7 +2,9 @@
 
 ## Goal
 
-Provide a single-command local development workflow that starts and resets backend, frontend, and database together for fast early-stage iteration.
+Provide a single-command local development workflow that starts backend,
+frontend, and database together for fast early-stage iteration, while keeping
+local data by default unless an explicit clean reset is requested.
 
 ## Entry Points
 
@@ -32,22 +34,36 @@ Provide a single-command local development workflow that starts and resets backe
 
 ## Reset Policy
 
-`deploy/dev/start-dev.sh` intentionally performs full reset on each run:
+`deploy/dev/start-dev.sh` preserves the existing dev database by default:
 
-- remove running compose services
+- remove app services (`server`, `web`, `nginx`)
+- keep the `db` container and its data volume
+- rebuild backend/frontend images
+- re-run baseline development seed (`cmd/seed`) unless `--skip-seed` is used
+- optionally seed extended local fixtures (`cmd/e2e-seed`)
+
+Use `--clean-all` when you intentionally want a fresh local environment:
+
+- remove all compose services
 - `down --volumes --remove-orphans`
 - rebuild backend/frontend images
-- re-seed development data (`cmd/seed`)
-- optionally seed extended local fixtures (`cmd/e2e-seed`)
+- re-seed from a clean database
 
 ## Seeded Accounts
 
 - bootstrap admin created by `cmd/seed`: `admin/admin`
-- local dev startup then immediately rotates that account to: `admin/admin123`
+- local dev startup keeps that account at: `admin/admin` by default
 - extended local fixture admin: `e2e-admin/e2e-admin-123`
 
-Set `DEV_ADMIN_PASSWORD=<password>` to override the post-seed local admin password.
+Set `DEV_ADMIN_PASSWORD=<password>` when you want local dev to rotate the
+bootstrap admin account after seed.
 Set `DEV_INCLUDE_E2E_SEED=1` or pass `--e2e-seed` when you want the extended local fixtures too.
+
+Recommended split:
+
+- local `./start-dev.sh`: baseline bootstrap only, preserving DB state by default
+- local clean reset: `./start-dev.sh --clean-all`
+- GitHub Codespaces devcontainer: `--clean-all --e2e-seed` on first create, then `--skip-seed` on resume
 
 ## Browser Warning Bridge
 
@@ -60,8 +76,5 @@ When started via `./start-dev.sh`, the frontend enables a dev-only browser warni
 
 This bridge is development-only and is not intended for production deployments.
 
-This is optimized for early development consistency over state persistence.
-
-## Future Evolution
-
-When project maturity requires faster partial restarts or stable local data, split profiles can be added (for example, keep DB persistent while hot-reloading app containers).
+This workflow is optimized for fast iteration while keeping local state stable
+by default.

@@ -1,94 +1,222 @@
 # KubeVirt Shepherd
 
 [![Licensed under Apache License version 2.0](https://img.shields.io/github/license/kv-shepherd/shepherd.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/kv-shepherd/shepherd)](go.mod)
+[![CI](https://github.com/kv-shepherd/shepherd/actions/workflows/ci.yml/badge.svg)](https://github.com/kv-shepherd/shepherd/actions/workflows/ci.yml)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/kv-shepherd/shepherd?quickstart=1)
 
-**KubeVirt Shepherd** is a governance platform for [KubeVirt][kubevirt] virtual 
-machines. It enables self-service VM lifecycle management with proper approval 
-workflows and audit controls across multiple clusters.
+**KubeVirt Shepherd** is a governance-first management platform for
+[KubeVirt][kubevirt] virtual machines. It provides self-service VM lifecycle
+management with structured approval workflows, RBAC, and full audit trails
+across multiple Kubernetes clusters.
 
-> *Like a shepherd tending a flock, this platform ensures that VMs are properly 
-> managed throughout their lifecycle — users enjoy self-service freedom while 
+> *Like a shepherd tending a flock, this platform ensures that VMs are properly
+> managed throughout their lifecycle — users enjoy self-service freedom while
 > governance policies prevent resource sprawl and orphaned instances.*
 
-## Governance Model
+## Why Shepherd?
+
+KubeVirt solves *"running VMs on Kubernetes"*. Shepherd solves what comes next:
+**who** can request a VM, **who** approves it, how are **quotas** enforced,
+and where is the **audit trail**?
+
+Today, these governance capabilities are mainly available through Red Hat's
+commercial stack (OpenShift Virtualization + RHACM). Shepherd provides an
+**open-source, vendor-neutral alternative** built with production-grade
+engineering standards — contract-first API design, declarative schema
+migrations, structured ADR governance, and comprehensive CI gate enforcement.
+
+| Capability | OpenShift Virt | Shepherd |
+|------------|---------------|----------|
+| Multi-cluster management | ✔ (requires RHACM) | ✔ Native |
+| Approval workflows | ✔ | ✔ Built-in |
+| Self-service portal | Operator-driven | ✔ Request → Approve → Deliver |
+| Audit trail | OpenShift-integrated | ✔ Platform-native |
+| Vendor lock-in | Strong (OpenShift) | None |
+
+## Features
+
+- **Approval Workflow** — Structured request and multi-level approval for VM lifecycle operations
+- **VM Operations** — Create, modify, start, stop, restart, and delete through governed workflows
+- **Multi-Cluster** — Unified management across Kubernetes clusters
+- **Dual-Layer Access Control** — Platform-facing RBAC for global capabilities, plus System membership that inherits down to Services and VMs
+- **Environment-Scoped Bindings** — Global role bindings can be limited to approved environments such as test and prod
+- **Audit Trail** — Complete operation history for every resource change
+- **VM Console Access** — VNC and serial console access with approval-aware entrypoints
+- **i18n** — Chinese/English UI, extensible
+- **Auth Plugin SDK** — Pluggable authentication (LDAP, OIDC, custom)
+
+## Architecture
 
 ```
-System (Business Line) → Service (Application) → VM Instance
+Web UI (React 19 + Next.js 16)  ──REST──▶  Go Backend (Gin)  ──▶  PostgreSQL 18
+                                                               ──▶  KubeVirt clusters (client-go)
 ```
 
-| Layer | Example | Self-Service | Approval | Audit |
-|-------|---------|--------------|----------|-------|
-| System | `demo`, `shop` | ✅ | No | ✅ |
-| Service | `redis`, `mysql` | ✅ | No | ✅ |
-| VM | `redis-06` | ✅ | **Required** | ✅ |
-
-## Key Capabilities
-
-- **Approval Workflow**: Structured request and approval for VM provisioning
-- **Lifecycle Operations**: Start, stop, snapshot, clone, migrate (via KubeVirt)
-- **Multi-Cluster**: Manage VMs across multiple Kubernetes clusters
-- **Environment Isolation**: Strict separation between test and production
-- **Audit Trail**: Complete operation history for compliance
-
-## Design Principles
-
-| Principle | Description |
-|-----------|-------------|
-| **Governance First** | This is a governance platform, not a scheduling platform. Reliability over speed. |
-| **Eventually Consistent** | Batch operations complete reliably via queue processing, not aggressively in parallel. |
-| **PostgreSQL Only** | Single database dependency (PostgreSQL 18+). No Redis, no external message queues. |
-| **Async by Default** | Operations with external side effects return `202 Accepted` and execute asynchronously via River; pure PostgreSQL transactional writes may remain synchronous for atomicity. |
-| **Platform RBAC** | RBAC managed in PostgreSQL, not Kubernetes. Permission queries isolated from cluster control plane. |
-
-## Decision Documents
-
-- **ADRs** record accepted architectural decisions
-- **Design Notes** capture proposed changes before ADR acceptance
-- Normative design specs are updated only after ADRs are accepted
-
-## Documentation Map
-
-- [docs/README.md](docs/README.md) - documentation index
-- [docs/adr/README.md](docs/adr/README.md) - ADR catalog and reading order
-- [docs/design/interaction-flows/master-flow.md](docs/design/interaction-flows/master-flow.md) - canonical interaction flow
-- [docs/design/README.md](docs/design/README.md) - implementation design index
-- [docs/design/frontend/README.md](docs/design/frontend/README.md) - frontend design layer
-- [docs/design/database/README.md](docs/design/database/README.md) - database design layer
-- [docs/design/ci/README.md](docs/design/ci/README.md) - CI/governance checks
+**Design principles:** PostgreSQL-only (no Redis / external MQ), async-first
+via River Queue, contract-first API (OpenAPI), 53 ADRs governing all technical
+decisions. See [docs/design/](docs/design/) for details.
 
 ## Project Status
 
-> ⚠️ **Pre-Alpha**: Planning and design phase.
+> ⚠️ **Alpha Track** — Core governed VM request, approval, RBAC, audit, and
+> console workflows are functional. Public deployment guides are available
+> below; release automation and operational guidance are still being hardened.
 
-- [x] Architecture Decision Records
-- [x] Implementation specifications  
-- [ ] Core implementation
+See [CHANGELOG.md](CHANGELOG.md) for release details.
 
-## Local Development
+## Quick Start (Development)
 
-Use the integrated Docker workflow to start/reset frontend, backend, and database together:
+### GitHub Codespaces
+
+Use the badge above to launch a browser-based demo environment.
+
+- first create runs the full integrated dev stack automatically
+- the first bootstrap starts from a clean database, then loads baseline bootstrap data and extended demo fixtures
+- later Codespace restarts reuse the existing demo data and only resume services
+- the first start can take a few minutes because backend, frontend, database, and demo fixtures are all prepared inside the Codespace
+
+Default demo sign-in:
+- `admin / admin`
+- first sign-in will require a password change
+- Codespaces starts with demo data, but it does **not** assume a live K8s/KubeVirt cluster is available. VM create, power, modify, delete, and console flows depend on a real cluster connection and can fail with normal availability or cluster-health errors until one is configured.
 
 ```bash
+# Start all services (frontend + backend + database)
 ./start-dev.sh
+
+# Start from a clean local database
+./start-dev.sh --clean-all
+
+# Or build from source
+make generate   # Ent ORM + OpenAPI + sqlc code generation
+make build      # Go binary → bin/shepherd
+make docker     # Docker image → kubevirt-shepherd:latest
+
+# Frontend
+cd web && npm ci && npm run dev
 ```
 
-- Web ingress: `http://localhost:3000`
-- API direct (diagnostic): `http://localhost:8080`
-- PostgreSQL: `localhost:5432`
+| Endpoint | URL |
+|----------|-----|
+| Web UI | `http://localhost:3000` |
+| API | `http://localhost:8080` |
 
-See `docs/design/frontend/local-dev-docker.md` for topology and workflow details.
+Local development seeds only the platform bootstrap baseline:
+- built-in roles
+- default admin account: `admin / admin`
+- first sign-in requires a password change
+
+Local dev preserves the existing database by default. Use `--clean-all` only
+when you intentionally want a fresh local environment.
+
+GitHub Codespaces uses the same startup chain, but adds extended demo fixtures on
+first create so the UI is populated for browser-based evaluation.
+
+### Prerequisites
+
+Go 1.25+ · Node.js 22+ · PostgreSQL 18+ · Docker 24+
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development setup.
+
+## Production Deployment
+
+Shepherd ships with a Docker Compose-based production topology built around
+`server`, `web`, and `nginx`, with an optional bundled PostgreSQL service when
+you do not point `DATABASE_URL` at an external database.
+
+| Service | Image | Role |
+|---------|-------|------|
+| **db** | `postgres:18` | Optional bundled data persistence service |
+| **server** | `shepherd-server` | Go API backend (distroless runtime) |
+| **web** | `shepherd-web` | Next.js SSR frontend |
+| **nginx** | `nginx:1.27-alpine` | TLS termination, reverse proxy, rate limiting |
+
+### Deploying from Source
+
+```bash
+# 1. Build images
+docker build -t shepherd-server:latest .
+docker build -t shepherd-web:latest -f deploy/prod/web.Dockerfile web/
+
+# 2. Configure environment
+cp deploy/prod/.env.prod.example deploy/prod/.env.prod
+#    Edit .env.prod — set DATABASE password, SESSION_SECRET, ENCRYPTION_KEY, PUBLIC_BASE_URL
+
+# 3. Provide TLS certificates
+mkdir -p deploy/prod/tls
+cp /path/to/cert.pem deploy/prod/tls/cert.pem
+cp /path/to/key.pem  deploy/prod/tls/key.pem
+
+# 4. Launch
+docker compose -f deploy/prod/docker-compose.prod.yml \
+  --env-file deploy/prod/.env.prod -p shepherd-prod up -d
+
+# 5. Seed initial data (first deploy only)
+docker compose -f deploy/prod/docker-compose.prod.yml \
+  --env-file deploy/prod/.env.prod -p shepherd-prod \
+  exec -T server /usr/local/bin/seed
+```
+
+Or use the one-click script:
+
+```bash
+bash deploy/prod/deploy-prod.sh              # builds + deploys
+bash deploy/prod/deploy-prod.sh --with-seed  # first deploy/bootstrap
+bash deploy/prod/deploy-prod.sh --help   # all options
+```
+
+When `DATABASE_URL` points to an external PostgreSQL host, `deploy-prod.sh`
+auto-detects that topology and does not start the bundled `postgres:18`
+service. Override with `DEPLOY_BUNDLED_POSTGRES=true|false` only when you need
+to force the topology.
+
+### Key Configuration
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `DEPLOY_BUNDLED_POSTGRES` | `auto`, `true`, or `false` to control bundled vs external PostgreSQL topology |
+| `SECURITY_SESSION_SECRET` | Session signing key (`openssl rand -hex 32`) |
+| `SECURITY_ENCRYPTION_KEY` | Data encryption key (`openssl rand -hex 32`) |
+| `SERVER_PUBLIC_BASE_URL` | External URL (e.g. `https://shepherd.example.com`) |
+| `SERVER_ALLOWED_ORIGINS` | CORS origins (comma-separated) |
+| `DATABASE_AUTO_MIGRATE` | Auto-migrate schema on startup (`true` / `false`) |
+
+See [`deploy/prod/.env.prod.example`](deploy/prod/.env.prod.example) for the
+complete variable reference. Production security checklist:
+
+- [ ] `SERVER_UNSAFE_ALLOW_ALL_ORIGINS=false`
+- [ ] `GIN_MODE=release`
+- [ ] Replace self-signed TLS with CA-issued certificates
+- [ ] Rotate default admin password after first login
+
+### Management
+
+```bash
+docker compose -f deploy/prod/docker-compose.prod.yml -p shepherd-prod logs -f   # logs
+docker compose -f deploy/prod/docker-compose.prod.yml -p shepherd-prod ps        # status
+docker compose -f deploy/prod/docker-compose.prod.yml -p shepherd-prod down      # stop
+```
+
+## Documentation
+
+- [docs/README.md](docs/README.md) — Documentation index & 5-minute quick start
+- [docs/adr/](docs/adr/) — 53 Architecture Decision Records
+- [docs/design/](docs/design/) — Implementation specifications
+- [docs/RELEASE.md](docs/RELEASE.md) — Release process
 
 ## Community
 
-- [GitHub Issues][issues] - Bug reports and feature requests
-- [Contributing](CONTRIBUTING.md) - How to contribute
-- [Code of Conduct](CODE_OF_CONDUCT.md) - Community standards
-- [Governance](GOVERNANCE.md) - Project governance
-- [Security](SECURITY.md) - Security policy
+- [GitHub Issues][issues] — Bug reports and feature requests
+- [Contributing](CONTRIBUTING.md) — PR workflow, CI gates, coding standards
+- [Code of Conduct](CODE_OF_CONDUCT.md) — Community standards
+- [Governance](GOVERNANCE.md) — Project governance
+- [Security](SECURITY.md) — Vulnerability reporting
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+Apache License 2.0 — See [LICENSE](LICENSE).
 
     Copyright The KubeVirt Shepherd Authors.
 

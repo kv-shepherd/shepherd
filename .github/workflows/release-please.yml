@@ -1,0 +1,43 @@
+# KubeVirt Shepherd — Automated Release Management (Google release-please)
+#
+# This workflow runs on every push to main and:
+#   1. Parses conventional commits (feat:, fix:, etc.)
+#   2. Creates/updates a "Release PR" with auto-generated CHANGELOG
+#   3. When the Release PR is merged, creates a git tag + GitHub Release
+#   4. The tag creation triggers the release.yml workflow for artifact build
+#
+# Commit format: https://www.conventionalcommits.org/
+#   feat: add multi-cluster support
+#   fix: correct RBAC permission check
+#   feat!: redesign approval workflow (BREAKING CHANGE)
+#
+# ADR-0029: Pin actions to commit SHA, use specific runner version
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      major: ${{ steps.release.outputs.major }}
+      minor: ${{ steps.release.outputs.minor }}
+      patch: ${{ steps.release.outputs.patch }}
+    steps:
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4.4.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
