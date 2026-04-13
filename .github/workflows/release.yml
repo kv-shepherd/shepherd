@@ -105,7 +105,7 @@ jobs:
   build-docker:
     name: Build Docker (${{ matrix.image }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     needs: [preflight]
     strategy:
       matrix:
