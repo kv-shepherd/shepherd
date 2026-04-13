@@ -144,8 +144,8 @@ jobs:
         with:
           images: ${{ matrix.image_name }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}},value=${{ needs.preflight.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.preflight.outputs.version }}
             type=raw,value=latest,enable=${{ needs.preflight.outputs.is_prerelease == 'false' }}
 
       - name: Build & Push
