@@ -19,6 +19,10 @@ const tscBin = path.join(
   process.platform === "win32" ? "tsc.cmd" : "tsc",
 );
 
+async function restoreFile(filepath, content) {
+  await fs.writeFile(filepath, content);
+}
+
 function run(bin, args, extraEnv = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, {
@@ -50,10 +54,14 @@ async function main() {
   await fs.writeFile(tempTsconfigPath, sourceTsconfig);
 
   const relativeTsconfigPath = path.relative(webRoot, tempTsconfigPath);
-  await run(nextBin, ["typegen"], {
-    NEXT_TSCONFIG_PATH: relativeTsconfigPath,
-  });
-  await run(tscBin, ["--noEmit", "-p", relativeTsconfigPath]);
+  try {
+    await run(nextBin, ["typegen"], {
+      NEXT_TSCONFIG_PATH: relativeTsconfigPath,
+    });
+    await run(tscBin, ["--noEmit", "-p", relativeTsconfigPath]);
+  } finally {
+    await restoreFile(sourceTsconfigPath, sourceTsconfig);
+  }
 }
 
 main()

@@ -46,6 +46,10 @@ type ExecutionOptions struct {
 	DiskGB          int
 }
 
+type approveCreateConfig struct {
+	skipClonePreflight bool
+}
+
 // AtomicDecisionWriter defines ADR-0012 atomic write operations for final
 // ticket decisions.
 type AtomicDecisionWriter interface {
@@ -188,6 +192,16 @@ func (g *Service) approvePower(ctx context.Context, ticket *ent.Ticket, event *e
 
 // approveCreate handles approval of CREATE tickets (original flow).
 func (g *Service) approveCreate(ctx context.Context, ticket *ent.Ticket, ticketID, approver string, opts ExecutionOptions) error {
+	return g.approveCreateWithConfig(ctx, ticket, ticketID, approver, opts, approveCreateConfig{})
+}
+
+func (g *Service) approveCreateWithConfig(
+	ctx context.Context,
+	ticket *ent.Ticket,
+	ticketID, approver string,
+	opts ExecutionOptions,
+	config approveCreateConfig,
+) error {
 	if opts.ClusterID == "" {
 		return fmt.Errorf("selected cluster is required for create approval")
 	}
@@ -282,7 +296,7 @@ func (g *Service) approveCreate(ctx context.Context, ticket *ent.Ticket, ticketI
 		templateEntity.ImageURL,
 		templateEntity.PvcName,
 	)
-	if g.vmService != nil && effectiveSourceType == service.TemplateSourceCDIPVCClone {
+	if g.vmService != nil && effectiveSourceType == service.TemplateSourceCDIPVCClone && !config.skipClonePreflight {
 		targetStorageClass := strings.TrimSpace(resolvedOpts.StorageClass)
 		if targetStorageClass == "" {
 			selectedCluster, clusterErr := g.client.Cluster.Get(ctx, opts.ClusterID)
@@ -428,6 +442,78 @@ func (g *Service) approveCreate(ctx context.Context, ticket *ent.Ticket, ticketI
 		zap.String("event_id", ticket.EventID),
 		zap.Bool("resource_override", opts.EnableOverride),
 	)
+
+	return nil
+}
+
+func (g *Service) preflightCreateCloneSource(ctx context.Context, ticket *ent.Ticket, opts ExecutionOptions) error {
+	if g == nil || g.vmService == nil || ticket == nil || strings.TrimSpace(opts.ClusterID) == "" {
+		return nil
+	}
+
+	event, err := g.client.DomainEvent.Get(ctx, ticket.EventID)
+	if err != nil {
+		return fmt.Errorf("get domain event %s: %w", ticket.EventID, err)
+	}
+
+	payload, err := parseVMCreatePayload(event.Payload)
+	if err != nil {
+		return fmt.Errorf("parse create payload for ticket %s: %w", ticket.ID, err)
+	}
+
+	effectiveTemplateID, effectiveInstanceSizeID := resolveEffectiveSelectionIDs(
+		payload.TemplateID,
+		payload.InstanceSizeID,
+		ticket.ModifiedSpec,
+	)
+	if effectiveTemplateID == "" {
+		return fmt.Errorf("effective template id is empty for ticket %s", ticket.ID)
+	}
+	if effectiveInstanceSizeID == "" {
+		return fmt.Errorf("effective instance size id is empty for ticket %s", ticket.ID)
+	}
+
+	templateEntity, err := g.client.Template.Get(ctx, effectiveTemplateID)
+	if err != nil {
+		return fmt.Errorf("get template %s for ticket %s: %w", effectiveTemplateID, ticket.ID, err)
+	}
+	if service.EffectiveTemplateSourceType(
+		templateEntity.SourceType,
+		templateEntity.ImageURL,
+		templateEntity.PvcName,
+	) != service.TemplateSourceCDIPVCClone {
+		return nil
+	}
+
+	instanceSizeEntity, err := g.client.InstanceSize.Get(ctx, effectiveInstanceSizeID)
+	if err != nil {
+		return fmt.Errorf("get instance size %s for ticket %s: %w", effectiveInstanceSizeID, ticket.ID, err)
+	}
+	targetDiskGB := instanceSizeEntity.DiskGB
+	if opts.EnableOverride && opts.DiskGB > 0 {
+		targetDiskGB = opts.DiskGB
+	}
+
+	targetStorageClass := strings.TrimSpace(opts.StorageClass)
+	if targetStorageClass == "" {
+		selectedCluster, clusterErr := g.client.Cluster.Get(ctx, opts.ClusterID)
+		if clusterErr != nil {
+			return fmt.Errorf("get cluster %s for ticket %s: %w", opts.ClusterID, ticket.ID, clusterErr)
+		}
+		targetStorageClass = strings.TrimSpace(selectedCluster.DefaultStorageClass)
+	}
+
+	if err := g.vmService.ValidatePVCCloneSource(
+		ctx,
+		opts.ClusterID,
+		payload.Namespace,
+		templateEntity.PvcNamespace,
+		templateEntity.PvcName,
+		targetDiskGB,
+		targetStorageClass,
+	); err != nil {
+		return fmt.Errorf("source pvc preflight failed for ticket %s: %w", ticket.ID, err)
+	}
 
 	return nil
 }
@@ -895,9 +981,29 @@ func (g *Service) approveBatchParent(
 		failedCount  int
 		firstErr     error
 	)
+	createReady := make(map[string]struct{}, len(children))
+	for _, child := range children {
+		if child.Status != entticket.StatusPENDING || child.OperationType != entticket.OperationTypeCREATE {
+			continue
+		}
+		if preflightErr := g.preflightCreateCloneSource(ctx, child, opts); preflightErr != nil {
+			failedCount++
+			if firstErr == nil {
+				firstErr = preflightErr
+			}
+			g.markChildApprovalDispatchFailed(ctx, child, approver, preflightErr)
+			continue
+		}
+		createReady[child.ID] = struct{}{}
+	}
 	for _, child := range children {
 		if child.Status != entticket.StatusPENDING {
 			continue
+		}
+		if child.OperationType == entticket.OperationTypeCREATE {
+			if _, ok := createReady[child.ID]; !ok {
+				continue
+			}
 		}
 
 		var approveErr error
@@ -927,7 +1033,9 @@ func (g *Service) approveBatchParent(
 			}
 			approveErr = g.approvePower(ctx, child, childEvent, child.ID, approver)
 		default:
-			approveErr = g.approveCreate(ctx, child, child.ID, approver, opts)
+			approveErr = g.approveCreateWithConfig(ctx, child, child.ID, approver, opts, approveCreateConfig{
+				skipClonePreflight: true,
+			})
 		}
 		if approveErr != nil {
 			failedCount++

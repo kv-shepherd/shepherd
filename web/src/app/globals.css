@@ -3782,24 +3782,6 @@ a {
   animation: pulseDot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-@keyframes orbitSpin {
-  0% { transform: translate(-50%, -50%) rotate(0deg); }
-  100% { transform: translate(-50%, -50%) rotate(360deg); }
-}
-
-@keyframes orbitSpinReverse {
-  0% { transform: translate(-50%, -50%) rotate(360deg); }
-  100% { transform: translate(-50%, -50%) rotate(0deg); }
-}
-
-.app-orbit-spin {
-  animation: orbitSpin 25s linear infinite;
-}
-
-.app-orbit-spin-slow {
-  animation: orbitSpinReverse 40s linear infinite;
-}
-
 .workbench-feed-list .ant-list-items {
   display: flex !important;
   flex-direction: column !important;

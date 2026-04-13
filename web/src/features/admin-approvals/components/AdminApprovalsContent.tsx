@@ -710,13 +710,8 @@ export function AdminApprovalsContent() {
               approvals.changeSearchFilter(value);
               setQuickSearchDraft(value);
             }}
-            searchPlaceholder={t("filter.quick_search_placeholder", {
-              defaultValue: "Search ticket ID, requester, or selected cluster",
-            })}
-            searchHelp={t("filter.quick_search_help", {
-              defaultValue:
-                "Quick search matches ticket ID, requester, and selected cluster name. Pasted cluster IDs still work. Use advanced search for approval-specific queue filters.",
-            })}
+            searchPlaceholder={t("filter.quick_search_placeholder")}
+            searchHelp={t("filter.quick_search_help")}
             searchTestId="approvals-search-input"
             hasActiveFilters={hasActiveFilters}
             onClear={resetQueueFilters}
@@ -747,7 +742,7 @@ export function AdminApprovalsContent() {
                         value: option.key,
                       }))}
                       style={{ minWidth: 180 }}
-                      placeholder={t("filter.operation_label", "Operation")}
+                      placeholder={t("filter.operation_label")}
                     />
                     <Select
                       showSearch
@@ -760,20 +755,20 @@ export function AdminApprovalsContent() {
                       }
                       options={[
                         {
-                          label: t("filter.placement_all", "All placement states"),
+                          label: t("filter.placement_all"),
                           value: "ALL",
                         },
                         {
-                          label: t("filter.placement_present", "Placement captured"),
+                          label: t("filter.placement_present"),
                           value: "present",
                         },
                         {
-                          label: t("filter.placement_missing", "Placement missing"),
+                          label: t("filter.placement_missing"),
                           value: "missing",
                         },
                       ]}
                       style={{ minWidth: 200 }}
-                      placeholder={t("filter.placement_label", "Placement snapshot")}
+                      placeholder={t("filter.placement_label")}
                     />
                     <Select
                       showSearch
@@ -784,10 +779,7 @@ export function AdminApprovalsContent() {
                         setSelectedClusterFilterDraft(value ?? "")
                       }
                       options={clusterFilterOptions}
-                      placeholder={t(
-                        "filter.selected_cluster",
-                        "Filter by cluster name",
-                      )}
+                      placeholder={t("filter.selected_cluster")}
                       style={{ minWidth: 260 }}
                     />
                     <Select
@@ -799,10 +791,7 @@ export function AdminApprovalsContent() {
                         setPlacementAdvisoryFilterDraft(value ?? "")
                       }
                       options={placementAdvisoryOptions}
-                      placeholder={t(
-                        "filter.placement_advisory",
-                        "Filter by placement advisory",
-                      )}
+                      placeholder={t("filter.placement_advisory")}
                       style={{ minWidth: 300 }}
                     />
                   </Space>
@@ -887,7 +876,30 @@ export function AdminApprovalsContent() {
               }
 
               const renderActions = () => {
-                if (record.status !== "PENDING") return null;
+                if (record.status !== "PENDING") {
+                  if (itemCount > 1) {
+                    return (
+                      <Space size={8} wrap className="workbench-row-actions">
+                        {record.status === "FAILED" ? (
+                          <Button
+                            size="small"
+                            loading={approvals.retryBatchPending}
+                            onClick={() => approvals.submitBatchRetry(record.id)}
+                          >
+                            {t("vm:batch.retry_failed")}
+                          </Button>
+                        ) : null}
+                        <Button
+                          size="small"
+                          onClick={() => router.push(`/vms/batch/${record.id}`)}
+                        >
+                          {t("vm:batch.detail_title")}
+                        </Button>
+                      </Space>
+                    );
+                  }
+                  return null;
+                }
                 const moreContent = (
                   <div className="workbench-row-menu">
                     <Button type="text" danger block data-testid={`approval-action-reject-${record.id}`} onClick={() => { setOpenActionMenuId(null); approvals.openRejectModal(record); }}>

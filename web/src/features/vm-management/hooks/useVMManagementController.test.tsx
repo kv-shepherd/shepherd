@@ -807,6 +807,33 @@ describe("useVMManagementController", () => {
     expect(result.current.activeBatchStatusURL).toBe(
       "/api/v1/vms/batch/batch-from-status-url",
     );
+    expect(result.current.activeBatchKind).toBe("request");
+    expect(messageSuccessMock).toHaveBeenCalledWith("batch.request_submitted");
+  });
+
+  it("marks power batches as job tracking and keeps batch workspace routing semantics", () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    const powerBatchOptions = getMutationOptions(4) as {
+      onSuccess?: (data: {
+        batch_id: string;
+        status: string;
+        status_url: string;
+        retry_after_seconds: number;
+      }) => void;
+    };
+
+    act(() => {
+      powerBatchOptions.onSuccess?.({
+        batch_id: "power-batch-1",
+        status: "IN_PROGRESS",
+        status_url: "/api/v1/vms/batch/power-batch-1",
+        retry_after_seconds: 0,
+      });
+    });
+
+    expect(result.current.activeBatchKind).toBe("job");
+    expect(messageSuccessMock).toHaveBeenCalledWith("batch.job_submitted");
   });
 
   it("restores active batch tracking from session storage", () => {
@@ -815,6 +842,7 @@ describe("useVMManagementController", () => {
       JSON.stringify({
         batch_id: "batch-restored-1",
         status_url: "/api/v1/vms/batch/batch-restored-1",
+        kind: "request",
       }),
     );
 
@@ -824,6 +852,7 @@ describe("useVMManagementController", () => {
     expect(result.current.activeBatchStatusURL).toBe(
       "/api/v1/vms/batch/batch-restored-1",
     );
+    expect(result.current.activeBatchKind).toBe("request");
   });
 
   it("enters cooldown on BATCH_RATE_LIMITED and blocks batch actions while countdown active", () => {

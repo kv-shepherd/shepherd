@@ -67,6 +67,8 @@ vi.mock("react-i18next", () => ({
         "summary.irreversible_description":
           "Approving this request will permanently remove the virtual machine and related resources. Verify the system, service, namespace, cluster, and VM before continuing.",
         "vm:status.STOPPED": "Stopped",
+        "vm:batch.retry_failed": "Retry failed",
+        "vm:batch.detail_title": "Batch detail",
       };
       if (key === "summary.shape_cpu" && typeof options?.count === "number") {
         return `${options.count} vCPU`;
@@ -542,9 +544,11 @@ vi.mock("../hooks/useAdminApprovalsController", async () => {
         submitApprove: vi.fn(),
         submitReject: vi.fn(),
         submitCancel: vi.fn(),
+        submitBatchRetry: vi.fn(),
         approvePending: false,
         rejectPending: false,
         cancelPending: false,
+        retryBatchPending: false,
         ...controllerState.overrides,
       };
     },
@@ -662,6 +666,39 @@ describe("AdminApprovalsContent", () => {
     expect(screen.getByText("Affected Items")).toBeInTheDocument();
     expect(screen.getAllByText("Ubuntu 22.04 · M4 Large").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Requested Resources").length).toBeGreaterThan(0);
+  });
+
+  it("shows retry action for failed batch approvals", async () => {
+    const user = userEvent.setup();
+    const submitBatchRetry = vi.fn();
+    controllerState.overrides = {
+      data: {
+        items: [
+          {
+            id: "ticket-batch-failed",
+            event_id: "event-batch-failed",
+            status: "FAILED",
+            operation_type: "CREATE",
+            requester: "alice",
+            summary: {
+              batch_count: 2,
+              system_name: "shop",
+              service_name: "redis",
+            },
+            ticket_payload: {
+              items: [{ vm_name: "vm-a" }, { vm_name: "vm-b" }],
+            },
+          },
+        ],
+        pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
+      },
+      submitBatchRetry,
+    };
+
+    render(<AdminApprovalsContent />);
+
+    await user.click(screen.getByRole("button", { name: "Retry failed" }));
+    expect(submitBatchRetry).toHaveBeenCalledWith("ticket-batch-failed");
   });
 
   it("keeps storage-class-resolvable clusters selectable and shows detected storage classes", () => {

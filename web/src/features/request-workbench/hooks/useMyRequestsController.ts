@@ -4,16 +4,10 @@ import { useEffect, useState } from 'react';
 import type { TFunction } from 'i18next';
 
 import { useApiGet } from '@/lib/api/useApiGet';
-import { useApiMutation } from '@/lib/api/useApiMutation';
 import { api } from '@/lib/api/client';
 import { translateApiError } from '@/lib/api/errorMessage';
 import { useMessage } from '@/lib/hooks/useMessage';
 import { useApiAction } from '@/hooks/useApiQuery';
-import {
-    ACTIVE_BATCH_CHANGED_EVENT,
-    clearStoredActiveBatchState,
-    readStoredActiveBatchState,
-} from '@/lib/storage/activeBatchTracking';
 import { useAuthStore } from '@/stores/auth';
 import {
     clearVMRequestDraft,
@@ -26,8 +20,6 @@ import type { VMRequestDraft } from '@/features/vm-management/types';
 import type {
     Ticket,
     TicketList,
-    BatchActionResponse,
-    BatchStatusResponse,
     HistoryStatusFilter,
     RequestTicketOperationType,
     RequestWorkbenchView,
@@ -37,34 +29,25 @@ interface UseMyRequestsControllerArgs {
     t: TFunction;
 }
 
-const ACTIVE_BATCH_POLL_INTERVAL_MS = 5000;
-const RETRYABLE_BATCH_STATUSES = new Set(['FAILED', 'PARTIAL_SUCCESS']);
-const CANCELLABLE_BATCH_STATUSES = new Set(['PENDING_APPROVAL', 'IN_PROGRESS']);
-
 export function useMyRequestsController({ t }: UseMyRequestsControllerArgs) {
     const user = useAuthStore((state) => state.user);
     const [view, setView] = useState<RequestWorkbenchView>('in_progress');
-    const [historyStatus, setHistoryStatus] = useState<HistoryStatusFilter>('SUCCESS');
+    const [historyStatus, setHistoryStatus] = useState<HistoryStatusFilter>('ALL');
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [search, setSearch] = useState('');
     const [operationType, setOperationType] = useState<RequestTicketOperationType | ''>('');
     const [savedVmDraft, setSavedVmDraft] = useState<VMRequestDraft | null>(null);
-    const [activeBatchID, setActiveBatchID] = useState(
-        () => readStoredActiveBatchState().batch_id
-    );
-    const [activeBatchStatusURL, setActiveBatchStatusURL] = useState(
-        () => readStoredActiveBatchState().status_url
-    );
     const { messageApi, messageContextHolder } = useMessage();
     const draftOwner = resolveVMRequestDraftOwner(user);
 
     const requestQueryEnabled = view === 'in_progress' || view === 'history';
-    const requestStatus = view === 'in_progress' ? 'PENDING' : historyStatus;
-    const batchQueryEnabled = view === 'batch_jobs' && activeBatchID !== '';
+    const requestStatus =
+        view === 'history' && historyStatus !== 'ALL' ? historyStatus : '';
+    const requestStatusGroup = view === 'in_progress' ? 'ACTIVE' : 'TERMINAL';
 
     const { data, isLoading, refetch } = useApiGet<TicketList>(
-        ['my-tickets', view, requestStatus, page, pageSize, search, operationType],
+        ['my-tickets', view, requestStatusGroup, requestStatus, page, pageSize, search, operationType],
         () =>
             api.GET('/tickets', {
                 params: {
@@ -72,31 +55,14 @@ export function useMyRequestsController({ t }: UseMyRequestsControllerArgs) {
                         page,
                         per_page: pageSize,
                         mine: true,
-                        status: requestStatus as never,
+                        ...(requestStatus ? { status: requestStatus as never } : {}),
+                        status_group: requestStatusGroup as never,
                         search: search || undefined,
                         operation_type: operationType || undefined,
                     },
                 },
             }) as Promise<{ data?: TicketList; error?: unknown; response?: Response }>,
         { enabled: requestQueryEnabled }
-    );
-
-    const {
-        data: batchStatus,
-        isLoading: batchLoading,
-        refetch: refetchBatch,
-    } = useApiGet<BatchStatusResponse>(
-        ['my-requests', 'batch', activeBatchID, activeBatchStatusURL],
-        () =>
-            api.GET('/vms/batch/{batch_id}', {
-                params: {
-                    path: { batch_id: activeBatchID },
-                },
-            }) as Promise<{ data?: BatchStatusResponse; error?: unknown; response?: Response }>,
-        {
-            enabled: batchQueryEnabled,
-            refetchInterval: batchQueryEnabled ? ACTIVE_BATCH_POLL_INTERVAL_MS : undefined,
-        }
     );
 
     const cancelMutation = useApiAction<string>(
@@ -107,38 +73,6 @@ export function useMyRequestsController({ t }: UseMyRequestsControllerArgs) {
             onSuccess: () => {
                 void messageApi.success(t('cancel_success'));
                 void refetch();
-            },
-            onError: (error) => {
-                void messageApi.error(translateApiError(t, error));
-            },
-        }
-    );
-
-    const retryBatchMutation = useApiMutation<BatchActionResponse, string>(
-        (batchID: string) =>
-            api.POST('/vms/batch/{batch_id}/retry', {
-                params: { path: { batch_id: batchID } },
-            }),
-        {
-            onSuccess: () => {
-                void messageApi.success(t('workbench.batch_jobs.retry_submitted'));
-                void refetchBatch();
-            },
-            onError: (error) => {
-                void messageApi.error(translateApiError(t, error));
-            },
-        }
-    );
-
-    const cancelBatchMutation = useApiMutation<BatchActionResponse, string>(
-        (batchID: string) =>
-            api.POST('/vms/batch/{batch_id}/cancel', {
-                params: { path: { batch_id: batchID } },
-            }),
-        {
-            onSuccess: () => {
-                void messageApi.success(t('workbench.batch_jobs.cancel_submitted'));
-                void refetchBatch();
             },
             onError: (error) => {
                 void messageApi.error(translateApiError(t, error));
@@ -233,38 +167,6 @@ export function useMyRequestsController({ t }: UseMyRequestsControllerArgs) {
         };
     }, [draftOwner]);
 
-    useEffect(() => {
-        if (typeof window === 'undefined') {
-            return;
-        }
-
-        const refreshActiveBatch = () => {
-            const stored = readStoredActiveBatchState();
-            setActiveBatchID(stored.batch_id);
-            setActiveBatchStatusURL(stored.status_url);
-        };
-
-        const onStorage = (event: StorageEvent) => {
-            if (event.storageArea !== window.sessionStorage) {
-                return;
-            }
-            refreshActiveBatch();
-        };
-
-        window.addEventListener(ACTIVE_BATCH_CHANGED_EVENT, refreshActiveBatch);
-        window.addEventListener('storage', onStorage);
-        return () => {
-            window.removeEventListener(ACTIVE_BATCH_CHANGED_EVENT, refreshActiveBatch);
-            window.removeEventListener('storage', onStorage);
-        };
-    }, []);
-
-    const clearActiveBatchTracking = () => {
-        clearStoredActiveBatchState();
-        setActiveBatchID('');
-        setActiveBatchStatusURL('');
-    };
-
     return {
         data,
         isLoading,
@@ -277,13 +179,6 @@ export function useMyRequestsController({ t }: UseMyRequestsControllerArgs) {
         operationType,
         savedVmDraft,
         cancelMutation,
-        activeBatchID,
-        batchStatus,
-        batchLoading,
-        batchCanRetry: RETRYABLE_BATCH_STATUSES.has(batchStatus?.status ?? ''),
-        batchCanCancel: CANCELLABLE_BATCH_STATUSES.has(batchStatus?.status ?? ''),
-        batchActionPending:
-            retryBatchMutation.isPending || cancelBatchMutation.isPending,
         messageContextHolder,
         setPage,
         setPageSize,
@@ -294,19 +189,5 @@ export function useMyRequestsController({ t }: UseMyRequestsControllerArgs) {
         clearListFilters,
         discardSavedVmDraft,
         prepareHistoryReuse,
-        refreshBatch: () => {
-            void refetchBatch();
-        },
-        clearBatchTracking: clearActiveBatchTracking,
-        retryBatch: () => {
-            if (activeBatchID !== '') {
-                retryBatchMutation.mutate(activeBatchID);
-            }
-        },
-        cancelBatch: () => {
-            if (activeBatchID !== '') {
-                cancelBatchMutation.mutate(activeBatchID);
-            }
-        },
     };
 }

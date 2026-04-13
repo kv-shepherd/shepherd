@@ -4,13 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
     useApiGetMock,
-    useApiMutationMock,
     useApiActionMock,
     messageSuccessMock,
     messageErrorMock,
 } = vi.hoisted(() => ({
     useApiGetMock: vi.fn(),
-    useApiMutationMock: vi.fn(),
     useApiActionMock: vi.fn(),
     messageSuccessMock: vi.fn(),
     messageErrorMock: vi.fn(),
@@ -18,10 +16,6 @@ const {
 
 vi.mock('@/lib/api/useApiGet', () => ({
     useApiGet: (...args: unknown[]) => useApiGetMock(...args),
-}));
-
-vi.mock('@/lib/api/useApiMutation', () => ({
-    useApiMutation: (...args: unknown[]) => useApiMutationMock(...args),
 }));
 
 vi.mock('@/hooks/useApiQuery', () => ({
@@ -51,9 +45,6 @@ vi.mock('@/stores/auth', () => ({
 }));
 
 import { buildVMRequestDraftStorageKey } from '@/features/vm-management/draftStorage';
-import {
-    ACTIVE_BATCH_STORAGE_KEY,
-} from '@/lib/storage/activeBatchTracking';
 import { useMyRequestsController } from './useMyRequestsController';
 
 describe('useMyRequestsController', () => {
@@ -67,10 +58,6 @@ describe('useMyRequestsController', () => {
             data: { items: [], pagination: { total: 0, page: 1, per_page: 20 } },
             isLoading: false,
             refetch: vi.fn(),
-        });
-        useApiMutationMock.mockReturnValue({
-            mutate: vi.fn(),
-            isPending: false,
         });
         useApiActionMock.mockReturnValue({
             mutate: vi.fn(),
@@ -119,33 +106,12 @@ describe('useMyRequestsController', () => {
         ).toContain('"requestMode":"full"');
     });
 
-    it('loads and clears active batch tracking from session storage', () => {
-        window.sessionStorage.setItem(
-            ACTIVE_BATCH_STORAGE_KEY,
-            JSON.stringify({
-                batch_id: 'batch-1',
-                status_url: '/vms/batch/batch-1',
-            })
-        );
-
-        const { result } = renderHook(() => useMyRequestsController({ t }));
-
-        expect(result.current.activeBatchID).toBe('batch-1');
-
-        act(() => {
-            result.current.clearBatchTracking();
-        });
-
-        expect(result.current.activeBatchID).toBe('');
-        expect(window.sessionStorage.getItem(ACTIVE_BATCH_STORAGE_KEY)).toBeNull();
-    });
-
-    it('defaults history filter to SUCCESS and requests only current user approvals', async () => {
+    it('defaults history filter to ALL, loads active requests for in-progress, and scopes to the current user', async () => {
         const apiGet = await import('@/lib/api/client');
 
         const { result } = renderHook(() => useMyRequestsController({ t }));
 
-        expect(result.current.historyStatus).toBe('SUCCESS');
+        expect(result.current.historyStatus).toBe('ALL');
         expect(useApiGetMock).toHaveBeenCalled();
 
         const requestFetcher = useApiGetMock.mock.calls[0]?.[1] as (() => Promise<unknown>) | undefined;
@@ -157,9 +123,10 @@ describe('useMyRequestsController', () => {
             params: {
                 query: expect.objectContaining({
                     mine: true,
-                    status: 'PENDING',
+                    status_group: 'ACTIVE',
                 }),
             },
         });
     });
+
 });

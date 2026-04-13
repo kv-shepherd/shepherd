@@ -58,6 +58,8 @@
   "INVALID_BATCH_ITEMS": "批量条目无效。",
   "INVALID_BATCH_ITEM": "某个批量条目无效。",
   "BATCH_NOT_FOUND": "未找到批量任务。",
+  "BATCH_NOTHING_TO_RETRY": "当前没有可重试的失败项。该批次可能已经恢复、仍在处理中，或不再包含失败子项。",
+  "BATCH_NOTHING_TO_CANCEL": "当前没有可取消的待处理项。",
   "INVALID_POWER_ACTION": "电源操作无效。",
   "INVALID_VNC_TOKEN": "VNC 令牌无效或已过期。",
   "VM_NOT_FOUND": "未找到虚拟机。",

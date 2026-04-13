@@ -4360,6 +4360,15 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            /** @description No failed children are available to retry */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     cancelVMBatch: {
@@ -4383,6 +4392,15 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            /** @description No pending children are available to cancel */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getVM: {
@@ -4746,6 +4764,8 @@ export interface operations {
                 /** @description Case-insensitive search text */
                 search?: components["parameters"]["Search"];
                 status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
+                /** @description Filter by a built-in status group. */
+                status_group?: "ACTIVE" | "TERMINAL" | "ATTENTION";
                 /**
                  * @description When true, return only tickets requested by the current
                  *     authenticated user. This does not require ticket:view.
@@ -4787,6 +4807,8 @@ export interface operations {
                 /** @description Case-insensitive search text */
                 search?: components["parameters"]["Search"];
                 status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
+                /** @description Filter by a built-in status group. */
+                status_group?: "ACTIVE" | "TERMINAL" | "ATTENTION";
                 /** @description Filter by task operation type. */
                 operation_type?: "CREATE" | "MODIFY" | "DELETE" | "POWER" | "VNC_ACCESS";
                 /** @description Filter by the cluster selected during CREATE execution planning. */

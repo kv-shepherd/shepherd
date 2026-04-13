@@ -1,8 +1,6 @@
 import type { components } from '@/types/api.gen';
 
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'EXECUTING' | 'SUCCESS' | 'FAILED';
-export type BatchStatusResponse = components['schemas']['VMBatchStatusResponse'];
-export type BatchActionResponse = components['schemas']['VMBatchActionResponse'];
 
 export interface VMRequestPrefill {
     system_id: string;
@@ -42,8 +40,8 @@ export interface TicketList {
 }
 
 export type RequestTicketOperationType = 'CREATE' | 'MODIFY' | 'DELETE' | 'POWER' | 'VNC_ACCESS';
-export type RequestWorkbenchView = 'drafts' | 'in_progress' | 'history' | 'batch_jobs';
-export type HistoryStatusFilter = Extract<ApprovalStatus, 'SUCCESS' | 'FAILED' | 'REJECTED' | 'CANCELLED'>;
+export type RequestWorkbenchView = 'drafts' | 'in_progress' | 'history';
+export type HistoryStatusFilter = 'ALL' | Extract<ApprovalStatus, 'SUCCESS' | 'FAILED' | 'REJECTED' | 'CANCELLED'>;
 
 export const STATUS_COLORS: Record<ApprovalStatus, string> = {
     PENDING: 'orange',

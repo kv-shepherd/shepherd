@@ -14,6 +14,7 @@ const {
   watchedValues,
   approveMutate,
   rejectMutate,
+  retryBatchMutate,
   cancelMutate,
   messageSuccessMock,
   messageInfoMock,
@@ -51,6 +52,7 @@ const {
   } as Record<string, unknown>,
   approveMutate: vi.fn(),
   rejectMutate: vi.fn(),
+  retryBatchMutate: vi.fn(),
   cancelMutate: vi.fn(),
   messageSuccessMock: vi.fn(),
   messageInfoMock: vi.fn(),
@@ -229,9 +231,14 @@ describe("useAdminApprovalsController", () => {
     let mutationCall = 0;
     useApiMutationMock.mockImplementation(() => {
       mutationCall += 1;
-      return mutationCall % 2 === 1
-        ? { mutate: approveMutate, isPending: false }
-        : { mutate: rejectMutate, isPending: false };
+      const hookIndex = (mutationCall - 1) % 3;
+      if (hookIndex === 0) {
+        return { mutate: approveMutate, isPending: false };
+      }
+      if (hookIndex === 1) {
+        return { mutate: rejectMutate, isPending: false };
+      }
+      return { mutate: retryBatchMutate, isPending: false };
     });
     useApiActionMock.mockReturnValue({
       mutate: cancelMutate,
@@ -277,7 +284,6 @@ describe("useAdminApprovalsController", () => {
     expect(apiGetMock).toHaveBeenCalledWith("/builtin-approval/tasks", {
       params: {
         query: {
-          status: "PENDING",
           operation_type: "POWER",
           selected_cluster_id: "cluster-a",
           placement_advisory_code: "PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY",

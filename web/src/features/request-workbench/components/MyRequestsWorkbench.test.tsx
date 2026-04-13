@@ -22,20 +22,11 @@ vi.mock('react-i18next', () => ({
         t: (key: string, options?: { count?: number; index?: number }) => {
             const labels: Record<string, string> = {
                 my_approvals_title: 'My Requests',
-                my_approvals_subtitle: 'Track active requests, history, and upcoming recovery tools',
-                'workbench.summary.batch_title': 'Batch Tracking',
-                'workbench.summary.batch_inactive': 'No active batch',
-                'workbench.summary.batch_description': 'Track the latest parent-child execution without returning to the VM page.',
+                my_approvals_subtitle: 'Track drafts, active requests, and history',
                 'workbench.tab.drafts': 'Drafts',
                 'workbench.tab.in_progress': 'In Progress',
                 'workbench.tab.history': 'History',
-                'workbench.tab.batch_jobs': 'Batch Jobs',
                 'workbench.drafts.empty_title': 'No saved drafts yet',
-                'workbench.batch_jobs.current_title': 'Current Batch Job',
-                'workbench.batch_jobs.child_title': 'Child Tasks',
-                'workbench.batch_jobs.batch_id': 'Batch ID',
-                'workbench.batch_jobs.retry_submitted': 'Retry submitted',
-                'workbench.batch_jobs.cancel_submitted': 'Cancel submitted',
                 'workbench.drafts.saved_title': 'Saved VM request draft',
                 'workbench.drafts.saved_description': 'This draft is stored locally and can be resumed from the VM request flow.',
                 'workbench.drafts.service': 'Service',
@@ -72,8 +63,9 @@ vi.mock('react-i18next', () => ({
                 'workbench.details.execution_pending_description': 'Do not treat this as a finished change yet. The downstream VM operation can still fail later and will show its final outcome here.',
                 'workbench.details.success_hint': 'This request finished successfully.',
                 'workbench.details.failed_hint': 'Approval was accepted, but downstream execution failed.',
-                'workbench.details.failed_description': 'Review the failure details below before retrying or submitting a follow-up request.',
+                'workbench.details.failed_description': 'This request ended in failure. Submit a follow-up request or contact an administrator for further help.',
                 'workbench.details.rejected_hint': 'This request was rejected and will not execute.',
+                'workbench.details.rejected_description': 'This request has ended and will not execute.',
                 'workbench.details.cancelled_hint': 'This request was cancelled before execution completed.',
                 'workbench.in_progress.description': 'Review requests that are still waiting for approval or downstream processing.',
                 ticket_id: 'Ticket ID',
@@ -103,26 +95,6 @@ vi.mock('react-i18next', () => ({
                 'op_type.DELETE': 'Delete',
                 'op_type.POWER': 'Power',
                 'op_type.VNC_ACCESS': 'VNC Access',
-                'vm:batch.clear': 'Clear',
-                'vm:batch.status': 'Status',
-                'vm:batch.operation': 'Operation',
-                'vm:batch.operation.CREATE': 'Create',
-                'vm:batch.operation.MODIFY': 'Modify',
-                'vm:batch.operation.DELETE': 'Delete',
-                'vm:batch.operation.START': 'Start',
-                'vm:batch.operation.STOP': 'Stop',
-                'vm:batch.operation.RESTART': 'Restart',
-                'vm:batch.child_count': 'Child Count',
-                'vm:batch.success_count': 'Success',
-                'vm:batch.failed_count': 'Failed',
-                'vm:batch.pending_count': 'Pending',
-                'vm:batch.retry_failed': 'Retry Failed',
-                'vm:batch.cancel_pending': 'Cancel Pending',
-                'vm:batch.child.ticket': 'Ticket ID',
-                'vm:batch.child.resource': 'Resource',
-                'vm:batch.child.status': 'Status',
-                'vm:batch.child.attempt': 'Attempts',
-                'vm:batch.child.error': 'Last Error',
                 'summary.system': 'System',
                 'summary.service': 'Service',
                 'summary.namespace': 'Namespace',
@@ -255,7 +227,6 @@ vi.mock('@/components/ui/LocalDateTimeText', () => ({
 }));
 
 vi.mock('@/components/illustrations/DashboardIllustrations', () => ({
-    BatchFlowGlyph: (props: Record<string, unknown>) => <span {...props}>batch-glyph</span>,
     DraftNotebookGlyph: (props: Record<string, unknown>) => <span {...props}>draft-glyph</span>,
     QueueReviewGlyph: (props: Record<string, unknown>) => <span {...props}>queue-glyph</span>,
     RequestsOverviewGlyph: (props: Record<string, unknown>) => <span {...props}>requests-glyph</span>,
@@ -460,12 +431,6 @@ vi.mock('../hooks/useMyRequestsController', () => ({
         operationType: '',
         savedVmDraft: null,
         cancelMutation: { isPending: false, mutate: vi.fn() },
-        activeBatchID: '',
-        batchStatus: undefined,
-        batchLoading: false,
-        batchCanRetry: false,
-        batchCanCancel: false,
-        batchActionPending: false,
         messageContextHolder: null,
         setPage: vi.fn(),
         setPageSize: vi.fn(),
@@ -476,10 +441,6 @@ vi.mock('../hooks/useMyRequestsController', () => ({
         clearListFilters: vi.fn(),
         discardSavedVmDraft: vi.fn(),
         prepareHistoryReuse: vi.fn(() => true),
-        refreshBatch: vi.fn(),
-        clearBatchTracking: vi.fn(),
-        retryBatch: vi.fn(),
-        cancelBatch: vi.fn(),
         ...state.overrides,
     }),
 }));
@@ -569,7 +530,7 @@ describe('MyRequestsWorkbench', () => {
         expect(state.push).toHaveBeenCalledWith('/vms?request=create&draft=resume');
     });
 
-    it('surfaces downstream execution failures after approval succeeds', async () => {
+    it('shows generic failure outcomes in history without exposing raw execution errors', async () => {
         const user = userEvent.setup();
         state.overrides = {
             view: 'history',
@@ -604,13 +565,19 @@ describe('MyRequestsWorkbench', () => {
         };
 
         render(<MyRequestsWorkbench />);
-        expect(screen.getByText('CPU hotplug failed on the target node')).toBeVisible();
+        expect(screen.getAllByText('Failed').length).toBeGreaterThan(0);
+        expect(screen.queryByText('CPU hotplug failed on the target node')).not.toBeInTheDocument();
         await user.click(screen.getByTestId('approval-action-details-ticket-failed-1'));
 
         expect(
             screen.getByText('Approval was accepted, but downstream execution failed.'),
         ).toBeVisible();
-        expect(screen.getAllByText('CPU hotplug failed on the target node').length).toBeGreaterThan(0);
+        expect(
+            screen.getByText(
+                'This request ended in failure. Submit a follow-up request or contact an administrator for further help.',
+            ),
+        ).toBeVisible();
+        expect(screen.queryByText('CPU hotplug failed on the target node')).not.toBeInTheDocument();
     });
 
     it('shows the drafts empty state and then a resumable local draft', () => {
@@ -647,38 +614,17 @@ describe('MyRequestsWorkbench', () => {
         expect(screen.getByText('Service A')).toBeVisible();
     });
 
-    it('renders active batch tracking inside the batch jobs tab', () => {
+    it('maps legacy batch_jobs query tabs back to the active request queue', () => {
+        const changeView = vi.fn();
         state.searchParams = new URLSearchParams('tab=batch_jobs');
         state.overrides = {
-            view: 'batch_jobs',
-            activeBatchID: 'batch-1',
-            batchStatus: {
-                batch_id: 'batch-1',
-                operation: 'CREATE',
-                status: 'IN_PROGRESS',
-                child_count: 2,
-                success_count: 1,
-                failed_count: 0,
-                pending_count: 1,
-                children: [
-                    {
-                        ticket_id: 'ticket-1',
-                        resource_name: 'vm-a',
-                        status: 'PENDING',
-                        attempt_count: 0,
-                        last_error: '',
-                    },
-                ],
-            },
+            changeView,
         };
 
         render(<MyRequestsWorkbench />);
 
-        expect(screen.getByText('Current Batch Job')).toBeVisible();
-        expect(screen.getByText('Create · 2 VM requests')).toBeVisible();
-        expect(screen.getAllByText('vm-a').length).toBeGreaterThan(0);
-        expect(screen.getByRole('button', { name: 'Retry Failed' })).toBeVisible();
-        expect(screen.getByRole('button', { name: 'Cancel Pending' })).toBeVisible();
+        expect(changeView).toHaveBeenCalledWith('in_progress');
+        expect(screen.queryByText('Batch Jobs')).not.toBeInTheDocument();
     });
 
     it('builds request detail items from a ticket snapshot', () => {
@@ -731,7 +677,6 @@ describe('MyRequestsWorkbench', () => {
             { key: 'template', label: 'workbench.drafts.template', value: 'Ubuntu 24.04', isIdentifier: false },
             { key: 'size', label: 'workbench.drafts.size', value: 'M4 Large', isIdentifier: false },
             { key: 'namespace', label: 'workbench.drafts.namespace', value: 'team-prod' },
-            { key: 'batch_count', label: 'workbench.drafts.batch_count', value: 2 },
         ]);
     });
 });

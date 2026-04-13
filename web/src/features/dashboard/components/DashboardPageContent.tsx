@@ -514,6 +514,10 @@ export function DashboardPageContent() {
     ), [myRequests, t]);
 
     const pendingRequestCount = pendingTickets?.pagination?.total ?? 0;
+    const systemsTotal = systems?.pagination?.total ?? 0;
+    const servicesTotal = services?.pagination?.total ?? 0;
+    const vmsTotal = vms?.pagination?.total ?? 0;
+    const shouldPromoteSetupGuideShell = vmsTotal === 0;
 
     if (isLoading) {
         return (
@@ -525,17 +529,6 @@ export function DashboardPageContent() {
 
     return (
         <div className="dashboard-page" style={{ position: 'relative', zIndex: 0 }}>
-            {/* Global Galactic Background */}
-            <div style={{ position: 'fixed', inset: 0, zIndex: -1, pointerEvents: 'none', overflow: 'hidden' }}>
-                <div style={{ position: 'absolute', top: '-10%', right: '-10%', width: '50vw', height: '50vw', background: 'radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, rgba(99, 102, 241, 0) 60%)', borderRadius: '50%', filter: 'blur(3xl)', transform: 'translate3d(0,0,0)' }} />
-                <div style={{ position: 'absolute', bottom: '-10%', left: '-10%', width: '60vw', height: '60vw', background: 'radial-gradient(circle, rgba(14, 165, 233, 0.05) 0%, rgba(14, 165, 233, 0) 60%)', borderRadius: '50%', filter: 'blur(3xl)', transform: 'translate3d(0,0,0)' }} />
-                <div style={{ position: 'absolute', top: '30%', left: '50%', width: '100vw', height: '100vw', maxWidth: 1400, maxHeight: 1400, border: '1px solid rgba(99, 102, 241, 0.08)', borderRadius: '50%' }} className="app-orbit-spin-slow">
-                    <div style={{ position: 'absolute', top: 0, left: '50%', width: 12, height: 12, background: '#818cf8', borderRadius: '50%', boxShadow: '0 0 16px rgba(129,140,248,0.8)', transform: 'translate(-50%, -50%)' }} />
-                </div>
-                <div style={{ position: 'absolute', top: '40%', left: '30%', width: '70vw', height: '70vw', maxWidth: 1000, maxHeight: 1000, border: '1px solid rgba(56, 189, 248, 0.1)', borderRadius: '50%' }} className="app-orbit-spin">
-                    <div style={{ position: 'absolute', bottom: 0, left: '50%', width: 8, height: 8, background: '#38bdf8', borderRadius: '50%', boxShadow: '0 0 12px rgba(56,189,248,0.8)', transform: 'translate(-50%, 50%)' }} />
-                </div>
-            </div>
             <PageHeader
                 title={t('nav.dashboard')}
                 subtitle={t('dashboard.subtitle')}
@@ -596,11 +589,25 @@ export function DashboardPageContent() {
                 </div>
             </PageSurface>
 
+            {shouldPromoteSetupGuideShell ? (
+                <div className="dashboard-page__setup-shell">
+                    <SetupGuideCard
+                        variant="dashboard"
+                        focusAction={setupAction}
+                        snapshot={{
+                            systemsTotal,
+                            servicesTotal,
+                            vmsTotal,
+                        }}
+                    />
+                </div>
+            ) : null}
+
             <div className="dashboard-page__overview-grid">
                 <DashboardOverviewCard
                     title={t('nav.systems')}
                     description={t('dashboard.overview.systems_description')}
-                    total={systems?.pagination?.total ?? 0}
+                    total={systemsTotal}
                     icon={<SystemsIcon className="dashboard-overview-card__icon-art" />}
                     actionLabel={t('dashboard.action.open_systems')}
                     onAction={() => router.push('/systems')}
@@ -612,7 +619,7 @@ export function DashboardPageContent() {
                 <DashboardOverviewCard
                     title={t('nav.services')}
                     description={t('dashboard.overview.services_description')}
-                    total={services?.pagination?.total ?? 0}
+                    total={servicesTotal}
                     icon={<ServicesIcon className="dashboard-overview-card__icon-art" />}
                     actionLabel={t('dashboard.action.open_services')}
                     onAction={() => router.push('/services')}
@@ -624,7 +631,7 @@ export function DashboardPageContent() {
                 <DashboardOverviewCard
                     title={t('nav.vms')}
                     description={t('dashboard.overview.vms_description')}
-                    total={vms?.pagination?.total ?? 0}
+                    total={vmsTotal}
                     icon={<VMsIcon className="dashboard-overview-card__icon-art" />}
                     actionLabel={t('dashboard.action.open_vms')}
                     onAction={() => router.push('/vms')}
@@ -648,17 +655,19 @@ export function DashboardPageContent() {
                 />
             </div>
 
-            <div className="dashboard-page__setup-shell">
-                <SetupGuideCard
-                    variant="dashboard"
-                    focusAction={setupAction}
-                    snapshot={{
-                        systemsTotal: systems?.pagination?.total ?? 0,
-                        servicesTotal: services?.pagination?.total ?? 0,
-                        vmsTotal: vms?.pagination?.total ?? 0,
-                    }}
-                />
-            </div>
+            {!shouldPromoteSetupGuideShell ? (
+                <div className="dashboard-page__setup-shell">
+                    <SetupGuideCard
+                        variant="dashboard"
+                        focusAction={setupAction}
+                        snapshot={{
+                            systemsTotal,
+                            servicesTotal,
+                            vmsTotal,
+                        }}
+                    />
+                </div>
+            ) : null}
         </div>
     );
 }

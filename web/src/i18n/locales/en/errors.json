@@ -58,6 +58,8 @@
   "INVALID_BATCH_ITEMS": "The batch items are invalid.",
   "INVALID_BATCH_ITEM": "A batch item is invalid.",
   "BATCH_NOT_FOUND": "Batch job not found.",
+  "BATCH_NOTHING_TO_RETRY": "There are no failed items available to retry. This batch may already be recovering, still in progress, or no longer contains failed children.",
+  "BATCH_NOTHING_TO_CANCEL": "There are no pending items available to cancel.",
   "INVALID_POWER_ACTION": "The requested power action is invalid.",
   "INVALID_VNC_TOKEN": "The VNC token is invalid or expired.",
   "VM_NOT_FOUND": "Virtual machine not found.",

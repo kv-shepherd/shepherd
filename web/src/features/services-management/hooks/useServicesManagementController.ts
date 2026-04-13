@@ -2,7 +2,7 @@
 
 import { App, Form } from 'antd';
 import type { TFunction } from 'i18next';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { applyApiFieldErrors } from '@/hooks/applyApiFieldErrors';
@@ -39,6 +39,8 @@ export function useServicesManagementController({
     const { message: messageApi } = App.useApp();
     const messageContextHolder = null;
     const [createOpen, setCreateOpen] = useState(false);
+    const [createFormVersion, setCreateFormVersion] = useState(0);
+    const [createInitialSystemId, setCreateInitialSystemId] = useState<string | undefined>(undefined);
     const [editOpen, setEditOpen] = useState(false);
     const [editingService, setEditingService] = useState<Service | null>(null);
     const [filters, setFilters] = useState<ServiceSearchFilters>(() => ({
@@ -60,6 +62,9 @@ export function useServicesManagementController({
         [systemsQuery.data?.items],
     );
     const activeSystemId = filters.systemId;
+    const resolvedCreateSystemId = createInitialSystemId
+        ?? (activeSystemId !== ALL_SYSTEMS_FILTER ? activeSystemId : allSystems[0]?.id)
+        ?? undefined;
 
     const servicesQuery = useApiGet<ServiceList>(
         ['services', activeSystemId, filters.search, page, pageSize],
@@ -79,6 +84,16 @@ export function useServicesManagementController({
         servicesQuery.data?.items?.length ??
         0;
     const shouldContinueOnboarding = existingServicesTotal === 0;
+
+    useEffect(() => {
+        if (!createOpen || !resolvedCreateSystemId) {
+            return;
+        }
+        if (form.getFieldValue('system_id')) {
+            return;
+        }
+        form.setFieldValue('system_id', resolvedCreateSystemId);
+    }, [createOpen, form, resolvedCreateSystemId]);
 
     const createMutation = useApiMutation<
         { system_id: string; body: ServiceCreateRequest },
@@ -165,7 +180,6 @@ export function useServicesManagementController({
     };
 
     const openCreateModal = useCallback((systemId?: string) => {
-        setCreateOpen(true);
         const targetSystemId = systemId ?? (
             activeSystemId !== ALL_SYSTEMS_FILTER
                 ? activeSystemId
@@ -175,11 +189,14 @@ export function useServicesManagementController({
             setFilters((current) => ({ ...current, systemId: targetSystemId }));
             setPage(1);
         }
-        form.setFieldValue('system_id', targetSystemId || undefined);
-    }, [activeSystemId, allSystems, form]);
+        setCreateInitialSystemId(targetSystemId || undefined);
+        setCreateFormVersion((current) => current + 1);
+        setCreateOpen(true);
+    }, [activeSystemId, allSystems]);
 
     const closeCreateModal = () => {
         setCreateOpen(false);
+        setCreateInitialSystemId(undefined);
         form.resetFields();
     };
 
@@ -212,7 +229,17 @@ export function useServicesManagementController({
     const submitCreate = async () => {
         const values = await form.validateFields();
         const { system_id, ...body } = values;
-        createMutation.mutate({ system_id, body });
+        const systemID = system_id || resolvedCreateSystemId;
+        if (!systemID) {
+            form.setFields([
+                {
+                    name: 'system_id',
+                    errors: [t('services.validation.system_required')],
+                },
+            ]);
+            return;
+        }
+        createMutation.mutate({ system_id: systemID, body });
     };
 
     const submitDelete = (systemId: string, serviceId: string) => {
@@ -244,6 +271,8 @@ export function useServicesManagementController({
         setPage,
         setPageSize,
         form,
+        createFormVersion,
+        createInitialSystemId,
         editForm,
         systemsData: systemsQuery.data,
         servicesData: servicesQuery.data,

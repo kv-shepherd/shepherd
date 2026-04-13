@@ -55,6 +55,25 @@ export default function VMsPageContent() {
     const setupGuide = useSetupGuide({
         vmsTotal: vm.vmData?.pagination?.total,
     });
+    const batchStatusLabel = vm.batchStatus?.status
+        ? t(`batch.status_value.${vm.batchStatus.status}`, { defaultValue: vm.batchStatus.status })
+        : '—';
+    const isRequestBatchTracking = vm.activeBatchKind === 'request';
+    const batchStatusSummaryKey = isRequestBatchTracking
+        ? 'batch.request_live_status_summary'
+        : 'batch.job_live_status_summary';
+    const batchPrimaryActionLabel = isRequestBatchTracking
+        ? t('batch.open_requests')
+        : t('batch.open_workbench');
+    const openTrackedBatchWorkspace = () => {
+        if (isRequestBatchTracking) {
+            router.push('/tickets?tab=in_progress');
+            return;
+        }
+        if (vm.activeBatchID) {
+            router.push(`/vms/batch/${vm.activeBatchID}`);
+        }
+    };
     const router = useRouter();
     const scopedSystemId = searchParams.get('system_id') || undefined;
     const scopedServiceId = searchParams.get('service_id') || undefined;
@@ -578,9 +597,8 @@ export default function VMsPageContent() {
                             border: 0,
                         }}
                     >
-                        {t('batch.live_status_summary', {
-                            batch_id: vm.activeBatchID,
-                            status: vm.batchStatus?.status ?? '—',
+                        {t(batchStatusSummaryKey, {
+                            status: batchStatusLabel,
                             success_count: vm.batchStatus?.success_count ?? 0,
                             failed_count: vm.batchStatus?.failed_count ?? 0,
                             pending_count: vm.batchStatus?.pending_count ?? 0,
@@ -590,9 +608,8 @@ export default function VMsPageContent() {
                         <Space direction="vertical" size={2}>
                             <Text strong>{t('batch.current_batch')}</Text>
                             <Text type="secondary" className="vm-page-supporting-text">
-                                {t('batch.live_status_summary', {
-                                    batch_id: vm.activeBatchID,
-                                    status: vm.batchStatus?.status ?? '—',
+                                {t(batchStatusSummaryKey, {
+                                    status: batchStatusLabel,
                                     success_count: vm.batchStatus?.success_count ?? 0,
                                     failed_count: vm.batchStatus?.failed_count ?? 0,
                                     pending_count: vm.batchStatus?.pending_count ?? 0,
@@ -612,13 +629,15 @@ export default function VMsPageContent() {
                             </Button>
                             <Button
                                 type="primary"
-                                onClick={() => router.push('/tickets?tab=batch_jobs')}
+                                onClick={openTrackedBatchWorkspace}
                             >
-                                {t('batch.open_workbench')}
+                                {batchPrimaryActionLabel}
                             </Button>
-                            <Button onClick={vm.clearBatchTracking}>
-                                {t('batch.clear')}
-                            </Button>
+                            {!isRequestBatchTracking && (
+                                <Button onClick={vm.clearBatchTracking}>
+                                    {t('batch.clear')}
+                                </Button>
+                            )}
                         </Space>
                     </Space>
                 </PageSurface>

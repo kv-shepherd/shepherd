@@ -773,6 +773,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMBatchActionResponse'
+        '409':
+          description: No failed children are available to retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -790,6 +796,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMBatchActionResponse'
+        '409':
+          description: No pending children are available to cancel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1133,6 +1145,12 @@ paths:
           schema:
             type: string
             enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
+        - name: status_group
+          in: query
+          description: Filter by a built-in status group.
+          schema:
+            type: string
+            enum: [ACTIVE, TERMINAL, ATTENTION]
         - name: mine
           in: query
           description: |
@@ -1185,6 +1203,12 @@ paths:
           schema:
             type: string
             enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
+        - name: status_group
+          in: query
+          description: Filter by a built-in status group.
+          schema:
+            type: string
+            enum: [ACTIVE, TERMINAL, ATTENTION]
         - name: operation_type
           in: query
           description: Filter by task operation type.

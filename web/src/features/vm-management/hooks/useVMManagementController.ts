@@ -12,6 +12,7 @@ import {
   clearStoredActiveBatchState,
   readStoredActiveBatchState,
   saveStoredActiveBatchState,
+  type ActiveBatchKind,
 } from "@/lib/storage/activeBatchTracking";
 import { useAuthStore } from "@/stores/auth";
 
@@ -76,6 +77,7 @@ const TERMINAL_BATCH_STATUSES = new Set([
   "FAILED",
   "CANCELLED",
 ]);
+const REQUEST_TRACKED_BATCH_OPERATIONS = new Set(["CREATE", "MODIFY", "DELETE"]);
 const VM_DELETE_ALLOWED_STATUSES = new Set([
   "STOPPED",
   "FAILED",
@@ -112,6 +114,18 @@ const normalizeRetryAfterSeconds = (value: unknown): number => {
     return 0;
   }
   return Math.max(0, Math.ceil(n));
+};
+
+const normalizeActiveBatchKind = (value: unknown): ActiveBatchKind | "" =>
+  value === "request" || value === "job" ? value : "";
+
+const inferActiveBatchKindFromOperation = (
+  operation: string | undefined,
+): ActiveBatchKind | "" => {
+  if (typeof operation !== "string" || operation.trim() === "") {
+    return "";
+  }
+  return REQUEST_TRACKED_BATCH_OPERATIONS.has(operation) ? "request" : "job";
 };
 
 const normalizeDraftString = (value: unknown): string | undefined => {
@@ -198,6 +212,9 @@ export function useVMManagementController({
   );
   const [activeBatchStatusURL, setActiveBatchStatusURL] = useState(
     () => readStoredActiveBatchState().status_url,
+  );
+  const [activeBatchKind, setActiveBatchKind] = useState<ActiveBatchKind | "">(
+    () => normalizeActiveBatchKind(readStoredActiveBatchState().kind),
   );
   const [batchAutoPolling, setBatchAutoPolling] = useState(true);
   const [batchPollingIntervalMs, setBatchPollingIntervalMs] = useState(2000);
@@ -430,6 +447,13 @@ export function useVMManagementController({
     return instanceSizesFallbackQuery.data;
   }, [requestContextQuery.data, instanceSizesFallbackQuery.data]);
 
+  const resolvedActiveBatchKind = useMemo<ActiveBatchKind | "">(
+    () =>
+      activeBatchKind ||
+      inferActiveBatchKindFromOperation(batchStatusQuery.data?.operation),
+    [activeBatchKind, batchStatusQuery.data?.operation],
+  );
+
   useEffect(() => {
     if (activeBatchID.trim() === "") {
       clearStoredActiveBatchState();
@@ -438,8 +462,9 @@ export function useVMManagementController({
     saveStoredActiveBatchState({
       batch_id: activeBatchID,
       status_url: activeBatchStatusURL,
+      kind: resolvedActiveBatchKind,
     });
-  }, [activeBatchID, activeBatchStatusURL]);
+  }, [activeBatchID, activeBatchStatusURL, resolvedActiveBatchKind]);
 
   useEffect(() => {
     setSavedDraft(loadVMRequestDraft(draftOwner));
@@ -569,13 +594,17 @@ export function useVMManagementController({
     return true;
   };
 
-  const trackBatchSubmission = (resp: VMBatchSubmitResponse) => {
+  const trackBatchSubmission = (
+    resp: VMBatchSubmitResponse,
+    kind: ActiveBatchKind,
+  ) => {
     const trackedBatchID = parseBatchIDFromStatusURL(
       resp.status_url,
       resp.batch_id,
     );
     setActiveBatchID(trackedBatchID);
     setActiveBatchStatusURL(resp.status_url);
+    setActiveBatchKind(kind);
     setBatchAutoPolling(true);
     setLastBatchActionFeedback(null);
     const intervalSeconds = normalizeRetryAfterSeconds(
@@ -710,14 +739,14 @@ export function useVMManagementController({
   >((req) => api.POST("/vms/batch", { body: req }), {
     invalidateKeys: [["vms"], ["tickets"], ["my-tickets"], ["builtin-approval-tasks"]],
     onSuccess: (resp) => {
-      trackBatchSubmission(resp);
+      trackBatchSubmission(resp, "request");
       clearSavedDraft();
       setWizardOpen(false);
       setWizardStep(0);
       setRequestMode("guided");
       setSelectedSystemId("");
       form.resetFields();
-      messageApi.success(t("batch.submitted"));
+      messageApi.success(t("batch.request_submitted"));
     },
     onError: (err) => {
       if (onBatchMutationRateLimit(err)) {
@@ -733,8 +762,8 @@ export function useVMManagementController({
   >((req) => api.POST("/vms/batch", { body: req }), {
     invalidateKeys: [["vms"], ["tickets"], ["my-tickets"], ["builtin-approval-tasks"]],
     onSuccess: (resp) => {
-      trackBatchSubmission(resp);
-      messageApi.success(t("batch.submitted"));
+      trackBatchSubmission(resp, "request");
+      messageApi.success(t("batch.request_submitted"));
     },
     onError: (err) => {
       if (onBatchMutationRateLimit(err)) {
@@ -750,8 +779,8 @@ export function useVMManagementController({
   >((req) => api.POST("/vms/batch/power", { body: req }), {
     invalidateKeys: [["vms"]],
     onSuccess: (resp) => {
-      trackBatchSubmission(resp);
-      messageApi.success(t("batch.submitted"));
+      trackBatchSubmission(resp, "job");
+      messageApi.success(t("batch.job_submitted"));
     },
     onError: (err) => {
       if (onBatchMutationRateLimit(err)) {
@@ -1297,6 +1326,7 @@ export function useVMManagementController({
     submitModify,
     modifySubmitDisabled,
     activeBatchID,
+    activeBatchKind: resolvedActiveBatchKind,
     activeBatchStatusURL,
     batchStatus: batchStatusQuery.data,
     batchLoading: batchStatusQuery.isLoading,
@@ -1313,6 +1343,7 @@ export function useVMManagementController({
     clearBatchTracking: () => {
       setActiveBatchID("");
       setActiveBatchStatusURL("");
+      setActiveBatchKind("");
       setBatchAutoPolling(false);
       setLastBatchActionFeedback(null);
       clearStoredActiveBatchState();

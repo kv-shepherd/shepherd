@@ -1,6 +1,13 @@
+import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { NextConfig } from "next";
+
+// ESM compatibility: Next.js 16 compiles .ts config to ESM where
+// `require` and `__dirname` are not available as globals.
+const esmRequire = createRequire(import.meta.url);
+const __esmDirname = path.dirname(fileURLToPath(import.meta.url));
 
 const allowedDevOrigins = (process.env.DEV_ALLOWED_ORIGINS || "")
   .split(",")
@@ -66,8 +73,8 @@ const nextConfig: NextConfig = {
     config.resolve = config.resolve || {};
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
-      [require.resolve("@novnc/novnc/lib/util/browser.js")]: path.resolve(
-        __dirname,
+      [esmRequire.resolve("@novnc/novnc/lib/util/browser.js")]: path.resolve(
+        __esmDirname,
         "src/vendor/novnc/browser.ts",
       ),
     };

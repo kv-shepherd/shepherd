@@ -44,6 +44,7 @@ type ticketListOptions struct {
 	perPage               int
 	search                string
 	status                string
+	statusGroup           string
 	operationType         string
 	selectedClusterID     string
 	placementAdvisoryCode string
@@ -73,6 +74,7 @@ func (s *Server) ListTickets(c *gin.Context, params generated.ListTicketsParams)
 		perPage:               params.PerPage,
 		search:                params.Search,
 		status:                string(params.Status),
+		statusGroup:           string(params.StatusGroup),
 		operationType:         string(params.OperationType),
 		selectedClusterID:     params.SelectedClusterId,
 		placementAdvisoryCode: params.PlacementAdvisoryCode,
@@ -97,6 +99,7 @@ func (s *Server) ListBuiltinApprovalTasks(c *gin.Context, params generated.ListB
 		perPage:               params.PerPage,
 		search:                params.Search,
 		status:                string(params.Status),
+		statusGroup:           string(params.StatusGroup),
 		operationType:         string(params.OperationType),
 		selectedClusterID:     params.SelectedClusterId,
 		placementAdvisoryCode: params.PlacementAdvisoryCode,
@@ -127,6 +130,33 @@ func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options t
 						sqljson.Path("selected_cluster_name"),
 					))
 				}),
+			),
+		)
+	}
+	switch strings.TrimSpace(options.statusGroup) {
+	case "ACTIVE":
+		query = query.Where(
+			entticket.StatusIn(
+				entticket.StatusPENDING,
+				entticket.StatusAPPROVED,
+				entticket.StatusEXECUTING,
+			),
+		)
+	case "TERMINAL":
+		query = query.Where(
+			entticket.StatusIn(
+				entticket.StatusSUCCESS,
+				entticket.StatusFAILED,
+				entticket.StatusREJECTED,
+				entticket.StatusCANCELLED,
+			),
+		)
+	case "ATTENTION":
+		query = query.Where(
+			entticket.StatusIn(
+				entticket.StatusPENDING,
+				entticket.StatusEXECUTING,
+				entticket.StatusFAILED,
 			),
 		)
 	}

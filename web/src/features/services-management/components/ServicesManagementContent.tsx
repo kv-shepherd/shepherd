@@ -519,7 +519,13 @@ export function ServicesManagementContent() {
                 confirmLoading={services.createPending}
                 data-testid="service-create-modal"
             >
-                <Form form={services.form} layout="vertical" name="create-service">
+                <Form
+                    key={`create-service-${services.createFormVersion}`}
+                    form={services.form}
+                    layout="vertical"
+                    name="create-service"
+                    initialValues={{ system_id: services.createInitialSystemId }}
+                >
                     <Form.Item
                         name="system_id"
                         label={t('services.form.system_label')}

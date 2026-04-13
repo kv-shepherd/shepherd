@@ -44,7 +44,7 @@ export function useAdminApprovalsController({
   const { message: messageApi } = App.useApp();
   const messageContextHolder = null;
   const [statusFilter, setStatusFilter] = useState<"ALL" | ApprovalStatus>(
-    "PENDING",
+    "ALL",
   );
   const [searchFilter, setSearchFilter] = useState("");
   const [operationFilter, setOperationFilter] = useState<
@@ -424,6 +424,27 @@ export function useAdminApprovalsController({
     },
   );
 
+  const retryBatchMutation = useApiMutation<
+    string,
+    components["schemas"]["VMBatchActionResponse"]
+  >(
+    (batchId) =>
+      api.POST("/vms/batch/{batch_id}/retry", {
+        params: { path: { batch_id: batchId } },
+      }),
+    {
+      onSuccess: (response) => {
+        messageApi.success(
+          t("vm:batch.retry_reactivated", {
+            count: response?.affected_count ?? 0,
+          }),
+        );
+        void approvalListQuery.refetch();
+      },
+      onError: (err) => showApprovalError(err),
+    },
+  );
+
   const changeStatusFilter = (value: "ALL" | ApprovalStatus) => {
     setStatusFilter(value);
     setPage(1);
@@ -459,7 +480,7 @@ export function useAdminApprovalsController({
   };
 
   const resetFilters = () => {
-    setStatusFilter("PENDING");
+    setStatusFilter("ALL");
     setSearchFilter("");
     setOperationFilter("ALL");
     setSelectedClusterFilter("");
@@ -615,6 +636,10 @@ export function useAdminApprovalsController({
     cancelMutation.mutate(ticketId);
   };
 
+  const submitBatchRetry = (batchId: string) => {
+    retryBatchMutation.mutate(batchId);
+  };
+
   return {
     messageContextHolder,
     statusFilter,
@@ -675,9 +700,11 @@ export function useAdminApprovalsController({
     submitApprove,
     submitReject,
     submitCancel,
+    submitBatchRetry,
     approvePending: approveMutation.isPending,
     rejectPending: rejectMutation.isPending,
     cancelPending: cancelMutation.isPending,
+    retryBatchPending: retryBatchMutation.isPending,
   };
 }
 

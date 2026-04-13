@@ -27,6 +27,7 @@ type fakeAtomicWriter struct {
 	called       bool
 	modifyCalled bool
 	powerCalled  bool
+	createCalls  int
 
 	ticketID     string
 	eventID      string
@@ -39,6 +40,7 @@ type fakeAtomicWriter struct {
 	placement    map[string]interface{}
 	modifiedSpec map[string]interface{}
 	powerOp      string
+	afterCreate  func()
 }
 
 func init() {
@@ -54,6 +56,7 @@ func (f *fakeAtomicWriter) ApproveCreateAndEnqueue(
 	memoizedSpec map[string]interface{},
 ) (vmID, vmName string, err error) {
 	f.called = true
+	f.createCalls++
 	f.ticketID = ticketID
 	f.eventID = eventID
 	f.approver = approver
@@ -64,6 +67,9 @@ func (f *fakeAtomicWriter) ApproveCreateAndEnqueue(
 	f.requesterID = requesterID
 	f.placement = placementEvaluation
 	f.modifiedSpec = memoizedSpec
+	if f.afterCreate != nil {
+		f.afterCreate()
+	}
 	return "vm-1", "vm-name", nil
 }
 
@@ -798,6 +804,177 @@ func TestServiceApproveBatchParent_ReturnsFirstChildValidationError(t *testing.T
 	}
 	if writer.called {
 		t.Fatal("atomic writer should not be called when batch child dryrun fails")
+	}
+}
+
+func TestServiceApproveBatchParent_PreflightsCloneSourceBeforeDispatchingChildren(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_behavior_batch_clone_preflight")
+	ctx := context.Background()
+
+	parentEventID := "batch-clone-parent-event"
+	parentTicketID := "batch-clone-parent-ticket"
+	requester := "user-1"
+
+	parentPayloadRaw, err := json.Marshal(map[string]interface{}{
+		"operation": "CREATE",
+		"items": []map[string]interface{}{
+			{
+				"service_id":       "svc-clone-batch",
+				"namespace":        "team-a",
+				"template_id":      "tpl-clone-batch",
+				"instance_size_id": "size-clone-batch",
+			},
+			{
+				"service_id":       "svc-clone-batch",
+				"namespace":        "team-a",
+				"template_id":      "tpl-clone-batch",
+				"instance_size_id": "size-clone-batch",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal batch parent payload: %v", err)
+	}
+	if _, createErr := client.DomainEvent.Create().
+		SetID(parentEventID).
+		SetEventType(string(domain.EventBatchCreateRequested)).
+		SetAggregateType("vm_batch").
+		SetAggregateID("svc-clone-batch").
+		SetPayload(parentPayloadRaw).
+		SetCreatedBy(requester).
+		Save(ctx); createErr != nil {
+		t.Fatalf("create parent event: %v", createErr)
+	}
+	if _, createErr := client.Ticket.Create().
+		SetID(parentTicketID).
+		SetEventID(parentEventID).
+		SetRequester(requester).
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(ctx); createErr != nil {
+		t.Fatalf("create parent ticket: %v", createErr)
+	}
+
+	for idx := 1; idx <= 2; idx++ {
+		childEventID := fmt.Sprintf("batch-clone-child-event-%d", idx)
+		childTicketID := fmt.Sprintf("batch-clone-child-ticket-%d", idx)
+		childPayloadRaw, marshalErr := json.Marshal(map[string]interface{}{
+			"requester_id":     requester,
+			"service_id":       "svc-clone-batch",
+			"template_id":      "tpl-clone-batch",
+			"instance_size_id": "size-clone-batch",
+			"namespace":        "team-a",
+		})
+		if marshalErr != nil {
+			t.Fatalf("marshal child payload %d: %v", idx, marshalErr)
+		}
+		if _, createErr := client.DomainEvent.Create().
+			SetID(childEventID).
+			SetEventType(string(domain.EventVMCreationRequested)).
+			SetAggregateType("vm").
+			SetAggregateID("svc-clone-batch").
+			SetPayload(childPayloadRaw).
+			SetCreatedBy(requester).
+			Save(ctx); createErr != nil {
+			t.Fatalf("create child event %d: %v", idx, createErr)
+		}
+		if _, createErr := client.Ticket.Create().
+			SetID(childTicketID).
+			SetEventID(childEventID).
+			SetRequester(requester).
+			SetParentTicketID(parentTicketID).
+			SetStatus(entticket.StatusPENDING).
+			SetOperationType(entticket.OperationTypeCREATE).
+			Save(ctx); createErr != nil {
+			t.Fatalf("create child ticket %d: %v", idx, createErr)
+		}
+	}
+
+	if _, createErr := client.Cluster.Create().
+		SetID("cluster-clone-batch").
+		SetName("cluster-clone-batch").
+		SetAPIServerURL("https://cluster.invalid").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetEnvironment(entcluster.EnvironmentTest).
+		SetDefaultStorageClass("gold-sc").
+		SetCreatedBy("seed").
+		Save(ctx); createErr != nil {
+		t.Fatalf("create cluster: %v", createErr)
+	}
+	if _, createErr := client.NamespaceRegistry.Create().
+		SetID("ns-clone-batch").
+		SetName("team-a").
+		SetEnvironment(entnamespaceregistry.EnvironmentTest).
+		SetEnabled(true).
+		SetCreatedBy("seed").
+		Save(ctx); createErr != nil {
+		t.Fatalf("create namespace registry: %v", createErr)
+	}
+	if _, createErr := client.Template.Create().
+		SetID("tpl-clone-batch").
+		SetName("tpl-clone-batch").
+		SetSourceType("cdi_pvc_clone").
+		SetPvcName("ubuntu-golden").
+		SetPvcNamespace("golden-images").
+		SetCreatedBy("seed").
+		Save(ctx); createErr != nil {
+		t.Fatalf("create template: %v", createErr)
+	}
+	if _, createErr := client.InstanceSize.Create().
+		SetID("size-clone-batch").
+		SetName("size-clone-batch").
+		SetCPUCores(2).
+		SetMemoryGi(4).
+		SetDiskGB(40).
+		SetCreatedBy("seed").
+		Save(ctx); createErr != nil {
+		t.Fatalf("create instance size: %v", createErr)
+	}
+
+	stubProvider := newDryRunProviderStub(&domain.ValidationResult{Valid: true}, nil)
+	stubProvider.SeedPVCs([]*domain.PersistentVolumeClaim{{
+		Name:                  "ubuntu-golden",
+		Namespace:             "golden-images",
+		Phase:                 "Bound",
+		RequestedStorageBytes: 40 * 1024 * 1024 * 1024,
+	}})
+	stubProvider.SeedStorageClasses([]*domain.StorageClass{{
+		Name:                 "gold-sc",
+		AllowVolumeExpansion: true,
+	}})
+
+	writer := &fakeAtomicWriter{
+		afterCreate: func() {
+			stubProvider.SeedPVCConsumers("golden-images", "ubuntu-golden", []domain.ObjectReference{{
+				Namespace: "golden-images",
+				Name:      "clone-source-pod",
+				Kind:      "Pod",
+			}})
+		},
+	}
+	gw := NewService(client, nil, writer)
+	gw.validator = nil
+	gw.SetVMService(service.NewVMService(stubProvider))
+
+	if approveErr := gw.Approve(ctx, parentTicketID, "admin-1", ExecutionOptions{
+		ClusterID:    "cluster-clone-batch",
+		StorageClass: "gold-sc",
+	}); approveErr != nil {
+		t.Fatalf("Approve() error = %v, want nil", approveErr)
+	}
+
+	if writer.createCalls != 2 {
+		t.Fatalf("create approval calls = %d, want 2", writer.createCalls)
+	}
+	parentTicket, err := client.Ticket.Get(ctx, parentTicketID)
+	if err != nil {
+		t.Fatalf("get parent ticket: %v", err)
+	}
+	if parentTicket.Status != entticket.StatusEXECUTING {
+		t.Fatalf("parent status = %s, want EXECUTING after child dispatch", parentTicket.Status)
 	}
 }
 

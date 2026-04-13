@@ -1117,6 +1117,133 @@ func TestListApprovals_MineFiltersByRequesterWithoutApprovalViewPermission(t *te
 	}
 }
 
+func TestListApprovals_StatusGroupFiltersActiveAndTerminalTickets(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newApprovalTestServer(t, "approval_list_status_group")
+
+	mustCreateDomainEvent(t, client, "ev-status-active", []byte(`{"reason":"active"}`))
+	if _, err := client.Ticket.Create().
+		SetID("ticket-status-active").
+		SetEventID("ev-status-active").
+		SetRequester("user-a").
+		SetStatus(entticket.StatusEXECUTING).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create active ticket: %v", err)
+	}
+	mustCreateDomainEvent(t, client, "ev-status-terminal", []byte(`{"reason":"terminal"}`))
+	if _, err := client.Ticket.Create().
+		SetID("ticket-status-terminal").
+		SetEventID("ev-status-terminal").
+		SetRequester("user-a").
+		SetStatus(entticket.StatusFAILED).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create terminal ticket: %v", err)
+	}
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/tickets?mine=true&status_group=ACTIVE", "", "user-a", nil)
+	srv.ListTickets(c, generated.ListTicketsParams{
+		Mine:        true,
+		StatusGroup: generated.ListTicketsParamsStatusGroup("ACTIVE"),
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var activeResp generated.TicketList
+	if err := json.Unmarshal(w.Body.Bytes(), &activeResp); err != nil {
+		t.Fatalf("decode active TicketList: %v", err)
+	}
+	if len(activeResp.Items) != 1 || activeResp.Items[0].Id != "ticket-status-active" {
+		t.Fatalf("active items = %+v, want only active ticket", activeResp.Items)
+	}
+
+	terminalCtx, terminalW := newAuthedGinContext(t, http.MethodGet, "/tickets?mine=true&status_group=TERMINAL", "", "user-a", nil)
+	srv.ListTickets(terminalCtx, generated.ListTicketsParams{
+		Mine:        true,
+		StatusGroup: generated.ListTicketsParamsStatusGroup("TERMINAL"),
+	})
+
+	if terminalW.Code != http.StatusOK {
+		t.Fatalf("terminal status = %d, want %d body=%s", terminalW.Code, http.StatusOK, terminalW.Body.String())
+	}
+
+	var terminalResp generated.TicketList
+	if err := json.Unmarshal(terminalW.Body.Bytes(), &terminalResp); err != nil {
+		t.Fatalf("decode terminal TicketList: %v", err)
+	}
+	if len(terminalResp.Items) != 1 || terminalResp.Items[0].Id != "ticket-status-terminal" {
+		t.Fatalf("terminal items = %+v, want only terminal ticket", terminalResp.Items)
+	}
+}
+
+func TestListBuiltinApprovalTasks_StatusGroupAttentionIncludesPendingExecutingAndFailed(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newApprovalTestServer(t, "builtin_approval_status_group")
+
+	mustCreateDomainEvent(t, client, "ev-attn-pending", []byte(`{"reason":"pending"}`))
+	mustCreateTicket(t, client, "ticket-attn-pending", "ev-attn-pending", entticket.OperationTypeCREATE, "user-a")
+
+	mustCreateDomainEvent(t, client, "ev-attn-executing", []byte(`{"reason":"executing"}`))
+	if _, err := client.Ticket.Create().
+		SetID("ticket-attn-executing").
+		SetEventID("ev-attn-executing").
+		SetRequester("user-a").
+		SetStatus(entticket.StatusEXECUTING).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create executing ticket: %v", err)
+	}
+
+	mustCreateDomainEvent(t, client, "ev-attn-failed", []byte(`{"reason":"failed"}`))
+	if _, err := client.Ticket.Create().
+		SetID("ticket-attn-failed").
+		SetEventID("ev-attn-failed").
+		SetRequester("user-a").
+		SetStatus(entticket.StatusFAILED).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create failed ticket: %v", err)
+	}
+
+	mustCreateDomainEvent(t, client, "ev-attn-success", []byte(`{"reason":"success"}`))
+	if _, err := client.Ticket.Create().
+		SetID("ticket-attn-success").
+		SetEventID("ev-attn-success").
+		SetRequester("user-a").
+		SetStatus(entticket.StatusSUCCESS).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create success ticket: %v", err)
+	}
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/builtin-approval/tasks?status_group=ATTENTION", "", "admin-1", []string{"builtin_approval:view"})
+	srv.ListBuiltinApprovalTasks(c, generated.ListBuiltinApprovalTasksParams{
+		StatusGroup: generated.ListBuiltinApprovalTasksParamsStatusGroup("ATTENTION"),
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.TicketList
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode TicketList: %v", err)
+	}
+	if len(resp.Items) != 3 {
+		t.Fatalf("items length = %d, want 3", len(resp.Items))
+	}
+	for _, item := range resp.Items {
+		if item.Id == "ticket-attn-success" {
+			t.Fatalf("attention items unexpectedly included success ticket")
+		}
+	}
+}
+
 func TestCancelTicket_RequesterDoesNotRequireGlobalPermission(t *testing.T) {
 	t.Parallel()
 

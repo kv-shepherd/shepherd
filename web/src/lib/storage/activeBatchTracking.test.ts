@@ -17,11 +17,29 @@ describe('activeBatchTracking', () => {
         saveStoredActiveBatchState({
             batch_id: 'batch-1',
             status_url: '/vms/batch/batch-1',
+            kind: 'request',
         });
 
         expect(readStoredActiveBatchState()).toEqual({
             batch_id: 'batch-1',
             status_url: '/vms/batch/batch-1',
+            kind: 'request',
+        });
+    });
+
+    it('treats missing batch kind as legacy state and restores it safely', () => {
+        window.sessionStorage.setItem(
+            ACTIVE_BATCH_STORAGE_KEY,
+            JSON.stringify({
+                batch_id: 'batch-legacy',
+                status_url: '/vms/batch/batch-legacy',
+            }),
+        );
+
+        expect(readStoredActiveBatchState()).toEqual({
+            batch_id: 'batch-legacy',
+            status_url: '/vms/batch/batch-legacy',
+            kind: '',
         });
     });
 
@@ -30,11 +48,13 @@ describe('activeBatchTracking', () => {
         expect(readStoredActiveBatchState()).toEqual({
             batch_id: '',
             status_url: '',
+            kind: '',
         });
 
         saveStoredActiveBatchState({
             batch_id: '',
             status_url: '/vms/batch/batch-1',
+            kind: 'job',
         });
         expect(window.sessionStorage.getItem(ACTIVE_BATCH_STORAGE_KEY)).toBeNull();
     });
@@ -46,6 +66,7 @@ describe('activeBatchTracking', () => {
         saveStoredActiveBatchState({
             batch_id: 'batch-1',
             status_url: '/vms/batch/batch-1',
+            kind: 'job',
         });
         clearStoredActiveBatchState();
 

@@ -4,6 +4,17 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const controllerState = vi.hoisted(() => ({
+    activeBatchID: '',
+    activeBatchKind: '',
+    batchStatus: null as null | {
+        status: string;
+        success_count?: number;
+        failed_count?: number;
+        pending_count?: number;
+    },
+}));
+
 const useSetupGuideMock = vi.fn();
 const useScopedVMRequestLauncherMock = vi.fn();
 const pushMock = vi.fn();
@@ -49,6 +60,12 @@ vi.mock('react-i18next', () => ({
                 'search.service': 'Service',
                 'search.operating_system': 'Operating system',
                 'search.ip_address': 'IP address',
+                'batch.current_batch': 'Current Batch',
+                'batch.request_live_status_summary': 'Current batch request status PENDING_APPROVAL. Open My Requests to follow approval and downstream handling.',
+                'batch.job_live_status_summary': 'Current batch status IN_PROGRESS, success 2, failed 0, pending 1',
+                'batch.open_requests': 'Open My Requests',
+                'batch.open_workbench': 'Open Batch Jobs',
+                'batch.clear': 'Clear',
             };
             const fallback =
                 typeof options === 'string' ? options : options?.defaultValue;
@@ -186,8 +203,9 @@ vi.mock('@/features/vm-management/hooks/useVMManagementController', () => ({
             openDeleteModal: vi.fn(),
             openModifyModal: vi.fn(),
             setSelectedVMIDs: vi.fn(),
-            activeBatchID: '',
-            batchStatus: null,
+            activeBatchID: controllerState.activeBatchID,
+            activeBatchKind: controllerState.activeBatchKind,
+            batchStatus: controllerState.batchStatus,
             batchLoading: false,
             refreshBatch: vi.fn(),
             clearBatchTracking: vi.fn(),
@@ -267,6 +285,9 @@ describe('VMsPage', () => {
         openWizardMock.mockReset();
         changeFiltersMock.mockReset();
         resetFiltersMock.mockReset();
+        controllerState.activeBatchID = '';
+        controllerState.activeBatchKind = '';
+        controllerState.batchStatus = null;
         useApiGetMock.mockReturnValue({
             data: {
                 service: {
@@ -338,5 +359,48 @@ describe('VMsPage', () => {
         expect(screen.getByTestId('vms-filter-namespace')).toBeVisible();
         expect(screen.getByTestId('vms-filter-service')).toBeVisible();
         expect(screen.getByTestId('vms-advanced-search-submit')).toBeVisible();
+    });
+
+    it('routes request-style current batch tracking to My Requests', async () => {
+        const user = userEvent.setup();
+        useSetupGuideMock.mockReturnValue({
+            vmRequestReady: true,
+        });
+        controllerState.activeBatchID = 'batch-req-1';
+        controllerState.activeBatchKind = 'request';
+        controllerState.batchStatus = {
+            status: 'PENDING_APPROVAL',
+            success_count: 0,
+            failed_count: 0,
+            pending_count: 2,
+        };
+
+        render(<VMsPage />);
+
+        expect(screen.getByText('Current Batch')).toBeVisible();
+        expect(screen.getAllByText(/Open My Requests to follow approval/).length).toBeGreaterThan(0);
+
+        await user.click(screen.getByRole('button', { name: 'Open My Requests' }));
+        expect(pushMock).toHaveBeenCalledWith('/tickets?tab=in_progress');
+    });
+
+    it('routes operation-style current batch tracking to the batch detail page', async () => {
+        const user = userEvent.setup();
+        useSetupGuideMock.mockReturnValue({
+            vmRequestReady: true,
+        });
+        controllerState.activeBatchID = 'batch-job-1';
+        controllerState.activeBatchKind = 'job';
+        controllerState.batchStatus = {
+            status: 'IN_PROGRESS',
+            success_count: 2,
+            failed_count: 0,
+            pending_count: 1,
+        };
+
+        render(<VMsPage />);
+
+        await user.click(screen.getByRole('button', { name: 'Open Batch Jobs' }));
+        expect(pushMock).toHaveBeenCalledWith('/vms/batch/batch-job-1');
     });
 });

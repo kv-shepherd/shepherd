@@ -20,12 +20,16 @@ const {
     resetFields: vi.fn(),
     setFieldValue: vi.fn(),
     setFieldsValue: vi.fn(),
+    setFields: vi.fn(),
+    getFieldValue: vi.fn(),
   },
   editFormState: {
     validateFields: vi.fn(),
     resetFields: vi.fn(),
     setFieldValue: vi.fn(),
     setFieldsValue: vi.fn(),
+    setFields: vi.fn(),
+    getFieldValue: vi.fn(),
   },
   messageSuccessMock: vi.fn(),
   messageErrorMock: vi.fn(),
@@ -74,9 +78,11 @@ describe('useServicesManagementController', () => {
       name: 'svc-a',
       description: 'service a',
     });
+    formState.getFieldValue.mockReturnValue(undefined);
     editFormState.validateFields.mockResolvedValue({
       description: 'updated description',
     });
+    editFormState.getFieldValue.mockReturnValue(undefined);
     let getCall = 0;
     useApiGetMock.mockImplementation(() => {
       getCall += 1;
@@ -171,6 +177,8 @@ describe('useServicesManagementController', () => {
     });
 
     expect(result.current.activeSystemId).toBe('sys-1');
+    expect(result.current.createInitialSystemId).toBe('sys-1');
+    expect(result.current.createFormVersion).toBe(1);
     expect(formState.setFieldValue).toHaveBeenCalledWith('system_id', 'sys-1');
   });
 

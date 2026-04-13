@@ -458,6 +458,40 @@ func TestBatchHandler_RetryVMBatch_Errors(t *testing.T) {
 		}
 		assertErrorCode(t, w.Body.Bytes(), "BATCH_NOT_FOUND")
 	}
+
+	{
+		client := srv.client
+		vmID := mustCreateBatchDeleteTargetVM(t, client)
+		submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
+			Operation: generated.VMBatchOperation("DELETE"),
+			Items: []generated.VMBatchChildItem{
+				{VmId: vmID},
+			},
+		})
+		submitCtx, submitW := newAuthedGinContext(
+			t,
+			http.MethodPost,
+			"/vms/batch",
+			submitBody,
+			"owner-1",
+			[]string{"platform:admin"},
+		)
+		srv.SubmitVMBatch(submitCtx)
+		if submitW.Code != http.StatusAccepted {
+			t.Fatalf("submit status = %d, want %d body=%s", submitW.Code, http.StatusAccepted, submitW.Body.String())
+		}
+		var submitResp generated.VMBatchSubmitResponse
+		if err := json.Unmarshal(submitW.Body.Bytes(), &submitResp); err != nil {
+			t.Fatalf("decode submit response: %v", err)
+		}
+
+		c, w := newAuthedGinContext(t, http.MethodPost, "/vms/batch/"+submitResp.BatchId+"/retry", "", "owner-1", []string{"vm:delete"})
+		srv.RetryVMBatch(c, submitResp.BatchId)
+		if w.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusConflict, w.Body.String())
+		}
+		assertErrorCode(t, w.Body.Bytes(), "BATCH_NOTHING_TO_RETRY")
+	}
 }
 
 func TestBatchHandler_GetVMBatch_RequestContextCanceled(t *testing.T) {
@@ -791,11 +825,11 @@ func TestBatchHandler_RetryVMBatch_RetriesFailedDeleteChild(t *testing.T) {
 	}
 	child := children[0]
 
-	if _, err := client.Ticket.UpdateOneID(child.ID).
+	if _, updateErr := client.Ticket.UpdateOneID(child.ID).
 		SetStatus(entticket.StatusFAILED).
 		SetRejectReason("seed failure").
-		Save(t.Context()); err != nil {
-		t.Fatalf("seed child failed status: %v", err)
+		Save(t.Context()); updateErr != nil {
+		t.Fatalf("seed child failed status: %v", updateErr)
 	}
 
 	retryCtx, retryW := newAuthedGinContext(t, http.MethodPost, "/vms/batch/"+submitResp.BatchId+"/retry", "", "owner-1", []string{"vm:delete"})
@@ -805,14 +839,31 @@ func TestBatchHandler_RetryVMBatch_RetriesFailedDeleteChild(t *testing.T) {
 	}
 
 	var retryResp generated.VMBatchActionResponse
-	if err := json.Unmarshal(retryW.Body.Bytes(), &retryResp); err != nil {
-		t.Fatalf("decode retry response: %v", err)
+	if decodeErr := json.Unmarshal(retryW.Body.Bytes(), &retryResp); decodeErr != nil {
+		t.Fatalf("decode retry response: %v", decodeErr)
 	}
 	if retryResp.AffectedCount != 1 {
 		t.Fatalf("affected_count = %d, want 1", retryResp.AffectedCount)
 	}
 	if len(retryResp.AffectedTicketIds) != 1 || retryResp.AffectedTicketIds[0] != child.ID {
 		t.Fatalf("affected_ticket_ids = %v, want [%s]", retryResp.AffectedTicketIds, child.ID)
+	}
+	if retryResp.Status == generated.VMBatchParentStatusFAILED || retryResp.Status == generated.VMBatchParentStatusCANCELLED {
+		t.Fatalf("retry status = %q, want active status", retryResp.Status)
+	}
+	parentTicket, err := client.Ticket.Get(t.Context(), submitResp.BatchId)
+	if err != nil {
+		t.Fatalf("load parent ticket: %v", err)
+	}
+	if parentTicket.Status != entticket.StatusEXECUTING {
+		t.Fatalf("parent ticket status = %q, want %q", parentTicket.Status, entticket.StatusEXECUTING)
+	}
+	parentEvent, err := client.DomainEvent.Get(t.Context(), parentTicket.EventID)
+	if err != nil {
+		t.Fatalf("load parent event: %v", err)
+	}
+	if parentEvent.Status != domainevent.StatusPROCESSING {
+		t.Fatalf("parent event status = %q, want %q", parentEvent.Status, domainevent.StatusPROCESSING)
 	}
 	if writer.deleteCalls != 1 {
 		t.Fatalf("delete atomic writer calls = %d, want 1", writer.deleteCalls)

@@ -36,7 +36,7 @@ func setTicketStatusByEvent(ctx context.Context, client *ent.Client, eventID str
 			zap.Error(err),
 		)
 	}
-	syncParentBatchStatusByChildEvent(ctx, client, eventID)
+	SyncParentBatchStatusByChildEvent(ctx, client, eventID)
 }
 
 // logAuditVMOp is a helper for writing VM operation audit log entries. Failures
@@ -55,7 +55,9 @@ func logAuditVMOp(ctx context.Context, auditLogger *audit.Logger, action, resour
 	}
 }
 
-func syncParentBatchStatusByChildEvent(ctx context.Context, client *ent.Client, childEventID string) {
+// SyncParentBatchStatusByChildEvent refreshes the parent batch aggregates for
+// the parent ticket that owns the provided child event.
+func SyncParentBatchStatusByChildEvent(ctx context.Context, client *ent.Client, childEventID string) {
 	if client == nil || childEventID == "" {
 		return
 	}
@@ -75,10 +77,12 @@ func syncParentBatchStatusByChildEvent(ctx context.Context, client *ent.Client, 
 	if parentID == "" {
 		return
 	}
-	syncParentBatchStatus(ctx, client, parentID)
+	SyncParentBatchStatus(ctx, client, parentID)
 }
 
-func syncParentBatchStatus(ctx context.Context, client *ent.Client, parentTicketID string) {
+// SyncParentBatchStatus recalculates parent batch ticket, event, and projection
+// state from its child ticket statuses.
+func SyncParentBatchStatus(ctx context.Context, client *ent.Client, parentTicketID string) {
 	children, err := client.Ticket.Query().
 		Where(entticket.ParentTicketIDEQ(parentTicketID)).
 		All(ctx)

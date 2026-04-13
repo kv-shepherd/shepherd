@@ -29,7 +29,6 @@ import { useTranslation } from 'react-i18next';
 
 import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
 import {
-    BatchFlowGlyph,
     DraftNotebookGlyph,
     QueueReviewGlyph,
     RequestsOverviewGlyph,
@@ -52,7 +51,6 @@ import {
     formatApprovalRecordID,
 } from '@/features/approval-shared/summary';
 import type {
-    BatchStatusResponse,
     Ticket,
     RequestTicketOperationType,
     RequestWorkbenchView,
@@ -81,10 +79,10 @@ interface RequestRowOutcome {
     detail?: string;
 }
 
-type BatchChildRow = NonNullable<BatchStatusResponse['children']>[number];
 type RequestBatchDisplayRow = ReturnType<typeof buildApprovalBatchDisplayItems>[number];
 
 const HISTORY_STATUS_OPTIONS: Array<{ value: HistoryStatusFilter; labelKey: string }> = [
+    { value: 'ALL', labelKey: 'filter_all' },
     { value: 'SUCCESS', labelKey: 'status.SUCCESS' },
     { value: 'FAILED', labelKey: 'status.FAILED' },
     { value: 'REJECTED', labelKey: 'status.REJECTED' },
@@ -264,7 +262,6 @@ function requestFields(record: Ticket, t: TFunction): CompactField[] {
 }
 
 function requestOutcome(record: Ticket, t: TFunction): RequestRowOutcome | null {
-    const detail = record.provisioning?.failure_message?.trim() || record.reject_reason?.trim() || undefined;
     switch (record.status) {
         case 'APPROVED':
             return { tone: 'info', title: t('workbench.outcome.approved_title') };
@@ -273,43 +270,14 @@ function requestOutcome(record: Ticket, t: TFunction): RequestRowOutcome | null 
         case 'SUCCESS':
             return { tone: 'success', title: t('workbench.outcome.success_title') };
         case 'FAILED':
-            return { tone: 'danger', title: t('workbench.outcome.failed_title'), detail };
+            return { tone: 'danger', title: t('workbench.outcome.failed_title') };
         case 'REJECTED':
-            return { tone: 'warning', title: t('workbench.outcome.rejected_title'), detail };
+            return { tone: 'warning', title: t('workbench.outcome.rejected_title') };
         case 'CANCELLED':
             return { tone: 'muted', title: t('workbench.outcome.cancelled_title') };
         default:
             return null;
     }
-}
-
-function batchChildSummaryTitle(resourceName: string | undefined): string {
-    return resourceName && resourceName.trim() !== '' ? resourceName : EMPTY_VALUE;
-}
-
-function summarizeBatchTracking(batchStatus: BatchStatusResponse | undefined, t: TFunction) {
-    if (!batchStatus) {
-        return {
-            headline: undefined as string | undefined,
-            preview: undefined as string | undefined,
-        };
-    }
-
-    const operation = batchStatus.operation
-        ? t(`vm:batch.operation.${batchStatus.operation}`, { defaultValue: batchStatus.operation })
-        : t('workbench.summary.batch_title');
-    const count = batchStatus.child_count ?? 0;
-    const headline = `${operation} · ${t('request_batch_count', { count })}`;
-    const namedChildren = (batchStatus.children ?? [])
-        .map((child) => child.resource_name?.trim())
-        .filter((value): value is string => Boolean(value));
-    const preview = namedChildren.length === 0
-        ? undefined
-        : namedChildren.length === 1
-            ? namedChildren[0]
-            : `${namedChildren.slice(0, 2).join(' · ')}${namedChildren.length > 2 ? ` +${namedChildren.length - 2}` : ''}`;
-
-    return { headline, preview };
 }
 
 function requestLifecycleAlert(ticket: Ticket, t: (key: string) => string) {
@@ -342,16 +310,13 @@ function requestLifecycleAlert(ticket: Ticket, t: (key: string) => string) {
             return {
                 type: 'error' as const,
                 message: t('workbench.details.failed_hint'),
-                description:
-                    ticket.provisioning?.failure_message ||
-                    ticket.reject_reason ||
-                    t('workbench.details.failed_description'),
+                description: t('workbench.details.failed_description'),
             };
         case 'REJECTED':
             return {
                 type: 'warning' as const,
                 message: t('workbench.details.rejected_hint'),
-                description: ticket.reject_reason,
+                description: t('workbench.details.rejected_description'),
             };
         case 'CANCELLED':
             return {
@@ -422,11 +387,6 @@ export function buildRequestWorkbenchContextItems(
             label: t('workbench.drafts.namespace'),
             value: summary?.namespace || requestPrefill.namespace || EMPTY_VALUE,
         },
-        {
-            key: 'batch_count',
-            label: t('workbench.drafts.batch_count'),
-            value: requestPrefill.batch_count,
-        },
     ];
 }
 
@@ -456,12 +416,15 @@ export function MyRequestsWorkbench() {
     const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 
     useEffect(() => {
-        if (
-            requestedTab &&
-            ['drafts', 'in_progress', 'history', 'batch_jobs'].includes(requestedTab) &&
-            requestedTab !== view
-        ) {
+        if (!requestedTab || requestedTab === view) {
+            return;
+        }
+        if (['drafts', 'in_progress', 'history'].includes(requestedTab)) {
             changeView(requestedTab as RequestWorkbenchView);
+            return;
+        }
+        if (requestedTab === 'batch_jobs') {
+            changeView('in_progress');
         }
     }, [changeView, requestedTab, view]);
 
@@ -553,30 +516,6 @@ export function MyRequestsWorkbench() {
         ],
         [t],
     );
-    const batchStatusColor =
-        requests.batchStatus?.status === 'COMPLETED'
-            ? 'green'
-            : requests.batchStatus?.status === 'FAILED'
-                ? 'red'
-                : 'blue';
-    const batchTrackingSummary = summarizeBatchTracking(requests.batchStatus, t);
-    const formatBatchStatus = (status?: string) => {
-        if (!status) {
-            return EMPTY_VALUE;
-        }
-        const labelKey = `vm:batch.status_value.${status}`;
-        const label = t(labelKey);
-        return label === labelKey ? status : label;
-    };
-    const formatBatchOperation = (operation?: string) => {
-        if (!operation) {
-            return EMPTY_VALUE;
-        }
-        const labelKey = `vm:batch.operation.${operation}`;
-        const label = t(labelKey);
-        return label === labelKey ? operation : label;
-    };
-
     const renderRequestTable = () => (
         <List<Ticket>
             className="workbench-feed-list"
@@ -965,30 +904,6 @@ export function MyRequestsWorkbench() {
                         : t('workbench.summary.load_on_open')}
                 </div>
             </div>
-
-            <div
-                className={[
-                    'workbench-overview-card',
-                    requests.view === 'batch_jobs' ? 'workbench-overview-card--active' : '',
-                ].filter(Boolean).join(' ')}
-                style={{ '--workbench-overview-accent': '#D66A1F' } as CSSProperties}
-            >
-                <div className="workbench-overview-card__header">
-                    <span className="workbench-overview-card__title">{t('workbench.summary.batch_title')}</span>
-                    <BatchFlowGlyph className="workbench-overview-card__art" />
-                </div>
-                <div className="workbench-overview-card__value">
-                    {batchTrackingSummary.headline || t('workbench.summary.batch_inactive')}
-                </div>
-                <div className="workbench-overview-card__meta">
-                    <Space wrap size={8}>
-                        <span>{batchTrackingSummary.preview || t('workbench.summary.batch_description')}</span>
-                        {requests.batchStatus?.status ? (
-                            <Tag color={batchStatusColor}>{formatBatchStatus(requests.batchStatus.status)}</Tag>
-                        ) : null}
-                    </Space>
-                </div>
-            </div>
         </div>
     );
 
@@ -1042,135 +957,6 @@ export function MyRequestsWorkbench() {
         );
     };
 
-    const renderBatchJobs = () => {
-        if (!requests.activeBatchID) {
-            return renderEmptyState(
-                'workbench.batch_jobs.empty_title',
-                'workbench.batch_jobs.empty_description',
-                'workbench.open_vms',
-                { showSetupGuide: true, visual: <BatchFlowGlyph className="action-empty-state__art" /> },
-            );
-        }
-
-        return (
-            <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                <Card
-                    variant="borderless"
-                    title={t('workbench.batch_jobs.current_title')}
-                    extra={(
-                        <Space>
-                            <Button
-                                icon={<ReloadOutlined />}
-                                onClick={requests.refreshBatch}
-                                loading={requests.batchLoading}
-                            >
-                                {t('common:button.refresh')}
-                            </Button>
-                            <Button onClick={requests.clearBatchTracking}>
-                                {t('vm:batch.clear')}
-                            </Button>
-                        </Space>
-                    )}
-                >
-                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                        <Alert
-                            type={requests.batchStatus?.status === 'FAILED' ? 'warning' : 'info'}
-                            showIcon
-                            message={t('workbench.batch_jobs.status_summary', {
-                                status: formatBatchStatus(requests.batchStatus?.status),
-                                success: requests.batchStatus?.success_count ?? 0,
-                                failed: requests.batchStatus?.failed_count ?? 0,
-                                pending: requests.batchStatus?.pending_count ?? 0,
-                            })}
-                        />
-                        <Descriptions bordered size="small" column={2}>
-                            <Descriptions.Item label={t('workbench.batch_jobs.batch_id')}>
-                                {requests.activeBatchID}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={t('vm:batch.status')}>
-                                <Tag color={
-                                    requests.batchStatus?.status === 'COMPLETED'
-                                        ? 'green'
-                                        : requests.batchStatus?.status === 'FAILED'
-                                            ? 'red'
-                                            : 'blue'
-                                }>
-                                    {formatBatchStatus(requests.batchStatus?.status)}
-                                </Tag>
-                            </Descriptions.Item>
-                            <Descriptions.Item label={t('vm:batch.operation')}>
-                                {formatBatchOperation(requests.batchStatus?.operation)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={t('vm:batch.child_count')}>
-                                {requests.batchStatus?.child_count ?? 0}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={t('vm:batch.success_count')}>
-                                {requests.batchStatus?.success_count ?? 0}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={t('vm:batch.failed_count')}>
-                                {requests.batchStatus?.failed_count ?? 0}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={t('vm:batch.pending_count')}>
-                                {requests.batchStatus?.pending_count ?? 0}
-                            </Descriptions.Item>
-                        </Descriptions>
-                        <Space wrap>
-                            <Button
-                                onClick={requests.retryBatch}
-                                disabled={!requests.batchCanRetry}
-                                loading={requests.batchActionPending}
-                            >
-                                {t('vm:batch.retry_failed')}
-                            </Button>
-                            <Button
-                                danger
-                                onClick={requests.cancelBatch}
-                                disabled={!requests.batchCanCancel}
-                                loading={requests.batchActionPending}
-                            >
-                                {t('vm:batch.cancel_pending')}
-                            </Button>
-                            <Button onClick={() => router.push('/vms')}>
-                                {t('workbench.open_vms')}
-                            </Button>
-                        </Space>
-                    </Space>
-                </Card>
-
-                <Card variant="borderless" title={t('workbench.batch_jobs.child_title')}>
-                    <Table
-                        rowKey="ticket_id"
-                        loading={requests.batchLoading}
-                        dataSource={requests.batchStatus?.children ?? []}
-                        pagination={false}
-                        columns={[
-                                {
-                                    title: t('vm:batch.child.resource'),
-                                    key: 'resource_summary',
-                                    render: (_: unknown, record: BatchChildRow) => (
-                                    <Space direction="vertical" size={0}>
-                                        <Text strong>{batchChildSummaryTitle(record.resource_name)}</Text>
-                                        <Text copyable={{ text: record.ticket_id }} type="secondary" style={{ fontSize: 13 }}>
-                                            {t('vm:batch.child.ticket')}: {formatApprovalRecordID(record.ticket_id)}
-                                        </Text>
-                                    </Space>
-                                ),
-                            },
-                            {
-                                title: t('vm:batch.child.status'),
-                                dataIndex: 'status',
-                                key: 'status',
-                                render: (status: string) => <Tag>{formatBatchStatus(status)}</Tag>,
-                            },
-                            { title: t('vm:batch.child.attempt'), dataIndex: 'attempt_count', key: 'attempt_count' },
-                            { title: t('vm:batch.child.error'), dataIndex: 'last_error', key: 'last_error' },
-                        ]}
-                    />
-                </Card>
-            </Space>
-        );
-    };
-
     const tabItems: Array<{ key: RequestWorkbenchView; label: string; children: ReactNode }> = [
         {
             key: 'drafts',
@@ -1208,7 +994,7 @@ export function MyRequestsWorkbench() {
                         title: t('workbench.summary.history_title'),
                         description: t('workbench.history.description'),
                         count: requestListTotal,
-                        statusLabel: t(`status.${requests.historyStatus}`),
+                        statusLabel: requests.historyStatus === 'ALL' ? t('filter_all') : t(`status.${requests.historyStatus}`),
                     })}
                     {renderRequestSearchToolbar(true)}
                     {(requests.data?.items?.length ?? 0) === 0 && !requests.isLoading
@@ -1221,11 +1007,6 @@ export function MyRequestsWorkbench() {
                         : renderRequestTable()}
                 </Space>
             ),
-        },
-        {
-            key: 'batch_jobs',
-            label: t('workbench.tab.batch_jobs'),
-            children: renderBatchJobs(),
         },
     ];
 

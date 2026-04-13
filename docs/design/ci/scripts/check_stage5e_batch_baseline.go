@@ -208,7 +208,8 @@ func checkGatewayFragments(violations *[]string) {
 		"approveBatchParent(",
 		"isBatchParentTicket(",
 		"markChildApprovalDispatchFailed(",
-		"g.approveCreate(ctx, child",
+		"g.preflightCreateCloneSource(ctx, child, opts)",
+		"g.approveCreateWithConfig(ctx, child",
 		"g.approveDelete(ctx, child",
 	}
 	text := string(content)
@@ -250,8 +251,8 @@ func checkJobHelperFragments(violations *[]string) {
 	}
 
 	needles := []string{
-		"syncParentBatchStatusByChildEvent(",
-		"syncParentBatchStatus(",
+		"SyncParentBatchStatusByChildEvent(",
+		"SyncParentBatchStatus(",
 		"parentStatus := entticket.StatusEXECUTING",
 	}
 	text := string(content)

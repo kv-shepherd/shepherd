@@ -105,20 +105,6 @@ export function QueueReviewGlyph(props: IllustrationProps) {
     );
 }
 
-export function BatchFlowGlyph(props: IllustrationProps) {
-    return (
-        <IllustrationFrame {...props}>
-            <rect x="16" y="20" width="88" height="80" rx="24" fill="#FFF3E8" />
-            <rect x="24" y="32" width="28" height="18" rx="9" fill="#FFB57A" />
-            <rect x="68" y="32" width="28" height="18" rx="9" fill="#FFD7AE" />
-            <rect x="46" y="70" width="28" height="18" rx="9" fill="#D66A1F" />
-            <path d="M38 50V58C38 64 42 68 48 68H60" stroke="#D66A1F" strokeWidth="4.5" strokeLinecap="round" />
-            <path d="M82 50V58C82 64 78 68 72 68H60" stroke="#D66A1F" strokeWidth="4.5" strokeLinecap="round" />
-            <circle cx="60" cy="68" r="6" fill="#FFFFFF" stroke="#D66A1F" strokeWidth="4" />
-        </IllustrationFrame>
-    );
-}
-
 export function ServiceWorkspaceGlyph(props: IllustrationProps) {
     return (
         <IllustrationFrame {...props}>
