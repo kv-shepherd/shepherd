@@ -68,8 +68,9 @@ The release process is fully automated via [release-please](https://github.com/g
    - GitHub Release with auto-generated changelog
 
 4. **Bootstrap a first prerelease if needed**
-   - Open the `Release Please` workflow manually with `workflow_dispatch`
-   - Provide `release_as=0.1.0-alpha.1` for the initial alpha bootstrap
+   - For a one-time bootstrap pin, merge a small commit whose body includes `Release-As: x.y.z`
+   - This is the documented override that `release-please` reads when the automatic prerelease version needs to be pinned once
+   - The `workflow_dispatch` `release_as` input is useful for reruns, but the commit-body footer is the authoritative bootstrap override
    - Subsequent releases continue automatically from the generated manifest baseline
 
 5. **Tag push triggers artifact build** (`.github/workflows/release.yml`):
