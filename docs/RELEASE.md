@@ -45,11 +45,9 @@ KubeVirt Shepherd follows [Semantic Versioning 2.0.0](https://semver.org/):
 
 ### Release Process
 
-The release process is fully automated via [release-please](https://github.com/googleapis/release-please).
+The release process is fully automated via [release-please](https://github.com/googleapis/release-please) once the repository secret `RELEASE_PLEASE_TOKEN` is configured with a token that can open release PRs.
 
-> For alpha/beta/rc releases, confirm the `release-please` prerelease settings
-> and manifest baseline match the intended prerelease tag before merging the
-> release PR.
+> For alpha/beta/rc releases, keep the `release-please` prerelease settings and manifest baseline aligned with the intended prerelease track. Use a one-time bootstrap input only when you need to pin the first prerelease version.
 
 1. **Write Conventional Commits** on the `main` branch
    ```
@@ -62,19 +60,25 @@ The release process is fully automated via [release-please](https://github.com/g
 2. **Release PR is auto-created** by release-please
    - Updates `CHANGELOG.md` with categorized changes
    - Bumps version in `.release-please-manifest.json`
-   - PR title: `chore(main): release 0.1.0-alpha.1` (prerelease example)
+   - PR title: `chore(main): release 0.1.0-alpha.1` when bootstrapping the first alpha release
+   - Release PR commits are generated with `Signed-off-by` when `signoff: true` is enabled
 
 3. **Merge the Release PR** → release-please creates:
    - Git tag (for example `v0.1.0-alpha.1` or `v0.1.0`)
    - GitHub Release with auto-generated changelog
 
-4. **Tag push triggers artifact build** (`.github/workflows/release.yml`):
+4. **Bootstrap a first prerelease if needed**
+   - Open the `Release Please` workflow manually with `workflow_dispatch`
+   - Provide `release_as=0.1.0-alpha.1` for the initial alpha bootstrap
+   - Subsequent releases continue automatically from the generated manifest baseline
+
+5. **Tag push triggers artifact build** (`.github/workflows/release.yml`):
    - Go binaries (linux/amd64, linux/arm64) → GitHub Release assets
    - Docker images → `ghcr.io/kv-shepherd/shepherd-server`, `shepherd-web`
    - Cosign keyless signatures for all container images
    - SHA-256 checksums
 
-5. **Post-Release**
+6. **Post-Release**
    - Announce release (GitHub Discussions)
    - Verify container image signatures: `cosign verify ghcr.io/kv-shepherd/shepherd-server:v0.1.0-alpha.1`
 

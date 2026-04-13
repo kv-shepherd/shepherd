@@ -17,9 +17,16 @@ name: Release Please
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_as:
+        description: "Optional bootstrap version, for example 0.1.0-alpha.1"
+        required: false
+        type: string
 
 permissions:
   contents: write
+  issues: write
   pull-requests: write
 
 jobs:
@@ -39,5 +46,8 @@ jobs:
         id: release
         uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4.4.0
         with:
+          # Use a token that can open release PRs; the default GITHUB_TOKEN is restricted here.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          release-as: ${{ github.event_name == 'workflow_dispatch' && inputs.release_as || '' }}
