@@ -1,6 +1,6 @@
 # Multi-stage build for KubeVirt Shepherd
 # Stage 1: Build
-FROM golang:1.25.7-bookworm AS builder
+FROM golang:1.25.9-bookworm AS builder
 
 WORKDIR /build
 
@@ -15,7 +15,7 @@ RUN --mount=type=cache,id=shepherd-go-mod,target=/go/pkg/mod --mount=type=cache,
 RUN --mount=type=cache,id=shepherd-go-mod,target=/go/pkg/mod --mount=type=cache,id=shepherd-go-build,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bin/e2e-seed ./cmd/e2e-seed/...
 
 # Stage 2: Runtime
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 
 COPY --from=builder /build/bin/shepherd /usr/local/bin/shepherd
 COPY --from=builder /build/bin/seed /usr/local/bin/seed
