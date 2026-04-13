@@ -61,7 +61,7 @@ The release process is fully automated via [release-please](https://github.com/g
    - Updates `CHANGELOG.md` with categorized changes
    - Bumps version in `.release-please-manifest.json`
    - PR title: `chore(main): release 0.1.0-alpha.1` when bootstrapping the first alpha release
-   - Release PR commits are generated with `Signed-off-by` when `signoff: true` is enabled
+   - Release PR commits include a `Signed-off-by` trailer when `signoff` is configured with a valid `Name <email>` identity
 
 3. **Merge the Release PR** → release-please creates:
    - Git tag (for example `v0.1.0-alpha.1` or `v0.1.0`)
