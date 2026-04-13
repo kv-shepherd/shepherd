@@ -71,6 +71,16 @@ See [CHANGELOG.md](CHANGELOG.md) for release details.
 
 Use the badge above to launch a browser-based demo environment.
 
+#### Try the demo
+
+1. Click **Open in GitHub Codespaces**.
+2. Wait for the container bootstrap to finish.
+3. Open the forwarded **Shepherd UI** port if the browser does not open automatically.
+4. Sign in with `admin / admin`.
+5. Change the password when prompted.
+
+Codespaces behavior:
+
 - first create runs the full integrated dev stack automatically
 - the first bootstrap starts from a clean database, then loads baseline bootstrap data and extended demo fixtures
 - later Codespace restarts reuse the existing demo data and only resume services

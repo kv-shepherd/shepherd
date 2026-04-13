@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/deploy/dev/docker-compose.yml"
+GO_TOOLCHAIN_VERSION="${GO_TOOLCHAIN_VERSION:-$(awk '/^go [0-9]+\.[0-9]+\.[0-9]+$/ { print "go" $2; exit }' "${ROOT_DIR}/go.mod")}"
 HOST_USER_ID="${USER_ID:-$(id -u)}"
 HOST_GROUP_ID="${GROUP_ID:-$(id -g)}"
 DEV_ADMIN_PASSWORD="${DEV_ADMIN_PASSWORD:-admin}"
@@ -44,6 +45,10 @@ CLEAN_ALL=0
 SKIP_SEED=0
 # Default to webpack for stability; Turbopack can consume excessive memory in some dev scenarios.
 DEV_FRONTEND_BUILDER="${DEV_FRONTEND_BUILDER:-webpack}"
+
+# Keep shell-based bootstrap aligned with the repository Go baseline so Codespaces
+# and local dev do not depend on whatever toolchain happened to be preinstalled.
+export GOTOOLCHAIN="${GO_TOOLCHAIN_VERSION}"
 
 usage() {
     cat <<'EOF'
