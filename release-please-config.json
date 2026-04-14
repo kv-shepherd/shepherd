@@ -4,6 +4,7 @@
   "packages": {
     ".": {
       "release-type": "go",
+      "versioning": "prerelease",
       "changelog-path": "CHANGELOG.md",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,

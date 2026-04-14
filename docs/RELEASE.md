@@ -45,9 +45,9 @@ KubeVirt Shepherd follows [Semantic Versioning 2.0.0](https://semver.org/):
 
 ### Release Process
 
-The release process is fully automated via [release-please](https://github.com/googleapis/release-please) once the repository secret `RELEASE_PLEASE_TOKEN` is configured with a token that can open release PRs.
+The release process is fully automated via [release-please](https://github.com/googleapis/release-please) and the repository `GITHUB_TOKEN`. The repository or organization must grant GitHub Actions `Read and write permissions` and allow GitHub Actions to create pull requests.
 
-> For alpha/beta/rc releases, keep the `release-please` prerelease settings and manifest baseline aligned with the intended prerelease track. Use a one-time bootstrap input only when you need to pin the first prerelease version.
+> KubeVirt Shepherd uses the `prerelease` versioning strategy for ongoing alpha work. Once a prerelease line is bootstrapped, routine `feat:` and `fix:` commits advance `vX.Y.Z-alpha.N` within the same base version until maintainers intentionally promote the line.
 
 1. **Write Conventional Commits** on the `main` branch
    ```
@@ -60,18 +60,19 @@ The release process is fully automated via [release-please](https://github.com/g
 2. **Release PR is auto-created** by release-please
    - Updates `CHANGELOG.md` with categorized changes
    - Bumps version in `.release-please-manifest.json`
-   - PR title: `chore(main): release 0.1.0-alpha.1` when bootstrapping the first alpha release
+   - Routine alpha releases advance within the same base version, for example `v0.1.1-alpha.1` → `v0.1.1-alpha.2` → `v0.1.1-alpha.3`
+   - Release PRs should be authored by `github-actions[bot]`
    - Release PR commits include a `Signed-off-by` trailer when `signoff` is configured with a valid `Name <email>` identity
 
 3. **Merge the Release PR** → release-please creates:
    - Git tag (for example `v0.1.0-alpha.1` or `v0.1.0`)
    - GitHub Release with auto-generated changelog
 
-4. **Bootstrap a first prerelease if needed**
+4. **Bootstrap or promote intentionally**
    - For a one-time bootstrap pin, merge a small commit whose body includes `Release-As: x.y.z`
-   - This is the documented override that `release-please` reads when the automatic prerelease version needs to be pinned once
-   - The `workflow_dispatch` `release_as` input is useful for reruns, but the commit-body footer is the authoritative bootstrap override
-   - Subsequent releases continue automatically from the generated manifest baseline
+   - The `workflow_dispatch` `release_as` input is useful for reruns or operator-driven promotion
+   - To keep iterating on the same alpha line, do nothing special; the prerelease strategy will increment only `alpha.N`
+   - To promote a mature line to a stable release such as `v0.1.2`, use one intentional `Release-As: 0.1.2` override or the workflow dispatch input with `release_as=0.1.2`
 
 5. **Tag push triggers artifact build** (`.github/workflows/release.yml`):
    - Go binaries (linux/amd64, linux/arm64) → GitHub Release assets
