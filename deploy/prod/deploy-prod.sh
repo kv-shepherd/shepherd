@@ -15,6 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.prod.yml"
 ENV_FILE="${SCRIPT_DIR}/.env.prod"
+ENV_EXAMPLE_FILE="${SCRIPT_DIR}/.env.prod.example"
 ENTERPRISE_MODE=0
 BUILD_ONLY=0
 SEED_ONLY=0
@@ -122,10 +123,15 @@ echo "=============================================="
 echo ""
 
 if [[ ! -f "${ENV_FILE}" ]]; then
-    echo "ERROR: ${ENV_FILE} not found."
-    echo "  Create it from the example:"
-    echo "    cp ${SCRIPT_DIR}/.env.prod.example ${ENV_FILE}"
-    exit 1
+    if [[ ! -f "${ENV_EXAMPLE_FILE}" ]]; then
+        echo "ERROR: ${ENV_FILE} not found and template ${ENV_EXAMPLE_FILE} is missing."
+        exit 1
+    fi
+    cp "${ENV_EXAMPLE_FILE}" "${ENV_FILE}"
+    echo "INFO: ${ENV_FILE} not found."
+    echo "  Generated a first-run template from:"
+    echo "    ${ENV_EXAMPLE_FILE}"
+    echo "  Review and update the generated file, then rerun this command."
 fi
 
 # Source env for validation

@@ -177,6 +177,11 @@ bash deploy/prod/deploy-prod.sh --with-seed  # first deploy/bootstrap
 bash deploy/prod/deploy-prod.sh --help   # all options
 ```
 
+On first run, `deploy-prod.sh` will generate `deploy/prod/.env.prod` from
+`deploy/prod/.env.prod.example` if the file is missing. The generated template
+is not copied into container images; it remains a local deployment input that
+you should review and fill before rerunning the script.
+
 When `DATABASE_URL` points to an external PostgreSQL host, `deploy-prod.sh`
 auto-detects that topology and does not start the bundled `postgres:18`
 service. Override with `DEPLOY_BUNDLED_POSTGRES=true|false` only when you need
