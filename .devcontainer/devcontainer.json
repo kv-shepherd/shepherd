@@ -10,6 +10,8 @@
     "ghcr.io/devcontainers/features/node:1": {
       "version": "22"
     },
+    // GitHub CLI for resolving the latest release tag and authenticating GHCR pulls.
+    "ghcr.io/devcontainers/features/github-cli:1": {},
     // Docker-in-Docker for running PostgreSQL and service containers
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
       "dockerDashComposeVersion": "v2"
@@ -29,7 +31,7 @@
     }
   },
 
-  // First bootstrap: build and start the full demo stack once per Codespace.
+  // First bootstrap: pull the release images, seed demo data, and start the demo stack once per Codespace.
   "postCreateCommand": "bash .devcontainer/post-create.sh",
 
   // Wait for the initial bootstrap to finish before reporting the container ready.

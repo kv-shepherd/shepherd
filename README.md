@@ -3,7 +3,6 @@
 [![Licensed under Apache License version 2.0](https://img.shields.io/github/license/kv-shepherd/shepherd.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/kv-shepherd/shepherd)](go.mod)
 [![CI](https://github.com/kv-shepherd/shepherd/actions/workflows/ci.yml/badge.svg)](https://github.com/kv-shepherd/shepherd/actions/workflows/ci.yml)
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/kv-shepherd/shepherd?quickstart=1)
 
 **KubeVirt Shepherd** is a governance-first management platform for
 [KubeVirt][kubevirt] virtual machines. It provides self-service VM lifecycle
@@ -65,31 +64,11 @@ decisions. See [docs/design/](docs/design/) for details.
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
 
-## Quick Start (Development)
+## Quick Start
 
-### GitHub Codespaces
+### Local Development
 
-Use the badge above to launch a browser-based demo environment.
-
-#### Try the demo
-
-1. Click **Open in GitHub Codespaces**.
-2. Wait for the container bootstrap to finish.
-3. Open the forwarded **Shepherd UI** port if the browser does not open automatically.
-4. Sign in with `admin / admin`.
-5. Change the password when prompted.
-
-Codespaces behavior:
-
-- first create runs the full integrated dev stack automatically
-- the first bootstrap starts from a clean database, then loads baseline bootstrap data and extended demo fixtures
-- later Codespace restarts reuse the existing demo data and only resume services
-- the first start can take a few minutes because backend, frontend, database, and demo fixtures are all prepared inside the Codespace
-
-Default demo sign-in:
-- `admin / admin`
-- first sign-in will require a password change
-- Codespaces starts with demo data, but it does **not** assume a live K8s/KubeVirt cluster is available. VM create, power, modify, delete, and console flows depend on a real cluster connection and can fail with normal availability or cluster-health errors until one is configured.
+Use the local source-based workflow for actual development work.
 
 ```bash
 # Start all services (frontend + backend + database)
@@ -120,8 +99,30 @@ Local development seeds only the platform bootstrap baseline:
 Local dev preserves the existing database by default. Use `--clean-all` only
 when you intentionally want a fresh local environment.
 
-GitHub Codespaces uses the same startup chain, but adds extended demo fixtures on
-first create so the UI is populated for browser-based evaluation.
+### GitHub Codespaces Demo
+
+Use Codespaces as a browser-based product demo, not as the primary source
+development environment.
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/kv-shepherd/shepherd?quickstart=1)
+
+#### Try the demo
+
+1. Click **Open in GitHub Codespaces**.
+2. Wait for the container bootstrap to finish.
+3. Open the forwarded **Shepherd UI** port if the browser does not open automatically.
+4. Sign in with `admin / admin`, then follow the password-change prompt if it appears.
+
+Codespaces demo behavior:
+
+- first create resolves the latest published Shepherd release and pulls the matching server/web images from GHCR
+- the first bootstrap starts from a clean database and seeds baseline bootstrap data plus extended demo fixtures
+- later Codespace restarts reuse the existing demo data and only resume services
+- the first start can still take a few minutes because the release images are pulled and the demo fixtures are seeded inside the Codespace
+
+Default demo sign-in:
+- `admin / admin` (first sign-in prompts a password change)
+- Codespaces starts with demo data, but it does **not** assume a live K8s/KubeVirt cluster is available. VM create, power, modify, delete, and console flows depend on a real cluster connection and can fail with normal availability or cluster-health errors until one is configured.
 
 ### Prerequisites
 
