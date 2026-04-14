@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.codespaces.yml"
 PROJECT_NAME="${CODESPACES_PROJECT_NAME:-shepherd-codespaces}"
 HTTP_PORT="${CODESPACES_HTTP_PORT:-3000}"
@@ -9,7 +10,8 @@ API_PORT="${CODESPACES_API_PORT:-8080}"
 ADMIN_USERNAME="${CODESPACES_ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${CODESPACES_ADMIN_PASSWORD:-admin}"
 GHCR_REPO="${CODESPACES_RELEASE_REPO:-kv-shepherd/shepherd}"
-DEFAULT_RELEASE_TAG="${CODESPACES_RELEASE_TAG:-v0.1.0-alpha.1}"
+EXPLICIT_RELEASE_TAG="${CODESPACES_RELEASE_TAG:-}"
+HOST_E2E_SEED_BIN="${REPO_ROOT}/build/bin/codespaces-e2e-seed"
 
 usage() {
     cat <<'EOF'
@@ -43,6 +45,11 @@ compute_allowed_origins() {
 }
 
 resolve_release_tag() {
+    if [[ -n "${EXPLICIT_RELEASE_TAG}" ]]; then
+        printf "%s" "${EXPLICIT_RELEASE_TAG}"
+        return 0
+    fi
+
     if command -v gh >/dev/null 2>&1; then
         local tag=""
         tag="$(
@@ -56,9 +63,21 @@ resolve_release_tag() {
             printf "%s" "${tag}"
             return 0
         fi
+
+        tag="$(
+            gh api "/repos/${GHCR_REPO}/releases?per_page=20" \
+                --jq '[.[] | select(.draft == false)] | .[0].tag_name'
+        )" || true
+        if [[ -n "${tag}" && "${tag}" != "null" ]]; then
+            printf "%s" "${tag}"
+            return 0
+        fi
     fi
 
-    printf "%s" "${DEFAULT_RELEASE_TAG}"
+    echo "Unable to resolve the latest published release tag automatically." >&2
+    echo "Set CODESPACES_RELEASE_TAG explicitly, for example:" >&2
+    echo "  CODESPACES_RELEASE_TAG=v0.1.1-alpha.1 bash .devcontainer/codespaces-demo.sh bootstrap" >&2
+    return 1
 }
 
 docker_login_ghcr() {
@@ -99,6 +118,43 @@ compose_up() {
         docker compose -f "${COMPOSE_FILE}" up -d --pull "${pull_policy}"
 }
 
+compose_exec() {
+    COMPOSE_PROJECT_NAME="${PROJECT_NAME}" docker compose -f "${COMPOSE_FILE}" exec -T "$@"
+}
+
+build_codespaces_e2e_seed() {
+    mkdir -p "$(dirname "${HOST_E2E_SEED_BIN}")"
+    (
+        cd "${REPO_ROOT}"
+        GOTOOLCHAIN=go1.25.9 \
+        GOOS=linux \
+        GOARCH="$(go env GOARCH)" \
+        CGO_ENABLED=0 \
+            go build -ldflags="-s -w" -o "${HOST_E2E_SEED_BIN}" ./cmd/e2e-seed/...
+    )
+}
+
+run_codespaces_e2e_seed() {
+    local server_container
+    server_container="$(COMPOSE_PROJECT_NAME="${PROJECT_NAME}" docker compose -f "${COMPOSE_FILE}" ps -q server)"
+    if [[ -z "${server_container}" ]]; then
+        echo "Unable to resolve the server container for demo seeding." >&2
+        return 1
+    fi
+
+    echo "Building demo-only e2e fixture helper on the Codespaces host..."
+    build_codespaces_e2e_seed
+
+    echo "Injecting demo-only e2e fixture helper into the running server container..."
+    docker cp "${HOST_E2E_SEED_BIN}" "${server_container}:/tmp/e2e-seed"
+
+    echo "Seeding demo fixtures..."
+    compose_exec \
+        -e "E2E_ADMIN_USERNAME=${ADMIN_USERNAME}" \
+        -e "E2E_ADMIN_PASSWORD=${ADMIN_PASSWORD}" \
+        server /tmp/e2e-seed >/dev/null
+}
+
 wait_for_url() {
     local url="$1"
     local label="$2"
@@ -132,15 +188,8 @@ stack_ready() {
 
 seed_demo() {
     echo "Seeding baseline data..."
-    COMPOSE_PROJECT_NAME="${PROJECT_NAME}" \
-        docker compose -f "${COMPOSE_FILE}" exec -T server /usr/local/bin/seed >/dev/null
-
-    echo "Seeding demo fixtures..."
-    COMPOSE_PROJECT_NAME="${PROJECT_NAME}" \
-        docker compose -f "${COMPOSE_FILE}" exec -T \
-        -e "E2E_ADMIN_USERNAME=${ADMIN_USERNAME}" \
-        -e "E2E_ADMIN_PASSWORD=${ADMIN_PASSWORD}" \
-        server /usr/local/bin/e2e-seed >/dev/null
+    compose_exec server /usr/local/bin/seed >/dev/null
+    run_codespaces_e2e_seed
 }
 
 start_stack() {
