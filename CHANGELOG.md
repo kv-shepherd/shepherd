@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-alpha.1](https://github.com/kv-shepherd/shepherd/compare/v0.1.0-alpha.1...v0.1.1-alpha.1) (2026-04-14)
+
+
+### Features
+
+* **dev:** add Codespaces demo bootstrap ([#480](https://github.com/kv-shepherd/shepherd/issues/480)) ([083788f](https://github.com/kv-shepherd/shepherd/commit/083788f3a260f19b55dad3efe5baa0da4a932897)), closes [#479](https://github.com/kv-shepherd/shepherd/issues/479)
+
+
+### Bug Fixes
+
+* **auth:** allow forwarded public headers ([#483](https://github.com/kv-shepherd/shepherd/issues/483)) ([3218315](https://github.com/kv-shepherd/shepherd/commit/3218315aebea5d2a5c6fd743abc57c6a5db0c402)), closes [#482](https://github.com/kv-shepherd/shepherd/issues/482)
+
 ## [0.1.0-alpha.1](https://github.com/kv-shepherd/shepherd/compare/v0.1.0-alpha.0...v0.1.0-alpha.1) (2026-04-13)
 
 
