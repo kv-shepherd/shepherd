@@ -295,7 +295,10 @@ func (v *openAPIRuntimeValidator) newValidator(extraStrictIgnorePaths ...string)
 	// Browser clients and public forwarding layers may attach runtime/proxy
 	// headers that are unrelated to declared API parameters. Keep strict mode
 	// for contract governance, but ignore these transport artifacts.
-	strictIgnorePaths := []string{"$.cookies.*"}
+	strictIgnorePaths := []string{
+		"$.cookies.*",
+		"$.cookies['**']",
+	}
 	if len(extraStrictIgnorePaths) > 0 {
 		strictIgnorePaths = append(strictIgnorePaths, extraStrictIgnorePaths...)
 	}
