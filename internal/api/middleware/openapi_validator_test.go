@@ -217,11 +217,41 @@ func TestOpenAPIValidatorAllowsBrowserRuntimeHeadersInStrictMode(t *testing.T) {
 	req.Header.Set("Priority", "u=1, i")
 	req.Header.Set("X-Forwarded-Host", "10.1.111.111:3000")
 	req.Header.Set("X-Forwarded-Port", "3000")
+	req.Header.Set("Forwarded", "for=185.123.145.236;proto=https;host=demo-3000.app.github.dev")
+	req.Header.Set("X-Forwarded-Server", "codespaces-proxy")
+	req.Header.Set("X-Original-Host", "demo-3000.app.github.dev")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected 200 for browser runtime headers in strict mode, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsForwardedHeadersOnPublicAuthDiscovery(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/auth/providers", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"id":        "provider-1",
+					"name":      "Corp SSO",
+					"auth_type": "oauth2",
+				},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/providers", http.NoBody)
+	req.Header.Set("Forwarded", "for=185.123.145.236;proto=https;host=demo-3000.app.github.dev")
+	req.Header.Set("X-Forwarded-Server", "codespaces-proxy")
+	req.Header.Set("X-Original-Host", "demo-3000.app.github.dev")
+	req.Header.Set("Referer", "https://demo-3000.app.github.dev/login")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for forwarded auth discovery request, got %d body=%s", resp.Code, resp.Body.String())
 	}
 }
 

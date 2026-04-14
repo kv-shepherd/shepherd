@@ -292,9 +292,9 @@ func responseStrictIgnorePaths(request *http.Request, basePath string) []string 
 }
 
 func (v *openAPIRuntimeValidator) newValidator(extraStrictIgnorePaths ...string) (validator.Validator, error) {
-	// Browser clients may attach framework/runtime cookies and forwarding headers
-	// that are unrelated to API contract parameters. Keep strict mode for API
-	// governance, but ignore these transport/runtime artifacts.
+	// Browser clients and public forwarding layers may attach runtime/proxy
+	// headers that are unrelated to declared API parameters. Keep strict mode
+	// for contract governance, but ignore these transport artifacts.
 	strictIgnorePaths := []string{"$.cookies.*"}
 	if len(extraStrictIgnorePaths) > 0 {
 		strictIgnorePaths = append(strictIgnorePaths, extraStrictIgnorePaths...)
@@ -306,10 +306,13 @@ func (v *openAPIRuntimeValidator) newValidator(extraStrictIgnorePaths ...string)
 		validatorconfig.WithSchemaCache(v.schemaCache),
 		validatorconfig.WithStrictIgnoredHeadersExtra(
 			"dnt",
+			"forwarded",
 			"priority",
 			"upgrade-insecure-requests",
+			"x-forwarded-server",
 			"x-forwarded-host",
 			"x-forwarded-port",
+			"x-original-host",
 			"sec-ch-ua",
 			"sec-ch-ua-mobile",
 			"sec-ch-ua-platform",
