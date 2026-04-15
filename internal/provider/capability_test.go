@@ -4,6 +4,10 @@ import (
 	"context"
 	"fmt"
 	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // --------------------------------------------------------------------------
@@ -243,7 +247,8 @@ func (s *stubKVCRClient) GetVersion(_ context.Context) (string, error) {
 }
 
 type stubClusterClient struct {
-	kvCR KubeVirtCRClient
+	kvCR  KubeVirtCRClient
+	nodes NodeClient
 }
 
 func (s *stubClusterClient) VM() VirtualMachineClient             { return nil }
@@ -254,11 +259,30 @@ func (s *stubClusterClient) PVC() PersistentVolumeClaimClient     { return nil }
 func (s *stubClusterClient) StorageClass() StorageClassClient     { return nil }
 func (s *stubClusterClient) Events() EventClient                  { return nil }
 func (s *stubClusterClient) Namespaces() NamespaceClient          { return nil }
-func (s *stubClusterClient) Nodes() NodeClient                    { return nil }
+func (s *stubClusterClient) Nodes() NodeClient                    { return s.nodes }
 func (s *stubClusterClient) Pods() PodClient                      { return nil }
 func (s *stubClusterClient) Authorization() AuthorizationClient   { return nil }
 func (s *stubClusterClient) SSA() DynamicSSAClient                { return nil }
 func (s *stubClusterClient) KubeVirt() KubeVirtCRClient           { return s.kvCR }
+
+type stubNodeClient struct {
+	list *corev1.NodeList
+	err  error
+}
+
+func (s *stubNodeClient) Get(_ context.Context, _ string, _ k8smetav1.GetOptions) (*corev1.Node, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (s *stubNodeClient) List(_ context.Context, _ k8smetav1.ListOptions) (*corev1.NodeList, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.list == nil {
+		return &corev1.NodeList{}, nil
+	}
+	return s.list, nil
+}
 
 func TestCapabilityDetector_Detect_MergesGAAndExplicitGates(t *testing.T) {
 	t.Parallel()
@@ -351,5 +375,51 @@ func TestCapabilityDetector_Detect_GracefulDegradationOnVersionError(t *testing.
 	}
 	if caps.KubeVirtVersion != "" {
 		t.Errorf("caps.KubeVirtVersion = %q, want empty string on version fetch failure", caps.KubeVirtVersion)
+	}
+}
+
+func TestCapabilityDetector_Detect_IncludesHugepagesFromNodeAllocatable(t *testing.T) {
+	t.Parallel()
+
+	detector := NewCapabilityDetector()
+	client := &stubClusterClient{
+		kvCR: &stubKVCRClient{
+			version: "1.7.0",
+		},
+		nodes: &stubNodeClient{
+			list: &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: k8smetav1.ObjectMeta{Name: "node-a"},
+						Status: corev1.NodeStatus{
+							Allocatable: corev1.ResourceList{
+								corev1.ResourceName("hugepages-2Mi"): resource.MustParse("512Mi"),
+								corev1.ResourceName("cpu"):           resource.MustParse("8"),
+							},
+						},
+					},
+					{
+						ObjectMeta: k8smetav1.ObjectMeta{Name: "node-b"},
+						Status: corev1.NodeStatus{
+							Allocatable: corev1.ResourceList{
+								corev1.ResourceName("hugepages-1Gi"): resource.MustParse("2Gi"),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	caps, err := detector.Detect(context.Background(), client)
+	if err != nil {
+		t.Fatalf("Detect() error = %v", err)
+	}
+
+	if !caps.HasFeature("hugepages-2Mi") {
+		t.Fatalf("enabled_features = %v, want hugepages-2Mi", caps.EnabledFeatures)
+	}
+	if !caps.HasFeature("hugepages-1Gi") {
+		t.Fatalf("enabled_features = %v, want hugepages-1Gi", caps.EnabledFeatures)
 	}
 }

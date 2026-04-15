@@ -37,7 +37,10 @@ import {
 } from "@/components/illustrations/DashboardIllustrations";
 import { PageHeader, PageSurface } from "@/components/layouts/PageSection";
 import { LocalDateTimeText } from "@/components/ui/LocalDateTimeText";
-import { PageSearchToolbar, filterOptionByLabel } from "@/components/ui/PageSearchToolbar";
+import {
+  PageSearchToolbar,
+  filterOptionByLabel,
+} from "@/components/ui/PageSearchToolbar";
 import {
   HUGEPAGES_PRESET_OPTIONS,
   isValidHugepagesPageSizeValue,
@@ -71,15 +74,33 @@ function clusterMatchesSearch(record: Cluster, query: string) {
 export function AdminClustersContent() {
   const { t } = useTranslation(["admin", "common"]);
   const clusters = useAdminClustersController({ t });
+  const policyAllowHugepages = Form.useWatch(
+    "allow_hugepages",
+    clusters.policyForm,
+  );
+  const policyAllowCdiClone = Form.useWatch(
+    "allow_cdi_clone",
+    clusters.policyForm,
+  );
   const [quickSearch, setQuickSearch] = useState("");
   const [quickSearchDraft, setQuickSearchDraft] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [environmentFilter, setEnvironmentFilter] = useState<"" | "test" | "prod">("");
+  const [environmentFilter, setEnvironmentFilter] = useState<
+    "" | "test" | "prod"
+  >("");
   const [statusFilter, setStatusFilter] = useState<"" | Cluster["status"]>("");
-  const [enabledFilter, setEnabledFilter] = useState<"" | "enabled" | "disabled">("");
-  const [environmentFilterDraft, setEnvironmentFilterDraft] = useState<"" | "test" | "prod">("");
-  const [statusFilterDraft, setStatusFilterDraft] = useState<"" | Cluster["status"]>("");
-  const [enabledFilterDraft, setEnabledFilterDraft] = useState<"" | "enabled" | "disabled">("");
+  const [enabledFilter, setEnabledFilter] = useState<
+    "" | "enabled" | "disabled"
+  >("");
+  const [environmentFilterDraft, setEnvironmentFilterDraft] = useState<
+    "" | "test" | "prod"
+  >("");
+  const [statusFilterDraft, setStatusFilterDraft] = useState<
+    "" | Cluster["status"]
+  >("");
+  const [enabledFilterDraft, setEnabledFilterDraft] = useState<
+    "" | "enabled" | "disabled"
+  >("");
   const clusterItems = useMemo(
     () =>
       (clusters.data?.items ?? []).filter((cluster) => {
@@ -100,12 +121,20 @@ export function AdminClustersContent() {
         }
         return true;
       }),
-    [clusters.data?.items, enabledFilter, environmentFilter, quickSearch, statusFilter],
+    [
+      clusters.data?.items,
+      enabledFilter,
+      environmentFilter,
+      quickSearch,
+      statusFilter,
+    ],
   );
   const clusterSummary = {
     total: clusterItems.length,
-    healthy: clusterItems.filter((cluster) => cluster.status === "HEALTHY").length,
-    prod: clusterItems.filter((cluster) => cluster.environment === "prod").length,
+    healthy: clusterItems.filter((cluster) => cluster.status === "HEALTHY")
+      .length,
+    prod: clusterItems.filter((cluster) => cluster.environment === "prod")
+      .length,
     disabled: clusterItems.filter((cluster) => !cluster.enabled).length,
   };
 
@@ -141,11 +170,11 @@ export function AdminClustersContent() {
         return (
           <Badge
             status={config.badge}
-            text={(
+            text={
               <Tag color={config.color}>
                 {t(`clusters.status.${status.toLowerCase()}`, status)}
               </Tag>
-            )}
+            }
           />
         );
       },
@@ -398,32 +427,35 @@ export function AdminClustersContent() {
       <PageHeader
         title={t("clusters.title")}
         subtitle={t("clusters.subtitle")}
-        actions={(
+        actions={
           <Space>
-          <Button
-            icon={<ReloadOutlined />}
-            data-testid="clusters-refresh-btn"
-            onClick={() => clusters.refetch()}
-          >
-            {t("common:button.refresh")}
-          </Button>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            data-testid="cluster-create-button"
-            onClick={clusters.openCreateModal}
-          >
-            {t("clusters.add")}
-          </Button>
+            <Button
+              icon={<ReloadOutlined />}
+              data-testid="clusters-refresh-btn"
+              onClick={() => clusters.refetch()}
+            >
+              {t("common:button.refresh")}
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              data-testid="cluster-create-button"
+              onClick={clusters.openCreateModal}
+            >
+              {t("clusters.add")}
+            </Button>
           </Space>
-        )}
+        }
       />
 
       <div className="summary-card-grid">
         <SummaryMetricCard
           title={t("clusters.summary.total_title", "Registered clusters")}
           value={clusterSummary.total}
-          description={t("clusters.summary.total_description", "All cluster connections currently registered with the platform.")}
+          description={t(
+            "clusters.summary.total_description",
+            "All cluster connections currently registered with the platform.",
+          )}
           visual={<SystemsOverviewGlyph className="summary-metric-card__art" />}
           accentColor="#1D5BFF"
           surfaceColor="#E6F4FF"
@@ -431,7 +463,10 @@ export function AdminClustersContent() {
         <SummaryMetricCard
           title={t("clusters.summary.healthy_title", "Healthy")}
           value={clusterSummary.healthy}
-          description={t("clusters.summary.healthy_description", "Clusters currently passing connectivity and KubeVirt health checks.")}
+          description={t(
+            "clusters.summary.healthy_description",
+            "Clusters currently passing connectivity and KubeVirt health checks.",
+          )}
           visual={<HealthOverviewGlyph className="summary-metric-card__art" />}
           accentColor="#0F8F57"
           surfaceColor="#E8FFF2"
@@ -439,7 +474,10 @@ export function AdminClustersContent() {
         <SummaryMetricCard
           title={t("clusters.summary.prod_title", "Production")}
           value={clusterSummary.prod}
-          description={t("clusters.summary.prod_description", "Clusters tagged for production placement and governance rules.")}
+          description={t(
+            "clusters.summary.prod_description",
+            "Clusters tagged for production placement and governance rules.",
+          )}
           visual={<QueueReviewGlyph className="summary-metric-card__art" />}
           accentColor="#D66A1F"
           surfaceColor="#FFF4E5"
@@ -447,14 +485,22 @@ export function AdminClustersContent() {
         <SummaryMetricCard
           title={t("clusters.summary.disabled_title", "Disabled")}
           value={clusterSummary.disabled}
-          description={t("clusters.summary.disabled_description", "Registered clusters currently held out of placement decisions.")}
-          visual={<NotificationInboxGlyph className="summary-metric-card__art" />}
+          description={t(
+            "clusters.summary.disabled_description",
+            "Registered clusters currently held out of placement decisions.",
+          )}
+          visual={
+            <NotificationInboxGlyph className="summary-metric-card__art" />
+          }
           accentColor="#6D4DE3"
           surfaceColor="#F5EDFF"
         />
       </div>
 
-      <PageSurface className="admin-clusters-page__workspace-surface" flush={true}>
+      <PageSurface
+        className="admin-clusters-page__workspace-surface"
+        flush={true}
+      >
         <PageSearchToolbar
           searchValue={quickSearch}
           searchDraftValue={quickSearchDraft}
@@ -463,14 +509,26 @@ export function AdminClustersContent() {
             setQuickSearchDraft(value);
             setQuickSearch(value);
           }}
-          searchPlaceholder={t("clusters.search_placeholder", "Search clusters by name, endpoint, version, or feature")}
-          searchHelp={t("clusters.search_help", "Press Enter or click Search. Quick search matches cluster names, display names, API endpoints, versions, and enabled features.")}
+          searchPlaceholder={t(
+            "clusters.search_placeholder",
+            "Search clusters by name, endpoint, version, or feature",
+          )}
+          searchHelp={t(
+            "clusters.search_help",
+            "Press Enter or click Search. Quick search matches cluster names, display names, API endpoints, versions, and enabled features.",
+          )}
           advancedSearch={{
             open: filtersOpen,
             onToggle: () => setFiltersOpen((open) => !open),
-            openLabel: t("common:search.advanced", { defaultValue: "Advanced search" }),
-            closeLabel: t("common:search.hide_advanced", { defaultValue: "Hide advanced search" }),
-            title: t("common:search.advanced", { defaultValue: "Advanced search" }),
+            openLabel: t("common:search.advanced", {
+              defaultValue: "Advanced search",
+            }),
+            closeLabel: t("common:search.hide_advanced", {
+              defaultValue: "Hide advanced search",
+            }),
+            title: t("common:search.advanced", {
+              defaultValue: "Advanced search",
+            }),
             content: (
               <Space direction="vertical" size={12} style={{ width: "100%" }}>
                 <Text type="secondary">
@@ -480,74 +538,89 @@ export function AdminClustersContent() {
                   })}
                 </Text>
                 <Space wrap align="end">
-                <Select
-                  allowClear
-                  showSearch
-                  filterOption={filterOptionByLabel}
-                  optionFilterProp="label"
-                  style={{ width: 180 }}
-                  value={environmentFilterDraft || undefined}
-                  placeholder={t("clusters.environment")}
-                  onChange={(value) => setEnvironmentFilterDraft((value as "test" | "prod" | undefined) ?? "")}
-                  options={[
-                    { value: "test", label: t("clusters.env_test") },
-                    { value: "prod", label: t("clusters.env_prod") },
-                  ]}
-                />
-                <Select
-                  allowClear
-                  showSearch
-                  filterOption={filterOptionByLabel}
-                  optionFilterProp="label"
-                  style={{ width: 180 }}
-                  value={statusFilterDraft || undefined}
-                  placeholder={t("common:table.status")}
-                  onChange={(value) => setStatusFilterDraft((value as Cluster["status"] | undefined) ?? "")}
-                  options={Object.entries(CLUSTER_STATUS_MAP).map(([key]) => ({
-                    value: key,
-                    label: t(`clusters.status.${key.toLowerCase()}`, key),
-                  }))}
-                />
-                <Select
-                  allowClear
-                  showSearch
-                  filterOption={filterOptionByLabel}
-                  optionFilterProp="label"
-                  style={{ width: 180 }}
-                  value={enabledFilterDraft || undefined}
-                  placeholder={t("clusters.enabled")}
-                  onChange={(value) =>
-                    setEnabledFilterDraft((value as "enabled" | "disabled" | undefined) ?? "")
-                  }
-                  options={[
-                    {
-                      value: "enabled",
-                      label: t("clusters.enabled_yes", "Enabled"),
-                    },
-                    {
-                      value: "disabled",
-                      label: t("clusters.enabled_no", "Disabled"),
-                    },
-                  ]}
-                />
-                <Button
-                  type="primary"
-                  data-testid="clusters-advanced-search-submit"
-                  onClick={() => {
-                    setQuickSearch(quickSearchDraft);
-                    setEnvironmentFilter(environmentFilterDraft);
-                    setStatusFilter(statusFilterDraft);
-                    setEnabledFilter(enabledFilterDraft);
-                  }}
-                >
-                  {t("common:button.search")}
-                </Button>
+                  <Select
+                    allowClear
+                    showSearch
+                    filterOption={filterOptionByLabel}
+                    optionFilterProp="label"
+                    style={{ width: 180 }}
+                    value={environmentFilterDraft || undefined}
+                    placeholder={t("clusters.environment")}
+                    onChange={(value) =>
+                      setEnvironmentFilterDraft(
+                        (value as "test" | "prod" | undefined) ?? "",
+                      )
+                    }
+                    options={[
+                      { value: "test", label: t("clusters.env_test") },
+                      { value: "prod", label: t("clusters.env_prod") },
+                    ]}
+                  />
+                  <Select
+                    allowClear
+                    showSearch
+                    filterOption={filterOptionByLabel}
+                    optionFilterProp="label"
+                    style={{ width: 180 }}
+                    value={statusFilterDraft || undefined}
+                    placeholder={t("common:table.status")}
+                    onChange={(value) =>
+                      setStatusFilterDraft(
+                        (value as Cluster["status"] | undefined) ?? "",
+                      )
+                    }
+                    options={Object.entries(CLUSTER_STATUS_MAP).map(
+                      ([key]) => ({
+                        value: key,
+                        label: t(`clusters.status.${key.toLowerCase()}`, key),
+                      }),
+                    )}
+                  />
+                  <Select
+                    allowClear
+                    showSearch
+                    filterOption={filterOptionByLabel}
+                    optionFilterProp="label"
+                    style={{ width: 180 }}
+                    value={enabledFilterDraft || undefined}
+                    placeholder={t("clusters.enabled")}
+                    onChange={(value) =>
+                      setEnabledFilterDraft(
+                        (value as "enabled" | "disabled" | undefined) ?? "",
+                      )
+                    }
+                    options={[
+                      {
+                        value: "enabled",
+                        label: t("clusters.enabled_yes", "Enabled"),
+                      },
+                      {
+                        value: "disabled",
+                        label: t("clusters.enabled_no", "Disabled"),
+                      },
+                    ]}
+                  />
+                  <Button
+                    type="primary"
+                    data-testid="clusters-advanced-search-submit"
+                    onClick={() => {
+                      setQuickSearch(quickSearchDraft);
+                      setEnvironmentFilter(environmentFilterDraft);
+                      setStatusFilter(statusFilterDraft);
+                      setEnabledFilter(enabledFilterDraft);
+                    }}
+                  >
+                    {t("common:button.search")}
+                  </Button>
                 </Space>
               </Space>
             ),
           }}
           hasActiveFilters={Boolean(
-            quickSearch.trim() || environmentFilter || statusFilter || enabledFilter,
+            quickSearch.trim() ||
+            environmentFilter ||
+            statusFilter ||
+            enabledFilter,
           )}
           onClear={() => {
             setQuickSearch("");
@@ -559,7 +632,9 @@ export function AdminClustersContent() {
             setEnabledFilter("");
             setEnabledFilterDraft("");
           }}
-          clearLabel={t("common:button.clear_filters", { defaultValue: "Clear filters" })}
+          clearLabel={t("common:button.clear_filters", {
+            defaultValue: "Clear filters",
+          })}
         />
         <Table<Cluster>
           style={{ marginTop: 16 }}
@@ -580,18 +655,23 @@ export function AdminClustersContent() {
               <ActionEmptyState
                 compact={true}
                 title={t("clusters.empty", "No clusters registered")}
-                description={t("clusters.empty_description", "Add the first cluster before routing approvals, placement decisions, or live VM operations to a KubeVirt target.")}
-                visual={<HealthOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                description={t(
+                  "clusters.empty_description",
+                  "Add the first cluster before routing approvals, placement decisions, or live VM operations to a KubeVirt target.",
+                )}
+                visual={
+                  <HealthOverviewGlyph className="action-empty-state__art action-empty-state__art--compact" />
+                }
               />
             ),
           }}
         />
       </PageSurface>
 
-      {clusters.createOpen ? (
       <Modal
         title={t("clusters.add")}
         open={clusters.createOpen}
+        forceRender={true}
         onOk={() => {
           void clusters.submitCreate();
         }}
@@ -679,14 +759,13 @@ export function AdminClustersContent() {
           </Form.Item>
         </Form>
       </Modal>
-      ) : null}
-      {clusters.editOpen ? (
       <Modal
         title={t("clusters.edit_title", {
           cluster: clusters.editingClusterName || clusters.editingClusterId,
           defaultValue: "Edit Cluster: {{cluster}}",
         })}
         open={clusters.editOpen}
+        forceRender={true}
         onOk={() => {
           void clusters.submitEdit();
         }}
@@ -699,7 +778,6 @@ export function AdminClustersContent() {
           layout="vertical"
           name="edit-cluster"
           preserve={false}
-          initialValues={{ environment: "test", enabled: true }}
         >
           <Alert
             type="info"
@@ -783,11 +861,10 @@ export function AdminClustersContent() {
           </Form.Item>
         </Form>
       </Modal>
-      ) : null}
-      {clusters.envModalOpen ? (
       <Modal
         title={t("clusters.set_environment")}
         open={clusters.envModalOpen}
+        forceRender={true}
         onOk={() => {
           void clusters.submitEnvUpdate();
         }}
@@ -810,14 +887,13 @@ export function AdminClustersContent() {
           </Form.Item>
         </Form>
       </Modal>
-      ) : null}
-      {clusters.policyModalOpen ? (
       <Modal
         title={t("clusters.edit_policy_title", {
           cluster: clusters.selectedClusterName || clusters.selectedClusterId,
           defaultValue: "Edit Policy: {{cluster}}",
         })}
         open={clusters.policyModalOpen}
+        forceRender={true}
         onOk={() => {
           void clusters.submitPolicyUpdate();
         }}
@@ -931,113 +1007,94 @@ export function AdminClustersContent() {
             )}
           </Text>
           <Form.Item
-            noStyle
-            shouldUpdate={(prev, cur) =>
-              prev.allow_hugepages !== cur.allow_hugepages
-            }
+            name="allowed_hugepages_sizes"
+            hidden={!policyAllowHugepages}
+            preserve={true}
+            label={t(
+              "clusters.policy.allowed_hugepages_sizes",
+              "Allowed hugepages sizes",
+            )}
+            extra={t(
+              "clusters.policy.allowed_hugepages_sizes_help",
+              "Leave empty for no size restriction. Select 2Mi/1Gi, or input custom MB like 512.",
+            )}
+            getValueFromEvent={normalizeHugepagesPageSizeList}
+            rules={[
+              {
+                validator: (_, value: unknown) => {
+                  if (
+                    !policyAllowHugepages ||
+                    !Array.isArray(value) ||
+                    value.every((item) => isValidHugepagesPageSizeValue(item))
+                  ) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(
+                    new Error(
+                      t(
+                        "clusters.policy.allowed_hugepages_sizes_invalid",
+                        "Hugepages must be 2Mi/1Gi, or a custom MB value (for example 512).",
+                      ),
+                    ),
+                  );
+                },
+              },
+            ]}
           >
-            {({ getFieldValue }) =>
-              getFieldValue("allow_hugepages") ? (
-                <Form.Item
-                  name="allowed_hugepages_sizes"
-                  label={t(
-                    "clusters.policy.allowed_hugepages_sizes",
-                    "Allowed hugepages sizes",
-                  )}
-                  extra={t(
-                    "clusters.policy.allowed_hugepages_sizes_help",
-                    "Leave empty for no size restriction. Select 2Mi/1Gi, or input custom MB like 512.",
-                  )}
-                  getValueFromEvent={normalizeHugepagesPageSizeList}
-                  rules={[
-                    {
-                      validator: (_, value: unknown) => {
-                        if (
-                          !Array.isArray(value) ||
-                          value.every((item) =>
-                            isValidHugepagesPageSizeValue(item),
-                          )
-                        ) {
-                          return Promise.resolve();
-                        }
-                        return Promise.reject(
-                          new Error(
-                            t(
-                              "clusters.policy.allowed_hugepages_sizes_invalid",
-                              "Hugepages must be 2Mi/1Gi, or a custom MB value (for example 512).",
-                            ),
-                          ),
-                        );
-                      },
-                    },
-                  ]}
-                >
-                  <Select
-                    mode="tags"
-                    allowClear
-                    maxTagCount="responsive"
-                    tokenSeparators={[","]}
-                    disabled={clusters.policyLoading}
-                    options={HUGEPAGES_PRESET_OPTIONS.map((value) => ({
-                      label: value,
-                      value,
-                    }))}
-                    placeholder={t(
-                      "clusters.policy.allowed_hugepages_sizes_placeholder",
-                      "Select 2Mi/1Gi or input MB",
-                    )}
-                  />
-                </Form.Item>
-              ) : null
-            }
+            <Select
+              mode="tags"
+              allowClear
+              maxTagCount="responsive"
+              tokenSeparators={[","]}
+              disabled={clusters.policyLoading || !policyAllowHugepages}
+              options={HUGEPAGES_PRESET_OPTIONS.map((value) => ({
+                label: value,
+                value,
+              }))}
+              placeholder={t(
+                "clusters.policy.allowed_hugepages_sizes_placeholder",
+                "Select 2Mi/1Gi or input MB",
+              )}
+            />
           </Form.Item>
           <Form.Item
-            noStyle
-            shouldUpdate={(prev, cur) =>
-              prev.allow_cdi_clone !== cur.allow_cdi_clone
+            name="allowed_clone_source_namespaces"
+            hidden={!policyAllowCdiClone}
+            preserve={true}
+            label={t(
+              "clusters.policy.allowed_clone_source_namespaces",
+              "Allowed clone source namespaces",
+            )}
+            extra={
+              clusters.selectedClusterNamespaceOptions.length > 0
+                ? t(
+                    "clusters.policy.allowed_clone_source_namespaces_detected_help",
+                    "Suggested from registered namespaces in the same environment. Leave empty to allow all clone source namespaces.",
+                  )
+                : t(
+                    "clusters.policy.allowed_clone_source_namespaces_help",
+                    "Leave empty to allow all clone source namespaces. You can still type a namespace manually.",
+                  )
             }
           >
-            {({ getFieldValue }) =>
-              getFieldValue("allow_cdi_clone") ? (
-                <Form.Item
-                  name="allowed_clone_source_namespaces"
-                  label={t(
-                    "clusters.policy.allowed_clone_source_namespaces",
-                    "Allowed clone source namespaces",
-                  )}
-                  extra={
-                    clusters.selectedClusterNamespaceOptions.length > 0
-                      ? t(
-                          "clusters.policy.allowed_clone_source_namespaces_detected_help",
-                          "Suggested from registered namespaces in the same environment. Leave empty to allow all clone source namespaces.",
-                        )
-                      : t(
-                          "clusters.policy.allowed_clone_source_namespaces_help",
-                          "Leave empty to allow all clone source namespaces. You can still type a namespace manually.",
-                        )
-                  }
-                >
-                  <Select
-                    mode="tags"
-                    allowClear
-                    maxTagCount="responsive"
-                    tokenSeparators={[","]}
-                    disabled={clusters.policyLoading}
-                    loading={clusters.namespaceSuggestionsLoading}
-                    options={clusters.selectedClusterNamespaceOptions.map(
-                      (value) => ({
-                        label: value,
-                        value,
-                      }),
-                    )}
-                    placeholder={t(
-                      "clusters.policy.allowed_clone_source_namespaces_placeholder",
-                      "e.g. golden-images",
-                    )}
-                  />
-                </Form.Item>
-              ) : null
-            }
+            <Select
+              mode="tags"
+              allowClear
+              maxTagCount="responsive"
+              tokenSeparators={[","]}
+              disabled={clusters.policyLoading || !policyAllowCdiClone}
+              loading={clusters.namespaceSuggestionsLoading}
+              options={clusters.selectedClusterNamespaceOptions.map(
+                (value) => ({
+                  label: value,
+                  value,
+                }),
+              )}
+              placeholder={t(
+                "clusters.policy.allowed_clone_source_namespaces_placeholder",
+                "e.g. golden-images",
+              )}
+            />
           </Form.Item>
           <Form.Item
             name="allowed_storage_classes"
@@ -1075,7 +1132,6 @@ export function AdminClustersContent() {
           </Form.Item>
         </Form>
       </Modal>
-      ) : null}
     </div>
   );
 }

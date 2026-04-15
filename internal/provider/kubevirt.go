@@ -21,6 +21,7 @@ import (
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	"sigs.k8s.io/yaml"
 
 	"kv-shepherd.io/shepherd/internal/domain"
 )
@@ -118,6 +119,45 @@ func (p *KubeVirtProviderImpl) GetVM(ctx context.Context, cluster, namespace, na
 		}
 	}
 	return mapped, nil
+}
+
+func (p *KubeVirtProviderImpl) GetVMManifestYAML(ctx context.Context, cluster, namespace, name string) (string, error) {
+	client, err := p.clientFactory(cluster)
+	if err != nil {
+		return "", fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	vm, err := client.VM().Get(opCtx, namespace, name, k8smetav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("get vm manifest %s/%s: %w", namespace, name, err)
+	}
+
+	jsonData, err := json.Marshal(vm)
+	if err != nil {
+		return "", fmt.Errorf("marshal vm manifest json: %w", err)
+	}
+
+	var manifest map[string]interface{}
+	unmarshalErr := json.Unmarshal(jsonData, &manifest)
+	if unmarshalErr != nil {
+		return "", fmt.Errorf("unmarshal vm manifest json: %w", unmarshalErr)
+	}
+
+	unstructured.RemoveNestedField(manifest, "metadata", "managedFields")
+
+	normalizedJSON, err := json.Marshal(manifest)
+	if err != nil {
+		return "", fmt.Errorf("marshal normalized vm manifest json: %w", err)
+	}
+
+	yamlData, err := yaml.JSONToYAML(normalizedJSON)
+	if err != nil {
+		return "", fmt.Errorf("convert vm manifest to yaml: %w", err)
+	}
+	return string(yamlData), nil
 }
 
 // OpenVNCStream opens a raw VNC stream backed by the official KubeVirt client.

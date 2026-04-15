@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"kv-shepherd.io/shepherd/ent"
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	entclusterpolicy "kv-shepherd.io/shepherd/ent/clusterpolicy"
@@ -952,6 +954,7 @@ func TestGetClusterPolicy_ReturnsPolicy(t *testing.T) {
 		SetAllowGpu(true).
 		SetAllowSriov(true).
 		SetAllowHugepages(true).
+		SetAllowedHugepagesSizes([]string{"2mi", "1gi"}).
 		SetAllowCdiClone(true).
 		SetAllowedStorageClasses([]string{"fast-sc"}).
 		SetCreatedBy("test").
@@ -977,6 +980,9 @@ func TestGetClusterPolicy_ReturnsPolicy(t *testing.T) {
 	mustDecodeJSON(t, w.Body.Bytes(), &resp)
 	if !resp.AllowCdiClone {
 		t.Fatal("allow_cdi_clone = false, want true")
+	}
+	if diff := cmp.Diff([]string{"2Mi", "1Gi"}, resp.AllowedHugepagesSizes); diff != "" {
+		t.Fatalf("allowed_hugepages_sizes mismatch (-want +got):\n%s", diff)
 	}
 	if len(resp.AllowedStorageClasses) != 1 || resp.AllowedStorageClasses[0] != "fast-sc" {
 		t.Fatalf("allowed_storage_classes = %#v, want [fast-sc]", resp.AllowedStorageClasses)
@@ -1006,7 +1012,7 @@ func TestUpsertClusterPolicy_CreatesAndUpdatesPolicy(t *testing.T) {
 		t,
 		http.MethodPut,
 		"/admin/clusters/cl-1/policy",
-		`{"allow_cpu_overcommit":false,"allow_memory_overcommit":true,"allow_dedicated_cpu":true,"allow_gpu":true,"allow_sriov":true,"allow_hugepages":true,"allowed_hugepages_sizes":["2Mi","2Mi"],"allow_cdi_clone":true,"allowed_clone_source_namespaces":["golden-images"],"allowed_storage_classes":["fast-sc"]}`,
+		`{"allow_cpu_overcommit":false,"allow_memory_overcommit":true,"allow_dedicated_cpu":true,"allow_gpu":true,"allow_sriov":true,"allow_hugepages":true,"allowed_hugepages_sizes":["2mi","2Mi","512"],"allow_cdi_clone":true,"allowed_clone_source_namespaces":["golden-images"],"allowed_storage_classes":["fast-sc"]}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
@@ -1020,8 +1026,8 @@ func TestUpsertClusterPolicy_CreatesAndUpdatesPolicy(t *testing.T) {
 	if created.AllowCpuOvercommit {
 		t.Fatal("allow_cpu_overcommit = true, want false")
 	}
-	if got := len(created.AllowedHugepagesSizes); got != 1 {
-		t.Fatalf("allowed_hugepages_sizes len = %d, want 1 after normalization", got)
+	if diff := cmp.Diff([]string{"2Mi", "512Mi"}, created.AllowedHugepagesSizes); diff != "" {
+		t.Fatalf("allowed_hugepages_sizes mismatch (-want +got):\n%s", diff)
 	}
 
 	stored, err := client.ClusterPolicy.Query().
@@ -1032,6 +1038,9 @@ func TestUpsertClusterPolicy_CreatesAndUpdatesPolicy(t *testing.T) {
 	}
 	if stored.CreatedBy != "admin-1" {
 		t.Fatalf("created_by = %q, want admin-1", stored.CreatedBy)
+	}
+	if diff := cmp.Diff([]string{"2Mi", "512Mi"}, stored.AllowedHugepagesSizes); diff != "" {
+		t.Fatalf("stored allowed_hugepages_sizes mismatch (-want +got):\n%s", diff)
 	}
 
 	updateCtx, updateW := newAuthedGinContext(

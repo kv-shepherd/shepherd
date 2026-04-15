@@ -14,10 +14,14 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-function rootVolumeModeOptionKey(option: {
-  access_modes?: string[];
-  volume_mode?: string;
-} | undefined): string {
+function rootVolumeModeOptionKey(
+  option:
+    | {
+        access_modes?: string[];
+        volume_mode?: string;
+      }
+    | undefined,
+): string {
   if (!option?.volume_mode || !option.access_modes?.length) {
     return "";
   }
@@ -28,7 +32,9 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (
       key: string,
-      options?: string | { defaultValue?: string; count?: number; index?: number },
+      options?:
+        | string
+        | { defaultValue?: string; count?: number; index?: number },
     ) => {
       if (typeof options === "string") {
         return options;
@@ -36,10 +42,12 @@ vi.mock("react-i18next", () => ({
       const labels: Record<string, string> = {
         "common:nav.approval_tasks": "Approval Tasks",
         "empty.pending_title": "No approvals waiting yet",
-        "empty.pending_description": "Finish setup or submit the first VM request to exercise the approval flow.",
+        "empty.pending_description":
+          "Finish setup or submit the first VM request to exercise the approval flow.",
         "empty.open_vm_request": "Open VM Request",
         "empty.filtered_title": "No approvals match the current filters",
-        "empty.filtered_description": "Reset the queue filters to see the broader approval backlog again.",
+        "empty.filtered_description":
+          "Reset the queue filters to see the broader approval backlog again.",
         "summary.overview_title": "Review Overview",
         "summary.scope_title": "Resource Context",
         "summary.change_title": "Requested Change",
@@ -73,16 +81,36 @@ vi.mock("react-i18next", () => ({
       if (key === "summary.shape_cpu" && typeof options?.count === "number") {
         return `${options.count} vCPU`;
       }
-      if (key === "summary.shape_memory" && typeof options?.count === "number") {
+      if (
+        key === "summary.shape_memory" &&
+        typeof options?.count === "number"
+      ) {
         return `${options.count} Gi memory`;
       }
       if (key === "summary.shape_disk" && typeof options?.count === "number") {
         return `${options.count} Gi disk`;
       }
-      if (key === "summary.item_fallback" && typeof options?.index === "number") {
+      if (
+        key === "summary.item_fallback" &&
+        typeof options?.index === "number"
+      ) {
         return `Request #${options.index}`;
       }
-      return labels[key] ?? options?.defaultValue ?? key;
+      const template = labels[key] ?? options?.defaultValue ?? key;
+      if (typeof template !== "string" || !options) {
+        return template;
+      }
+      return Object.entries(options).reduce((result, [name, value]) => {
+        if (
+          name === "defaultValue" ||
+          value === undefined ||
+          value === null ||
+          typeof value === "object"
+        ) {
+          return result;
+        }
+        return result.replaceAll(`{{${name}}}`, String(value));
+      }, template);
     },
   }),
 }));
@@ -148,7 +176,9 @@ vi.mock("@/components/layouts/PageSection", () => ({
 }));
 
 vi.mock("@/components/ui/LocalDateTimeText", () => ({
-  LocalDateTimeText: ({ value }: { value: string }) => <time dateTime={value}>{value}</time>,
+  LocalDateTimeText: ({ value }: { value: string }) => (
+    <time dateTime={value}>{value}</time>
+  ),
 }));
 
 vi.mock("@/components/workbench/WorkbenchDetailModal", () => ({
@@ -178,10 +208,18 @@ vi.mock("@/components/workbench/WorkbenchDetailModal", () => ({
 }));
 
 vi.mock("@/components/illustrations/DashboardIllustrations", () => ({
-  QueueReviewGlyph: (props: Record<string, unknown>) => <span {...props}>queue-glyph</span>,
-  RequestsOverviewGlyph: (props: Record<string, unknown>) => <span {...props}>requests-glyph</span>,
-  ServiceWorkspaceGlyph: (props: Record<string, unknown>) => <span {...props}>service-glyph</span>,
-  VirtualMachinesOverviewGlyph: (props: Record<string, unknown>) => <span {...props}>vms-glyph</span>,
+  QueueReviewGlyph: (props: Record<string, unknown>) => (
+    <span {...props}>queue-glyph</span>
+  ),
+  RequestsOverviewGlyph: (props: Record<string, unknown>) => (
+    <span {...props}>requests-glyph</span>
+  ),
+  ServiceWorkspaceGlyph: (props: Record<string, unknown>) => (
+    <span {...props}>service-glyph</span>
+  ),
+  VirtualMachinesOverviewGlyph: (props: Record<string, unknown>) => (
+    <span {...props}>vms-glyph</span>
+  ),
 }));
 
 vi.mock("antd", async () => {
@@ -227,10 +265,7 @@ vi.mock("antd", async () => {
   }) => (
     <dl data-testid="mock-descriptions">
       {items?.map((item, index) => (
-        <DescriptionsItem
-          key={item.key ?? String(index)}
-          label={item.label}
-        >
+        <DescriptionsItem key={item.key ?? String(index)} label={item.label}>
           {item.children}
         </DescriptionsItem>
       ))}
@@ -288,7 +323,11 @@ vi.mock("antd", async () => {
                 const content = column.render
                   ? column.render(rawValue, record, rowIndex)
                   : rawValue;
-                return <td key={column.key ?? String(columnIndex)}>{content as ReactNode}</td>;
+                return (
+                  <td key={column.key ?? String(columnIndex)}>
+                    {content as ReactNode}
+                  </td>
+                );
               })}
             </tr>
           ))}
@@ -343,7 +382,9 @@ vi.mock("@/features/setup-guide/hooks/useSetupGuide", () => ({
 }));
 
 vi.mock("@/features/setup-guide/components/SetupGuideCard", () => ({
-  SetupGuideCard: ({ variant }: { variant: string }) => <div>{`setup-guide-${variant}`}</div>,
+  SetupGuideCard: ({ variant }: { variant: string }) => (
+    <div>{`setup-guide-${variant}`}</div>
+  ),
 }));
 
 vi.mock("../hooks/useAdminApprovalsController", async () => {
@@ -352,22 +393,22 @@ vi.mock("../hooks/useAdminApprovalsController", async () => {
     useAdminApprovalsController: () => {
       const [approveForm] = Form.useForm();
       const [rejectForm] = Form.useForm();
-      const selectedRootVolumeResolution =
-        (controllerState.overrides.selectedRootVolumeResolution as
-          | Record<string, unknown>
-          | undefined) ?? {
-          state: "storage_class_required",
-          message:
-            "approval must select a target storage class before root volume provisioning can be resolved",
-        };
+      const selectedRootVolumeResolution = (controllerState.overrides
+        .selectedRootVolumeResolution as
+        | Record<string, unknown>
+        | undefined) ?? {
+        state: "storage_class_required",
+        message:
+          "approval must select a target storage class before root volume provisioning can be resolved",
+      };
       const rootVolumeModeOptions =
         (controllerState.overrides.rootVolumeModeOptions as
           | Array<{ access_modes?: string[]; volume_mode?: string }>
           | undefined) ??
-        ((selectedRootVolumeResolution.mode_options as
+        (selectedRootVolumeResolution.mode_options as
           | Array<{ access_modes?: string[]; volume_mode?: string }>
           | undefined) ??
-          []);
+        [];
       const effectiveSelectedRootVolumeMode =
         (controllerState.overrides.effectiveSelectedRootVolumeMode as
           | { access_modes?: string[]; volume_mode?: string }
@@ -380,9 +421,10 @@ vi.mock("../hooks/useAdminApprovalsController", async () => {
                   (selectedRootVolumeResolution.effective_access_modes as
                     | string[]
                     | undefined) ?? [],
-                volume_mode: selectedRootVolumeResolution.effective_volume_mode as
-                  | string
-                  | undefined,
+                volume_mode:
+                  selectedRootVolumeResolution.effective_volume_mode as
+                    | string
+                    | undefined,
               }
             : undefined);
       return {
@@ -523,8 +565,13 @@ vi.mock("../hooks/useAdminApprovalsController", async () => {
         selectedRootVolumeResolution,
         rootVolumeModeOptions,
         canSelectRootVolumeMode:
-          (controllerState.overrides.canSelectRootVolumeMode as boolean | undefined) ??
-          rootVolumeModeOptions.length > 1,
+          (controllerState.overrides.canSelectRootVolumeMode as
+            | boolean
+            | undefined) ?? rootVolumeModeOptions.length > 1,
+        requiresManualRootVolumeModeInput:
+          (controllerState.overrides.requiresManualRootVolumeModeInput as
+            | boolean
+            | undefined) ?? false,
         effectiveSelectedRootVolumeMode,
         effectiveSelectedRootVolumeModeKey:
           (controllerState.overrides.effectiveSelectedRootVolumeModeKey as
@@ -580,7 +627,9 @@ describe("AdminApprovalsContent", () => {
       />,
     );
 
-    expect(screen.getByTestId("approval-provisioning-card")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("approval-provisioning-card"),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("approval-provisioning-phase")).toHaveTextContent(
       "CloneInProgress",
     );
@@ -664,8 +713,12 @@ describe("AdminApprovalsContent", () => {
     render(<AdminApprovalsContent />);
 
     expect(screen.getByText("Affected Items")).toBeInTheDocument();
-    expect(screen.getAllByText("Ubuntu 22.04 · M4 Large").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Requested Resources").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Ubuntu 22.04 · M4 Large").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText("Requested Resources").length).toBeGreaterThan(
+      0,
+    );
   });
 
   it("shows retry action for failed batch approvals", async () => {
@@ -723,7 +776,7 @@ describe("AdminApprovalsContent", () => {
             intent_mode: "auto",
             state: "mode_required",
             message:
-              "storage class \"rook-ceph\" supports multiple root volume modes; approval must choose one explicit combination",
+              'storage class "rook-ceph" supports multiple root volume modes; approval must choose one explicit combination',
             mode_options: [
               { volume_mode: "Block", access_modes: ["ReadWriteMany"] },
               { volume_mode: "Block", access_modes: ["ReadWriteOnce"] },
@@ -735,7 +788,7 @@ describe("AdminApprovalsContent", () => {
         intent_mode: "auto",
         state: "mode_required",
         message:
-          "storage class \"rook-ceph\" supports multiple root volume modes; approval must choose one explicit combination",
+          'storage class "rook-ceph" supports multiple root volume modes; approval must choose one explicit combination',
         mode_options: [
           { volume_mode: "Block", access_modes: ["ReadWriteMany"] },
           { volume_mode: "Block", access_modes: ["ReadWriteOnce"] },
@@ -745,7 +798,9 @@ describe("AdminApprovalsContent", () => {
 
     render(<AdminApprovalsContent />);
 
-    expect(screen.getAllByText("Select root volume mode").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Select root volume mode").length,
+    ).toBeGreaterThan(0);
     expect(screen.getByText("Root Volume Mode")).toBeInTheDocument();
     expect(
       screen.getByText("Recommended root volume mode"),
@@ -789,13 +844,98 @@ describe("AdminApprovalsContent", () => {
     render(<AdminApprovalsContent />);
 
     expect(screen.getByText("Root Volume Mode")).toBeInTheDocument();
-    expect(screen.getAllByText("Block + ReadWriteMany").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Block + ReadWriteMany").length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("prefers RWX combinations over RWO combinations when marking the recommended root volume mode", () => {
+    controllerState.overrides = {
+      selectedCluster: {
+        id: "cluster-a",
+        name: "Cluster A",
+        enabled: true,
+        compatibility: {
+          eligible: false,
+          root_volume_resolution: {
+            intent_mode: "auto",
+            state: "mode_required",
+            message:
+              'storage class "generic-sc" supports multiple root volume modes; approval must choose one explicit combination',
+            mode_options: [
+              { volume_mode: "Block", access_modes: ["ReadWriteOnce"] },
+              { volume_mode: "Filesystem", access_modes: ["ReadWriteMany"] },
+            ],
+          },
+        },
+      },
+      selectedRootVolumeResolution: {
+        intent_mode: "auto",
+        state: "mode_required",
+        message:
+          'storage class "generic-sc" supports multiple root volume modes; approval must choose one explicit combination',
+        mode_options: [
+          { volume_mode: "Block", access_modes: ["ReadWriteOnce"] },
+          { volume_mode: "Filesystem", access_modes: ["ReadWriteMany"] },
+        ],
+      },
+    };
+
+    render(<AdminApprovalsContent />);
+
+    expect(
+      screen.getByText(/Filesystem \+ ReadWriteMany/),
+    ).toBeInTheDocument();
+  });
+
+  it("allows manual root volume mode entry when StorageProfile claimPropertySets are missing", () => {
+    controllerState.overrides = {
+      requiresManualRootVolumeModeInput: true,
+      selectedCluster: {
+        id: "cluster-a",
+        name: "Cluster A",
+        enabled: true,
+        compatibility: {
+          eligible: false,
+          root_volume_resolution: {
+            intent_mode: "auto",
+            state: "profile_incomplete",
+            message:
+              'storage class "block-sc" does not expose claimPropertySets in StorageProfile',
+          },
+        },
+      },
+      selectedRootVolumeResolution: {
+        intent_mode: "auto",
+        state: "profile_incomplete",
+        message:
+          'storage class "block-sc" does not expose claimPropertySets in StorageProfile',
+      },
+      effectiveSelectedStorageClass: "block-sc",
+      selectedClusterStorageClassOptions: ["block-sc"],
+      rootVolumeModeOptions: [],
+    };
+
+    render(<AdminApprovalsContent />);
+
+    expect(
+      screen.getByText("Select root volume mode manually"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Volume Mode")).toBeInTheDocument();
+    expect(screen.getByText("Access Modes")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Recommended: ReadWriteMany. If compatibility checks or provisioning cannot satisfy it, choose ReadWriteOnce instead.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("keeps the approve modal body scrollable when the content is long", () => {
     const { container } = render(<AdminApprovalsContent />);
 
-    const modalViewport = container.ownerDocument.querySelector(".workbench-detail-modal__viewport");
+    const modalViewport = container.ownerDocument.querySelector(
+      ".workbench-detail-modal__viewport",
+    );
     expect(modalViewport).not.toBeNull();
     expect(modalViewport).toHaveClass("workbench-detail-modal__viewport");
     expect(modalViewport).toHaveStyle({
@@ -864,6 +1004,8 @@ describe("AdminApprovalsContent", () => {
     expect(screen.getByText("Latest Status")).toBeInTheDocument();
     expect(screen.getByText("Stopped")).toBeInTheDocument();
     expect(screen.getByText("NOT_FOUND")).toBeInTheDocument();
-    expect(screen.getByText("4 vCPU · 8 Gi memory · 80 Gi disk")).toBeInTheDocument();
+    expect(
+      screen.getByText("4 vCPU · 8 Gi memory · 80 Gi disk"),
+    ).toBeInTheDocument();
   });
 });

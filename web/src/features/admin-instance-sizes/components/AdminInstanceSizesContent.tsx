@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
     Alert,
     Button,
@@ -63,6 +63,7 @@ import {
     formatCores,
     formatMemory,
     getGPUDeviceLabels,
+    hasDedicatedCPURequirement,
     hasCPUOvercommit,
     hasMemoryOvercommit,
     type InstanceSize,
@@ -185,7 +186,7 @@ function getInstanceSizeCapabilityTags(
             color: 'geekblue',
         });
     }
-    if (record.dedicated_cpu) {
+    if (hasDedicatedCPURequirement(record)) {
         tags.push({ label: t('instanceSizes.capability_dedicated_cpu', 'Dedicated CPU'), color: 'orange' });
     }
     if (hasCPUOvercommit(record)) {
@@ -238,6 +239,28 @@ function handleInstanceSizeFormValuesChange(
         form.setFieldsValue(updates);
     }
     formRef.current?.sync();
+}
+
+function scheduleInterlockResume(flagRef: RefObject<boolean>) {
+    const resume = () => {
+        flagRef.current = false;
+    };
+    if (typeof queueMicrotask === 'function') {
+        queueMicrotask(resume);
+        return;
+    }
+    setTimeout(resume, 0);
+}
+
+function hydrateFormWithoutInterlocks(
+    form: FormInstance,
+    values: Record<string, unknown>,
+    suspendRef: RefObject<boolean>,
+) {
+    suspendRef.current = true;
+    form.resetFields();
+    form.setFieldsValue(values);
+    scheduleInterlockResume(suspendRef);
 }
 
 function highlightText(text: string, highlight: string): React.ReactNode {
@@ -361,6 +384,11 @@ function InstanceSizeFormFields({
     formRef: React.RefObject<DynamicSchemaFormHandle | null>;
 }) {
     const { t } = useTranslation(['admin', 'common']);
+    const form = Form.useFormInstance();
+    const dedicatedCPU = Form.useWatch('dedicated_cpu', form);
+    const cpuOvercommitEnabled = Form.useWatch('cpu_overcommit_enabled', form);
+    const memoryOvercommitEnabled = Form.useWatch('memory_overcommit_enabled', form);
+    const rootVolumeModeIntent = Form.useWatch('root_volume_mode_intent', form);
 
     return (
         <>
@@ -417,81 +445,62 @@ function InstanceSizeFormFields({
                 <UnitInputNumber min={0.5} step={0.5} precision={1} unit={t('instanceSizes.cores')} />
             </Form.Item>
 
-            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.cpu_overcommit_enabled !== cur.cpu_overcommit_enabled}>
-                {({ getFieldValue }) => (
-                    <Form.Item name="dedicated_cpu" valuePropName="checked">
-                        <Checkbox disabled={!!getFieldValue('cpu_overcommit_enabled')}>
-                            {renderInlineHelpLabel(
-                                t('instanceSizes.dedicated'),
-                                t('instanceSizes.dedicated_help')
-                            )}
-                        </Checkbox>
-                    </Form.Item>
-                )}
+            <Form.Item name="dedicated_cpu" valuePropName="checked">
+                <Checkbox disabled={!!cpuOvercommitEnabled}>
+                    {renderInlineHelpLabel(
+                        t('instanceSizes.dedicated'),
+                        t('instanceSizes.dedicated_help')
+                    )}
+                </Checkbox>
             </Form.Item>
 
-            {/* CPU Overcommit: conditional reveal using shouldUpdate (rendering only, no side effects) */}
-            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.dedicated_cpu !== cur.dedicated_cpu}>
-                {({ getFieldValue }) => (
-                    <Form.Item name="cpu_overcommit_enabled" valuePropName="checked">
-                        <Checkbox disabled={!!getFieldValue('dedicated_cpu')}>
-                            {renderInlineHelpLabel(
-                                t('instanceSizes.enable_cpu_overcommit'),
-                                t('instanceSizes.enable_cpu_overcommit_help')
-                            )}
-                        </Checkbox>
-                    </Form.Item>
-                )}
+            <Form.Item name="cpu_overcommit_enabled" valuePropName="checked">
+                <Checkbox disabled={!!dedicatedCPU}>
+                    {renderInlineHelpLabel(
+                        t('instanceSizes.enable_cpu_overcommit'),
+                        t('instanceSizes.enable_cpu_overcommit_help')
+                    )}
+                </Checkbox>
             </Form.Item>
-            <Form.Item
-                noStyle
-                shouldUpdate={(prev, cur) =>
-                    prev.cpu_overcommit_enabled !== cur.cpu_overcommit_enabled ||
-                    prev.dedicated_cpu !== cur.dedicated_cpu
-                }
-            >
-                {({ getFieldValue }) =>
-                    getFieldValue('cpu_overcommit_enabled') && !getFieldValue('dedicated_cpu') ? (
-                        <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
-                            <Space style={{ width: '100%' }} direction="vertical">
-                                <Form.Item
-                                    name="cpu_request"
-                                    label={t('instanceSizes.cpu_request')}
-                                    tooltip={{ title: t('instanceSizes.cpu_request_help'), trigger: ['hover', 'click'] }}
-                                    dependencies={['cpu_cores']}
-                                    rules={[
-                                        ({ getFieldValue }) => ({
-                                            validator(_, value) {
-                                                if (typeof value !== 'number') {
-                                                    return Promise.resolve();
-                                                }
-                                                const cpuCores = getFieldValue('cpu_cores');
-                                                if (typeof cpuCores === 'number' && value > cpuCores) {
-                                                    return Promise.reject(
-                                                        new Error(
-                                                            t(
-                                                                'instanceSizes.cpu_request_exceeds_limit',
-                                                                'CPU request cannot exceed CPU limit.',
-                                                            ),
-                                                        ),
-                                                    );
-                                                }
-                                                return Promise.resolve();
-                                            },
-                                        }),
-                                    ]}
-                                    style={{ margin: 0 }}
-                                >
-                                    <UnitInputNumber min={0.5} step={0.5} precision={1} unit={t('instanceSizes.cores')} />
-                                </Form.Item>
-                                <Text type="secondary" style={{ fontSize: 13 }}>
-                                    {t('instanceSizes.overcommit_ratio_hint')}
-                                </Text>
-                            </Space>
-                        </Card>
-                    ) : null
-                }
-            </Form.Item>
+            {cpuOvercommitEnabled && !dedicatedCPU ? (
+                <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+                    <Space style={{ width: '100%' }} direction="vertical">
+                        <Form.Item
+                            name="cpu_request"
+                            label={t('instanceSizes.cpu_request')}
+                            tooltip={{ title: t('instanceSizes.cpu_request_help'), trigger: ['hover', 'click'] }}
+                            dependencies={['cpu_cores']}
+                            rules={[
+                                ({ getFieldValue }) => ({
+                                    validator(_, value) {
+                                        if (typeof value !== 'number') {
+                                            return Promise.resolve();
+                                        }
+                                        const cpuCores = getFieldValue('cpu_cores');
+                                        if (typeof cpuCores === 'number' && value > cpuCores) {
+                                            return Promise.reject(
+                                                new Error(
+                                                    t(
+                                                        'instanceSizes.cpu_request_exceeds_limit',
+                                                        'CPU request cannot exceed CPU limit.',
+                                                    ),
+                                                ),
+                                            );
+                                        }
+                                        return Promise.resolve();
+                                    },
+                                }),
+                            ]}
+                            style={{ margin: 0 }}
+                        >
+                            <UnitInputNumber min={0.5} step={0.5} precision={1} unit={t('instanceSizes.cores')} />
+                        </Form.Item>
+                        <Text type="secondary" style={{ fontSize: 13 }}>
+                            {t('instanceSizes.overcommit_ratio_hint')}
+                        </Text>
+                    </Space>
+                </Card>
+            ) : null}
 
             <Form.Item
                 name="memory_gi"
@@ -511,47 +520,40 @@ function InstanceSizeFormFields({
                     )}
                 </Checkbox>
             </Form.Item>
-            <Form.Item
-                noStyle
-                shouldUpdate={(prev, cur) => prev.memory_overcommit_enabled !== cur.memory_overcommit_enabled}
-            >
-                {({ getFieldValue }) =>
-                    getFieldValue('memory_overcommit_enabled') ? (
-                        <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
-                            <Form.Item
-                                name="memory_request_gi"
-                                label={t('instanceSizes.memory_request')}
-                                tooltip={{ title: t('instanceSizes.memory_request_help'), trigger: ['hover', 'click'] }}
-                                dependencies={['memory_gi']}
-                                rules={[
-                                    ({ getFieldValue }) => ({
-                                        validator(_, value) {
-                                            if (typeof value !== 'number') {
-                                                return Promise.resolve();
-                                            }
-                                            const memoryGi = getFieldValue('memory_gi');
-                                            if (typeof memoryGi === 'number' && value > memoryGi) {
-                                                return Promise.reject(
-                                                    new Error(
-                                                        t(
-                                                            'instanceSizes.memory_request_exceeds_limit',
-                                                            'Memory request cannot exceed memory limit.',
-                                                        ),
-                                                    ),
-                                                );
-                                            }
-                                            return Promise.resolve();
-                                        },
-                                    }),
-                                ]}
-                                style={{ margin: 0 }}
-                            >
-                                <UnitInputNumber min={0.5} step={0.5} precision={1} unit="Gi" />
-                            </Form.Item>
-                        </Card>
-                    ) : null
-                }
-            </Form.Item>
+            {memoryOvercommitEnabled ? (
+                <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+                    <Form.Item
+                        name="memory_request_gi"
+                        label={t('instanceSizes.memory_request')}
+                        tooltip={{ title: t('instanceSizes.memory_request_help'), trigger: ['hover', 'click'] }}
+                        dependencies={['memory_gi']}
+                        rules={[
+                            ({ getFieldValue }) => ({
+                                validator(_, value) {
+                                    if (typeof value !== 'number') {
+                                        return Promise.resolve();
+                                    }
+                                    const memoryGi = getFieldValue('memory_gi');
+                                    if (typeof memoryGi === 'number' && value > memoryGi) {
+                                        return Promise.reject(
+                                            new Error(
+                                                t(
+                                                    'instanceSizes.memory_request_exceeds_limit',
+                                                    'Memory request cannot exceed memory limit.',
+                                                ),
+                                            ),
+                                        );
+                                    }
+                                    return Promise.resolve();
+                                },
+                            }),
+                        ]}
+                        style={{ margin: 0 }}
+                    >
+                        <UnitInputNumber min={0.5} step={0.5} precision={1} unit="Gi" />
+                    </Form.Item>
+                </Card>
+            ) : null}
 
             <Form.Item
                 name="disk_gb"
@@ -574,66 +576,59 @@ function InstanceSizeFormFields({
                 />
             </Form.Item>
 
-            <Form.Item
-                noStyle
-                shouldUpdate={(prev, cur) => prev.root_volume_mode_intent !== cur.root_volume_mode_intent}
-            >
-                {({ getFieldValue }) =>
-                    getFieldValue('root_volume_mode_intent') === 'explicit' ? (
-                        <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
-                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                                <Text type="secondary">
-                                    {t(
-                                        'instanceSizes.root_volume_mode_explicit_help',
-                                        'Approval validates whether the target StorageClass supports this accessModes + volumeMode combination. If the cluster does not support it, the approval cannot pass.'
-                                    )}
-                                </Text>
-                                <Form.Item
-                                    name="dv_volume_mode"
-                                    label={t('instanceSizes.dv_volume_mode')}
-                                    tooltip={{ title: t('instanceSizes.dv_volume_mode_help'), trigger: ['hover', 'click'] }}
-                                    rules={[{ required: true, message: t('instanceSizes.dv_volume_mode_required') }]}
-                                    style={{ margin: 0 }}
-                                >
-                                    <Select
-                                        options={[
-                                            { label: 'Block', value: 'Block' },
-                                            { label: 'Filesystem', value: 'Filesystem' },
-                                        ]}
-                                    />
-                                </Form.Item>
-                                <Form.Item
-                                    name="dv_access_modes"
-                                    label={t('instanceSizes.dv_access_modes')}
-                                    tooltip={{ title: t('instanceSizes.dv_access_modes_help'), trigger: ['hover', 'click'] }}
-                                    rules={[{ required: true, message: t('instanceSizes.dv_access_modes_required') }]}
-                                    style={{ margin: 0 }}
-                                >
-                                    <Select
-                                        mode="multiple"
-                                        allowClear
-                                        options={ROOT_VOLUME_ACCESS_MODE_OPTIONS.map((value) => ({
-                                            label: value,
-                                            value,
-                                        }))}
-                                    />
-                                </Form.Item>
-                            </Space>
-                        </Card>
-                    ) : (
-                        <Alert
-                            type="info"
-                            showIcon
-                            style={{ marginBottom: 16 }}
-                            message={t('instanceSizes.root_volume_mode_auto')}
-                            description={t(
-                                'instanceSizes.root_volume_mode_auto_help',
-                                'The spec keeps only the Auto intent. During approval, the target cluster and StorageProfile resolve the real root volume mode; if the result is not unique, approval must choose an explicit mode.'
+            {rootVolumeModeIntent === 'explicit' ? (
+                <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <Text type="secondary">
+                            {t(
+                                'instanceSizes.root_volume_mode_explicit_help',
+                                'Approval validates whether the target StorageClass supports this accessModes + volumeMode combination. If the cluster does not support it, the approval cannot pass.'
                             )}
-                        />
-                    )
-                }
-            </Form.Item>
+                        </Text>
+                        <Form.Item
+                            name="dv_volume_mode"
+                            label={t('instanceSizes.dv_volume_mode')}
+                            tooltip={{ title: t('instanceSizes.dv_volume_mode_help'), trigger: ['hover', 'click'] }}
+                            rules={[{ required: true, message: t('instanceSizes.dv_volume_mode_required') }]}
+                            style={{ margin: 0 }}
+                        >
+                            <Select
+                                options={[
+                                    { label: 'Block', value: 'Block' },
+                                    { label: 'Filesystem', value: 'Filesystem' },
+                                ]}
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="dv_access_modes"
+                            label={t('instanceSizes.dv_access_modes')}
+                            tooltip={{ title: t('instanceSizes.dv_access_modes_help'), trigger: ['hover', 'click'] }}
+                            rules={[{ required: true, message: t('instanceSizes.dv_access_modes_required') }]}
+                            style={{ margin: 0 }}
+                        >
+                            <Select
+                                mode="multiple"
+                                allowClear
+                                options={ROOT_VOLUME_ACCESS_MODE_OPTIONS.map((value) => ({
+                                    label: value,
+                                    value,
+                                }))}
+                            />
+                        </Form.Item>
+                    </Space>
+                </Card>
+            ) : (
+                <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message={t('instanceSizes.root_volume_mode_auto')}
+                    description={t(
+                        'instanceSizes.root_volume_mode_auto_help',
+                        'The spec keeps only the Auto intent. During approval, the target cluster and StorageProfile resolve the real root volume mode; if the result is not unique, approval must choose an explicit mode.'
+                    )}
+                />
+            )}
 
             <Form.Item
                 name="requires_sriov"
@@ -858,6 +853,18 @@ export function AdminInstanceSizesContent() {
     // formRef.current?.sync() is called in onValuesChange to update spec_text.
     const createFormRef = useRef<DynamicSchemaFormHandle>(null);
     const editFormRef = useRef<DynamicSchemaFormHandle>(null);
+    const suspendEditInterlocksRef = useRef<boolean>(false);
+
+    useEffect(() => {
+        if (!sizes.editOpen || !sizes.editingItem || !sizes.editInitialValues) {
+            return;
+        }
+        hydrateFormWithoutInterlocks(
+            sizes.editForm,
+            sizes.editInitialValues as unknown as Record<string, unknown>,
+            suspendEditInterlocksRef,
+        );
+    }, [sizes.editForm, sizes.editInitialValues, sizes.editOpen, sizes.editingItem]);
 
     const getColumnSearchProps = (dataIndex: keyof InstanceSize): Partial<ColumnsType<InstanceSize>[number]> => ({
         filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }: FilterDropdownProps) => (
@@ -1332,7 +1339,7 @@ export function AdminInstanceSizesContent() {
                     key="instance-size-create-form"
                     form={sizes.createForm}
                     layout="vertical"
-                    initialValues={sizes.createInitialValues}
+                    preserve={false}
                     onValuesChange={(changedValues) => {
                         handleInstanceSizeFormValuesChange(sizes.createForm, createFormRef, changedValues);
                     }}
@@ -1346,6 +1353,7 @@ export function AdminInstanceSizesContent() {
             <Modal
                 title={t('instanceSizes.edit_title')}
                 open={sizes.editOpen}
+                forceRender={true}
                 onOk={() => { void sizes.submitEdit(); }}
                 onCancel={sizes.closeEditModal}
                 confirmLoading={sizes.updatePending}
@@ -1353,11 +1361,13 @@ export function AdminInstanceSizesContent() {
                 data-testid="instance-size-edit-modal"
             >
                 <Form
-                    key={sizes.editingItem?.id ?? 'instance-size-edit-form'}
                     form={sizes.editForm}
                     layout="vertical"
-                    initialValues={sizes.editInitialValues}
+                    preserve={false}
                     onValuesChange={(changedValues) => {
+                        if (suspendEditInterlocksRef.current) {
+                            return;
+                        }
                         handleInstanceSizeFormValuesChange(sizes.editForm, editFormRef, changedValues);
                     }}
                 >

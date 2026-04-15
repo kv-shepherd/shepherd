@@ -10,7 +10,15 @@ function getAtPath(value: unknown, pathText: string): unknown {
     const parts = pathText.split('.');
     let current: unknown = value;
     for (const part of parts) {
-        if (!current || typeof current !== 'object' || Array.isArray(current)) {
+        if (Array.isArray(current)) {
+            const index = Number(part);
+            if (Number.isNaN(index)) {
+                return undefined;
+            }
+            current = current[index];
+            continue;
+        }
+        if (!current || typeof current !== 'object') {
             return undefined;
         }
         current = (current as Record<string, unknown>)[part];
@@ -51,6 +59,36 @@ describe('curatedCatalog internal audit', () => {
             );
             expect(getNameList(parsed, 'spec.template.spec.domain.devices.interfaces')).toContain('default');
             expect(getNameList(parsed, 'spec.template.spec.networks')).toContain('default');
+            expect(
+                getAtPath(
+                    parsed,
+                    'spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.0.weight',
+                ),
+            ).toBe(100);
+            expect(
+                getAtPath(
+                    parsed,
+                    'spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.0.podAffinityTerm.labelSelector.matchExpressions.0.key',
+                ),
+            ).toBe('shepherd.io/service-id');
+            expect(
+                getAtPath(
+                    parsed,
+                    'spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.0.podAffinityTerm.labelSelector.matchExpressions.0.operator',
+                ),
+            ).toBe('In');
+            expect(
+                getAtPath(
+                    parsed,
+                    'spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.0.podAffinityTerm.labelSelector.matchExpressions.0.values.0',
+                ),
+            ).toBe('__SHEPHERD_SERVICE_ID__');
+            expect(
+                getAtPath(
+                    parsed,
+                    'spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.0.podAffinityTerm.topologyKey',
+                ),
+            ).toBe('kubernetes.io/hostname');
 
             if (key.startsWith('linux')) {
                 expect(values.cpu_cores).toBe(4);
@@ -76,7 +114,7 @@ describe('curatedCatalog internal audit', () => {
                 expect(values.memory_request_gi).toBeUndefined();
                 expect(values.dedicated_cpu).toBe(true);
                 expect(getAtPath(parsed, 'spec.template.spec.domain.cpu.dedicatedCpuPlacement')).toBe(true);
-                expect(getAtPath(parsed, 'spec.template.spec.domain.cpu.numa.guestMappingPassthrough')).toEqual({});
+                expect(getAtPath(parsed, 'spec.template.spec.domain.cpu.numa.guestMappingPassthrough')).toBeUndefined();
                 expect(getAtPath(parsed, 'spec.template.spec.domain.memory.hugepages.pageSize')).toBe('2Mi');
             }
         },

@@ -2,7 +2,7 @@
 
 import { App, Form } from "antd";
 import type { TFunction } from "i18next";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useApiAction, useApiGet, useApiMutation } from "@/hooks/useApiQuery";
 import { api } from "@/lib/api/client";
@@ -18,6 +18,10 @@ import type {
   ClusterList,
   RejectDecisionRequest,
 } from "../types";
+import {
+  loadRememberedApprovalClusterPlacement,
+  saveRememberedApprovalClusterPlacement,
+} from "../approvalPlacementMemory";
 
 interface UseAdminApprovalsControllerArgs {
   t: TFunction;
@@ -59,6 +63,8 @@ export function useAdminApprovalsController({
   const [pageSize, setPageSize] = useState(20);
   const [approveModal, setApproveModal] = useState<ApprovalTask | null>(null);
   const [rejectModal, setRejectModal] = useState<ApprovalTask | null>(null);
+  const rememberedStorageAutofillRef = useRef("");
+  const rememberedRootModeAutofillRef = useRef("");
   const [approveForm] = Form.useForm<ApprovalDecisionFormValues>();
   const [rejectForm] = Form.useForm<RejectDecisionRequest>();
   const watchedSelectedClusterId = Form.useWatch(
@@ -67,6 +73,14 @@ export function useAdminApprovalsController({
   );
   const watchedSelectedRootVolumeModeKey = Form.useWatch(
     "selected_root_volume_mode_key",
+    approveForm,
+  );
+  const watchedSelectedDVAccessModes = Form.useWatch(
+    "selected_dv_access_modes",
+    approveForm,
+  );
+  const watchedSelectedDVVolumeMode = Form.useWatch(
+    "selected_dv_volume_mode",
     approveForm,
   );
   const watchedStorageClass = Form.useWatch(
@@ -137,6 +151,10 @@ export function useAdminApprovalsController({
       retry: false,
     },
   );
+  const sortedApprovalData = useMemo(
+    () => sortApprovalTaskList(approvalListQuery.data),
+    [approvalListQuery.data],
+  );
 
   const isCreateTicket = approveModal?.operation_type === "CREATE";
   const approvePayload = approveModal?.ticket_payload as
@@ -182,7 +200,7 @@ export function useAdminApprovalsController({
         baseCompatibilityQuery
           ? { params: { query: baseCompatibilityQuery } }
           : undefined,
-    ),
+      ),
     {
       enabled: Boolean(approveModal) && isCreateTicket,
       retry: false,
@@ -203,7 +221,8 @@ export function useAdminApprovalsController({
         params: { path: { cluster_id: selectedClusterId as string } },
       }),
     {
-      enabled: Boolean(approveModal) && isCreateTicket && selectedClusterId !== "",
+      enabled:
+        Boolean(approveModal) && isCreateTicket && selectedClusterId !== "",
       retry: false,
     },
   );
@@ -244,7 +263,12 @@ export function useAdminApprovalsController({
         }
       : undefined;
   const resolvedClusterListQuery = useApiGet<ClusterList>(
-    ["admin-clusters", "approval-select", "resolved", resolvedCompatibilityQuery],
+    [
+      "admin-clusters",
+      "approval-select",
+      "resolved",
+      resolvedCompatibilityQuery,
+    ],
     () =>
       api.GET(
         "/admin/clusters",
@@ -265,7 +289,8 @@ export function useAdminApprovalsController({
     [resolvedClusterListQuery.data?.items, selectedClusterId],
   );
   const selectionSourceCluster = useMemo(
-    () => mergeClusterCompatibility(baseSelectedCluster, resolvedSelectedCluster),
+    () =>
+      mergeClusterCompatibility(baseSelectedCluster, resolvedSelectedCluster),
     [baseSelectedCluster, resolvedSelectedCluster],
   );
   const selectionSourceRootVolumeResolution =
@@ -274,6 +299,8 @@ export function useAdminApprovalsController({
     () => selectionSourceRootVolumeResolution?.mode_options ?? [],
     [selectionSourceRootVolumeResolution?.mode_options],
   );
+  const requiresManualRootVolumeModeInput =
+    selectionSourceRootVolumeResolution?.state === "profile_incomplete";
   const explicitSelectedRootVolumeModeKey = normalizeOptionalString(
     watchedSelectedRootVolumeModeKey,
   );
@@ -286,6 +313,25 @@ export function useAdminApprovalsController({
         rootVolumeModeOptionKey(option) === explicitSelectedRootVolumeModeKey,
     );
   }, [explicitSelectedRootVolumeModeKey, rootVolumeModeOptions]);
+  const manualSelectedRootVolumeMode = useMemo(() => {
+    if (!requiresManualRootVolumeModeInput) {
+      return undefined;
+    }
+
+    const accessModes = normalizeStringArray(watchedSelectedDVAccessModes);
+    const volumeMode = normalizeVolumeMode(watchedSelectedDVVolumeMode);
+    if (accessModes.length === 0 || !volumeMode) {
+      return undefined;
+    }
+    return {
+      access_modes: accessModes,
+      volume_mode: volumeMode,
+    };
+  }, [
+    requiresManualRootVolumeModeInput,
+    watchedSelectedDVAccessModes,
+    watchedSelectedDVVolumeMode,
+  ]);
   const resolvedRootVolumeMode = useMemo(() => {
     const accessModes = normalizeStringArray(
       selectionSourceRootVolumeResolution?.effective_access_modes,
@@ -311,6 +357,7 @@ export function useAdminApprovalsController({
       : undefined;
   const effectiveSelectedRootVolumeMode =
     explicitSelectedRootVolumeMode ||
+    manualSelectedRootVolumeMode ||
     (rootVolumeModeOptions.length === 1
       ? rootVolumeModeOptions[0]
       : implicitResolvedRootVolumeMode);
@@ -324,10 +371,11 @@ export function useAdminApprovalsController({
     effectiveSelectedRootVolumeMode?.volume_mode,
   );
   const canSelectRootVolumeMode = rootVolumeModeOptions.length > 1;
+  const hasCompleteExplicitRootVolumeModeSelection =
+    effectiveSelectedDVAccessModes.length > 0 &&
+    effectiveSelectedDVVolumeMode !== undefined;
   const validationCompatibilityQuery =
-    resolvedCompatibilityQuery &&
-    (effectiveSelectedDVAccessModes.length > 0 ||
-      effectiveSelectedDVVolumeMode !== undefined)
+    resolvedCompatibilityQuery && hasCompleteExplicitRootVolumeModeSelection
       ? {
           ...resolvedCompatibilityQuery,
           ...(effectiveSelectedDVAccessModes.length > 0
@@ -339,7 +387,12 @@ export function useAdminApprovalsController({
         }
       : undefined;
   const validatedClusterListQuery = useApiGet<ClusterList>(
-    ["admin-clusters", "approval-select", "validated", validationCompatibilityQuery],
+    [
+      "admin-clusters",
+      "approval-select",
+      "validated",
+      validationCompatibilityQuery,
+    ],
     () =>
       api.GET(
         "/admin/clusters",
@@ -361,13 +414,210 @@ export function useAdminApprovalsController({
   );
   const clustersData = baseClusterListQuery.data;
   const selectedCluster = useMemo(
-    () => mergeClusterCompatibility(selectionSourceCluster, validatedSelectedCluster),
+    () =>
+      mergeClusterCompatibility(
+        selectionSourceCluster,
+        validatedSelectedCluster,
+      ),
     [selectionSourceCluster, validatedSelectedCluster],
   );
   const selectedRootVolumeResolution =
     selectedCluster?.compatibility?.root_volume_resolution;
 
-  const showApprovalError = (error?: Error | { code?: string; message?: string; params?: Record<string, unknown> }) => {
+  useEffect(() => {
+    if (!approveModal || !isCreateTicket || selectedClusterId === "") {
+      return;
+    }
+    if (!baseSelectedCluster || selectedClusterPolicyQuery.isLoading) {
+      return;
+    }
+
+    const autofillKey = `${approveModal.id}:${selectedClusterId}`;
+    if (rememberedStorageAutofillRef.current === autofillKey) {
+      return;
+    }
+
+    const currentStorageClass = normalizeOptionalString(
+      approveForm.getFieldValue("selected_storage_class"),
+    );
+    if (currentStorageClass !== "") {
+      rememberedStorageAutofillRef.current = autofillKey;
+      return;
+    }
+
+    const remembered = loadRememberedApprovalClusterPlacement(selectedClusterId);
+    const rememberedStorageClass = normalizeOptionalString(
+      remembered?.selectedStorageClass,
+    );
+    if (!rememberedStorageClass) {
+      rememberedStorageAutofillRef.current = autofillKey;
+      return;
+    }
+
+    const matchedStorageClass = selectedClusterStorageClassOptions.find(
+      (option) =>
+        normalizeStorageClassName(option) ===
+        normalizeStorageClassName(rememberedStorageClass),
+    );
+    if (!matchedStorageClass) {
+      rememberedStorageAutofillRef.current = autofillKey;
+      return;
+    }
+
+    approveForm.setFieldsValue({
+      selected_storage_class: matchedStorageClass,
+    });
+    rememberedStorageAutofillRef.current = autofillKey;
+  }, [
+    approveForm,
+    approveModal,
+    baseSelectedCluster,
+    isCreateTicket,
+    selectedClusterId,
+    selectedClusterPolicyQuery.isLoading,
+    selectedClusterStorageClassOptions,
+  ]);
+
+  useEffect(() => {
+    if (
+      !approveModal ||
+      !isCreateTicket ||
+      selectedClusterId === "" ||
+      effectiveSelectedStorageClass === ""
+    ) {
+      return;
+    }
+    if (!selectionSourceRootVolumeResolution && resolvedClusterListQuery.isLoading) {
+      return;
+    }
+
+    const autofillKey = `${approveModal.id}:${selectedClusterId}:${normalizeStorageClassName(
+      effectiveSelectedStorageClass,
+    )}`;
+    if (rememberedRootModeAutofillRef.current === autofillKey) {
+      return;
+    }
+
+    const currentRootModeKey = normalizeOptionalString(
+      approveForm.getFieldValue("selected_root_volume_mode_key"),
+    );
+    const currentAccessModes = normalizeStringArray(
+      approveForm.getFieldValue("selected_dv_access_modes"),
+    );
+    const currentVolumeMode = normalizeVolumeMode(
+      approveForm.getFieldValue("selected_dv_volume_mode"),
+    );
+    if (
+      currentRootModeKey !== "" ||
+      currentAccessModes.length > 0 ||
+      currentVolumeMode !== undefined
+    ) {
+      rememberedRootModeAutofillRef.current = autofillKey;
+      return;
+    }
+
+    const remembered = loadRememberedApprovalClusterPlacement(selectedClusterId);
+    if (
+      normalizeStorageClassName(remembered?.selectedStorageClass ?? "") !==
+      normalizeStorageClassName(effectiveSelectedStorageClass)
+    ) {
+      rememberedRootModeAutofillRef.current = autofillKey;
+      return;
+    }
+
+    const rememberedRootVolumeModeKey = normalizeOptionalString(
+      remembered?.selectedRootVolumeModeKey,
+    );
+    if (canSelectRootVolumeMode && rememberedRootVolumeModeKey) {
+      const matchedRootMode = rootVolumeModeOptions.find(
+        (option) =>
+          rootVolumeModeOptionKey(option) === rememberedRootVolumeModeKey,
+      );
+      if (matchedRootMode) {
+        approveForm.setFieldsValue({
+          selected_root_volume_mode_key: rememberedRootVolumeModeKey,
+          selected_dv_access_modes: matchedRootMode.access_modes,
+          selected_dv_volume_mode: matchedRootMode.volume_mode,
+        });
+      }
+      rememberedRootModeAutofillRef.current = autofillKey;
+      return;
+    }
+
+    if (!requiresManualRootVolumeModeInput) {
+      rememberedRootModeAutofillRef.current = autofillKey;
+      return;
+    }
+
+    const rememberedAccessModes = normalizeStringArray(
+      remembered?.selectedDVAccessModes,
+    );
+    const rememberedVolumeMode = normalizeVolumeMode(
+      remembered?.selectedDVVolumeMode,
+    );
+    if (rememberedAccessModes.length > 0 && rememberedVolumeMode) {
+      approveForm.setFieldsValue({
+        selected_dv_access_modes: rememberedAccessModes,
+        selected_dv_volume_mode: rememberedVolumeMode,
+      });
+    }
+    rememberedRootModeAutofillRef.current = autofillKey;
+  }, [
+    approveForm,
+    approveModal,
+    canSelectRootVolumeMode,
+    effectiveSelectedStorageClass,
+    isCreateTicket,
+    requiresManualRootVolumeModeInput,
+    resolvedClusterListQuery.isLoading,
+    rootVolumeModeOptions,
+    selectedClusterId,
+    selectionSourceRootVolumeResolution,
+  ]);
+
+  useEffect(() => {
+    if (
+      !approveModal ||
+      !isCreateTicket ||
+      selectedClusterId === "" ||
+      effectiveSelectedStorageClass === ""
+    ) {
+      return;
+    }
+
+    saveRememberedApprovalClusterPlacement({
+      clusterId: selectedClusterId,
+      selectedStorageClass: effectiveSelectedStorageClass,
+      selectedRootVolumeModeKey:
+        canSelectRootVolumeMode && effectiveSelectedRootVolumeModeKey !== ""
+          ? effectiveSelectedRootVolumeModeKey
+          : undefined,
+      selectedDVAccessModes:
+        requiresManualRootVolumeModeInput && effectiveSelectedDVAccessModes.length > 0
+          ? effectiveSelectedDVAccessModes
+          : undefined,
+      selectedDVVolumeMode:
+        requiresManualRootVolumeModeInput
+          ? effectiveSelectedDVVolumeMode
+          : undefined,
+    });
+  }, [
+    approveModal,
+    canSelectRootVolumeMode,
+    effectiveSelectedDVAccessModes,
+    effectiveSelectedDVVolumeMode,
+    effectiveSelectedRootVolumeModeKey,
+    effectiveSelectedStorageClass,
+    isCreateTicket,
+    requiresManualRootVolumeModeInput,
+    selectedClusterId,
+  ]);
+
+  const showApprovalError = (
+    error?:
+      | Error
+      | { code?: string; message?: string; params?: Record<string, unknown> },
+  ) => {
     messageApi.error({
       content: translateApiError(t, error),
       duration: APPROVAL_ERROR_MESSAGE_DURATION_SECONDS,
@@ -490,6 +740,8 @@ export function useAdminApprovalsController({
   };
 
   const openApproveModal = (ticket: ApprovalTask) => {
+    rememberedStorageAutofillRef.current = "";
+    rememberedRootModeAutofillRef.current = "";
     setApproveModal(ticket);
     approveForm.resetFields();
     if (ticket.operation_type === "MODIFY") {
@@ -516,6 +768,8 @@ export function useAdminApprovalsController({
   };
 
   const closeApproveModal = () => {
+    rememberedStorageAutofillRef.current = "";
+    rememberedRootModeAutofillRef.current = "";
     setApproveModal(null);
     approveForm.resetFields();
   };
@@ -530,6 +784,8 @@ export function useAdminApprovalsController({
   };
 
   const handleSelectedClusterChange = () => {
+    rememberedStorageAutofillRef.current = "";
+    rememberedRootModeAutofillRef.current = "";
     const currentStorageClass = normalizeOptionalString(
       approveForm.getFieldValue("selected_storage_class"),
     );
@@ -561,6 +817,7 @@ export function useAdminApprovalsController({
   };
 
   const handleSelectedStorageClassChange = () => {
+    rememberedRootModeAutofillRef.current = "";
     const currentModeKey = normalizeOptionalString(
       approveForm.getFieldValue("selected_root_volume_mode_key"),
     );
@@ -659,7 +916,7 @@ export function useAdminApprovalsController({
     pageSize,
     setPage,
     setPageSize,
-    data: approvalListQuery.data,
+    data: sortedApprovalData,
     isLoading: approvalListQuery.isLoading,
     listError: approvalListQuery.error,
     refetch: approvalListQuery.refetch,
@@ -687,6 +944,7 @@ export function useAdminApprovalsController({
     selectedRootVolumeResolution,
     rootVolumeModeOptions,
     canSelectRootVolumeMode,
+    requiresManualRootVolumeModeInput,
     effectiveSelectedRootVolumeMode,
     effectiveSelectedRootVolumeModeKey,
     approveCreateContext,
@@ -801,7 +1059,8 @@ function normalizeApprovalDecisionValues(
       normalizeOptionalString(values.selected_storage_class) ||
       undefined,
     selected_dv_access_modes:
-      values.selected_dv_access_modes && values.selected_dv_access_modes.length > 0
+      values.selected_dv_access_modes &&
+      values.selected_dv_access_modes.length > 0
         ? values.selected_dv_access_modes
         : defaults.selected_dv_access_modes,
     selected_dv_volume_mode:
@@ -837,16 +1096,16 @@ function normalizeOptionalString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function asPayloadRecord(
-  value: unknown,
-): Record<string, unknown> | undefined {
+function asPayloadRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
     : undefined;
 }
 
 function payloadNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function normalizeStorageClassName(value: string): string {
@@ -969,6 +1228,50 @@ function mergeRootVolumeResolution(
   };
 }
 
+function sortApprovalTaskList(
+  data: ApprovalTaskList | undefined,
+): ApprovalTaskList | undefined {
+  if (!data?.items?.length) {
+    return data;
+  }
+
+  return {
+    ...data,
+    items: [...data.items].sort(compareApprovalTasks),
+  };
+}
+
+function compareApprovalTasks(left: ApprovalTask, right: ApprovalTask): number {
+  const pendingDiff =
+    approvalStatusSortRank(left.status) - approvalStatusSortRank(right.status);
+  if (pendingDiff !== 0) {
+    return pendingDiff;
+  }
+
+  const createdAtDiff =
+    approvalCreatedAtSortValue(right.created_at) -
+    approvalCreatedAtSortValue(left.created_at);
+  if (createdAtDiff !== 0) {
+    return createdAtDiff;
+  }
+
+  return (left.id ?? "").localeCompare(right.id ?? "");
+}
+
+function approvalStatusSortRank(
+  status: ApprovalTask["status"] | undefined,
+): number {
+  return status === "PENDING" ? 0 : 1;
+}
+
+function approvalCreatedAtSortValue(createdAt: string | undefined): number {
+  if (!createdAt) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const parsed = Date.parse(createdAt);
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
 function rootVolumeModeOptionKey(
   option:
     | {
@@ -981,16 +1284,22 @@ function rootVolumeModeOptionKey(
     return "";
   }
   const accessModes = Array.isArray(option.access_modes)
-    ? option.access_modes.map((value) => value.trim()).filter(Boolean).sort()
+    ? option.access_modes
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .sort()
     : [];
-  const volumeMode = typeof option.volume_mode === "string" ? option.volume_mode.trim() : "";
+  const volumeMode =
+    typeof option.volume_mode === "string" ? option.volume_mode.trim() : "";
   if (!volumeMode || accessModes.length === 0) {
     return "";
   }
   return `${volumeMode}|${accessModes.join(",")}`;
 }
 
-function normalizeVolumeMode(value: unknown): "Block" | "Filesystem" | undefined {
+function normalizeVolumeMode(
+  value: unknown,
+): "Block" | "Filesystem" | undefined {
   if (typeof value !== "string") {
     return undefined;
   }

@@ -760,6 +760,19 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 		}
 		create = create.SetSpecOverrides(req.SpecOverrides)
 	}
+	if req.SpecOverrides != nil {
+		hints := effectiveInstanceSizeCapabilityHintsFromSpec(
+			req.SpecOverrides,
+			req.RequiresGpu,
+			req.RequiresHugepages,
+			req.HugepagesSize,
+		)
+		create = create.SetRequiresGpu(hints.RequiresGPU)
+		create = create.SetRequiresHugepages(hints.RequiresHugepages)
+		if v := strings.TrimSpace(hints.HugepagesSize); v != "" {
+			create = create.SetHugepagesSize(v)
+		}
+	}
 	if req.SortOrder != nil {
 		create = create.SetSortOrder(*req.SortOrder)
 	}
@@ -924,6 +937,19 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeID generate
 			return
 		}
 		update = update.SetSpecOverrides(*req.SpecOverrides)
+		hints := effectiveInstanceSizeCapabilityHintsFromSpec(
+			*req.SpecOverrides,
+			req.RequiresGpu,
+			req.RequiresHugepages,
+			req.HugepagesSize,
+		)
+		update = update.SetRequiresGpu(hints.RequiresGPU)
+		update = update.SetRequiresHugepages(hints.RequiresHugepages)
+		if v := strings.TrimSpace(hints.HugepagesSize); v == "" {
+			update = update.ClearHugepagesSize()
+		} else {
+			update = update.SetHugepagesSize(v)
+		}
 	}
 	if req.SortOrder != nil {
 		update = update.SetSortOrder(*req.SortOrder)
@@ -2351,8 +2377,14 @@ func validateInstanceSizeCreate(req instanceSizeCreateRequest) error {
 	); err != nil {
 		return fmt.Errorf("%s", err.Error())
 	}
-	requiresHugepages := req.RequiresHugepages != nil && *req.RequiresHugepages
-	hasHugepagesSize := req.HugepagesSize != nil && strings.TrimSpace(*req.HugepagesSize) != ""
+	hints := effectiveInstanceSizeCapabilityHintsFromSpec(
+		req.SpecOverrides,
+		req.RequiresGpu,
+		req.RequiresHugepages,
+		req.HugepagesSize,
+	)
+	requiresHugepages := hints.RequiresHugepages
+	hasHugepagesSize := strings.TrimSpace(hints.HugepagesSize) != ""
 	if requiresHugepages && !hasHugepagesSize {
 		return fmt.Errorf("hugepages_size is required when requires_hugepages is true")
 	}

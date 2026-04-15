@@ -820,6 +820,31 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /vms/{vm_id}/manifest:
+    get:
+      tags: [vms]
+      summary: Get VM live manifest YAML
+      description: |
+        Returns the current live KubeVirt VirtualMachine manifest as YAML.
+        This endpoint is intended for platform-admin debugging and troubleshooting only.
+      operationId: getVMManifest
+      parameters:
+        - $ref: '#/components/parameters/VMID'
+      responses:
+        '200':
+          description: Live VM manifest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VMManifestResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /vms/{vm_id}/request-prefill:
     get:
       tags: [vms]
@@ -3620,6 +3645,21 @@ components:
             validate: "required"
           type: string
         # ⚠️ cluster_id is intentionally ABSENT — see ADR-0017
+    VMManifestResponse:
+      type: object
+      required: [vm_id, name, namespace, cluster_id, yaml]
+      properties:
+        vm_id:
+          type: string
+        name:
+          type: string
+        namespace:
+          type: string
+        cluster_id:
+          type: string
+        yaml:
+          type: string
+          description: Current live KubeVirt VirtualMachine manifest serialized as YAML
     VMRequestPrefill:
       type: object
       required: [system_id, service_id, template_id, instance_size_id, namespace, reason, batch_count]

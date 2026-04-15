@@ -97,6 +97,7 @@ type NamespaceClient interface {
 // NodeClient abstracts cluster-scoped Node reads used for host placement enrichment.
 type NodeClient interface {
 	Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*corev1.Node, error)
+	List(ctx context.Context, opts k8smetav1.ListOptions) (*corev1.NodeList, error)
 }
 
 // PodClient abstracts namespace-scoped Pod reads used for PVC clone preflight checks.

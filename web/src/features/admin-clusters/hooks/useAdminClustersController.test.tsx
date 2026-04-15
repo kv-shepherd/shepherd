@@ -141,7 +141,7 @@ describe("useAdminClustersController", () => {
         allow_gpu: false,
         allow_sriov: true,
         allow_hugepages: false,
-        allowed_hugepages_sizes: ["2Mi"],
+        allowed_hugepages_sizes: ["2mi", "1gi"],
         allow_cdi_clone: true,
         allowed_clone_source_namespaces: ["golden-images"],
         allowed_storage_classes: ["rook-ceph-block"],
@@ -173,6 +173,7 @@ describe("useAdminClustersController", () => {
       expect.objectContaining({
         allow_cpu_overcommit: false,
         allow_gpu: false,
+        allowed_hugepages_sizes: ["2Mi", "1Gi"],
         allowed_storage_classes: ["rook-ceph-block"],
       }),
     );
@@ -225,7 +226,7 @@ describe("useAdminClustersController", () => {
       allow_gpu: false,
       allow_sriov: true,
       allow_hugepages: true,
-      allowed_hugepages_sizes: ["2Mi"],
+      allowed_hugepages_sizes: ["2mi", "512"],
       allow_cdi_clone: true,
       allowed_clone_source_namespaces: ["golden-images"],
       allowed_storage_classes: ["rook-ceph-block"],
@@ -252,7 +253,7 @@ describe("useAdminClustersController", () => {
           allow_gpu: false,
           allow_sriov: true,
           allow_hugepages: true,
-          allowed_hugepages_sizes: ["2Mi"],
+          allowed_hugepages_sizes: ["2Mi", "512Mi"],
           allow_cdi_clone: true,
           allowed_clone_source_namespaces: ["golden-images"],
           allowed_storage_classes: ["rook-ceph-block"],
@@ -340,19 +341,16 @@ describe("useAdminClustersController", () => {
       await result.current.submitEdit();
     });
 
-    expect(apiPatchMock).toHaveBeenCalledWith(
-      "/admin/clusters/{cluster_id}",
-      {
-        params: { path: { cluster_id: "cl-1" } },
-        body: expect.objectContaining({
-          display_name: "Cluster A",
-          environment: "prod",
-          enabled: true,
-          kubeconfig:
-            "YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCmNsdXN0ZXJzOgotIG5hbWU6IGMxCiAgY2x1c3RlcjoKICAgIHNlcnZlcjogaHR0cHM6Ly9jbHVzdGVyLmV4YW1wbGUuY29t",
-        }),
-      },
-    );
+    expect(apiPatchMock).toHaveBeenCalledWith("/admin/clusters/{cluster_id}", {
+      params: { path: { cluster_id: "cl-1" } },
+      body: expect.objectContaining({
+        display_name: "Cluster A",
+        environment: "prod",
+        enabled: true,
+        kubeconfig:
+          "YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCmNsdXN0ZXJzOgotIG5hbWU6IGMxCiAgY2x1c3RlcjoKICAgIHNlcnZlcjogaHR0cHM6Ly9jbHVzdGVyLmV4YW1wbGUuY29t",
+      }),
+    });
   });
 
   it("hydrates the edit form from the selected cluster after opening the modal", async () => {
@@ -371,6 +369,13 @@ describe("useAdminClustersController", () => {
     expect(result.current.editingCluster?.name).toBe("cluster-b");
     expect(result.current.editingClusterName).toBe("Cluster B");
     expect(result.current.editOpen).toBe(true);
+    expect(editFormState.resetFields).toHaveBeenCalled();
+    expect(editFormState.setFieldsValue).toHaveBeenCalledWith({
+      display_name: "Cluster B",
+      environment: "prod",
+      enabled: false,
+      kubeconfig_text: "",
+    });
   });
 
   it("deletes clusters via DELETE action", async () => {
@@ -384,11 +389,8 @@ describe("useAdminClustersController", () => {
       await result.current.deleteCluster("cl-9");
     });
 
-    expect(apiDeleteMock).toHaveBeenCalledWith(
-      "/admin/clusters/{cluster_id}",
-      {
-        params: { path: { cluster_id: "cl-9" } },
-      },
-    );
+    expect(apiDeleteMock).toHaveBeenCalledWith("/admin/clusters/{cluster_id}", {
+      params: { path: { cluster_id: "cl-9" } },
+    });
   });
 });

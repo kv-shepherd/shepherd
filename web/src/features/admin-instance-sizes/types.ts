@@ -1,5 +1,11 @@
 import type { components } from '@/types/api.gen';
 
+import {
+    CANONICAL_DEDICATED_CPU_PATH,
+    getSpecOverrideValue,
+    normalizeInstanceSizeSpecOverrides,
+} from './specOverrides';
+
 export type InstanceSize = components['schemas']['InstanceSize'];
 export type InstanceSizeList = components['schemas']['InstanceSizeList'];
 export type InstanceSizeCreateRequest = components['schemas']['InstanceSizeCreateRequest'];
@@ -24,22 +30,14 @@ export function formatCores(cores: number): string {
     return Number.isInteger(cores) ? `${cores}` : cores.toFixed(1);
 }
 
-function getSpecOverrideValue(spec: Record<string, unknown> | undefined, path: string): unknown {
-    if (!spec || !path) {
-        return undefined;
+export function hasDedicatedCPURequirement(record: Pick<InstanceSize, 'dedicated_cpu' | 'spec_overrides'>): boolean {
+    if (record.dedicated_cpu === true) {
+        return true;
     }
-    if (path in spec) {
-        return spec[path];
-    }
-    const segments = path.split('.');
-    let current: unknown = spec;
-    for (const segment of segments) {
-        if (!current || typeof current !== 'object' || Array.isArray(current)) {
-            return undefined;
-        }
-        current = (current as Record<string, unknown>)[segment];
-    }
-    return current;
+    const normalizedSpecOverrides = normalizeInstanceSizeSpecOverrides(
+        record.spec_overrides as Record<string, unknown> | undefined,
+    );
+    return getSpecOverrideValue(normalizedSpecOverrides, CANONICAL_DEDICATED_CPU_PATH) === true;
 }
 
 export function hasCPUOvercommit(record: InstanceSize): boolean {
@@ -51,8 +49,11 @@ export function hasMemoryOvercommit(record: InstanceSize): boolean {
 }
 
 export function getGPUDeviceLabels(record: InstanceSize): string[] {
-    const raw = getSpecOverrideValue(
+    const normalizedSpecOverrides = normalizeInstanceSizeSpecOverrides(
         record.spec_overrides as Record<string, unknown> | undefined,
+    );
+    const raw = getSpecOverrideValue(
+        normalizedSpecOverrides,
         'spec.template.spec.domain.devices.gpus'
     );
     if (!Array.isArray(raw)) {
@@ -84,6 +85,6 @@ export function getCapabilityLabels(record: InstanceSize): string[] {
     }
     if (record.requires_sriov) labels.push('SR-IOV');
     if (record.requires_hugepages) labels.push('Hugepages');
-    if (record.dedicated_cpu) labels.push('Dedicated CPU');
+    if (hasDedicatedCPURequirement(record)) labels.push('Dedicated CPU');
     return labels;
 }

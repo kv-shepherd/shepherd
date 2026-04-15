@@ -321,6 +321,10 @@ func (c *kubevirtNodeClient) Get(ctx context.Context, name string, opts k8smetav
 	return c.client.CoreV1().Nodes().Get(ctx, name, opts)
 }
 
+func (c *kubevirtNodeClient) List(ctx context.Context, opts k8smetav1.ListOptions) (*corev1.NodeList, error) {
+	return c.client.CoreV1().Nodes().List(ctx, opts)
+}
+
 type kubevirtPodClient struct {
 	client kubecli.KubevirtClient
 }

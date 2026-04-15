@@ -116,8 +116,6 @@ describe('useAdminInstanceSizesController', () => {
       cpu_cores: 4,
       memory_gi: 8,
       enabled: true,
-      // requires_gpu / requires_hugepages removed from formToPayload (ADR-0023 Stage 1).
-      // Those fields are now part of spec_overrides (KubeVirt spec), not top-level metadata.
       spec_overrides: {
         spec: {
           template: {
@@ -133,6 +131,35 @@ describe('useAdminInstanceSizesController', () => {
           },
         },
       },
+    }));
+  });
+
+  it('derives hugepages indexed fields from spec_text for API compatibility', async () => {
+    const createMutate = vi.fn();
+
+    useApiMutationMock
+      .mockReturnValueOnce({ mutate: createMutate, isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    createFormState.validateFields.mockResolvedValue({
+      name: 'm4.hugepages',
+      catalog_scope: 'prod',
+      cpu_cores: 4,
+      memory_gi: 8,
+      enabled: true,
+      spec_text: '{"spec":{"template":{"spec":{"domain":{"memory":{"hugepages":{"pageSize":"2Mi"}}}}}}}',
+    });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    await act(async () => {
+      await result.current.submitCreate();
+    });
+
+    expect(createMutate).toHaveBeenCalledWith(expect.objectContaining({
+      requires_hugepages: true,
+      hugepages_size: '2Mi',
     }));
   });
 
@@ -345,11 +372,13 @@ describe('useAdminInstanceSizesController', () => {
       });
     });
 
+    expect(editFormState.resetFields).not.toHaveBeenCalled();
+    expect(editFormState.setFieldsValue).not.toHaveBeenCalled();
     expect(result.current.editInitialValues).toEqual(expect.objectContaining({
       name: 'm8.large',
       display_name: 'M8 Large',
       catalog_scope: 'all',
-      cpu_overcommit_enabled: true,
+      cpu_overcommit_enabled: false,
       memory_overcommit_enabled: true,
       dedicated_cpu: true,
       sort_order: 30,
@@ -357,6 +386,221 @@ describe('useAdminInstanceSizesController', () => {
       memory_request_gi: 12,
       spec_text: '{}',
     }));
+  });
+
+  it('hydrates legacy hugepages metadata back into spec_text for edit modals', async () => {
+    useApiMutationMock
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'size-hugepages',
+        name: 'm4.hugepages',
+        catalog_scope: 'prod',
+        cpu_cores: 4,
+        memory_gi: 8,
+        requires_hugepages: true,
+        hugepages_size: '2Mi',
+        enabled: true,
+        spec_overrides: {},
+      });
+    });
+
+    expect(result.current.editInitialValues?.spec_text).toBe(
+      JSON.stringify({
+        spec: {
+          template: {
+            spec: {
+              domain: {
+                memory: {
+                  hugepages: {
+                    pageSize: '2Mi',
+                  },
+                },
+              },
+            },
+          },
+        },
+      }, null, 2),
+    );
+  });
+
+  it('hydrates dedicated cpu from spec_overrides even when the indexed flag is stale', async () => {
+    useApiMutationMock
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'size-dedicated',
+        name: 'm4.dedicated',
+        catalog_scope: 'prod',
+        cpu_cores: 4,
+        memory_gi: 8,
+        dedicated_cpu: false,
+        cpu_request: 4,
+        enabled: true,
+        spec_overrides: {
+          spec: {
+            template: {
+              spec: {
+                domain: {
+                  cpu: {
+                    dedicatedCpuPlacement: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    expect(result.current.editInitialValues).toEqual(expect.objectContaining({
+      dedicated_cpu: true,
+      cpu_overcommit_enabled: false,
+      spec_text: JSON.stringify({
+        spec: {
+          template: {
+            spec: {
+              domain: {
+                cpu: {
+                  dedicatedCpuPlacement: true,
+                },
+              },
+            },
+          },
+        },
+      }, null, 2),
+    }));
+  });
+
+  it('hydrates dedicated cpu from legacy spec.domain cpu overrides', async () => {
+    useApiMutationMock
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'size-dedicated-legacy',
+        name: 'm4.dedicated.legacy',
+        catalog_scope: 'prod',
+        cpu_cores: 4,
+        memory_gi: 8,
+        dedicated_cpu: false,
+        cpu_request: 4,
+        enabled: true,
+        spec_overrides: {
+          spec: {
+            domain: {
+              cpu: {
+                dedicatedCpuPlacement: true,
+              },
+            },
+          },
+        },
+      });
+    });
+
+    expect(result.current.editInitialValues).toEqual(expect.objectContaining({
+      dedicated_cpu: true,
+      cpu_overcommit_enabled: false,
+      spec_text: JSON.stringify({
+        spec: {
+          template: {
+            spec: {
+              domain: {
+                cpu: {
+                  dedicatedCpuPlacement: true,
+                },
+              },
+            },
+          },
+        },
+      }, null, 2),
+    }));
+  });
+
+  it('normalizes legacy spec.domain cpu overrides before submitting update payloads', async () => {
+    const createMutate = vi.fn();
+    const updateMutate = vi.fn();
+
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      if (mutationCall % 2 === 1) {
+        return { mutate: createMutate, isPending: false };
+      }
+      return { mutate: updateMutate, isPending: false };
+    });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    editFormState.validateFields.mockResolvedValue({
+      name: 'm4.dedicated.legacy',
+      catalog_scope: 'prod',
+      cpu_cores: 4,
+      memory_gi: 8,
+      dedicated_cpu: true,
+      enabled: true,
+      spec_text: JSON.stringify({
+        spec: {
+          domain: {
+            cpu: {
+              dedicatedCpuPlacement: true,
+            },
+          },
+        },
+      }),
+    });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'size-dedicated-legacy',
+        name: 'm4.dedicated.legacy',
+        catalog_scope: 'prod',
+        cpu_cores: 4,
+        memory_gi: 8,
+        dedicated_cpu: true,
+        enabled: true,
+        spec_overrides: {},
+      });
+    });
+
+    await act(async () => {
+      await result.current.submitEdit();
+    });
+
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 'size-dedicated-legacy',
+      body: expect.objectContaining({
+        dedicated_cpu: true,
+        spec_overrides: {
+          spec: {
+            template: {
+              spec: {
+                domain: {
+                  cpu: {
+                    dedicatedCpuPlacement: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    });
   });
 
   it('hydrates fractional cpu overcommit values for edit modals', async () => {

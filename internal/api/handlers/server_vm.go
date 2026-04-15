@@ -1044,6 +1044,52 @@ func (s *Server) GetVM(c *gin.Context, vmID generated.VMID) {
 	c.JSON(http.StatusOK, vmToAPI(vm, clusterEnv, clusterName, liveVMByID[vm.ID], vmSnapshotInfoByTicketID[vm.TicketID], s.loadVMProvisioning(ctx, vm)))
 }
 
+func (s *Server) GetVMManifest(c *gin.Context, vmID generated.VMID) {
+	ctx := c.Request.Context()
+	if !requireGlobalPermission(c, "platform:admin") {
+		return
+	}
+
+	vm, err := s.client.VM.Query().
+		Where(entvm.IDEQ(vmID)).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
+			return
+		}
+		logger.Error("failed to get VM for manifest", zap.Error(err), zap.String("vm_id", vmID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if s.vmService == nil {
+		c.JSON(http.StatusServiceUnavailable, generated.Error{
+			Code:    "MANIFEST_UNAVAILABLE",
+			Message: "vm manifest service is unavailable",
+		})
+		return
+	}
+
+	manifestYAML, err := s.vmService.GetVMManifestYAML(ctx, vm.ClusterID, vm.Namespace, vm.Name)
+	if err != nil {
+		logger.Error("failed to fetch VM manifest yaml", zap.Error(err), zap.String("vm_id", vmID), zap.String("cluster_id", vm.ClusterID))
+		c.JSON(http.StatusBadGateway, generated.Error{
+			Code:    "MANIFEST_UNAVAILABLE",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, generated.VMManifestResponse{
+		VmId:      vm.ID,
+		Name:      vm.Name,
+		Namespace: vm.Namespace,
+		ClusterId: vm.ClusterID,
+		Yaml:      manifestYAML,
+	})
+}
+
 func firstNonEmptyString(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {

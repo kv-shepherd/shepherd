@@ -33,6 +33,7 @@ import {
 import type { DescriptionsProps } from "antd";
 import {
   ArrowLeftOutlined,
+  FileTextOutlined,
   CopyOutlined,
   DeleteOutlined,
   DesktopOutlined,
@@ -53,6 +54,7 @@ import { useApiMutation } from "@/lib/api/useApiMutation";
 import { api } from "@/lib/api/client";
 import { translateApiError } from "@/lib/api/errorMessage";
 import { isCodespacesDemoHost } from "@/lib/auth/demoEnvironment";
+import { hasPermission, PLATFORM_ADMIN_PERMISSION } from "@/lib/auth/permissions";
 import { useMessage } from "@/lib/hooks/useMessage";
 import {
   hasAnyConsoleCapability,
@@ -76,6 +78,7 @@ import type {
 } from "@/features/vm-management/types";
 import { formatMemory, VM_STATUS_MAP } from "@/features/vm-management/types";
 import { PageHeader, PageSurface } from "@/components/layouts/PageSection";
+import { useAuthStore } from "@/stores/auth";
 
 const { Text, Paragraph } = Typography;
 
@@ -99,6 +102,7 @@ export default function VMDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const vmId = params.id;
+  const user = useAuthStore((state) => state.user);
   const { messageApi, messageContextHolder } = useMessage();
   const isCodespacesDemo =
     typeof window !== "undefined" && isCodespacesDemoHost(window.location.hostname);
@@ -110,6 +114,7 @@ export default function VMDetailPage() {
     useState<VMConsoleType>("SERIAL");
   const [activeConsoleTarget, setActiveConsoleTarget] =
     useState<ResolvedConsoleTarget | null>(null);
+  const [manifestViewerOpen, setManifestViewerOpen] = useState(false);
   const consoleSectionRef = useRef<HTMLDivElement | null>(null);
 
   const {
@@ -205,6 +210,7 @@ export default function VMDetailPage() {
     "—";
   const consoleCapabilities = vmData?.console_capabilities;
   const consoleAvailable = hasAnyConsoleCapability(vmData);
+  const canViewManifest = hasPermission(user, PLATFORM_ADMIN_PERMISSION);
   const operatingSystemLabel = formatVMOperatingSystem(vmData);
   const remoteAccessMode = resolveVMRemoteAccessMode(vmData);
   const remoteAccessCommand = buildVMRemoteAccessCommand(vmData);
@@ -224,6 +230,17 @@ export default function VMDetailPage() {
       refetchInterval: activeConsoleTarget ? undefined : 15_000,
     },
   );
+  const manifestQuery = useApiGet<components["schemas"]["VMManifestResponse"]>(
+    ["vm-manifest", vmId],
+    () =>
+      api.GET("/vms/{vm_id}/manifest", {
+        params: { path: { vm_id: vmId } },
+      }),
+    {
+      enabled: canViewManifest && manifestViewerOpen && Boolean(vmId),
+    },
+  );
+  const manifestYaml = manifestQuery.data?.yaml ?? "";
   const openConsoleChooser = () => {
     setSelectedConsoleType(
       resolveDefaultConsoleType(
@@ -281,6 +298,17 @@ export default function VMDetailPage() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [searchParams]);
+  const copyManifestYaml = async () => {
+    if (!manifestYaml || typeof navigator === "undefined" || !navigator.clipboard) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(manifestYaml);
+      void messageApi.success(t("manifest.copy_success"));
+    } catch (error) {
+      void messageApi.error(translateApiError(t, error as Error));
+    }
+  };
   const detailItems: DescriptionsProps["items"] = [
     {
       key: "name",
@@ -630,6 +658,15 @@ export default function VMDetailPage() {
           >
             {activeConsoleTarget ? t("action.switch_console") : t("action.console")}
           </Button>
+          {canViewManifest ? (
+            <Button
+              icon={<FileTextOutlined />}
+              data-testid={`vm-action-manifest-${vmId}`}
+              onClick={() => setManifestViewerOpen(true)}
+            >
+              {t("action.view_manifest")}
+            </Button>
+          ) : null}
           <Button
             icon={<CopyOutlined />}
             data-testid={`vm-action-request-similar-${vmId}`}
@@ -694,6 +731,58 @@ export default function VMDetailPage() {
         onChange={setSelectedConsoleType}
         onConfirm={() => void confirmConsoleChooser()}
       />
+      <Modal
+        title={t("manifest.title")}
+        open={manifestViewerOpen}
+        onCancel={() => setManifestViewerOpen(false)}
+        destroyOnHidden={true}
+        width={960}
+        footer={[
+          <Button
+            key="copy"
+            icon={<CopyOutlined />}
+            onClick={() => void copyManifestYaml()}
+            disabled={!manifestYaml}
+          >
+            {t("manifest.copy")}
+          </Button>,
+          <Button
+            key="close"
+            type="primary"
+            onClick={() => setManifestViewerOpen(false)}
+          >
+            {t("common:button.close")}
+          </Button>,
+        ]}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Text type="secondary">{t("manifest.description")}</Text>
+          {manifestQuery.error ? (
+            <Alert
+              type="error"
+              showIcon={true}
+              message={t("manifest.unavailable")}
+              description={translateApiError(t, manifestQuery.error)}
+            />
+          ) : null}
+          <Input.TextArea
+            data-testid="vm-manifest-content"
+            value={
+              manifestQuery.isLoading || manifestQuery.isFetching
+                ? t("manifest.loading")
+                : manifestYaml
+            }
+            readOnly={true}
+            spellCheck={false}
+            autoSize={{ minRows: 20, maxRows: 28 }}
+            placeholder={t("manifest.empty")}
+            style={{
+              fontFamily:
+                'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
+            }}
+          />
+        </Space>
+      </Modal>
       {deleteOpen ? (
         <Modal
           title={

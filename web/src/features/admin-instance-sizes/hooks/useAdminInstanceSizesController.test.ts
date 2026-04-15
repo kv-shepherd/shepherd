@@ -56,11 +56,35 @@ describe('useAdminInstanceSizesController helpers', () => {
             cpu_request: undefined,
             memory_request_gi: undefined,
         });
+        const hugepagesSize = buildInstanceSize({
+            id: 'size-hugepages',
+            name: 'memory-hp',
+            requires_gpu: false,
+            requires_hugepages: false,
+            spec_overrides: {
+                spec: {
+                    template: {
+                        spec: {
+                            domain: {
+                                memory: {
+                                    hugepages: {
+                                        pageSize: '2Mi',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            cpu_request: undefined,
+            memory_request_gi: undefined,
+        });
 
         expect(matchesInstanceSizeCapabilityFilter(gpuSize, 'gpu')).toBe(true);
         expect(matchesInstanceSizeCapabilityFilter(gpuSize, 'cpu_overcommit')).toBe(true);
         expect(matchesInstanceSizeCapabilityFilter(sriovSize, 'gpu')).toBe(false);
         expect(matchesInstanceSizeCapabilityFilter(sriovSize, 'sriov')).toBe(true);
+        expect(matchesInstanceSizeCapabilityFilter(hugepagesSize, 'hugepages')).toBe(true);
     });
 
     it('filters with quick search by id while keeping advanced filters name-first', () => {

@@ -224,6 +224,187 @@ func TestVMConsole_Request_ProductionRejectsDuplicatePendingRequest(t *testing.T
 	assertErrorCode(t, w.Body.Bytes(), "DUPLICATE_PENDING_VNC_REQUEST")
 }
 
+func TestVMConsole_Request_ProductionReusesApprovedTicket(t *testing.T) {
+	t.Parallel()
+
+	srv, client, mock := newVMConsoleBehaviorTestServer(t)
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
+	seedVMConsoleTargetInMock(mock, vm)
+
+	eventID := uuid.Must(uuid.NewV7()).String()
+	ticketID := uuid.Must(uuid.NewV7()).String()
+	payload, err := json.Marshal(vncRequestPayload{
+		VMID:                 vm.ID,
+		ClusterID:            vm.ClusterID,
+		Namespace:            vm.Namespace,
+		RequesterID:          "actor-1",
+		PreferredConsoleType: "SERIAL",
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	_, createEventErr := client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVNCAccessRequested)).
+		SetAggregateType("vm").
+		SetAggregateID(vm.ID).
+		SetPayload(payload).
+		SetStatus(domainevent.StatusCOMPLETED).
+		SetCreatedBy("actor-1").
+		Save(t.Context())
+	if createEventErr != nil {
+		t.Fatalf("create approved event payload: %v", createEventErr)
+	}
+	_, createTicketErr := client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetOperationType(entticket.OperationTypeVNC_ACCESS).
+		SetStatus(entticket.StatusAPPROVED).
+		SetRequester("actor-1").
+		SetApprover("admin-1").
+		Save(t.Context())
+	if createTicketErr != nil {
+		t.Fatalf("create approved ticket: %v", createTicketErr)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		fmt.Sprintf("/vms/%s/console/request", vm.ID),
+		`{"preferred_console_type":"VNC"}`,
+		"actor-1",
+		[]string{"vnc:access"},
+	)
+	srv.RequestVMConsoleAccess(c, vm.ID)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	resp := decodeJSONMap(t, w.Body.Bytes())
+	if got := toStringValue(resp["status"]); got != "APPROVED" {
+		t.Fatalf("status = %q, want %q", got, "APPROVED")
+	}
+	if got := toStringValue(resp["ticket_id"]); got != ticketID {
+		t.Fatalf("ticket_id = %q, want %q", got, ticketID)
+	}
+	if got := toStringValue(resp["console_type"]); got != "VNC" {
+		t.Fatalf("console_type = %q, want %q", got, "VNC")
+	}
+	if got := toStringValue(resp["console_url"]); got != "/api/v1/vms/"+vm.ID+"/vnc" {
+		t.Fatalf("console_url = %q, want %q", got, "/api/v1/vms/"+vm.ID+"/vnc")
+	}
+
+	count, err := client.Ticket.Query().Count(t.Context())
+	if err != nil {
+		t.Fatalf("count tickets: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("ticket count = %d, want 1", count)
+	}
+}
+
+func TestVMConsole_Request_ProductionReusesLatestApprovedTicketEvenIfNewerRequestRejected(t *testing.T) {
+	t.Parallel()
+
+	srv, client, mock := newVMConsoleBehaviorTestServer(t)
+	vm := mustCreateVMConsoleTarget(t, client, namespaceregistry.EnvironmentProd, entvm.StatusRUNNING)
+	seedVMConsoleTargetInMock(mock, vm)
+
+	approvedEventID := uuid.Must(uuid.NewV7()).String()
+	approvedTicketID := uuid.Must(uuid.NewV7()).String()
+	approvedPayload, err := json.Marshal(vncRequestPayload{
+		VMID:                 vm.ID,
+		ClusterID:            vm.ClusterID,
+		Namespace:            vm.Namespace,
+		RequesterID:          "actor-1",
+		PreferredConsoleType: "SERIAL",
+	})
+	if err != nil {
+		t.Fatalf("marshal approved payload: %v", err)
+	}
+	_, createApprovedEventErr := client.DomainEvent.Create().
+		SetID(approvedEventID).
+		SetEventType(string(domain.EventVNCAccessRequested)).
+		SetAggregateType("vm").
+		SetAggregateID(vm.ID).
+		SetPayload(approvedPayload).
+		SetStatus(domainevent.StatusCOMPLETED).
+		SetCreatedBy("actor-1").
+		Save(t.Context())
+	if createApprovedEventErr != nil {
+		t.Fatalf("create approved event payload: %v", createApprovedEventErr)
+	}
+	_, createApprovedTicketErr := client.Ticket.Create().
+		SetID(approvedTicketID).
+		SetEventID(approvedEventID).
+		SetOperationType(entticket.OperationTypeVNC_ACCESS).
+		SetStatus(entticket.StatusAPPROVED).
+		SetRequester("actor-1").
+		SetApprover("admin-1").
+		Save(t.Context())
+	if createApprovedTicketErr != nil {
+		t.Fatalf("create approved ticket: %v", createApprovedTicketErr)
+	}
+
+	rejectedEventID := uuid.Must(uuid.NewV7()).String()
+	rejectedTicketID := uuid.Must(uuid.NewV7()).String()
+	rejectedPayload, err := json.Marshal(vncRequestPayload{
+		VMID:                 vm.ID,
+		ClusterID:            vm.ClusterID,
+		Namespace:            vm.Namespace,
+		RequesterID:          "actor-1",
+		PreferredConsoleType: "VNC",
+	})
+	if err != nil {
+		t.Fatalf("marshal rejected payload: %v", err)
+	}
+	if _, err := client.DomainEvent.Create().
+		SetID(rejectedEventID).
+		SetEventType(string(domain.EventVNCAccessRequested)).
+		SetAggregateType("vm").
+		SetAggregateID(vm.ID).
+		SetPayload(rejectedPayload).
+		SetStatus(domainevent.StatusCOMPLETED).
+		SetCreatedBy("actor-1").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create rejected event payload: %v", err)
+	}
+	if _, err := client.Ticket.Create().
+		SetID(rejectedTicketID).
+		SetEventID(rejectedEventID).
+		SetOperationType(entticket.OperationTypeVNC_ACCESS).
+		SetStatus(entticket.StatusREJECTED).
+		SetRequester("actor-1").
+		SetApprover("admin-2").
+		SetRejectReason("policy denies temporary vnc").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create rejected ticket: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		fmt.Sprintf("/vms/%s/console/request", vm.ID),
+		`{"preferred_console_type":"VNC"}`,
+		"actor-1",
+		[]string{"vnc:access"},
+	)
+	srv.RequestVMConsoleAccess(c, vm.ID)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	resp := decodeJSONMap(t, w.Body.Bytes())
+	if got := toStringValue(resp["status"]); got != "APPROVED" {
+		t.Fatalf("status = %q, want %q", got, "APPROVED")
+	}
+	if got := toStringValue(resp["ticket_id"]); got != approvedTicketID {
+		t.Fatalf("ticket_id = %q, want %q", got, approvedTicketID)
+	}
+}
+
 func TestVMConsole_Request_RejectsNonRunningVM(t *testing.T) {
 	t.Parallel()
 

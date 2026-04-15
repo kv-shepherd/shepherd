@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { TFunction } from "i18next";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -88,6 +88,7 @@ vi.mock("@/lib/api/client", () => ({
 }));
 
 import { useAdminApprovalsController } from "./useAdminApprovalsController";
+import { saveRememberedApprovalClusterPlacement } from "../approvalPlacementMemory";
 
 function findAdminClustersQueryFn(stage: "base" | "resolved" | "validated") {
   const call = [...useApiGetMock.mock.calls]
@@ -106,6 +107,7 @@ describe("useAdminApprovalsController", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     let formCall = 0;
     useFormMock.mockImplementation(() => {
       formCall += 1;
@@ -273,7 +275,10 @@ describe("useAdminApprovalsController", () => {
 
     const approvalsCall = [...useApiGetMock.mock.calls]
       .reverse()
-      .find((call) => Array.isArray(call[0]) && call[0][0] === "builtin-approval-tasks");
+      .find(
+        (call) =>
+          Array.isArray(call[0]) && call[0][0] === "builtin-approval-tasks",
+      );
     const approvalsQueryFn = approvalsCall?.[1];
     expect(approvalsQueryFn).toBeTypeOf("function");
 
@@ -510,6 +515,328 @@ describe("useAdminApprovalsController", () => {
           memory_limit_gi: 4,
         },
       },
+    });
+  });
+
+  it("includes manually entered root volume mode in compatibility queries when StorageProfile is incomplete", async () => {
+    watchedValues.selected_root_volume_mode_key = undefined;
+    watchedValues.selected_storage_class = "block-sc";
+    watchedValues.selected_dv_access_modes = ["ReadWriteOnce"];
+    watchedValues.selected_dv_volume_mode = "Filesystem";
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
+      if (key === "builtin-approval-tasks") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (key === "admin-clusters") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["block-sc"],
+                default_storage_class: "block-sc",
+                compatibility: {
+                  eligible: false,
+                  root_volume_resolution: {
+                    state: "profile_incomplete",
+                    message:
+                      'storage class "block-sc" does not expose claimPropertySets in StorageProfile',
+                  },
+                },
+              },
+            ],
+          },
+          isLoading: false,
+        };
+      }
+      if (key === "admin-cluster-policy") {
+        return {
+          data: {
+            id: "policy-1",
+            cluster_id: "cluster-a",
+            allow_cdi_clone: true,
+            allowed_storage_classes: ["block-sc"],
+          },
+          isLoading: false,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+      };
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openApproveModal({
+        id: "ticket-1",
+        operation_type: "CREATE",
+        status: "PENDING",
+        requester: "alice",
+        ticket_payload: {
+          namespace: "prod-a",
+          template_id: "tpl-1",
+          instance_size_id: "sz-1",
+        },
+      } as never);
+    });
+
+    const clusterQueryFn = findAdminClustersQueryFn("validated");
+    expect(clusterQueryFn).toBeTypeOf("function");
+
+    await act(async () => {
+      await clusterQueryFn();
+    });
+
+    expect(apiGetMock).toHaveBeenCalledWith("/admin/clusters", {
+      params: {
+        query: {
+          include_incompatible: true,
+          namespace: "prod-a",
+          template_id: "tpl-1",
+          instance_size_id: "sz-1",
+          selected_storage_class: "block-sc",
+          selected_dv_access_modes: ["ReadWriteOnce"],
+          selected_dv_volume_mode: "Filesystem",
+          cpu_request: 1,
+          cpu_limit: 2,
+          memory_request_gi: 2,
+          memory_limit_gi: 4,
+        },
+      },
+    });
+  });
+
+  it("auto-fills the remembered storage class when it is still available", async () => {
+    watchedValues.selected_storage_class = undefined;
+    approveFormState.resetFields.mockImplementation(() => {
+      watchedValues.selected_cluster_id = "cluster-a";
+      watchedValues.selected_storage_class = undefined;
+      watchedValues.selected_root_volume_mode_key = undefined;
+      watchedValues.selected_dv_access_modes = undefined;
+      watchedValues.selected_dv_volume_mode = undefined;
+    });
+
+    saveRememberedApprovalClusterPlacement({
+      clusterId: "cluster-a",
+      selectedStorageClass: "gold-sc",
+    });
+
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
+      if (key === "builtin-approval-tasks") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (key === "admin-clusters") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["rook-ceph", "gold-sc"],
+                default_storage_class: "rook-ceph",
+                compatibility: {
+                  eligible: true,
+                },
+              },
+            ],
+          },
+          isLoading: false,
+          error: undefined,
+        };
+      }
+      if (key === "admin-cluster-policy") {
+        return {
+          data: {
+            id: "policy-1",
+            cluster_id: "cluster-a",
+            allow_cdi_clone: true,
+            allowed_storage_classes: ["rook-ceph", "gold-sc"],
+          },
+          isLoading: false,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+        error: undefined,
+      };
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openApproveModal({
+        id: "ticket-1",
+        operation_type: "CREATE",
+        status: "PENDING",
+        requester: "alice",
+        ticket_payload: {
+          namespace: "prod-a",
+          template_id: "tpl-1",
+          instance_size_id: "sz-1",
+        },
+      } as never);
+    });
+
+    await waitFor(() => {
+      expect(approveFormState.setFieldsValue).toHaveBeenCalledWith({
+        selected_storage_class: "gold-sc",
+      });
+    });
+    expect(watchedValues.selected_storage_class).toBe("gold-sc");
+  });
+
+  it("skips remembered storage classes that are no longer available", async () => {
+    watchedValues.selected_storage_class = undefined;
+    approveFormState.resetFields.mockImplementation(() => {
+      watchedValues.selected_cluster_id = "cluster-a";
+      watchedValues.selected_storage_class = undefined;
+      watchedValues.selected_root_volume_mode_key = undefined;
+      watchedValues.selected_dv_access_modes = undefined;
+      watchedValues.selected_dv_volume_mode = undefined;
+    });
+
+    saveRememberedApprovalClusterPlacement({
+      clusterId: "cluster-a",
+      selectedStorageClass: "gold-sc",
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openApproveModal({
+        id: "ticket-1",
+        operation_type: "CREATE",
+        status: "PENDING",
+        requester: "alice",
+        ticket_payload: {
+          namespace: "prod-a",
+          template_id: "tpl-1",
+          instance_size_id: "sz-1",
+        },
+      } as never);
+    });
+
+    await act(async () => {});
+
+    expect(watchedValues.selected_storage_class).toBeUndefined();
+    expect(approveFormState.setFieldsValue).not.toHaveBeenCalledWith({
+      selected_storage_class: "gold-sc",
+    });
+  });
+
+  it("auto-fills remembered manual root volume mode for the same cluster and storage class", async () => {
+    watchedValues.selected_storage_class = undefined;
+    watchedValues.selected_root_volume_mode_key = undefined;
+    watchedValues.selected_dv_access_modes = undefined;
+    watchedValues.selected_dv_volume_mode = undefined;
+    approveFormState.resetFields.mockImplementation(() => {
+      watchedValues.selected_cluster_id = "cluster-a";
+      watchedValues.selected_storage_class = undefined;
+      watchedValues.selected_root_volume_mode_key = undefined;
+      watchedValues.selected_dv_access_modes = undefined;
+      watchedValues.selected_dv_volume_mode = undefined;
+    });
+
+    saveRememberedApprovalClusterPlacement({
+      clusterId: "cluster-a",
+      selectedStorageClass: "block-sc",
+      selectedDVAccessModes: ["ReadWriteOnce"],
+      selectedDVVolumeMode: "Block",
+    });
+
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
+      if (key === "builtin-approval-tasks") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (key === "admin-clusters") {
+        return {
+          data: {
+            items: [
+              {
+                id: "cluster-a",
+                name: "Cluster A",
+                status: "HEALTHY",
+                enabled: true,
+                storage_classes: ["block-sc"],
+                default_storage_class: "block-sc",
+                compatibility: {
+                  eligible: false,
+                  root_volume_resolution: {
+                    state: "profile_incomplete",
+                    message:
+                      'storage class "block-sc" does not expose claimPropertySets in StorageProfile',
+                  },
+                },
+              },
+            ],
+          },
+          isLoading: false,
+          error: undefined,
+        };
+      }
+      if (key === "admin-cluster-policy") {
+        return {
+          data: {
+            id: "policy-1",
+            cluster_id: "cluster-a",
+            allow_cdi_clone: true,
+            allowed_storage_classes: ["block-sc"],
+          },
+          isLoading: false,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+        error: undefined,
+      };
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openApproveModal({
+        id: "ticket-1",
+        operation_type: "CREATE",
+        status: "PENDING",
+        requester: "alice",
+        ticket_payload: {
+          namespace: "prod-a",
+          template_id: "tpl-1",
+          instance_size_id: "sz-1",
+        },
+      } as never);
+    });
+
+    await waitFor(() => {
+      expect(watchedValues.selected_storage_class).toBe("block-sc");
+      expect(watchedValues.selected_dv_access_modes).toEqual([
+        "ReadWriteOnce",
+      ]);
+      expect(watchedValues.selected_dv_volume_mode).toBe("Block");
     });
   });
 
@@ -894,9 +1221,9 @@ describe("useAdminApprovalsController", () => {
     const { result } = renderHook(() => useAdminApprovalsController({ t }));
 
     expect(result.current.selectedRootVolumeResolution?.state).toBe("resolved");
-    expect(result.current.selectedRootVolumeResolution?.mode_options).toHaveLength(
-      2,
-    );
+    expect(
+      result.current.selectedRootVolumeResolution?.mode_options,
+    ).toHaveLength(2);
   });
 
   it("does not rewrite root volume fields when resolution is already clear", () => {
@@ -1389,5 +1716,73 @@ describe("useAdminApprovalsController", () => {
       content: "vm spec rejected by cluster",
       duration: 10,
     });
+  });
+
+  it("sorts approval tasks with pending items first, then newest items first within each status group", () => {
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      const key = Array.isArray(queryKey) ? queryKey[0] : undefined;
+      if (key === "builtin-approval-tasks") {
+        return {
+          data: {
+            items: [
+              {
+                id: "ticket-approved-new",
+                status: "APPROVED",
+                operation_type: "CREATE",
+                created_at: "2026-04-15T08:00:00Z",
+              },
+              {
+                id: "ticket-pending-old",
+                status: "PENDING",
+                operation_type: "CREATE",
+                created_at: "2026-04-14T08:00:00Z",
+              },
+              {
+                id: "ticket-approved-old",
+                status: "APPROVED",
+                operation_type: "CREATE",
+                created_at: "2026-04-13T08:00:00Z",
+              },
+              {
+                id: "ticket-pending-new",
+                status: "PENDING",
+                operation_type: "CREATE",
+                created_at: "2026-04-15T09:00:00Z",
+              },
+            ],
+            pagination: { page: 1, per_page: 20, total: 4, total_pages: 1 },
+          },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (key === "admin-clusters") {
+        return {
+          data: { items: [] },
+          isLoading: false,
+          error: undefined,
+        };
+      }
+      if (key === "admin-cluster-policy") {
+        return {
+          data: undefined,
+          isLoading: false,
+        };
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+        error: undefined,
+      };
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    expect(result.current.data?.items?.map((item) => item.id)).toEqual([
+      "ticket-pending-new",
+      "ticket-pending-old",
+      "ticket-approved-new",
+      "ticket-approved-old",
+    ]);
   });
 });

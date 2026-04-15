@@ -1151,7 +1151,7 @@ func clusterPolicyToAPI(policy *ent.ClusterPolicy) generated.ClusterPolicy {
 		AllowGpu:                     policy.AllowGpu,
 		AllowSriov:                   policy.AllowSriov,
 		AllowHugepages:               policy.AllowHugepages,
-		AllowedHugepagesSizes:        policy.AllowedHugepagesSizes,
+		AllowedHugepagesSizes:        service.CanonicalHugepagesPageSizeList(policy.AllowedHugepagesSizes),
 		AllowCdiClone:                policy.AllowCdiClone,
 		AllowedCloneSourceNamespaces: policy.AllowedCloneSourceNamespaces,
 		AllowedStorageClasses:        policy.AllowedStorageClasses,
@@ -1197,6 +1197,7 @@ func filterUserRequestableTemplates(templates []*ent.Template) []*ent.Template {
 }
 
 func instanceSizeToAPI(sz *ent.InstanceSize) generated.InstanceSize {
+	hints := effectiveInstanceSizeCapabilityHints(sz)
 	return generated.InstanceSize{
 		Id:                sz.ID,
 		Name:              sz.Name,
@@ -1209,10 +1210,10 @@ func instanceSizeToAPI(sz *ent.InstanceSize) generated.InstanceSize {
 		MemoryRequestGi:   float32(sz.MemoryRequestGi),
 		DiskGb:            sz.DiskGB,
 		DedicatedCpu:      sz.DedicatedCPU,
-		RequiresGpu:       sz.RequiresGpu,
+		RequiresGpu:       hints.RequiresGPU,
 		RequiresSriov:     sz.RequiresSriov,
-		RequiresHugepages: sz.RequiresHugepages,
-		HugepagesSize:     sz.HugepagesSize,
+		RequiresHugepages: hints.RequiresHugepages,
+		HugepagesSize:     hints.HugepagesSize,
 		DvAccessModes:     cloneStringSlice(sz.DvAccessModes),
 		DvVolumeMode:      generated.InstanceSizeDvVolumeMode(strings.TrimSpace(sz.DvVolumeMode)),
 		SortOrder:         sz.SortOrder,
@@ -1226,6 +1227,7 @@ func instanceSizeToAPI(sz *ent.InstanceSize) generated.InstanceSize {
 // internals (spec_overrides). The generated InstanceSize type uses
 // omitempty+omitzero, so a nil SpecOverrides is omitted from JSON output.
 func instanceSizeToPublicAPI(sz *ent.InstanceSize) generated.InstanceSize {
+	hints := effectiveInstanceSizeCapabilityHints(sz)
 	return generated.InstanceSize{
 		Id:                sz.ID,
 		Name:              sz.Name,
@@ -1238,10 +1240,10 @@ func instanceSizeToPublicAPI(sz *ent.InstanceSize) generated.InstanceSize {
 		MemoryRequestGi:   float32(sz.MemoryRequestGi),
 		DiskGb:            sz.DiskGB,
 		DedicatedCpu:      sz.DedicatedCPU,
-		RequiresGpu:       sz.RequiresGpu,
+		RequiresGpu:       hints.RequiresGPU,
 		RequiresSriov:     sz.RequiresSriov,
-		RequiresHugepages: sz.RequiresHugepages,
-		HugepagesSize:     sz.HugepagesSize,
+		RequiresHugepages: hints.RequiresHugepages,
+		HugepagesSize:     hints.HugepagesSize,
 		DvAccessModes:     cloneStringSlice(sz.DvAccessModes),
 		DvVolumeMode:      generated.InstanceSizeDvVolumeMode(strings.TrimSpace(sz.DvVolumeMode)),
 		SortOrder:         sz.SortOrder,

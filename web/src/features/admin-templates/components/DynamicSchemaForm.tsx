@@ -1236,6 +1236,7 @@ export const DynamicSchemaForm = React.forwardRef<
     collapseItems.push({
       key: "advanced",
       label: t("dynamic_form.advanced_settings", "Advanced Features"),
+      forceRender: true,
       children: renderMaskElements(advancedFields),
     });
   }
@@ -1243,12 +1244,14 @@ export const DynamicSchemaForm = React.forwardRef<
     collapseItems.push({
       key: "professional",
       label: t("dynamic_form.professional_features", "Professional Features"),
+      forceRender: true,
       children: renderMaskElements(professionalFields),
     });
   }
   collapseItems.push({
     key: "json-recognition",
     label: t("dynamic_form.supplemental_fields", "JSON Recognition"),
+    forceRender: true,
     children: (
       <Space direction="vertical" size={8} style={{ width: "100%" }}>
         <Text type="secondary">
@@ -1275,6 +1278,7 @@ export const DynamicSchemaForm = React.forwardRef<
   collapseItems.push({
     key: "raw-json",
     label: t("dynamic_form.raw_json", "Raw KubeVirt JSON"),
+    forceRender: true,
     children: (
       <Space direction="vertical" size={8} style={{ width: "100%" }}>
         <Text type="secondary">

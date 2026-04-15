@@ -2,11 +2,12 @@
 
 import { App, Form } from "antd";
 import type { TFunction } from "i18next";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { useApiAction, useApiGet, useApiMutation } from "@/hooks/useApiQuery";
 import { api } from "@/lib/api/client";
 import { translateApiError } from "@/lib/api/errorMessage";
+import { normalizeHugepagesPageSizeList } from "@/lib/hugepages";
 import type { components } from "@/types/api.gen";
 
 import type {
@@ -96,8 +97,7 @@ export function useAdminClustersController({
         messageApi.success(t("common:message.success"));
         closeCreateModal();
       },
-      onError: (err) =>
-        messageApi.error(translateApiError(t, err)),
+      onError: (err) => messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -116,8 +116,7 @@ export function useAdminClustersController({
         messageApi.success(t("common:message.success"));
         closeEditModal();
       },
-      onError: (err) =>
-        messageApi.error(translateApiError(t, err)),
+      onError: (err) => messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -133,8 +132,7 @@ export function useAdminClustersController({
     {
       invalidateKeys: [["admin-clusters"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
-      onError: (err) =>
-        messageApi.error(translateApiError(t, err)),
+      onError: (err) => messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -150,8 +148,7 @@ export function useAdminClustersController({
     {
       invalidateKeys: [["admin-clusters"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
-      onError: (err) =>
-        messageApi.error(translateApiError(t, err)),
+      onError: (err) => messageApi.error(translateApiError(t, err)),
     },
   );
 
@@ -163,19 +160,19 @@ export function useAdminClustersController({
     {
       invalidateKeys: [["admin-clusters"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
-      onError: (err) =>
-        messageApi.error(translateApiError(t, err)),
+      onError: (err) => messageApi.error(translateApiError(t, err)),
     },
   );
 
   const openCreateModal = () => {
-    setCreateOpen(true);
+    form.resetFields();
     form.setFieldsValue({
       display_name: "",
       environment: "test",
       enabled: true,
       kubeconfig_text: "",
     });
+    setCreateOpen(true);
   };
 
   const closeCreateModal = () => {
@@ -189,6 +186,8 @@ export function useAdminClustersController({
   };
 
   const openEditModal = (cluster: Cluster) => {
+    editForm.resetFields();
+    editForm.setFieldsValue(clusterEditorFormValues(cluster));
     editingClusterIdRef.current = cluster.id;
     setEditingCluster(cluster);
     setEditingClusterId(cluster.id);
@@ -243,6 +242,8 @@ export function useAdminClustersController({
   };
 
   const openPolicyModal = async (cluster: Cluster) => {
+    policyForm.resetFields();
+    policyForm.setFieldsValue(defaultClusterPolicyFormValues());
     selectedClusterIdRef.current = cluster.id;
     setSelectedClusterId(cluster.id);
     setSelectedClusterName(cluster.display_name ?? cluster.name ?? cluster.id);
@@ -305,19 +306,6 @@ export function useAdminClustersController({
       setDeletingClusterId("");
     }
   };
-
-  useEffect(() => {
-    if (!editOpen || editingCluster == null) {
-      return;
-    }
-
-    editForm.setFieldsValue({
-      display_name: editingCluster.display_name ?? "",
-      environment: (editingCluster.environment ?? "test") as ClusterEnvironment,
-      enabled: editingCluster.enabled !== false,
-      kubeconfig_text: "",
-    });
-  }, [editForm, editOpen, editingCluster]);
 
   return {
     messageContextHolder,
@@ -396,6 +384,15 @@ function clusterEditorFormToUpdateRequest(
   return body;
 }
 
+function clusterEditorFormValues(cluster: Cluster): ClusterEditorFormValues {
+  return {
+    display_name: cluster.display_name ?? "",
+    environment: (cluster.environment ?? "test") as ClusterEnvironment,
+    enabled: cluster.enabled !== false,
+    kubeconfig_text: "",
+  };
+}
+
 function trimmedOrUndefined(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
@@ -426,7 +423,9 @@ function clusterPolicyToFormValues(
     allow_gpu: policy.allow_gpu,
     allow_sriov: policy.allow_sriov,
     allow_hugepages: policy.allow_hugepages,
-    allowed_hugepages_sizes: policy.allowed_hugepages_sizes ?? [],
+    allowed_hugepages_sizes: normalizeHugepagesPageSizeList(
+      policy.allowed_hugepages_sizes ?? [],
+    ),
     allow_cdi_clone: policy.allow_cdi_clone,
     allowed_clone_source_namespaces:
       policy.allowed_clone_source_namespaces ?? [],
@@ -437,10 +436,13 @@ function clusterPolicyToFormValues(
 function normalizePolicyFormValues(
   values: ClusterPolicyUpsertRequest,
 ): ClusterPolicyUpsertRequest {
+  const normalizedHugepagesSizes = normalizeHugepagesPageSizeList(
+    values.allowed_hugepages_sizes ?? [],
+  );
   return {
     ...values,
     allowed_hugepages_sizes: values.allow_hugepages
-      ? (values.allowed_hugepages_sizes ?? [])
+      ? normalizedHugepagesSizes
       : [],
     allowed_clone_source_namespaces: values.allow_cdi_clone
       ? (values.allowed_clone_source_namespaces ?? [])

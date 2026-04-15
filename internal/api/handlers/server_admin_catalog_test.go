@@ -194,6 +194,92 @@ func TestAdminInstanceSizeCRUD(t *testing.T) {
 	}
 }
 
+func TestAdminInstanceSize_DerivesHugepagesHintsFromSpecOverrides(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newAdminCatalogTestServer(t)
+
+	createCtx, createW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/instance-sizes",
+		`{
+			"name":"m4-hugepages",
+			"display_name":"M4 Hugepages",
+			"catalog_scope":"prod",
+			"cpu_cores":4,
+			"memory_gi":8,
+			"enabled":true,
+			"spec_overrides":{
+				"spec":{
+					"template":{
+						"spec":{
+							"domain":{
+								"memory":{
+									"hugepages":{
+										"pageSize":"2Mi"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.CreateAdminInstanceSize(createCtx)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body=%s", createW.Code, http.StatusCreated, createW.Body.String())
+	}
+
+	var created generated.InstanceSize
+	mustDecodeJSON(t, createW.Body.Bytes(), &created)
+	if !created.RequiresHugepages {
+		t.Fatal("requires_hugepages = false, want true")
+	}
+	if created.HugepagesSize != "2Mi" {
+		t.Fatalf("hugepages_size = %q, want 2Mi", created.HugepagesSize)
+	}
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/instance-sizes/"+created.Id,
+		`{
+			"spec_overrides":{
+				"spec":{
+					"template":{
+						"spec":{
+							"domain":{
+								"cpu":{
+									"cores":4
+								}
+							}
+						}
+					}
+				}
+			}
+		}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.UpdateAdminInstanceSize(updateCtx, created.Id)
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d, body=%s", updateW.Code, http.StatusOK, updateW.Body.String())
+	}
+
+	var updated generated.InstanceSize
+	mustDecodeJSON(t, updateW.Body.Bytes(), &updated)
+	if updated.RequiresHugepages {
+		t.Fatal("requires_hugepages = true, want false after hugepages removed from spec")
+	}
+	if updated.HugepagesSize != "" {
+		t.Fatalf("hugepages_size = %q, want empty after hugepages removed from spec", updated.HugepagesSize)
+	}
+}
+
 func TestDeleteAdminTemplate_RejectsActiveCreateRequests(t *testing.T) {
 	t.Parallel()
 

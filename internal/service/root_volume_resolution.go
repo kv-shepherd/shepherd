@@ -73,6 +73,8 @@ func (v *ApprovalValidator) resolveRootVolumeProvisioning(
 		IntentMode:            rootVolumeIntentMode(instanceSizeEntity),
 		RequestedStorageClass: strings.TrimSpace(input.StorageClass),
 	}
+	requested := requestedRootVolumeClaimPropertySet(instanceSizeEntity, input)
+	explicitRequested := claimPropertySetKey(requested) != ""
 	candidateStorageClasses := rootVolumeCandidateStorageClasses(clusterEntity, policy)
 	effectiveStorageClass := strings.TrimSpace(input.StorageClass)
 	if effectiveStorageClass == "" {
@@ -90,6 +92,9 @@ func (v *ApprovalValidator) resolveRootVolumeProvisioning(
 	}
 	resolution.EffectiveStorageClass = effectiveStorageClass
 
+	resolution.RequestedAccessModes = cloneStringSlice(requested.AccessModes)
+	resolution.RequestedVolumeMode = requested.VolumeMode
+
 	storageProfile, err := v.vmService.GetStorageProfile(ctx, clusterEntity.ID, effectiveStorageClass)
 	if err != nil {
 		resolution.State = rootVolumeResolutionProfileIncomplete
@@ -103,6 +108,17 @@ func (v *ApprovalValidator) resolveRootVolumeProvisioning(
 	}
 	claimPropertySets := normalizeClaimPropertySets(storageProfile)
 	if len(claimPropertySets) == 0 {
+		if explicitRequested {
+			resolution.State = rootVolumeResolutionResolved
+			resolution.Message = fmt.Sprintf(
+				"storage class %q does not expose claimPropertySets in StorageProfile; using explicit root volume mode %s without automatic StorageProfile validation",
+				effectiveStorageClass,
+				formatClaimPropertySet(requested),
+			)
+			resolution.EffectiveAccessModes = cloneStringSlice(requested.AccessModes)
+			resolution.EffectiveVolumeMode = requested.VolumeMode
+			return resolution, nil
+		}
 		resolution.State = rootVolumeResolutionProfileIncomplete
 		resolution.Message = fmt.Sprintf(
 			"storage class %q does not expose claimPropertySets in StorageProfile; approval cannot resolve root volume mode automatically",
@@ -114,11 +130,7 @@ func (v *ApprovalValidator) resolveRootVolumeProvisioning(
 		resolution.ModeOptions = cloneClaimPropertySets(claimPropertySets)
 	}
 
-	requested := requestedRootVolumeClaimPropertySet(instanceSizeEntity, input)
-	resolution.RequestedAccessModes = cloneStringSlice(requested.AccessModes)
-	resolution.RequestedVolumeMode = requested.VolumeMode
-
-	if resolution.IntentMode == rootVolumeIntentAuto && len(requested.AccessModes) == 0 && requested.VolumeMode == "" {
+	if resolution.IntentMode == rootVolumeIntentAuto && !explicitRequested {
 		if len(claimPropertySets) == 1 {
 			resolution.State = rootVolumeResolutionResolved
 			resolution.EffectiveAccessModes = cloneStringSlice(claimPropertySets[0].AccessModes)

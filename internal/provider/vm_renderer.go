@@ -172,6 +172,11 @@ spec:
         {{- end}}
 `
 
+const (
+	serviceIDLabelKey         = "shepherd.io/service-id"
+	serviceIDPlaceholderValue = "__SHEPHERD_SERVICE_ID__"
+)
+
 // vmTemplateData holds pre-computed values for the VM YAML template.
 //
 // ADR-0018 Hybrid Model: This struct contains ONLY fields needed for
@@ -363,8 +368,9 @@ func RenderVMSpecToYAML(namespace string, spec *VMRenderInput) (string, error) {
 	}
 
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("execute vm template: %w", err)
+	executeErr := tmpl.Execute(&buf, data)
+	if executeErr != nil {
+		return "", fmt.Errorf("execute vm template: %w", executeErr)
 	}
 
 	// If no SpecOverrides, return the template-rendered YAML directly.
@@ -372,17 +378,70 @@ func RenderVMSpecToYAML(namespace string, spec *VMRenderInput) (string, error) {
 		return buf.String(), nil
 	}
 
+	resolvedSpecOverrides, err := resolveSpecOverridePlaceholders(spec.SpecOverrides, spec.Labels)
+	if err != nil {
+		return "", err
+	}
+
 	// Validate SpecOverrides paths before applying.
-	if err := validateOverridePaths(spec.SpecOverrides); err != nil {
+	if err := validateOverridePaths(resolvedSpecOverrides); err != nil {
 		return "", err
 	}
 	// Enforce CPU/Memory standard step for resource overrides as well.
-	if err := validateOverrideResourceSteps(spec.SpecOverrides); err != nil {
+	if err := validateOverrideResourceSteps(resolvedSpecOverrides); err != nil {
 		return "", err
 	}
 
 	// Apply SpecOverrides as deep-merge patches into the rendered YAML.
-	return applySpecOverridesToYAML(buf.Bytes(), spec.SpecOverrides)
+	return applySpecOverridesToYAML(buf.Bytes(), resolvedSpecOverrides)
+}
+
+func resolveSpecOverridePlaceholders(overrides map[string]interface{}, labels map[string]string) (map[string]interface{}, error) {
+	resolved, err := resolveOverrideValuePlaceholders(overrides, labels)
+	if err != nil {
+		return nil, err
+	}
+	typed, ok := resolved.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("resolve spec override placeholders: root value must remain an object")
+	}
+	return typed, nil
+}
+
+func resolveOverrideValuePlaceholders(value interface{}, labels map[string]string) (interface{}, error) {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		cloned := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			resolved, err := resolveOverrideValuePlaceholders(item, labels)
+			if err != nil {
+				return nil, err
+			}
+			cloned[key] = resolved
+		}
+		return cloned, nil
+	case []interface{}:
+		cloned := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			resolved, err := resolveOverrideValuePlaceholders(item, labels)
+			if err != nil {
+				return nil, err
+			}
+			cloned = append(cloned, resolved)
+		}
+		return cloned, nil
+	case string:
+		if typed != serviceIDPlaceholderValue {
+			return typed, nil
+		}
+		serviceID := strings.TrimSpace(labels[serviceIDLabelKey])
+		if serviceID == "" {
+			return nil, fmt.Errorf("resolve spec override placeholders: missing %q label for %q", serviceIDLabelKey, serviceIDPlaceholderValue)
+		}
+		return serviceID, nil
+	default:
+		return value, nil
+	}
 }
 
 func parseImportImageSource(raw string) (kind, url string, err error) {

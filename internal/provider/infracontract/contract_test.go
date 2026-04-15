@@ -28,6 +28,12 @@ func (stubVMMutationProvider) ExecuteVMMutation(context.Context, string, string,
 	return nil, nil
 }
 
+type stubVMManifestProvider struct{}
+
+func (stubVMManifestProvider) GetVMManifestYAML(context.Context, string, string, string) (string, error) {
+	return "", nil
+}
+
 type stubVNCStreamProvider struct{}
 
 func (stubVNCStreamProvider) OpenVNCStream(context.Context, string, string, string) (net.Conn, error) {
@@ -43,6 +49,7 @@ func (stubSerialConsoleStreamProvider) OpenSerialConsoleStream(context.Context, 
 var (
 	_ ConsoleProvider             = (*stubConsoleProvider)(nil)
 	_ VMMutationProvider          = (*stubVMMutationProvider)(nil)
+	_ VMManifestProvider          = (*stubVMManifestProvider)(nil)
 	_ VNCStreamProvider           = (*stubVNCStreamProvider)(nil)
 	_ SerialConsoleStreamProvider = (*stubSerialConsoleStreamProvider)(nil)
 )

@@ -616,6 +616,63 @@ func TestRenderVMSpecToYAML_RoundtripWithOverrides(t *testing.T) {
 	}
 }
 
+func TestRenderVMSpecToYAML_ResolvesServiceIDPlaceholderInAffinity(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "affinity-roundtrip",
+		CPUCores: 2,
+		MemoryGi: 2,
+		Image:    "docker.io/kubevirt/centos:7",
+		Labels: map[string]string{
+			serviceIDLabelKey: "svc-123",
+		},
+		SpecOverrides: map[string]interface{}{
+			"spec": map[string]interface{}{
+				"template": map[string]interface{}{
+					"spec": map[string]interface{}{
+						"affinity": map[string]interface{}{
+							"podAntiAffinity": map[string]interface{}{
+								"preferredDuringSchedulingIgnoredDuringExecution": []interface{}{
+									map[string]interface{}{
+										"weight": float64(100),
+										"podAffinityTerm": map[string]interface{}{
+											"labelSelector": map[string]interface{}{
+												"matchExpressions": []interface{}{
+													map[string]interface{}{
+														"key":      serviceIDLabelKey,
+														"operator": "In",
+														"values": []interface{}{
+															serviceIDPlaceholderValue,
+														},
+													},
+												},
+											},
+											"topologyKey": "kubernetes.io/hostname",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	yamlOut, err := RenderVMSpecToYAML("test-ns", spec)
+	if err != nil {
+		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
+	}
+	if !strings.Contains(yamlOut, `shepherd.io/service-id`) {
+		t.Fatalf("expected service-id selector in rendered YAML, got:\n%s", yamlOut)
+	}
+	if !strings.Contains(yamlOut, `- svc-123`) {
+		t.Fatalf("expected service-id placeholder resolved in rendered YAML, got:\n%s", yamlOut)
+	}
+	if strings.Contains(yamlOut, serviceIDPlaceholderValue) {
+		t.Fatalf("expected service-id placeholder to be resolved, got:\n%s", yamlOut)
+	}
+}
+
 func TestIsValidHalfStep(t *testing.T) {
 	valid := []float64{0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 8.0, 16.0}
 	for _, v := range valid {

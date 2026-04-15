@@ -185,9 +185,9 @@ func (s *ClusterPolicyService) ValidateCreatePlacement(input ClusterPolicyValida
 	}
 
 	hugepagesRequested := input.InstanceSize.RequiresHugepages
-	hugepagesSize := normalizeHugepagesSize(input.InstanceSize.HugepagesSize)
+	hugepagesSize := CanonicalHugepagesPageSize(input.InstanceSize.HugepagesSize)
 	if hugepagesSize == "" {
-		hugepagesSize = normalizeHugepagesSize(extractHugepagesSize(input.InstanceSize.SpecOverrides))
+		hugepagesSize = CanonicalHugepagesPageSize(extractHugepagesSize(input.InstanceSize.SpecOverrides))
 	}
 	if hugepagesSize != "" {
 		hugepagesRequested = true
@@ -200,7 +200,7 @@ func (s *ClusterPolicyService) ValidateCreatePlacement(input ClusterPolicyValida
 			if hugepagesSize == "" {
 				return policyDeny("cluster policy requires an explicit hugepages size")
 			}
-			if !stringSliceContains(policy.AllowedHugepagesSizes, hugepagesSize, normalizeHugepagesSize) {
+			if !stringSliceContains(policy.AllowedHugepagesSizes, hugepagesSize, CanonicalHugepagesPageSize) {
 				return policyDeny(fmt.Sprintf("hugepages size %q is not allowed by cluster policy", hugepagesSize))
 			}
 		}
@@ -269,7 +269,7 @@ func (s *ClusterPolicyService) ValidateCreatePlacement(input ClusterPolicyValida
 }
 
 func normalizeClusterPolicyInput(input ClusterPolicyInput) ClusterPolicyInput {
-	input.AllowedHugepagesSizes = normalizeStringList(input.AllowedHugepagesSizes, normalizeHugepagesSize)
+	input.AllowedHugepagesSizes = CanonicalHugepagesPageSizeList(input.AllowedHugepagesSizes)
 	input.AllowedCloneSourceNamespaces = normalizeStringList(input.AllowedCloneSourceNamespaces, normalizeNamespaceName)
 	input.AllowedStorageClasses = normalizeStringList(input.AllowedStorageClasses, normalizeStorageClassName)
 	return input

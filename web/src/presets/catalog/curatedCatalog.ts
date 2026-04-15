@@ -60,6 +60,30 @@ function toSpecText(spec: Record<string, unknown>): string {
     return JSON.stringify(spec, null, 2);
 }
 
+const developerInstanceServiceIdPlaceholder = '__SHEPHERD_SERVICE_ID__';
+
+const developerInstancePodAntiAffinity = {
+    podAntiAffinity: {
+        preferredDuringSchedulingIgnoredDuringExecution: [
+            {
+                weight: 100,
+                podAffinityTerm: {
+                    labelSelector: {
+                        matchExpressions: [
+                            {
+                                key: 'shepherd.io/service-id',
+                                operator: 'In',
+                                values: [developerInstanceServiceIdPlaceholder],
+                            },
+                        ],
+                    },
+                    topologyKey: 'kubernetes.io/hostname',
+                },
+            },
+        ],
+    },
+};
+
 const linuxBaseSpec = {
     spec: {
         runStrategy: 'Always',
@@ -72,6 +96,7 @@ const linuxBaseSpec = {
             },
             spec: {
                 evictionStrategy: 'LiveMigrate',
+                affinity: developerInstancePodAntiAffinity,
                 domain: {
                     cpu: {
                         model: 'host-passthrough',
@@ -137,6 +162,7 @@ const windowsBaseSpec = {
             },
             spec: {
                 evictionStrategy: 'LiveMigrate',
+                affinity: developerInstancePodAntiAffinity,
                 domain: {
                     cpu: {
                         model: 'host-passthrough',
@@ -374,9 +400,6 @@ export const CURATED_INSTANCE_SIZE_PRESET_ITEMS: Array<InstanceSizePresetCatalog
                                     threads: 1,
                                     dedicatedCpuPlacement: true,
                                     isolateEmulatorThread: false,
-                                    numa: {
-                                        guestMappingPassthrough: {},
-                                    },
                                 },
                                 memory: {
                                     hugepages: {
@@ -446,9 +469,6 @@ export const CURATED_INSTANCE_SIZE_PRESET_ITEMS: Array<InstanceSizePresetCatalog
                                     ...windowsBaseSpec.spec.template.spec.domain.cpu,
                                     dedicatedCpuPlacement: true,
                                     isolateEmulatorThread: false,
-                                    numa: {
-                                        guestMappingPassthrough: {},
-                                    },
                                 },
                                 memory: {
                                     hugepages: {

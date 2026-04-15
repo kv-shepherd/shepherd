@@ -85,6 +85,10 @@ type VMMutationProvider interface {
 	ExecuteVMMutation(ctx context.Context, cluster, namespace, name string, mutation *domain.VMMutation) (*domain.VM, error)
 }
 
+type VMManifestProvider interface {
+	GetVMManifestYAML(ctx context.Context, cluster, namespace, name string) (string, error)
+}
+
 type VNCStreamProvider interface {
 	OpenVNCStream(ctx context.Context, cluster, namespace, name string) (net.Conn, error)
 }

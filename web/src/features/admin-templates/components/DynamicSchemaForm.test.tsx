@@ -429,6 +429,45 @@ describe('DynamicSchemaForm', () => {
         });
     });
 
+    it('pre-renders advanced and professional fields so collapsed sections keep hydrated values', async () => {
+        render(
+            <Form layout="vertical">
+                <Form.Item
+                    name="spec_text"
+                    initialValue='{"spec":{"template":{"spec":{"domain":{"cpu":{"model":"host-passthrough"},"clock":{"utc":{}}}}}}}'
+                >
+                    <DynamicSchemaForm
+                        schema={minimalSchema}
+                        mask={{
+                            quick_fields: [],
+                            advanced_fields: [
+                                {
+                                    path: 'spec.template.spec.domain.cpu.model',
+                                    display_name: 'CPU Model',
+                                },
+                            ],
+                            professional_fields: [
+                                {
+                                    path: 'spec.template.spec.domain.clock.utc',
+                                    display_name: 'UTC Clock',
+                                },
+                            ],
+                        }}
+                    />
+                </Form.Item>
+            </Form>,
+        );
+
+        await waitFor(() => {
+            expect(
+                screen.getByTestId('dynamic-form-spec.template.spec.domain.cpu.model'),
+            ).toHaveValue('host-passthrough');
+            expect(
+                screen.getByTestId('dynamic-form-spec.template.spec.domain.clock.utc'),
+            ).toBeChecked();
+        });
+    });
+
     it('preserves empty-object presence nodes when pruning', () => {
         expect(
             pruneSpecTree(

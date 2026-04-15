@@ -62,6 +62,21 @@ func (s *VMService) GetVM(ctx context.Context, cluster, namespace, name string) 
 	return vm, nil
 }
 
+func (s *VMService) GetVMManifestYAML(ctx context.Context, cluster, namespace, name string) (string, error) {
+	if s == nil || s.infra == nil {
+		return "", fmt.Errorf("vm infrastructure provider is not configured")
+	}
+	manifestProvider, ok := s.infra.(infracontract.VMManifestProvider)
+	if !ok {
+		return "", fmt.Errorf("vm infrastructure provider does not expose manifest queries")
+	}
+	manifestYAML, err := manifestProvider.GetVMManifestYAML(ctx, cluster, namespace, name)
+	if err != nil {
+		return "", fmt.Errorf("get vm manifest yaml: %w", err)
+	}
+	return manifestYAML, nil
+}
+
 // ListVMs lists VMs with filtering.
 func (s *VMService) ListVMs(ctx context.Context, cluster, namespace string, opts infracontract.ListOptions) (*domain.VMList, error) {
 	list, err := s.infra.ListVMs(ctx, cluster, namespace, opts)

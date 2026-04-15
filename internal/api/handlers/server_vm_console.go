@@ -163,6 +163,46 @@ func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmID generated.VMID) {
 		return
 	}
 
+	approvedTicket, err := s.latestApprovedVNCRequest(ctx, vm.ID, actor)
+	if err != nil {
+		logger.Error("failed to query latest approved vnc request", zap.Error(err), zap.String("vm_id", vm.ID), zap.String("actor", actor))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if approvedTicket != nil {
+		consolePreference := preferredConsoleType
+		if consolePreference == nil {
+			consolePreference, err = s.preferredConsoleTypeForTicket(ctx, approvedTicket)
+			if err != nil {
+				logger.Warn("failed to parse preferred console type from approved vnc ticket payload", zap.Error(err), zap.String("ticket_id", approvedTicket.ID))
+			}
+		}
+
+		console, claims, issueErr := s.issuePreferredConsoleURL(c, actor, vm, consolePreference)
+		if issueErr != nil {
+			logger.Error("failed to issue approved console token", zap.Error(issueErr), zap.String("vm_id", vm.ID), zap.String("ticket_id", approvedTicket.ID))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+		if s.audit != nil {
+			_ = s.audit.LogAction(ctx, "vnc.access", "vm", vm.ID, actor, map[string]interface{}{
+				"token_id":    claims.JTI,
+				"environment": string(env),
+				"ticket_id":   approvedTicket.ID,
+				"source":      "console_request",
+			})
+		}
+
+		c.JSON(http.StatusOK, generated.VMConsoleRequestResponse{
+			Status:      generated.VMConsoleRequestStatusAPPROVED,
+			TicketId:    approvedTicket.ID,
+			ConsoleType: console.ConsoleType,
+			ConsoleUrl:  console.ConsoleURL,
+			VncUrl:      legacyVNCURL(console),
+		})
+		return
+	}
+
 	if _, _, preflightErr := s.resolvePreferredConsolePath(ctx, vm, preferredConsoleType); preflightErr != nil {
 		logger.Error("failed to preflight requested console path", zap.Error(preflightErr), zap.String("vm_id", vm.ID))
 		c.JSON(http.StatusBadGateway, generated.Error{
@@ -476,6 +516,40 @@ func (s *Server) latestVNCRequest(ctx context.Context, vmID, requester string) (
 			entticket.RequesterEQ(requester),
 			entticket.OperationTypeEQ(entticket.OperationTypeVNC_ACCESS),
 			entticket.EventIDIn(eventIDs...),
+		).
+		Order(ent.Desc(entticket.FieldCreatedAt)).
+		First(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return ticket, nil
+}
+
+func (s *Server) latestApprovedVNCRequest(ctx context.Context, vmID, requester string) (*ent.Ticket, error) {
+	eventIDs, err := s.client.DomainEvent.Query().
+		Where(
+			domainevent.AggregateTypeEQ("vm"),
+			domainevent.AggregateIDEQ(vmID),
+			domainevent.EventTypeEQ(string(domain.EventVNCAccessRequested)),
+		).
+		Select(domainevent.FieldID).
+		Strings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(eventIDs) == 0 {
+		return nil, nil
+	}
+
+	ticket, err := s.client.Ticket.Query().
+		Where(
+			entticket.RequesterEQ(requester),
+			entticket.OperationTypeEQ(entticket.OperationTypeVNC_ACCESS),
+			entticket.EventIDIn(eventIDs...),
+			entticket.StatusIn(entticket.StatusAPPROVED, entticket.StatusSUCCESS),
 		).
 		Order(ent.Desc(entticket.FieldCreatedAt)).
 		First(ctx)

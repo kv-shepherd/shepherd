@@ -456,6 +456,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vms/{vm_id}/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get VM live manifest YAML
+         * @description Returns the current live KubeVirt VirtualMachine manifest as YAML.
+         *     This endpoint is intended for platform-admin debugging and troubleshooting only.
+         */
+        get: operations["getVMManifest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vms/{vm_id}/request-prefill": {
         parameters: {
             query?: never;
@@ -1951,6 +1972,14 @@ export interface components {
             /** @description Target K8s namespace (immutable after submission, ADR-0017) */
             namespace: string;
             reason: string;
+        };
+        VMManifestResponse: {
+            vm_id: string;
+            name: string;
+            namespace: string;
+            cluster_id: string;
+            /** @description Current live KubeVirt VirtualMachine manifest serialized as YAML */
+            yaml: string;
         };
         VMRequestPrefill: {
             /** Format: uuid */
@@ -4456,6 +4485,32 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    getVMManifest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vm_id: components["parameters"]["VMID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Live VM manifest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VMManifestResponse"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     getVMRequestPrefill: {

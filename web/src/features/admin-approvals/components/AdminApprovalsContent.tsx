@@ -78,8 +78,19 @@ type PayloadRecord = Record<string, unknown>;
 type RootVolumeResolution = NonNullable<
   NonNullable<Cluster["compatibility"]>["root_volume_resolution"]
 >;
-type RootVolumeModeOption = NonNullable<RootVolumeResolution["mode_options"]>[number];
-type ApprovalBatchDisplayRow = ReturnType<typeof buildApprovalBatchDisplayItems>[number];
+type RootVolumeModeOption = NonNullable<
+  RootVolumeResolution["mode_options"]
+>[number];
+type ApprovalBatchDisplayRow = ReturnType<
+  typeof buildApprovalBatchDisplayItems
+>[number];
+
+const ROOT_VOLUME_ACCESS_MODE_OPTIONS = [
+  "ReadWriteOnce",
+  "ReadOnlyMany",
+  "ReadWriteMany",
+  "ReadWriteOncePod",
+];
 
 interface SearchSelectOption {
   label: string;
@@ -172,7 +183,10 @@ function approvalRequestFields(
       },
       {
         label: t("summary.instance_size", { ns: "approval" }),
-        value: firstVisibleValue(summary?.instance_size_name, summary?.instance_size_id),
+        value: firstVisibleValue(
+          summary?.instance_size_name,
+          summary?.instance_size_id,
+        ),
       },
       {
         label: t("summary.target_resources", { ns: "approval" }),
@@ -253,9 +267,9 @@ function renderCompactFieldGrid(fields: CompactField[]) {
           <Text type="secondary" className="workbench-compact-grid__label">
             {field.label}
           </Text>
-          <Text strong className="workbench-compact-grid__value">
-            {field.value}
-          </Text>
+          <div className="workbench-compact-grid__value selectable-inline-text">
+            <Text strong>{field.value}</Text>
+          </div>
         </div>
       ))}
     </div>
@@ -267,7 +281,9 @@ function payloadBool(value: unknown): boolean | undefined {
 }
 
 function payloadNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function instanceSizeDiskGB(
@@ -295,13 +311,16 @@ function batchPayloadItems(
 
 function requiresStorageClassSelection(cluster: Cluster): boolean {
   return (
-    cluster.compatibility?.reason_code === "CLUSTER_POLICY_STORAGE_CLASS_REQUIRED" ||
-    cluster.compatibility?.root_volume_resolution?.state === "storage_class_required"
+    cluster.compatibility?.reason_code ===
+      "CLUSTER_POLICY_STORAGE_CLASS_REQUIRED" ||
+    cluster.compatibility?.root_volume_resolution?.state ===
+      "storage_class_required"
   );
 }
 
 function requiresRootVolumeModeSelection(cluster: Cluster): boolean {
-  return cluster.compatibility?.root_volume_resolution?.state === "mode_required";
+  const state = cluster.compatibility?.root_volume_resolution?.state;
+  return state === "mode_required" || state === "profile_incomplete";
 }
 
 function clusterDisplayLabel(cluster: Cluster | undefined): string {
@@ -312,7 +331,8 @@ function clusterDisplayLabel(cluster: Cluster | undefined): string {
 }
 
 function approvalClusterOptionLabel(cluster: Cluster): string {
-  const primary = cluster.display_name?.trim() || cluster.name?.trim() || cluster.id;
+  const primary =
+    cluster.display_name?.trim() || cluster.name?.trim() || cluster.id;
   const secondary =
     cluster.display_name?.trim() &&
     cluster.name?.trim() &&
@@ -337,7 +357,9 @@ function approvalPlacementAdvisoryLabel(
   }
 }
 
-function rootVolumeModeOptionKey(option: RootVolumeModeOption | undefined): string {
+function rootVolumeModeOptionKey(
+  option: RootVolumeModeOption | undefined,
+): string {
   if (!option?.volume_mode || !option.access_modes?.length) {
     return "";
   }
@@ -363,18 +385,25 @@ function rootVolumeModeRecommendationRank(
     return Number.MAX_SAFE_INTEGER;
   }
   const volumeMode = option.volume_mode.trim();
-  const accessModes = [...option.access_modes].map((item) => item.trim()).sort();
-  const key = `${volumeMode}|${accessModes.join(",")}`;
-  switch (key) {
-    case "Block|ReadWriteMany":
-      return 0;
-    case "Block|ReadWriteOnce":
-      return 1;
-    case "Filesystem|ReadWriteOnce":
-      return 2;
-    default:
-      return 10;
-  }
+  const accessModes = new Set(
+    option.access_modes.map((item) => item.trim()).filter(Boolean),
+  );
+  const hasRWX = accessModes.has("ReadWriteMany");
+  const hasRWO = accessModes.has("ReadWriteOnce");
+  const hasRWOP = accessModes.has("ReadWriteOncePod");
+  const hasROX = accessModes.has("ReadOnlyMany");
+
+  if (volumeMode === "Block" && hasRWX) return 0;
+  if (volumeMode === "Filesystem" && hasRWX) return 1;
+  if (volumeMode === "Block" && hasRWO) return 2;
+  if (volumeMode === "Filesystem" && hasRWO) return 3;
+  if (volumeMode === "Block" && hasRWOP) return 4;
+  if (volumeMode === "Filesystem" && hasRWOP) return 5;
+  if (hasRWX) return 6;
+  if (hasRWO) return 7;
+  if (hasRWOP) return 8;
+  if (hasROX) return 9;
+  return 10;
 }
 
 function recommendedRootVolumeModeOption(
@@ -390,7 +419,9 @@ function recommendedRootVolumeModeOption(
     if (rankDiff !== 0) {
       return rankDiff;
     }
-    return rootVolumeModeOptionKey(left).localeCompare(rootVolumeModeOptionKey(right));
+    return rootVolumeModeOptionKey(left).localeCompare(
+      rootVolumeModeOptionKey(right),
+    );
   })[0];
 }
 
@@ -404,10 +435,12 @@ function renderRootVolumeResolutionMessage(
     return resolution.message;
   }
   if (resolution.state === "resolved" && resolution.effective_volume_mode) {
-    return `${resolution.effective_storage_class ?? "—"} · ${rootVolumeModeOptionLabel({
-      volume_mode: resolution.effective_volume_mode,
-      access_modes: resolution.effective_access_modes,
-    })}`;
+    return `${resolution.effective_storage_class ?? "—"} · ${rootVolumeModeOptionLabel(
+      {
+        volume_mode: resolution.effective_volume_mode,
+        access_modes: resolution.effective_access_modes,
+      },
+    )}`;
   }
   return "—";
 }
@@ -425,12 +458,10 @@ export function AdminApprovalsContent() {
   const [selectedClusterFilterDraft, setSelectedClusterFilterDraft] = useState(
     () => approvals.selectedClusterFilter,
   );
-  const [placementAdvisoryFilterDraft, setPlacementAdvisoryFilterDraft] = useState(
-    () => approvals.placementAdvisoryFilter,
-  );
-  const [placementSnapshotFilterDraft, setPlacementSnapshotFilterDraft] = useState(
-    () => approvals.placementSnapshotFilter,
-  );
+  const [placementAdvisoryFilterDraft, setPlacementAdvisoryFilterDraft] =
+    useState(() => approvals.placementAdvisoryFilter);
+  const [placementSnapshotFilterDraft, setPlacementSnapshotFilterDraft] =
+    useState(() => approvals.placementSnapshotFilter);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [advancedSearchOpen, setAdvancedSearchOpen] = useState(
     () =>
@@ -440,8 +471,13 @@ export function AdminApprovalsContent() {
       approvals.placementSnapshotFilter !== "ALL",
   );
   const setupGuide = useSetupGuide();
-  const pageItems = useMemo(() => approvals.data?.items ?? [], [approvals.data?.items]);
-  const selectedClusterOptionLabel = clusterDisplayLabel(approvals.selectedCluster);
+  const pageItems = useMemo(
+    () => approvals.data?.items ?? [],
+    [approvals.data?.items],
+  );
+  const selectedClusterOptionLabel = clusterDisplayLabel(
+    approvals.selectedCluster,
+  );
   const clusterFilterOptions = useMemo(() => {
     const groups = new Map<string, SearchSelectOption[]>();
     for (const cluster of approvals.filterClusters) {
@@ -499,15 +535,20 @@ export function AdminApprovalsContent() {
         value: code,
       }));
   }, [pageItems, placementAdvisoryFilterDraft, t]);
-  const pendingOnPage = pageItems.filter((ticket) => ticket.status === "PENDING").length;
+  const pendingOnPage = pageItems.filter(
+    (ticket) => ticket.status === "PENDING",
+  ).length;
   const urgentOnPage = pageItems.filter(
     (ticket) =>
-      ticket.status === "PENDING" && getPriorityTier(ticket.created_at) === "urgent",
+      ticket.status === "PENDING" &&
+      getPriorityTier(ticket.created_at) === "urgent",
   ).length;
   const createOnPage = pageItems.filter(
     (ticket) => ticket.operation_type === "CREATE",
   ).length;
-  const provisioningVisible = pageItems.filter((ticket) => Boolean(ticket.provisioning)).length;
+  const provisioningVisible = pageItems.filter((ticket) =>
+    Boolean(ticket.provisioning),
+  ).length;
   const isDefaultQueueState =
     approvals.statusFilter === "PENDING" &&
     approvals.searchFilter.trim() === "" &&
@@ -557,7 +598,9 @@ export function AdminApprovalsContent() {
     setAdvancedSearchOpen(false);
     approvals.resetFilters();
   };
-  const approveModalPayload = asPayloadRecord(approvals.approveModal?.ticket_payload);
+  const approveModalPayload = asPayloadRecord(
+    approvals.approveModal?.ticket_payload,
+  );
   const modifyRequiresRestart =
     payloadBool(approveModalPayload?.requires_restart) ?? false;
   const modifyCurrentCPURequest = payloadNumber(
@@ -588,16 +631,24 @@ export function AdminApprovalsContent() {
       <div
         className={[
           "workbench-overview-card",
-          approvals.statusFilter === "PENDING" ? "workbench-overview-card--active" : "",
-        ].filter(Boolean).join(" ")}
+          approvals.statusFilter === "PENDING"
+            ? "workbench-overview-card--active"
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         style={{ "--workbench-overview-accent": "#D97706" } as CSSProperties}
       >
         <div className="workbench-overview-card__header">
-          <span className="workbench-overview-card__title">{t("summary.pending_title")}</span>
+          <span className="workbench-overview-card__title">
+            {t("summary.pending_title")}
+          </span>
           <QueueReviewGlyph className="workbench-overview-card__art" />
         </div>
         <div className="workbench-overview-card__value">{pendingOnPage}</div>
-        <div className="workbench-overview-card__meta">{t("summary.pending_description")}</div>
+        <div className="workbench-overview-card__meta">
+          {t("summary.pending_description")}
+        </div>
       </div>
 
       <div
@@ -605,13 +656,19 @@ export function AdminApprovalsContent() {
         style={{ "--workbench-overview-accent": "#CF1322" } as CSSProperties}
       >
         <div className="workbench-overview-card__header">
-          <span className="workbench-overview-card__title">{t("summary.urgent_title")}</span>
+          <span className="workbench-overview-card__title">
+            {t("summary.urgent_title")}
+          </span>
           <RequestsOverviewGlyph className="workbench-overview-card__art" />
         </div>
         <div className="workbench-overview-card__value">
-          <span style={{ color: urgentOnPage > 0 ? "#cf1322" : undefined }}>{urgentOnPage}</span>
+          <span style={{ color: urgentOnPage > 0 ? "#cf1322" : undefined }}>
+            {urgentOnPage}
+          </span>
         </div>
-        <div className="workbench-overview-card__meta">{t("summary.urgent_description")}</div>
+        <div className="workbench-overview-card__meta">
+          {t("summary.urgent_description")}
+        </div>
       </div>
 
       <div
@@ -619,11 +676,15 @@ export function AdminApprovalsContent() {
         style={{ "--workbench-overview-accent": "#1D5BFF" } as CSSProperties}
       >
         <div className="workbench-overview-card__header">
-          <span className="workbench-overview-card__title">{t("summary.create_title")}</span>
+          <span className="workbench-overview-card__title">
+            {t("summary.create_title")}
+          </span>
           <ServiceWorkspaceGlyph className="workbench-overview-card__art" />
         </div>
         <div className="workbench-overview-card__value">{createOnPage}</div>
-        <div className="workbench-overview-card__meta">{t("summary.create_description")}</div>
+        <div className="workbench-overview-card__meta">
+          {t("summary.create_description")}
+        </div>
       </div>
 
       <div
@@ -631,11 +692,17 @@ export function AdminApprovalsContent() {
         style={{ "--workbench-overview-accent": "#6D4DE3" } as CSSProperties}
       >
         <div className="workbench-overview-card__header">
-          <span className="workbench-overview-card__title">{t("summary.provisioning_title")}</span>
+          <span className="workbench-overview-card__title">
+            {t("summary.provisioning_title")}
+          </span>
           <VirtualMachinesOverviewGlyph className="workbench-overview-card__art" />
         </div>
-        <div className="workbench-overview-card__value">{provisioningVisible}</div>
-        <div className="workbench-overview-card__meta">{t("summary.provisioning_description")}</div>
+        <div className="workbench-overview-card__value">
+          {provisioningVisible}
+        </div>
+        <div className="workbench-overview-card__meta">
+          {t("summary.provisioning_description")}
+        </div>
       </div>
     </div>
   );
@@ -669,7 +736,7 @@ export function AdminApprovalsContent() {
         className="admin-approvals-page__queue-surface"
         style={{ marginBottom: 16 }}
         title={t("triage.title")}
-        extra={(
+        extra={
           <Space wrap>
             <Segmented
               data-testid="approvals-status-filter"
@@ -690,7 +757,7 @@ export function AdminApprovalsContent() {
               {t("common:button.refresh")}
             </Button>
           </Space>
-        )}
+        }
       >
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           {renderQueueBanner()}
@@ -818,12 +885,17 @@ export function AdminApprovalsContent() {
               <ActionEmptyState
                 title={t("empty.pending_title")}
                 description={t("empty.pending_description")}
-                visual={<QueueReviewGlyph className="action-empty-state__art" />}
-                actions={(
-                <Button type="primary" onClick={() => router.push("/vms?request=create")}>
-                  {t("empty.open_vm_request")}
-                </Button>
-                )}
+                visual={
+                  <QueueReviewGlyph className="action-empty-state__art" />
+                }
+                actions={
+                  <Button
+                    type="primary"
+                    onClick={() => router.push("/vms?request=create")}
+                  >
+                    {t("empty.open_vm_request")}
+                  </Button>
+                }
               />
             </div>
           )
@@ -832,12 +904,14 @@ export function AdminApprovalsContent() {
             <ActionEmptyState
               title={t("empty.filtered_title")}
               description={t("empty.filtered_description")}
-              visual={<RequestsOverviewGlyph className="action-empty-state__art" />}
-              actions={(
-              <Button onClick={resetQueueFilters}>
-                {t("common:button.reset")}
-              </Button>
-              )}
+              visual={
+                <RequestsOverviewGlyph className="action-empty-state__art" />
+              }
+              actions={
+                <Button onClick={resetQueueFilters}>
+                  {t("common:button.reset")}
+                </Button>
+              }
             />
           </div>
         ) : (
@@ -856,13 +930,24 @@ export function AdminApprovalsContent() {
               },
             }}
             renderItem={(record) => {
-              const operationLabel = record.operation_type ? t(`op_type.${record.operation_type}`) : undefined;
+              const operationLabel = record.operation_type
+                ? t(`op_type.${record.operation_type}`)
+                : undefined;
               const requestReason = record.reason?.trim();
-              const failureReason = record.provisioning?.failure_message?.trim() || record.reject_reason?.trim() || undefined;
-              const showRequestReason = Boolean(requestReason) && requestReason !== approvalSummaryTitle(record, t);
+              const failureReason =
+                record.provisioning?.failure_message?.trim() ||
+                record.reject_reason?.trim() ||
+                undefined;
+              const showRequestReason =
+                Boolean(requestReason) &&
+                requestReason !== approvalSummaryTitle(record, t);
               const placement = record.placement_evaluation;
               const summary = record.summary;
-              const itemCount = summary?.batch_count || batchPayloadItems(record.ticket_payload as PayloadRecord | undefined).length;
+              const itemCount =
+                summary?.batch_count ||
+                batchPayloadItems(
+                  record.ticket_payload as PayloadRecord | undefined,
+                ).length;
               const provisioning = record.provisioning;
               const contextFields = approvalContextFields(record, t);
               const requestSummaryFields = approvalRequestFields(record, t);
@@ -872,7 +957,8 @@ export function AdminApprovalsContent() {
               let highlightClass = "";
               if (record.status === "PENDING") {
                 if (tier === "urgent") highlightClass = "approval-row-urgent";
-                else if (tier === "warning") highlightClass = "approval-row-warning";
+                else if (tier === "warning")
+                  highlightClass = "approval-row-warning";
               }
 
               const renderActions = () => {
@@ -884,7 +970,9 @@ export function AdminApprovalsContent() {
                           <Button
                             size="small"
                             loading={approvals.retryBatchPending}
-                            onClick={() => approvals.submitBatchRetry(record.id)}
+                            onClick={() =>
+                              approvals.submitBatchRetry(record.id)
+                            }
                           >
                             {t("vm:batch.retry_failed")}
                           </Button>
@@ -902,11 +990,34 @@ export function AdminApprovalsContent() {
                 }
                 const moreContent = (
                   <div className="workbench-row-menu">
-                    <Button type="text" danger block data-testid={`approval-action-reject-${record.id}`} onClick={() => { setOpenActionMenuId(null); approvals.openRejectModal(record); }}>
+                    <Button
+                      type="text"
+                      danger
+                      block
+                      data-testid={`approval-action-reject-${record.id}`}
+                      onClick={() => {
+                        setOpenActionMenuId(null);
+                        approvals.openRejectModal(record);
+                      }}
+                    >
                       {t("common:button.reject")}
                     </Button>
-                    <Popconfirm title={t("cancel_confirm")} onConfirm={() => { setOpenActionMenuId(null); approvals.submitCancel(record.id); }} okText={t("common:button.confirm")} cancelText={t("common:button.cancel")}>
-                      <Button type="text" danger block data-testid={`approval-action-cancel-${record.id}`} loading={approvals.cancelPending}>
+                    <Popconfirm
+                      title={t("cancel_confirm")}
+                      onConfirm={() => {
+                        setOpenActionMenuId(null);
+                        approvals.submitCancel(record.id);
+                      }}
+                      okText={t("common:button.confirm")}
+                      cancelText={t("common:button.cancel")}
+                    >
+                      <Button
+                        type="text"
+                        danger
+                        block
+                        data-testid={`approval-action-cancel-${record.id}`}
+                        loading={approvals.cancelPending}
+                      >
                         {t("cancel")}
                       </Button>
                     </Popconfirm>
@@ -914,75 +1025,213 @@ export function AdminApprovalsContent() {
                 );
                 return (
                   <Space size={8} wrap className="workbench-row-actions">
-                    <Button type="primary" size="small" icon={<AuditOutlined />} data-testid={`approval-action-approve-${record.id}`} onClick={() => approvals.openApproveModal(record)}>
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<AuditOutlined />}
+                      data-testid={`approval-action-approve-${record.id}`}
+                      onClick={() => approvals.openApproveModal(record)}
+                    >
                       {t("action.review")}
                     </Button>
-                    <Popover trigger="click" placement="bottomRight" open={openActionMenuId === record.id} onOpenChange={(open) => setOpenActionMenuId(open ? record.id : null)} content={moreContent}>
-                      <Button size="small" data-testid={`approval-action-more-${record.id}`} aria-label={`${t("common:table.actions")} ${record.id}`} icon={<MoreOutlined />} />
+                    <Popover
+                      trigger="click"
+                      placement="bottomRight"
+                      open={openActionMenuId === record.id}
+                      onOpenChange={(open) =>
+                        setOpenActionMenuId(open ? record.id : null)
+                      }
+                      content={moreContent}
+                    >
+                      <Button
+                        size="small"
+                        data-testid={`approval-action-more-${record.id}`}
+                        aria-label={`${t("common:table.actions")} ${record.id}`}
+                        icon={<MoreOutlined />}
+                      />
                     </Popover>
                   </Space>
                 );
               };
 
               return (
-                <List.Item className={`app-feed-card ${highlightClass}`} style={{ padding: "16px", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between" }}>
-                  <div className="app-feed-card-main" style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, paddingRight: 24 }}>
+                <List.Item
+                  className={`app-feed-card ${highlightClass}`}
+                  style={{
+                    padding: "16px",
+                    borderBottom: "1px solid #f0f0f0",
+                    display: "flex",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <div
+                    className="app-feed-card-main"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      flex: 1,
+                      paddingRight: 24,
+                    }}
+                  >
                     <Space size={8} className="workbench-table-heading">
                       <AuditOutlined style={{ color: "#d4380d" }} />
-                      <Text strong className="workbench-table-title" style={{ fontSize: 15 }}>
+                      <Text
+                        strong
+                        className="workbench-table-title"
+                        style={{ fontSize: 15 }}
+                      >
                         {approvalSummaryTitle(record, t)}
                       </Text>
-                      {operationLabel && <Tag color="purple">{operationLabel}</Tag>}
+                      {operationLabel && (
+                        <Tag color="purple">{operationLabel}</Tag>
+                      )}
                       <Badge
                         status={STATUS_BADGES[record.status] ?? "default"}
-                        text={<Text type="secondary" style={{ fontSize: 13, marginLeft: 4 }}>{t(`status.${record.status}`)}</Text>}
+                        text={
+                          <Text
+                            type="secondary"
+                            style={{ fontSize: 13, marginLeft: 4 }}
+                          >
+                            {t(`status.${record.status}`)}
+                          </Text>
+                        }
                       />
                     </Space>
-                    <div className="workbench-table-section-grid" style={{ marginTop: 8 }}>
-                      {renderSectionCard(t("workbench.table.scope_label"), contextFields)}
-                      {renderSectionCard(t("workbench.table.request_label"), requestSummaryFields)}
+                    <div
+                      className="workbench-table-section-grid"
+                      style={{ marginTop: 8 }}
+                    >
+                      {renderSectionCard(
+                        t("workbench.table.scope_label"),
+                        contextFields,
+                      )}
+                      {renderSectionCard(
+                        t("workbench.table.request_label"),
+                        requestSummaryFields,
+                      )}
                     </div>
                     {itemCount > 0 && (
-                        <Tag color="gold" style={{ width: "fit-content", marginTop: 4 }}>
-                          {t("batch.child_count", { defaultValue: "{{count}} items", count: itemCount })}
-                        </Tag>
+                      <Tag
+                        color="gold"
+                        style={{ width: "fit-content", marginTop: 4 }}
+                      >
+                        {t("batch.child_count", {
+                          defaultValue: "{{count}} items",
+                          count: itemCount,
+                        })}
+                      </Tag>
                     )}
                     {placement?.advisory_code && (
-                      <Tag color="warning" style={{ width: "fit-content", marginTop: 4 }}>
-                        {approvalPlacementAdvisoryLabel(placement.advisory_code, (key, defaultValue) => t(key, { defaultValue }))}
+                      <Tag
+                        color="warning"
+                        style={{ width: "fit-content", marginTop: 4 }}
+                      >
+                        {approvalPlacementAdvisoryLabel(
+                          placement.advisory_code,
+                          (key, defaultValue) => t(key, { defaultValue }),
+                        )}
                       </Tag>
                     )}
                     {record.operation_type === "CREATE" && provisioning && (
                       <Space wrap size={[6, 6]} style={{ marginTop: 4 }}>
-                        <Tag color={getProvisioningPhaseTagColor(provisioning.phase)}>{provisioning.phase || "—"}</Tag>
-                        {provisioning.clone_type === "copy" && <Tag color={getCloneTypeTagColor(provisioning.clone_type)}>{t("approve_modal.provisioning.clone_type_copy", "Host-assisted copy")}</Tag>}
+                        <Tag
+                          color={getProvisioningPhaseTagColor(
+                            provisioning.phase,
+                          )}
+                        >
+                          {provisioning.phase || "—"}
+                        </Tag>
+                        {provisioning.clone_type === "copy" && (
+                          <Tag
+                            color={getCloneTypeTagColor(
+                              provisioning.clone_type,
+                            )}
+                          >
+                            {t(
+                              "approve_modal.provisioning.clone_type_copy",
+                              "Host-assisted copy",
+                            )}
+                          </Tag>
+                        )}
                       </Space>
                     )}
                     {showRequestReason && (
-                      <div className="workbench-inline-meta" style={{ marginTop: 4 }}>
-                        <Text type="secondary" className="workbench-inline-meta__label">{t("reason")}</Text>
-                        <Text className="workbench-inline-meta__value">{requestReason}</Text>
+                      <div
+                        className="workbench-inline-meta"
+                        style={{ marginTop: 4 }}
+                      >
+                        <Text
+                          type="secondary"
+                          className="workbench-inline-meta__label"
+                        >
+                          {t("reason")}
+                        </Text>
+                        <Text className="workbench-inline-meta__value">
+                          {requestReason}
+                        </Text>
                       </div>
                     )}
-                    {record.status === "FAILED" && failureReason && failureReason !== requestReason && (
-                      <Text type="danger" className="workbench-table-note" style={{ marginTop: 4 }}>{failureReason}</Text>
-                    )}
-                    {record.operation_type === "CREATE" && provisioning?.failure_message && (
-                        <Text type="danger" className="workbench-table-note" style={{ marginTop: 4 }}>{provisioning.failure_message}</Text>
-                    )}
+                    {record.status === "FAILED" &&
+                      failureReason &&
+                      failureReason !== requestReason && (
+                        <Text
+                          type="danger"
+                          className="workbench-table-note"
+                          style={{ marginTop: 4 }}
+                        >
+                          {failureReason}
+                        </Text>
+                      )}
+                    {record.operation_type === "CREATE" &&
+                      provisioning?.failure_message && (
+                        <Text
+                          type="danger"
+                          className="workbench-table-note"
+                          style={{ marginTop: 4 }}
+                        >
+                          {provisioning.failure_message}
+                        </Text>
+                      )}
                   </div>
 
-                  <div className="app-feed-card-aside" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", minWidth: 200, gap: 12 }}>
+                  <div
+                    className="app-feed-card-aside"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-end",
+                      minWidth: 200,
+                      gap: 12,
+                    }}
+                  >
                     {renderActions()}
-                    <div className="workbench-actor-line" style={{ textAlign: "right" }}>
-                      <Text type="secondary" className="workbench-table-note">{t("requester")}:</Text>
+                    <div
+                      className="workbench-actor-line"
+                      style={{ textAlign: "right" }}
+                    >
+                      <Text type="secondary" className="workbench-table-note">
+                        {t("requester")}:
+                      </Text>
                       <Text>{requester?.primary || "—"}</Text>
                     </div>
-                    <div className="workbench-table-meta-stack" style={{ textAlign: "right", marginTop: "auto" }}>
-                      <Text copyable={{ text: record.id }} type="secondary" className="workbench-ticket-meta" style={{ display: "block", fontSize: 12 }}>
+                    <div
+                      className="workbench-table-meta-stack"
+                      style={{ textAlign: "right", marginTop: "auto" }}
+                    >
+                      <Text
+                        copyable={{ text: record.id }}
+                        type="secondary"
+                        className="workbench-ticket-meta"
+                        style={{ display: "block", fontSize: 12 }}
+                      >
                         ID: {formatApprovalRecordID(record.id)}
                       </Text>
-                      <Text type="secondary" className="workbench-table-note" style={{ display: "block", fontSize: 12 }}>
+                      <Text
+                        type="secondary"
+                        className="workbench-table-note"
+                        style={{ display: "block", fontSize: 12 }}
+                      >
                         <LocalDateTimeText value={record.created_at} />
                       </Text>
                     </div>
@@ -995,458 +1244,511 @@ export function AdminApprovalsContent() {
       </PageSurface>
 
       {approvals.approveModal ? (
-      <WorkbenchDetailModal
-        wrapClassName="admin-approvals-page__detail-modal"
-        title={
-          approvals.approveModal?.operation_type === "DELETE"
-            ? t("approve_modal.delete_title")
-            : t("approve_modal.title")
-        }
-        open={Boolean(approvals.approveModal)}
-        onOk={() => {
-          void approvals.submitApprove();
-        }}
-        onCancel={approvals.closeApproveModal}
-        confirmLoading={approvals.approvePending}
-        contentMinWidth={960}
-        data-testid="approve-modal"
-      >
-        <Form
-          form={approvals.approveForm}
-          layout="vertical"
-          name="approve-form"
-          preserve={false}
+        <WorkbenchDetailModal
+          wrapClassName="admin-approvals-page__detail-modal"
+          title={
+            approvals.approveModal?.operation_type === "DELETE"
+              ? t("approve_modal.delete_title")
+              : t("approve_modal.title")
+          }
+          open={Boolean(approvals.approveModal)}
+          onOk={() => {
+            void approvals.submitApprove();
+          }}
+          onCancel={approvals.closeApproveModal}
+          confirmLoading={approvals.approvePending}
+          contentMinWidth={960}
+          data-testid="approve-modal"
         >
-          {approveAlert && (
-            <Alert
-              type={approveAlert.type}
-              showIcon
-              style={{ marginBottom: 16 }}
-              message={approveAlert.message}
-              description={approveAlert.description}
-            />
-          )}
-          <Card size="small" className="workbench-detail-hero" style={{ marginBottom: 16 }}>
-            <Space direction="vertical" size={6} style={{ width: "100%" }}>
-              <Space wrap size={8}>
-                <Text strong style={{ fontSize: 16 }}>{approveSummaryTitle}</Text>
-                <Tag color={STATUS_COLORS[approvals.approveModal.status]}>
-                  {t(`status.${approvals.approveModal.status}`)}
-                </Tag>
-                {approvals.approveModal.operation_type ? (
-                  <Tag color="purple">{t(`op_type.${approvals.approveModal.operation_type}`)}</Tag>
-                ) : null}
-              </Space>
-              <Space wrap size={10} className="workbench-detail-hero__meta">
-                <Text copyable={{ text: approvals.approveModal.id }} type="secondary" className="workbench-ticket-meta">
-                {t("ticket_id")}: {formatApprovalRecordID(approvals.approveModal.id)}
-                </Text>
-                <Text type="secondary">
-                  {t("common:table.created_at")}: <LocalDateTimeText value={approvals.approveModal.created_at} />
-                </Text>
-              </Space>
-              <div className="workbench-detail-hero__grid">
-                {renderSectionCard(
-                  t("workbench.table.scope_label"),
-                  approvalContextFields(approvals.approveModal, t),
-                )}
-                {renderSectionCard(
-                  t("workbench.table.request_label"),
-                  approvalRequestFields(approvals.approveModal, t),
-                )}
-              </div>
-            </Space>
-          </Card>
-          {(approveOverviewItems.length > 0 ||
-            approveScopeItems.length > 0 ||
-            approveChangeItems.length > 0) && (
-            <div
-              className="workbench-detail-modal__grid"
-            >
-              {approveScopeItems.length > 0 && (
-                <Card
-                  size="small"
-                  className="workbench-detail-section-card workbench-detail-section-card--primary"
-                  title={t("summary.scope_title")}
-                >
-                  <Descriptions
-                    bordered
-                    size="small"
-                    column={1}
-                    items={approveScopeItems}
-                  />
-                </Card>
-              )}
-              {approveChangeItems.length > 0 && (
-                <Card
-                  size="small"
-                  className="workbench-detail-section-card workbench-detail-section-card--secondary"
-                  title={t("summary.change_title")}
-                >
-                  <Descriptions
-                    bordered
-                    size="small"
-                    column={1}
-                    items={approveChangeItems}
-                  />
-                </Card>
-              )}
-              {approveOverviewItems.length > 0 && (
-                <Card
-                  size="small"
-                  className="workbench-detail-section-card workbench-detail-section-card--tertiary"
-                  title={t("summary.workflow_title")}
-                >
-                  <Descriptions
-                    bordered
-                    size="small"
-                    column={1}
-                    items={approveOverviewItems}
-                  />
-                </Card>
-              )}
-            </div>
-          )}
-          {approveBatchItems.length > 0 && (
+          <Form
+            form={approvals.approveForm}
+            layout="vertical"
+            name="approve-form"
+            preserve={false}
+          >
+            {approveAlert && (
+              <Alert
+                type={approveAlert.type}
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={approveAlert.message}
+                description={approveAlert.description}
+              />
+            )}
             <Card
               size="small"
-              className="workbench-detail-section-card workbench-detail-section-card--wide"
+              className="workbench-detail-hero"
               style={{ marginBottom: 16 }}
-              title={t("summary.affected_items_title")}
             >
-              <div className="workbench-detail-modal__table-scroll">
-                <Table
-                  size="small"
-                  pagination={false}
-                  rowKey="key"
-                  dataSource={approveBatchItems}
-                  scroll={{ x: 760, y: 280 }}
-                  columns={[
-                    {
-                      title: t("summary.item"),
-                      dataIndex: "title",
-                      key: "title",
-                      width: 240,
-                      render: (value: string | undefined) => (
-                        <Space direction="vertical" size={4} className="workbench-table-stack">
-                          <Text strong className="workbench-table-title">
-                            {value || "—"}
-                          </Text>
-                        </Space>
-                      ),
-                    },
-                    {
-                      title: t("summary.scope"),
-                      key: "scope",
-                      width: 280,
-                      render: (_: unknown, record: ApprovalBatchDisplayRow) => (
-                        <Space direction="vertical" size={4} className="workbench-batch-cell">
-                          <div className="workbench-batch-cell__row">
-                            <Text type="secondary" className="workbench-batch-cell__label">
-                              {t("summary.scope")}
-                            </Text>
-                            <Text>{record.scope || "—"}</Text>
-                          </div>
-                          <div className="workbench-batch-cell__row">
-                            <Text type="secondary" className="workbench-batch-cell__label">
-                              {t("summary.cluster")}
-                            </Text>
-                            <Text>{record.cluster || "—"}</Text>
-                          </div>
-                          <div className="workbench-batch-cell__row">
-                            <Text type="secondary" className="workbench-batch-cell__label">
-                              {t("summary.request_vm_status")}
-                            </Text>
-                            <Text>{record.requestStatus || "—"}</Text>
-                          </div>
-                          <div className="workbench-batch-cell__row">
-                            <Text type="secondary" className="workbench-batch-cell__label">
-                              {t("summary.latest_vm_status")}
-                            </Text>
-                            <Space direction="vertical" size={0}>
-                              <Text>{record.latestStatus || "—"}</Text>
-                            </Space>
-                          </div>
-                          {record.statusChanged && (
-                            <Text type="warning" className="workbench-table-note">
-                              {t("summary.status_changed")}
-                            </Text>
-                          )}
-                        </Space>
-                      ),
-                    },
-                    {
-                      title: t("summary.target_resources"),
-                      key: "target_resources",
-                      width: 280,
-                      render: (_: unknown, record: ApprovalBatchDisplayRow) => (
-                        <Space direction="vertical" size={4} className="workbench-batch-cell">
-                          <div className="workbench-batch-cell__row">
-                            <Text type="secondary" className="workbench-batch-cell__label">
-                              {t("summary.current_resources")}
-                            </Text>
-                            <Text>{record.currentShape || "—"}</Text>
-                          </div>
-                          <div className="workbench-batch-cell__row">
-                            <Text type="secondary" className="workbench-batch-cell__label">
-                              {t("summary.target_resources")}
-                            </Text>
-                            <Text>{record.targetShape || "—"}</Text>
-                          </div>
-                          <div className="workbench-batch-cell__row">
-                            <Text type="secondary" className="workbench-batch-cell__label">
-                              {t("summary.power_action")}
-                            </Text>
-                            <Text>{record.action || "—"}</Text>
-                          </div>
-                        </Space>
-                      ),
-                    },
-                  ]}
-                />
-              </div>
-            </Card>
-          )}
-          {approvals.approveModal?.operation_type === "MODIFY"
-            ? (
-                <>
-                  {modifyRequiresRestart && (
-                    <Alert
-                      type="warning"
-                      showIcon
-                      style={{ marginBottom: 16 }}
-                      message={t(
-                        "approve_modal.modify_restart_required_title",
-                      )}
-                      description={t(
-                        "approve_modal.modify_restart_required_description",
-                      )}
-                    />
-                  )}
-                  <Alert
-                    type={
-                      modifyCPURequestNeedsReview ||
-                      modifyMemoryRequestNeedsReview
-                        ? "warning"
-                        : "info"
-                    }
-                    showIcon
-                    style={{ marginBottom: 16 }}
-                    message={t("approve_modal.modify_request_review_title")}
-                    description={t(
-                      modifyCPURequestNeedsReview ||
-                        modifyMemoryRequestNeedsReview
-                        ? "approve_modal.modify_request_review_required_description"
-                        : "approve_modal.modify_request_review_description",
-                      {
-                        cpu_request:
-                          typeof modifyCurrentCPURequest === "number"
-                            ? modifyCurrentCPURequest
-                            : "—",
-                        memory_request_gi:
-                          typeof modifyCurrentMemoryRequestGi === "number"
-                            ? modifyCurrentMemoryRequestGi
-                            : "—",
-                      },
-                    )}
-                  />
-                  <Form.Item
-                    name="enable_override"
-                    valuePropName="checked"
-                    label={t("approve_modal.modify_request_override")}
-                    extra={t("approve_modal.modify_request_override_help")}
+              <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                <Space wrap size={8}>
+                  <Text strong style={{ fontSize: 16 }}>
+                    {approveSummaryTitle}
+                  </Text>
+                  <Tag color={STATUS_COLORS[approvals.approveModal.status]}>
+                    {t(`status.${approvals.approveModal.status}`)}
+                  </Tag>
+                  {approvals.approveModal.operation_type ? (
+                    <Tag color="purple">
+                      {t(`op_type.${approvals.approveModal.operation_type}`)}
+                    </Tag>
+                  ) : null}
+                </Space>
+                <Space wrap size={10} className="workbench-detail-hero__meta">
+                  <Text
+                    copyable={{ text: approvals.approveModal.id }}
+                    type="secondary"
+                    className="workbench-ticket-meta"
                   >
-                    <Switch />
-                  </Form.Item>
+                    {t("ticket_id")}:{" "}
+                    {formatApprovalRecordID(approvals.approveModal.id)}
+                  </Text>
+                  <Text type="secondary">
+                    {t("common:table.created_at")}:{" "}
+                    <LocalDateTimeText
+                      value={approvals.approveModal.created_at}
+                    />
+                  </Text>
+                </Space>
+                <div className="workbench-detail-hero__grid">
+                  {renderSectionCard(
+                    t("workbench.table.scope_label"),
+                    approvalContextFields(approvals.approveModal, t),
+                  )}
+                  {renderSectionCard(
+                    t("workbench.table.request_label"),
+                    approvalRequestFields(approvals.approveModal, t),
+                  )}
+                </div>
+              </Space>
+            </Card>
+            {(approveOverviewItems.length > 0 ||
+              approveScopeItems.length > 0 ||
+              approveChangeItems.length > 0) && (
+              <div className="workbench-detail-modal__grid">
+                {approveScopeItems.length > 0 && (
                   <Card
                     size="small"
-                    style={{ marginBottom: 16, background: "#fafafa" }}
-                    title={t("approve_modal.modify_request_snapshot_title")}
+                    className="workbench-detail-section-card workbench-detail-section-card--primary"
+                    title={t("summary.scope_title")}
                   >
-                    <Space direction="vertical" style={{ width: "100%" }}>
-                      <Space style={{ width: "100%" }}>
-                        <Form.Item
-                          label={t("approve_modal.cpu_request_current")}
-                          style={{ marginBottom: 0, flex: 1 }}
-                        >
-                          <Input
-                            readOnly
-                            value={
-                              typeof modifyCurrentCPURequest === "number"
-                                ? `${modifyCurrentCPURequest} ${t(
-                                    "approve_modal.cores",
-                                  )}`
-                                : "—"
-                            }
-                          />
-                        </Form.Item>
-                        <Form.Item
-                          label={t("approve_modal.cpu_limit_review")}
-                          style={{ marginBottom: 0, flex: 1 }}
-                        >
-                          <Input
-                            readOnly
-                            value={
-                              typeof modifyTargetCPULimit === "number"
-                                ? `${modifyTargetCPULimit} ${t(
-                                    "approve_modal.cores",
-                                  )}`
-                                : "—"
-                            }
-                          />
-                        </Form.Item>
-                      </Space>
-                      <Space style={{ width: "100%" }}>
-                        <Form.Item
-                          label={t("approve_modal.memory_request_current")}
-                          style={{ marginBottom: 0, flex: 1 }}
-                        >
-                          <Input
-                            readOnly
-                            value={
-                              typeof modifyCurrentMemoryRequestGi === "number"
-                                ? `${modifyCurrentMemoryRequestGi} Gi`
-                                : "—"
-                            }
-                          />
-                        </Form.Item>
-                        <Form.Item
-                          label={t("approve_modal.memory_limit_review")}
-                          style={{ marginBottom: 0, flex: 1 }}
-                        >
-                          <Input
-                            readOnly
-                            value={
-                              typeof modifyTargetMemoryLimitGi === "number"
-                                ? `${modifyTargetMemoryLimitGi} Gi`
-                                : "—"
-                            }
-                          />
-                        </Form.Item>
-                      </Space>
-                    </Space>
+                    <Descriptions
+                      bordered
+                      size="small"
+                      column={1}
+                      items={approveScopeItems}
+                    />
                   </Card>
-                  <Form.Item
-                    noStyle
-                    shouldUpdate={(prev, cur) =>
-                      prev.enable_override !== cur.enable_override ||
-                      prev.cpu_request !== cur.cpu_request ||
-                      prev.memory_request_gi !== cur.memory_request_gi
-                    }
+                )}
+                {approveChangeItems.length > 0 && (
+                  <Card
+                    size="small"
+                    className="workbench-detail-section-card workbench-detail-section-card--secondary"
+                    title={t("summary.change_title")}
                   >
-                    {({ getFieldValue }) =>
-                      getFieldValue("enable_override") ? (
-                        <Card
-                          size="small"
-                          style={{ marginBottom: 16, background: "#fafafa" }}
-                        >
-                          <Space direction="vertical" style={{ width: "100%" }}>
-                            <Space style={{ width: "100%" }}>
-                              <Form.Item
-                                name="cpu_request"
-                                label={t("approve_modal.cpu_request")}
-                                style={{ marginBottom: 0, flex: 1 }}
-                                rules={[
-                                  () => ({
-                                    validator(_, value) {
-                                      if (
-                                        typeof value === "number" &&
-                                        typeof modifyTargetCPULimit === "number" &&
-                                        value > modifyTargetCPULimit
-                                      ) {
-                                        return Promise.reject(
-                                          new Error(
-                                            t(
-                                              "approve_modal.modify_cpu_request_exceeds_limit",
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                      return Promise.resolve();
-                                    },
-                                  }),
-                                ]}
-                              >
-                                <UnitInputNumber
-                                  min={0.5}
-                                  step={0.5}
-                                  precision={1}
-                                  unit={t("approve_modal.cores")}
-                                />
-                              </Form.Item>
-                              <Form.Item
-                                label={t("approve_modal.cpu_limit_review")}
-                                style={{ marginBottom: 0, flex: 1 }}
-                              >
-                                <Input
-                                  readOnly
-                                  value={
-                                    typeof modifyTargetCPULimit === "number"
-                                      ? `${modifyTargetCPULimit} ${t(
-                                          "approve_modal.cores",
-                                        )}`
-                                      : "—"
-                                  }
-                                />
-                              </Form.Item>
-                            </Space>
-                            <Space style={{ width: "100%" }}>
-                              <Form.Item
-                                name="memory_request_gi"
-                                label={t("approve_modal.memory_request")}
-                                style={{ marginBottom: 0, flex: 1 }}
-                                rules={[
-                                  () => ({
-                                    validator(_, value) {
-                                      if (
-                                        typeof value === "number" &&
-                                        typeof modifyTargetMemoryLimitGi ===
-                                          "number" &&
-                                        value > modifyTargetMemoryLimitGi
-                                      ) {
-                                        return Promise.reject(
-                                          new Error(
-                                            t(
-                                              "approve_modal.modify_memory_request_exceeds_limit",
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                      return Promise.resolve();
-                                    },
-                                  }),
-                                ]}
-                              >
-                                <UnitInputNumber
-                                  min={0.5}
-                                  step={0.5}
-                                  precision={1}
-                                  unit="Gi"
-                                />
-                              </Form.Item>
-                              <Form.Item
-                                label={t("approve_modal.memory_limit_review")}
-                                style={{ marginBottom: 0, flex: 1 }}
-                              >
-                                <Input
-                                  readOnly
-                                  value={
-                                    typeof modifyTargetMemoryLimitGi === "number"
-                                      ? `${modifyTargetMemoryLimitGi} Gi`
-                                      : "—"
-                                  }
-                                />
-                              </Form.Item>
-                            </Space>
+                    <Descriptions
+                      bordered
+                      size="small"
+                      column={1}
+                      items={approveChangeItems}
+                    />
+                  </Card>
+                )}
+                {approveOverviewItems.length > 0 && (
+                  <Card
+                    size="small"
+                    className="workbench-detail-section-card workbench-detail-section-card--tertiary"
+                    title={t("summary.workflow_title")}
+                  >
+                    <Descriptions
+                      bordered
+                      size="small"
+                      column={1}
+                      items={approveOverviewItems}
+                    />
+                  </Card>
+                )}
+              </div>
+            )}
+            {approveBatchItems.length > 0 && (
+              <Card
+                size="small"
+                className="workbench-detail-section-card workbench-detail-section-card--wide"
+                style={{ marginBottom: 16 }}
+                title={t("summary.affected_items_title")}
+              >
+                <div className="workbench-detail-modal__table-scroll">
+                  <Table
+                    size="small"
+                    pagination={false}
+                    rowKey="key"
+                    dataSource={approveBatchItems}
+                    scroll={{ x: 760, y: 280 }}
+                    columns={[
+                      {
+                        title: t("summary.item"),
+                        dataIndex: "title",
+                        key: "title",
+                        width: 240,
+                        render: (value: string | undefined) => (
+                          <Space
+                            direction="vertical"
+                            size={4}
+                            className="workbench-table-stack"
+                          >
+                            <Text strong className="workbench-table-title">
+                              {value || "—"}
+                            </Text>
                           </Space>
-                        </Card>
-                      ) : null
-                    }
-                  </Form.Item>
-                </>
-              )
-            : approvals.approveModal?.operation_type === "CREATE"
-            ? (() => {
+                        ),
+                      },
+                      {
+                        title: t("summary.scope"),
+                        key: "scope",
+                        width: 280,
+                        render: (
+                          _: unknown,
+                          record: ApprovalBatchDisplayRow,
+                        ) => (
+                          <Space
+                            direction="vertical"
+                            size={4}
+                            className="workbench-batch-cell"
+                          >
+                            <div className="workbench-batch-cell__row">
+                              <Text
+                                type="secondary"
+                                className="workbench-batch-cell__label"
+                              >
+                                {t("summary.scope")}
+                              </Text>
+                              <Text>{record.scope || "—"}</Text>
+                            </div>
+                            <div className="workbench-batch-cell__row">
+                              <Text
+                                type="secondary"
+                                className="workbench-batch-cell__label"
+                              >
+                                {t("summary.cluster")}
+                              </Text>
+                              <Text>{record.cluster || "—"}</Text>
+                            </div>
+                            <div className="workbench-batch-cell__row">
+                              <Text
+                                type="secondary"
+                                className="workbench-batch-cell__label"
+                              >
+                                {t("summary.request_vm_status")}
+                              </Text>
+                              <Text>{record.requestStatus || "—"}</Text>
+                            </div>
+                            <div className="workbench-batch-cell__row">
+                              <Text
+                                type="secondary"
+                                className="workbench-batch-cell__label"
+                              >
+                                {t("summary.latest_vm_status")}
+                              </Text>
+                              <Space direction="vertical" size={0}>
+                                <Text>{record.latestStatus || "—"}</Text>
+                              </Space>
+                            </div>
+                            {record.statusChanged && (
+                              <Text
+                                type="warning"
+                                className="workbench-table-note"
+                              >
+                                {t("summary.status_changed")}
+                              </Text>
+                            )}
+                          </Space>
+                        ),
+                      },
+                      {
+                        title: t("summary.target_resources"),
+                        key: "target_resources",
+                        width: 280,
+                        render: (
+                          _: unknown,
+                          record: ApprovalBatchDisplayRow,
+                        ) => (
+                          <Space
+                            direction="vertical"
+                            size={4}
+                            className="workbench-batch-cell"
+                          >
+                            <div className="workbench-batch-cell__row">
+                              <Text
+                                type="secondary"
+                                className="workbench-batch-cell__label"
+                              >
+                                {t("summary.current_resources")}
+                              </Text>
+                              <Text>{record.currentShape || "—"}</Text>
+                            </div>
+                            <div className="workbench-batch-cell__row">
+                              <Text
+                                type="secondary"
+                                className="workbench-batch-cell__label"
+                              >
+                                {t("summary.target_resources")}
+                              </Text>
+                              <Text>{record.targetShape || "—"}</Text>
+                            </div>
+                            <div className="workbench-batch-cell__row">
+                              <Text
+                                type="secondary"
+                                className="workbench-batch-cell__label"
+                              >
+                                {t("summary.power_action")}
+                              </Text>
+                              <Text>{record.action || "—"}</Text>
+                            </div>
+                          </Space>
+                        ),
+                      },
+                    ]}
+                  />
+                </div>
+              </Card>
+            )}
+            {approvals.approveModal?.operation_type === "MODIFY" ? (
+              <>
+                {modifyRequiresRestart && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message={t("approve_modal.modify_restart_required_title")}
+                    description={t(
+                      "approve_modal.modify_restart_required_description",
+                    )}
+                  />
+                )}
+                <Alert
+                  type={
+                    modifyCPURequestNeedsReview ||
+                    modifyMemoryRequestNeedsReview
+                      ? "warning"
+                      : "info"
+                  }
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                  message={t("approve_modal.modify_request_review_title")}
+                  description={t(
+                    modifyCPURequestNeedsReview ||
+                      modifyMemoryRequestNeedsReview
+                      ? "approve_modal.modify_request_review_required_description"
+                      : "approve_modal.modify_request_review_description",
+                    {
+                      cpu_request:
+                        typeof modifyCurrentCPURequest === "number"
+                          ? modifyCurrentCPURequest
+                          : "—",
+                      memory_request_gi:
+                        typeof modifyCurrentMemoryRequestGi === "number"
+                          ? modifyCurrentMemoryRequestGi
+                          : "—",
+                    },
+                  )}
+                />
+                <Form.Item
+                  name="enable_override"
+                  valuePropName="checked"
+                  label={t("approve_modal.modify_request_override")}
+                  extra={t("approve_modal.modify_request_override_help")}
+                >
+                  <Switch />
+                </Form.Item>
+                <Card
+                  size="small"
+                  style={{ marginBottom: 16, background: "#fafafa" }}
+                  title={t("approve_modal.modify_request_snapshot_title")}
+                >
+                  <Space direction="vertical" style={{ width: "100%" }}>
+                    <Space style={{ width: "100%" }}>
+                      <Form.Item
+                        label={t("approve_modal.cpu_request_current")}
+                        style={{ marginBottom: 0, flex: 1 }}
+                      >
+                        <Input
+                          readOnly
+                          value={
+                            typeof modifyCurrentCPURequest === "number"
+                              ? `${modifyCurrentCPURequest} ${t(
+                                  "approve_modal.cores",
+                                )}`
+                              : "—"
+                          }
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        label={t("approve_modal.cpu_limit_review")}
+                        style={{ marginBottom: 0, flex: 1 }}
+                      >
+                        <Input
+                          readOnly
+                          value={
+                            typeof modifyTargetCPULimit === "number"
+                              ? `${modifyTargetCPULimit} ${t(
+                                  "approve_modal.cores",
+                                )}`
+                              : "—"
+                          }
+                        />
+                      </Form.Item>
+                    </Space>
+                    <Space style={{ width: "100%" }}>
+                      <Form.Item
+                        label={t("approve_modal.memory_request_current")}
+                        style={{ marginBottom: 0, flex: 1 }}
+                      >
+                        <Input
+                          readOnly
+                          value={
+                            typeof modifyCurrentMemoryRequestGi === "number"
+                              ? `${modifyCurrentMemoryRequestGi} Gi`
+                              : "—"
+                          }
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        label={t("approve_modal.memory_limit_review")}
+                        style={{ marginBottom: 0, flex: 1 }}
+                      >
+                        <Input
+                          readOnly
+                          value={
+                            typeof modifyTargetMemoryLimitGi === "number"
+                              ? `${modifyTargetMemoryLimitGi} Gi`
+                              : "—"
+                          }
+                        />
+                      </Form.Item>
+                    </Space>
+                  </Space>
+                </Card>
+                <Form.Item
+                  noStyle
+                  shouldUpdate={(prev, cur) =>
+                    prev.enable_override !== cur.enable_override ||
+                    prev.cpu_request !== cur.cpu_request ||
+                    prev.memory_request_gi !== cur.memory_request_gi
+                  }
+                >
+                  {({ getFieldValue }) =>
+                    getFieldValue("enable_override") ? (
+                      <Card
+                        size="small"
+                        style={{ marginBottom: 16, background: "#fafafa" }}
+                      >
+                        <Space direction="vertical" style={{ width: "100%" }}>
+                          <Space style={{ width: "100%" }}>
+                            <Form.Item
+                              name="cpu_request"
+                              label={t("approve_modal.cpu_request")}
+                              style={{ marginBottom: 0, flex: 1 }}
+                              rules={[
+                                () => ({
+                                  validator(_, value) {
+                                    if (
+                                      typeof value === "number" &&
+                                      typeof modifyTargetCPULimit ===
+                                        "number" &&
+                                      value > modifyTargetCPULimit
+                                    ) {
+                                      return Promise.reject(
+                                        new Error(
+                                          t(
+                                            "approve_modal.modify_cpu_request_exceeds_limit",
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return Promise.resolve();
+                                  },
+                                }),
+                              ]}
+                            >
+                              <UnitInputNumber
+                                min={0.5}
+                                step={0.5}
+                                precision={1}
+                                unit={t("approve_modal.cores")}
+                              />
+                            </Form.Item>
+                            <Form.Item
+                              label={t("approve_modal.cpu_limit_review")}
+                              style={{ marginBottom: 0, flex: 1 }}
+                            >
+                              <Input
+                                readOnly
+                                value={
+                                  typeof modifyTargetCPULimit === "number"
+                                    ? `${modifyTargetCPULimit} ${t(
+                                        "approve_modal.cores",
+                                      )}`
+                                    : "—"
+                                }
+                              />
+                            </Form.Item>
+                          </Space>
+                          <Space style={{ width: "100%" }}>
+                            <Form.Item
+                              name="memory_request_gi"
+                              label={t("approve_modal.memory_request")}
+                              style={{ marginBottom: 0, flex: 1 }}
+                              rules={[
+                                () => ({
+                                  validator(_, value) {
+                                    if (
+                                      typeof value === "number" &&
+                                      typeof modifyTargetMemoryLimitGi ===
+                                        "number" &&
+                                      value > modifyTargetMemoryLimitGi
+                                    ) {
+                                      return Promise.reject(
+                                        new Error(
+                                          t(
+                                            "approve_modal.modify_memory_request_exceeds_limit",
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return Promise.resolve();
+                                  },
+                                }),
+                              ]}
+                            >
+                              <UnitInputNumber
+                                min={0.5}
+                                step={0.5}
+                                precision={1}
+                                unit="Gi"
+                              />
+                            </Form.Item>
+                            <Form.Item
+                              label={t("approve_modal.memory_limit_review")}
+                              style={{ marginBottom: 0, flex: 1 }}
+                            >
+                              <Input
+                                readOnly
+                                value={
+                                  typeof modifyTargetMemoryLimitGi === "number"
+                                    ? `${modifyTargetMemoryLimitGi} Gi`
+                                    : "—"
+                                }
+                              />
+                            </Form.Item>
+                          </Space>
+                        </Space>
+                      </Card>
+                    ) : null
+                  }
+                </Form.Item>
+              </>
+            ) : approvals.approveModal?.operation_type === "CREATE" ? (
+              (() => {
                 const payload = asPayloadRecord(
                   approvals.approveModal?.ticket_payload,
                 );
@@ -1658,8 +1960,10 @@ export function AdminApprovalsContent() {
                       ]}
                       extra={
                         approvals.selectedClusterId
-                          ? approvals.selectedClusterStorageClassOptions.length > 0
-                            ? approvals.selectedClusterStorageClassOptions.length === 1
+                          ? approvals.selectedClusterStorageClassOptions
+                              .length > 0
+                            ? approvals.selectedClusterStorageClassOptions
+                                .length === 1
                               ? t(
                                   "approve_modal.storage_class_auto_detected_single",
                                   "Exactly one eligible storage class was detected for this cluster and is auto-selected.",
@@ -1689,7 +1993,8 @@ export function AdminApprovalsContent() {
                         loading={approvals.selectedClusterPolicyLoading}
                         disabled={!approvals.selectedClusterId}
                         allowClear={
-                          approvals.selectedClusterStorageClassOptions.length > 1
+                          approvals.selectedClusterStorageClassOptions.length >
+                          1
                         }
                         showSearch
                         optionFilterProp="label"
@@ -1702,7 +2007,8 @@ export function AdminApprovalsContent() {
                             selectedRootVolumeMode ||
                             rootVolumeResolution.state === "resolved"
                               ? "success"
-                              : rootVolumeResolution.state === "profile_incomplete" ||
+                              : rootVolumeResolution.state ===
+                                    "profile_incomplete" ||
                                   rootVolumeResolution.state === "unsupported"
                                 ? "error"
                                 : "warning"
@@ -1712,21 +2018,24 @@ export function AdminApprovalsContent() {
                           message={t(
                             `approve_modal.root_volume_resolution.${rootVolumeResolution.state}.title`,
                             {
-                              defaultValue:
-                                selectedRootVolumeMode
-                                  ? "Root volume mode selected"
-                                  : rootVolumeResolution.state === "resolved"
+                              defaultValue: selectedRootVolumeMode
+                                ? "Root volume mode selected"
+                                : rootVolumeResolution.state === "resolved"
                                   ? "Root volume mode resolved"
-                                  : rootVolumeResolution.state === "mode_required"
+                                  : rootVolumeResolution.state ===
+                                      "mode_required"
                                     ? "Select root volume mode"
-                                    : rootVolumeResolution.state === "storage_class_required"
+                                    : rootVolumeResolution.state ===
+                                        "storage_class_required"
                                       ? "Select storage class"
                                       : "Root volume resolution blocked",
                             },
                           )}
                           description={
                             selectedRootVolumeMode
-                              ? rootVolumeModeOptionLabel(selectedRootVolumeMode)
+                              ? rootVolumeModeOptionLabel(
+                                  selectedRootVolumeMode,
+                                )
                               : renderRootVolumeResolutionMessage(
                                   rootVolumeResolution,
                                 )
@@ -1801,7 +2110,7 @@ export function AdminApprovalsContent() {
                           "approve_modal.root_volume_mode_recommendation_description",
                           {
                             defaultValue:
-                              "{{mode}} is recommended here because it preserves shared-block semantics and is the safest default for migration-friendly VM workloads.",
+                              "Prefer {{mode}} when available. If this storage class or compatibility checks cannot satisfy shared access, switch to a ReadWriteOnce mode instead.",
                             mode: rootVolumeModeOptionLabel(
                               recommendedRootVolumeMode,
                             ),
@@ -1809,11 +2118,95 @@ export function AdminApprovalsContent() {
                         )}
                       />
                     )}
-                    <Form.Item name="selected_dv_access_modes" hidden>
-                      <Select mode="multiple" options={[]} />
+                    {approvals.requiresManualRootVolumeModeInput && (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        style={{ marginTop: -8, marginBottom: 16 }}
+                        message={t(
+                          "approve_modal.root_volume_manual_mode_title",
+                          "Select root volume mode manually",
+                        )}
+                        description={t(
+                          "approve_modal.root_volume_manual_mode_help",
+                          "This StorageProfile does not expose claimPropertySets. Prefer ReadWriteMany when available; if the current storage class or compatibility checks cannot satisfy it, switch to ReadWriteOnce. Then choose volumeMode explicitly to continue with PVC-style root volume provisioning.",
+                        )}
+                      />
+                    )}
+                    <Form.Item
+                      name="selected_dv_volume_mode"
+                      hidden={!approvals.requiresManualRootVolumeModeInput}
+                      preserve={true}
+                      label={t(
+                        "approve_modal.root_volume_manual_volume_mode",
+                        "Volume Mode",
+                      )}
+                      rules={[
+                        {
+                          required: approvals.requiresManualRootVolumeModeInput,
+                          message: t(
+                            "approve_modal.root_volume_manual_volume_mode_required",
+                            "Select a volume mode before approving.",
+                          ),
+                        },
+                      ]}
+                    >
+                      <Select
+                        options={[
+                          { label: "Block", value: "Block" },
+                          { label: "Filesystem", value: "Filesystem" },
+                        ]}
+                      />
                     </Form.Item>
-                    <Form.Item name="selected_dv_volume_mode" hidden>
-                      <Input />
+                    <Form.Item
+                      name="selected_dv_access_modes"
+                      hidden={!approvals.requiresManualRootVolumeModeInput}
+                      preserve={true}
+                      label={t(
+                        "approve_modal.root_volume_manual_access_modes",
+                        "Access Modes",
+                      )}
+                      extra={t(
+                        "approve_modal.root_volume_manual_access_modes_help",
+                        "Recommended: ReadWriteMany. If compatibility checks or provisioning cannot satisfy it, choose ReadWriteOnce instead.",
+                      )}
+                      rules={[
+                        {
+                          validator: (_, value: unknown) => {
+                            if (!approvals.requiresManualRootVolumeModeInput) {
+                              return Promise.resolve();
+                            }
+                            if (Array.isArray(value) && value.length > 0) {
+                              return Promise.resolve();
+                            }
+                            return Promise.reject(
+                              new Error(
+                                t(
+                                  "approve_modal.root_volume_manual_access_modes_required",
+                                  "Select at least one access mode before approving.",
+                                ),
+                              ),
+                            );
+                          },
+                        },
+                      ]}
+                    >
+                      <Select
+                        mode="multiple"
+                        allowClear
+                        options={ROOT_VOLUME_ACCESS_MODE_OPTIONS.map(
+                          (value) => ({
+                            label:
+                              value === "ReadWriteMany"
+                                ? `${value} ${t(
+                                    "approve_modal.root_volume_mode_recommended_suffix",
+                                    "(Recommended)",
+                                  )}`
+                                : value,
+                            value,
+                          }),
+                        )}
+                      />
                     </Form.Item>
                     <Form.Item
                       name="enable_override"
@@ -1848,7 +2241,13 @@ export function AdminApprovalsContent() {
                                 }
                                 style={{ marginBottom: 0 }}
                               >
-                                <UnitInputNumber min={1} max={500} step={1} precision={0} unit="GB" />
+                                <UnitInputNumber
+                                  min={1}
+                                  max={500}
+                                  step={1}
+                                  precision={0}
+                                  unit="GB"
+                                />
                               </Form.Item>
                               <Space style={{ width: "100%" }}>
                                 <Form.Item
@@ -2000,47 +2399,47 @@ export function AdminApprovalsContent() {
                   </>
                 );
               })()
-            : null}
-          <Form.Item name="comment" label={t("approve_modal.comment")}>
-            <Input.TextArea rows={3} />
-          </Form.Item>
-        </Form>
-      </WorkbenchDetailModal>
+            ) : null}
+            <Form.Item name="comment" label={t("approve_modal.comment")}>
+              <Input.TextArea rows={3} />
+            </Form.Item>
+          </Form>
+        </WorkbenchDetailModal>
       ) : null}
 
       {approvals.rejectModal ? (
-      <WorkbenchDetailModal
-        title={t("reject_modal.title")}
-        open={Boolean(approvals.rejectModal)}
-        onOk={() => {
-          void approvals.submitReject();
-        }}
-        onCancel={approvals.closeRejectModal}
-        confirmLoading={approvals.rejectPending}
-        width="min(720px, calc(100vw - 16px))"
-        contentMinWidth={560}
-        data-testid="reject-modal"
-      >
-        <Form
-          form={approvals.rejectForm}
-          layout="vertical"
-          name="reject-form"
-          preserve={false}
+        <WorkbenchDetailModal
+          title={t("reject_modal.title")}
+          open={Boolean(approvals.rejectModal)}
+          onOk={() => {
+            void approvals.submitReject();
+          }}
+          onCancel={approvals.closeRejectModal}
+          confirmLoading={approvals.rejectPending}
+          width="min(720px, calc(100vw - 16px))"
+          contentMinWidth={560}
+          data-testid="reject-modal"
         >
-          <Form.Item
-            name="reason"
-            label={t("reject_modal.reason")}
-            rules={[
-              { required: true, message: t("reject_modal.reason_required") },
-            ]}
+          <Form
+            form={approvals.rejectForm}
+            layout="vertical"
+            name="reject-form"
+            preserve={false}
           >
-            <Input.TextArea
-              rows={4}
-              placeholder={t("reject_modal.reason_placeholder")}
-            />
-          </Form.Item>
-        </Form>
-      </WorkbenchDetailModal>
+            <Form.Item
+              name="reason"
+              label={t("reject_modal.reason")}
+              rules={[
+                { required: true, message: t("reject_modal.reason_required") },
+              ]}
+            >
+              <Input.TextArea
+                rows={4}
+                placeholder={t("reject_modal.reason_placeholder")}
+              />
+            </Form.Item>
+          </Form>
+        </WorkbenchDetailModal>
       ) : null}
     </div>
   );

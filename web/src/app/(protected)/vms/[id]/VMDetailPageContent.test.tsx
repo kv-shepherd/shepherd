@@ -6,6 +6,11 @@ const refetchMock = vi.fn();
 const refetchConsoleStatusMock = vi.fn();
 const useApiGetMock = vi.fn();
 const useApiMutationMock = vi.fn();
+const authState = {
+  user: {
+    permissions: ["platform:admin"],
+  },
+};
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "vm-1" }),
@@ -124,6 +129,11 @@ vi.mock("@/lib/hooks/useMessage", () => ({
   }),
 }));
 
+vi.mock("@/stores/auth", () => ({
+  useAuthStore: (selector: (state: typeof authState) => unknown) =>
+    selector(authState),
+}));
+
 vi.mock("@/features/vm-management/components/VMConsoleSessionPanel", () => ({
   VMConsoleSessionPanel: ({
     target,
@@ -145,6 +155,7 @@ describe("VMDetailPage", () => {
     refetchMock.mockReset();
     refetchConsoleStatusMock.mockReset();
     useApiGetMock.mockReset();
+    authState.user.permissions = ["platform:admin"];
   });
 
   it("renders the unified page shell and VM action surface", () => {
@@ -157,6 +168,20 @@ describe("VMDetailPage", () => {
           },
           isLoading: false,
           refetch: refetchConsoleStatusMock,
+        };
+      }
+      if (queryKey[0] === "vm-manifest") {
+        return {
+          data: {
+            vm_id: "vm-1",
+            name: "vm-alpha",
+            namespace: "team-prod",
+            cluster_id: "cluster-1",
+            yaml: "kind: VirtualMachine\nmetadata:\n  name: vm-alpha\n",
+          },
+          isLoading: false,
+          isFetching: false,
+          refetch: vi.fn(),
         };
       }
       return {
@@ -210,6 +235,7 @@ describe("VMDetailPage", () => {
     expect(screen.getByText("Actions")).toBeVisible();
     expect(screen.getByTestId("vm-action-start-vm-1")).toBeVisible();
     expect(screen.getByTestId("vm-action-console-vm-1")).toBeVisible();
+    expect(screen.getByTestId("vm-action-manifest-vm-1")).toBeVisible();
     expect(screen.getByTestId("vm-action-request-similar-vm-1")).toBeVisible();
     expect(screen.getByText("team-prod")).toBeVisible();
     expect(screen.getByText("Payments")).toBeVisible();
@@ -251,6 +277,14 @@ describe("VMDetailPage", () => {
           },
           isLoading: false,
           refetch: refetchConsoleStatusMock,
+        };
+      }
+      if (queryKey[0] === "vm-manifest") {
+        return {
+          data: undefined,
+          isLoading: false,
+          isFetching: false,
+          refetch: vi.fn(),
         };
       }
       return {
@@ -298,7 +332,16 @@ describe("VMDetailPage", () => {
         return {
           data: undefined,
           isLoading: false,
+          isFetching: false,
           refetch: refetchConsoleStatusMock,
+        };
+      }
+      if (queryKey[0] === "vm-manifest") {
+        return {
+          data: undefined,
+          isLoading: false,
+          isFetching: false,
+          refetch: vi.fn(),
         };
       }
       return {
@@ -321,5 +364,94 @@ describe("VMDetailPage", () => {
 
     expect(screen.getByTestId("vm-action-stop-vm-1")).toBeEnabled();
     expect(screen.getByTestId("vm-action-start-vm-1")).toBeDisabled();
+  });
+
+  it("shows the YAML manifest viewer for platform admins", () => {
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      if (queryKey[0] === "vm-console-status") {
+        return {
+          data: undefined,
+          isLoading: false,
+          isFetching: false,
+          refetch: refetchConsoleStatusMock,
+        };
+      }
+      if (queryKey[0] === "vm-manifest") {
+        return {
+          data: {
+            vm_id: "vm-1",
+            name: "vm-alpha",
+            namespace: "team-prod",
+            cluster_id: "cluster-1",
+            yaml: "kind: VirtualMachine\nmetadata:\n  name: vm-alpha\n",
+          },
+          isLoading: false,
+          isFetching: false,
+          refetch: vi.fn(),
+        };
+      }
+      return {
+        data: {
+          id: "vm-1",
+          name: "vm-alpha",
+          status: "RUNNING",
+          namespace: "team-prod",
+        },
+        isLoading: false,
+        refetch: refetchMock,
+      };
+    });
+    useApiMutationMock.mockReturnValue({
+      isPending: false,
+      mutate: vi.fn(),
+    });
+
+    render(<VMDetailPage />);
+
+    fireEvent.click(screen.getByTestId("vm-action-manifest-vm-1"));
+
+    expect(screen.getByTestId("vm-manifest-content")).toHaveValue(
+      "kind: VirtualMachine\nmetadata:\n  name: vm-alpha\n",
+    );
+  });
+
+  it("hides the YAML manifest viewer for non-platform-admin users", () => {
+    authState.user.permissions = ["vm:read"];
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      if (queryKey[0] === "vm-console-status") {
+        return {
+          data: undefined,
+          isLoading: false,
+          isFetching: false,
+          refetch: refetchConsoleStatusMock,
+        };
+      }
+      if (queryKey[0] === "vm-manifest") {
+        return {
+          data: undefined,
+          isLoading: false,
+          isFetching: false,
+          refetch: vi.fn(),
+        };
+      }
+      return {
+        data: {
+          id: "vm-1",
+          name: "vm-alpha",
+          status: "RUNNING",
+          namespace: "team-prod",
+        },
+        isLoading: false,
+        refetch: refetchMock,
+      };
+    });
+    useApiMutationMock.mockReturnValue({
+      isPending: false,
+      mutate: vi.fn(),
+    });
+
+    render(<VMDetailPage />);
+
+    expect(screen.queryByTestId("vm-action-manifest-vm-1")).not.toBeInTheDocument();
   });
 });

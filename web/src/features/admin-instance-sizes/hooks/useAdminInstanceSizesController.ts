@@ -2,14 +2,19 @@
 
 import { App, Form } from 'antd';
 import type { TFunction } from 'i18next';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { SETUP_GUIDE_INVALIDATION_KEYS } from '@/features/setup-guide/queryKeys';
 import { api } from '@/lib/api/client';
 import { translateApiError } from '@/lib/api/errorMessage';
+import {
+    HUGEPAGES_PAGE_SIZE_PATH,
+    normalizeHugepagesPageSizeValue,
+} from '@/lib/hugepages';
 
 import {
+    hasDedicatedCPURequirement,
     getCapabilityLabels,
     hasCPUOvercommit,
     hasMemoryOvercommit,
@@ -18,6 +23,11 @@ import {
     type InstanceSizeList,
     type InstanceSizeUpdateRequest,
 } from '../types';
+import {
+    getSpecOverrideValue,
+    normalizeInstanceSizeSpecOverrides,
+    setNestedValue,
+} from '../specOverrides';
 
 interface UseAdminInstanceSizesControllerArgs {
     t: TFunction;
@@ -119,6 +129,32 @@ function normalizeInstanceSizeSearchFilters(
     };
 }
 
+function resolveHugepagesRequirement(record: Pick<InstanceSize, 'requires_hugepages' | 'hugepages_size' | 'spec_overrides'>) {
+    const normalizedSpecOverrides = normalizeInstanceSizeSpecOverrides(
+        record.spec_overrides as Record<string, unknown> | undefined,
+    );
+    const indexedSize = normalizeHugepagesPageSizeValue(record.hugepages_size);
+    const specSize = normalizeHugepagesPageSizeValue(
+        getSpecOverrideValue(normalizedSpecOverrides, HUGEPAGES_PAGE_SIZE_PATH),
+    );
+    const hugepagesSize = indexedSize ?? specSize;
+    return {
+        requiresHugepages: record.requires_hugepages === true || Boolean(hugepagesSize),
+        hugepagesSize,
+    };
+}
+
+function hydrateSpecOverridesForEditing(instanceSize: InstanceSize): Record<string, unknown> {
+    const specOverrides = normalizeInstanceSizeSpecOverrides(
+        instanceSize.spec_overrides as Record<string, unknown> | undefined,
+    );
+    const { hugepagesSize } = resolveHugepagesRequirement(instanceSize);
+    if (hugepagesSize && getSpecOverrideValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH) === undefined) {
+        setNestedValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH, hugepagesSize);
+    }
+    return specOverrides;
+}
+
 export function resolveInstanceSizePublicationState(record: Pick<InstanceSize, 'enabled' | 'catalog_scope'>) {
     if (record.enabled === false) {
         return 'disabled';
@@ -133,6 +169,7 @@ export function matchesInstanceSizeCapabilityFilter(
     record: InstanceSize,
     capability: InstanceSizeSearchFilters['capability'],
 ) {
+    const hugepages = resolveHugepagesRequirement(record);
     switch (capability) {
         case '':
             return true;
@@ -141,9 +178,9 @@ export function matchesInstanceSizeCapabilityFilter(
         case 'sriov':
             return record.requires_sriov === true;
         case 'hugepages':
-            return record.requires_hugepages === true;
+            return hugepages.requiresHugepages;
         case 'dedicated_cpu':
-            return record.dedicated_cpu === true;
+            return hasDedicatedCPURequirement(record);
         case 'cpu_overcommit':
             return hasCPUOvercommit(record);
         case 'memory_overcommit':
@@ -219,12 +256,15 @@ function formToPayload(
         try {
             const parsed = JSON.parse(values.spec_text) as unknown;
             if (parsed !== null && !Array.isArray(parsed) && typeof parsed === 'object') {
-                specOverrides = parsed as Record<string, unknown>;
+                specOverrides = normalizeInstanceSizeSpecOverrides(parsed as Record<string, unknown>);
             }
         } catch {
             // Malformed spec_text — ignore, send without spec_overrides
         }
     }
+    const hugepagesSize = normalizeHugepagesPageSizeValue(
+        getSpecOverrideValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH),
+    );
 
     const cpuOvercommitEnabled = values.dedicated_cpu ? false : values.cpu_overcommit_enabled;
     // Overcommit clear semantics:
@@ -252,6 +292,8 @@ function formToPayload(
         memory_request_gi: memoryRequestGi,
         dedicated_cpu: values.dedicated_cpu,
         requires_sriov: values.requires_sriov,
+        requires_hugepages: Boolean(hugepagesSize),
+        hugepages_size: hugepagesSize,
         sort_order: values.sort_order,
         enabled: values.enabled,
         spec_overrides: specOverrides,
@@ -278,6 +320,7 @@ function instanceSizeToFormValues(instanceSize: InstanceSize): InstanceSizeFormV
         memory_request_gi?: number;
         sort_order?: number;
     };
+    const dedicatedCPU = hasDedicatedCPURequirement(instanceSize);
 
     return {
         name: instanceSize.name,
@@ -287,8 +330,8 @@ function instanceSizeToFormValues(instanceSize: InstanceSize): InstanceSizeFormV
         cpu_cores: instanceSize.cpu_cores,
         memory_gi: instanceSize.memory_gi,
         disk_gb: instanceSize.disk_gb,
-        dedicated_cpu: instanceSize.dedicated_cpu,
-        cpu_overcommit_enabled: typeof hydrated.cpu_request === 'number' && hydrated.cpu_request > 0,
+        dedicated_cpu: dedicatedCPU,
+        cpu_overcommit_enabled: !dedicatedCPU && typeof hydrated.cpu_request === 'number' && hydrated.cpu_request > 0,
         memory_overcommit_enabled: typeof hydrated.memory_request_gi === 'number' && hydrated.memory_request_gi > 0,
         cpu_request: hydrated.cpu_request,
         memory_request_gi: hydrated.memory_request_gi,
@@ -300,7 +343,7 @@ function instanceSizeToFormValues(instanceSize: InstanceSize): InstanceSizeFormV
         dv_access_modes: instanceSize.dv_access_modes,
         dv_volume_mode: instanceSize.dv_volume_mode,
         sort_order: hydrated.sort_order,
-        spec_text: JSON.stringify(instanceSize.spec_overrides ?? {}, null, 2),
+        spec_text: JSON.stringify(hydrateSpecOverridesForEditing(instanceSize), null, 2),
         enabled: instanceSize.enabled,
     };
 }
@@ -418,6 +461,14 @@ export function useAdminInstanceSizesController({
         setDeletingItem(item);
         setDeleteOpen(true);
     };
+
+    useEffect(() => {
+        if (!createOpen) {
+            return;
+        }
+        createForm.resetFields();
+        createForm.setFieldsValue(INSTANCE_SIZE_CREATE_INITIAL_VALUES);
+    }, [createForm, createOpen]);
 
     const submitCreate = async () => {
         const values = await createForm.validateFields();

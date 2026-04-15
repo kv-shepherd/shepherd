@@ -1,9 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { forwardRef, useImperativeHandle } from 'react';
 
 const controllerState = vi.hoisted(() => ({
     createOpen: false,
+    editOpen: false,
+    editingItem: null as Record<string, unknown> | null,
+    editInitialValues: undefined as Record<string, unknown> | undefined,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -108,9 +111,9 @@ vi.mock('../hooks/useAdminInstanceSizesController', async () => {
                 isLoading: false,
                 refetch: vi.fn(),
                 createOpen: controllerState.createOpen,
-                editOpen: false,
+                editOpen: controllerState.editOpen,
                 deleteOpen: false,
-                editingItem: null,
+                editingItem: controllerState.editingItem,
                 deletingItem: null,
                 createForm,
                 editForm,
@@ -122,7 +125,7 @@ vi.mock('../hooks/useAdminInstanceSizesController', async () => {
                     spec_text: '{}',
                     root_volume_mode_intent: 'auto',
                 },
-                editInitialValues: undefined,
+                editInitialValues: controllerState.editInitialValues,
                 openCreateModal: vi.fn(),
                 openEditModal: vi.fn(),
                 openDeleteModal: vi.fn(),
@@ -171,12 +174,15 @@ import { AdminInstanceSizesContent, applyInstanceSizePreset } from './AdminInsta
 describe('AdminInstanceSizesContent', () => {
     beforeEach(() => {
         controllerState.createOpen = false;
+        controllerState.editOpen = false;
+        controllerState.editingItem = null;
+        controllerState.editInitialValues = undefined;
     });
 
-    it('does not pre-mount dynamic schema forms while modals are closed', () => {
+    it('pre-mounts the edit dynamic schema form so first-open hydration has a registered Form tree', () => {
         render(<AdminInstanceSizesContent />);
 
-        expect(screen.queryByTestId('dynamic-schema-form')).not.toBeInTheDocument();
+        expect(screen.getAllByTestId('dynamic-schema-form')).toHaveLength(1);
     });
 
     it('renders the create form without duplicate initialValues warnings', async () => {
@@ -194,6 +200,51 @@ describe('AdminInstanceSizesContent', () => {
 
         consoleErrorSpy.mockRestore();
         controllerState.createOpen = false;
+    });
+
+    it('hydrates dedicated cpu in the edit modal without re-enabling cpu overcommit', async () => {
+        controllerState.editOpen = true;
+        controllerState.editingItem = {
+            id: 'size-dedicated',
+            name: 'm4.dedicated',
+        };
+        controllerState.editInitialValues = {
+            name: 'm4.dedicated',
+            catalog_scope: 'prod',
+            cpu_cores: 4,
+            memory_gi: 8,
+            cpu_request: 4,
+            dedicated_cpu: true,
+            cpu_overcommit_enabled: false,
+            memory_overcommit_enabled: false,
+            enabled: true,
+            spec_text: JSON.stringify({
+                spec: {
+                    template: {
+                        spec: {
+                            domain: {
+                                cpu: {
+                                    dedicatedCpuPlacement: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            }, null, 2),
+        };
+
+        render(<AdminInstanceSizesContent />);
+
+        expect(await screen.findByTestId('instance-size-edit-modal')).toBeInTheDocument();
+
+        const dedicatedLabel = screen.getByText('instanceSizes.dedicated').closest('label');
+        const dedicatedCheckbox = within(dedicatedLabel as HTMLElement).getByRole('checkbox') as HTMLInputElement;
+        expect(dedicatedCheckbox).toBeChecked();
+
+        const overcommitLabel = screen.getByText('instanceSizes.enable_cpu_overcommit').closest('label');
+        const overcommitCheckbox = within(overcommitLabel as HTMLElement).getByRole('checkbox') as HTMLInputElement;
+        expect(overcommitCheckbox).not.toBeChecked();
+        expect(overcommitCheckbox).toBeDisabled();
     });
 
     it('writes preset request values on the first apply', () => {

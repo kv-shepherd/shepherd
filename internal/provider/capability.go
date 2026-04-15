@@ -6,6 +6,7 @@ import (
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
+	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"kv-shepherd.io/shepherd/internal/provider/capabilityutil"
 )
@@ -67,6 +68,8 @@ func NewCapabilityDetector() *CapabilityDetector {
 // Strategy (2 sources, merged):
 //  1. GA features: inferred from Status.ObservedKubeVirtVersion via static table (no VM API calls).
 //  2. Explicit featureGates: read from KubeVirt CR spec.configuration.developerConfiguration.featureGates.
+//  3. Node allocatable hugepages resources: read from Nodes().List() and mapped to
+//     feature keys like hugepages-2Mi / hugepages-1Gi.
 //
 // Both are fetched from a single KubeVirt CR GET (the adapter layer caches the CR
 // object via sync.Once, so GetVersion() and GetFeatureGates() share one GET).
@@ -98,7 +101,16 @@ func (d *CapabilityDetector) Detect(ctx context.Context, client KubeVirtClusterC
 		explicitGates = nil
 	}
 
-	merged := mergeUniqueFeatures(gaFeatures, explicitGates)
+	hugepagesFeatures, err := detectHugepagesFeatures(ctx, client.Nodes())
+	if err != nil {
+		// Non-fatal: a cluster may not allow node listing. Keep GA + feature gates only.
+		hugepagesFeatures = nil
+	}
+
+	merged := mergeUniqueFeatures(
+		mergeUniqueFeatures(gaFeatures, explicitGates),
+		hugepagesFeatures,
+	)
 
 	return &ClusterCapabilities{
 		KubeVirtVersion: version,
@@ -186,4 +198,35 @@ func mergeUniqueFeatures(a, b []string) []string {
 		}
 	}
 	return result
+}
+
+func detectHugepagesFeatures(ctx context.Context, nodes NodeClient) ([]string, error) {
+	if nodes == nil {
+		return nil, nil
+	}
+	list, err := nodes.List(ctx, k8smetav1.ListOptions{ResourceVersion: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	features := make([]string, 0)
+	seen := make(map[string]struct{})
+	for i := range list.Items {
+		node := &list.Items[i]
+		for resourceName, quantity := range node.Status.Allocatable {
+			if quantity.Sign() <= 0 {
+				continue
+			}
+			normalized := strings.TrimSpace(string(resourceName))
+			if normalized == "" || !strings.HasPrefix(strings.ToLower(normalized), "hugepages-") {
+				continue
+			}
+			if _, ok := seen[normalized]; ok {
+				continue
+			}
+			seen[normalized] = struct{}{}
+			features = append(features, normalized)
+		}
+	}
+	return features, nil
 }

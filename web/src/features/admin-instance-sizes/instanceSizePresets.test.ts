@@ -26,6 +26,23 @@ describe('instanceSizePresets', () => {
             spec?: {
                 template?: {
                     spec?: {
+                        affinity?: {
+                            podAntiAffinity?: {
+                                preferredDuringSchedulingIgnoredDuringExecution?: Array<{
+                                    weight?: number;
+                                    podAffinityTerm?: {
+                                        labelSelector?: {
+                                            matchExpressions?: Array<{
+                                                key?: string;
+                                                operator?: string;
+                                                values?: string[];
+                                            }>;
+                                        };
+                                        topologyKey?: string;
+                                    };
+                                }>;
+                            };
+                        };
                         domain?: {
                             cpu?: Record<string, unknown>;
                             memory?: Record<string, unknown>;
@@ -49,12 +66,34 @@ describe('instanceSizePresets', () => {
             spec.spec?.template?.spec?.domain?.cpu?.dedicatedCpuPlacement,
         ).toBe(true);
         expect(
+            spec.spec?.template?.spec?.domain?.cpu?.numa,
+        ).toBeUndefined();
+        expect(
             spec.spec?.template?.spec?.domain?.memory,
         ).toMatchObject({
             hugepages: {
                 pageSize: '2Mi',
             },
         });
+        expect(
+            spec.spec?.template?.spec?.affinity?.podAntiAffinity?.preferredDuringSchedulingIgnoredDuringExecution,
+        ).toEqual([
+            {
+                weight: 100,
+                podAffinityTerm: {
+                    labelSelector: {
+                        matchExpressions: [
+                            {
+                                key: 'shepherd.io/service-id',
+                                operator: 'In',
+                                values: ['__SHEPHERD_SERVICE_ID__'],
+                            },
+                        ],
+                    },
+                    topologyKey: 'kubernetes.io/hostname',
+                },
+            },
+        ]);
         expect(
             spec.spec?.template?.spec?.domain?.features?.hyperv?.vendorid,
         ).toMatchObject({
@@ -123,5 +162,58 @@ describe('instanceSizePresets', () => {
         });
         expect(spec.spec?.template?.spec?.domain?.features).toBeTruthy();
         expect(spec.spec?.template?.spec?.domain?.clock).toBeTruthy();
+    });
+
+    it('adds anti-affinity to curated linux test preset without injecting numa passthrough', () => {
+        const preset = buildInstanceSizePresetValues('linux-test');
+        const spec = JSON.parse(preset.spec_text) as {
+            spec?: {
+                template?: {
+                    spec?: {
+                        affinity?: {
+                            podAntiAffinity?: {
+                                preferredDuringSchedulingIgnoredDuringExecution?: Array<{
+                                    weight?: number;
+                                    podAffinityTerm?: {
+                                        labelSelector?: {
+                                            matchExpressions?: Array<{
+                                                key?: string;
+                                                operator?: string;
+                                                values?: string[];
+                                            }>;
+                                        };
+                                        topologyKey?: string;
+                                    };
+                                }>;
+                            };
+                        };
+                        domain?: {
+                            cpu?: Record<string, unknown>;
+                        };
+                    };
+                };
+            };
+        };
+
+        expect(
+            spec.spec?.template?.spec?.affinity?.podAntiAffinity?.preferredDuringSchedulingIgnoredDuringExecution,
+        ).toEqual([
+            {
+                weight: 100,
+                podAffinityTerm: {
+                    labelSelector: {
+                        matchExpressions: [
+                            {
+                                key: 'shepherd.io/service-id',
+                                operator: 'In',
+                                values: ['__SHEPHERD_SERVICE_ID__'],
+                            },
+                        ],
+                    },
+                    topologyKey: 'kubernetes.io/hostname',
+                },
+            },
+        ]);
+        expect(spec.spec?.template?.spec?.domain?.cpu?.numa).toBeUndefined();
     });
 });

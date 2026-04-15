@@ -10,6 +10,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/yaml"
 
 	"kv-shepherd.io/shepherd/internal/domain"
 )
@@ -113,6 +114,40 @@ func (p *MockProvider) GetVM(_ context.Context, _, namespace, name string) (*dom
 		return nil, fmt.Errorf("vm %s not found", key)
 	}
 	return vm, nil
+}
+
+func (p *MockProvider) GetVMManifestYAML(_ context.Context, _, namespace, name string) (string, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	key := namespace + "/" + name
+	vm, ok := p.vms[key]
+	if !ok {
+		return "", fmt.Errorf("vm %s not found", key)
+	}
+
+	manifest := map[string]interface{}{
+		"apiVersion": "kubevirt.io/v1",
+		"kind":       "VirtualMachine",
+		"metadata": map[string]interface{}{
+			"name":      vm.Name,
+			"namespace": vm.Namespace,
+		},
+		"spec": map[string]interface{}{},
+		"status": map[string]interface{}{
+			"phase": string(vm.Status),
+		},
+	}
+
+	jsonData, err := json.Marshal(manifest)
+	if err != nil {
+		return "", fmt.Errorf("marshal mock manifest json: %w", err)
+	}
+	yamlData, err := yaml.JSONToYAML(jsonData)
+	if err != nil {
+		return "", fmt.Errorf("convert mock manifest to yaml: %w", err)
+	}
+	return string(yamlData), nil
 }
 
 func (p *MockProvider) ListVMs(_ context.Context, _, namespace string, _ ListOptions) (*domain.VMList, error) {
