@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-alpha.2](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.1...v0.1.1-alpha.2) (2026-04-14)
+
+
+### Bug Fixes
+
+* **auth:** ignore Codespaces forwarding cookie ([#485](https://github.com/kv-shepherd/shepherd/issues/485)) ([df7b07c](https://github.com/kv-shepherd/shepherd/commit/df7b07c99114211caead067f44ed4af83291ecba)), closes [#484](https://github.com/kv-shepherd/shepherd/issues/484)
+* **deploy:** generate prod env template on first run ([#494](https://github.com/kv-shepherd/shepherd/issues/494)) ([6baa4a3](https://github.com/kv-shepherd/shepherd/commit/6baa4a3d69efe6cea06a530928d428cfb216385d)), closes [#493](https://github.com/kv-shepherd/shepherd/issues/493)
+* **release:** align bot-authored alpha prereleases ([#491](https://github.com/kv-shepherd/shepherd/issues/491)) ([9546db3](https://github.com/kv-shepherd/shepherd/commit/9546db3a2d48516f3ffb7fe9898fb9da742f0709)), closes [#490](https://github.com/kv-shepherd/shepherd/issues/490)
+* **release:** split demo seed from runtime image ([#488](https://github.com/kv-shepherd/shepherd/issues/488)) ([5abb599](https://github.com/kv-shepherd/shepherd/commit/5abb599a46413a6473bf73be305446f0f5653c0e)), closes [#487](https://github.com/kv-shepherd/shepherd/issues/487)
+
+
+### Miscellaneous
+
+* **main:** release 0.1.2-alpha.1 ([#486](https://github.com/kv-shepherd/shepherd/issues/486)) ([dc98be2](https://github.com/kv-shepherd/shepherd/commit/dc98be2c1342f744bd890a7849cb0d1c161e3cd6))
+
 ## [0.1.2-alpha.1](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.1...v0.1.2-alpha.1) (2026-04-14)
 
 
