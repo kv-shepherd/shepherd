@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-alpha.3](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.2...v0.1.1-alpha.3) (2026-04-15)
+
+
+### Bug Fixes
+
+* **admin:** stabilize approval and sizing flows ([#499](https://github.com/kv-shepherd/shepherd/issues/499)) ([f891d5e](https://github.com/kv-shepherd/shepherd/commit/f891d5e66dc810f860c4d16c18752a93613f684b)), closes [#498](https://github.com/kv-shepherd/shepherd/issues/498)
+* **release:** dispatch prerelease artifacts ([#496](https://github.com/kv-shepherd/shepherd/issues/496)) ([1acb707](https://github.com/kv-shepherd/shepherd/commit/1acb707ca5bd0832876fd177c70bac0a8f651dce)), closes [#495](https://github.com/kv-shepherd/shepherd/issues/495)
+
 ## [0.1.1-alpha.2](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.1...v0.1.1-alpha.2) (2026-04-14)
 
 
