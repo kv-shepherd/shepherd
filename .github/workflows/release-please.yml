@@ -4,7 +4,7 @@
 #   1. Parses conventional commits (feat:, fix:, etc.)
 #   2. Creates/updates a "Release PR" with auto-generated CHANGELOG
 #   3. When the Release PR is merged, creates a git tag + GitHub Release
-#   4. The tag creation triggers the release.yml workflow for artifact build
+#   4. The workflow explicitly dispatches release.yml for artifact build
 #
 # Commit format: https://www.conventionalcommits.org/
 #   feat: add multi-cluster support
@@ -25,6 +25,7 @@ on:
         type: string
 
 permissions:
+  actions: write
   contents: write
   issues: write
   pull-requests: write
@@ -52,3 +53,18 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           release-as: ${{ github.event_name == 'workflow_dispatch' && inputs.release_as || '' }}
+
+      - name: Trigger release artifacts workflow
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+        run: |
+          gh release view "${RELEASE_TAG}" --repo "${{ github.repository }}" >/dev/null
+
+          gh workflow run release.yml \
+            --repo "${{ github.repository }}" \
+            --ref main \
+            -f tag_name="${RELEASE_TAG}"
+
+          echo "::notice ::Triggered release.yml for ${RELEASE_TAG}"

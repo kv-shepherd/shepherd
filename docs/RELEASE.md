@@ -45,7 +45,7 @@ KubeVirt Shepherd follows [Semantic Versioning 2.0.0](https://semver.org/):
 
 ### Release Process
 
-The release process is fully automated via [release-please](https://github.com/googleapis/release-please) and the repository `GITHUB_TOKEN`. The repository or organization must grant GitHub Actions `Read and write permissions` and allow GitHub Actions to create pull requests.
+The release process is fully automated via [release-please](https://github.com/googleapis/release-please) and the repository `GITHUB_TOKEN`. The repository or organization must grant GitHub Actions `Read and write permissions` and allow GitHub Actions to create pull requests. The release workflow also needs `actions: write` so it can dispatch the artifact publishing workflow after creating a release.
 
 > KubeVirt Shepherd uses the `prerelease` versioning strategy for ongoing alpha work. Once a prerelease line is bootstrapped, routine `feat:` and `fix:` commits advance `vX.Y.Z-alpha.N` within the same base version until maintainers intentionally promote the line.
 
@@ -74,11 +74,12 @@ The release process is fully automated via [release-please](https://github.com/g
    - To keep iterating on the same alpha line, do nothing special; the prerelease strategy will increment only `alpha.N`
    - To promote a mature line to a stable release such as `v0.1.2`, use one intentional `Release-As: 0.1.2` override or the workflow dispatch input with `release_as=0.1.2`
 
-5. **Tag push triggers artifact build** (`.github/workflows/release.yml`):
+5. **Artifact build is dispatched automatically** (`.github/workflows/release.yml`):
    - Go binaries (linux/amd64, linux/arm64) → GitHub Release assets
    - Docker images → `ghcr.io/kv-shepherd/shepherd-server`, `shepherd-web`
    - Cosign keyless signatures for all container images
    - SHA-256 checksums
+   - This dispatch is explicit because tags and releases created by the repository `GITHUB_TOKEN` do not fan out into downstream workflows automatically
 
 6. **Post-Release**
    - Announce release (GitHub Discussions)

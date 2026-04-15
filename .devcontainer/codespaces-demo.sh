@@ -50,8 +50,8 @@ resolve_release_tag() {
         return 0
     fi
 
+    local tag=""
     if command -v gh >/dev/null 2>&1; then
-        local tag=""
         tag="$(
             gh release list \
                 --repo "${GHCR_REPO}" \
@@ -77,6 +77,35 @@ resolve_release_tag() {
     echo "Unable to resolve the latest published release tag automatically." >&2
     echo "Set CODESPACES_RELEASE_TAG explicitly, for example:" >&2
     echo "  CODESPACES_RELEASE_TAG=v0.1.1-alpha.1 bash .devcontainer/codespaces-demo.sh bootstrap" >&2
+    return 1
+}
+
+server_image_for_tag() {
+    printf "ghcr.io/kv-shepherd/shepherd-server:%s" "${1#v}"
+}
+
+web_image_for_tag() {
+    printf "ghcr.io/kv-shepherd/shepherd-web:%s" "${1#v}"
+}
+
+release_images_available() {
+    local tag="$1"
+    docker manifest inspect "$(server_image_for_tag "${tag}")" >/dev/null 2>&1 \
+        && docker manifest inspect "$(web_image_for_tag "${tag}")" >/dev/null 2>&1
+}
+
+ensure_release_images_available() {
+    local tag="$1"
+
+    if release_images_available "${tag}"; then
+        return 0
+    fi
+
+    echo "Release ${tag} exists, but its server/web images are not published in GHCR yet." >&2
+    echo "Wait for Release Artifacts to finish, then retry Codespaces bootstrap." >&2
+    if [[ -z "${EXPLICIT_RELEASE_TAG}" ]]; then
+        echo "If you intentionally want an older published release, set CODESPACES_RELEASE_TAG explicitly." >&2
+    fi
     return 1
 }
 
@@ -209,11 +238,14 @@ start_stack() {
     fi
 
     allowed_origins="$(compute_allowed_origins "${public_base_url}")"
+    docker_login_ghcr
+
     release_tag="$(resolve_release_tag)"
+    ensure_release_images_available "${release_tag}"
     release_version="${release_tag#v}"
 
-    SERVER_IMAGE="ghcr.io/kv-shepherd/shepherd-server:${release_version}"
-    WEB_IMAGE="ghcr.io/kv-shepherd/shepherd-web:${release_version}"
+    SERVER_IMAGE="$(server_image_for_tag "${release_tag}")"
+    WEB_IMAGE="$(web_image_for_tag "${release_tag}")"
     DATABASE_URL="postgres://shepherd:shepherd_password@db:5432/shepherd_db?sslmode=disable"
     POSTGRES_PASSWORD="shepherd_password"
     SECURITY_SESSION_SECRET="${SECURITY_SESSION_SECRET:-codespaces-session-secret-0123456789abcdef0123456789abcdef}"
@@ -229,8 +261,6 @@ start_stack() {
     echo " Web image:    ${WEB_IMAGE}"
     echo " Web UI:       ${public_base_url}"
     echo " Login:        ${ADMIN_USERNAME} / ${ADMIN_PASSWORD}"
-
-    docker_login_ghcr
 
     if [[ "${mode}" == "bootstrap" ]]; then
         echo "Resetting demo volume state for a clean first boot..."
