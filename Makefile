@@ -146,7 +146,6 @@ ci-governance:
 	@bash docs/design/ci/scripts/check_no_legacy_batch1_invocations.sh
 	@bash docs/design/ci/scripts/check_changed_code_has_tests.sh
 	@bash docs/design/ci/scripts/check_no_redis_import.sh
-	@bash docs/design/ci/scripts/check_manual_di.sh
 	@go run docs/design/ci/scripts/check_no_sqlite_in_tests.go
 	@go run docs/design/ci/scripts/check_no_runtime_placeholders.go
 	@go run docs/design/ci/scripts/check_provider_wiring.go
@@ -166,8 +165,6 @@ ci-governance:
 	@go run docs/design/ci/scripts/check_stage5e_batch_baseline.go
 	@go run docs/design/ci/scripts/check_stage6_vnc_baseline.go
 	@bash docs/design/ci/scripts/check_live_e2e_no_mock.sh
-	@go run docs/design/ci/scripts/check_no_global_platform_admin_gate.go
-	@go run docs/design/ci/scripts/check_handler_explicit_rbac_guards.go
 	@go run docs/design/ci/scripts/check_auth_provider_plugin_boundary.go
 	@go run docs/design/ci/scripts/check_frontend_openapi_usage.go
 	@go run docs/design/ci/scripts/check_frontend_no_non_english_literals.go
@@ -368,8 +365,6 @@ master-flow-strict:
 	go run docs/design/ci/scripts/check_stage5d_delete_baseline.go
 	go run docs/design/ci/scripts/check_stage6_vnc_baseline.go
 	bash docs/design/ci/scripts/check_live_e2e_no_mock.sh
-	go run docs/design/ci/scripts/check_no_global_platform_admin_gate.go
-	go run docs/design/ci/scripts/check_handler_explicit_rbac_guards.go
 	go run docs/design/ci/scripts/check_auth_provider_plugin_boundary.go
 	go run docs/design/ci/scripts/check_frontend_openapi_usage.go
 	go run docs/design/ci/scripts/check_frontend_no_placeholder_pages.go

@@ -16,7 +16,9 @@ import (
 	"kv-shepherd.io/shepherd-linter/analyzer/forbiddenimports"
 	"kv-shepherd.io/shepherd-linter/analyzer/k8sintransaction"
 	"kv-shepherd.io/shepherd-linter/analyzer/k8spollingrv"
+	"kv-shepherd.io/shepherd-linter/analyzer/manualdi"
 	"kv-shepherd.io/shepherd-linter/analyzer/nakedgoroutine"
+	"kv-shepherd.io/shepherd-linter/analyzer/rbacguards"
 	"kv-shepherd.io/shepherd-linter/analyzer/riverbypass"
 	"kv-shepherd.io/shepherd-linter/analyzer/riverjobargs"
 	"kv-shepherd.io/shepherd-linter/analyzer/runtimemock"
@@ -35,7 +37,9 @@ func init() {
 var AllAnalyzers = []*analysis.Analyzer{
 	nakedgoroutine.Analyzer,
 	forbiddenimports.Analyzer,
+	manualdi.Analyzer,
 	authproviderlayering.Analyzer,
+	rbacguards.Analyzer,
 	riverbypass.Analyzer,
 	runtimemock.Analyzer,
 	semaphoreusage.Analyzer,

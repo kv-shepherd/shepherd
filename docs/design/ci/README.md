@@ -24,7 +24,7 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 
 | Script | Check Content | Level | Blocks CI |
 |--------|---------------|-------|-----------|
-| `shepherd-arch` (golangci-lint module plugin) | Batch1/2 architecture gates: forbidden imports, no runtime mock wiring, no naked goroutines, River bypass, semaphore pairing, service tx boundary, River job args claim-check, auth-provider core/edge/provider layering | Required | ✅ Yes |
+| `shepherd-arch` (golangci-lint module plugin) | Batch1/2 architecture gates: forbidden imports, manual DI, explicit RBAC, no runtime mock wiring, no naked goroutines, River bypass, semaphore pairing, service tx boundary, River job args claim-check, auth-provider core/edge/provider layering | Required | ✅ Yes |
 | `shepherd-arch/k8sintransaction` (Analyzer) | No K8s API calls inside transactions | Required | ✅ Yes |
 | [check_validate_spec.go](./scripts/check_validate_spec.go) | No ValidateSpec calls inside transactions | Required | ✅ Yes |
 | [check_openapi_critical_contract.go](./scripts/check_openapi_critical_contract.go) | Enforce stage-critical OpenAPI contracts (auth/vm/approval/audit/notification + global BearerAuth) | Required | ✅ Yes |
@@ -43,8 +43,7 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 | [check_stage5e_batch_baseline.go](./scripts/check_stage5e_batch_baseline.go) | Enforce Stage 5.E batch canonical endpoints (+ `/vms/batch/power` compatibility) + admin rate-limit override endpoints + handler/idempotency/rate-limit baseline + gateway child-dispatch + parent-status sync fragments; remove stale deferred allowlist entries | Required | ✅ Yes |
 | [check_stage6_vnc_baseline.go](./scripts/check_stage6_vnc_baseline.go) | Enforce Stage 6 VNC canonical endpoints + handler/token/gateway baseline + behavior tests + stale deferred allowlist cleanup | Required | ✅ Yes |
 | [check_live_e2e_no_mock.sh](./scripts/check_live_e2e_no_mock.sh) | Block network route-mocking patterns in strict live e2e spec (`master-flow-live.spec.ts`) | Required | ✅ Yes |
-| [check_no_global_platform_admin_gate.go](./scripts/check_no_global_platform_admin_gate.go) | Block route-level global `platform:admin` middleware and legacy rate-limit admin helper; require handler-level granular permissions | Required | ✅ Yes |
-| [check_handler_explicit_rbac_guards.go](./scripts/check_handler_explicit_rbac_guards.go) | Enforce explicit fail-closed RBAC guards for high-risk handlers (`member`, `namespace`, `/templates`, `/instance-sizes`) | Required | ✅ Yes |
+| `shepherd-arch/rbacguards` (Analyzer) | Enforce route-level/platform-admin RBAC invariants and explicit fail-closed guards for high-risk handlers | Required | ✅ Yes |
 | [check_auth_provider_plugin_boundary.go](./scripts/check_auth_provider_plugin_boundary.go) | Enforce auth-provider runtime/frontend/OpenAPI stay plugin-standard (no OIDC/LDAP hardcoded branches, no enterprise-private naming on public auth/directory surfaces, narrow contract packages stay split from root re-export files) | Required | ✅ Yes |
 | [check_frontend_openapi_usage.go](./scripts/check_frontend_openapi_usage.go) | Enforce each OpenAPI operation is consumed by frontend or explicitly deferred; guard system delete `confirm_name` flow | Required | ✅ Yes |
 | [check_frontend_no_non_english_literals.go](./scripts/check_frontend_no_non_english_literals.go) | Block non-English hardcoded literals in frontend source (except `i18n/locales`) | Required | ✅ Yes |
@@ -56,7 +55,7 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 | [check_no_chinese_chars.sh](./scripts/check_no_chinese_chars.sh) | Block Chinese characters in repository content except approved i18n paths (`docs/i18n/zh-CN/design/interaction-flows/master-flow.md`, `web/src/i18n/locales/zh-CN/**`) | Required | ✅ Yes |
 | [check_module_noop_hooks.go](./scripts/check_module_noop_hooks.go) | Block silent noop `ContributeServerDeps` / `RegisterWorkers` hooks unless allowlisted | Required | ✅ Yes |
 | [check_ent_codegen.go](./scripts/check_ent_codegen.go) | Ent code generation sync check | Required | ✅ Yes |
-| [check_manual_di.sh](./scripts/check_manual_di.sh) | **Strict Manual DI convention** (replaces Wire check) | Required | ✅ Yes |
+| `shepherd-arch/manualdi` (Analyzer) | **Strict Manual DI convention** (centralized hand-written DI, no Wire/Redis drift) | Required | ✅ Yes |
 | [check_sqlc_usage.sh](./scripts/check_sqlc_usage.sh) | **sqlc usage scope** (ADR-0012 whitelist enforcement) | Required | ✅ Yes |
 | [check_repository_tests.go](./scripts/check_repository_tests.go) | Repository methods must have tests | Required | ✅ Yes |
 | [check_dead_tests.go](./scripts/check_dead_tests.go) | Orphan/invalid test detection | Required | ✅ Yes |
@@ -290,8 +289,8 @@ ci/
     ├── check_stage5e_batch_baseline.go # Stage 5.E batch runtime+contract baseline check
     ├── check_stage6_vnc_baseline.go # Stage 6 VNC runtime+contract baseline check
     ├── check_live_e2e_no_mock.sh # Strict live e2e must not use route-mocking APIs
-    ├── check_no_global_platform_admin_gate.go # Forbid route-level global platform:admin gate + legacy rate-limit helper
-    ├── check_handler_explicit_rbac_guards.go # Enforce explicit fail-closed RBAC guards for key handlers
+    ├── check_no_global_platform_admin_gate.go # Legacy reference; superseded by shepherd-arch/rbacguards
+    ├── check_handler_explicit_rbac_guards.go # Legacy reference; superseded by shepherd-arch/rbacguards
     ├── check_auth_provider_plugin_boundary.go # Auth-provider plugin boundary + anti-hardcode guard
     ├── check_frontend_openapi_usage.go # Frontend/OpenAPI operation usage sync check
     ├── check_frontend_no_non_english_literals.go # Frontend hardcoded non-English literal check
@@ -303,7 +302,7 @@ ci/
     ├── check_no_chinese_chars.sh # Enforce English-only content (except approved i18n paths)
     ├── check_module_noop_hooks.go     # Noop module hook allowlist enforcement
     ├── check_ent_codegen.go           # Ent code generation sync check
-    ├── check_manual_di.sh             # Strict Manual DI convention check (replaces Wire)
+    ├── check_manual_di.sh             # Legacy reference; superseded by shepherd-arch/manualdi
     ├── check_repository_tests.go      # Repository test coverage check
     ├── check_dead_tests.go            # Dead test detection
     ├── check_test_assertions.go       # Test assertion check

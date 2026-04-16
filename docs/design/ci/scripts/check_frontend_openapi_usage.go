@@ -3,11 +3,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
-	"regexp"
+	"os/exec"
 	"sort"
 	"strings"
 
@@ -15,9 +14,10 @@ import (
 )
 
 const (
-	openAPIPath    = "api/openapi.yaml"
-	frontendSrcDir = "web/src"
-	allowlistPath  = "docs/design/ci/allowlists/frontend_openapi_unused.txt"
+	openAPIPath              = "api/openapi.yaml"
+	frontendSrcDir           = "web/src"
+	allowlistPath            = "docs/design/ci/allowlists/frontend_openapi_unused.txt"
+	frontendASTScannerScript = "docs/design/ci/scripts/frontend_api_ast_scan.mjs"
 )
 
 var supportedMethods = []string{"get", "post", "put", "patch", "delete"}
@@ -25,6 +25,12 @@ var supportedMethods = []string{"get", "post", "put", "patch", "delete"}
 type operation struct {
 	Method string
 	Path   string
+}
+
+type frontendASTScanResult struct {
+	UsedOperations             []string `json:"usedOperations"`
+	SystemDeleteHasConfirmName bool     `json:"systemDeleteHasConfirmName"`
+	SystemDeleteSourceFile     string   `json:"systemDeleteSourceFile"`
 }
 
 func (o operation) key() string {
@@ -38,11 +44,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	usage, err := collectFrontendUsage(frontendSrcDir, ops)
+	scan, err := runFrontendASTScan(frontendSrcDir)
 	if err != nil {
-		fmt.Printf("FAIL: collect frontend usage: %v\n", err)
+		fmt.Printf("FAIL: frontend AST usage scan: %v\n", err)
 		os.Exit(1)
 	}
+
+	usage := usageIndex(ops, scan.UsedOperations)
 
 	allowlist, err := loadAllowlist(allowlistPath)
 	if err != nil {
@@ -77,8 +85,11 @@ func main() {
 		}
 	}
 
-	if err := checkSystemDeleteConfirmGate(frontendSrcDir); err != nil {
-		violations = append(violations, err.Error())
+	if !scan.SystemDeleteHasConfirmName {
+		violations = append(
+			violations,
+			"system delete UI is missing params.query.confirm_name on DELETE /systems/{system_id} (ADR-0015 §13)",
+		)
 	}
 
 	if len(violations) > 0 {
@@ -93,10 +104,11 @@ func main() {
 	}
 
 	fmt.Printf(
-		"OK: frontend/OpenAPI usage check passed (operations=%d used=%d allowlisted=%d)\n",
+		"OK: frontend/OpenAPI usage check passed (operations=%d used=%d allowlisted=%d systemDelete=%s)\n",
 		len(ops),
 		usedCount,
 		len(allowlist),
+		confirmSource(scan.SystemDeleteSourceFile),
 	)
 }
 
@@ -141,55 +153,32 @@ func collectOpenAPIOperations(path string) ([]operation, error) {
 	return ops, nil
 }
 
-func collectFrontendUsage(root string, ops []operation) (map[string]bool, error) {
+func runFrontendASTScan(root string) (frontendASTScanResult, error) {
+	cmd := exec.Command("node", frontendASTScannerScript, root)
+	cmd.Dir = "."
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return frontendASTScanResult{}, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
+	}
+
+	var scan frontendASTScanResult
+	if err := json.Unmarshal(output, &scan); err != nil {
+		return frontendASTScanResult{}, fmt.Errorf("decode AST scan output: %w", err)
+	}
+	return scan, nil
+}
+
+func usageIndex(ops []operation, usedOps []string) map[string]bool {
 	usage := make(map[string]bool, len(ops))
 	for _, op := range ops {
 		usage[op.key()] = false
 	}
-
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	for _, key := range usedOps {
+		if _, ok := usage[key]; ok {
+			usage[key] = true
 		}
-		if d.IsDir() {
-			return nil
-		}
-		ext := strings.ToLower(filepath.Ext(path))
-		switch ext {
-		case ".ts", ".tsx", ".js", ".jsx":
-		default:
-			return nil
-		}
-
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		text := string(b)
-		for _, op := range ops {
-			key := op.key()
-			if usage[key] {
-				continue
-			}
-			if containsAPICall(text, op) {
-				usage[key] = true
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
-	return usage, nil
-}
-
-func containsAPICall(text string, op operation) bool {
-	method := regexp.QuoteMeta(op.Method)
-	path := regexp.QuoteMeta(op.Path)
-	pattern := regexp.MustCompile(
-		fmt.Sprintf(`api\s*\.\s*%s\s*\(\s*['"\x60]%s['"\x60]`, method, path),
-	)
-	return pattern.MatchString(text)
+	return usage
 }
 
 func loadAllowlist(path string) (map[string]struct{}, error) {
@@ -227,59 +216,11 @@ func loadAllowlist(path string) (map[string]struct{}, error) {
 	return allowed, nil
 }
 
-func checkSystemDeleteConfirmGate(root string) error {
-	deleteFragments := []string{
-		"/systems/{system_id}",
-		"confirm_name",
+func confirmSource(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return "missing"
 	}
-	var matchedFile string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext != ".ts" && ext != ".tsx" && ext != ".js" && ext != ".jsx" {
-			return nil
-		}
-		b, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
-		}
-		text := string(b)
-		if !quotedFragment(text, deleteFragments[0]) || !strings.Contains(text, deleteFragments[1]) {
-			return nil
-		}
-		matchedFile = path
-		return fs.SkipAll
-	})
-	if err != nil && err != fs.SkipAll {
-		return fmt.Errorf("scan frontend for system delete confirm gate: %w", err)
-	}
-	if matchedFile == "" {
-		return fmt.Errorf(
-			"missing system delete confirm_name flow in frontend source: require fragments %q + %q",
-			deleteFragments[0],
-			deleteFragments[1],
-		)
-	}
-	return nil
-}
-
-func quotedFragment(text, fragment string) bool {
-	patterns := []string{
-		fmt.Sprintf("'%s'", fragment),
-		fmt.Sprintf("\"%s\"", fragment),
-		fmt.Sprintf("`%s`", fragment),
-	}
-	for _, p := range patterns {
-		if strings.Contains(text, p) {
-			return true
-		}
-	}
-	return false
+	return path
 }
 
 func mapValue(node *yaml.Node, key string) (*yaml.Node, bool) {
@@ -287,10 +228,8 @@ func mapValue(node *yaml.Node, key string) (*yaml.Node, bool) {
 		return nil, false
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
-		k := node.Content[i]
-		v := node.Content[i+1]
-		if strings.TrimSpace(k.Value) == key {
-			return v, true
+		if node.Content[i].Value == key {
+			return node.Content[i+1], true
 		}
 	}
 	return nil, false

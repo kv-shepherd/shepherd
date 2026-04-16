@@ -59,11 +59,9 @@ tools/shepherd-linter/
 
 | Batch | Priority | Scripts | Status |
 |-------|----------|---------|--------|
-| Batch 1 | P0 — pure AST, no external deps | **9 / 10 scripts → 7 Analyzers** | ✅ Complete |
+| Batch 1 | P0 — pure AST, no external deps | **12 scripts → 9 analyzers** | ✅ Complete |
 | Batch 2 | P1 — provider-layer + transaction safety (AST) | 3 scripts → 3 Analyzers | ✅ Complete (extended 2026-03-23) |
 | Batch 3 | P2 — doc/manifest consistency checks | Permanently retained as `go run` | 📌 Documented |
-
-> `check_handler_explicit_rbac_guards.go` is retained as `go run` (file-content string matching; not AST-analyzable — ADR-0039 §Batch 1 note).
 
 ### Batch 1 — Implemented Analyzers
 
@@ -71,7 +69,9 @@ tools/shepherd-linter/
 |----------|----------|-----------------|
 | `nakedgoroutine` | ADR-0031 | `check_naked_goroutine.go` |
 | `forbiddenimports` | ADR-0003 + ADR-0006 hygiene | `check_forbidden_imports.go` + `check_no_gorm_import.go` + `check_no_outbox_import.go` |
+| `manualdi` | Centralized hand-written DI + no Wire/Redis drift | `check_manual_di.sh` |
 | `riverbypass` | ADR-0006 | `check_river_bypass.go` |
+| `rbacguards` | Explicit fail-closed high-risk RBAC guards | `check_no_global_platform_admin_gate.go` + `check_handler_explicit_rbac_guards.go` |
 | `runtimemock` | ADR-0034 | `check_no_runtime_mock.go` |
 | `semaphoreusage` | ADR-0031 | `check_semaphore_usage.go` |
 | `txboundary` | ADR-0010 | `check_transaction_boundary.go` |

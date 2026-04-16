@@ -5,11 +5,19 @@
 # 2026-01-18 architecture simplification: Redis dependency removed.
 # Session storage uses PostgreSQL + alexedwards/scs.
 
-set -e
+set -euo pipefail
 
 echo "Checking Redis imports..."
 
-VIOLATIONS=$(grep -rn 'github.com/redis/go-redis\|"go-redis"' --include="*.go" . 2>/dev/null | grep -v "_test.go" | grep -v "vendor/" || true)
+if ! command -v rg >/dev/null 2>&1; then
+    echo "ERROR: ripgrep (rg) is required for Redis import detection."
+    exit 127
+fi
+
+VIOLATIONS=$(rg -n 'github\.com/redis/go-redis|"go-redis"' \
+    cmd internal pkg ent plugins \
+    --glob '!**/*_test.go' \
+    --glob '!**/vendor/**' || true)
 
 if [ -n "$VIOLATIONS" ]; then
     echo "ERROR: found Redis imports (Redis dependency has been removed):"
