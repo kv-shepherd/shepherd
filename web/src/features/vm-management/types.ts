@@ -33,6 +33,9 @@ export interface VMRequestLaunchPrefill {
     instanceSizeId?: string;
     namespace?: string;
     reason?: string;
+    targetCpuCores?: number;
+    targetMemoryGi?: number;
+    targetDiskGb?: number;
     batchCount?: number;
     requestMode?: VMRequestMode;
 }
@@ -49,6 +52,9 @@ export interface VMRequestDraft {
     instanceSizeLabel?: string;
     namespace?: string;
     reason?: string;
+    targetCpuCores?: number;
+    targetMemoryGi?: number;
+    targetDiskGb?: number;
     batchCount: number;
     wizardStep: number;
     requestMode?: VMRequestMode;

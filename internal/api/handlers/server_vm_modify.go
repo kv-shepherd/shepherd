@@ -110,6 +110,26 @@ func (s *Server) CreateVMModifyRequest(c *gin.Context, vmID generated.VMID) {
 		return
 	}
 
+	existingTicket, err := s.findLatestActiveVMTicket(
+		ctx,
+		vmRow.ID,
+		entticket.OperationTypeMODIFY,
+		domain.EventVMModifyRequested,
+	)
+	if err != nil {
+		logger.Error("failed to check duplicate VM modify approval request",
+			zap.Error(err),
+			zap.String("vm_id", vmID),
+			zap.String("actor", actor),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if existingTicket != nil {
+		writeDuplicatePendingVMOperation(c, existingTicket)
+		return
+	}
+
 	ticketID, eventID, err := s.createVMModifyApprovalRequest(ctx, actor, strings.TrimSpace(req.Reason), payload)
 	if err != nil {
 		logger.Error("failed to create VM modify approval request",
@@ -421,4 +441,18 @@ func normalizeOptionalTargetInt(value int) *int {
 	}
 	normalized := value
 	return &normalized
+}
+
+func derefFloat64(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func derefInt(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
 }

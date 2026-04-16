@@ -106,6 +106,12 @@
             "help_key": "instanceSizes.mask.node_selector_help"
         },
         {
+            "path": "spec.template.spec.affinity.podAntiAffinity",
+            "display_name": "Pod Anti-Affinity",
+            "display_name_key": "instanceSizes.mask.pod_antiaffinity",
+            "help_key": "instanceSizes.mask.pod_antiaffinity_help"
+        },
+        {
             "path": "spec.template.metadata.annotations",
             "display_name": "Template Annotations",
             "display_name_key": "instanceSizes.mask.template_annotations",

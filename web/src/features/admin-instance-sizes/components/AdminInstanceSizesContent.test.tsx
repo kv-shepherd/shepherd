@@ -247,6 +247,33 @@ describe('AdminInstanceSizesContent', () => {
         expect(overcommitCheckbox).toBeDisabled();
     });
 
+    it('rehydrates explicit root volume mode values in the edit modal', async () => {
+        controllerState.editOpen = true;
+        controllerState.editingItem = {
+            id: 'size-explicit-root-volume',
+            name: 'm4.explicit',
+        };
+        controllerState.editInitialValues = {
+            name: 'm4.explicit',
+            catalog_scope: 'prod',
+            cpu_cores: 4,
+            memory_gi: 8,
+            root_volume_mode_intent: 'explicit',
+            dv_volume_mode: 'Filesystem',
+            dv_access_modes: ['ReadWriteMany'],
+            enabled: true,
+            spec_text: '{}',
+        };
+
+        render(<AdminInstanceSizesContent />);
+
+        const modal = await screen.findByTestId('instance-size-edit-modal');
+        await screen.findByText('instanceSizes.dv_volume_mode');
+        await screen.findByText('instanceSizes.dv_access_modes');
+        expect(within(modal).getByText('Filesystem')).toBeInTheDocument();
+        expect(within(modal).getByText('ReadWriteMany')).toBeInTheDocument();
+    });
+
     it('writes preset request values on the first apply', () => {
         const setFieldsValue = vi.fn();
         const mockForm = {

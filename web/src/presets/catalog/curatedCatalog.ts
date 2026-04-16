@@ -7,6 +7,7 @@ import type {
     InstanceSizePresetCatalogItem,
     TemplatePresetCatalogItem,
 } from './types';
+import { buildServiceSpreadPodAntiAffinity } from '@/lib/podAntiAffinity';
 
 export type CuratedTemplatePresetKey =
     | 'linux-test'
@@ -63,25 +64,10 @@ function toSpecText(spec: Record<string, unknown>): string {
 const developerInstanceServiceIdPlaceholder = '__SHEPHERD_SERVICE_ID__';
 
 const developerInstancePodAntiAffinity = {
-    podAntiAffinity: {
-        preferredDuringSchedulingIgnoredDuringExecution: [
-            {
-                weight: 100,
-                podAffinityTerm: {
-                    labelSelector: {
-                        matchExpressions: [
-                            {
-                                key: 'shepherd.io/service-id',
-                                operator: 'In',
-                                values: [developerInstanceServiceIdPlaceholder],
-                            },
-                        ],
-                    },
-                    topologyKey: 'kubernetes.io/hostname',
-                },
-            },
-        ],
-    },
+    podAntiAffinity: buildServiceSpreadPodAntiAffinity({
+        mode: 'required',
+        values: [developerInstanceServiceIdPlaceholder],
+    }),
 };
 
 const linuxBaseSpec = {

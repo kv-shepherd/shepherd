@@ -163,6 +163,24 @@ const normalizeOptionalTargetNumber = (value: unknown): number | undefined => {
   return n;
 };
 
+const normalizeCreateTargetOverride = (
+  value: unknown,
+  defaultValue: number | undefined,
+): number | undefined => {
+  const normalized = normalizeOptionalTargetNumber(value);
+  if (normalized === undefined) {
+    return undefined;
+  }
+  if (
+    typeof defaultValue === "number" &&
+    Number.isFinite(defaultValue) &&
+    Number(normalized) === Number(defaultValue)
+  ) {
+    return undefined;
+  }
+  return normalized;
+};
+
 const extractRetryAfterSeconds = (error: ApiErrorResponse): number => {
   if (typeof error.retry_after_seconds === "number") {
     return normalizeRetryAfterSeconds(error.retry_after_seconds);
@@ -247,6 +265,18 @@ export function useVMManagementController({
   const reasonValue = Form.useWatch("reason", watchOptions);
   const serviceIdValue = Form.useWatch("service_id", watchOptions);
   const batchCountValue = Form.useWatch("batch_count", watchOptions) ?? 1;
+  const createTargetCPUValue = Form.useWatch(
+    "target_cpu_cores",
+    watchOptions,
+  );
+  const createTargetMemoryValue = Form.useWatch(
+    "target_memory_gi",
+    watchOptions,
+  );
+  const createTargetDiskValue = Form.useWatch(
+    "target_disk_gb",
+    watchOptions,
+  );
   const modifyTargetCPUValue = Form.useWatch(
     "target_cpu_cores",
     modifyWatchOptions,
@@ -515,6 +545,9 @@ export function useVMManagementController({
       ),
       namespace: normalizeDraftString(namespaceValue),
       reason: normalizeDraftString(reasonValue),
+      targetCpuCores: normalizeOptionalTargetNumber(createTargetCPUValue),
+      targetMemoryGi: normalizeOptionalTargetNumber(createTargetMemoryValue),
+      targetDiskGb: normalizeOptionalTargetNumber(createTargetDiskValue),
       batchCount: normalizeDraftBatchCount(batchCountValue),
       wizardStep: normalizeDraftWizardStep(wizardStep),
       requestMode,
@@ -524,6 +557,9 @@ export function useVMManagementController({
     return hasMeaningfulVMRequestDraft(draft) ? draft : null;
   }, [
     batchCountValue,
+    createTargetCPUValue,
+    createTargetDiskValue,
+    createTargetMemoryValue,
     draftOwner,
     namespaceValue,
     reasonValue,
@@ -667,6 +703,9 @@ export function useVMManagementController({
       instance_size_id: draft.instanceSizeId,
       namespace: draft.namespace,
       reason: draft.reason,
+      target_cpu_cores: normalizeOptionalTargetNumber(draft.targetCpuCores),
+      target_memory_gi: normalizeOptionalTargetNumber(draft.targetMemoryGi),
+      target_disk_gb: normalizeOptionalTargetNumber(draft.targetDiskGb),
       batch_count: normalizeDraftBatchCount(draft.batchCount),
     });
   };
@@ -684,6 +723,9 @@ export function useVMManagementController({
       instance_size_id: prefill?.instanceSizeId,
       namespace: prefill?.namespace,
       reason: prefill?.reason,
+      target_cpu_cores: normalizeOptionalTargetNumber(prefill?.targetCpuCores),
+      target_memory_gi: normalizeOptionalTargetNumber(prefill?.targetMemoryGi),
+      target_disk_gb: normalizeOptionalTargetNumber(prefill?.targetDiskGb),
     });
   };
 
@@ -1123,12 +1165,29 @@ export function useVMManagementController({
     // Include unmounted previous-step fields; default getFieldsValue() only
     // returns currently mounted fields and would drop wizard data on step 5.
     const values = form.getFieldsValue(true);
+    const targetCPU = normalizeCreateTargetOverride(
+      values.target_cpu_cores,
+      selectedSize?.cpu_cores,
+    );
+    const targetMemory = normalizeCreateTargetOverride(
+      values.target_memory_gi,
+      selectedSize?.memory_gi,
+    );
+    const targetDisk = normalizeCreateTargetOverride(
+      values.target_disk_gb,
+      selectedSize?.disk_gb,
+    );
     const singlePayload: VMCreateRequest = {
       service_id: values.service_id,
       template_id: values.template_id,
       instance_size_id: values.instance_size_id,
       namespace: values.namespace,
       reason: values.reason,
+      ...(targetCPU !== undefined ? { target_cpu_cores: targetCPU } : {}),
+      ...(targetMemory !== undefined
+        ? { target_memory_gi: targetMemory }
+        : {}),
+      ...(targetDisk !== undefined ? { target_disk_gb: targetDisk } : {}),
     };
     const batchCount = Number(values.batch_count ?? 1);
 
@@ -1152,6 +1211,11 @@ export function useVMManagementController({
         instance_size_id: singlePayload.instance_size_id,
         namespace: singlePayload.namespace,
         reason: singlePayload.reason,
+        ...(targetCPU !== undefined ? { target_cpu_cores: targetCPU } : {}),
+        ...(targetMemory !== undefined
+          ? { target_memory_gi: targetMemory }
+          : {}),
+        ...(targetDisk !== undefined ? { target_disk_gb: targetDisk } : {}),
       })),
     };
     submitCreateBatch.mutate(batchPayload);
@@ -1290,6 +1354,9 @@ export function useVMManagementController({
     reasonValue,
     serviceIdValue,
     batchCountValue,
+    targetCpuValue: normalizeOptionalTargetNumber(createTargetCPUValue),
+    targetMemoryValue: normalizeOptionalTargetNumber(createTargetMemoryValue),
+    targetDiskValue: normalizeOptionalTargetNumber(createTargetDiskValue),
     wizardSteps,
     vmData: vmListQuery.data,
     isLoading: vmListQuery.isLoading,

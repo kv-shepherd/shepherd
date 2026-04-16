@@ -62,33 +62,27 @@ describe('curatedCatalog internal audit', () => {
             expect(
                 getAtPath(
                     parsed,
-                    'spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.0.weight',
+                    'spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution.0.topologyKey',
                 ),
-            ).toBe(100);
+            ).toBe('kubernetes.io/hostname');
             expect(
                 getAtPath(
                     parsed,
-                    'spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.0.podAffinityTerm.labelSelector.matchExpressions.0.key',
+                    'spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution.0.labelSelector.matchExpressions.0.key',
                 ),
             ).toBe('shepherd.io/service-id');
             expect(
                 getAtPath(
                     parsed,
-                    'spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.0.podAffinityTerm.labelSelector.matchExpressions.0.operator',
+                    'spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution.0.labelSelector.matchExpressions.0.operator',
                 ),
             ).toBe('In');
             expect(
                 getAtPath(
                     parsed,
-                    'spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.0.podAffinityTerm.labelSelector.matchExpressions.0.values.0',
+                    'spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution.0.labelSelector.matchExpressions.0.values.0',
                 ),
             ).toBe('__SHEPHERD_SERVICE_ID__');
-            expect(
-                getAtPath(
-                    parsed,
-                    'spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution.0.podAffinityTerm.topologyKey',
-                ),
-            ).toBe('kubernetes.io/hostname');
 
             if (key.startsWith('linux')) {
                 expect(values.cpu_cores).toBe(4);

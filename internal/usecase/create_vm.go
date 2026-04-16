@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/google/uuid"
@@ -28,12 +29,15 @@ import (
 
 // CreateVMInput represents the input for creating a VM.
 type CreateVMInput struct {
-	ServiceID      string `json:"service_id"`
-	TemplateID     string `json:"template_id"`
-	InstanceSizeID string `json:"instance_size_id"`
-	Namespace      string `json:"namespace"`
-	Reason         string `json:"reason"`
-	RequestedBy    string `json:"requested_by"`
+	ServiceID      string   `json:"service_id"`
+	TemplateID     string   `json:"template_id"`
+	InstanceSizeID string   `json:"instance_size_id"`
+	Namespace      string   `json:"namespace"`
+	Reason         string   `json:"reason"`
+	RequestedBy    string   `json:"requested_by"`
+	TargetCPUCores *float64 `json:"target_cpu_cores,omitempty"`
+	TargetMemoryGi *float64 `json:"target_memory_gi,omitempty"`
+	TargetDiskGB   *int     `json:"target_disk_gb,omitempty"`
 }
 
 // CreateVMOutput represents the output of a VM creation request.
@@ -106,6 +110,22 @@ func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*C
 	if !size.Enabled {
 		return nil, apperrors.BadRequest("INSTANCE_SIZE_DISABLED", "selected instance size is disabled")
 	}
+	requestedTargets := service.VMRequestTargets{
+		TargetCPUCores: input.TargetCPUCores,
+		TargetMemoryGi: input.TargetMemoryGi,
+		TargetDiskGB:   input.TargetDiskGB,
+	}
+	if validateErr := service.ValidateVMRequestTargets(requestedTargets); validateErr != nil {
+		return nil, apperrors.BadRequest("INVALID_RESOURCE_TARGET", validateErr.Error())
+	}
+	resolvedTargets := service.ResolveVMRequestTargets(
+		size.CPUCores,
+		size.CPURequest,
+		size.MemoryGi,
+		size.MemoryRequestGi,
+		size.DiskGB,
+		requestedTargets,
+	)
 	namespaceEnv, err := uc.resolveNamespaceEnvironment(ctx, input.Namespace)
 	if err != nil {
 		return nil, err
@@ -125,7 +145,7 @@ func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*C
 
 	// Duplicate pending guard (master-flow.md Stage 5.A):
 	// same resource + same operation must return existing ticket reference.
-	existingTicket, err := uc.findPendingCreateDuplicate(ctx, input)
+	existingTicket, err := uc.findPendingCreateDuplicate(ctx, input, resolvedTargets)
 	if err != nil {
 		return nil, fmt.Errorf("check duplicate create request: %w", err)
 	}
@@ -149,6 +169,9 @@ func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*C
 		InstanceSizeID: input.InstanceSizeID,
 		Namespace:      input.Namespace,
 		Reason:         input.Reason,
+		TargetCPUCores: resolvedTargets.CPULimit,
+		TargetMemoryGi: resolvedTargets.MemoryLimitGi,
+		TargetDiskGB:   resolvedTargets.DiskGB,
 	}
 
 	payloadBytes, err := payload.ToJSON()
@@ -219,6 +242,7 @@ func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*C
 func (uc *CreateVMUseCase) findPendingCreateDuplicate(
 	ctx context.Context,
 	input CreateVMInput,
+	resolvedTargets service.ResolvedVMRequestTargets,
 ) (*ent.Ticket, error) {
 	events, err := uc.entClient.DomainEvent.Query().
 		Where(
@@ -241,7 +265,7 @@ func (uc *CreateVMUseCase) findPendingCreateDuplicate(
 			)
 			continue
 		}
-		if !sameCreateResource(existing, input) {
+		if !sameCreateResource(existing, input, resolvedTargets) {
 			continue
 		}
 
@@ -263,11 +287,35 @@ func (uc *CreateVMUseCase) findPendingCreateDuplicate(
 	return nil, nil
 }
 
-func sameCreateResource(existing domain.VMCreationPayload, input CreateVMInput) bool {
+func sameCreateResource(
+	existing domain.VMCreationPayload,
+	input CreateVMInput,
+	resolvedTargets service.ResolvedVMRequestTargets,
+) bool {
+	sameCPU := compareCreateTargetFloat64(existing.TargetCPUCores, input.TargetCPUCores, resolvedTargets.CPULimit)
+	sameMemory := compareCreateTargetFloat64(existing.TargetMemoryGi, input.TargetMemoryGi, resolvedTargets.MemoryLimitGi)
+	sameDisk := compareCreateTargetInt(existing.TargetDiskGB, input.TargetDiskGB, resolvedTargets.DiskGB)
 	return strings.TrimSpace(existing.ServiceID) == strings.TrimSpace(input.ServiceID) &&
 		strings.TrimSpace(existing.TemplateID) == strings.TrimSpace(input.TemplateID) &&
 		strings.TrimSpace(existing.InstanceSizeID) == strings.TrimSpace(input.InstanceSizeID) &&
-		strings.TrimSpace(existing.Namespace) == strings.TrimSpace(input.Namespace)
+		strings.TrimSpace(existing.Namespace) == strings.TrimSpace(input.Namespace) &&
+		sameCPU &&
+		sameMemory &&
+		sameDisk
+}
+
+func compareCreateTargetFloat64(existing float64, requested *float64, effective float64) bool {
+	if existing > 0 {
+		return math.Abs(existing-effective) < 1e-9
+	}
+	return requested == nil
+}
+
+func compareCreateTargetInt(existing int, requested *int, effective int) bool {
+	if existing > 0 {
+		return existing == effective
+	}
+	return requested == nil
 }
 
 func (uc *CreateVMUseCase) resolveNamespaceEnvironment(

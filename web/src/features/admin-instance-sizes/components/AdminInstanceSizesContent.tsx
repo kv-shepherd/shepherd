@@ -259,7 +259,28 @@ function hydrateFormWithoutInterlocks(
 ) {
     suspendRef.current = true;
     form.resetFields();
-    form.setFieldsValue(values);
+    const {
+        root_volume_mode_intent: rootVolumeModeIntent,
+        dv_access_modes: dvAccessModes,
+        dv_volume_mode: dvVolumeMode,
+        ...rest
+    } = values;
+
+    form.setFieldsValue({
+        ...rest,
+        root_volume_mode_intent: rootVolumeModeIntent,
+    });
+
+    if (rootVolumeModeIntent === 'explicit') {
+        setTimeout(() => {
+            form.setFieldsValue({
+                dv_access_modes: dvAccessModes,
+                dv_volume_mode: dvVolumeMode,
+            });
+            scheduleInterlockResume(suspendRef);
+        }, 0);
+        return;
+    }
     scheduleInterlockResume(suspendRef);
 }
 

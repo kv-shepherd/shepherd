@@ -30,6 +30,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
+	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/usecase"
 )
 
@@ -148,7 +149,7 @@ func (l *batchSnapshotLoader) serviceLookup(ctx context.Context, serviceID strin
 	if lookup, ok := l.serviceByID[trimmedID]; ok {
 		return lookup
 	}
-	service, err := l.server.client.Service.Query().
+	serviceRow, err := l.server.client.Service.Query().
 		Where(entservice.IDEQ(trimmedID)).
 		WithSystem().
 		Only(ctx)
@@ -157,12 +158,12 @@ func (l *batchSnapshotLoader) serviceLookup(ctx context.Context, serviceID strin
 		return approvalServiceLookup{}
 	}
 	lookup := approvalServiceLookup{
-		ServiceID:   service.ID,
-		ServiceName: service.Name,
+		ServiceID:   serviceRow.ID,
+		ServiceName: serviceRow.Name,
 	}
-	if service.Edges.System != nil {
-		lookup.SystemID = service.Edges.System.ID
-		lookup.SystemName = service.Edges.System.Name
+	if serviceRow.Edges.System != nil {
+		lookup.SystemID = serviceRow.Edges.System.ID
+		lookup.SystemName = serviceRow.Edges.System.Name
 	}
 	l.serviceByID[trimmedID] = lookup
 	return lookup
@@ -271,12 +272,12 @@ func (l *batchSnapshotLoader) buildVMContextSnapshot(
 	}
 	snapshot.OwnerDisplayName, snapshot.OwnerUsername = l.actorIdentity(ctx, snapshot.OwnerID)
 
-	if service := vmRow.Edges.Service; service != nil {
-		snapshot.ServiceID = service.ID
-		snapshot.ServiceName = service.Name
-		if service.Edges.System != nil {
-			snapshot.SystemID = service.Edges.System.ID
-			snapshot.SystemName = service.Edges.System.Name
+	if serviceRow := vmRow.Edges.Service; serviceRow != nil {
+		snapshot.ServiceID = serviceRow.ID
+		snapshot.ServiceName = serviceRow.Name
+		if serviceRow.Edges.System != nil {
+			snapshot.SystemID = serviceRow.Edges.System.ID
+			snapshot.SystemName = serviceRow.Edges.System.Name
 		}
 	}
 
@@ -1339,6 +1340,22 @@ func (s *Server) prepareBatchChildren(
 					},
 				}
 			}
+			targetCPU := normalizeOptionalTargetFloat64(float64(item.TargetCpuCores))
+			targetMemory := normalizeOptionalTargetFloat64(float64(item.TargetMemoryGi))
+			targetDisk := normalizeOptionalTargetInt(item.TargetDiskGb)
+			if validateErr := service.ValidateVMRequestTargets(service.VMRequestTargets{
+				TargetCPUCores: targetCPU,
+				TargetMemoryGi: targetMemory,
+				TargetDiskGB:   targetDisk,
+			}); validateErr != nil {
+				return nil, &batchValidationError{
+					status: http.StatusBadRequest,
+					body: generated.Error{
+						Code:    "INVALID_RESOURCE_TARGET",
+						Message: fmt.Sprintf("create item #%d has invalid resource target: %v", idx+1, validateErr),
+					},
+				}
+			}
 			payload := domain.VMCreationPayload{
 				RequesterID:    actor,
 				ServiceID:      serviceID,
@@ -1346,6 +1363,9 @@ func (s *Server) prepareBatchChildren(
 				InstanceSizeID: instanceSizeID,
 				Namespace:      namespace,
 				Reason:         itemReason,
+				TargetCPUCores: derefFloat64(targetCPU),
+				TargetMemoryGi: derefFloat64(targetMemory),
+				TargetDiskGB:   derefInt(targetDisk),
 			}
 			snapshotLoader.enrichCreatePayload(ctx, &payload)
 			payloadBytes, err := payload.ToJSON()

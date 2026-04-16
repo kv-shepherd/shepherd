@@ -679,6 +679,9 @@ export default function VMsPageContent() {
                 namespaceOptions={vm.namespaceOptions}
                 reasonValue={vm.reasonValue}
                 batchCountValue={vm.batchCountValue}
+                targetCpuValue={vm.targetCpuValue}
+                targetMemoryValue={vm.targetMemoryValue}
+                targetDiskValue={vm.targetDiskValue}
                 isSubmitting={vm.createVMRequest.isPending || vm.batchSubmitPending}
                 onCancel={vm.closeWizard}
                 onNext={vm.goToNextWizardStep}

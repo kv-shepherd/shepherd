@@ -30,6 +30,21 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { resolveSchemaHelpText } from "@/i18n/schemaHelp";
+import {
+  DEFAULT_POD_ANTI_AFFINITY_VALUE,
+  POD_ANTI_AFFINITY_FIELD_PATH,
+  POD_ANTI_AFFINITY_MODES,
+  POD_ANTI_AFFINITY_OPERATORS,
+  buildPodAntiAffinity,
+  createDefaultPodAntiAffinityRule,
+  operatorUsesValues,
+  parsePodAntiAffinityRule,
+  parsePodAntiAffinityValuesText,
+  stringifyPodAntiAffinityValues,
+  type PodAntiAffinityMode,
+  type PodAntiAffinityOperator,
+  type PodAntiAffinityRule,
+} from "@/lib/podAntiAffinity";
 
 const { Text } = Typography;
 
@@ -359,6 +374,7 @@ export function buildRecognizedMaskFields(
 interface DynamicFieldGroupProps {
   node: SchemaNode;
   namePath: (string | number)[];
+  fieldPath?: string;
   label: React.ReactNode;
   labelText: string;
   helpText?: string;
@@ -663,6 +679,234 @@ const ScalarMapEditor: React.FC<ScalarMapEditorProps> = ({
   );
 };
 
+interface PodAntiAffinityEditorProps {
+  value?: Record<string, unknown>;
+  onChange?: (value?: Record<string, unknown>) => void;
+  disabled?: boolean;
+  testIdBase: string;
+}
+
+interface PodAntiAffinityDraft {
+  sourceKey: string;
+  enabled: boolean;
+  rule: PodAntiAffinityRule;
+}
+
+const PodAntiAffinityEditor: React.FC<PodAntiAffinityEditorProps> = ({
+  value,
+  onChange,
+  disabled,
+  testIdBase,
+}) => {
+  const { t } = useTranslation(["admin", "common"]);
+  const committedKey = useMemo(() => JSON.stringify(value ?? {}), [value]);
+  const committedEnabled = value !== undefined;
+  const committedRule = useMemo(
+    () => parsePodAntiAffinityRule(value) ?? createDefaultPodAntiAffinityRule(),
+    [value],
+  );
+  const [draft, setDraft] = useState<PodAntiAffinityDraft | null>(null);
+  const activeDraft = draft?.sourceKey === committedKey ? draft : null;
+  const enabled = activeDraft?.enabled ?? committedEnabled;
+  const rule = activeDraft?.rule ?? committedRule;
+
+  const commit = useCallback(
+    (nextEnabled: boolean, nextRule: PodAntiAffinityRule) => {
+      setDraft({
+        sourceKey: committedKey,
+        enabled: nextEnabled,
+        rule: nextRule,
+      });
+      onChange?.(nextEnabled ? buildPodAntiAffinity(nextRule) : undefined);
+    },
+    [committedKey, onChange],
+  );
+
+  const updateRule = useCallback(
+    (patch: Partial<PodAntiAffinityRule>) => {
+      commit(enabled, { ...rule, ...patch });
+    },
+    [commit, enabled, rule],
+  );
+
+  const handleModeChange = useCallback(
+    (mode: PodAntiAffinityMode) => {
+      updateRule({ mode });
+    },
+    [updateRule],
+  );
+
+  const handleOperatorChange = useCallback(
+    (operator: PodAntiAffinityOperator) => {
+      const nextValues = operatorUsesValues(operator)
+        ? operatorUsesValues(rule.operator) && rule.values.length > 0
+          ? rule.values
+          : [DEFAULT_POD_ANTI_AFFINITY_VALUE]
+        : [];
+      updateRule({ operator, values: nextValues });
+    },
+    [rule.operator, rule.values, updateRule],
+  );
+
+  const valuesDisabled = !operatorUsesValues(rule.operator);
+
+  return (
+    <Space direction="vertical" size={12} style={{ width: "100%" }}>
+      <Checkbox
+        checked={enabled}
+        disabled={disabled}
+        data-testid={`${testIdBase}-enabled`}
+        onChange={(event) => commit(Boolean(event.target.checked), rule)}
+      >
+        {t(
+          "dynamic_form.pod_antiaffinity_enabled",
+          "Enable a pod anti-affinity rule",
+        )}
+      </Checkbox>
+
+      {enabled ? (
+        <>
+          <Space
+            size={12}
+            wrap
+            style={{ display: "flex", width: "100%" }}
+            align="start"
+          >
+            <div style={{ flex: "1 1 220px", minWidth: 220 }}>
+              <Text type="secondary">
+                {t("dynamic_form.pod_antiaffinity_mode", "Scheduling mode")}
+              </Text>
+              <Select
+                value={rule.mode}
+                disabled={disabled}
+                data-testid={`${testIdBase}-mode`}
+                style={{ width: "100%", marginTop: 4 }}
+                onChange={handleModeChange}
+                options={POD_ANTI_AFFINITY_MODES.map((mode) => ({
+                  value: mode,
+                  label:
+                    mode === "preferred"
+                      ? t(
+                          "dynamic_form.pod_antiaffinity_mode_preferred",
+                          "Preferred spread",
+                        )
+                      : t(
+                          "dynamic_form.pod_antiaffinity_mode_required",
+                          "Required separation",
+                        ),
+                }))}
+              />
+            </div>
+            <div style={{ flex: "1 1 220px", minWidth: 220 }}>
+              <Text type="secondary">
+                {t("dynamic_form.pod_antiaffinity_operator", "Operator")}
+              </Text>
+              <Select
+                value={rule.operator}
+                disabled={disabled}
+                data-testid={`${testIdBase}-operator`}
+                style={{ width: "100%", marginTop: 4 }}
+                onChange={handleOperatorChange}
+                options={POD_ANTI_AFFINITY_OPERATORS.map((operator) => ({
+                  value: operator,
+                  label: operator,
+                }))}
+              />
+            </div>
+          </Space>
+
+          <div>
+            <Text type="secondary">
+              {t("dynamic_form.pod_antiaffinity_key", "Label key")}
+            </Text>
+            <Input
+              value={rule.key}
+              disabled={disabled}
+              data-testid={`${testIdBase}-key`}
+              placeholder={t(
+                "dynamic_form.pod_antiaffinity_key_placeholder",
+                "shepherd.io/service-id",
+              )}
+              style={{ marginTop: 4 }}
+              onChange={(event) => updateRule({ key: event.target.value })}
+            />
+          </div>
+
+          <div>
+            <Text type="secondary">
+              {t("dynamic_form.pod_antiaffinity_values", "Values")}
+            </Text>
+            <Input
+              value={stringifyPodAntiAffinityValues(rule.values)}
+              disabled={disabled || valuesDisabled}
+              data-testid={`${testIdBase}-values`}
+              placeholder={t(
+                "dynamic_form.pod_antiaffinity_values_placeholder",
+                "__SHEPHERD_SERVICE_ID__",
+              )}
+              style={{ marginTop: 4 }}
+              onChange={(event) =>
+                updateRule({
+                  values: parsePodAntiAffinityValuesText(event.target.value),
+                })
+              }
+            />
+            <Text type="secondary" style={{ display: "block", marginTop: 4 }}>
+              {valuesDisabled
+                ? t(
+                    "dynamic_form.pod_antiaffinity_values_ignored",
+                    "Exists and DoesNotExist do not use values.",
+                  )
+                : t(
+                    "dynamic_form.pod_antiaffinity_values_help",
+                    "Separate multiple values with commas.",
+                  )}
+            </Text>
+          </div>
+
+          <div>
+            <Text type="secondary">
+              {t("dynamic_form.pod_antiaffinity_topology_key", "Topology key")}
+            </Text>
+            <Input
+              value={rule.topologyKey}
+              disabled={disabled}
+              data-testid={`${testIdBase}-topology-key`}
+              placeholder={t(
+                "dynamic_form.pod_antiaffinity_topology_key_placeholder",
+                "kubernetes.io/hostname",
+              )}
+              style={{ marginTop: 4 }}
+              onChange={(event) =>
+                updateRule({ topologyKey: event.target.value })
+              }
+            />
+          </div>
+
+          <Text type="secondary">
+            {rule.mode === "preferred"
+              ? t(
+                  "dynamic_form.pod_antiaffinity_mode_preferred_help",
+                  "Preferred mode keeps weight fixed at 100 and asks the scheduler to spread matching pods when possible.",
+                )
+              : t(
+                  "dynamic_form.pod_antiaffinity_mode_required_help",
+                  "Required mode blocks scheduling onto nodes that already run matching pods.",
+                )}
+          </Text>
+        </>
+      ) : (
+        <Text type="secondary">
+          {t(
+            "dynamic_form.pod_antiaffinity_disabled_help",
+            "Turn this on when you want VMs from the same service to spread across different nodes.",
+          )}
+        </Text>
+      )}
+    </Space>
+  );
+};
+
 /**
  * Pure rendering component — renders a single schema node as the appropriate
  * Ant Design form control.  No Form instance is created here; this component
@@ -678,6 +922,7 @@ const ScalarMapEditor: React.FC<ScalarMapEditorProps> = ({
 const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
   node,
   namePath,
+  fieldPath,
   label,
   labelText,
   helpText,
@@ -717,6 +962,20 @@ const DynamicFieldGroup: React.FC<DynamicFieldGroupProps> = ({
   );
 
   const resolvedSelectPlaceholder = placeholder ?? "Select an option";
+
+  if (fieldPath === POD_ANTI_AFFINITY_FIELD_PATH) {
+    return renderFieldShell(
+      {
+        name: namePath,
+      },
+      (
+        <PodAntiAffinityEditor
+          disabled={disabled}
+          testIdBase={fieldTestId}
+        />
+      ),
+    );
+  }
 
   // array → dynamic add/remove table
   if (node.type === "array" && node.items?.properties) {
@@ -1212,6 +1471,7 @@ export const DynamicSchemaForm = React.forwardRef<
           key={field.path}
           node={node}
           namePath={namePath}
+          fieldPath={field.path}
           label={
             <Space size={6} wrap>
               <Text strong>{label}</Text>

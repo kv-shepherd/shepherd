@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
@@ -97,6 +99,80 @@ func TestStopVM_StartingProdNamespaceCreatesPendingPowerTicket(t *testing.T) {
 	}
 }
 
+func TestPowerEndpoints_RejectDuplicateActivePowerTicket(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name      string
+		vmStatus  entvm.Status
+		operation string
+		eventType domain.EventType
+		invoke    func(*Server, *gin.Context, generated.VMID)
+	}{
+		{
+			name:      "start endpoint",
+			vmStatus:  entvm.StatusSTOPPED,
+			operation: "start",
+			eventType: domain.EventVMStartRequested,
+			invoke: func(srv *Server, c *gin.Context, vmID generated.VMID) {
+				srv.StartVM(c, vmID)
+			},
+		},
+		{
+			name:      "stop endpoint",
+			vmStatus:  entvm.StatusRUNNING,
+			operation: "stop",
+			eventType: domain.EventVMStopRequested,
+			invoke: func(srv *Server, c *gin.Context, vmID generated.VMID) {
+				srv.StopVM(c, vmID)
+			},
+		},
+		{
+			name:      "restart endpoint",
+			vmStatus:  entvm.StatusRUNNING,
+			operation: "restart",
+			eventType: domain.EventVMRestartRequested,
+			invoke: func(srv *Server, c *gin.Context, vmID generated.VMID) {
+				srv.RestartVM(c, vmID)
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := testutil.OpenEntPostgres(t, "power_duplicate_"+tc.operation)
+			_ = logger.Init("error", "json")
+			srv := NewServer(ServerDeps{
+				EntClient:    client,
+				ApprovalReqs: service.NewApprovalRequirementService(client),
+			})
+
+			vmID := seedPowerTestVM(t, client, namespaceregistry.EnvironmentProd, tc.vmStatus)
+			existingTicketID := mustSeedActivePowerTicket(t, client, vmID, entticket.StatusEXECUTING, tc.eventType, tc.operation, "owner-1")
+
+			c, w := newAuthedGinContext(t, http.MethodPost, "/vms/"+vmID+"/"+tc.operation, "", "owner-1", []string{"vm:operate", "platform:admin"})
+			tc.invoke(srv, c, vmID)
+
+			if w.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusConflict, w.Body.String())
+			}
+			assertErrorCode(t, w.Body.Bytes(), "DUPLICATE_PENDING_REQUEST")
+
+			resp := decodeJSONMap(t, w.Body.Bytes())
+			params, ok := resp["params"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("params type = %T, want object", resp["params"])
+			}
+			if got := toStringValue(params["existing_ticket_id"]); got != existingTicketID {
+				t.Fatalf("existing_ticket_id = %q, want %q", got, existingTicketID)
+			}
+		})
+	}
+}
+
 func TestStartVM_UnregisteredNamespaceReturnsBadRequest(t *testing.T) {
 	t.Parallel()
 
@@ -163,4 +239,52 @@ func seedPowerTestVM(t *testing.T, client *ent.Client, env namespaceregistry.Env
 		t.Fatalf("create vm: %v", err)
 	}
 	return vmID
+}
+
+func mustSeedActivePowerTicket(
+	t *testing.T,
+	client *ent.Client,
+	vmID string,
+	status entticket.Status,
+	eventType domain.EventType,
+	operation string,
+	requester string,
+) string {
+	t.Helper()
+
+	eventID := uuid.Must(uuid.NewV7()).String()
+	ticketID := uuid.Must(uuid.NewV7()).String()
+	payloadBytes, err := domain.VMPowerPayload{
+		VMID:      vmID,
+		Operation: operation,
+		Actor:     requester,
+	}.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal power payload: %v", err)
+	}
+
+	if _, err := client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(eventType)).
+		SetAggregateType("vm").
+		SetAggregateID(vmID).
+		SetPayload(payloadBytes).
+		SetStatus(domainevent.StatusPENDING).
+		SetCreatedBy(requester).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create power event: %v", err)
+	}
+
+	if _, err := client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetOperationType(entticket.OperationTypePOWER).
+		SetStatus(status).
+		SetRequester(requester).
+		SetReason("duplicate guard seed").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create power ticket: %v", err)
+	}
+
+	return ticketID
 }

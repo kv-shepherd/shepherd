@@ -83,10 +83,82 @@ const minimalSchema: SchemaNode = {
                         spec: {
                             type: 'object',
                             properties: {
-                                nodeSelector: {
+                            nodeSelector: {
                                     type: 'object',
                                     additionalProperties: {
                                         type: 'string',
+                                    },
+                                },
+                                affinity: {
+                                    type: 'object',
+                                    properties: {
+                                        podAntiAffinity: {
+                                            type: 'object',
+                                            properties: {
+                                                preferredDuringSchedulingIgnoredDuringExecution: {
+                                                    type: 'array',
+                                                    items: {
+                                                        type: 'object',
+                                                        properties: {
+                                                            weight: { type: 'integer' },
+                                                            podAffinityTerm: {
+                                                                type: 'object',
+                                                                properties: {
+                                                                    labelSelector: {
+                                                                        type: 'object',
+                                                                        properties: {
+                                                                            matchExpressions: {
+                                                                                type: 'array',
+                                                                                items: {
+                                                                                    type: 'object',
+                                                                                    properties: {
+                                                                                        key: { type: 'string' },
+                                                                                        operator: { type: 'string' },
+                                                                                        values: {
+                                                                                            type: 'array',
+                                                                                            items: { type: 'string' },
+                                                                                        },
+                                                                                    },
+                                                                                },
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                    topologyKey: { type: 'string' },
+                                                                },
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                                requiredDuringSchedulingIgnoredDuringExecution: {
+                                                    type: 'array',
+                                                    items: {
+                                                        type: 'object',
+                                                        properties: {
+                                                            labelSelector: {
+                                                                type: 'object',
+                                                                properties: {
+                                                                    matchExpressions: {
+                                                                        type: 'array',
+                                                                        items: {
+                                                                            type: 'object',
+                                                                            properties: {
+                                                                                key: { type: 'string' },
+                                                                                operator: { type: 'string' },
+                                                                                values: {
+                                                                                    type: 'array',
+                                                                                    items: { type: 'string' },
+                                                                                },
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                },
+                                                            },
+                                                            topologyKey: { type: 'string' },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                        },
                                     },
                                 },
                                 domain: {
@@ -310,7 +382,22 @@ describe('DynamicSchemaForm', () => {
                         sync
                     </button>
                     <Form.Item shouldUpdate noStyle>
-                        {() => <pre data-testid="spec-text">{form.getFieldValue('spec_text')}</pre>}
+                        {() => (
+                            <>
+                                <pre data-testid="spec-text">{form.getFieldValue('spec_text')}</pre>
+                                <pre data-testid="pod-antiaffinity-value">
+                                    {JSON.stringify(
+                                        form.getFieldValue([
+                                            'spec',
+                                            'template',
+                                            'spec',
+                                            'affinity',
+                                            'podAntiAffinity',
+                                        ]) ?? null
+                                    )}
+                                </pre>
+                            </>
+                        )}
                     </Form.Item>
                 </Form>
             );
@@ -465,6 +552,124 @@ describe('DynamicSchemaForm', () => {
             expect(
                 screen.getByTestId('dynamic-form-spec.template.spec.domain.clock.utc'),
             ).toBeChecked();
+        });
+    });
+
+    it('renders pod anti-affinity as structured controls and clears it when disabled', async () => {
+        function Harness() {
+            const [form] = Form.useForm();
+            const formRef = useRef<DynamicSchemaFormHandle>(null);
+
+            return (
+                <Form
+                    form={form}
+                    layout="vertical"
+                    onValuesChange={() => formRef.current?.sync()}
+                >
+                    <Form.Item
+                        name="spec_text"
+                        initialValue='{"spec":{"template":{"spec":{"affinity":{"podAntiAffinity":{"preferredDuringSchedulingIgnoredDuringExecution":[{"weight":100,"podAffinityTerm":{"labelSelector":{"matchExpressions":[{"key":"shepherd.io/service-id","operator":"In","values":["__SHEPHERD_SERVICE_ID__"]}]},"topologyKey":"kubernetes.io/hostname"}}]}}}}}}'
+                    >
+                        <DynamicSchemaForm
+                            ref={formRef}
+                            schema={minimalSchema}
+                            mask={{
+                                quick_fields: [],
+                                advanced_fields: [
+                                    {
+                                        path: 'spec.template.spec.affinity.podAntiAffinity',
+                                        display_name: 'Pod Anti-Affinity',
+                                    },
+                                ],
+                            }}
+                        />
+                    </Form.Item>
+                    <Form.Item shouldUpdate noStyle>
+                        {() => (
+                            <pre data-testid="spec-text">{form.getFieldValue('spec_text')}</pre>
+                        )}
+                    </Form.Item>
+                </Form>
+            );
+        }
+
+        render(<Harness />);
+
+        openCollapsePanel('Advanced Features');
+
+        await waitFor(() => {
+            expect(
+                screen.getByTestId('dynamic-form-spec.template.spec.affinity.podAntiAffinity-enabled'),
+            ).toBeChecked();
+        });
+        expect(
+            screen.getByTestId('dynamic-form-spec.template.spec.affinity.podAntiAffinity-key'),
+        ).toHaveValue('shepherd.io/service-id');
+        expect(
+            screen.getByTestId('dynamic-form-spec.template.spec.affinity.podAntiAffinity-values'),
+        ).toHaveValue('__SHEPHERD_SERVICE_ID__');
+        expect(
+            screen.getByTestId('dynamic-form-spec.template.spec.affinity.podAntiAffinity-topology-key'),
+        ).toHaveValue('kubernetes.io/hostname');
+
+        fireEvent.click(
+            screen.getByTestId('dynamic-form-spec.template.spec.affinity.podAntiAffinity-enabled'),
+        );
+
+        await waitFor(() => {
+            expect(screen.getByTestId('spec-text')).not.toHaveTextContent('podAntiAffinity');
+        });
+    });
+
+    it('initializes pod anti-affinity with service-spread defaults when enabled from empty state', async () => {
+        function Harness() {
+            const [form] = Form.useForm();
+            const formRef = useRef<DynamicSchemaFormHandle>(null);
+
+            return (
+                <Form
+                    form={form}
+                    layout="vertical"
+                    onValuesChange={() => formRef.current?.sync()}
+                >
+                    <Form.Item name="spec_text" initialValue="{}">
+                        <DynamicSchemaForm
+                            ref={formRef}
+                            schema={minimalSchema}
+                            mask={{
+                                quick_fields: [],
+                                advanced_fields: [
+                                    {
+                                        path: 'spec.template.spec.affinity.podAntiAffinity',
+                                        display_name: 'Pod Anti-Affinity',
+                                    },
+                                ],
+                            }}
+                        />
+                    </Form.Item>
+                    <Form.Item shouldUpdate noStyle>
+                        {() => <pre data-testid="spec-text">{form.getFieldValue('spec_text')}</pre>}
+                    </Form.Item>
+                </Form>
+            );
+        }
+
+        render(<Harness />);
+
+        openCollapsePanel('Advanced Features');
+
+        fireEvent.click(
+            screen.getByTestId('dynamic-form-spec.template.spec.affinity.podAntiAffinity-enabled'),
+        );
+
+        await waitFor(() => {
+            expect(screen.getByTestId('spec-text')).toHaveTextContent('"podAntiAffinity"');
+            expect(screen.getByTestId('spec-text')).toHaveTextContent('"shepherd.io/service-id"');
+            expect(screen.getByTestId('spec-text')).toHaveTextContent('"__SHEPHERD_SERVICE_ID__"');
+            expect(screen.getByTestId('spec-text')).toHaveTextContent('"kubernetes.io/hostname"');
+            expect(screen.getByTestId('spec-text')).toHaveTextContent(
+                '"requiredDuringSchedulingIgnoredDuringExecution"',
+            );
         });
     });
 

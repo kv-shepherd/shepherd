@@ -14,6 +14,9 @@ func TestParseVMCreatePayload(t *testing.T) {
 		"namespace":        "ns-1",
 		"requester_id":     "user-1",
 		"instance_size_id": "size-1",
+		"target_cpu_cores": 2.5,
+		"target_memory_gi": 4.0,
+		"target_disk_gb":   80,
 	})
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
@@ -25,6 +28,15 @@ func TestParseVMCreatePayload(t *testing.T) {
 	}
 	if payload.TemplateID != "tpl-1" {
 		t.Fatalf("template id mismatch: got %q", payload.TemplateID)
+	}
+	if payload.TargetCPUCores == nil || *payload.TargetCPUCores != 2.5 {
+		t.Fatalf("target cpu mismatch: got %v", payload.TargetCPUCores)
+	}
+	if payload.TargetMemoryGi == nil || *payload.TargetMemoryGi != 4 {
+		t.Fatalf("target memory mismatch: got %v", payload.TargetMemoryGi)
+	}
+	if payload.TargetDiskGB == nil || *payload.TargetDiskGB != 80 {
+		t.Fatalf("target disk mismatch: got %v", payload.TargetDiskGB)
 	}
 }
 

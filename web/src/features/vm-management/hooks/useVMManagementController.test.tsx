@@ -382,6 +382,36 @@ describe("useVMManagementController", () => {
     });
   });
 
+  it("submits create payload with requested target resources when they differ from the selected size", async () => {
+    formState.getFieldsValue.mockReturnValue({
+      service_id: "svc-1",
+      template_id: "tpl-1",
+      instance_size_id: "size-1",
+      namespace: "prod",
+      reason: "scale up",
+      target_cpu_cores: 3,
+      target_memory_gi: 6,
+      target_disk_gb: 80,
+    });
+
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    await act(async () => {
+      await result.current.submitWizard();
+    });
+
+    expect(createMutate).toHaveBeenCalledWith({
+      service_id: "svc-1",
+      template_id: "tpl-1",
+      instance_size_id: "size-1",
+      namespace: "prod",
+      reason: "scale up",
+      target_cpu_cores: 3,
+      target_memory_gi: 6,
+      target_disk_gb: 80,
+    });
+  });
+
   it("prefills system and service when wizard is opened from a scoped entry point", () => {
     const { result } = renderHook(() => useVMManagementController({ t }));
 
@@ -397,6 +427,9 @@ describe("useVMManagementController", () => {
       instance_size_id: undefined,
       namespace: undefined,
       reason: undefined,
+      target_cpu_cores: undefined,
+      target_memory_gi: undefined,
+      target_disk_gb: undefined,
     });
   });
 
@@ -424,6 +457,9 @@ describe("useVMManagementController", () => {
       instance_size_id: "size-2",
       namespace: "team-prod",
       reason: "reuse request",
+      target_cpu_cores: undefined,
+      target_memory_gi: undefined,
+      target_disk_gb: undefined,
     });
   });
 
@@ -446,6 +482,9 @@ describe("useVMManagementController", () => {
       instance_size_id: "size-prefill",
       namespace: "prefill-ns",
       reason: "reuse vm request",
+      target_cpu_cores: undefined,
+      target_memory_gi: undefined,
+      target_disk_gb: undefined,
     });
   });
 
@@ -526,6 +565,9 @@ describe("useVMManagementController", () => {
       instance_size_id: "size-restore",
       namespace: "restore-ns",
       reason: "restore reason",
+      target_cpu_cores: undefined,
+      target_memory_gi: undefined,
+      target_disk_gb: undefined,
       batch_count: 3,
     });
   });
@@ -732,6 +774,55 @@ describe("useVMManagementController", () => {
     watchValues.batch_count = 1;
   });
 
+  it("includes requested target resources in batch create items", async () => {
+    watchValues.batch_count = 2;
+    formState.getFieldsValue.mockReturnValue({
+      service_id: "svc-1",
+      template_id: "tpl-1",
+      instance_size_id: "size-1",
+      namespace: "prod",
+      reason: "scale up",
+      batch_count: 2,
+      target_cpu_cores: 3,
+      target_memory_gi: 6,
+      target_disk_gb: 80,
+    });
+
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    await act(async () => {
+      await result.current.submitWizard();
+    });
+
+    expect(createBatchMutate).toHaveBeenCalledWith({
+      operation: "CREATE",
+      reason: "scale up",
+      items: [
+        {
+          service_id: "svc-1",
+          template_id: "tpl-1",
+          instance_size_id: "size-1",
+          namespace: "prod",
+          reason: "scale up",
+          target_cpu_cores: 3,
+          target_memory_gi: 6,
+          target_disk_gb: 80,
+        },
+        {
+          service_id: "svc-1",
+          template_id: "tpl-1",
+          instance_size_id: "size-1",
+          namespace: "prod",
+          reason: "scale up",
+          target_cpu_cores: 3,
+          target_memory_gi: 6,
+          target_disk_gb: 80,
+        },
+      ],
+    });
+    watchValues.batch_count = 1;
+  });
+
   it("watches preserved wizard fields so confirm step summaries stay populated", () => {
     renderHook(() => useVMManagementController({ t }));
 
@@ -749,6 +840,18 @@ describe("useVMManagementController", () => {
     );
     expect(useWatchMock).toHaveBeenCalledWith(
       "batch_count",
+      expect.objectContaining({ form: formState, preserve: true }),
+    );
+    expect(useWatchMock).toHaveBeenCalledWith(
+      "target_cpu_cores",
+      expect.objectContaining({ form: formState, preserve: true }),
+    );
+    expect(useWatchMock).toHaveBeenCalledWith(
+      "target_memory_gi",
+      expect.objectContaining({ form: formState, preserve: true }),
+    );
+    expect(useWatchMock).toHaveBeenCalledWith(
+      "target_disk_gb",
       expect.objectContaining({ form: formState, preserve: true }),
     );
   });

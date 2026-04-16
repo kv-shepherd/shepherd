@@ -914,6 +914,9 @@ func (s *Server) CreateVMRequest(c *gin.Context) {
 		Namespace:      req.Namespace,
 		Reason:         req.Reason,
 		RequestedBy:    actor,
+		TargetCPUCores: normalizeOptionalTargetFloat64(float64(req.TargetCpuCores)),
+		TargetMemoryGi: normalizeOptionalTargetFloat64(float64(req.TargetMemoryGi)),
+		TargetDiskGB:   normalizeOptionalTargetInt(req.TargetDiskGb),
 	})
 	if err != nil {
 		if appErr, ok := apperrors.IsAppError(err); ok {
@@ -1390,6 +1393,28 @@ func (s *Server) handleVMPower(c *gin.Context, vm *ent.VM, operation string, eve
 	}
 	if !needsApproval {
 		s.enqueueVMPowerOp(c, vm, operation, eventType)
+		return
+	}
+
+	existingTicket, err := s.findLatestActiveVMTicket(
+		ctx,
+		vm.ID,
+		entticket.OperationTypePOWER,
+		domain.EventVMStartRequested,
+		domain.EventVMStopRequested,
+		domain.EventVMRestartRequested,
+	)
+	if err != nil {
+		logger.Error("failed to check duplicate power approval request",
+			zap.Error(err),
+			zap.String("vm_id", vm.ID),
+			zap.String("operation", operation),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if existingTicket != nil {
+		writeDuplicatePendingVMOperation(c, existingTicket)
 		return
 	}
 

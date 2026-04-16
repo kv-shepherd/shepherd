@@ -2289,6 +2289,8 @@ paths:
       responses:
         '204':
           description: Template deleted
+        '409':
+          $ref: '#/components/responses/Conflict'
         '404':
           $ref: '#/components/responses/NotFound'
   /templates:
@@ -2373,6 +2375,8 @@ paths:
       responses:
         '204':
           description: Instance size deleted
+        '409':
+          $ref: '#/components/responses/Conflict'
         '404':
           $ref: '#/components/responses/NotFound'
   /instance-sizes:
@@ -3644,6 +3648,22 @@ components:
           x-oapi-codegen-extra-tags:
             validate: "required"
           type: string
+        target_cpu_cores:
+          type: number
+          format: double
+          minimum: 0.5
+          multipleOf: 0.5
+          description: Optional desired total vCPU count for the requested VM.
+        target_memory_gi:
+          type: number
+          format: double
+          minimum: 0.5
+          multipleOf: 0.5
+          description: Optional desired total guest memory in Gi for the requested VM.
+        target_disk_gb:
+          type: integer
+          minimum: 1
+          description: Optional desired total root-volume size in Gi for the requested VM.
         # ⚠️ cluster_id is intentionally ABSENT — see ADR-0017
     VMManifestResponse:
       type: object
@@ -3872,14 +3892,19 @@ components:
         target_cpu_cores:
           type: number
           format: double
-          description: Required for MODIFY when changing CPU.
+          minimum: 0.5
+          multipleOf: 0.5
+          description: Optional desired total vCPU count for CREATE or MODIFY operations.
         target_memory_gi:
           type: number
           format: double
-          description: Required for MODIFY when changing memory.
+          minimum: 0.5
+          multipleOf: 0.5
+          description: Optional desired total guest memory in Gi for CREATE or MODIFY operations.
         target_disk_gb:
           type: integer
-          description: Required for MODIFY when changing disk.
+          minimum: 1
+          description: Optional desired total root-volume size in Gi for CREATE or MODIFY operations.
         reason:
           type: string
     VMBatchPowerItem:

@@ -173,6 +173,34 @@ func TestCreateVMModifyRequest_AllowsRunningShrinkAndMarksRestartRequired(t *tes
 	}
 }
 
+func TestCreateVMModifyRequest_RejectsDuplicateActiveModifyTicket(t *testing.T) {
+	t.Parallel()
+
+	srv, client, vmID := newVMModifyTestServer(t)
+	existingTicketID := mustSeedActiveModifyTicket(t, client, vmID, entticket.StatusPENDING, "owner-1")
+
+	body := mustJSON(t, generated.VMModifyRequest{
+		Reason:         "scale resources",
+		TargetMemoryGi: 8,
+	})
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/"+vmID+"/modify-request", body, "owner-1", []string{"vm:operate", "platform:admin"})
+	srv.CreateVMModifyRequest(c, vmID)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusConflict, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "DUPLICATE_PENDING_REQUEST")
+
+	resp := decodeJSONMap(t, w.Body.Bytes())
+	params, ok := resp["params"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("params type = %T, want object", resp["params"])
+	}
+	if got := toStringValue(params["existing_ticket_id"]); got != existingTicketID {
+		t.Fatalf("existing_ticket_id = %q, want %q", got, existingTicketID)
+	}
+}
+
 func newVMModifyTestServer(t *testing.T) (*Server, *ent.Client, string) {
 	return newVMModifyTestServerWithStatus(t, entvm.StatusRUNNING, domain.VMStatusRunning)
 }
@@ -241,4 +269,49 @@ func newVMModifyTestServerWithStatus(t *testing.T, dbStatus entvm.Status, liveSt
 		EntClient: client,
 		VMService: service.NewVMService(mock),
 	}), client, vmID
+}
+
+func mustSeedActiveModifyTicket(
+	t *testing.T,
+	client *ent.Client,
+	vmID string,
+	status entticket.Status,
+	requester string,
+) string {
+	t.Helper()
+
+	eventID := uuid.Must(uuid.NewV7()).String()
+	ticketID := uuid.Must(uuid.NewV7()).String()
+	payloadBytes, err := domain.VMModifyPayload{
+		VMID:  vmID,
+		Actor: requester,
+	}.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal modify payload: %v", err)
+	}
+
+	if _, err := client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMModifyRequested)).
+		SetAggregateType("vm").
+		SetAggregateID(vmID).
+		SetPayload(payloadBytes).
+		SetStatus(domainevent.StatusPENDING).
+		SetCreatedBy(requester).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create modify event: %v", err)
+	}
+
+	if _, err := client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetOperationType(entticket.OperationTypeMODIFY).
+		SetStatus(status).
+		SetRequester(requester).
+		SetReason("duplicate guard seed").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create modify ticket: %v", err)
+	}
+
+	return ticketID
 }

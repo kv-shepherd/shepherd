@@ -1372,7 +1372,12 @@ func TestServiceCancel_RequesterTransitionsTicketAndEvent(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // createOverrideTestData sets up common entities for override tests.
-func createOverrideTestData(t *testing.T, client *ent.Client, suffix string) (ticketID string) {
+func createOverrideTestData(
+	t *testing.T,
+	client *ent.Client,
+	suffix string,
+	payloadOverride ...domain.VMCreationPayload,
+) (ticketID string) {
 	t.Helper()
 	eventID := "event-override-" + suffix
 	ticketID = "ticket-override-" + suffix
@@ -1382,6 +1387,9 @@ func createOverrideTestData(t *testing.T, client *ent.Client, suffix string) (ti
 		TemplateID:     "tpl-override-" + suffix,
 		InstanceSizeID: "size-override-" + suffix,
 		Namespace:      "team-a",
+	}
+	if len(payloadOverride) > 0 {
+		payload = payloadOverride[0]
 	}
 	payloadRaw, err := payload.ToJSON()
 	if err != nil {
@@ -1608,6 +1616,63 @@ func TestServiceApproveCreate_EnableOverrideDiskOnly_WorksWithoutCPUMemory(t *te
 	}
 	if val, ok := ms["enable_override"].(bool); !ok || !val {
 		t.Fatalf("modifiedSpec[enable_override] = %v, want true", ms["enable_override"])
+	}
+}
+
+func TestServiceApproveCreate_UserRequestedTargets_WriteModifiedSpecAndCapRequests(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_requested_targets")
+	payload := domain.VMCreationPayload{
+		RequesterID:    "user-1",
+		ServiceID:      "svc-1",
+		TemplateID:     "tpl-override-requested-targets",
+		InstanceSizeID: "size-override-requested-targets",
+		Namespace:      "team-a",
+		TargetCPUCores: 2,
+		TargetMemoryGi: 4,
+		TargetDiskGB:   120,
+	}
+	ticketID := createOverrideTestData(t, client, "requested-targets", payload)
+
+	if _, err := client.InstanceSize.UpdateOneID("size-override-requested-targets").
+		SetCPUCores(4).
+		SetCPURequest(3).
+		SetMemoryGi(8).
+		SetMemoryRequestGi(6).
+		SetDiskGB(80).
+		Save(context.Background()); err != nil {
+		t.Fatalf("update instance size: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+	gw.validator = nil
+
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", ExecutionOptions{
+		ClusterID: "cluster-1",
+	}); err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer not called")
+	}
+	ms := writer.modifiedSpec
+	assertFloat64Value := func(t *testing.T, key string, expected float64) {
+		t.Helper()
+		v, ok := ms[key].(float64)
+		if !ok {
+			t.Fatalf("modifiedSpec[%q] not found or not float64: %v", key, ms[key])
+		}
+		if v != expected {
+			t.Fatalf("modifiedSpec[%q] = %f, want %f", key, v, expected)
+		}
+	}
+	assertFloat64Value(t, "cpu_limit", 2)
+	assertFloat64Value(t, "memory_limit_gi", 4)
+	assertFloat64Value(t, "cpu_request", 2)
+	assertFloat64Value(t, "memory_request_gi", 4)
+	if v, ok := asInt(ms["disk_gb"]); !ok || v != 120 {
+		t.Fatalf("modifiedSpec[disk_gb] = %v, want 120", ms["disk_gb"])
 	}
 }
 
@@ -1916,6 +1981,84 @@ func TestBuildDryRunSpec_AppliesOverrideValues(t *testing.T) {
 		if !strings.HasPrefix(spec.Name, "dryrun-") {
 			t.Errorf("spec.Name = %q, want prefix 'dryrun-'", spec.Name)
 		}
+		if got := spec.Labels["shepherd.io/service-id"]; got != "svc-1" {
+			t.Fatalf("spec.Labels[service-id] = %q, want svc-1", got)
+		}
+		if got := spec.Labels["shepherd.io/template-id"]; got != "tpl-test" {
+			t.Fatalf("spec.Labels[template-id] = %q, want tpl-test", got)
+		}
+	})
+
+	t.Run("service_id_placeholder_in_antiaffinity_resolves_during_dryrun_render", func(t *testing.T) {
+		t.Parallel()
+
+		sizeWithAntiAffinity := &ent.InstanceSize{
+			ID:       "size-antiaffinity",
+			CPUCores: 2.0,
+			MemoryGi: 4.0,
+			DiskGB:   50,
+			SpecOverrides: map[string]interface{}{
+				"spec": map[string]interface{}{
+					"template": map[string]interface{}{
+						"spec": map[string]interface{}{
+							"affinity": map[string]interface{}{
+								"podAntiAffinity": map[string]interface{}{
+									"preferredDuringSchedulingIgnoredDuringExecution": []interface{}{
+										map[string]interface{}{
+											"weight": float64(100),
+											"podAffinityTerm": map[string]interface{}{
+												"labelSelector": map[string]interface{}{
+													"matchExpressions": []interface{}{
+														map[string]interface{}{
+															"key":      "shepherd.io/service-id",
+															"operator": "In",
+															"values": []interface{}{
+																"__SHEPHERD_SERVICE_ID__",
+															},
+														},
+													},
+												},
+												"topologyKey": "kubernetes.io/hostname",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		spec, err := gw.buildDryRunSpec(payload, tmpl, sizeWithAntiAffinity, ExecutionOptions{})
+		if err != nil {
+			t.Fatalf("buildDryRunSpec() with anti-affinity error = %v", err)
+		}
+
+		renderedYAML, err := provider.RenderVMSpecToYAML(payload.Namespace, &provider.VMRenderInput{
+			Name:            spec.Name,
+			CPUCores:        spec.CPU,
+			MemoryGi:        spec.MemoryGi,
+			DiskGB:          spec.DiskGB,
+			Image:           spec.Image,
+			StorageClass:    spec.StorageClass,
+			CloudInit:       spec.CloudInit,
+			Labels:          spec.Labels,
+			CPURequest:      spec.CPURequest,
+			MemoryRequestGi: spec.MemoryRequestGi,
+			SpecOverrides:   spec.SpecOverrides,
+			DVAccessModes:   spec.DVAccessModes,
+			DVVolumeMode:    spec.DVVolumeMode,
+		})
+		if err != nil {
+			t.Fatalf("RenderVMSpecToYAML() error = %v", err)
+		}
+		if strings.Contains(renderedYAML, "__SHEPHERD_SERVICE_ID__") {
+			t.Fatalf("expected service-id placeholder resolved in rendered yaml, got:\n%s", renderedYAML)
+		}
+		if !strings.Contains(renderedYAML, "- svc-1") {
+			t.Fatalf("expected rendered yaml to contain resolved service-id selector, got:\n%s", renderedYAML)
+		}
 	})
 
 	t.Run("admin_resource_override_applied", func(t *testing.T) {
@@ -1940,6 +2083,47 @@ func TestBuildDryRunSpec_AppliesOverrideValues(t *testing.T) {
 		}
 		if spec.DiskGB != 200 {
 			t.Errorf("spec.DiskGB = %d, want 200 (override)", spec.DiskGB)
+		}
+	})
+
+	t.Run("requested_target_values_adjust_default_requests", func(t *testing.T) {
+		t.Parallel()
+		sizeWithRequests := &ent.InstanceSize{
+			ID:              "size-requested",
+			CPUCores:        4.0,
+			CPURequest:      3.0,
+			MemoryGi:        8.0,
+			MemoryRequestGi: 6.0,
+			DiskGB:          50,
+		}
+		targetCPU := 2.0
+		targetMemory := 4.0
+		targetDisk := 120
+		requestedPayload := &vmCreatePayload{
+			ServiceID:      "svc-1",
+			Namespace:      "team-a",
+			TargetCPUCores: &targetCPU,
+			TargetMemoryGi: &targetMemory,
+			TargetDiskGB:   &targetDisk,
+		}
+		spec, err := gw.buildDryRunSpec(requestedPayload, tmpl, sizeWithRequests, ExecutionOptions{})
+		if err != nil {
+			t.Fatalf("buildDryRunSpec() with requested targets error = %v", err)
+		}
+		if spec.CPU != 2.0 {
+			t.Errorf("spec.CPU = %f, want 2.0", spec.CPU)
+		}
+		if spec.MemoryGi != 4.0 {
+			t.Errorf("spec.MemoryGi = %f, want 4.0", spec.MemoryGi)
+		}
+		if spec.DiskGB != 120 {
+			t.Errorf("spec.DiskGB = %d, want 120", spec.DiskGB)
+		}
+		if spec.CPURequest != 2.0 {
+			t.Errorf("spec.CPURequest = %f, want 2.0", spec.CPURequest)
+		}
+		if spec.MemoryRequestGi != 4.0 {
+			t.Errorf("spec.MemoryRequestGi = %f, want 4.0", spec.MemoryRequestGi)
 		}
 	})
 

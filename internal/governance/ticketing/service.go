@@ -228,19 +228,19 @@ func (g *Service) approveCreateWithConfig(
 		return fmt.Errorf("effective instance size id is empty for ticket %s", ticketID)
 	}
 
+	// Load template and instance size once — shared by placement validation, DryRun gate,
+	// overcommit validation, and snapshot building below.
+	templateEntity, err := g.client.Template.Get(ctx, effectiveTemplateID)
+	if err != nil {
+		return fmt.Errorf("get template %s for ticket %s: %w", effectiveTemplateID, ticketID, err)
+	}
+	instanceSizeEntity, err := g.client.InstanceSize.Get(ctx, effectiveInstanceSizeID)
+	if err != nil {
+		return fmt.Errorf("get instance size %s for ticket %s: %w", effectiveInstanceSizeID, ticketID, err)
+	}
+
 	var placementEvaluation map[string]interface{}
 	if g.validator != nil {
-		var override *service.ApprovalResourceOverride
-		if opts.EnableOverride {
-			overrideValue := service.ApprovalResourceOverride{
-				CPURequest:      opts.CPURequest,
-				CPULimit:        opts.CPULimit,
-				MemoryRequestGi: opts.MemoryRequestGi,
-				MemoryLimitGi:   opts.MemoryLimitGi,
-				DiskGB:          opts.DiskGB,
-			}
-			override = &overrideValue
-		}
 		evaluation, evalErr := g.validator.EvaluateClusterPlacement(ctx, service.ApprovalValidationInput{
 			ClusterID:      opts.ClusterID,
 			TemplateID:     effectiveTemplateID,
@@ -249,7 +249,7 @@ func (g *Service) approveCreateWithConfig(
 			StorageClass:   opts.StorageClass,
 			DVAccessModes:  opts.DVAccessModes,
 			DVVolumeMode:   opts.DVVolumeMode,
-			Override:       override,
+			Override:       buildCreateApprovalOverride(payload, instanceSizeEntity, opts),
 		})
 		if evalErr != nil {
 			return fmt.Errorf("approval validation failed for ticket %s: %w", ticketID, evalErr)
@@ -276,17 +276,6 @@ func (g *Service) approveCreateWithConfig(
 		}
 	}
 
-	// Load template and instance size once — shared by DryRun gate, overcommit validation,
-	// and snapshot building below. This avoids the 2-3 redundant DB reads from the previous
-	// implementation.
-	templateEntity, err := g.client.Template.Get(ctx, effectiveTemplateID)
-	if err != nil {
-		return fmt.Errorf("get template %s for ticket %s: %w", effectiveTemplateID, ticketID, err)
-	}
-	instanceSizeEntity, err := g.client.InstanceSize.Get(ctx, effectiveInstanceSizeID)
-	if err != nil {
-		return fmt.Errorf("get instance size %s for ticket %s: %w", effectiveInstanceSizeID, ticketID, err)
-	}
 	targetDiskGB := instanceSizeEntity.DiskGB
 	if opts.EnableOverride && opts.DiskGB > 0 {
 		targetDiskGB = opts.DiskGB
@@ -375,6 +364,7 @@ func (g *Service) approveCreateWithConfig(
 		instanceSizeSnapshot = applyResolvedRootVolumeToInstanceSizeSnapshot(instanceSizeSnapshot, placementEvaluation)
 	}
 	modifiedSpec := cloneMap(ticket.ModifiedSpec)
+	applyRequestedCreateTargets(modifiedSpec, payload, instanceSizeEntity)
 
 	// Merge admin resource overrides into modifiedSpec (Stage 5.B).
 	if opts.EnableOverride {
@@ -1339,11 +1329,14 @@ func (g *Service) ListPending(ctx context.Context) ([]*ent.Ticket, error) {
 }
 
 type vmCreatePayload struct {
-	ServiceID      string `json:"service_id"`
-	TemplateID     string `json:"template_id"`
-	Namespace      string `json:"namespace"`
-	RequesterID    string `json:"requester_id"`
-	InstanceSizeID string `json:"instance_size_id"`
+	ServiceID      string   `json:"service_id"`
+	TemplateID     string   `json:"template_id"`
+	Namespace      string   `json:"namespace"`
+	RequesterID    string   `json:"requester_id"`
+	InstanceSizeID string   `json:"instance_size_id"`
+	TargetCPUCores *float64 `json:"target_cpu_cores,omitempty"`
+	TargetMemoryGi *float64 `json:"target_memory_gi,omitempty"`
+	TargetDiskGB   *int     `json:"target_disk_gb,omitempty"`
 }
 
 func parseVMCreatePayload(raw json.RawMessage) (*vmCreatePayload, error) {
@@ -1539,18 +1532,23 @@ func (g *Service) buildDryRunSpec(
 	if err != nil {
 		return nil, fmt.Errorf("resolve image for dryrun from template %s: %w", tmpl.ID, err)
 	}
+	requestedTargets := resolveCreateRequestTargets(payload, size)
 
 	spec := &domain.VMSpec{
-		Name:            "dryrun-" + payload.ServiceID, // unique per request, not persisted
-		CPU:             size.CPUCores,
-		MemoryGi:        size.MemoryGi,
-		DiskGB:          size.DiskGB,
-		Image:           image,
-		StorageClass:    strings.TrimSpace(opts.StorageClass),
-		CloudInit:       tmpl.CloudInit,
+		Name:         "dryrun-" + payload.ServiceID, // unique per request, not persisted
+		CPU:          requestedTargets.CPULimit,
+		MemoryGi:     requestedTargets.MemoryLimitGi,
+		DiskGB:       requestedTargets.DiskGB,
+		Image:        image,
+		StorageClass: strings.TrimSpace(opts.StorageClass),
+		CloudInit:    tmpl.CloudInit,
+		Labels: map[string]string{
+			"shepherd.io/service-id":  payload.ServiceID,
+			"shepherd.io/template-id": tmpl.ID,
+		},
 		SpecOverrides:   cloneMap(size.SpecOverrides),
-		CPURequest:      size.CPURequest,
-		MemoryRequestGi: size.MemoryRequestGi,
+		CPURequest:      requestedTargets.CPURequest,
+		MemoryRequestGi: requestedTargets.MemoryRequestGi,
 		DVAccessModes:   cloneStringSlice(size.DvAccessModes),
 		DVVolumeMode:    strings.TrimSpace(size.DvVolumeMode),
 	}
@@ -1583,6 +1581,82 @@ func (g *Service) buildDryRunSpec(
 	}
 
 	return spec, nil
+}
+
+func resolveCreateRequestTargets(
+	payload *vmCreatePayload,
+	size *ent.InstanceSize,
+) service.ResolvedVMRequestTargets {
+	return service.ResolveVMRequestTargets(
+		size.CPUCores,
+		size.CPURequest,
+		size.MemoryGi,
+		size.MemoryRequestGi,
+		size.DiskGB,
+		service.VMRequestTargets{
+			TargetCPUCores: payload.TargetCPUCores,
+			TargetMemoryGi: payload.TargetMemoryGi,
+			TargetDiskGB:   payload.TargetDiskGB,
+		},
+	)
+}
+
+func buildCreateApprovalOverride(
+	payload *vmCreatePayload,
+	size *ent.InstanceSize,
+	opts ExecutionOptions,
+) *service.ApprovalResourceOverride {
+	resolved := resolveCreateRequestTargets(payload, size)
+	override := service.ApprovalResourceOverride{
+		CPURequest:      resolved.CPURequest,
+		CPULimit:        resolved.CPULimit,
+		MemoryRequestGi: resolved.MemoryRequestGi,
+		MemoryLimitGi:   resolved.MemoryLimitGi,
+		DiskGB:          resolved.DiskGB,
+	}
+	if opts.EnableOverride {
+		if opts.CPURequest > 0 {
+			override.CPURequest = opts.CPURequest
+		}
+		if opts.CPULimit > 0 {
+			override.CPULimit = opts.CPULimit
+		}
+		if opts.MemoryRequestGi > 0 {
+			override.MemoryRequestGi = opts.MemoryRequestGi
+		}
+		if opts.MemoryLimitGi > 0 {
+			override.MemoryLimitGi = opts.MemoryLimitGi
+		}
+		if opts.DiskGB > 0 {
+			override.DiskGB = opts.DiskGB
+		}
+	} else if opts.DiskGB > 0 {
+		override.DiskGB = opts.DiskGB
+	}
+	return &override
+}
+
+func applyRequestedCreateTargets(
+	modifiedSpec map[string]interface{},
+	payload *vmCreatePayload,
+	size *ent.InstanceSize,
+) {
+	resolved := resolveCreateRequestTargets(payload, size)
+	if payload.TargetCPUCores != nil {
+		modifiedSpec["cpu_limit"] = resolved.CPULimit
+	}
+	if payload.TargetMemoryGi != nil {
+		modifiedSpec["memory_limit_gi"] = resolved.MemoryLimitGi
+	}
+	if payload.TargetDiskGB != nil {
+		modifiedSpec["disk_gb"] = resolved.DiskGB
+	}
+	if payload.TargetCPUCores != nil && resolved.AdjustedCPURequest {
+		modifiedSpec["cpu_request"] = resolved.CPURequest
+	}
+	if payload.TargetMemoryGi != nil && resolved.AdjustedMemoryGiReq {
+		modifiedSpec["memory_request_gi"] = resolved.MemoryRequestGi
+	}
 }
 
 // resolveTemplateImageForDryRun extracts the boot image string from an Ent Template.

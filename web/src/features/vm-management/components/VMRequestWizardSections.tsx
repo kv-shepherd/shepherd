@@ -65,6 +65,13 @@ function formatInstanceSizeDisk(size: InstanceSize, t: TFunction) {
     return t('wizard.size_disk_suffix', { disk: size.disk_gb });
 }
 
+function formatCPUValue(value: number) {
+    if (!Number.isFinite(value) || value <= 0) {
+        return '0';
+    }
+    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 export function VMRequestSectionCard({
     title,
     children,
@@ -172,10 +179,16 @@ export function VMRequestSizeFields({
     t,
     sizesData,
     selectedSize,
+    targetCpuValue,
+    targetMemoryValue,
+    targetDiskValue,
 }: {
     t: TFunction;
     sizesData: InstanceSizeList | undefined;
     selectedSize: InstanceSize | undefined;
+    targetCpuValue?: number;
+    targetMemoryValue?: number;
+    targetDiskValue?: number;
 }) {
     const selectedSizeTags = selectedSize ? capabilityTags(selectedSize, t) : [];
 
@@ -220,6 +233,68 @@ export function VMRequestSizeFields({
                     message={t('wizard.size_capability_notice')}
                     description={<Space wrap>{selectedSizeTags}</Space>}
                 />
+            ) : null}
+            {selectedSize ? (
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Alert
+                        type="info"
+                        showIcon
+                        message={t('wizard.custom_resources_title')}
+                        description={t('wizard.custom_resources_hint')}
+                    />
+                    <Form.Item
+                        name="target_cpu_cores"
+                        label={t('modify.target_cpu')}
+                        extra={t('wizard.custom_resource_default', {
+                            value: `${formatCPUValue(selectedSize.cpu_cores)} vCPU`,
+                        })}
+                    >
+                        <InputNumber
+                            min={0.5}
+                            step={0.5}
+                            precision={1}
+                            placeholder={formatCPUValue(selectedSize.cpu_cores)}
+                            style={{ width: '100%' }}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="target_memory_gi"
+                        label={t('modify.target_memory')}
+                        extra={t('wizard.custom_resource_default', {
+                            value: formatMemory(selectedSize.memory_gi),
+                        })}
+                    >
+                        <InputNumber
+                            min={0.5}
+                            step={0.5}
+                            precision={1}
+                            placeholder={String(selectedSize.memory_gi)}
+                            style={{ width: '100%' }}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="target_disk_gb"
+                        label={t('modify.target_disk')}
+                        extra={t('wizard.custom_resource_default', {
+                            value: `${selectedSize.disk_gb} Gi`,
+                        })}
+                    >
+                        <InputNumber
+                            min={1}
+                            step={1}
+                            precision={0}
+                            placeholder={String(selectedSize.disk_gb)}
+                            style={{ width: '100%' }}
+                        />
+                    </Form.Item>
+                    {targetCpuValue || targetMemoryValue || targetDiskValue ? (
+                        <Alert
+                            type="success"
+                            showIcon
+                            message={t('wizard.custom_resources_active')}
+                        />
+                    ) : null}
+                </Space>
             ) : null}
         </>
     );
@@ -314,6 +389,9 @@ export function VMRequestConfirmStep({
     namespaceValue,
     reasonValue,
     batchCountValue,
+    targetCpuValue,
+    targetMemoryValue,
+    targetDiskValue,
 }: {
     t: TFunction;
     servicesData: ServiceList | undefined;
@@ -323,6 +401,9 @@ export function VMRequestConfirmStep({
     namespaceValue: string | undefined;
     reasonValue: string | undefined;
     batchCountValue: number;
+    targetCpuValue?: number;
+    targetMemoryValue?: number;
+    targetDiskValue?: number;
 }) {
     const selectedSizeTags = selectedSize ? capabilityTags(selectedSize, t) : [];
 
@@ -379,6 +460,27 @@ export function VMRequestConfirmStep({
                         label: t('wizard.confirm_batch_count'),
                         children: batchCountValue,
                     },
+                    ...(targetCpuValue
+                        ? [{
+                            key: 'targetCpu',
+                            label: t('modify.target_cpu'),
+                            children: `${formatCPUValue(targetCpuValue)} vCPU`,
+                        }]
+                        : []),
+                    ...(targetMemoryValue
+                        ? [{
+                            key: 'targetMemory',
+                            label: t('modify.target_memory'),
+                            children: formatMemory(targetMemoryValue),
+                        }]
+                        : []),
+                    ...(targetDiskValue
+                        ? [{
+                            key: 'targetDisk',
+                            label: t('modify.target_disk'),
+                            children: `${targetDiskValue} Gi`,
+                        }]
+                        : []),
                 ]}
             />
         </Space>

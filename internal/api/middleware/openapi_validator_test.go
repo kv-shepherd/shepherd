@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
@@ -652,6 +653,55 @@ func TestOpenAPIValidatorAllowsDynamicInstanceSizeSpecOverridesInRequestBody(t *
 
 	if resp.Code != http.StatusCreated {
 		t.Fatalf("expected 201 for instance size request with dynamic spec_overrides, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsCatalogDeleteConflictResponses(t *testing.T) {
+	testCases := []struct {
+		name   string
+		path   string
+		code   string
+		params map[string]interface{}
+	}{
+		{
+			name: "template delete conflict",
+			path: "/api/v1/admin/templates/tpl-active",
+			code: "TEMPLATE_HAS_ACTIVE_REQUESTS",
+			params: map[string]interface{}{
+				"active_request_count": 1,
+			},
+		},
+		{
+			name: "instance size delete conflict",
+			path: "/api/v1/admin/instance-sizes/size-active",
+			code: "INSTANCE_SIZE_HAS_ACTIVE_REQUESTS",
+			params: map[string]interface{}{
+				"active_request_count": 2,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			router := newOpenAPIValidatorTestRouter(t)
+			router.DELETE(tc.path, func(c *gin.Context) {
+				c.JSON(http.StatusConflict, generated.Error{
+					Code:    tc.code,
+					Message: "resource is referenced by active VM create requests",
+					Params:  tc.params,
+				})
+			})
+
+			req := httptest.NewRequest(http.MethodDelete, tc.path, http.NoBody)
+			req.Header.Set("Authorization", "Bearer test-token")
+			resp := httptest.NewRecorder()
+			router.ServeHTTP(resp, req)
+
+			if resp.Code != http.StatusConflict {
+				t.Fatalf("expected 409 for %s, got %d body=%s", tc.path, resp.Code, resp.Body.String())
+			}
+			assertErrorCode(t, resp.Body.Bytes(), tc.code)
+		})
 	}
 }
 

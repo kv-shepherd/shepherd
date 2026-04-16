@@ -59,6 +59,9 @@ interface VMRequestWizardProps {
     namespaceOptions: string[];
     reasonValue: string | undefined;
     batchCountValue: number;
+    targetCpuValue?: number;
+    targetMemoryValue?: number;
+    targetDiskValue?: number;
     isSubmitting: boolean;
     onCancel: () => void;
     onNext: () => void;
@@ -89,6 +92,9 @@ export function VMRequestWizard({
     namespaceOptions,
     reasonValue,
     batchCountValue,
+    targetCpuValue,
+    targetMemoryValue,
+    targetDiskValue,
     isSubmitting,
     onCancel,
     onNext,
@@ -121,6 +127,9 @@ export function VMRequestWizard({
                     t={t}
                     sizesData={sizesData}
                     selectedSize={selectedSize}
+                    targetCpuValue={targetCpuValue}
+                    targetMemoryValue={targetMemoryValue}
+                    targetDiskValue={targetDiskValue}
                 />
             </VMRequestSectionCard>
             <VMRequestSectionCard title={t('wizard.section.configuration')}>
@@ -144,6 +153,9 @@ export function VMRequestWizard({
                     namespaceValue={namespaceValue}
                     reasonValue={reasonValue}
                     batchCountValue={batchCountValue}
+                    targetCpuValue={targetCpuValue}
+                    targetMemoryValue={targetMemoryValue}
+                    targetDiskValue={targetDiskValue}
                 />
             </VMRequestSectionCard>
         </Space>
@@ -169,6 +181,9 @@ export function VMRequestWizard({
                         t={t}
                         sizesData={sizesData}
                         selectedSize={selectedSize}
+                        targetCpuValue={targetCpuValue}
+                        targetMemoryValue={targetMemoryValue}
+                        targetDiskValue={targetDiskValue}
                     />
                 );
             case 3:
@@ -194,6 +209,9 @@ export function VMRequestWizard({
                         namespaceValue={namespaceValue}
                         reasonValue={reasonValue}
                         batchCountValue={batchCountValue}
+                        targetCpuValue={targetCpuValue}
+                        targetMemoryValue={targetMemoryValue}
+                        targetDiskValue={targetDiskValue}
                     />
                 );
             default:

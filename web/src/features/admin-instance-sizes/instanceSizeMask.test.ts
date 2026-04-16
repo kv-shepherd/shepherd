@@ -78,6 +78,7 @@ describe('instancesize.mask.json', () => {
         const paths = readMaskPaths();
 
         expect(paths).toContain('spec.template.spec.nodeSelector');
+        expect(paths).toContain('spec.template.spec.affinity.podAntiAffinity');
         expect(paths).toContain('spec.template.metadata.annotations');
     });
 

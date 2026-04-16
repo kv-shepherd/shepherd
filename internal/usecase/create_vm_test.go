@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -20,6 +21,9 @@ func TestSameCreateResource(t *testing.T) {
 		TemplateID:     "tpl-1",
 		InstanceSizeID: "size-1",
 		Namespace:      "team-a",
+		TargetCPUCores: 2,
+		TargetMemoryGi: 4,
+		TargetDiskGB:   50,
 	}
 
 	testCases := []struct {
@@ -36,6 +40,17 @@ func TestSameCreateResource(t *testing.T) {
 				Namespace:      "team-a",
 			},
 			expect: true,
+		},
+		{
+			name: "different target cpu",
+			input: CreateVMInput{
+				ServiceID:      "svc-1",
+				TemplateID:     "tpl-1",
+				InstanceSizeID: "size-1",
+				Namespace:      "team-a",
+				TargetCPUCores: float64Ptr(3),
+			},
+			expect: false,
 		},
 		{
 			name: "different service",
@@ -91,12 +106,129 @@ func TestSameCreateResource(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := sameCreateResource(basePayload, tc.input)
+			resolvedTargets := service.ResolveVMRequestTargets(
+				2,
+				0,
+				4,
+				0,
+				50,
+				service.VMRequestTargets{
+					TargetCPUCores: tc.input.TargetCPUCores,
+					TargetMemoryGi: tc.input.TargetMemoryGi,
+					TargetDiskGB:   tc.input.TargetDiskGB,
+				},
+			)
+			got := sameCreateResource(basePayload, tc.input, resolvedTargets)
 			if got != tc.expect {
 				t.Fatalf("sameCreateResource mismatch: got %v want %v", got, tc.expect)
 			}
 		})
 	}
+}
+
+func TestSameCreateResource_LegacyPayloadWithoutTargetsMatchesDefaultRequest(t *testing.T) {
+	legacyPayload := domain.VMCreationPayload{
+		ServiceID:      "svc-1",
+		TemplateID:     "tpl-1",
+		InstanceSizeID: "size-1",
+		Namespace:      "team-a",
+	}
+	resolvedTargets := service.ResolveVMRequestTargets(2, 0, 4, 0, 50, service.VMRequestTargets{})
+	if !sameCreateResource(legacyPayload, CreateVMInput{
+		ServiceID:      "svc-1",
+		TemplateID:     "tpl-1",
+		InstanceSizeID: "size-1",
+		Namespace:      "team-a",
+	}, resolvedTargets) {
+		t.Fatal("legacy payload without target resources should match a default create request")
+	}
+}
+
+func TestCreateVMUseCase_PersistsResolvedTargetResources(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "create_vm_target_resources")
+	uc := NewCreateVMUseCase(
+		client,
+		nil,
+		service.NewInstanceSizeService(client),
+		service.NewTemplateService(client),
+	)
+
+	if _, err := client.NamespaceRegistry.Create().
+		SetID("ns-test").
+		SetName("team-test").
+		SetEnvironment(namespaceregistry.EnvironmentTest).
+		SetCreatedBy("seed").
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed namespace: %v", err)
+	}
+	if _, err := client.Template.Create().
+		SetID("tpl-all").
+		SetName("ubuntu-shared").
+		SetCreatedBy("seed").
+		SetCatalogScope(enttemplate.CatalogScopeAll).
+		SetSourceType(service.TemplateSourceCDIImageImport).
+		SetImageURL("docker://quay.io/containerdisks/ubuntu:22.04").
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed template: %v", err)
+	}
+	if _, err := client.InstanceSize.Create().
+		SetID("size-test").
+		SetName("test-size").
+		SetCPUCores(4).
+		SetCPURequest(3).
+		SetMemoryGi(8).
+		SetMemoryRequestGi(6).
+		SetDiskGB(80).
+		SetCreatedBy("seed").
+		SetCatalogScope(instancesize.CatalogScopeTest).
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed instance size: %v", err)
+	}
+
+	out, err := uc.Execute(t.Context(), CreateVMInput{
+		ServiceID:      "svc-1",
+		TemplateID:     "tpl-all",
+		InstanceSizeID: "size-test",
+		Namespace:      "team-test",
+		RequestedBy:    "user-1",
+		TargetCPUCores: float64Ptr(2),
+		TargetMemoryGi: float64Ptr(4),
+		TargetDiskGB:   intPtr(120),
+	})
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+
+	event, err := client.DomainEvent.Get(t.Context(), out.EventID)
+	if err != nil {
+		t.Fatalf("load domain event: %v", err)
+	}
+	var payload domain.VMCreationPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.TargetCPUCores != 2 {
+		t.Fatalf("target_cpu_cores = %v, want 2", payload.TargetCPUCores)
+	}
+	if payload.TargetMemoryGi != 4 {
+		t.Fatalf("target_memory_gi = %v, want 4", payload.TargetMemoryGi)
+	}
+	if payload.TargetDiskGB != 120 {
+		t.Fatalf("target_disk_gb = %v, want 120", payload.TargetDiskGB)
+	}
+}
+
+func float64Ptr(value float64) *float64 {
+	return &value
+}
+
+func intPtr(value int) *int {
+	return &value
 }
 
 func TestCreateVMUseCase_RejectsCatalogScopeMismatch(t *testing.T) {

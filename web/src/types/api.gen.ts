@@ -1972,6 +1972,18 @@ export interface components {
             /** @description Target K8s namespace (immutable after submission, ADR-0017) */
             namespace: string;
             reason: string;
+            /**
+             * Format: double
+             * @description Optional desired total vCPU count for the requested VM.
+             */
+            target_cpu_cores?: number;
+            /**
+             * Format: double
+             * @description Optional desired total guest memory in Gi for the requested VM.
+             */
+            target_memory_gi?: number;
+            /** @description Optional desired total root-volume size in Gi for the requested VM. */
+            target_disk_gb?: number;
         };
         VMManifestResponse: {
             vm_id: string;
@@ -2088,15 +2100,15 @@ export interface components {
             namespace?: string;
             /**
              * Format: double
-             * @description Required for MODIFY when changing CPU.
+             * @description Optional desired total vCPU count for CREATE or MODIFY operations.
              */
             target_cpu_cores?: number;
             /**
              * Format: double
-             * @description Required for MODIFY when changing memory.
+             * @description Optional desired total guest memory in Gi for CREATE or MODIFY operations.
              */
             target_memory_gi?: number;
-            /** @description Required for MODIFY when changing disk. */
+            /** @description Optional desired total root-volume size in Gi for CREATE or MODIFY operations. */
             target_disk_gb?: number;
             reason?: string;
         };
@@ -6195,6 +6207,7 @@ export interface operations {
                 content?: never;
             };
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     updateAdminTemplate: {
@@ -6315,6 +6328,7 @@ export interface operations {
                 content?: never;
             };
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     updateAdminInstanceSize: {
