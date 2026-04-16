@@ -49,8 +49,8 @@ import dayjs from "dayjs";
 
 import { ConsoleModeModal } from "@/features/vm-management/components/ConsoleModeModal";
 import { VMConsoleSessionPanel } from "@/features/vm-management/components/VMConsoleSessionPanel";
+import { useApiMutation } from "@/hooks/useApiQuery";
 import { useApiGet } from "@/lib/api/useApiGet";
-import { useApiMutation } from "@/lib/api/useApiMutation";
 import { api } from "@/lib/api/client";
 import { translateApiError } from "@/lib/api/errorMessage";
 import { isCodespacesDemoHost } from "@/lib/auth/demoEnvironment";
@@ -73,6 +73,7 @@ import {
 } from "@/features/vm-management/osInfo";
 import type { components } from "@/types/api.gen";
 import type {
+  DeleteVMResponse,
   VM,
   VMConsoleRequestResponse,
 } from "@/features/vm-management/types";
@@ -139,7 +140,7 @@ export default function VMDetailPage() {
     },
   );
 
-  const deleteMutation = useApiMutation(
+  const deleteMutation = useApiMutation<DeleteVMResponse>(
     () =>
       api.DELETE("/vms/{vm_id}", {
         params: {

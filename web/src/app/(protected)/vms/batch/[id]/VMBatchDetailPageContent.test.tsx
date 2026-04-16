@@ -55,7 +55,7 @@ vi.mock('@/lib/api/useApiGet', () => ({
     useApiGet: (...args: unknown[]) => useApiGetMock(...args),
 }));
 
-vi.mock('@/lib/api/useApiMutation', () => ({
+vi.mock('@/hooks/useApiQuery', () => ({
     useApiMutation: (...args: unknown[]) => useApiMutationMock(...args),
 }));
 

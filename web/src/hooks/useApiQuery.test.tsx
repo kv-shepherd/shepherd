@@ -121,7 +121,7 @@ describe('useApiMutation', () => {
 			{ wrapper }
 		);
 
-		await expect(result.current.mutateAsync('ignored')).rejects.toMatchObject({
+		await expect(result.current.mutateAsync()).rejects.toMatchObject({
 			code: 'CONFLICT',
 			message: 'duplicate',
 			status: 409,
@@ -147,7 +147,7 @@ describe('useApiMutation', () => {
 			{ wrapper }
 		);
 
-		await expect(result.current.mutateAsync('ignored')).rejects.toMatchObject({
+		await expect(result.current.mutateAsync()).rejects.toMatchObject({
 			code: 'BATCH_RATE_LIMITED',
 			status: 429,
 			retry_after_seconds: 8,

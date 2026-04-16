@@ -8,7 +8,7 @@
  * AGENTS.md §5.1: Calculate derived state during rendering.
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { UseQueryOptions } from '@tanstack/react-query';
+import type { UseMutationResult, UseQueryOptions } from '@tanstack/react-query';
 
 /**
  * API error shape — matches backend Error schema.
@@ -27,15 +27,18 @@ export interface ApiErrorResponse {
     }>;
 }
 
-function normalizeApiError(
-    error: ApiErrorResponse | undefined,
-    response: Response | undefined,
-): ApiErrorResponse {
+type ApiClientResult<T> = {
+    data?: T;
+    error?: unknown;
+    response?: Response;
+};
+
+function normalizeApiError(error: unknown, response: Response | undefined): ApiErrorResponse {
     const retryHeader = response?.headers.get('Retry-After');
     const retryAfterSeconds = retryHeader ? Number(retryHeader) : NaN;
-    const base: ApiErrorResponse = error ?? {
+    const base = toApiErrorResponse(error, response) ?? {
         code: response?.ok ? 'UNKNOWN_ERROR' : 'HTTP_ERROR',
-        message: response ? `HTTP ${response.status}` : undefined,
+        message: error instanceof Error ? error.message : response ? `HTTP ${response.status}` : undefined,
     };
     const normalized: ApiErrorResponse = {
         ...base,
@@ -45,6 +48,46 @@ function normalizeApiError(
         normalized.retry_after_seconds = retryAfterSeconds;
     }
     return normalized;
+}
+
+function toApiErrorResponse(
+    error: unknown,
+    response: Response | undefined,
+): ApiErrorResponse | undefined {
+    if (!error || typeof error !== 'object') {
+        return undefined;
+    }
+
+    const candidate = error as Partial<ApiErrorResponse>;
+    if (typeof candidate.code === 'string') {
+        return candidate as ApiErrorResponse;
+    }
+    if (response) {
+        return {
+            code: 'HTTP_ERROR',
+            message: typeof candidate.message === 'string' ? candidate.message : `HTTP ${response.status}`,
+            status: response.status,
+        };
+    }
+    if (typeof candidate.message === 'string') {
+        return {
+            code: 'UNKNOWN_ERROR',
+            message: candidate.message,
+        };
+    }
+    return undefined;
+}
+
+async function invalidateQueryKeys(
+    queryClient: ReturnType<typeof useQueryClient>,
+    queryKeys: readonly unknown[][] | undefined,
+): Promise<void> {
+    if (!queryKeys || queryKeys.length === 0) {
+        return;
+    }
+    await Promise.all(
+        queryKeys.map((key) => queryClient.invalidateQueries({ queryKey: key })),
+    );
 }
 
 /**
@@ -58,7 +101,7 @@ function normalizeApiError(
  */
 export function useApiGet<T>(
     queryKey: readonly unknown[],
-    fetcher: () => Promise<{ data?: T; error?: ApiErrorResponse; response: Response }>,
+    fetcher: () => Promise<ApiClientResult<T>>,
     options?: Omit<UseQueryOptions<T, ApiErrorResponse>, 'queryKey' | 'queryFn'>
 ) {
     // queryKey is the cache identity chosen by the caller; this wrapper keeps
@@ -70,7 +113,9 @@ export function useApiGet<T>(
         queryFn: async () => {
             const { data, error, response } = await fetcher();
             if (error) throw normalizeApiError(error, response);
-            if (!data) throw { code: 'EMPTY_RESPONSE', message: 'No data returned' };
+            if (typeof data === 'undefined') {
+                throw { code: 'EMPTY_RESPONSE', message: 'No data returned' } satisfies ApiErrorResponse;
+            }
             return data;
         },
         ...options,
@@ -81,12 +126,24 @@ export function useApiGet<T>(
  * Hook for mutations (POST/PUT/DELETE).
  * Automatically invalidates related queries on success.
  */
+export function useApiMutation<TResponse = unknown>(
+    mutationFn: () => Promise<ApiClientResult<TResponse>>,
+    options?: {
+        invalidateKeys?: readonly unknown[][];
+        onSuccess?: (data: TResponse) => void;
+        onError?: (error: ApiErrorResponse) => void;
+    }
+): UseMutationResult<TResponse, ApiErrorResponse, void>;
 export function useApiMutation<TRequest, TResponse = unknown>(
-    mutationFn: (req: TRequest) => Promise<{
-        data?: TResponse;
-        error?: ApiErrorResponse;
-        response: Response;
-    }>,
+    mutationFn: (req: TRequest) => Promise<ApiClientResult<TResponse>>,
+    options?: {
+        invalidateKeys?: readonly unknown[][];
+        onSuccess?: (data: TResponse) => void;
+        onError?: (error: ApiErrorResponse) => void;
+    }
+): UseMutationResult<TResponse, ApiErrorResponse, TRequest>;
+export function useApiMutation<TRequest = void, TResponse = unknown>(
+    mutationFn: ((req: TRequest) => Promise<ApiClientResult<TResponse>>) | (() => Promise<ApiClientResult<TResponse>>),
     options?: {
         invalidateKeys?: readonly unknown[][];
         onSuccess?: (data: TResponse) => void;
@@ -97,17 +154,13 @@ export function useApiMutation<TRequest, TResponse = unknown>(
 
     return useMutation<TResponse, ApiErrorResponse, TRequest>({
         mutationFn: async (req: TRequest) => {
-            const { data, error, response } = await mutationFn(req);
+            const { data, error, response } = await (mutationFn as (req: TRequest) => Promise<ApiClientResult<TResponse>>)(req);
             if (error) throw normalizeApiError(error, response);
-            if (!response.ok) throw normalizeApiError(undefined, response);
+            if (!response?.ok) throw normalizeApiError(undefined, response);
             return data as TResponse;
         },
-        onSuccess: (data) => {
-            if (options?.invalidateKeys) {
-                for (const key of options.invalidateKeys) {
-                    queryClient.invalidateQueries({ queryKey: key });
-                }
-            }
+        onSuccess: async (data) => {
+            await invalidateQueryKeys(queryClient, options?.invalidateKeys);
             options?.onSuccess?.(data);
         },
         onError: (error) => {
@@ -121,11 +174,7 @@ export function useApiMutation<TRequest, TResponse = unknown>(
  * These endpoints return 202/204 with no body.
  */
 export function useApiAction<TRequest = void>(
-    actionFn: (req: TRequest) => Promise<{
-        data?: unknown;
-        error?: ApiErrorResponse;
-        response: Response;
-    }>,
+    actionFn: (req: TRequest) => Promise<ApiClientResult<unknown>>,
     options?: {
         invalidateKeys?: readonly unknown[][];
         onSuccess?: () => void;
@@ -138,14 +187,12 @@ export function useApiAction<TRequest = void>(
         mutationFn: async (req: TRequest) => {
             const { error, response } = await actionFn(req);
             if (error) throw normalizeApiError(error, response);
-            if (!response.ok) throw normalizeApiError({ code: 'UNEXPECTED_ERROR', message: `HTTP ${response.status}` }, response);
-        },
-        onSuccess: () => {
-            if (options?.invalidateKeys) {
-                for (const key of options.invalidateKeys) {
-                    queryClient.invalidateQueries({ queryKey: key });
-                }
+            if (!response?.ok) {
+                throw normalizeApiError({ code: 'UNEXPECTED_ERROR', message: response ? `HTTP ${response.status}` : 'No response returned' }, response);
             }
+        },
+        onSuccess: async () => {
+            await invalidateQueryKeys(queryClient, options?.invalidateKeys);
             options?.onSuccess?.();
         },
         onError: (error) => {

@@ -22,8 +22,8 @@ import type { TFunction } from 'i18next';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
+import { useApiMutation } from '@/hooks/useApiQuery';
 import { useApiGet } from '@/lib/api/useApiGet';
-import { useApiMutation } from '@/lib/api/useApiMutation';
 import { api } from '@/lib/api/client';
 import { useMessage } from '@/lib/hooks/useMessage';
 import type { components } from '@/types/api.gen';

@@ -52,10 +52,10 @@ import {
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 import { PageSearchToolbar, filterOptionByLabel } from '@/components/ui/PageSearchToolbar';
+import { useApiMutation } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
 import { translateApiError } from '@/lib/api/errorMessage';
 import { useApiGet } from '@/lib/api/useApiGet';
-import { useApiMutation } from '@/lib/api/useApiMutation';
 import type { components } from '@/types/api.gen';
 
 const { Text } = Typography;
@@ -274,11 +274,11 @@ export default function AdminRateLimitsPageContent() {
         });
     }, [exemptionFilter, exemptionItems, search, userFilter]);
 
-    const createExemptionMutation = useApiMutation<RateLimitExemption, RateLimitExemptionCreateRequest>(
+    const createExemptionMutation = useApiMutation<RateLimitExemptionCreateRequest, RateLimitExemption>(
         (body) =>
             api.POST('/admin/rate-limits/exemptions', {
                 body,
-            }) as Promise<{ data?: RateLimitExemption; error?: unknown; response?: Response }>,
+            }),
         {
             onSuccess: async () => {
                 messageApi.success(t('rate_limits.exemptions.save_success', { defaultValue: 'Rate-limit exemption saved.' }));
@@ -292,11 +292,11 @@ export default function AdminRateLimitsPageContent() {
         },
     );
 
-    const deleteExemptionMutation = useApiMutation<void, string>(
+    const deleteExemptionMutation = useApiMutation<string, void>(
         (userId) =>
             api.DELETE('/admin/rate-limits/exemptions/{user_id}', {
                 params: { path: { user_id: userId } },
-            }) as Promise<{ data?: void; error?: unknown; response?: Response }>,
+            }),
         {
             onSuccess: async () => {
                 messageApi.success(t('rate_limits.exemptions.delete_success', { defaultValue: 'Rate-limit exemption removed.' }));
@@ -309,14 +309,14 @@ export default function AdminRateLimitsPageContent() {
     );
 
     const updateOverrideMutation = useApiMutation<
-        RateLimitUserOverride,
-        { userId: string; body: RateLimitUserOverrideRequest }
+        { userId: string; body: RateLimitUserOverrideRequest },
+        RateLimitUserOverride
     >(
         ({ userId, body }) =>
             api.PUT('/admin/rate-limits/users/{user_id}', {
                 params: { path: { user_id: userId } },
                 body,
-            }) as Promise<{ data?: RateLimitUserOverride; error?: unknown; response?: Response }>,
+            }),
         {
             onSuccess: async () => {
                 messageApi.success(t('rate_limits.overrides.save_success', { defaultValue: 'User rate-limit override saved.' }));

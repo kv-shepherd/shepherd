@@ -43,7 +43,7 @@ vi.mock('@/lib/api/useApiGet', () => ({
     }),
 }));
 
-vi.mock('@/lib/api/useApiMutation', () => ({
+vi.mock('@/hooks/useApiQuery', () => ({
     useApiMutation: () => ({
         mutate: mutationState.mutate,
         isPending: false,

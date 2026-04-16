@@ -32,8 +32,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { useApiMutation } from '@/hooks/useApiQuery';
 import { useApiGet } from '@/lib/api/useApiGet';
-import { useApiMutation } from '@/lib/api/useApiMutation';
 import { api } from '@/lib/api/client';
 import { translateApiError } from '@/lib/api/errorMessage';
 import { useMessage } from '@/lib/hooks/useMessage';
@@ -82,7 +82,7 @@ export default function ProfilePage() {
                 form.resetFields();
                 setError(null);
             },
-            onError: (err: Error) => {
+            onError: (err) => {
                 setError(translateApiError(t, err, 'auth.change_password_error'));
             },
         }

@@ -206,23 +206,29 @@ export function VMRequestSizeFields({
                         .map((size: InstanceSize) => {
                             const sizeTags = capabilityTags(size, t);
                             return {
-                                label: (
-                                    <Space direction="vertical" size={0}>
-                                        <Space size={6}>
-                                            <Text strong>{size.display_name || size.name}</Text>
-                                            <Text type="secondary">{formatInstanceSizeSummary(size, t)}</Text>
-                                            {size.disk_gb && <Text type="secondary">· {formatInstanceSizeDisk(size, t)}</Text>}
-                                        </Space>
-                                        {sizeTags.length > 0 ? (
-                                            <Space size={4} wrap>
-                                                {sizeTags}
-                                            </Space>
-                                        ) : null}
-                                    </Space>
-                                ),
+                                label: `${size.display_name || size.name}  ${formatInstanceSizeSummary(size, t)}${size.disk_gb ? ` · ${formatInstanceSizeDisk(size, t)}` : ''}`,
                                 value: size.id,
+                                sizeName: size.display_name || size.name,
+                                sizeSummary: formatInstanceSizeSummary(size, t),
+                                sizeDisk: size.disk_gb ? formatInstanceSizeDisk(size, t) : null,
+                                sizeTags,
                             };
                         })}
+                    optionRender={(option) => (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 0' }}>
+                            <div>
+                                <Text strong>{option.data.sizeName}</Text>{' '}
+                                <Text type="secondary">{option.data.sizeSummary}</Text>
+                                {option.data.sizeDisk && <Text type="secondary"> · {option.data.sizeDisk}</Text>}
+                            </div>
+                            {option.data.sizeTags?.length > 0 ? (
+                                <Space size={4} wrap>
+                                    {option.data.sizeTags}
+                                </Space>
+                            ) : null}
+                        </div>
+                    )}
+                    popupMatchSelectWidth={false}
                     style={{ width: '100%' }}
                 />
             </Form.Item>
@@ -232,15 +238,17 @@ export function VMRequestSizeFields({
                     showIcon
                     message={t('wizard.size_capability_notice')}
                     description={<Space wrap>{selectedSizeTags}</Space>}
+                    style={{ marginBottom: 24 }}
                 />
             ) : null}
             {selectedSize ? (
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <>
                     <Alert
                         type="info"
                         showIcon
                         message={t('wizard.custom_resources_title')}
                         description={t('wizard.custom_resources_hint')}
+                        style={{ marginBottom: 24 }}
                     />
                     <Form.Item
                         name="target_cpu_cores"
@@ -294,7 +302,7 @@ export function VMRequestSizeFields({
                             message={t('wizard.custom_resources_active')}
                         />
                     ) : null}
-                </Space>
+                </>
             ) : null}
         </>
     );

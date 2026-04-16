@@ -26,8 +26,8 @@ import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useApiMutation } from '@/hooks/useApiQuery';
 import { useApiGet } from '@/lib/api/useApiGet';
-import { useApiMutation } from '@/lib/api/useApiMutation';
 import { api } from '@/lib/api/client';
 import { translateApiError } from '@/lib/api/errorMessage';
 import { useMessage } from '@/lib/hooks/useMessage';
@@ -102,7 +102,7 @@ export default function VMBatchListPage() {
         () => api.GET('/vms/batch', {}) as Promise<{ data?: BatchJobList; error?: unknown; response?: Response }>
     );
 
-    const retryMutation = useApiMutation<unknown, string>(
+    const retryMutation = useApiMutation<string, unknown>(
         (batchId) => api.POST('/vms/batch/{batch_id}/retry', { params: { path: { batch_id: batchId } } }),
         {
             onSuccess: () => {
@@ -115,7 +115,7 @@ export default function VMBatchListPage() {
         }
     );
 
-    const cancelMutation = useApiMutation<unknown, string>(
+    const cancelMutation = useApiMutation<string, unknown>(
         (batchId) => api.POST('/vms/batch/{batch_id}/cancel', { params: { path: { batch_id: batchId } } }),
         {
             onSuccess: () => {
