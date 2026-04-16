@@ -10,7 +10,7 @@ import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { App } from "antd";
 import { useTranslation } from "react-i18next";
-import { AUTH_STORAGE_KEY, useAuthStore } from "@/stores/auth";
+import { useAuthStore } from "@/stores/auth";
 import { api } from "@/lib/api/client";
 import {
   getStandardLoginPath,
@@ -25,71 +25,6 @@ interface LoginPayload {
 }
 
 type UserInfo = components["schemas"]["UserInfo"];
-type ExternalAuthBridgePayload = {
-  type: string;
-  success?: boolean;
-  token?: string;
-  expires_at?: string;
-  user?: UserInfo;
-  force_password_change?: boolean;
-  code?: string;
-  return_to?: string;
-};
-
-const EXTERNAL_AUTH_BRIDGE_MESSAGE_TYPE = "shepherd.external_auth.complete";
-
-function readPersistedExternalAuthPayload(): ExternalAuthBridgePayload | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
-  if (!raw) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw) as {
-      state?: {
-        token?: unknown;
-        user?: unknown;
-        isAuthenticated?: unknown;
-        forcePasswordChange?: unknown;
-      };
-    };
-    const state = parsed?.state;
-    if (!state || state.isAuthenticated !== true) {
-      return null;
-    }
-    if (typeof state.token !== "string" || !state.token) {
-      return null;
-    }
-    if (!state.user || typeof state.user !== "object") {
-      return null;
-    }
-    return {
-      type: EXTERNAL_AUTH_BRIDGE_MESSAGE_TYPE,
-      success: true,
-      token: state.token,
-      user: state.user as UserInfo,
-      force_password_change: Boolean(state.forcePasswordChange),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function getExternalAuthBridgeOrigin(): string {
-  if (typeof window === "undefined") {
-    return "http://localhost";
-  }
-  try {
-    return new URL(
-      process.env.NEXT_PUBLIC_API_URL ?? "/api/v1",
-      window.location.origin,
-    ).origin;
-  } catch {
-    return window.location.origin;
-  }
-}
 
 function normalizeExternalAuthNavigationTarget(raw?: string): string {
   if (typeof window === "undefined") {
@@ -182,7 +117,6 @@ export function useAuth() {
   const startExternalLogin = useCallback(
     async (providerId: string, loginMode?: string, returnTo = "/dashboard") => {
       const normalizedReturnTo = normalizeExternalAuthNavigationTarget(returnTo);
-      const expectedBridgeOrigin = getExternalAuthBridgeOrigin();
       const { data, error } = await api.POST(
         "/auth/providers/{provider_id}/login/start",
         {
@@ -200,113 +134,9 @@ export function useAuth() {
         message.error(t(normalized.code ?? "INTERNAL_ERROR"));
         throw normalized;
       }
-
-      const popup = window.open(
-        data.redirect_url,
-        `shepherd-external-auth-${providerId}`,
-        "popup=yes,width=520,height=720",
-      );
-      if (!popup) {
-        const popupError: ApiErrorResponse = { code: "POPUP_BLOCKED" };
-        message.error(t(popupError.code));
-        throw popupError;
-      }
-
-      await new Promise<void>((resolve, reject) => {
-        let settled = false;
-        const cleanup = () => {
-          window.removeEventListener("message", onMessage);
-          window.removeEventListener("storage", onStorage);
-          window.clearInterval(closedPoll);
-        };
-
-        const fail = (err: ApiErrorResponse) => {
-          if (settled) return;
-          settled = true;
-          cleanup();
-          try {
-            popup.close();
-          } catch {
-            // ignore
-          }
-          reject(err);
-        };
-
-        const succeed = (payload: ExternalAuthBridgePayload) => {
-          if (settled) return;
-          settled = true;
-          cleanup();
-          login(
-            payload.token as string,
-            payload.user as UserInfo,
-            payload.force_password_change ?? false,
-          );
-          if (payload.force_password_change) {
-            router.push("/auth/change-password");
-          } else {
-            router.push(
-              normalizeExternalAuthNavigationTarget(
-                payload.return_to || returnTo,
-              ),
-            );
-          }
-          try {
-            popup.close();
-          } catch {
-            // ignore
-          }
-          resolve();
-        };
-
-        const recoverPersistedLogin = () => {
-          const persisted = readPersistedExternalAuthPayload();
-          if (!persisted) {
-            return false;
-          }
-          succeed({
-            ...persisted,
-            return_to: persisted.return_to || returnTo,
-          });
-          return true;
-        };
-
-        const onMessage = (event: MessageEvent<ExternalAuthBridgePayload>) => {
-          if (event.origin !== expectedBridgeOrigin) return;
-          const payload = event.data;
-          if (!payload || payload.type !== EXTERNAL_AUTH_BRIDGE_MESSAGE_TYPE)
-            return;
-          if (payload.success === false || payload.code) {
-            fail({ code: payload.code || "EXTERNAL_AUTH_CALLBACK_FAILED" });
-            return;
-          }
-          if (!payload.token || !payload.user) {
-            fail({ code: "EXTERNAL_AUTH_CALLBACK_FAILED" });
-            return;
-          }
-          succeed(payload);
-        };
-
-        const onStorage = (event: StorageEvent) => {
-          if (event.key !== AUTH_STORAGE_KEY) {
-            return;
-          }
-          recoverPersistedLogin();
-        };
-
-        const closedPoll = window.setInterval(() => {
-          if (popup.closed) {
-            if (recoverPersistedLogin()) {
-              return;
-            }
-            fail({ code: "EXTERNAL_AUTH_CANCELLED" });
-          }
-        }, 500);
-
-        window.addEventListener("message", onMessage);
-        window.addEventListener("storage", onStorage);
-      });
+      window.location.assign(data.redirect_url);
     },
-    [login, message, router, t],
+    [message, t],
   );
 
   const submitExternalCredentialLogin = useCallback(

@@ -1,16 +1,32 @@
 /* eslint-disable @next/next/no-img-element */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import type { ImgHTMLAttributes } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const loginMock = vi.fn();
 const startExternalLoginMock = vi.fn();
 const submitExternalCredentialLoginMock = vi.fn();
 const changeLanguageMock = vi.fn();
+const replaceMock = vi.fn();
+
+const authHookState = {
+    isAuthenticated: false,
+    forcePasswordChange: false,
+};
+
+const authStoreState = {
+    hasHydrated: true,
+};
 
 vi.mock('next/image', () => ({
     default: (props: ImgHTMLAttributes<HTMLImageElement>) => <img {...props} alt={props.alt ?? ''} />,
+}));
+
+vi.mock('next/navigation', () => ({
+    useRouter: () => ({
+        replace: replaceMock,
+    }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -51,6 +67,8 @@ vi.mock('@/hooks/useAuth', () => ({
         login: loginMock,
         startExternalLogin: startExternalLoginMock,
         submitExternalCredentialLogin: submitExternalCredentialLoginMock,
+        isAuthenticated: authHookState.isAuthenticated,
+        forcePasswordChange: authHookState.forcePasswordChange,
     }),
 }));
 
@@ -61,9 +79,20 @@ vi.mock('@/hooks/useApiQuery', () => ({
     }),
 }));
 
+vi.mock('@/stores/auth', () => ({
+    useAuthStore: (selector: (state: typeof authStoreState) => unknown) => selector(authStoreState),
+}));
+
 import LoginPageContent from './LoginPageContent';
 
 describe('LoginPageContent', () => {
+    beforeEach(() => {
+        authHookState.isAuthenticated = false;
+        authHookState.forcePasswordChange = false;
+        authStoreState.hasHydrated = true;
+        replaceMock.mockReset();
+    });
+
     it('renders the login shell and primary credential fields', async () => {
         render(<LoginPageContent />);
 
@@ -80,5 +109,27 @@ describe('LoginPageContent', () => {
 
         expect(await screen.findByText('Local demo sign-in')).toBeVisible();
         expect(screen.getByText('Use admin / admin for local development and Codespaces demos. First sign-in will require a password change.')).toBeVisible();
+    });
+
+    it('redirects authenticated users away from /login', async () => {
+        authHookState.isAuthenticated = true;
+
+        render(<LoginPageContent />);
+
+        await waitFor(() => {
+            expect(replaceMock).toHaveBeenCalledWith('/');
+        });
+        expect(screen.queryByTestId('login-page')).not.toBeInTheDocument();
+    });
+
+    it('redirects force-password-change users to the password reset page', async () => {
+        authHookState.isAuthenticated = true;
+        authHookState.forcePasswordChange = true;
+
+        render(<LoginPageContent />);
+
+        await waitFor(() => {
+            expect(replaceMock).toHaveBeenCalledWith('/auth/change-password');
+        });
     });
 });

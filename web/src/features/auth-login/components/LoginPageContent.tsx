@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { Alert, Button, Card, Divider, Form, Input, Modal, Select, Switch, Tag, Typography, ConfigProvider } from 'antd';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -10,6 +11,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useApiGet } from '@/hooks/useApiQuery';
 import { isLocalOrCodespacesDemoHost } from '@/lib/auth/demoEnvironment';
 import { api } from '@/lib/api/client';
+import { useAuthStore } from '@/stores/auth';
 import LanguageSwitcher from '@/components/ui/LanguageSwitcher';
 import type { components } from '@/types/api.gen';
 
@@ -83,9 +85,11 @@ function resolveLoginModes(provider: LoginAuthProvider): ResolvedLoginAuthMode[]
 }
 
 export default function LoginPageContent() {
+    const router = useRouter();
     const { t } = useTranslation('common');
     const { t: tErrors } = useTranslation('errors');
-    const { login, startExternalLogin, submitExternalCredentialLogin } = useAuth();
+    const { login, startExternalLogin, submitExternalCredentialLogin, isAuthenticated, forcePasswordChange } = useAuth();
+    const hasHydrated = useAuthStore((state) => state.hasHydrated);
     const [loading, setLoading] = useState(false);
     const [externalLoadingKey, setExternalLoadingKey] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -97,12 +101,19 @@ export default function LoginPageContent() {
     const providersQuery = useApiGet<LoginAuthProviderList>(
         ['login-auth-providers'],
         () => api.GET('/auth/providers'),
-        { enabled: mounted },
+        { enabled: mounted && hasHydrated && !isAuthenticated },
     );
 
     useEffect(() => {
         setMounted(true);
     }, []);
+
+    useEffect(() => {
+        if (!mounted || !hasHydrated || !isAuthenticated) {
+            return;
+        }
+        router.replace(forcePasswordChange ? '/auth/change-password' : '/');
+    }, [forcePasswordChange, hasHydrated, isAuthenticated, mounted, router]);
 
     const showDevLoginHint = typeof window !== 'undefined'
         && isLocalOrCodespacesDemoHost(window.location.hostname);
@@ -242,7 +253,7 @@ export default function LoginPageContent() {
         });
     };
 
-    if (!mounted) {
+    if (!mounted || !hasHydrated || isAuthenticated) {
         return null;
     }
 
