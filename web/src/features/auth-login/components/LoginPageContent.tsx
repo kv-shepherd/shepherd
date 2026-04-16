@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useApiGet } from '@/hooks/useApiQuery';
 import { isLocalOrCodespacesDemoHost } from '@/lib/auth/demoEnvironment';
 import { api } from '@/lib/api/client';
+import LanguageSwitcher from '@/components/ui/LanguageSwitcher';
 import type { components } from '@/types/api.gen';
 
 const { Title, Text } = Typography;
@@ -248,8 +249,8 @@ export default function LoginPageContent() {
     const externalProviders: LoginAuthProvider[] = providersQuery.data?.items ?? [];
 
     return (
-        <ConfigProvider theme={{ 
-            token: { 
+        <ConfigProvider theme={{
+            token: {
                 colorPrimary: '#1677ff', // Trustworthy blue
                 colorBgContainer: '#ffffff',
                 colorBgElevated: '#ffffff',
@@ -282,6 +283,9 @@ export default function LoginPageContent() {
                     </div>
 
                     <Card className="auth-shell__card">
+                        <div className="auth-shell__card-toolbar">
+                            <LanguageSwitcher dataTestId="login-language-switcher" />
+                        </div>
                         <div className="auth-shell__card-header">
                             <Title level={3} className="auth-shell__card-title">
                                 {t('auth.login')}

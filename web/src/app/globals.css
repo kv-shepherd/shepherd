@@ -3021,6 +3021,7 @@ a {
 }
 
 .auth-shell {
+  position: relative;
   min-height: 100vh;
   display: flex;
   justify-content: center;
@@ -3117,6 +3118,16 @@ a {
 
 .auth-shell__card .ant-card-body {
   padding: 40px 36px;
+}
+
+.auth-shell__card-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 20px;
+}
+
+.auth-shell__card-toolbar .app-shell-lang-trigger {
+  min-width: 64px;
 }
 
 .auth-shell__card-header {

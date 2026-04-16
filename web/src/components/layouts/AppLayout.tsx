@@ -16,7 +16,6 @@ import Link from 'next/link';
 import {
     ThunderboltOutlined,
     LogoutOutlined,
-    GlobalOutlined,
     SearchOutlined,
     DownOutlined,
     GithubOutlined,
@@ -31,6 +30,7 @@ import {
 } from '@/lib/auth/loginEntry';
 import NotificationBell from '@/components/ui/NotificationBell';
 import LocalTimezoneBadge from '@/components/ui/LocalTimezoneBadge';
+import LanguageSwitcher from '@/components/ui/LanguageSwitcher';
 import { hasPermission, PLATFORM_ADMIN_PERMISSION } from '@/lib/auth/permissions';
 import {
     filterMenuSearchEntries,
@@ -48,15 +48,11 @@ export default function AppLayout({
 }) {
     const router = useRouter();
     const pathname = usePathname();
-    const { t, i18n } = useTranslation('common');
+    const { t } = useTranslation('common');
     const { user, logout } = useAuthStore();
     const canAccessAdmin = hasPermission(user, PLATFORM_ADMIN_PERMISSION);
     const route = React.useMemo(() => getMenuRoutes(t, canAccessAdmin), [t, canAccessAdmin]);
     const [menuSearch, setMenuSearch] = React.useState('');
-    const languageKey = React.useMemo(() => {
-        const lang = (i18n.resolvedLanguage ?? i18n.language ?? 'en').toLowerCase();
-        return lang.startsWith('zh') ? 'zh-CN' : 'en';
-    }, [i18n.language, i18n.resolvedLanguage]);
     const secureDevOrigin = process.env.NEXT_PUBLIC_DEV_SECURE_ORIGIN?.trim() ?? '';
     const devIngressPort = process.env.NEXT_PUBLIC_DEV_HTTP_INGRESS_PORT?.trim() ?? '';
 
@@ -87,10 +83,6 @@ export default function AppLayout({
             // Ignore malformed dev origin overrides; the HTTP page still works with a manual refresh.
         }
     }, [devIngressPort, secureDevOrigin]);
-
-    const handleLanguageChange = (lang: string) => {
-        void i18n.changeLanguage(lang);
-    };
 
     const quickActionItems = React.useMemo(() => {
         const items = [
@@ -241,36 +233,7 @@ export default function AppLayout({
                         {t('quick_actions.label')}
                     </Button>
                 </Dropdown>,
-                <Dropdown
-                    key="language"
-                    menu={{
-                        items: [
-                            {
-                                key: 'en',
-                                label: t('language.english'),
-                                onClick: () => handleLanguageChange('en'),
-                            },
-                            {
-                                key: 'zh-CN',
-                                label: t('language.chinese'),
-                                onClick: () => handleLanguageChange('zh-CN'),
-                            },
-                        ],
-                        selectedKeys: [languageKey],
-                    }}
-                    placement="bottomRight"
-                >
-                    <button
-                        type="button"
-                        className="action-icon app-shell-icon-action app-shell-lang-trigger"
-                        aria-label={t('language.label')}
-                    >
-                        <span className="app-shell-lang-trigger__label">
-                            {languageKey === 'zh-CN' ? t('language.short_chinese') : t('language.short_english')}
-                        </span>
-                        <GlobalOutlined style={{ fontSize: 18 }} />
-                    </button>
-                </Dropdown>,
+                <LanguageSwitcher key="language" />,
                 <NotificationBell key="notification" />,
             ]}
             menuItemRender={(item, dom) => {

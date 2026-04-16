@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 const loginMock = vi.fn();
 const startExternalLoginMock = vi.fn();
 const submitExternalCredentialLoginMock = vi.fn();
+const changeLanguageMock = vi.fn();
 
 vi.mock('next/image', () => ({
     default: (props: ImgHTMLAttributes<HTMLImageElement>) => <img {...props} alt={props.alt ?? ''} />,
@@ -29,8 +30,18 @@ vi.mock('react-i18next', () => ({
                 'validation.username_min': 'Username is too short',
                 'validation.password_required': 'Password is required',
                 'message.loading': 'Loading',
+                'language.label': 'Language',
+                'language.english': 'English',
+                'language.chinese': 'Chinese',
+                'language.short_english': 'EN',
+                'language.short_chinese': 'ZH',
             };
             return labels[key] ?? key;
+        },
+        i18n: {
+            language: 'en',
+            resolvedLanguage: 'en',
+            changeLanguage: changeLanguageMock,
         },
     }),
 }));
@@ -61,6 +72,7 @@ describe('LoginPageContent', () => {
         expect(screen.getByPlaceholderText('Username')).toBeInTheDocument();
         expect(screen.getByPlaceholderText('Password')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Sign in' })).toBeVisible();
+        expect(screen.getByTestId('login-language-switcher')).toHaveTextContent('EN');
     });
 
     it('shows the local demo hint on localhost', async () => {
