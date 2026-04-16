@@ -10,31 +10,17 @@ func TestBuildReportInstancesize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildReport(instancesize) error = %v", err)
 	}
-	if report.FromVersion != "1.7.0" {
-		t.Fatalf("FromVersion = %q, want %q", report.FromVersion, "1.7.0")
+	if report.FromVersion != "1.8.0" {
+		t.Fatalf("FromVersion = %q, want %q", report.FromVersion, "1.8.0")
 	}
-	if report.ToVersion != "1.8.0" {
-		t.Fatalf("ToVersion = %q, want %q", report.ToVersion, "1.8.0")
+	if report.ToVersion != "1.8.1" {
+		t.Fatalf("ToVersion = %q, want %q", report.ToVersion, "1.8.1")
 	}
-	if len(report.SchemaPathsAdded) == 0 {
-		t.Fatal("SchemaPathsAdded is empty, want non-empty candidate set")
+	if len(report.SchemaPathsAdded) != 0 {
+		t.Fatalf("SchemaPathsAdded length = %d, want 0 for patch baseline refresh", len(report.SchemaPathsAdded))
 	}
-
-	found := false
-	for _, item := range report.SchemaPathsAdded {
-		if item.Path != "spec.template.spec.domain.rebootPolicy" {
-			continue
-		}
-		found = true
-		if item.IntroducedIn != "1.8.0" {
-			t.Fatalf("rebootPolicy introduced_in = %q, want %q", item.IntroducedIn, "1.8.0")
-		}
-		if item.SuggestedDisplay == "" || item.SuggestedHelp == "" || item.SuggestedPlacehold == "" {
-			t.Fatal("rebootPolicy suggestions should not be empty")
-		}
-	}
-	if !found {
-		t.Fatal("expected rebootPolicy to appear in schema upgrade candidates")
+	if len(report.ChangedMaskedPaths) != 0 {
+		t.Fatalf("ChangedMaskedPaths length = %d, want 0 for patch baseline refresh", len(report.ChangedMaskedPaths))
 	}
 }
 
@@ -75,13 +61,10 @@ func TestAuditMaskLocaleKeysReportsMissingLocaleEntries(t *testing.T) {
 
 func TestPrintReportIncludesSections(t *testing.T) {
 	report := &upgradeReport{
-		Entity:      "instancesize",
-		FromVersion: "1.7.0",
-		ToVersion:   "1.8.0",
-		SchemaPathsAdded: []candidateField{{
-			Path:         "spec.template.spec.domain.rebootPolicy",
-			IntroducedIn: "1.8.0",
-		}},
+		Entity:           "instancesize",
+		FromVersion:      "1.8.0",
+		ToVersion:        "1.8.1",
+		SchemaPathsAdded: nil,
 	}
 
 	var builder strings.Builder
@@ -90,7 +73,7 @@ func TestPrintReportIncludesSections(t *testing.T) {
 	if !strings.Contains(output, "Schema additions not yet exposed in mask") {
 		t.Fatal("expected output to include schema additions section")
 	}
-	if !strings.Contains(output, "v1.8.0+") {
-		t.Fatal("expected output to include introduced-in badge text")
+	if !strings.Contains(output, "baseline: v1.8.0 -> v1.8.1") {
+		t.Fatal("expected output to include refreshed baseline header")
 	}
 }

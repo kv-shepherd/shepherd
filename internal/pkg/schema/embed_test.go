@@ -144,8 +144,8 @@ func TestCurrentVersionKeyFor_Instancesize(t *testing.T) {
 	if !ok {
 		t.Fatal("CurrentVersionKeyFor(instancesize) returned ok=false")
 	}
-	if versionKey != "kubevirt-v1.8.0" {
-		t.Fatalf("CurrentVersionKeyFor(instancesize) = %q, want %q", versionKey, "kubevirt-v1.8.0")
+	if versionKey != "kubevirt-v1.8.1" {
+		t.Fatalf("CurrentVersionKeyFor(instancesize) = %q, want %q", versionKey, "kubevirt-v1.8.1")
 	}
 }
 
@@ -157,11 +157,11 @@ func TestAvailableVersions_Instancesize(t *testing.T) {
 	if len(versions) == 0 {
 		t.Fatal("AvailableVersions(instancesize) returned no versions")
 	}
-	if versions[len(versions)-1].Key != "kubevirt-v1.8.0" {
-		t.Fatalf("AvailableVersions(instancesize)[last].Key = %q, want %q", versions[len(versions)-1].Key, "kubevirt-v1.8.0")
+	if versions[len(versions)-1].Key != "kubevirt-v1.8.1" {
+		t.Fatalf("AvailableVersions(instancesize)[last].Key = %q, want %q", versions[len(versions)-1].Key, "kubevirt-v1.8.1")
 	}
-	if versions[len(versions)-1].KubeVirtVersion != "1.8.0" {
-		t.Fatalf("AvailableVersions(instancesize)[last].KubeVirtVersion = %q, want %q", versions[len(versions)-1].KubeVirtVersion, "1.8.0")
+	if versions[len(versions)-1].KubeVirtVersion != "1.8.1" {
+		t.Fatalf("AvailableVersions(instancesize)[last].KubeVirtVersion = %q, want %q", versions[len(versions)-1].KubeVirtVersion, "1.8.1")
 	}
 }
 
@@ -173,18 +173,18 @@ func TestAvailableSchemaVersions_Instancesize(t *testing.T) {
 	if len(versions) == 0 {
 		t.Fatal("AvailableSchemaVersions(instancesize) returned no versions")
 	}
-	if versions[len(versions)-1] != "1.8.0" {
-		t.Fatalf("AvailableSchemaVersions(instancesize)[last] = %q, want %q", versions[len(versions)-1], "1.8.0")
+	if versions[len(versions)-1] != "1.8.1" {
+		t.Fatalf("AvailableSchemaVersions(instancesize)[last] = %q, want %q", versions[len(versions)-1], "1.8.1")
 	}
 }
 
 func TestVersionKeyForKubeVirtVersion_Instancesize(t *testing.T) {
-	versionKey, ok := schema.VersionKeyForKubeVirtVersion("instancesize", "1.8.0")
+	versionKey, ok := schema.VersionKeyForKubeVirtVersion("instancesize", "1.8.1")
 	if !ok {
-		t.Fatal("VersionKeyForKubeVirtVersion(instancesize, 1.8.0) returned ok=false")
+		t.Fatal("VersionKeyForKubeVirtVersion(instancesize, 1.8.1) returned ok=false")
 	}
-	if versionKey != "kubevirt-v1.8.0" {
-		t.Fatalf("VersionKeyForKubeVirtVersion(instancesize, 1.8.0) = %q, want %q", versionKey, "kubevirt-v1.8.0")
+	if versionKey != "kubevirt-v1.8.1" {
+		t.Fatalf("VersionKeyForKubeVirtVersion(instancesize, 1.8.1) = %q, want %q", versionKey, "kubevirt-v1.8.1")
 	}
 }
 
@@ -213,17 +213,17 @@ func TestCurrentVersionDiffSummary_Instancesize(t *testing.T) {
 	if diff == nil {
 		t.Fatal("CurrentVersionDiffSummary(instancesize) = nil, want summary")
 	}
-	if diff.FromVersion != "1.7.0" {
-		t.Fatalf("FromVersion = %q, want %q", diff.FromVersion, "1.7.0")
+	if diff.FromVersion != "1.8.0" {
+		t.Fatalf("FromVersion = %q, want %q", diff.FromVersion, "1.8.0")
 	}
-	if diff.ToVersion != "1.8.0" {
-		t.Fatalf("ToVersion = %q, want %q", diff.ToVersion, "1.8.0")
+	if diff.ToVersion != "1.8.1" {
+		t.Fatalf("ToVersion = %q, want %q", diff.ToVersion, "1.8.1")
 	}
-	if len(diff.SchemaPathsAdded) == 0 {
-		t.Fatal("SchemaPathsAdded is empty, want non-empty")
+	if len(diff.SchemaPathsAdded) != 0 {
+		t.Fatalf("SchemaPathsAdded length = %d, want 0 for patch baseline refresh", len(diff.SchemaPathsAdded))
 	}
-	if len(diff.ChangedPaths) == 0 {
-		t.Fatal("ChangedPaths is empty, want non-empty")
+	if len(diff.ChangedPaths) != 0 {
+		t.Fatalf("ChangedPaths length = %d, want 0 for patch baseline refresh", len(diff.ChangedPaths))
 	}
 	if len(diff.MaskPathsAdded) != 0 {
 		t.Fatalf("MaskPathsAdded length = %d, want 0", len(diff.MaskPathsAdded))

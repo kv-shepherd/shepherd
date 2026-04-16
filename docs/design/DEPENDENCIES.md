@@ -189,8 +189,8 @@ func (c *DatabaseClients) Close() {
 | `k8s.io/client-go` | `v0.34.3` | 2026-03 | K8s official client (aligned with K8s 1.34) |
 | `k8s.io/apimachinery` | `v0.34.3` | 2026-03 | K8s API machinery |
 | `k8s.io/api` | `v0.34.3` | 2026-03 | K8s API types |
-| `kubevirt.io/client-go` | `v1.8.0` | 2026-03-24 | **KubeVirt official client** (typed client + list/watch primitives) |
-| `kubevirt.io/api` | `v1.8.0` | 2026-03-24 | KubeVirt API type definitions |
+| `kubevirt.io/client-go` | `v1.8.1` | 2026-04-16 | **KubeVirt official client** (typed client + list/watch primitives) |
+| `kubevirt.io/api` | `v1.8.1` | 2026-04-16 | KubeVirt API type definitions |
 | `sigs.k8s.io/controller-runtime` | `v0.22.5` | 2025-12 | **SSA Apply core dependency** (ADR-0011), validated against k8s.io v0.34.x |
 
 ### KubeVirt Schema Upgrade Workflow
@@ -296,19 +296,19 @@ output-options:
 > **Decision Record**: [ADR-0001-kubevirt-client.md](../adr/ADR-0001-kubevirt-client.md)
 
 > **Version Compatibility Constraints**:
-> - `kubevirt.io/client-go` v1.8.0 is built for **Kubernetes v1.34** (k8s.io v0.34.3 per kubevirt go.mod)
+> - `kubevirt.io/client-go` v1.8.1 is built for **Kubernetes v1.34** (k8s.io v0.34.3 per kubevirt go.mod)
 > - Also supports K8s v1.33 ~ v1.34
 > - **Must** use `k8s.io/client-go` **v0.34.x** series
 > - **Do not** upgrade to `k8s.io/client-go` v0.35.x+ until a compatible KubeVirt baseline is adopted
 > - All three k8s.io packages must use **exactly the same version**
 
-> **Compatibility Verification Record** (2026-03-26, refreshed from kubevirt v1.8.0 go.mod):
+> **Compatibility Verification Record** (2026-04-16, refreshed from kubevirt v1.8.1 go.mod):
 >
 > | Package Pair | Status | Verification Method |
 > |--------------|--------|---------------------|
 > | `controller-runtime v0.22.5` + `client-go v0.34.3` | ✅ Compatible | repository build/test validation after refresh |
-> | `kubevirt.io/client-go v1.8.0` + `client-go v0.34.3` | ✅ Compatible | KubeVirt v1.8.0 go.mod replace directives use v0.34.3 |
-> | `controller-runtime v0.22.5` + `kubevirt.io/client-go v1.8.0` | ✅ Compatible | repository build/test validation after refresh |
+> | `kubevirt.io/client-go v1.8.1` + `client-go v0.34.3` | ✅ Compatible | KubeVirt v1.8.1 go.mod replace directives use v0.34.3 |
+> | `controller-runtime v0.22.5` + `kubevirt.io/client-go v1.8.1` | ✅ Compatible | repository build/test validation after refresh |
 >
 > **Note**: Actual compatibility must be verified via `go mod tidy && go build` during Phase 0.
 > **Upgrade Path**: When adopting a future KubeVirt baseline, refresh the matching k8s.io series and re-run compatibility validation.
@@ -339,14 +339,14 @@ module kv-shepherd.io/shepherd
 go 1.25
 
 require (
-    kubevirt.io/client-go v1.8.0
-    kubevirt.io/api v1.8.0
+    kubevirt.io/client-go v1.8.1
+    kubevirt.io/api v1.8.1
     k8s.io/client-go v0.34.3
     k8s.io/apimachinery v0.34.3
     k8s.io/api v0.34.3
 )
 
-// Force lock K8s dependency versions (match kubevirt.io/client-go v1.8.0)
+// Force lock K8s dependency versions (match kubevirt.io/client-go v1.8.1)
 replace (
     k8s.io/api => k8s.io/api v0.34.3
     k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.34.3
@@ -549,7 +549,7 @@ replace (
 | Middleware | Version | Support Cycle |
 |------------|---------|---------------|
 | **PostgreSQL** | `18.x` | Latest stable |
-| **Kubernetes** | `1.33+` | Test baseline 1.34 (aligned with kubevirt.io/client-go v1.8.0) |
+| **Kubernetes** | `1.33+` | Test baseline 1.34 (aligned with kubevirt.io/client-go v1.8.1) |
 | **KubeVirt** | `1.7+` | Recommended 1.8+ |
 
 > **Database Selection**: PostgreSQL, supports JSONB indexes, transactional DDL, SKIP LOCKED
@@ -669,12 +669,12 @@ require (
     github.com/jackc/pgx/v5 v5.8.0
     github.com/riverqueue/river v0.30.2
     
-    // Kubernetes (must match kubevirt.io/client-go v1.8.0 → k8s.io v0.34.3)
+    // Kubernetes (must match kubevirt.io/client-go v1.8.1 → k8s.io v0.34.3)
     k8s.io/client-go v0.34.3
     k8s.io/apimachinery v0.34.3
     k8s.io/api v0.34.3
-    kubevirt.io/client-go v1.8.0
-    kubevirt.io/api v1.8.0
+    kubevirt.io/client-go v1.8.1
+    kubevirt.io/api v1.8.1
     
     // Session storage (replaces Redis)
     github.com/alexedwards/scs/v2 v2.9.0
@@ -697,7 +697,7 @@ require (
     github.com/testcontainers/testcontainers-go v0.40.0
 )
 
-// Force lock K8s dependency versions (match kubevirt.io/client-go v1.8.0)
+// Force lock K8s dependency versions (match kubevirt.io/client-go v1.8.1)
 replace (
     k8s.io/api => k8s.io/api v0.33.5
     k8s.io/apimachinery => k8s.io/apimachinery v0.33.5
