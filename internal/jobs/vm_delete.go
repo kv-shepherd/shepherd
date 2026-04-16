@@ -121,7 +121,7 @@ func (w *VMDeleteWorker) Work(ctx context.Context, job *river.Job[VMDeleteArgs])
 			setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
 			logAuditVMOp(ctx, w.auditLogger, "delete_failed", payload.VMName, payload.Actor, eventID)
 			return river.JobCancel(fmt.Errorf(
-				"refuse delete for vm %s in %s state, must be STOPPED, FAILED, NOT_FOUND, or UNKNOWN",
+				"refuse delete for vm %s in %s state, must be STOPPED, FAILED, NOT_FOUND, UNKNOWN, or DELETING",
 				payload.VMID,
 				currentVM.Status,
 			))
@@ -144,10 +144,11 @@ func (w *VMDeleteWorker) Work(ctx context.Context, job *river.Job[VMDeleteArgs])
 
 	// Step 4: Execute K8s VM deletion (outside transaction per ADR-0012).
 	if skipK8sDelete {
-		logger.Info("Skipping K8s delete because VM is already NOT_FOUND on a responsive cluster",
+		logger.Info("Skipping K8s delete because VM is already absent",
 			zap.String("event_id", eventID),
 			zap.String("vm_id", payload.VMID),
 			zap.String("vm_name", payload.VMName),
+			zap.String("vm_status", string(currentVM.Status)),
 		)
 	} else {
 		if deleteErr := w.vmService.DeleteVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName); deleteErr != nil {
