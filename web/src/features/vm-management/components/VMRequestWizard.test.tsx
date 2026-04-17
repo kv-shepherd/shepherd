@@ -1,5 +1,7 @@
 import { Form } from 'antd';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { FormInstance } from 'antd';
 import type { TFunction } from 'i18next';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -64,8 +66,23 @@ vi.mock('react-i18next', () => ({
     }),
 }));
 
-function WizardHarness({ requestMode, step = 0 }: { requestMode: VMRequestMode; step?: number }) {
-    const [form] = Form.useForm();
+function WizardHarness({
+    requestMode,
+    step = 0,
+    targetCpuValue,
+    targetMemoryValue,
+    targetDiskValue,
+    form: providedForm,
+}: {
+    requestMode: VMRequestMode;
+    step?: number;
+    targetCpuValue?: number;
+    targetMemoryValue?: number;
+    targetDiskValue?: number;
+    form?: FormInstance;
+}) {
+    const [internalForm] = Form.useForm();
+    const form = providedForm ?? internalForm;
     const t = ((key: string, options?: { defaultValue?: string }) => {
         const labels: Record<string, string> = {
             'wizard.title': 'Create VM Request',
@@ -83,8 +100,17 @@ function WizardHarness({ requestMode, step = 0 }: { requestMode: VMRequestMode; 
             'wizard.select_system': 'Select system',
             'wizard.select_service': 'Select service',
             'wizard.select_template': 'Select template',
-            'wizard.select_size': 'Select size',
-            'wizard.namespace': 'Namespace',
+                'wizard.select_size': 'Select size',
+                'wizard.custom_resources_title': 'Optional Resource Adjustment',
+                'wizard.custom_resources_hint': 'Enable this to customize CPU, memory, or disk before submitting.',
+                'wizard.custom_resources_active': 'Custom resource overrides are active.',
+                'wizard.custom_resource_default': 'Default: {{value}}',
+                'modify.target_cpu': 'Target CPU',
+                'modify.target_memory': 'Target Memory',
+                'modify.target_disk': 'Target Disk',
+                'wizard.size_summary': '{{cpu}} vCPU · {{memory}}',
+                'wizard.size_disk_suffix': '{{disk}} Gi disk',
+                'wizard.namespace': 'Namespace',
             'wizard.namespace_hint': 'Namespace hint',
             'wizard.namespace_placeholder': 'Namespace placeholder',
             'wizard.reason': 'Reason',
@@ -162,6 +188,9 @@ function WizardHarness({ requestMode, step = 0 }: { requestMode: VMRequestMode; 
             namespaceOptions={['team-prod']}
             reasonValue="Need capacity"
             batchCountValue={1}
+            targetCpuValue={targetCpuValue}
+            targetMemoryValue={targetMemoryValue}
+            targetDiskValue={targetDiskValue}
             isSubmitting={false}
             onCancel={vi.fn()}
             onNext={vi.fn()}
@@ -189,5 +218,44 @@ describe('VMRequestWizard', () => {
         expect(screen.getAllByText('Progress').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Instance Size').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Next').length).toBeGreaterThan(0);
+    });
+
+    it('keeps optional resource adjustment expanded when target overrides already exist', () => {
+        render(
+            <WizardHarness
+                requestMode="guided"
+                step={2}
+                targetCpuValue={3}
+                targetMemoryValue={6}
+                targetDiskValue={80}
+            />,
+        );
+
+        expect(screen.getByRole('checkbox', { name: 'Optional Resource Adjustment' })).toBeChecked();
+        expect(screen.getByTitle('Target CPU')).toBeInTheDocument();
+        expect(screen.getByTitle('Target Memory')).toBeInTheDocument();
+        expect(screen.getByTitle('Target Disk')).toBeInTheDocument();
+    });
+
+    it('persists optional resource adjustment across guided-step remounts', async () => {
+        const user = userEvent.setup();
+
+        function PersistentWizardHarness({ step }: { step: number }) {
+            const [form] = Form.useForm();
+            return <WizardHarness requestMode="guided" step={step} form={form} />;
+        }
+
+        const { rerender } = render(<PersistentWizardHarness step={2} />);
+
+        const checkbox = screen.getByRole('checkbox', { name: 'Optional Resource Adjustment' });
+        await user.click(checkbox);
+        expect(checkbox).toBeChecked();
+
+        rerender(<PersistentWizardHarness step={3} />);
+        rerender(<PersistentWizardHarness step={2} />);
+
+        expect(
+            screen.getByRole('checkbox', { name: 'Optional Resource Adjustment' }),
+        ).toBeChecked();
     });
 });

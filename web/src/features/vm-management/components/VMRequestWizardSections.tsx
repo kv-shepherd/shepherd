@@ -4,6 +4,7 @@ import {
     Alert,
     AutoComplete,
     Card,
+    Checkbox,
     Descriptions,
     Form,
     Input,
@@ -15,6 +16,8 @@ import {
 } from 'antd';
 import type { TFunction } from 'i18next';
 import type { ReactNode } from 'react';
+
+import type { FormInstance } from 'antd';
 
 import type {
     InstanceSize,
@@ -177,6 +180,7 @@ export function VMRequestTemplateFields({
 
 export function VMRequestSizeFields({
     t,
+    form,
     sizesData,
     selectedSize,
     targetCpuValue,
@@ -184,6 +188,7 @@ export function VMRequestSizeFields({
     targetDiskValue,
 }: {
     t: TFunction;
+    form: FormInstance;
     sizesData: InstanceSizeList | undefined;
     selectedSize: InstanceSize | undefined;
     targetCpuValue?: number;
@@ -191,6 +196,39 @@ export function VMRequestSizeFields({
     targetDiskValue?: number;
 }) {
     const selectedSizeTags = selectedSize ? capabilityTags(selectedSize, t) : [];
+    const watchedCustomResourcesEnabled = Form.useWatch('custom_resources_enabled', {
+        form,
+        preserve: true,
+    });
+    const watchedTargetCPU = Form.useWatch('target_cpu_cores', { form, preserve: true });
+    const watchedTargetMemory = Form.useWatch('target_memory_gi', { form, preserve: true });
+    const watchedTargetDisk = Form.useWatch('target_disk_gb', { form, preserve: true });
+
+    const hasExistingCustomTargets = [
+        targetCpuValue,
+        targetMemoryValue,
+        targetDiskValue,
+        watchedTargetCPU,
+        watchedTargetMemory,
+        watchedTargetDisk,
+    ].some((value) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) && numeric > 0;
+    });
+
+    const customResourcesEnabled =
+        Boolean(watchedCustomResourcesEnabled) || hasExistingCustomTargets;
+
+    const handleCustomResourcesChange = (checked: boolean) => {
+        form.setFieldValue('custom_resources_enabled', checked);
+        if (!checked) {
+            form.setFieldsValue({
+                target_cpu_cores: undefined,
+                target_memory_gi: undefined,
+                target_disk_gb: undefined,
+            });
+        }
+    };
 
     return (
         <>
@@ -243,64 +281,73 @@ export function VMRequestSizeFields({
             ) : null}
             {selectedSize ? (
                 <>
-                    <Alert
-                        type="info"
-                        showIcon
-                        message={t('wizard.custom_resources_title')}
-                        description={t('wizard.custom_resources_hint')}
-                        style={{ marginBottom: 24 }}
-                    />
-                    <Form.Item
-                        name="target_cpu_cores"
-                        label={t('modify.target_cpu')}
-                        extra={t('wizard.custom_resource_default', {
-                            value: `${formatCPUValue(selectedSize.cpu_cores)} vCPU`,
-                        })}
-                    >
-                        <InputNumber
-                            min={0.5}
-                            step={0.5}
-                            precision={1}
-                            placeholder={formatCPUValue(selectedSize.cpu_cores)}
-                            style={{ width: '100%' }}
-                        />
+                    <Form.Item style={{ marginBottom: 16 }}>
+                        <Checkbox
+                            checked={customResourcesEnabled}
+                            onChange={(e) => handleCustomResourcesChange(e.target.checked)}
+                        >
+                            {t('wizard.custom_resources_title')}
+                        </Checkbox>
+                        <br />
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            {t('wizard.custom_resources_hint')}
+                        </Text>
                     </Form.Item>
-                    <Form.Item
-                        name="target_memory_gi"
-                        label={t('modify.target_memory')}
-                        extra={t('wizard.custom_resource_default', {
-                            value: formatMemory(selectedSize.memory_gi),
-                        })}
-                    >
-                        <InputNumber
-                            min={0.5}
-                            step={0.5}
-                            precision={1}
-                            placeholder={String(selectedSize.memory_gi)}
-                            style={{ width: '100%' }}
-                        />
-                    </Form.Item>
-                    <Form.Item
-                        name="target_disk_gb"
-                        label={t('modify.target_disk')}
-                        extra={t('wizard.custom_resource_default', {
-                            value: `${selectedSize.disk_gb} Gi`,
-                        })}
-                    >
-                        <InputNumber
-                            min={1}
-                            step={1}
-                            precision={0}
-                            placeholder={String(selectedSize.disk_gb)}
-                            style={{ width: '100%' }}
-                        />
-                    </Form.Item>
-                    {targetCpuValue || targetMemoryValue || targetDiskValue ? (
-                        <Alert
-                            type="success"
-                            showIcon
-                            message={t('wizard.custom_resources_active')}
-                        />
+                    {customResourcesEnabled ? (
+                        <>
+                            <Form.Item
+                                name="target_cpu_cores"
+                                label={t('modify.target_cpu')}
+                                extra={t('wizard.custom_resource_default', {
+                                    value: `${formatCPUValue(selectedSize.cpu_cores)} vCPU`,
+                                })}
+                            >
+                                <InputNumber
+                                    min={0.5}
+                                    step={0.5}
+                                    precision={1}
+                                    placeholder={formatCPUValue(selectedSize.cpu_cores)}
+                                    style={{ width: '100%' }}
+                                />
+                            </Form.Item>
+                            <Form.Item
+                                name="target_memory_gi"
+                                label={t('modify.target_memory')}
+                                extra={t('wizard.custom_resource_default', {
+                                    value: formatMemory(selectedSize.memory_gi),
+                                })}
+                            >
+                                <InputNumber
+                                    min={0.5}
+                                    step={0.5}
+                                    precision={1}
+                                    placeholder={String(selectedSize.memory_gi)}
+                                    style={{ width: '100%' }}
+                                />
+                            </Form.Item>
+                            <Form.Item
+                                name="target_disk_gb"
+                                label={t('modify.target_disk')}
+                                extra={t('wizard.custom_resource_default', {
+                                    value: `${selectedSize.disk_gb} Gi`,
+                                })}
+                            >
+                                <InputNumber
+                                    min={1}
+                                    step={1}
+                                    precision={0}
+                                    placeholder={String(selectedSize.disk_gb)}
+                                    style={{ width: '100%' }}
+                                />
+                            </Form.Item>
+                            {targetCpuValue || targetMemoryValue || targetDiskValue ? (
+                                <Alert
+                                    type="success"
+                                    showIcon
+                                    message={t('wizard.custom_resources_active')}
+                                />
+                            ) : null}
+                        </>
                     ) : null}
                 </>
             ) : null}

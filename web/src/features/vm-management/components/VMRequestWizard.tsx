@@ -125,6 +125,7 @@ export function VMRequestWizard({
             <VMRequestSectionCard title={t('wizard.section.size')}>
                 <VMRequestSizeFields
                     t={t}
+                    form={form}
                     sizesData={sizesData}
                     selectedSize={selectedSize}
                     targetCpuValue={targetCpuValue}
@@ -179,6 +180,7 @@ export function VMRequestWizard({
                 return (
                     <VMRequestSizeFields
                         t={t}
+                        form={form}
                         sizesData={sizesData}
                         selectedSize={selectedSize}
                         targetCpuValue={targetCpuValue}
