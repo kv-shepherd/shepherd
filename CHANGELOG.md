@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-alpha.4](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.3...v0.1.1-alpha.4) (2026-04-17)
+
+
+### Features
+
+* **vm-request:** support create-time resource adjustments ([#501](https://github.com/kv-shepherd/shepherd/issues/501)) ([06ae18b](https://github.com/kv-shepherd/shepherd/commit/06ae18b73745134b19893df5db545389fb15b801)), closes [#500](https://github.com/kv-shepherd/shepherd/issues/500)
+
+
+### Bug Fixes
+
+* **approvals:** suppress non-failed provisioning errors ([#528](https://github.com/kv-shepherd/shepherd/issues/528)) ([fa2a736](https://github.com/kv-shepherd/shepherd/commit/fa2a736e6b5b3e1f435a2d7189e113b52cf08329)), closes [#527](https://github.com/kv-shepherd/shepherd/issues/527)
+* **auth:** add login language switcher ([#512](https://github.com/kv-shepherd/shepherd/issues/512)) ([206dc51](https://github.com/kv-shepherd/shepherd/commit/206dc51cd2f9867ef3fb1626f8f36b190c7ba4fa)), closes [#511](https://github.com/kv-shepherd/shepherd/issues/511)
+* **auth:** share admin directory layout ([#526](https://github.com/kv-shepherd/shepherd/issues/526)) ([a24e179](https://github.com/kv-shepherd/shepherd/commit/a24e1799710c44318a5035fb01f481eb4acce2ac)), closes [#523](https://github.com/kv-shepherd/shepherd/issues/523)
+* **vm:** avoid skipping unknown-status delete ([#514](https://github.com/kv-shepherd/shepherd/issues/514)) ([b97afaa](https://github.com/kv-shepherd/shepherd/commit/b97afaa592ed4e9fe6a56366a955851f0ec3d6ae)), closes [#513](https://github.com/kv-shepherd/shepherd/issues/513)
+* **vm:** improve size selector rendering ([#520](https://github.com/kv-shepherd/shepherd/issues/520)) ([eacf5c5](https://github.com/kv-shepherd/shepherd/commit/eacf5c5a008c98e5870860744d9062b78a539b33)), closes [#519](https://github.com/kv-shepherd/shepherd/issues/519)
+* **vm:** preserve custom resource toggles in wizard ([#531](https://github.com/kv-shepherd/shepherd/issues/531)) ([1cb3922](https://github.com/kv-shepherd/shepherd/commit/1cb3922d862f289bff5d0042bf4c1bdb67b89926)), closes [#529](https://github.com/kv-shepherd/shepherd/issues/529)
+* **web:** streamline auth entry flow ([#522](https://github.com/kv-shepherd/shepherd/issues/522)) ([b2d0019](https://github.com/kv-shepherd/shepherd/commit/b2d00194e1d33cb323841288eeb7bfa2d7522f86)), closes [#521](https://github.com/kv-shepherd/shepherd/issues/521)
+* **web:** use the logo icon as favicon ([#532](https://github.com/kv-shepherd/shepherd/issues/532)) ([3d9eb1d](https://github.com/kv-shepherd/shepherd/commit/3d9eb1dc26d1541b8ae2abbb4d9048029e3bda89)), closes [#530](https://github.com/kv-shepherd/shepherd/issues/530)
+
+
+### Miscellaneous
+
+* **schema:** refresh kubevirt baseline to v1.8.1 ([#518](https://github.com/kv-shepherd/shepherd/issues/518)) ([e52fdf6](https://github.com/kv-shepherd/shepherd/commit/e52fdf6cdcb29e1907c606c7450a152c7522fdff)), closes [#517](https://github.com/kv-shepherd/shepherd/issues/517)
+
 ## [0.1.1-alpha.3](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.2...v0.1.1-alpha.3) (2026-04-15)
 
 
