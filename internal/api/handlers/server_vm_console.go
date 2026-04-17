@@ -88,14 +88,8 @@ func (s *Server) RequestVMConsoleAccess(c *gin.Context, vmID generated.VMID) {
 	}
 	preferredConsoleType := normalizePreferredConsoleType(req)
 
-	vm, err := s.client.VM.Get(ctx, vmID)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to get VM for console request", zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	vm, ok := s.loadAccessibleVM(ctx, c, vmID, "create")
+	if !ok {
 		return
 	}
 	vm = s.refreshVMLiveState(ctx, vm)
@@ -243,14 +237,8 @@ func (s *Server) GetVMConsoleStatus(c *gin.Context, vmID generated.VMID) {
 		return
 	}
 
-	vm, err := s.client.VM.Get(ctx, vmID)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to get VM for console status", zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	vm, ok := s.loadAccessibleVM(ctx, c, vmID, "create")
+	if !ok {
 		return
 	}
 	vm = s.refreshVMLiveState(ctx, vm)

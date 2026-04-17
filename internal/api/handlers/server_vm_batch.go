@@ -472,7 +472,7 @@ func (s *Server) submitBatch(c *gin.Context) {
 		return
 	}
 
-	children, err := s.prepareBatchChildren(ctx, actor, op, req, visibility)
+	children, err := s.prepareBatchChildren(ctx, c, actor, op, req, visibility)
 	if err != nil {
 		var appErr *batchValidationError
 		if errors.As(err, &appErr) {
@@ -741,7 +741,7 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
-	children, err := s.prepareBatchPowerChildren(ctx, actor, jobOperation, childEventType, req, visibility)
+	children, err := s.prepareBatchPowerChildren(ctx, c, actor, jobOperation, childEventType, req, visibility)
 	if err != nil {
 		var appErr *batchValidationError
 		if errors.As(err, &appErr) {
@@ -1295,6 +1295,7 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 
 func (s *Server) prepareBatchChildren(
 	ctx context.Context,
+	c *gin.Context,
 	actor string,
 	op string,
 	req generated.VMBatchSubmitRequest,
@@ -1324,6 +1325,19 @@ func (s *Server) prepareBatchChildren(
 					body: generated.Error{
 						Code:    "INVALID_BATCH_ITEM",
 						Message: fmt.Sprintf("create item #%d requires service_id/template_id/instance_size_id/namespace", idx+1),
+					},
+				}
+			}
+			serviceRow, allowed, err := s.serviceAccessibleForAction(ctx, c, serviceID, "create")
+			if err != nil {
+				return nil, err
+			}
+			if serviceRow == nil || !allowed {
+				return nil, &batchValidationError{
+					status: http.StatusNotFound,
+					body: generated.Error{
+						Code:    "SERVICE_NOT_FOUND",
+						Message: fmt.Sprintf("service %q not found", serviceID),
 					},
 				}
 			}
@@ -1409,16 +1423,16 @@ func (s *Server) prepareBatchChildren(
 				}
 				return nil, err
 			}
-			visible, err := s.isNamespaceVisible(ctx, vmObj.Namespace, visibility)
+			visible, err := s.vmAccessibleForActionWithVisibility(ctx, c, vmObj.ID, vmObj.Namespace, "create", visibility)
 			if err != nil {
 				return nil, err
 			}
 			if !visible {
 				return nil, &batchValidationError{
-					status: http.StatusForbidden,
+					status: http.StatusNotFound,
 					body: generated.Error{
-						Code:    "NAMESPACE_ENV_FORBIDDEN",
-						Message: fmt.Sprintf("vm namespace %q is outside allowed environment visibility", vmObj.Namespace),
+						Code:    "VM_NOT_FOUND",
+						Message: fmt.Sprintf("vm %q not found", vmID),
 					},
 				}
 			}
@@ -1499,16 +1513,16 @@ func (s *Server) prepareBatchChildren(
 				}
 				return nil, err
 			}
-			visible, err := s.isNamespaceVisible(ctx, vmObj.Namespace, visibility)
+			visible, err := s.vmAccessibleForActionWithVisibility(ctx, c, vmObj.ID, vmObj.Namespace, "create", visibility)
 			if err != nil {
 				return nil, err
 			}
 			if !visible {
 				return nil, &batchValidationError{
-					status: http.StatusForbidden,
+					status: http.StatusNotFound,
 					body: generated.Error{
-						Code:    "NAMESPACE_ENV_FORBIDDEN",
-						Message: fmt.Sprintf("vm namespace %q is outside allowed environment visibility", vmObj.Namespace),
+						Code:    "VM_NOT_FOUND",
+						Message: fmt.Sprintf("vm %q not found", vmID),
 					},
 				}
 			}
@@ -1587,6 +1601,7 @@ func normalizeBatchPowerOperation(op generated.VMBatchPowerAction) (opKey, jobOp
 
 func (s *Server) prepareBatchPowerChildren(
 	ctx context.Context,
+	c *gin.Context,
 	actor string,
 	jobOperation string,
 	childEventType domain.EventType,
@@ -1624,16 +1639,16 @@ func (s *Server) prepareBatchPowerChildren(
 			}
 			return nil, err
 		}
-		visible, err := s.isNamespaceVisible(ctx, vmObj.Namespace, visibility)
+		visible, err := s.vmAccessibleForActionWithVisibility(ctx, c, vmObj.ID, vmObj.Namespace, "create", visibility)
 		if err != nil {
 			return nil, err
 		}
 		if !visible {
 			return nil, &batchValidationError{
-				status: http.StatusForbidden,
+				status: http.StatusNotFound,
 				body: generated.Error{
-					Code:    "NAMESPACE_ENV_FORBIDDEN",
-					Message: fmt.Sprintf("vm namespace %q is outside allowed environment visibility", vmObj.Namespace),
+					Code:    "VM_NOT_FOUND",
+					Message: fmt.Sprintf("vm %q not found", vmID),
 				},
 			}
 		}

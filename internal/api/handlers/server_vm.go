@@ -48,42 +48,30 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 	}
 
 	query := s.client.VM.Query()
-	visibility, err := s.resolveNamespaceVisibility(c)
+	visibility, err := s.resolveVMQueryVisibility(ctx, c)
 	if err != nil {
 		if isRequestContextCanceled(err) {
-			logger.Debug("request canceled while resolving VM namespace visibility", zap.Error(err))
+			logger.Debug("request canceled while resolving VM visibility", zap.Error(err))
 			return
 		}
-		logger.Error("failed to resolve VM namespace visibility", zap.Error(err))
+		logger.Error("failed to resolve VM visibility", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
-	if visibility.restricted {
-		visibleNamespaces, listErr := s.listVisibleNamespaceNames(ctx, visibility)
-		if listErr != nil {
-			if isRequestContextCanceled(listErr) {
-				logger.Debug("request canceled while listing visible namespaces", zap.Error(listErr))
-				return
-			}
-			logger.Error("failed to load visible namespaces", zap.Error(listErr))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		}
-		if len(visibleNamespaces) == 0 {
-			page, perPage := defaultPagination(params.Page, params.PerPage)
-			c.JSON(http.StatusOK, generated.VMList{
-				Items: []generated.VM{},
-				Pagination: generated.Pagination{
-					Page:       page,
-					PerPage:    perPage,
-					Total:      0,
-					TotalPages: 0,
-				},
-			})
-			return
-		}
-		query = query.Where(entvm.NamespaceIn(visibleNamespaces...))
+	if visibility.empty() {
+		page, perPage := defaultPagination(params.Page, params.PerPage)
+		c.JSON(http.StatusOK, generated.VMList{
+			Items: []generated.VM{},
+			Pagination: generated.Pagination{
+				Page:       page,
+				PerPage:    perPage,
+				Total:      0,
+				TotalPages: 0,
+			},
+		})
+		return
 	}
+	query = visibility.apply(query)
 
 	query = applyVMExactFilters(query, params)
 
@@ -176,7 +164,7 @@ func (s *Server) GetVMFilterOptions(c *gin.Context) {
 	}
 
 	query := s.client.VM.Query()
-	visibility, err := s.resolveNamespaceVisibility(c)
+	visibility, err := s.resolveVMQueryVisibility(ctx, c)
 	if err != nil {
 		if isRequestContextCanceled(err) {
 			logger.Debug("request canceled while resolving VM filter visibility", zap.Error(err))
@@ -186,23 +174,11 @@ func (s *Server) GetVMFilterOptions(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
-	if visibility.restricted {
-		visibleNamespaces, listErr := s.listVisibleNamespaceNames(ctx, visibility)
-		if listErr != nil {
-			if isRequestContextCanceled(listErr) {
-				logger.Debug("request canceled while listing VM filter namespaces", zap.Error(listErr))
-				return
-			}
-			logger.Error("failed to load VM filter namespaces", zap.Error(listErr))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		}
-		if len(visibleNamespaces) == 0 {
-			c.JSON(http.StatusOK, generated.VMFilterOptionsResponse{})
-			return
-		}
-		query = query.Where(entvm.NamespaceIn(visibleNamespaces...))
+	if visibility.empty() {
+		c.JSON(http.StatusOK, generated.VMFilterOptionsResponse{})
+		return
 	}
+	query = visibility.apply(query)
 	query = query.
 		Where(entvm.StatusNEQ(entvm.StatusDELETING)).
 		WithService(func(serviceQuery *ent.ServiceQuery) {
@@ -887,6 +863,9 @@ func (s *Server) CreateVMRequest(c *gin.Context) {
 	if !bindAndValidateJSON(c, &req) {
 		return
 	}
+	if _, ok := s.loadAccessibleService(ctx, c, req.ServiceId.String(), "create"); !ok {
+		return
+	}
 	visibility, err := s.resolveNamespaceVisibility(c)
 	if err != nil {
 		logger.Error("failed to resolve VM request namespace visibility", zap.Error(err))
@@ -986,35 +965,8 @@ func (s *Server) GetVM(c *gin.Context, vmID generated.VMID) {
 		return
 	}
 
-	vm, err := s.client.VM.Query().
-		Where(entvm.IDEQ(vmID)).
-		WithService(func(serviceQuery *ent.ServiceQuery) {
-			serviceQuery.WithSystem()
-		}).
-		Only(ctx)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to get VM", zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	visibility, err := s.resolveNamespaceVisibility(c)
-	if err != nil {
-		logger.Error("failed to resolve VM namespace visibility", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	visible, err := s.isNamespaceVisible(ctx, vm.Namespace, visibility)
-	if err != nil {
-		logger.Error("failed to check VM namespace visibility", zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if !visible {
-		c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
+	vm, ok := s.loadAccessibleVM(ctx, c, vmID, "view")
+	if !ok {
 		return
 	}
 	vm = s.refreshVMLiveState(ctx, vm)
@@ -1110,31 +1062,8 @@ func (s *Server) GetVMRequestPrefill(c *gin.Context, vmID generated.VMID) {
 		return
 	}
 
-	vm, err := s.client.VM.Get(ctx, vmID)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to get VM for request prefill", zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	visibility, err := s.resolveNamespaceVisibility(c)
-	if err != nil {
-		logger.Error("failed to resolve VM namespace visibility for request prefill", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	visible, err := s.isNamespaceVisible(ctx, vm.Namespace, visibility)
-	if err != nil {
-		logger.Error("failed to check VM namespace visibility for request prefill", zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if !visible {
-		c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
+	vm, ok := s.loadAccessibleVM(ctx, c, vmID, "view")
+	if !ok {
 		return
 	}
 
@@ -1208,6 +1137,9 @@ func (s *Server) DeleteVM(c *gin.Context, vmID generated.VMID, params generated.
 	if !requireGlobalPermission(c, "vm:delete") {
 		return
 	}
+	if _, ok := s.loadAccessibleVM(ctx, c, vmID, "create"); !ok {
+		return
+	}
 	actor := middleware.GetUserID(ctx)
 
 	// Build use case input from params.
@@ -1274,14 +1206,8 @@ func (s *Server) StartVM(c *gin.Context, vmID generated.VMID) {
 	if !requireGlobalPermission(c, "vm:operate") {
 		return
 	}
-	vm, err := s.client.VM.Get(c.Request.Context(), vmID)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to get VM for start", zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	vm, ok := s.loadAccessibleVM(c.Request.Context(), c, vmID, "create")
+	if !ok {
 		return
 	}
 	vm = s.refreshVMLiveState(c.Request.Context(), vm)
@@ -1322,14 +1248,8 @@ func (s *Server) mustGetRunningVMForPowerOp(c *gin.Context, vmID generated.VMID,
 	if !requireGlobalPermission(c, "vm:operate") {
 		return nil
 	}
-	vm, err := s.client.VM.Get(c.Request.Context(), vmID)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-			return nil
-		}
-		logger.Error(fmt.Sprintf("failed to get VM for %s", op), zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	vm, ok := s.loadAccessibleVM(c.Request.Context(), c, vmID, "create")
+	if !ok {
 		return nil
 	}
 	vm = s.refreshVMLiveState(c.Request.Context(), vm)
@@ -1348,14 +1268,8 @@ func (s *Server) mustGetStoppableVMForPowerOp(c *gin.Context, vmID generated.VMI
 	if !requireGlobalPermission(c, "vm:operate") {
 		return nil
 	}
-	vm, err := s.client.VM.Get(c.Request.Context(), vmID)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-			return nil
-		}
-		logger.Error(fmt.Sprintf("failed to get VM for %s", op), zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	vm, ok := s.loadAccessibleVM(c.Request.Context(), c, vmID, "create")
+	if !ok {
 		return nil
 	}
 	vm = s.refreshVMLiveState(c.Request.Context(), vm)
@@ -1823,14 +1737,8 @@ func (s *Server) PowerVM(c *gin.Context, vmID generated.VMID) {
 		return
 	}
 
-	vm, err := s.client.VM.Get(c.Request.Context(), vmID)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to get VM for power action", zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+	vm, ok := s.loadAccessibleVM(c.Request.Context(), c, vmID, "create")
+	if !ok {
 		return
 	}
 	vm = s.refreshVMLiveState(c.Request.Context(), vm)

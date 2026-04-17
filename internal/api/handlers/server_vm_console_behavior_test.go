@@ -779,6 +779,8 @@ func mustCreateVMConsoleTarget(
 
 	sys := mustCreateSystem(t, client, systemID, "sys-"+systemID[len(systemID)-4:], actor)
 	svc := mustCreateService(t, client, serviceID, "svc-"+serviceID[len(serviceID)-4:], sys.ID, "svc")
+	mustCreateSystemBinding(t, client, actor, sys.ID, "owner")
+	mustCreateGlobalEnvRoleBinding(t, client, actor, []string{"vnc:access"}, []string{string(environment)})
 
 	_, err := client.NamespaceRegistry.Create().
 		SetID("ns-" + uuid.NewString()).

@@ -172,34 +172,7 @@ func (s *Server) CreateVMModifyRequest(c *gin.Context, vmID generated.VMID) {
 }
 
 func (s *Server) loadVisibleVMForModify(ctx context.Context, c *gin.Context, vmID generated.VMID) (*ent.VM, bool) {
-	vmRow, err := s.client.VM.Get(ctx, vmID)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-			return nil, false
-		}
-		logger.Error("failed to get VM for modify", zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return nil, false
-	}
-
-	visibility, err := s.resolveNamespaceVisibility(c)
-	if err != nil {
-		logger.Error("failed to resolve VM namespace visibility for modify", zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return nil, false
-	}
-	visible, err := s.isNamespaceVisible(ctx, vmRow.Namespace, visibility)
-	if err != nil {
-		logger.Error("failed to check VM namespace visibility for modify", zap.Error(err), zap.String("vm_id", vmID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return nil, false
-	}
-	if !visible {
-		c.JSON(http.StatusNotFound, generated.Error{Code: "VM_NOT_FOUND"})
-		return nil, false
-	}
-	return vmRow, true
+	return s.loadAccessibleVM(ctx, c, vmID, "create")
 }
 
 func (s *Server) resolveVMModifyContext(

@@ -406,6 +406,15 @@ func TestBatchHandler_SubmitCreate_ForbiddenWhenNamespaceInvisible(t *testing.T)
 
 	srv, client := newBatchBehaviorTestServer(t)
 	serviceID, templateID, sizeID := mustCreateBatchCreatePrerequisites(t, client, "requester-1", "team-prod")
+	serviceRow, err := client.Service.Get(t.Context(), serviceID.String())
+	if err != nil {
+		t.Fatalf("get create batch service: %v", err)
+	}
+	systemRow, err := serviceRow.QuerySystem().Only(t.Context())
+	if err != nil {
+		t.Fatalf("get create batch service system: %v", err)
+	}
+	mustCreateSystemBinding(t, client, "requester-1", systemRow.ID, "member")
 
 	submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
 		Operation: generated.VMBatchOperation("CREATE"),

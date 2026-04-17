@@ -85,13 +85,33 @@ func main() {
 			path: "internal/api/handlers/server_vm.go",
 			patternGroups: [][]string{
 				{
+					`resolveVMQueryVisibility\(ctx,\s*c\)`,
+				},
+				{
+					`resolveNamespaceVisibility\(c\)`,
+				},
+				{
+					`isNamespaceVisible\(ctx,\s*req\.Namespace,\s*visibility\)`,
+				},
+			},
+		},
+		{
+			path: "internal/api/handlers/vm_access.go",
+			patternGroups: [][]string{
+				{
 					`resolveNamespaceVisibility\(c\)`,
 				},
 				{
 					`listVisibleNamespaceNames\(ctx,\s*visibility\)`,
 				},
 				{
-					`isNamespaceVisible\(ctx,\s*req\.Namespace,\s*visibility\)`,
+					`visibleSystemIDs\(ctx,\s*actor\)`,
+				},
+				{
+					`NamespaceIn\(v\.visibleNamespaces\.\.\.\)`,
+				},
+				{
+					`entsystem\.IDIn\(v\.visibleSystemIDs\.\.\.\)`,
 				},
 			},
 		},
