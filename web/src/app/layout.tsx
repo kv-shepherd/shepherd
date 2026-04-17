@@ -22,6 +22,9 @@ export const metadata: Metadata = {
   title: 'KubeVirt Shepherd',
   description:
     'Cloud-native virtual machine governance platform for KubeVirt',
+  icons: {
+    icon: '/logo-icon.svg',
+  },
 };
 
 export default function RootLayout({
