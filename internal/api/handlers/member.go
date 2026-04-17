@@ -736,6 +736,10 @@ func buildUserSearchPredicate(
 	normalizedProfileFields map[string]string,
 	searchableProfileFields []string,
 ) predicate.User {
+	const (
+		userSearchFieldEmail = "email"
+		userSearchFieldRoles = "roles"
+	)
 	if strings.TrimSpace(term.Value) == "" {
 		return nil
 	}
@@ -745,14 +749,14 @@ func buildUserSearchPredicate(
 			return entuser.UsernameEqualFold(term.Value)
 		case "display_name", "displayname", "name":
 			return entuser.DisplayNameEqualFold(term.Value)
-		case "email", "mail":
+		case userSearchFieldEmail, "mail":
 			return entuser.EmailEqualFold(term.Value)
 		case "status", "enabled":
 			if enabled, ok := parseUserEnabledSearchValue(term.Value); ok {
 				return entuser.EnabledEQ(enabled)
 			}
 			return impossibleUserSearchPredicate()
-		case "role", "roles":
+		case "role", userSearchFieldRoles:
 			return userHasRoleNameEqualFold(term.Value)
 		default:
 			if field, ok := normalizedProfileFields[normalizeUserSearchField(term.Field)]; ok {

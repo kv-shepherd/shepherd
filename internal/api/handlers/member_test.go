@@ -205,3 +205,56 @@ func TestMemberHandler_ListSystemMembers_IncludesDirectoryProfileFields(t *testi
 		t.Fatalf("department = %#v, want Engineering", resp.Items[0].ProfileAttributes["department"])
 	}
 }
+
+func TestApplyUserSearch_SupportsMailAndRolesAliases(t *testing.T) {
+	t.Parallel()
+
+	_, client := newAdminIdentityTestServer(t)
+	userEnt, err := client.User.Create().
+		SetID("user-search-aliases").
+		SetUsername("alice.alias").
+		SetDisplayName("Alice Alias").
+		SetEmail("alice.alias@example.com").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	roleEnt, err := client.Role.Create().
+		SetID("role-search-aliases").
+		SetName("TeamLead").
+		SetDisplayName("Team Lead").
+		SetPermissions([]string{"user:manage"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+
+	if _, createErr := client.RoleBinding.Create().
+		SetID("binding-search-aliases").
+		SetUserID(userEnt.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy("test").
+		Save(t.Context()); createErr != nil {
+		t.Fatalf("create role binding: %v", createErr)
+	}
+
+	usersByMail, err := applyUserSearch(client.User.Query(), "mail:alice.alias@example.com", nil).All(t.Context())
+	if err != nil {
+		t.Fatalf("search by mail alias: %v", err)
+	}
+	if len(usersByMail) != 1 || usersByMail[0].ID != userEnt.ID {
+		t.Fatalf("mail alias search returned %+v, want only %s", usersByMail, userEnt.ID)
+	}
+
+	usersByRoles, err := applyUserSearch(client.User.Query(), `roles:"Team Lead"`, nil).All(t.Context())
+	if err != nil {
+		t.Fatalf("search by roles alias: %v", err)
+	}
+	if len(usersByRoles) != 1 || usersByRoles[0].ID != userEnt.ID {
+		t.Fatalf("roles alias search returned %+v, want only %s", usersByRoles, userEnt.ID)
+	}
+}
