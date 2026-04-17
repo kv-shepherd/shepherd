@@ -610,19 +610,18 @@ describe("AdminApprovalsContent", () => {
     controllerState.overrides = {};
   });
 
-  it("shows clone fallback details for create approvals with provisioning status", () => {
+  it("shows clone fallback details without treating successful clone messages as failures", () => {
     render(
       <ApprovalProvisioningCard
         provisioning={{
-          phase: "CloneInProgress",
-          progress: "45%",
-          claim_name: "target-root-pvc",
+          phase: "Succeeded",
+          progress: "100.0%",
+          claim_name: "prod01-log-manage-rocketmq-name-02-rootfs",
           pvc_phase: "Bound",
-          clone_type: "copy",
+          clone_type: "snapshot",
           clone_phase: "Succeeded",
-          clone_fallback_reason:
-            "The volume modes of source and target are incompatible",
-          failure_message: "target pod restarted once",
+          clone_fallback_reason: "The volume modes of source and target are incompatible",
+          failure_message: "Clone Complete",
         }}
       />,
     );
@@ -631,17 +630,43 @@ describe("AdminApprovalsContent", () => {
       screen.getByTestId("approval-provisioning-card"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("approval-provisioning-phase")).toHaveTextContent(
-      "CloneInProgress",
+      "Succeeded",
     );
     expect(
       screen.getByTestId("approval-provisioning-clone-type"),
-    ).toHaveTextContent("Host-assisted copy");
+    ).toHaveTextContent("snapshot");
     expect(
       screen.getByText(
         "The volume modes of source and target are incompatible",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("target pod restarted once")).toBeInTheDocument();
+    expect(screen.queryByText("Clone Complete")).not.toBeInTheDocument();
+  });
+
+  it("shows failure details only when provisioning is explicitly failed", () => {
+    render(
+      <ApprovalProvisioningCard
+        provisioning={{
+          phase: "Failed",
+          progress: "75.0%",
+          claim_name: "target-root-pvc",
+          pvc_phase: "Bound",
+          clone_type: "copy",
+          clone_phase: "Failed",
+          failure_message: "smart clone permission denied",
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByText("smart clone permission denied"),
+    ).toBeInTheDocument();
+  });
+
+  it("does not render successful provisioning messages as list-level failures", () => {
+    render(<AdminApprovalsContent />);
+
+    expect(screen.queryByText("target pod restarted once")).not.toBeInTheDocument();
   });
 
   it("shows cluster compatibility query errors instead of silently rendering an empty list", () => {
@@ -731,7 +756,6 @@ describe("AdminApprovalsContent", () => {
             id: "ticket-batch-failed",
             event_id: "event-batch-failed",
             status: "FAILED",
-            operation_type: "CREATE",
             requester: "alice",
             summary: {
               batch_count: 2,

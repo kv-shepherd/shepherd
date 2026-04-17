@@ -151,3 +151,65 @@ func TestGetProvisioningStatus_AggregatesDataVolumePVCAndEvents(t *testing.T) {
 		t.Fatalf("RecentEvents[0].Reason = %q, want %q", got.RecentEvents[0].Reason, "CloneSourceDenied")
 	}
 }
+
+func TestGetProvisioningStatus_DoesNotExposeFailureMessage_WhenProvisioningNotFailed(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	mock := provider.NewMockProvider()
+	mock.SeedDataVolumes([]*domain.DataVolume{
+		{
+			Name:      "vm-a-rootfs",
+			Namespace: "team-a",
+			UID:       "dv-uid-2",
+			ClaimName: "vm-a-rootfs",
+			Phase:     "Succeeded",
+			Progress:  "100.0%",
+			Conditions: []domain.ProvisioningCondition{
+				{
+					Type:               "Running",
+					Status:             "False",
+					Reason:             "Completed",
+					Message:            "Clone Complete",
+					LastTransitionTime: now.Add(-1 * time.Minute),
+				},
+			},
+		},
+	})
+	mock.SeedPVCs([]*domain.PersistentVolumeClaim{
+		{
+			Name:                "vm-a-rootfs",
+			Namespace:           "team-a",
+			Phase:               "Bound",
+			CloneType:           "snapshot",
+			ClonePhase:          "Succeeded",
+			CloneFallbackReason: "",
+		},
+	})
+	mock.SeedEvents(domain.ObjectReference{
+		Kind:      "DataVolume",
+		Name:      "vm-a-rootfs",
+		Namespace: "team-a",
+		UID:       "dv-uid-2",
+	}, []domain.ProvisioningEvent{
+		{
+			Type:          "Normal",
+			Reason:        "CloneComplete",
+			Message:       "Clone Complete",
+			LastObserved:  now.Add(-30 * time.Second),
+			FirstObserved: now.Add(-45 * time.Second),
+		},
+	})
+
+	svc := NewVMService(mock)
+	got, err := svc.GetProvisioningStatus(t.Context(), "cluster-a", "team-a", "vm-a")
+	if err != nil {
+		t.Fatalf("GetProvisioningStatus error = %v, want nil", err)
+	}
+	if got == nil {
+		t.Fatal("GetProvisioningStatus = nil, want aggregated status")
+	}
+	if got.FailureMessage != "" {
+		t.Fatalf("FailureMessage = %q, want empty when phase is not failed", got.FailureMessage)
+	}
+}

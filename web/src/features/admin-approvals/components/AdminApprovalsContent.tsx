@@ -57,6 +57,7 @@ import {
 import { useAdminApprovalsController } from "../hooks/useAdminApprovalsController";
 import {
   ApprovalProvisioningCard,
+  hasProvisioningFailure,
   getCloneTypeTagColor,
   getProvisioningPhaseTagColor,
 } from "./ApprovalProvisioningCard";
@@ -934,8 +935,13 @@ export function AdminApprovalsContent() {
                 ? t(`op_type.${record.operation_type}`)
                 : undefined;
               const requestReason = record.reason?.trim();
+              const provisioningFailureReason =
+                record.provisioning &&
+                hasProvisioningFailure(record.provisioning)
+                  ? record.provisioning.failure_message?.trim()
+                  : undefined;
               const failureReason =
-                record.provisioning?.failure_message?.trim() ||
+                provisioningFailureReason ||
                 record.reject_reason?.trim() ||
                 undefined;
               const showRequestReason =
@@ -1184,7 +1190,8 @@ export function AdminApprovalsContent() {
                         </Text>
                       )}
                     {record.operation_type === "CREATE" &&
-                      provisioning?.failure_message && (
+                      provisioning &&
+                      hasProvisioningFailure(provisioning) && (
                         <Text
                           type="danger"
                           className="workbench-table-note"

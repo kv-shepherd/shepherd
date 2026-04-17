@@ -121,16 +121,17 @@ func deriveProvisioningFailureMessage(status *domain.ProvisioningStatus) string 
 	if status == nil {
 		return ""
 	}
+	if !strings.EqualFold(strings.TrimSpace(status.Phase), "Failed") {
+		return ""
+	}
 	for _, cond := range status.Conditions {
 		if strings.EqualFold(cond.Status, "False") && strings.TrimSpace(cond.Message) != "" {
 			return cond.Message
 		}
 	}
-	if strings.EqualFold(status.Phase, "Failed") {
-		for _, ev := range status.RecentEvents {
-			if strings.EqualFold(ev.Type, "Warning") && strings.TrimSpace(ev.Message) != "" {
-				return ev.Message
-			}
+	for _, ev := range status.RecentEvents {
+		if strings.EqualFold(ev.Type, "Warning") && strings.TrimSpace(ev.Message) != "" {
+			return ev.Message
 		}
 	}
 	return ""

@@ -3,6 +3,15 @@ import { useTranslation } from "react-i18next";
 
 import type { ApprovalTask } from "../types";
 
+export function hasProvisioningFailure(
+  provisioning: NonNullable<ApprovalTask["provisioning"]>,
+): boolean {
+  return (
+    Boolean(provisioning.failure_message?.trim()) &&
+    provisioning.phase?.trim().toLowerCase() === "failed"
+  );
+}
+
 export function getProvisioningPhaseTagColor(phase?: string): string {
   if (!phase) return "default";
   if (phase === "Succeeded" || phase === "Ready") return "green";
@@ -87,28 +96,28 @@ export function ApprovalProvisioningCard({
             },
           ]}
         />
-      {provisioning.clone_fallback_reason && (
-        <Alert
-          type="warning"
-          showIcon
-          message={t(
-            "approve_modal.provisioning.clone_fallback_reason",
-            "Clone fallback reason",
-          )}
-          description={provisioning.clone_fallback_reason}
-        />
-      )}
-      {provisioning.failure_message && (
-        <Alert
-          type="error"
-          showIcon
-          message={t(
-            "approve_modal.provisioning.failure_message",
-            "Provisioning failure",
-          )}
-          description={provisioning.failure_message}
-        />
-      )}
+        {provisioning.clone_fallback_reason && (
+          <Alert
+            type="warning"
+            showIcon
+            message={t(
+              "approve_modal.provisioning.clone_fallback_reason",
+              "Clone fallback reason",
+            )}
+            description={provisioning.clone_fallback_reason}
+          />
+        )}
+        {hasProvisioningFailure(provisioning) && (
+          <Alert
+            type="error"
+            showIcon
+            message={t(
+              "approve_modal.provisioning.failure_message",
+              "Provisioning failure",
+            )}
+            description={provisioning.failure_message}
+          />
+        )}
       </Space>
     </Card>
   );
