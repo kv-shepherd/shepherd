@@ -58,9 +58,20 @@ decisions. See [docs/design/](docs/design/) for details.
 
 ## Project Status
 
-> ⚠️ **Alpha Track** — Core governed VM request, approval, RBAC, audit, and
-> console workflows are functional. Public deployment guides are available
-> below; release automation and operational guidance are still being hardened.
+> ⚠️ **Alpha** — The core governance capabilities — approval workflows, RBAC,
+> audit trails, and VM lifecycle management — have been validated through
+> internal production use within a financial-services team. We consider these
+> core functions production-capable.
+>
+> The Alpha designation reflects a conservative assessment for external
+> adopters: every environment is different, and UX refinements, peripheral
+> features, and operational tooling are still being iterated. We label the
+> project Alpha not because the platform is unstable, but because broader
+> community feedback is needed to validate it across diverse environments.
+>
+> **We welcome your feedback** — bug reports, feature requests, and usage
+> experiences all help raise the project's maturity. Please open an
+> [Issue](https://github.com/kv-shepherd/shepherd/issues).
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
 
@@ -99,30 +110,36 @@ Local development seeds only the platform bootstrap baseline:
 Local dev preserves the existing database by default. Use `--clean-all` only
 when you intentionally want a fresh local environment.
 
-### GitHub Codespaces Demo
+### GitHub Codespaces
 
-Use Codespaces as a browser-based product demo, not as the primary source
-development environment.
+Use Codespaces as a browser-based technical entry point for the real product.
+It builds the current source tree, boots the production-style stack, and seeds
+sample data so contributors and KubeVirt community users can inspect and debug
+the running system directly.
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/kv-shepherd/shepherd?quickstart=1)
 
-#### Try the demo
+#### Try it in Codespaces
 
 1. Click **Open in GitHub Codespaces**.
 2. Wait for the container bootstrap to finish.
 3. Open the forwarded **Shepherd UI** port if the browser does not open automatically.
-4. Sign in with `admin / admin`, then follow the password-change prompt if it appears.
+4. Sign in with one of the seeded accounts:
+   - `admin / admin`
+   - `test / test`
 
-Codespaces demo behavior:
+Codespaces behavior:
 
-- first create resolves the latest published Shepherd release and pulls the matching server/web images from GHCR
-- the first bootstrap starts from a clean database and seeds baseline bootstrap data plus extended demo fixtures
-- later Codespace restarts reuse the existing demo data and only resume services
-- the first start can still take a few minutes because the release images are pulled and the demo fixtures are seeded inside the Codespace
+- first create builds `server` and `web` from the checked-out source tree
+- the first bootstrap starts from a clean database and seeds baseline data plus extended experience fixtures
+- later Codespace restarts reuse the existing data and only resume services
+- the helper script also supports a rebuild path when you want fresh images without wiping seeded data
+- the first start can still take a few minutes because the source images are built and the seed fixtures are loaded inside the Codespace
 
-Default demo sign-in:
-- `admin / admin` (first sign-in prompts a password change)
-- Codespaces starts with demo data, but it does **not** assume a live K8s/KubeVirt cluster is available. VM create, power, modify, delete, and console flows depend on a real cluster connection and can fail with normal availability or cluster-health errors until one is configured.
+Default Codespaces sign-in:
+- `admin / admin`
+- `test / test`
+- Codespaces starts with seeded product data, but it does **not** assume a live K8s/KubeVirt cluster is available. VM create, power, modify, delete, and console flows depend on a real cluster connection and can fail with normal availability or cluster-health errors until one is configured.
 
 ### Prerequisites
 
@@ -130,114 +147,17 @@ Go 1.25+ · Node.js 22+ · PostgreSQL 18+ · Docker 24+
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development setup.
 
-## Production Deployment
+## Deployment
 
-Shepherd ships with a Docker Compose-based production topology built around
-`server`, `web`, and `nginx`, with an optional bundled PostgreSQL service when
-you do not point `DATABASE_URL` at an external database.
-
-| Service | Image | Role |
-|---------|-------|------|
-| **db** | `postgres:18` | Optional bundled data persistence service |
-| **server** | `shepherd-server` | Go API backend (distroless runtime) |
-| **web** | `shepherd-web` | Next.js SSR frontend |
-| **nginx** | `nginx:1.27-alpine` | TLS termination, reverse proxy, rate limiting |
-
-### Deploying from Source
+Shepherd provides a Docker Compose-based production topology (`server` + `web`
++ `nginx` + optional bundled PostgreSQL) with a one-click deploy script:
 
 ```bash
-# 1. Build images
-docker build -t shepherd-server:latest .
-docker build -t shepherd-web:latest -f deploy/prod/web.Dockerfile web/
-
-# 2. Configure environment
-cp deploy/prod/.env.prod.example deploy/prod/.env.prod
-#    Edit .env.prod — set DATABASE password, SESSION_SECRET, ENCRYPTION_KEY, PUBLIC_BASE_URL
-
-# 3. Provide TLS certificates
-mkdir -p deploy/prod/tls
-cp /path/to/cert.pem deploy/prod/tls/cert.pem
-cp /path/to/key.pem  deploy/prod/tls/key.pem
-
-# 4. Launch
-docker compose -f deploy/prod/docker-compose.prod.yml \
-  --env-file deploy/prod/.env.prod -p shepherd-prod up -d
-
-# 5. Seed initial data (first deploy only)
-docker compose -f deploy/prod/docker-compose.prod.yml \
-  --env-file deploy/prod/.env.prod -p shepherd-prod \
-  exec -T server /usr/local/bin/seed
+bash deploy/prod/deploy-prod.sh --with-seed   # first deploy
 ```
 
-Or use the one-click script:
-
-```bash
-bash deploy/prod/deploy-prod.sh              # builds + deploys
-bash deploy/prod/deploy-prod.sh --with-seed  # first deploy/bootstrap
-bash deploy/prod/deploy-prod.sh --with-seed --with-experience-seed
-bash deploy/prod/deploy-prod.sh --help   # all options
-```
-
-On first run, `deploy-prod.sh` will generate `deploy/prod/.env.prod` from
-`deploy/prod/.env.prod.example` if the file is missing. The generated template
-is not copied into container images; it remains a local deployment input that
-you should review and fill before rerunning the script.
-
-When `DATABASE_URL` points to an external PostgreSQL host, `deploy-prod.sh`
-auto-detects that topology and does not start the bundled `postgres:18`
-service. Override with `DEPLOY_BUNDLED_POSTGRES=true|false` only when you need
-to force the topology.
-
-### VPS Experience Seed
-
-If you want a browser-accessible product experience on a VPS, keep the real
-production deployment topology and add the extended experience seed instead of
-using a separate demo mode:
-
-```bash
-bash deploy/prod/deploy-prod.sh --with-seed --with-experience-seed
-```
-
-This keeps the normal `server` + `web` + `nginx` + PostgreSQL deployment path
-and then injects:
-
-- `admin / admin`
-- `test / test`
-- sample system, service, template, instance sizes, approval tickets, and notifications
-
-By default, the experience seed registers a stub cluster when no kubeconfig is
-provided, which means cluster-backed VM actions remain illustrative until a
-real Kubernetes/KubeVirt environment is configured. To seed against a real
-cluster, export `E2E_KUBECONFIG_PATH=/path/to/kubeconfig` (or
-`E2E_KUBECONFIG_B64`) before running `deploy-prod.sh`.
-
-### Key Configuration
-
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `DEPLOY_BUNDLED_POSTGRES` | `auto`, `true`, or `false` to control bundled vs external PostgreSQL topology |
-| `SECURITY_SESSION_SECRET` | Session signing key (`openssl rand -hex 32`) |
-| `SECURITY_ENCRYPTION_KEY` | Data encryption key (`openssl rand -hex 32`) |
-| `SERVER_PUBLIC_BASE_URL` | External URL (e.g. `https://shepherd.example.com`) |
-| `SERVER_ALLOWED_ORIGINS` | CORS origins (comma-separated) |
-| `DATABASE_AUTO_MIGRATE` | Auto-migrate schema on startup (`true` / `false`) |
-
-See [`deploy/prod/.env.prod.example`](deploy/prod/.env.prod.example) for the
-complete variable reference. Production security checklist:
-
-- [ ] `SERVER_UNSAFE_ALLOW_ALL_ORIGINS=false`
-- [ ] `GIN_MODE=release`
-- [ ] Replace self-signed TLS with CA-issued certificates
-- [ ] Rotate default admin password after first login
-
-### Management
-
-```bash
-docker compose -f deploy/prod/docker-compose.prod.yml -p shepherd-prod logs -f   # logs
-docker compose -f deploy/prod/docker-compose.prod.yml -p shepherd-prod ps        # status
-docker compose -f deploy/prod/docker-compose.prod.yml -p shepherd-prod down      # stop
-```
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full deployment guide,
+configuration reference, security checklist, and VPS experience seed setup.
 
 ## Documentation
 
@@ -245,14 +165,20 @@ docker compose -f deploy/prod/docker-compose.prod.yml -p shepherd-prod down     
 - [docs/adr/](docs/adr/) — 53 Architecture Decision Records
 - [docs/design/](docs/design/) — Implementation specifications
 - [docs/RELEASE.md](docs/RELEASE.md) — Release process
+- [ROADMAP.md](ROADMAP.md) — Project roadmap
+- [ADOPTERS.md](ADOPTERS.md) — Who is using Shepherd
 
 ## Community
+
+We welcome **all forms of feedback** — bug reports, feature suggestions, usage
+stories, and governance ideas. Your input helps shape the project direction.
 
 - [GitHub Issues][issues] — Bug reports and feature requests
 - [Contributing](CONTRIBUTING.md) — PR workflow, CI gates, coding standards
 - [Code of Conduct](CODE_OF_CONDUCT.md) — Community standards
 - [Governance](GOVERNANCE.md) — Project governance
 - [Security](SECURITY.md) — Vulnerability reporting
+- [Adopters](ADOPTERS.md) — Organizations using Shepherd
 
 ## License
 

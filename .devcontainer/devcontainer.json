@@ -1,7 +1,7 @@
 // KubeVirt Shepherd — GitHub Codespaces / Dev Container Configuration
 // See: https://containers.dev/implementors/json_reference/
 {
-  "name": "Shepherd Demo",
+  "name": "Shepherd Codespaces",
   "image": "mcr.microsoft.com/devcontainers/go:1.25-bookworm",
 
   // Additional tools
@@ -10,7 +10,7 @@
     "ghcr.io/devcontainers/features/node:1": {
       "version": "22"
     },
-    // GitHub CLI for resolving the latest release tag and authenticating GHCR pulls.
+    // GitHub CLI for repository workflows and troubleshooting inside Codespaces.
     "ghcr.io/devcontainers/features/github-cli:1": {},
     // Docker-in-Docker for running PostgreSQL and service containers
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
@@ -31,13 +31,14 @@
     }
   },
 
-  // First bootstrap: pull the release images, seed demo data, and start the demo stack once per Codespace.
+  // First bootstrap: build the current source tree, seed baseline + experience data,
+  // and start the stack once per Codespace.
   "postCreateCommand": "bash .devcontainer/post-create.sh",
 
   // Wait for the initial bootstrap to finish before reporting the container ready.
   "waitFor": "postCreateCommand",
 
-  // Resume services on later container starts without reseeding demo data.
+  // Resume services on later container starts without reseeding data.
   "postStartCommand": "bash .devcontainer/post-start.sh",
 
   // VS Code / Codespaces extensions

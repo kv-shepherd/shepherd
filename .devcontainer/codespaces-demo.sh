@@ -9,18 +9,29 @@ HTTP_PORT="${CODESPACES_HTTP_PORT:-3000}"
 API_PORT="${CODESPACES_API_PORT:-8080}"
 ADMIN_USERNAME="${CODESPACES_ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${CODESPACES_ADMIN_PASSWORD:-admin}"
-GHCR_REPO="${CODESPACES_RELEASE_REPO:-kv-shepherd/shepherd}"
-EXPLICIT_RELEASE_TAG="${CODESPACES_RELEASE_TAG:-}"
+TEST_USERNAME="${CODESPACES_TEST_USERNAME:-test}"
+TEST_PASSWORD="${CODESPACES_TEST_PASSWORD:-test}"
 HOST_E2E_SEED_BIN="${REPO_ROOT}/build/bin/codespaces-e2e-seed"
+GO_TOOLCHAIN_VERSION="${GO_TOOLCHAIN_VERSION:-$(awk '/^go [0-9]+\.[0-9]+\.[0-9]+$/ { print "go" $2; exit }' "${REPO_ROOT}/go.mod")}"
 
 usage() {
     cat <<'EOF'
-Usage: bash .devcontainer/codespaces-demo.sh [bootstrap|resume]
+Usage: bash .devcontainer/codespaces-demo.sh [bootstrap|resume|rebuild]
 
-bootstrap  Start a fresh Codespaces demo stack, seed baseline + demo fixtures,
-           and wait for the UI to become ready.
-resume     Start the stack without reseeding, reusing the existing demo data.
+bootstrap  Build the current source tree, reset the local Codespaces stack, and
+           seed baseline + experience fixtures.
+resume     Start the existing stack without rebuilding images or reseeding data.
+rebuild    Rebuild the current source tree into fresh images and restart the
+           stack without resetting data.
 EOF
+}
+
+base64_file() {
+    if base64 -w0 "$1" >/dev/null 2>&1; then
+        base64 -w0 "$1"
+    else
+        base64 <"$1" | tr -d '\n'
+    fi
 }
 
 compute_public_base_url() {
@@ -44,118 +55,39 @@ compute_allowed_origins() {
         "${API_PORT}"
 }
 
-resolve_release_tag() {
-    if [[ -n "${EXPLICIT_RELEASE_TAG}" ]]; then
-        printf "%s" "${EXPLICIT_RELEASE_TAG}"
-        return 0
-    fi
-
-    local tag=""
-    if command -v gh >/dev/null 2>&1; then
-        tag="$(
-            gh release list \
-                --repo "${GHCR_REPO}" \
-                --limit 20 \
-                --json tagName,isDraft,isPrerelease \
-                --jq '[.[] | select(.isDraft == false)] | .[0].tagName'
-        )" || true
-        if [[ -n "${tag}" && "${tag}" != "null" ]]; then
-            printf "%s" "${tag}"
-            return 0
-        fi
-
-        tag="$(
-            gh api "/repos/${GHCR_REPO}/releases?per_page=20" \
-                --jq '[.[] | select(.draft == false)] | .[0].tag_name'
-        )" || true
-        if [[ -n "${tag}" && "${tag}" != "null" ]]; then
-            printf "%s" "${tag}"
-            return 0
-        fi
-    fi
-
-    echo "Unable to resolve the latest published release tag automatically." >&2
-    echo "Set CODESPACES_RELEASE_TAG explicitly, for example:" >&2
-    echo "  CODESPACES_RELEASE_TAG=v0.1.1-alpha.1 bash .devcontainer/codespaces-demo.sh bootstrap" >&2
-    return 1
-}
-
-server_image_for_tag() {
-    printf "ghcr.io/kv-shepherd/shepherd-server:%s" "${1#v}"
-}
-
-web_image_for_tag() {
-    printf "ghcr.io/kv-shepherd/shepherd-web:%s" "${1#v}"
-}
-
-release_images_available() {
-    local tag="$1"
-    docker manifest inspect "$(server_image_for_tag "${tag}")" >/dev/null 2>&1 \
-        && docker manifest inspect "$(web_image_for_tag "${tag}")" >/dev/null 2>&1
-}
-
-ensure_release_images_available() {
-    local tag="$1"
-
-    if release_images_available "${tag}"; then
-        return 0
-    fi
-
-    echo "Release ${tag} exists, but its server/web images are not published in GHCR yet." >&2
-    echo "Wait for Release Artifacts to finish, then retry Codespaces bootstrap." >&2
-    if [[ -z "${EXPLICIT_RELEASE_TAG}" ]]; then
-        echo "If you intentionally want an older published release, set CODESPACES_RELEASE_TAG explicitly." >&2
-    fi
-    return 1
-}
-
-docker_login_ghcr() {
-    if ! command -v gh >/dev/null 2>&1; then
-        echo "gh CLI is required to authenticate GHCR pulls in Codespaces." >&2
-        return 1
-    fi
-
-    local token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-    local username
-    if [[ -z "${token}" ]]; then
-        if ! token="$(gh auth token)"; then
-            echo "Unable to read a GitHub auth token for GHCR pulls. Sign in to gh inside the Codespace and retry." >&2
-            return 1
-        fi
-    fi
-    if ! username="$(gh api user --jq .login)"; then
-        echo "Unable to resolve the GitHub username for GHCR login." >&2
-        return 1
-    fi
-    printf '%s' "${token}" | docker login ghcr.io -u "${username}" --password-stdin >/dev/null
+compose_cmd() {
+    COMPOSE_PROJECT_NAME="${PROJECT_NAME}" docker compose -f "${COMPOSE_FILE}" "$@"
 }
 
 compose_up() {
-    local pull_policy="$1"
+    local mode="$1"
+    local -a args
+    args=(up -d)
+    if [[ "${mode}" == "bootstrap" || "${mode}" == "rebuild" ]]; then
+        args+=(--build)
+    fi
 
-    SERVER_IMAGE="${SERVER_IMAGE}" \
-    WEB_IMAGE="${WEB_IMAGE}" \
-    HTTP_PORT="${HTTP_PORT}" \
-    API_PORT="${API_PORT}" \
     DATABASE_URL="${DATABASE_URL}" \
     POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
     SECURITY_SESSION_SECRET="${SECURITY_SESSION_SECRET}" \
     SECURITY_ENCRYPTION_KEY="${SECURITY_ENCRYPTION_KEY}" \
     SERVER_PUBLIC_BASE_URL="${SERVER_PUBLIC_BASE_URL}" \
     SERVER_ALLOWED_ORIGINS="${SERVER_ALLOWED_ORIGINS}" \
+    HTTP_PORT="${HTTP_PORT}" \
+    API_PORT="${API_PORT}" \
     COMPOSE_PROJECT_NAME="${PROJECT_NAME}" \
-        docker compose -f "${COMPOSE_FILE}" up -d --pull "${pull_policy}"
+        docker compose -f "${COMPOSE_FILE}" "${args[@]}"
 }
 
 compose_exec() {
-    COMPOSE_PROJECT_NAME="${PROJECT_NAME}" docker compose -f "${COMPOSE_FILE}" exec -T "$@"
+    compose_cmd exec -T "$@"
 }
 
 build_codespaces_e2e_seed() {
     mkdir -p "$(dirname "${HOST_E2E_SEED_BIN}")"
     (
         cd "${REPO_ROOT}"
-        GOTOOLCHAIN=go1.25.9 \
+        GOTOOLCHAIN="${GO_TOOLCHAIN_VERSION}" \
         GOOS=linux \
         GOARCH="$(go env GOARCH)" \
         CGO_ENABLED=0 \
@@ -165,23 +97,45 @@ build_codespaces_e2e_seed() {
 
 run_codespaces_e2e_seed() {
     local server_container
-    server_container="$(COMPOSE_PROJECT_NAME="${PROJECT_NAME}" docker compose -f "${COMPOSE_FILE}" ps -q server)"
+    local -a e2e_seed_env
+    e2e_seed_env=(
+        -e "E2E_ADMIN_USERNAME=${ADMIN_USERNAME}"
+        -e "E2E_ADMIN_PASSWORD=${ADMIN_PASSWORD}"
+        -e "E2E_ADMIN_EMAIL=${ADMIN_USERNAME}@localhost"
+        -e "E2E_SECOND_USERNAME=${TEST_USERNAME}"
+        -e "E2E_SECOND_PASSWORD=${TEST_PASSWORD}"
+        -e "E2E_SECOND_EMAIL=${TEST_USERNAME}@localhost"
+        -e "E2E_SECOND_DISPLAY_NAME=Test User"
+        -e "E2E_SECOND_ROLE_NAME=TestEngineer"
+    )
+
+    if [[ -n "${E2E_KUBECONFIG_B64:-}" ]]; then
+        e2e_seed_env+=(-e "E2E_KUBECONFIG_B64=${E2E_KUBECONFIG_B64}")
+    elif [[ -n "${E2E_KUBECONFIG_PATH:-}" ]]; then
+        if [[ ! -f "${E2E_KUBECONFIG_PATH}" ]]; then
+            echo "ERROR: E2E_KUBECONFIG_PATH does not exist: ${E2E_KUBECONFIG_PATH}" >&2
+            return 1
+        fi
+        e2e_seed_env+=(-e "E2E_KUBECONFIG_B64=$(base64_file "${E2E_KUBECONFIG_PATH}")")
+    fi
+
+    server_container="$(compose_cmd ps -q server)"
     if [[ -z "${server_container}" ]]; then
-        echo "Unable to resolve the server container for demo seeding." >&2
+        echo "Unable to resolve the server container for experience seeding." >&2
         return 1
     fi
 
-    echo "Building demo-only e2e fixture helper on the Codespaces host..."
+    echo "Building extended experience seeder from the current source tree..."
     build_codespaces_e2e_seed
 
-    echo "Injecting demo-only e2e fixture helper into the running server container..."
+    echo "Injecting extended experience seeder into the running server container..."
     docker cp "${HOST_E2E_SEED_BIN}" "${server_container}:/tmp/e2e-seed"
 
-    echo "Seeding demo fixtures..."
+    echo "Seeding experience fixtures (admin/test accounts + sample catalog data)..."
     compose_exec \
-        -e "E2E_ADMIN_USERNAME=${ADMIN_USERNAME}" \
-        -e "E2E_ADMIN_PASSWORD=${ADMIN_PASSWORD}" \
+        "${e2e_seed_env[@]}" \
         server /tmp/e2e-seed >/dev/null
+    compose_exec server rm -f /tmp/e2e-seed >/dev/null 2>&1 || true
 }
 
 wait_for_url() {
@@ -215,7 +169,7 @@ stack_ready() {
         && curl -fsS "http://localhost:${HTTP_PORT}/" >/dev/null 2>&1
 }
 
-seed_demo() {
+seed_codespaces() {
     echo "Seeding baseline data..."
     compose_exec server /usr/local/bin/seed >/dev/null
     run_codespaces_e2e_seed
@@ -225,8 +179,6 @@ start_stack() {
     local mode="$1"
     local public_base_url
     local allowed_origins
-    local release_tag
-    local release_version
 
     public_base_url="$(compute_public_base_url)"
 
@@ -234,18 +186,11 @@ start_stack() {
         echo "Backend and UI already ready; skipping resume bootstrap."
         echo " Web UI: ${public_base_url}"
         echo " Login:  ${ADMIN_USERNAME} / ${ADMIN_PASSWORD}"
+        echo " User:   ${TEST_USERNAME} / ${TEST_PASSWORD}"
         return 0
     fi
 
     allowed_origins="$(compute_allowed_origins "${public_base_url}")"
-    docker_login_ghcr
-
-    release_tag="$(resolve_release_tag)"
-    ensure_release_images_available "${release_tag}"
-    release_version="${release_tag#v}"
-
-    SERVER_IMAGE="$(server_image_for_tag "${release_tag}")"
-    WEB_IMAGE="$(web_image_for_tag "${release_tag}")"
     DATABASE_URL="postgres://shepherd:shepherd_password@db:5432/shepherd_db?sslmode=disable"
     POSTGRES_PASSWORD="shepherd_password"
     SECURITY_SESSION_SECRET="${SECURITY_SESSION_SECRET:-codespaces-session-secret-0123456789abcdef0123456789abcdef}"
@@ -254,43 +199,50 @@ start_stack() {
     SERVER_ALLOWED_ORIGINS="${allowed_origins}"
 
     echo "=============================================="
-    echo " Shepherd Codespaces Demo"
+    echo " Shepherd Codespaces"
     echo "=============================================="
-    echo " Release tag: ${release_tag}"
-    echo " Server image: ${SERVER_IMAGE}"
-    echo " Web image:    ${WEB_IMAGE}"
-    echo " Web UI:       ${public_base_url}"
-    echo " Login:        ${ADMIN_USERNAME} / ${ADMIN_PASSWORD}"
-
-    if [[ "${mode}" == "bootstrap" ]]; then
-        echo "Resetting demo volume state for a clean first boot..."
-        COMPOSE_PROJECT_NAME="${PROJECT_NAME}" docker compose -f "${COMPOSE_FILE}" down -v --remove-orphans >/dev/null 2>&1 || true
-    fi
-
-    if [[ "${mode}" == "bootstrap" ]]; then
-        compose_up "always"
+    echo " Mode:          ${mode}"
+    echo " Source root:   ${REPO_ROOT}"
+    echo " Web UI:        ${public_base_url}"
+    echo " Login(admin):  ${ADMIN_USERNAME} / ${ADMIN_PASSWORD}"
+    echo " Login(test):   ${TEST_USERNAME} / ${TEST_PASSWORD}"
+    if [[ -n "${E2E_KUBECONFIG_B64:-${E2E_KUBECONFIG_PATH:-}}" ]]; then
+        echo " Cluster seed:  configured from operator-provided kubeconfig"
     else
-        compose_up "missing"
+        echo " Cluster seed:  stub cluster only (no live KubeVirt backing configured)"
     fi
 
+    if [[ "${mode}" == "bootstrap" ]]; then
+        echo "Resetting Codespaces state for a clean first boot..."
+        compose_cmd down -v --remove-orphans >/dev/null 2>&1 || true
+    fi
+
+    compose_up "${mode}"
     wait_for_url "http://localhost:${API_PORT}/api/v1/health/ready" "backend"
 
-    if [[ "${mode}" == "bootstrap" ]]; then
-        seed_demo
-    else
-        echo "Skipping seed on resume."
-    fi
+    case "${mode}" in
+        bootstrap)
+            seed_codespaces
+            ;;
+        rebuild)
+            echo "Skipping seed on rebuild."
+            ;;
+        resume)
+            echo "Skipping seed on resume."
+            ;;
+    esac
 
     wait_for_url "http://localhost:${HTTP_PORT}/" "web UI"
     prewarm_routes "http://localhost:${HTTP_PORT}"
 
-    echo ""
+    echo
     echo "=============================================="
-    echo " ✅ Shepherd Codespaces demo is ready"
+    echo " Shepherd Codespaces is ready"
     echo "=============================================="
     echo " Web UI:  ${public_base_url}"
     echo " API:     http://localhost:${API_PORT}"
-    echo " Login:   ${ADMIN_USERNAME} / ${ADMIN_PASSWORD}"
+    echo " Admin:   ${ADMIN_USERNAME} / ${ADMIN_PASSWORD}"
+    echo " Test:    ${TEST_USERNAME} / ${TEST_PASSWORD}"
 }
 
 main() {
@@ -298,7 +250,7 @@ main() {
         -h|--help|help)
             usage
             ;;
-        bootstrap|resume)
+        bootstrap|resume|rebuild)
             start_stack "$1"
             ;;
         *)

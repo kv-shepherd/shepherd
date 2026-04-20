@@ -1,12 +1,19 @@
 
 # Next.js
 .next/
+.next-*/
 out/
+.next-prod/
 coverage/
 node_modules/
 .turbo/
 npm-debug.log
 yarn-error.log
+playwright-report/
+test-results/
+tmp/
+*.tsbuildinfo
+ts_errors.log
 
 # IDE
 .idea/

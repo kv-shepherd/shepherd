@@ -5,6 +5,7 @@
 
 # Go
 bin/
+build/
 coverage.out
 coverage.html
 vendor/
@@ -12,8 +13,14 @@ vendor/
 # Node/Web
 web/node_modules/
 web/.next/
+web/.next-*/
 web/coverage/
 web/.turbo/
+web/playwright-report/
+web/test-results/
+web/tmp/
+web/*.tsbuildinfo
+web/ts_errors.log
 node_modules/
 npm-debug.log
 yarn-error.log

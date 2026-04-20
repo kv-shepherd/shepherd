@@ -158,6 +158,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for detailed guidelines.
 
 | Document | Purpose |
 |----------|---------|
+| [DEPLOYMENT.md](./DEPLOYMENT.md) | Production deployment guide and configuration reference |
 | [RELEASE.md](./RELEASE.md) | Release process and versioning |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Contribution guidelines |
 | [SECURITY.md](../SECURITY.md) | Security policy |
